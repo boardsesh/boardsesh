@@ -284,22 +284,14 @@ export default function AuroraCredentialsSection() {
     <>
       <Card>
         <CardContent>
-          <Typography variant="h5">Board Accounts</Typography>
+          <Typography variant="h5">Tension Board Account</Typography>
           <Typography variant="body2" component="span" color="text.secondary" className={styles.sectionDescription}>
-            Link your Kilter and Tension board accounts to import your Aurora data to Boardsesh.
+            Link your Tension board account to import your Aurora data to Boardsesh.
             We'll automatically sync your logbook, ascents, and climbs FROM Aurora every 6 hours.
             Data created in Boardsesh stays local and does not sync back to Aurora.
           </Typography>
 
           <Stack spacing={2} className={styles.cardsContainer}>
-            <BoardCredentialCard
-              boardType="kilter"
-              credential={getCredentialForBoard('kilter')}
-              unsyncedCounts={unsyncedCounts?.kilter ?? { ascents: 0, climbs: 0 }}
-              onAdd={() => handleAddClick('kilter')}
-              onRemove={() => handleRemove('kilter')}
-              isRemoving={removingBoard === 'kilter'}
-            />
             <BoardCredentialCard
               boardType="tension"
               credential={getCredentialForBoard('tension')}

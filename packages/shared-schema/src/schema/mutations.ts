@@ -111,6 +111,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     saveTick(input: SaveTickInput!): Tick!
 
+    """
+    Import a batch of ticks from a CSV file.
+    Call multiple times with batches of rows. Set buildSessions=true on the last batch.
+    """
+    importTicksBatch(input: ImportTicksBatchInput!): ImportTicksBatchResult!
+
     # ============================================
     # Climb Mutations (require auth)
     # ============================================

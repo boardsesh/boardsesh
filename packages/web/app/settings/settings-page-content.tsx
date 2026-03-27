@@ -18,6 +18,7 @@ import Instagram from '@mui/icons-material/Instagram';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Logo from '@/app/components/brand/logo';
+import AuroraCredentialsSection from '@/app/components/settings/aurora-credentials-section';
 import CsvImportSection from '@/app/components/settings/csv-import-section';
 import ControllersSection from '@/app/components/settings/controllers-section';
 import BackButton from '@/app/components/back-button';
@@ -411,6 +412,10 @@ export default function SettingsPageContent() {
             </Box>
           </CardContent>
         </Card>
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <AuroraCredentialsSection />
 
         <MuiDivider sx={{ my: 2 }} />
 

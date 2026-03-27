@@ -108,4 +108,31 @@ export const ticksTypeDefs = /* GraphQL */ `
     "Optional list of climb UUIDs to filter by"
     climbUuids: [String!]
   }
+
+  input ImportTickRowInput {
+    climbUuid: String
+    climbName: String!
+    angle: Int!
+    date: String!
+    loggedGrade: String
+    displayedGrade: String
+    isBenchmark: Boolean!
+    tries: Int!
+    isMirror: Boolean!
+    isAscent: Boolean!
+    comment: String
+  }
+
+  input ImportTicksBatchInput {
+    boardType: String!
+    rows: [ImportTickRowInput!]!
+    buildSessions: Boolean
+  }
+
+  type ImportTicksBatchResult {
+    imported: Int!
+    skipped: Int!
+    duplicates: Int!
+    errors: [String!]!
+  }
 `;

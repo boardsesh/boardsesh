@@ -25,6 +25,14 @@ import UploadFileOutlined from '@mui/icons-material/UploadFileOutlined';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import {
+  IMPORT_TICKS_BATCH,
+  ImportTicksBatchInput,
+  ImportTicksBatchResult,
+  ImportTickRow,
+} from '@/app/lib/graphql/operations/imports';
 import styles from './csv-import-section.module.css';
 
 type BoardType = 'kilter' | 'tension';
@@ -85,8 +93,11 @@ function parseRawRow(raw: Record<string, string>): CsvRow {
 
 const PREVIEW_LIMIT = 20;
 
+const BATCH_SIZE = 50;
+
 export default function CsvImportSection() {
   const { showMessage } = useSnackbar();
+  const { token: authToken } = useWsAuthToken();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [boardType, setBoardType] = useState<BoardType>('kilter');
@@ -95,6 +106,8 @@ export default function CsvImportSection() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [totalBatches, setTotalBatches] = useState(0);
   const [importResults, setImportResults] = useState<ImportResults | null>(null);
 
   const totalRows = parsedRows.length;
@@ -195,31 +208,80 @@ export default function CsvImportSection() {
   }, []);
 
   const handleImport = useCallback(async () => {
-    if (!parsedRows.length) return;
+    if (!parsedRows.length || !authToken) return;
 
     setImporting(true);
-    setImportProgress(10);
+    setImportProgress(0);
+
+    const client = createGraphQLHttpClient(authToken);
+
+    // Convert parsed CSV rows to GraphQL input format
+    const importRows: ImportTickRow[] = parsedRows.map((row) => ({
+      climbUuid: row.climb_uuid || null,
+      climbName: row.climb_name,
+      angle: row.angle,
+      date: row.date,
+      loggedGrade: row.logged_grade || null,
+      displayedGrade: row.displayed_grade || null,
+      isBenchmark: row.is_benchmark,
+      tries: row.tries,
+      isMirror: row.is_mirror,
+      isAscent: row.is_ascent,
+      comment: row.comment || null,
+    }));
+
+    const numBatches = Math.ceil(importRows.length / BATCH_SIZE);
+    setTotalBatches(numBatches);
+    let totalImported = 0;
+    let totalSkipped = 0;
+    let totalDuplicates = 0;
+    const allErrors: string[] = [];
 
     try {
-      const response = await fetch('/api/internal/csv-import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boardType, rows: parsedRows }),
-      });
+      for (let i = 0; i < numBatches; i++) {
+        setCurrentBatch(i + 1);
+        const batch = importRows.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+        const isLastBatch = i === numBatches - 1;
 
-      setImportProgress(80);
+        const variables: { input: ImportTicksBatchInput } = {
+          input: {
+            boardType,
+            rows: batch,
+            buildSessions: isLastBatch,
+          },
+        };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Import failed with status ${response.status}`);
+        const result = await client.request<ImportTicksBatchResult>(
+          IMPORT_TICKS_BATCH,
+          variables,
+        );
+
+        const batchResult = result.importTicksBatch;
+        totalImported += batchResult.imported;
+        totalSkipped += batchResult.skipped;
+        totalDuplicates += batchResult.duplicates;
+        // Offset error row numbers for this batch
+        const batchOffset = i * BATCH_SIZE;
+        allErrors.push(
+          ...batchResult.errors.map((err) => {
+            // Adjust row numbers: "Row 5: ..." -> "Row 255: ..."
+            return err.replace(/^Row (\d+):/, (_, num) => `Row ${parseInt(num) + batchOffset}:`);
+          }),
+        );
+
+        setImportProgress(Math.round(((i + 1) / numBatches) * 100));
       }
 
-      const results: ImportResults = await response.json();
-      setImportProgress(100);
-      setImportResults(results);
-      const errorCount = results.errors.length;
+      setImportResults({
+        imported: totalImported,
+        skipped: totalSkipped,
+        duplicates: totalDuplicates,
+        errors: allErrors,
+      });
+
+      const errorCount = allErrors.length;
       showMessage(
-        `Import complete: ${results.imported} imported, ${results.duplicates} duplicates, ${results.skipped} skipped` +
+        `Import complete: ${totalImported} imported, ${totalDuplicates} duplicates, ${totalSkipped} skipped` +
           (errorCount > 0 ? `, ${errorCount} errors` : ''),
         errorCount > 0 ? 'warning' : 'success',
       );
@@ -228,8 +290,10 @@ export default function CsvImportSection() {
       showMessage(message, 'error');
     } finally {
       setImporting(false);
+      setCurrentBatch(0);
+      setTotalBatches(0);
     }
-  }, [parsedRows, boardType, showMessage]);
+  }, [parsedRows, boardType, authToken, showMessage]);
 
   const handleReset = useCallback(() => {
     setParsedRows([]);
@@ -237,6 +301,8 @@ export default function CsvImportSection() {
     setFileName(null);
     setImportResults(null);
     setImportProgress(0);
+    setCurrentBatch(0);
+    setTotalBatches(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -250,8 +316,9 @@ export default function CsvImportSection() {
         </Typography>
 
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Import your climbing logbook from a BoardLib CSV export. Select your board type, upload the
-          CSV file, review the entries, and import them into your account.
+          Import your climbing logbook from a BoardLib CSV export. If you had a Kilter account and
+          exported your data before the Aurora app shut down, you can import it here. Also works for
+          Tension CSV exports.
         </Typography>
 
         {/* Board Type Selector */}
@@ -377,7 +444,11 @@ export default function CsvImportSection() {
           <Box sx={{ mb: 3 }}>
             <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
               <CircularProgress size={20} />
-              <Typography variant="body2">Importing entries...</Typography>
+              <Typography variant="body2">
+                {totalBatches > 1
+                  ? `Importing batch ${currentBatch} of ${totalBatches}...`
+                  : 'Importing entries...'}
+              </Typography>
             </Stack>
             <LinearProgress variant="determinate" value={importProgress} />
           </Box>
@@ -442,7 +513,7 @@ export default function CsvImportSection() {
             <Button
               variant="contained"
               onClick={handleImport}
-              disabled={importing}
+              disabled={importing || !authToken}
             >
               Import {totalRows} entries
             </Button>
