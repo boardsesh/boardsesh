@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import Papa from 'papaparse';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -36,6 +34,8 @@ import {
 import styles from './csv-import-section.module.css';
 
 type BoardType = 'kilter' | 'tension';
+
+const VALID_BOARDS: BoardType[] = ['kilter', 'tension'];
 
 interface CsvRow {
   board: string;
@@ -71,9 +71,13 @@ function parseIntSafe(value: string): number {
   return isNaN(n) ? 0 : n;
 }
 
+function isEmptyRow(raw: Record<string, string>): boolean {
+  return Object.values(raw).every((v) => !v || !v.trim());
+}
+
 function parseRawRow(raw: Record<string, string>): CsvRow {
   return {
-    board: raw.board ?? '',
+    board: (raw.board ?? '').trim().toLowerCase(),
     angle: parseIntSafe(raw.angle),
     climb_name: raw.climb_name ?? '',
     date: raw.date ?? '',
@@ -100,7 +104,6 @@ export default function CsvImportSection() {
   const { token: authToken } = useWsAuthToken();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [boardType, setBoardType] = useState<BoardType>('kilter');
   const [parsedRows, setParsedRows] = useState<CsvRow[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -114,16 +117,18 @@ export default function CsvImportSection() {
   const ascents = parsedRows.filter((r) => r.is_ascent).length;
   const attempts = totalRows - ascents;
 
+  // Group rows by board type for display and import
+  const boardCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const row of parsedRows) {
+      counts[row.board] = (counts[row.board] || 0) + 1;
+    }
+    return counts;
+  }, [parsedRows]);
+
   const previewRows = [...parsedRows]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, PREVIEW_LIMIT);
-
-  const handleBoardTypeChange = useCallback(
-    (_: React.MouseEvent<HTMLElement>, value: BoardType | null) => {
-      if (value) setBoardType(value);
-    },
-    [],
-  );
 
   const handleFileSelect = useCallback((file: File) => {
     setParseError(null);
@@ -162,7 +167,28 @@ export default function CsvImportSection() {
         }
 
         try {
-          const rows = results.data.map(parseRawRow);
+          // Filter out empty rows and rows without a valid board type
+          const rows = results.data
+            .filter((raw) => !isEmptyRow(raw))
+            .map(parseRawRow)
+            .filter((row) => row.climb_name.trim() !== '');
+
+          // Validate board types
+          const invalidBoards = [...new Set(rows.map((r) => r.board).filter((b) => !VALID_BOARDS.includes(b as BoardType)))];
+          if (invalidBoards.length > 0) {
+            setParseError(
+              `CSV contains unsupported board types: ${invalidBoards.join(', ')}. Supported: ${VALID_BOARDS.join(', ')}.`,
+            );
+            setParsedRows([]);
+            return;
+          }
+
+          if (!rows.length) {
+            setParseError('No valid data rows found after filtering empty rows.');
+            setParsedRows([]);
+            return;
+          }
+
           setParsedRows(rows);
         } catch {
           setParseError('Failed to parse CSV rows. Check that the file format is correct.');
@@ -215,61 +241,79 @@ export default function CsvImportSection() {
 
     const client = createGraphQLHttpClient(authToken);
 
-    // Convert parsed CSV rows to GraphQL input format
-    const importRows: ImportTickRow[] = parsedRows.map((row) => ({
-      climbUuid: row.climb_uuid || null,
-      climbName: row.climb_name,
-      angle: row.angle,
-      date: row.date,
-      loggedGrade: row.logged_grade || null,
-      displayedGrade: row.displayed_grade || null,
-      isBenchmark: row.is_benchmark,
-      tries: row.tries,
-      isMirror: row.is_mirror,
-      isAscent: row.is_ascent,
-      comment: row.comment || null,
-    }));
+    // Group rows by board type
+    const rowsByBoard: Record<string, CsvRow[]> = {};
+    for (const row of parsedRows) {
+      if (!rowsByBoard[row.board]) rowsByBoard[row.board] = [];
+      rowsByBoard[row.board].push(row);
+    }
 
-    const numBatches = Math.ceil(importRows.length / BATCH_SIZE);
-    setTotalBatches(numBatches);
+    // Calculate total batches across all board types
+    let totalBatchCount = 0;
+    for (const boardRows of Object.values(rowsByBoard)) {
+      totalBatchCount += Math.ceil(boardRows.length / BATCH_SIZE);
+    }
+    setTotalBatches(totalBatchCount);
+
     let totalImported = 0;
     let totalSkipped = 0;
     let totalDuplicates = 0;
     const allErrors: string[] = [];
+    let batchesDone = 0;
+    let globalRowOffset = 0;
 
     try {
-      for (let i = 0; i < numBatches; i++) {
-        setCurrentBatch(i + 1);
-        const batch = importRows.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
-        const isLastBatch = i === numBatches - 1;
+      for (const [boardType, boardRows] of Object.entries(rowsByBoard)) {
+        const importRows: ImportTickRow[] = boardRows.map((row) => ({
+          climbUuid: row.climb_uuid || null,
+          climbName: row.climb_name,
+          angle: row.angle,
+          date: row.date,
+          loggedGrade: row.logged_grade || null,
+          displayedGrade: row.displayed_grade || null,
+          isBenchmark: row.is_benchmark,
+          tries: row.tries,
+          isMirror: row.is_mirror,
+          isAscent: row.is_ascent,
+          comment: row.comment || null,
+        }));
 
-        const variables: { input: ImportTicksBatchInput } = {
-          input: {
-            boardType,
-            rows: batch,
-            buildSessions: isLastBatch,
-          },
-        };
+        const numBatches = Math.ceil(importRows.length / BATCH_SIZE);
 
-        const result = await client.request<ImportTicksBatchResult>(
-          IMPORT_TICKS_BATCH,
-          variables,
-        );
+        for (let i = 0; i < numBatches; i++) {
+          batchesDone++;
+          setCurrentBatch(batchesDone);
+          const batch = importRows.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+          const isLastBatchForBoard = i === numBatches - 1;
 
-        const batchResult = result.importTicksBatch;
-        totalImported += batchResult.imported;
-        totalSkipped += batchResult.skipped;
-        totalDuplicates += batchResult.duplicates;
-        // Offset error row numbers for this batch
-        const batchOffset = i * BATCH_SIZE;
-        allErrors.push(
-          ...batchResult.errors.map((err) => {
-            // Adjust row numbers: "Row 5: ..." -> "Row 255: ..."
-            return err.replace(/^Row (\d+):/, (_, num) => `Row ${parseInt(num) + batchOffset}:`);
-          }),
-        );
+          const variables: { input: ImportTicksBatchInput } = {
+            input: {
+              boardType,
+              rows: batch,
+              buildSessions: isLastBatchForBoard,
+            },
+          };
 
-        setImportProgress(Math.round(((i + 1) / numBatches) * 100));
+          const result = await client.request<ImportTicksBatchResult>(
+            IMPORT_TICKS_BATCH,
+            variables,
+          );
+
+          const batchResult = result.importTicksBatch;
+          totalImported += batchResult.imported;
+          totalSkipped += batchResult.skipped;
+          totalDuplicates += batchResult.duplicates;
+          const batchOffset = globalRowOffset + i * BATCH_SIZE;
+          allErrors.push(
+            ...batchResult.errors.map((err) => {
+              return err.replace(/^Row (\d+):/, (_, num) => `Row ${parseInt(num) + batchOffset}:`);
+            }),
+          );
+
+          setImportProgress(Math.round((batchesDone / totalBatchCount) * 100));
+        }
+
+        globalRowOffset += boardRows.length;
       }
 
       setImportResults({
@@ -293,7 +337,7 @@ export default function CsvImportSection() {
       setCurrentBatch(0);
       setTotalBatches(0);
     }
-  }, [parsedRows, boardType, authToken, showMessage]);
+  }, [parsedRows, authToken, showMessage]);
 
   const handleReset = useCallback(() => {
     setParsedRows([]);
@@ -316,26 +360,9 @@ export default function CsvImportSection() {
         </Typography>
 
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Import your climbing logbook from a BoardLib CSV export. If you had a Kilter account and
-          exported your data before the Aurora app shut down, you can import it here. Also works for
-          Tension CSV exports.
+          Import your climbing logbook from a BoardLib CSV export. The board type is read
+          automatically from the &quot;board&quot; column in each row. Supports Kilter and Tension.
         </Typography>
-
-        {/* Board Type Selector */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Board Type
-          </Typography>
-          <ToggleButtonGroup
-            value={boardType}
-            exclusive
-            onChange={handleBoardTypeChange}
-            size="small"
-          >
-            <ToggleButton value="kilter">Kilter</ToggleButton>
-            <ToggleButton value="tension">Tension</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
 
         {/* File Upload */}
         {!importResults && (
@@ -381,7 +408,7 @@ export default function CsvImportSection() {
 
         {/* Summary Stats */}
         {parsedRows.length > 0 && !importResults && (
-          <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+          <Stack direction="row" spacing={1} sx={{ mb: 3, flexWrap: 'wrap', gap: 1 }}>
             <Chip label={`${totalRows} total entries`} variant="outlined" />
             <Chip
               label={`${ascents} ascents`}
@@ -395,6 +422,14 @@ export default function CsvImportSection() {
               variant="outlined"
               icon={<WarningAmberOutlined />}
             />
+            {Object.entries(boardCounts).map(([board, count]) => (
+              <Chip
+                key={board}
+                label={`${count} ${board}`}
+                variant="outlined"
+                color="info"
+              />
+            ))}
           </Stack>
         )}
 
@@ -408,9 +443,11 @@ export default function CsvImportSection() {
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
+                    <TableCell>Board</TableCell>
                     <TableCell>Date</TableCell>
                     <TableCell>Climb Name</TableCell>
                     <TableCell>Grade</TableCell>
+                    <TableCell>Angle</TableCell>
                     <TableCell>Tries</TableCell>
                     <TableCell>Status</TableCell>
                   </TableRow>
@@ -418,11 +455,13 @@ export default function CsvImportSection() {
                 <TableBody>
                   {previewRows.map((row, idx) => (
                     <TableRow key={`${row.date}-${row.climb_name}-${idx}`}>
+                      <TableCell sx={{ textTransform: 'capitalize' }}>{row.board}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         {row.date}
                       </TableCell>
                       <TableCell>{row.climb_name}</TableCell>
                       <TableCell>{row.displayed_grade || row.logged_grade}</TableCell>
+                      <TableCell>{row.angle}°</TableCell>
                       <TableCell>{row.tries}</TableCell>
                       <TableCell>
                         {row.is_ascent ? (
