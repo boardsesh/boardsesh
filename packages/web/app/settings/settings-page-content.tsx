@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import Logo from '@/app/components/brand/logo';
 import AuroraCredentialsSection from '@/app/components/settings/aurora-credentials-section';
 import ControllersSection from '@/app/components/settings/controllers-section';
+import ImportDataSection from '@/app/components/settings/import-data-section';
 import BackButton from '@/app/components/back-button';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
@@ -419,6 +420,10 @@ export default function SettingsPageContent() {
         <MuiDivider sx={{ my: 2 }} />
 
         <ControllersSection />
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <ImportDataSection />
       </Box>
     </Box>
   );

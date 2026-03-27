@@ -14,9 +14,11 @@ import { handleAvatarUpload } from './handlers/avatars';
 import { handleStaticAvatar } from './handlers/static';
 import { handleSyncCron } from './handlers/sync';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
+import { handleImportUpload, handleImportStatus } from './handlers/import';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
+import { startImportWorker } from './jobs/import-worker';
 
 /**
  * Start the Boardsesh Backend server
@@ -43,6 +45,14 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
       console.log('[Server] EventBroker and NotificationWorker started');
     } catch (error) {
       console.error('[Server] Failed to initialize EventBroker:', error);
+    }
+
+    // Start import worker (processes JSON import jobs from Redis stream)
+    try {
+      await startImportWorker();
+      console.log('[Server] Import worker started');
+    } catch (error) {
+      console.error('[Server] Failed to start import worker:', error);
     }
   } else {
     await roomManager.initialize(); // Postgres-only mode
@@ -88,6 +98,18 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
       // OCR test data upload endpoint (handle OPTIONS for CORS preflight)
       if (pathname === '/api/ocr-test-data' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleOcrTestDataUpload(req, res);
+        return;
+      }
+
+      // Import data upload endpoint
+      if (pathname === '/api/import' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleImportUpload(req, res);
+        return;
+      }
+
+      // Import job status endpoint
+      if (pathname === '/api/import/status' && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleImportStatus(req, res);
         return;
       }
 
@@ -149,6 +171,8 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
     console.log(`  Avatar upload: http://0.0.0.0:${PORT}/api/avatars`);
     console.log(`  Avatar files: http://0.0.0.0:${PORT}/static/avatars/`);
     console.log(`  OCR test data: http://0.0.0.0:${PORT}/api/ocr-test-data`);
+    console.log(`  Import upload: http://0.0.0.0:${PORT}/api/import`);
+    console.log(`  Import status: http://0.0.0.0:${PORT}/api/import/status`);
     console.log(`  Sync cron: http://0.0.0.0:${PORT}/sync-cron`);
   });
 
