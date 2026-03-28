@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/internal/shared-sync/tension",
-      "schedule": "0 */2 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

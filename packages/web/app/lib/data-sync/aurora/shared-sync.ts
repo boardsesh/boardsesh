@@ -1,7 +1,7 @@
 import { getPool } from '@/app/lib/db/db';
 import { SyncOptions, AuroraBoardName } from '../../api-wrappers/aurora/types';
 import { sharedSync } from '../../api-wrappers/aurora/sharedSync';
-import { sql, eq, inArray } from 'drizzle-orm';
+import { sql, eq, and, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import { NeonDatabase } from 'drizzle-orm/neon-serverless';
 import { Attempt, BetaLink, Climb, ClimbStats, SharedSync, SyncPutFields } from '../../api-wrappers/sync-api-types';
@@ -67,39 +67,33 @@ async function upsertClimbStats(db: NeonDatabase<Record<string, never>>, board: 
   const climbStatsSchema = UNIFIED_TABLES.climbStats;
   const climbStatHistorySchema = UNIFIED_TABLES.climbStatsHistory;
 
-  await Promise.all(
-    data.map((item) => {
-      return Promise.all([
-        // Update current stats
-        db
-          .insert(climbStatsSchema)
-          .values({
-            boardType: board,
-            climbUuid: item.climb_uuid,
-            angle: Number(item.angle),
-            displayDifficulty: Number(item.display_difficulty || item.difficulty_average),
-            benchmarkDifficulty: item.benchmark_difficulty != null ? Number(item.benchmark_difficulty) : null,
-            ascensionistCount: Number(item.ascensionist_count),
-            difficultyAverage: Number(item.difficulty_average),
-            qualityAverage: Number(item.quality_average),
-            faUsername: item.fa_username,
-            faAt: item.fa_at,
-          })
-          .onConflictDoUpdate({
-            target: [climbStatsSchema.boardType, climbStatsSchema.climbUuid, climbStatsSchema.angle],
-            set: {
-              displayDifficulty: Number(item.display_difficulty || item.difficulty_average),
-              benchmarkDifficulty: item.benchmark_difficulty != null ? Number(item.benchmark_difficulty) : null,
-              ascensionistCount: Number(item.ascensionist_count),
-              difficultyAverage: Number(item.difficulty_average),
-              qualityAverage: Number(item.quality_average),
-              faUsername: item.fa_username,
-              faAt: item.fa_at,
-            },
-          }),
+  if (data.length === 0) return;
 
-        // Also insert into history table
-        db.insert(climbStatHistorySchema).values({
+  // Fetch current stats for all climb+angle combos so we can detect changes
+  const keys = data.map((item) => ({ uuid: item.climb_uuid, angle: Number(item.angle) }));
+  const uuids = [...new Set(keys.map((k) => k.uuid))];
+
+  const existingStats = await db
+    .select({
+      climbUuid: climbStatsSchema.climbUuid,
+      angle: climbStatsSchema.angle,
+      ascensionistCount: climbStatsSchema.ascensionistCount,
+      qualityAverage: climbStatsSchema.qualityAverage,
+      difficultyAverage: climbStatsSchema.difficultyAverage,
+    })
+    .from(climbStatsSchema)
+    .where(and(eq(climbStatsSchema.boardType, board), inArray(climbStatsSchema.climbUuid, uuids)));
+
+  const existingMap = new Map(
+    existingStats.map((s) => [`${s.climbUuid}:${s.angle}`, s]),
+  );
+
+  // Upsert current stats (individual inserts to avoid bulk upsert issues)
+  await Promise.all(
+    data.map((item) =>
+      db
+        .insert(climbStatsSchema)
+        .values({
           boardType: board,
           climbUuid: item.climb_uuid,
           angle: Number(item.angle),
@@ -110,10 +104,58 @@ async function upsertClimbStats(db: NeonDatabase<Record<string, never>>, board: 
           qualityAverage: Number(item.quality_average),
           faUsername: item.fa_username,
           faAt: item.fa_at,
+        })
+        .onConflictDoUpdate({
+          target: [climbStatsSchema.boardType, climbStatsSchema.climbUuid, climbStatsSchema.angle],
+          set: {
+            displayDifficulty: Number(item.display_difficulty || item.difficulty_average),
+            benchmarkDifficulty: item.benchmark_difficulty != null ? Number(item.benchmark_difficulty) : null,
+            ascensionistCount: Number(item.ascensionist_count),
+            difficultyAverage: Number(item.difficulty_average),
+            qualityAverage: Number(item.quality_average),
+            faUsername: item.fa_username,
+            faAt: item.fa_at,
+          },
         }),
-      ]);
-    }),
+    ),
   );
+
+  // Only insert history for stats that actually changed (or are new)
+  const changedItems = data.filter((item) => {
+    const key = `${item.climb_uuid}:${Number(item.angle)}`;
+    const existing = existingMap.get(key);
+    if (!existing) return true; // New stat, always record
+    return (
+      Number(existing.ascensionistCount) !== Number(item.ascensionist_count) ||
+      Number(existing.qualityAverage) !== Number(item.quality_average) ||
+      Number(existing.difficultyAverage) !== Number(item.difficulty_average)
+    );
+  });
+
+  if (changedItems.length > 0) {
+    // Batch insert history records in chunks (single INSERT per chunk)
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < changedItems.length; i += BATCH_SIZE) {
+      const batch = changedItems.slice(i, i + BATCH_SIZE);
+      await db.insert(climbStatHistorySchema).values(
+        batch.map((item) => ({
+          boardType: board,
+          climbUuid: item.climb_uuid,
+          angle: Number(item.angle),
+          displayDifficulty: Number(item.display_difficulty || item.difficulty_average),
+          benchmarkDifficulty: item.benchmark_difficulty != null ? Number(item.benchmark_difficulty) : null,
+          ascensionistCount: Number(item.ascensionist_count),
+          difficultyAverage: Number(item.difficulty_average),
+          qualityAverage: Number(item.quality_average),
+          faUsername: item.fa_username,
+          faAt: item.fa_at,
+        })),
+      );
+    }
+    console.log(`[SharedSync] Inserted ${changedItems.length} changed stats into history (skipped ${data.length - changedItems.length} unchanged)`);
+  } else {
+    console.log(`[SharedSync] No stats changed, skipped all ${data.length} history inserts`);
+  }
 }
 
 async function upsertBetaLinks(db: NeonDatabase<Record<string, never>>, board: AuroraBoardName, data: BetaLink[]) {
