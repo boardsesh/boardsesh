@@ -11,6 +11,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import CircularProgress from '@mui/material/CircularProgress';
 import { DatePicker as MuiDatePicker } from '@mui/x-date-pickers/DatePicker';
 import { EmptyState } from '@/app/components/ui/empty-state';
+import BoardImportPrompt from '@/app/components/settings/board-import-prompt';
 import dayjs from 'dayjs';
 import type { ChartData } from '../profile-stats-charts';
 import {
@@ -44,6 +45,7 @@ interface BoardStatsSectionProps {
   chartDataBar: ChartData | null;
   chartDataPie: ChartData | null;
   chartDataWeeklyBar: ChartData | null;
+  isOwnProfile: boolean;
 }
 
 export default function BoardStatsSection({
@@ -60,6 +62,7 @@ export default function BoardStatsSection({
   chartDataBar,
   chartDataPie,
   chartDataWeeklyBar,
+  isOwnProfile,
 }: BoardStatsSectionProps) {
   return (
     <MuiCard className={styles.statsCard}><CardContent>
@@ -117,7 +120,11 @@ export default function BoardStatsSection({
           <CircularProgress />
         </div>
       ) : filteredLogbook.length === 0 ? (
-        <EmptyState description="No climbing data for this period" />
+        isOwnProfile && (selectedBoard === 'kilter' || selectedBoard === 'tension') ? (
+          <BoardImportPrompt boardType={selectedBoard} />
+        ) : (
+          <EmptyState description="No climbing data for this period" />
+        )
       ) : (
         <div className={styles.chartsContainer}>
           <ProfileStatsCharts

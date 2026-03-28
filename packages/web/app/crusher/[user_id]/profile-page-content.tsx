@@ -119,6 +119,7 @@ export default function ProfilePageContent({ userId }: { userId: string }) {
           chartDataBar={boardChartData.chartDataBar}
           chartDataPie={boardChartData.chartDataPie}
           chartDataWeeklyBar={boardChartData.chartDataWeeklyBar}
+          isOwnProfile={isOwnProfile}
         />
 
         {hasCredentials && (

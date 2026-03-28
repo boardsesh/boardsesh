@@ -43,18 +43,18 @@ interface BoardUnsyncedCounts {
   climbs: number;
 }
 
-interface ImportPreview {
+export interface ImportPreview {
   ascents: number;
   attempts: number;
   circuits: number;
   username: string;
 }
 
-type ImportPhase = 'preview' | 'importing' | 'complete' | 'error';
+export type ImportPhase = 'preview' | 'importing' | 'complete' | 'error';
 
-type ImportStep = 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits' | 'sessions';
+export type ImportStep = 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits' | 'sessions';
 
-interface ImportProgress {
+export interface ImportProgress {
   step: ImportStep;
   message?: string;
   current?: number;
@@ -72,7 +72,7 @@ const STEP_LABELS: Record<ImportStep, string> = {
   sessions: 'Building sessions',
 };
 
-interface BoardCredentialCardProps {
+export interface BoardCredentialCardProps {
   boardType: 'kilter' | 'tension';
   credential: AuroraCredentialStatus | null;
   unsyncedCounts: BoardUnsyncedCounts;
@@ -83,7 +83,7 @@ interface BoardCredentialCardProps {
   isImporting: boolean;
 }
 
-function BoardCredentialCard({
+export function BoardCredentialCard({
   boardType,
   credential,
   unsyncedCounts,
@@ -232,7 +232,7 @@ function BoardCredentialCard({
   );
 }
 
-function ImportProgressSteps({ progress }: { progress: ImportProgress | null }) {
+export function ImportProgressSteps({ progress }: { progress: ImportProgress | null }) {
   const currentStepIndex = progress ? STEP_ORDER.indexOf(progress.step) : -1;
 
   return (
