@@ -6,13 +6,14 @@ This document describes the WebSocket implementation used for real-time party se
 
 1. [Architecture Overview](#architecture-overview)
 2. [Technology Stack](#technology-stack)
-3. [Connection Flow](#connection-flow)
-4. [Session Management](#session-management)
-5. [Queue State Synchronization](#queue-state-synchronization)
-6. [Multi-Instance Support](#multi-instance-support)
-7. [Failure States and Recovery](#failure-states-and-recovery)
-8. [Client-Side Connection Supervisor](#client-side-connection-supervisor)
-9. [Data Persistence Strategy](#data-persistence-strategy)
+3. [Frontend Connection Architecture](#frontend-connection-architecture)
+4. [Connection Flow](#connection-flow)
+5. [Session Management](#session-management)
+6. [Queue State Synchronization](#queue-state-synchronization)
+7. [Multi-Instance Support](#multi-instance-support)
+8. [Failure States and Recovery](#failure-states-and-recovery)
+9. [Client-Side Connection Supervisor](#client-side-connection-supervisor)
+10. [Data Persistence Strategy](#data-persistence-strategy)
 
 ---
 
@@ -87,6 +88,75 @@ The party session system uses a GraphQL-over-WebSocket architecture with the fol
 1. **Publisher** — shared by RoomManager, RedisSessionStore, DistributedState, EventBroker (non-blocking ops like `xadd`, `xack`)
 2. **Subscriber** — dedicated to ioredis pub/sub mode (enters special subscribe-only mode)
 3. **Stream Consumer** — dedicated to EventBroker's blocking `XREADGROUP BLOCK 5000` loop, preventing it from starving the publisher connection
+
+---
+
+## Frontend Connection Architecture
+
+The frontend connection layer uses a 3-class separation of concerns:
+
+```
+ConnectionStateMachine (state)  <-  SessionConnection (orchestration)  <-  PersistentSessionContext (React)
+```
+
+### ConnectionStateMachine
+
+A finite state machine (`connection-state-machine.ts`) that replaces 6+ scattered boolean flags with explicit states and transitions:
+
+```
+IDLE -> CONNECTING -> CONNECTED -> RECONNECTING -> CONNECTED
+                  \-> FAILED                    \-> FAILED
+```
+
+**States:**
+| State | Description |
+|-------|-------------|
+| `IDLE` | Initial state, no connection attempted |
+| `CONNECTING` | First connection in progress |
+| `CONNECTED` | Active WebSocket connection with subscriptions |
+| `RECONNECTING` | Lost connection, attempting to restore |
+| `FAILED` | Permanent failure (max retries exhausted or non-transient error) |
+
+**Derived flags** (exposed via `flags` getter):
+- `isConnecting` -- true when `CONNECTING`
+- `hasConnected` -- true once `CONNECTED` has been reached (persists through `RECONNECTING`)
+- `isWebSocketConnected` -- true only when currently `CONNECTED`
+
+Invalid transitions log warnings instead of silently corrupting state.
+
+### SessionConnection
+
+The `SessionConnection` class (`session-connection.ts`) encapsulates all WebSocket orchestration:
+
+- **Client lifecycle**: Creates/disposes `graphql-ws` client
+- **Session join/leave**: Executes `joinSession` mutation with initial queue support
+- **Subscriptions**: Sets up queue and session update subscriptions; automatically re-establishes them on subscription error
+- **Reconnection**: Uses an async lock to prevent overlapping resync calls; delegates state transitions to `ConnectionStateMachine`
+- **Delta/full sync**: See [Reconnection Sync Strategy](#reconnection-sync-strategy) below
+- **Retry logic**: Exponential backoff for transient failures, immediate fail for permanent ones (auth errors, session-not-found)
+- **Suspend/resume**: Background tabs are suspended after 60s hidden, resumed on foreground return
+- **Resync throttling**: Non-forced resyncs throttled to prevent spamming from rapid tab switches
+- **Disposal**: Sends `LEAVE_SESSION` on microtask, then nulls client synchronously
+
+### Reconnection Sync Strategy
+
+When reconnecting after a WebSocket drop, `SessionConnection` calculates the sequence gap and chooses:
+
+| Condition | Strategy |
+|-----------|----------|
+| Gap > 100 events | Full sync via `joinSession` response |
+| 0 < Gap <= 100 | Delta sync via `eventsReplay` query; falls back to full sync if no events returned |
+| Gap = 0 | Verify state hash; full sync if mismatch |
+| First connection (`lastSeq` is null) | Full sync |
+
+### PersistentSessionContext
+
+The React context layer (`persistent-session-context.tsx`) retains:
+- Queue state management (reducer pattern for event processing)
+- Sequence tracking and gap detection
+- Corruption detection with cooldown-based resync
+- Periodic hash verification (every 60 seconds)
+- iOS foreground recovery (visibility change handler with 300ms debounce)
 
 ---
 

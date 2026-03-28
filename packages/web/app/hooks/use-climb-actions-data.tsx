@@ -100,6 +100,7 @@ export function useClimbActionsData({
   const {
     data: favorites,
     isLoading: isLoadingFavorites,
+    error: favoritesError,
     cancelFetches: cancelFavFetches,
   } = useIncrementalQuery<Set<string>>(
     climbUuids,
@@ -215,6 +216,7 @@ export function useClimbActionsData({
 
   const {
     data: membershipsData,
+    error: membershipsError,
     cancelFetches: cancelMemFetches,
   } = useIncrementalQuery<Map<string, Set<string>>>(
     climbUuids,
@@ -315,6 +317,7 @@ export function useClimbActionsData({
       isFavorited,
       toggleFavorite,
       isLoading: isLoadingFavorites,
+      error: favoritesError,
       isAuthenticated,
     },
     playlistsProviderProps: {
@@ -324,6 +327,7 @@ export function useClimbActionsData({
       removeFromPlaylist,
       createPlaylist,
       isLoading: playlistsLoading,
+      error: membershipsError,
       isAuthenticated,
       refreshPlaylists,
     },

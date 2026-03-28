@@ -20,6 +20,7 @@ interface FavoritesProviderProps {
   isFavorited: (uuid: string) => boolean;
   toggleFavorite: (uuid: string) => Promise<boolean>;
   isLoading: boolean;
+  error: Error | null;
   isAuthenticated: boolean;
   children: React.ReactNode;
 }

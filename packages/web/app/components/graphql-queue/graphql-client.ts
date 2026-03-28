@@ -9,6 +9,7 @@ const MUTATION_TIMEOUT_MS = 30_000; // 30 second timeout for mutations
 import { INITIAL_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS, BACKOFF_MULTIPLIER } from './retry-constants';
 
 let clientCounter = 0;
+const NON_RETRYABLE_CLOSE_CODES = new Set([4400, 4401, 4403, 4404, 1002, 1003, 1008]);
 
 // Cache for parsed operation names to avoid regex on every call
 const operationNameCache = new WeakMap<{ query: string }, string>();
@@ -26,6 +27,26 @@ function getOperationName(operation: { query: string }, type: 'mutation' | 'quer
   return name;
 }
 
+function shouldRetrySocket(errorOrCloseEvent: unknown): boolean {
+  const eventWithCode = errorOrCloseEvent as { code?: number; reason?: string; message?: string };
+  const code = eventWithCode?.code;
+  if (typeof code === 'number' && NON_RETRYABLE_CLOSE_CODES.has(code)) {
+    return false;
+  }
+
+  const message = `${eventWithCode?.reason ?? ''} ${eventWithCode?.message ?? ''}`.toLowerCase();
+  if (
+    message.includes('unauthorized') ||
+    message.includes('forbidden') ||
+    message.includes('authentication') ||
+    message.includes('invalid token')
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export interface ExtendedClient extends Client {
   onReconnect?: (callback: () => void) => void;
 }
@@ -34,6 +55,7 @@ export interface GraphQLClientOptions {
   url: string;
   authToken?: string | null;
   onReconnect?: () => void;
+  onConnectionStateChange?: (connected: boolean, isReconnect: boolean) => void;
   connectionName?: string;
 }
 
@@ -55,7 +77,7 @@ export function createGraphQLClient(
     ? { url: urlOrOptions, onReconnect }
     : urlOrOptions;
 
-  const { url, authToken, onReconnect: onReconnectCallback, connectionName } = options;
+  const { url, authToken, onReconnect: onReconnectCallback, onConnectionStateChange, connectionName } = options;
   const managerConnectionName = connectionName ?? 'primary';
 
   const clientId = ++clientCounter;
@@ -67,7 +89,7 @@ export function createGraphQLClient(
   const client = createClient({
     url,
     retryAttempts: 10, // More attempts with exponential backoff
-    shouldRetry: () => true,
+    shouldRetry: shouldRetrySocket,
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
     retryWait: async (retryCount) => {
       const delay = Math.min(
@@ -85,15 +107,20 @@ export function createGraphQLClient(
     connectionParams: authToken ? { authToken } : undefined,
     on: {
       connected: () => {
+        const isReconnect = hasConnectedOnce;
         if (DEBUG) console.log(`[GraphQL] Client #${clientId} connected (first: ${!hasConnectedOnce})`);
-        if (hasConnectedOnce && onReconnectCallback) {
+        hasConnectedOnce = true;
+        onConnectionStateChange?.(true, isReconnect);
+        if (isReconnect && onReconnectCallback) {
           if (DEBUG) console.log(`[GraphQL] Client #${clientId} reconnected, calling onReconnect`);
           onReconnectCallback();
         }
-        hasConnectedOnce = true;
       },
       closed: (event) => {
         if (DEBUG) console.log(`[GraphQL] Client #${clientId} closed`, event);
+        if (hasConnectedOnce) {
+          onConnectionStateChange?.(false, true);
+        }
       },
       error: (error) => {
         if (DEBUG) console.log(`[GraphQL] Client #${clientId} error`, error);
@@ -127,11 +154,20 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 
   if (DEBUG) console.log(`[GraphQL] execute START: ${opName}`);
 
-  const executionPromise = new Promise<TData>((resolve, reject) => {
-    let result: TData | undefined;
-    let hasResolved = false;
+  let result: TData | undefined;
+  let hasSettled = false;
+  let timeoutId: ReturnType<typeof setTimeout>;
+  let unsubscribe: (() => void) | null = null;
 
-    const unsubscribe = client.subscribe<TData>(
+  const unsubscribeSafely = () => {
+    if (!unsubscribe) return;
+    const fn = unsubscribe;
+    unsubscribe = null;
+    fn();
+  };
+
+  const executionPromise = new Promise<TData>((resolve, reject) => {
+    unsubscribe = client.subscribe<TData>(
       { query: operation.query, variables: operation.variables as Record<string, unknown> },
       {
         next: (data) => {
@@ -141,26 +177,26 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
             result = data.data as TData;
           }
           if (data.errors) {
-            if (!hasResolved) {
-              hasResolved = true;
-              unsubscribe();
+            if (!hasSettled) {
+              hasSettled = true;
+              unsubscribeSafely();
               reject(new Error(data.errors.map((e) => e.message).join(', ')));
             }
           }
         },
         error: (err) => {
           if (DEBUG) console.log(`[GraphQL] execute ERROR: ${opName}`, err);
-          if (!hasResolved) {
-            hasResolved = true;
-            unsubscribe();
+          if (!hasSettled) {
+            hasSettled = true;
+            unsubscribeSafely();
             reject(err);
           }
         },
         complete: () => {
           if (DEBUG) console.log(`[GraphQL] execute COMPLETE: ${opName}`);
-          if (!hasResolved) {
-            hasResolved = true;
-            unsubscribe();
+          if (!hasSettled) {
+            hasSettled = true;
+            unsubscribeSafely();
             if (result === undefined) {
               reject(new Error(`GraphQL operation '${opName}' completed without data`));
               return;
@@ -174,12 +210,17 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 
   // Add timeout to prevent mutations from hanging forever
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      if (hasSettled) return;
+      hasSettled = true;
+      unsubscribeSafely();
       reject(new Error(`GraphQL mutation '${opName}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
-  return Promise.race([executionPromise, timeoutPromise]);
+  return Promise.race([executionPromise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
 }
 
 /**

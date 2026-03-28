@@ -31,6 +31,8 @@ interface UseIncrementalQueryOptions<T> {
 interface UseIncrementalQueryResult<T> {
   data: T;
   isLoading: boolean;
+  /** The error from the most recent failed fetch, or null if the last fetch succeeded. */
+  error: Error | null;
   /**
    * Cancel all in-flight fetch queries for this incremental query.
    * Useful for optimistic mutations that need to prevent stale fetch results
@@ -130,9 +132,28 @@ export function useIncrementalQuery<T>(
         return fetchChunk(chunks[0]);
       }
 
-      // Parallel fetch for multiple chunks, then merge
-      const results = await Promise.all(chunks.map((chunk) => fetchChunk(chunk)));
-      return results.reduce((acc, result) => merge(acc, result), initialValue);
+      // Parallel fetch for multiple chunks — use allSettled to save partial results
+      const settled = await Promise.allSettled(chunks.map((chunk) => fetchChunk(chunk)));
+      const fulfilled: T[] = [];
+      let failCount = 0;
+      for (const result of settled) {
+        if (result.status === 'fulfilled') {
+          fulfilled.push(result.value as T);
+        } else {
+          failCount++;
+        }
+      }
+      if (fulfilled.length === 0) {
+        // All chunks failed — rethrow the first error
+        const firstRejected = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+        throw firstRejected?.reason ?? new Error('All fetch chunks failed');
+      }
+      if (failCount > 0) {
+        console.warn(
+          `[useIncrementalQuery] ${failCount}/${settled.length} chunks failed, using partial results`,
+        );
+      }
+      return fulfilled.reduce((acc, result) => merge(acc, result), initialValue);
     },
     enabled: enabled && newUuids.length > 0,
     // Each batch is fetched once; accumulation handles deduplication
@@ -172,6 +193,11 @@ export function useIncrementalQuery<T>(
   const lastCacheWriteRef = useRef<T | undefined>(undefined);
   useEffect(() => {
     if (!fetchQuery.data || fetchQuery.data === lastMergedRef.current) return;
+
+    // Guard against stale fetch results from a previous context (e.g., board/angle changed mid-fetch).
+    // If the key has changed since this fetch started, discard the results.
+    if (prevKeyRef.current !== currentKeyStr) return;
+
     lastMergedRef.current = fetchQuery.data;
 
     // Mark these UUIDs as fetched (including those with no results)
@@ -183,7 +209,7 @@ export function useIncrementalQuery<T>(
       lastCacheWriteRef.current = merged;
       queryClient.setQueryData(accumulatedKey, merged);
     }
-  }, [fetchQuery.data, newUuids, accumulated, merge, hasChanged, accumulatedKey, queryClient]);
+  }, [fetchQuery.data, newUuids, accumulated, merge, hasChanged, accumulatedKey, queryClient, currentKeyStr]);
 
   // Subscribe to cache changes for the accumulated key only.
   // Handles two scenarios:
@@ -238,6 +264,7 @@ export function useIncrementalQuery<T>(
   return {
     data: accumulated,
     isLoading: fetchQuery.isLoading && !hasChanged(initialValue, accumulated),
+    error: fetchQuery.error instanceof Error ? fetchQuery.error : fetchQuery.error ? new Error(String(fetchQuery.error)) : null,
     cancelFetches,
   };
 }

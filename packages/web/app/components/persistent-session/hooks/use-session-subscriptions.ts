@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
+import React, { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { SubscriptionQueueEvent, SessionEvent, SessionLiveStats } from '@boardsesh/shared-schema';
 import { computeQueueStateHash } from '@/app/utils/hash';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
@@ -10,7 +10,11 @@ interface UseSessionSubscriptionsArgs {
   activeSession: ActiveSessionInfo | null;
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
-  lastReceivedStateHash: string | null;
+  serverStateHash: string | null;
+  localStateHash: string | null;
+  shouldRefreshServerHashRef: React.MutableRefObject<boolean>;
+  setLocalStateHash: Dispatch<SetStateAction<string | null>>;
+  setServerStateHash: Dispatch<SetStateAction<string | null>>;
   liveSessionStats: { sessionId: string } | null;
   setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
   setLiveSessionStats: Dispatch<SetStateAction<SessionLiveStats | null>>;
@@ -31,7 +35,11 @@ export function useSessionSubscriptions({
   activeSession,
   queue,
   currentClimbQueueItem,
-  lastReceivedStateHash,
+  serverStateHash,
+  localStateHash,
+  shouldRefreshServerHashRef,
+  setLocalStateHash,
+  setServerStateHash,
   liveSessionStats,
   setQueueState,
   setLiveSessionStats,
@@ -74,39 +82,42 @@ export function useSessionSubscriptions({
 
       console.error('[PersistentSession] Detected null/undefined items in queue, triggering resync');
       lastCorruptionResyncRef.current = now;
-      if (triggerResyncRef.current) {
-        triggerResyncRef.current();
-      }
+      triggerResyncRef.current?.(true);
       return;
     }
-    // Note: hash is computed in the main provider via the event processor
-  }, [session, queue, currentClimbQueueItem, setQueueState, triggerResyncRef, lastCorruptionResyncRef, isFilteringCorruptedItemsRef]);
+
+    // Compute local hash and conditionally update server hash
+    const newHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
+    setLocalStateHash(newHash);
+    if (shouldRefreshServerHashRef.current) {
+      shouldRefreshServerHashRef.current = false;
+      setServerStateHash(newHash);
+    }
+  }, [session, queue, currentClimbQueueItem, setQueueState, setLocalStateHash, setServerStateHash, shouldRefreshServerHashRef, triggerResyncRef, lastCorruptionResyncRef, isFilteringCorruptedItemsRef]);
 
   // Periodic state hash verification (every 60 seconds)
   useEffect(() => {
-    if (!session || !lastReceivedStateHash || queue.length === 0) {
+    if (!session || !serverStateHash || queue.length === 0) {
       return;
     }
 
     const verifyInterval = setInterval(() => {
-      const localHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
+      const currentLocalHash = localStateHash ?? computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
 
-      if (localHash !== lastReceivedStateHash) {
+      if (currentLocalHash !== serverStateHash) {
         console.warn(
           '[PersistentSession] State hash mismatch detected!',
-          `Local: ${localHash}, Server: ${lastReceivedStateHash}`,
+          `Local: ${currentLocalHash}, Server: ${serverStateHash}`,
           'Triggering automatic resync...'
         );
-        if (triggerResyncRef.current) {
-          triggerResyncRef.current();
-        }
+        triggerResyncRef.current?.(true);
       } else {
         if (DEBUG) console.log('[PersistentSession] State hash verification passed');
       }
     }, 60000);
 
     return () => clearInterval(verifyInterval);
-  }, [session, lastReceivedStateHash, queue, currentClimbQueueItem, triggerResyncRef]);
+  }, [session, serverStateHash, localStateHash, queue, currentClimbQueueItem, triggerResyncRef]);
 
   // Defensive state consistency check
   useEffect(() => {
@@ -120,9 +131,7 @@ export function useSessionSubscriptions({
       console.warn(
         '[PersistentSession] Current climb not found in queue - state inconsistency detected. Triggering resync.'
       );
-      if (triggerResyncRef.current) {
-        triggerResyncRef.current();
-      }
+      triggerResyncRef.current?.(true);
     }
   }, [session, currentClimbQueueItem, queue, triggerResyncRef]);
 

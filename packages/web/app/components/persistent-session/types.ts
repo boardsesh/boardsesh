@@ -154,7 +154,7 @@ export interface SharedRefs {
   isConnectingRef: MutableRefObject<boolean>;
   isReconnectingRef: MutableRefObject<boolean>;
   connectionGenerationRef: MutableRefObject<number>;
-  triggerResyncRef: MutableRefObject<(() => void) | null>;
+  triggerResyncRef: MutableRefObject<((force?: boolean) => void) | null>;
   lastReceivedSequenceRef: MutableRefObject<number | null>;
   lastCorruptionResyncRef: MutableRefObject<number>;
   isFilteringCorruptedItemsRef: MutableRefObject<boolean>;

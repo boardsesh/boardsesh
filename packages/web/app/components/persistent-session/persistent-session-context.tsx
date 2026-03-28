@@ -39,7 +39,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const isConnectingRef = useRef(false);
   const isReconnectingRef = useRef(false);
   const connectionGenerationRef = useRef(0);
-  const triggerResyncRef = useRef<(() => void) | null>(null);
+  const triggerResyncRef = useRef<((force?: boolean) => void) | null>(null);
   const lastReceivedSequenceRef = useRef<number | null>(null);
   const lastCorruptionResyncRef = useRef<number>(0);
   const isFilteringCorruptedItemsRef = useRef(false);
@@ -59,6 +59,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   // destabilize the lifecycle effect's dependency array and cause infinite reconnects.
   const noopSetSession = useCallback(() => {}, []);
 
+  // SharedRefs: some refs are still used by non-lifecycle hooks (event processor, subscriptions, storage).
+  // The lifecycle hook only uses a subset since SessionConnection manages its own state internally.
   const refs: SharedRefs = {
     wsAuthTokenRef, usernameRef, avatarUrlRef,
     sessionRef, activeSessionRef,
@@ -108,7 +110,11 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     activeSession: lifecycle.activeSession,
     queue: eventProcessor.queue,
     currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
-    lastReceivedStateHash: eventProcessor.lastReceivedStateHash,
+    serverStateHash: eventProcessor.serverStateHash,
+    localStateHash: eventProcessor.localStateHash,
+    shouldRefreshServerHashRef: eventProcessor.shouldRefreshServerHashRef,
+    setLocalStateHash: eventProcessor.setLocalStateHash,
+    setServerStateHash: eventProcessor.setServerStateHash,
     liveSessionStats: eventProcessor.liveSessionStats,
     setQueueState: eventProcessor.setQueueState,
     setLiveSessionStats: eventProcessor.setLiveSessionStats,

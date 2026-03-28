@@ -40,6 +40,7 @@ interface PlaylistsProviderProps {
     icon?: string
   ) => Promise<Playlist>;
   isLoading: boolean;
+  error: Error | null;
   isAuthenticated: boolean;
   refreshPlaylists: () => Promise<void>;
   children: React.ReactNode;

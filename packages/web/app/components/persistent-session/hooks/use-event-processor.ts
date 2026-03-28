@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { SubscriptionQueueEvent, SessionEvent, SessionLiveStats } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { evaluateQueueEventSequence, insertQueueItemIdempotent } from '../event-utils';
@@ -16,6 +16,8 @@ export interface EventProcessorState {
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
   lastReceivedStateHash: string | null;
+  serverStateHash: string | null;
+  localStateHash: string | null;
   liveSessionStats: SessionLiveStats | null;
 }
 
@@ -24,6 +26,9 @@ export interface EventProcessorActions {
   handleSessionEvent: (event: SessionEvent) => void;
   setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
   setCurrentClimbQueueItem: Dispatch<SetStateAction<LocalClimbQueueItem | null>>;
+  setLocalStateHash: Dispatch<SetStateAction<string | null>>;
+  setServerStateHash: Dispatch<SetStateAction<string | null>>;
+  shouldRefreshServerHashRef: MutableRefObject<boolean>;
   setLiveSessionStats: Dispatch<SetStateAction<SessionLiveStats | null>>;
   notifyQueueSubscribers: (event: SubscriptionQueueEvent) => void;
   notifySessionSubscribers: (event: SessionEvent) => void;
@@ -41,7 +46,9 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
 
   const [queue, setQueueState] = useState<LocalClimbQueueItem[]>([]);
   const [currentClimbQueueItem, setCurrentClimbQueueItem] = useState<LocalClimbQueueItem | null>(null);
-  const [lastReceivedStateHash, setLastReceivedStateHash] = useState<string | null>(null);
+  const [serverStateHash, setServerStateHash] = useState<string | null>(null);
+  const [localStateHash, setLocalStateHash] = useState<string | null>(null);
+  const shouldRefreshServerHashRef = useRef(false);
   const [liveSessionStats, setLiveSessionStats] = useState<SessionLiveStats | null>(null);
 
   // Notify queue event subscribers
@@ -82,9 +89,7 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
           `[PersistentSession] Sequence gap detected: expected ${lastSeq! + 1}, got ${event.sequence}. ` +
           `Triggering resync.`
         );
-        if (triggerResyncRef.current) {
-          triggerResyncRef.current();
-        }
+        triggerResyncRef.current?.(true);
         return;
       }
     }
@@ -94,7 +99,8 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
         setQueueState((event.state.queue as LocalClimbQueueItem[]).filter(item => item != null));
         setCurrentClimbQueueItem(event.state.currentClimbQueueItem as LocalClimbQueueItem | null);
         updateLastReceivedSequence(event.sequence);
-        setLastReceivedStateHash(event.state.stateHash);
+        shouldRefreshServerHashRef.current = false;
+        setServerStateHash(event.state.stateHash);
         break;
       case 'QueueItemAdded':
         if (event.addedItem == null) {
@@ -110,23 +116,34 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
           );
         });
         updateLastReceivedSequence(event.sequence);
+        shouldRefreshServerHashRef.current = true;
         break;
       case 'QueueItemRemoved':
         setQueueState((prev) => prev.filter((item) => item.uuid !== event.uuid));
         updateLastReceivedSequence(event.sequence);
+        shouldRefreshServerHashRef.current = true;
         break;
       case 'QueueReordered':
         setQueueState((prev) => {
+          if (event.oldIndex < 0 || event.oldIndex >= prev.length || event.newIndex < 0 || event.newIndex >= prev.length) {
+            console.warn(
+              `[PersistentSession] QueueReordered indices out of bounds: oldIndex=${event.oldIndex}, newIndex=${event.newIndex}, queue length=${prev.length}. Triggering resync.`
+            );
+            triggerResyncRef.current?.(true);
+            return prev;
+          }
           const newQueue = [...prev];
           const [item] = newQueue.splice(event.oldIndex, 1);
           newQueue.splice(event.newIndex, 0, item);
           return newQueue;
         });
         updateLastReceivedSequence(event.sequence);
+        shouldRefreshServerHashRef.current = true;
         break;
       case 'CurrentClimbChanged':
         setCurrentClimbQueueItem(event.currentItem as LocalClimbQueueItem | null);
         updateLastReceivedSequence(event.sequence);
+        shouldRefreshServerHashRef.current = true;
         break;
       case 'ClimbMirrored':
         setCurrentClimbQueueItem((prev) => {
@@ -140,6 +157,7 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
           };
         });
         updateLastReceivedSequence(event.sequence);
+        shouldRefreshServerHashRef.current = true;
         break;
     }
 
@@ -173,12 +191,17 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
   return {
     queue,
     currentClimbQueueItem,
-    lastReceivedStateHash,
+    lastReceivedStateHash: serverStateHash,
+    serverStateHash,
+    localStateHash,
+    shouldRefreshServerHashRef,
     liveSessionStats,
     handleQueueEvent,
     handleSessionEvent,
     setQueueState,
     setCurrentClimbQueueItem,
+    setLocalStateHash,
+    setServerStateHash,
     setLiveSessionStats,
     notifyQueueSubscribers,
     notifySessionSubscribers,
