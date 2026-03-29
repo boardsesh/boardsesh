@@ -22,6 +22,11 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: { user: { id: 'test-user' } } }),
 }));
 
+// Mock useWsAuthToken (uses react-query internally)
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: 'mock-auth-token', isAuthenticated: true, isLoading: false, error: null }),
+}));
+
 import BoardImportPrompt from '../board-import-prompt';
 
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -381,7 +386,7 @@ describe('BoardImportPrompt', () => {
       fireEvent.click(screen.getByText('Import'));
 
       await waitFor(() => {
-        expect(mockStreamImport).toHaveBeenCalledWith('kilter', expect.anything(), expect.any(Function));
+        expect(mockStreamImport).toHaveBeenCalledWith('kilter', expect.anything(), expect.any(Function), 'mock-auth-token');
       });
 
       await waitFor(() => {
