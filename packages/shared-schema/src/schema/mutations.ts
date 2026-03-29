@@ -399,6 +399,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     revokeRole(input: RevokeRoleInput!): Boolean!
 
+    # ============================================
+    # Aurora Import Mutations (require auth)
+    # ============================================
+
+    """
+    Import Aurora JSON export data (ascents, attempts, circuits).
+    Also stores the Aurora username claim for setter attribution.
+    Requires authentication.
+    """
+    importAuroraJson(input: AuroraImportInput!): AuroraImportResult!
+
     # ESP32 sends LED positions from official app Bluetooth
     # frames: Pre-built frames string from ESP32 (preferred)
     # positions: Legacy LED positions array (for backwards compatibility)

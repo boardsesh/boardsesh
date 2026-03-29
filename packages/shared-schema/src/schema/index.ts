@@ -19,6 +19,7 @@ import { queriesTypeDefs } from './queries';
 import { mutationsTypeDefs } from './mutations';
 import { subscriptionsTypeDefs } from './subscriptions';
 import { eventsTypeDefs } from './events';
+import { auroraImportTypeDefs } from './aurora-import';
 import { controllerTypeDefs } from './controller';
 
 export const typeDefs = [
@@ -44,4 +45,5 @@ export const typeDefs = [
   subscriptionsTypeDefs,
   eventsTypeDefs,
   controllerTypeDefs,
+  auroraImportTypeDefs,
 ];

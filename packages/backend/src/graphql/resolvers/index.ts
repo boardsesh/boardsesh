@@ -42,6 +42,7 @@ import { socialRoleQueries, socialRoleMutations } from './social/roles';
 import { socialCommunitySettingsQueries, socialCommunitySettingsMutations } from './social/community-settings';
 import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions';
 import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
+import { auroraImportMutations } from './aurora-import/mutations';
 
 export const resolvers = {
   // Scalar types
@@ -96,6 +97,7 @@ export const resolvers = {
     ...socialCommunitySettingsMutations,
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
+    ...auroraImportMutations,
   },
 
   Subscription: {

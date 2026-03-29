@@ -37,6 +37,7 @@ import type { UnsyncedCounts } from '@/app/api/internal/aurora-credentials/unsyn
 import type { ImportResult } from '@/app/lib/data-sync/aurora/json-import';
 import { streamImport } from '@/app/lib/data-sync/aurora/json-import-stream';
 import { parseAuroraExport, type AuroraExportPreview, type StrippedExportData } from '@/app/lib/data-sync/aurora/parse-aurora-export';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import styles from './aurora-credentials-section.module.css';
 
 interface BoardUnsyncedCounts {
@@ -275,6 +276,7 @@ export function ImportProgressSteps({ progress }: { progress: ImportProgress | n
 
 export default function AuroraCredentialsSection() {
   const { showMessage } = useSnackbar();
+  const { token } = useWsAuthToken();
   const [credentials, setCredentials] = useState<AuroraCredentialStatus[]>([]);
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -488,13 +490,13 @@ export default function AuroraCredentialsSection() {
             showMessage(event.error, 'error');
             break;
         }
-      });
+      }, token);
 
-      // If stream ended without a complete/error event (e.g. server timeout)
+      // If the callback never fired (unexpected)
       if (!receivedCompleteRef.current) {
-        setImportError('Import was interrupted. The server may have timed out. Your data may have been partially imported.');
+        setImportError('Import failed unexpectedly. Please try again.');
         setImportPhase('error');
-        showMessage('Import was interrupted', 'error');
+        showMessage('Import failed', 'error');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Import failed';

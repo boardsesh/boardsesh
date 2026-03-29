@@ -26,6 +26,7 @@ import {
   type ImportProgress,
 } from './aurora-credentials-section';
 import { parseAuroraExport, type AuroraExportPreview, type StrippedExportData } from '@/app/lib/data-sync/aurora/parse-aurora-export';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import styles from './aurora-credentials-section.module.css';
 
 interface BoardImportPromptProps {
@@ -34,6 +35,7 @@ interface BoardImportPromptProps {
 
 export default function BoardImportPrompt({ boardType }: BoardImportPromptProps) {
   const { showMessage } = useSnackbar();
+  const { token } = useWsAuthToken();
   const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
 
   // Credential state
@@ -230,12 +232,12 @@ export default function BoardImportPrompt({ boardType }: BoardImportPromptProps)
             showMessage(event.error, 'error');
             break;
         }
-      });
+      }, token);
 
       if (!receivedCompleteRef.current) {
-        setImportError('Import was interrupted. The server may have timed out. Your data may have been partially imported.');
+        setImportError('Import failed unexpectedly. Please try again.');
         setImportPhase('error');
-        showMessage('Import was interrupted', 'error');
+        showMessage('Import failed', 'error');
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Import failed';
