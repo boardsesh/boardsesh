@@ -44,9 +44,9 @@ export function deriveWsUrlFromHost(hostname: string, secure: boolean): string |
  * files). On the server side it returns the build-time env var directly.
  */
 export function getBackendWsUrl(): string | null {
-  // Server-side: env var is the only source of truth
+  // Server-side: prefer internal URL for Docker networking, fall back to public URL
   if (typeof window === 'undefined') {
-    return process.env.NEXT_PUBLIC_WS_URL || null;
+    return process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_WS_URL || null;
   }
 
   // 1. Host-derived URL for known domain patterns

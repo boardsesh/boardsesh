@@ -109,6 +109,7 @@ jobs:
             -e NEXTAUTH_SECRET=branch-deploy-secret-${PR_NUM} \
             -e NEXTAUTH_URL=https://${PR_NUM}.preview.boardsesh.com \
             -e IRON_SESSION_PASSWORD='{"1":"branch-deploy-session-must-be-32-chars!!"}' \
+            -e BACKEND_INTERNAL_URL=ws://backend-pr-${PR_NUM}:8080/graphql \
             -e VERCEL_ENV=preview \
             -e NODE_ENV=production \
             --label "traefik.enable=true" \
