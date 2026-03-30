@@ -4,26 +4,18 @@
 
 Migrate Boardsesh from Next.js 15 to TanStack Start with Selective SSR. This eliminates SSR overhead on interactive routes (70% of pages) while keeping server rendering for shareable/SEO pages. Consolidates all REST APIs into GraphQL on the Railway backend and migrates auth from next-auth to Better Auth.
 
-**Branch strategy**: All work happens on the `rewrite` branch. Each milestone is a feature branch merged into `rewrite`. Branch deploys at `rewrite.preview.boardsesh.com` for continuous testing. Merge to `main` only when all milestones are complete and verified.
+**Branch**: All work on `claude/evaluate-nextjs-choice-ZX1dj`. No feature branches — commit directly, push incrementally.
 
-```
-main (production)
-└── rewrite (integration branch)
-    ├── rewrite/m0-backend-graphql
-    ├── rewrite/m1-backend-auth
-    ├── rewrite/m2-spa-scaffold
-    ├── rewrite/m3-core-routes
-    ├── rewrite/m4-remaining-routes
-    ├── rewrite/m5-infrastructure
-    └── rewrite/m6-cleanup
-```
+**Execution model**: Each milestone uses 3 Opus 4.6 subagents launched in parallel:
+1. **Implementation agent** — writes the code, commits, pushes
+2. **QA agent** — runs typecheck, tests, verifies functionality after implementation commits
+3. **Code review agent** — reviews for correctness, security, performance, and project conventions
 
 ---
 
 ## Milestone 0: Backend GraphQL Expansion
 
 **Goal**: Backend becomes self-sufficient — every REST endpoint in `packages/web/app/api/` has a GraphQL equivalent.
-**Branch**: `rewrite/m0-backend-graphql`
 **Risk**: Zero — existing Next.js app is untouched.
 
 ### Tasks
@@ -106,7 +98,6 @@ Add to `packages/backend/src/graphql/resolvers/admin/`:
 ## Milestone 1: Backend Auth (Better Auth)
 
 **Goal**: Backend handles all authentication. Dual-token validation supports both old (next-auth JWE) and new (Better Auth session) clients.
-**Branch**: `rewrite/m1-backend-auth`
 **Depends on**: M0 (resolvers available for auth-protected operations)
 
 ### Tasks
@@ -155,7 +146,6 @@ Add to `packages/backend/src/graphql/resolvers/admin/`:
 ## Milestone 2: SPA Scaffold
 
 **Goal**: TanStack Start app boots, authenticates, and renders a shell with all context providers.
-**Branch**: `rewrite/m2-spa-scaffold`
 **Depends on**: M1 (auth endpoints available)
 
 ### Tasks
@@ -219,7 +209,6 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 ## Milestone 3: Core Routes
 
 **Goal**: The main user flow works end-to-end — browse, queue, play, log ascent.
-**Branch**: `rewrite/m3-core-routes`
 **Depends on**: M2 (scaffold with auth and providers)
 
 ### Tasks
@@ -271,7 +260,6 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 ## Milestone 4: Remaining Routes
 
 **Goal**: Full route parity with existing Next.js app.
-**Branch**: `rewrite/m4-remaining-routes`
 **Depends on**: M3 (core flow works)
 
 ### Tasks
@@ -330,7 +318,6 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 ## Milestone 5: Infrastructure
 
 **Goal**: Production-ready deployment pipeline for the new app.
-**Branch**: `rewrite/m5-infrastructure`
 **Depends on**: M4 (all routes ported)
 
 ### Tasks
@@ -381,7 +368,6 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 ## Milestone 6: Cleanup and Cutover
 
 **Goal**: Remove old code, merge to main.
-**Branch**: `rewrite/m6-cleanup`
 **Depends on**: M5 (infra verified)
 
 ### Tasks
