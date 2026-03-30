@@ -276,44 +276,6 @@ export const boardDataTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
-  Public user profile with social stats.
-  """
-  type PublicProfile {
-    "User ID"
-    id: ID!
-    "Email (only if own profile)"
-    email: String
-    "User name"
-    name: String
-    "User avatar image URL"
-    image: String
-    "User profile details"
-    profile: ProfileDetails
-    "Aurora board credentials"
-    credentials: [ProfileCredential!]!
-    "Whether this is the viewer's own profile"
-    isOwnProfile: Boolean!
-    "Number of followers"
-    followerCount: Int!
-    "Number of users followed"
-    followingCount: Int!
-    "Whether the viewer follows this user"
-    isFollowedByMe: Boolean!
-  }
-
-  type ProfileDetails {
-    displayName: String
-    avatarUrl: String
-    instagramUrl: String
-  }
-
-  type ProfileCredential {
-    boardType: String!
-    auroraUsername: String!
-    auroraUserId: Int!
-  }
-
-  """
   Result of setting a password.
   """
   type SetPasswordResult {
