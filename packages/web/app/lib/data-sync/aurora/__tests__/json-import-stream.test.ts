@@ -242,9 +242,9 @@ describe('streamImport', () => {
       const received: ImportProgressEvent[] = [];
       await streamImport('kilter', { user: { username: 'test' }, ascents, attempts }, (e) => received.push(e));
 
-      const progressEvent = received.find((e) => e.type === 'progress');
+      const progressEvent = received.find((e) => e.type === 'progress' && 'message' in e);
       expect(progressEvent).toBeDefined();
-      if (progressEvent?.type === 'progress') {
+      if (progressEvent?.type === 'progress' && 'message' in progressEvent) {
         expect(progressEvent.message).toBe('Importing 1100 items...');
       }
     });

@@ -90,13 +90,19 @@ export interface ImportResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function normalizeTimestamp(ts: string): string {
-  let normalized = ts.trim();
-  if (!normalized.includes('T') && !normalized.includes('Z')) {
-    normalized = normalized.replace(/(\.\d{3})\d*$/, '$1');
-    normalized = normalized.replace(' ', 'T') + 'Z';
+function normalizeTimestamp(ts: string): string | null {
+  try {
+    let normalized = ts.trim();
+    if (!normalized.includes('T') && !normalized.includes('Z')) {
+      normalized = normalized.replace(/(\.\d{3})\d*$/, '$1');
+      normalized = normalized.replace(' ', 'T') + 'Z';
+    }
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return null;
+    return date.toISOString();
+  } catch {
+    return null;
   }
-  return new Date(normalized).toISOString();
 }
 
 function generateJsonImportAuroraId(
@@ -190,10 +196,11 @@ async function getExistingTickKeys(
     );
 
   return new Set(
-    existing.map((row) => {
+    existing.reduce<string[]>((keys, row) => {
       const normalized = normalizeTimestamp(row.climbedAt);
-      return `${row.climbUuid}:${row.angle}:${normalized}`;
-    }),
+      if (normalized) keys.push(`${row.climbUuid}:${row.angle}:${normalized}`);
+      return keys;
+    }, []),
   );
 }
 
@@ -267,7 +274,9 @@ async function importJsonExportData(
 
   const now = new Date().toISOString();
 
-  // Store the Aurora username claim
+  // Store the Aurora username claim. Intentionally outside the tick import
+  // transaction: the user IS this Aurora user regardless of whether their
+  // tick data imports successfully. Uses the global db instance.
   const auroraUsername = data.user.username;
   if (auroraUsername) {
     await upsertUsernameClaim(userId, boardType, auroraUsername);
@@ -302,6 +311,8 @@ async function importJsonExportData(
       if (!climbUuid) { result.ascents.failed++; return rows; }
 
       const climbedAt = normalizeTimestamp(ascent.climbed_at);
+      if (!climbedAt) { result.ascents.failed++; return rows; }
+
       const tickKey = `${climbUuid}:${ascent.angle}:${climbedAt}`;
       if (existingKeys.has(tickKey)) { result.ascents.skipped++; return rows; }
 
@@ -320,7 +331,7 @@ async function importJsonExportData(
         isBenchmark: false,
         comment: '',
         climbedAt,
-        createdAt: ascent.created_at ? normalizeTimestamp(ascent.created_at) : now,
+        createdAt: normalizeTimestamp(ascent.created_at) ?? now,
         updatedAt: now,
         auroraType: 'ascents' as const,
         auroraId: generateJsonImportAuroraId(userId, climbUuid, ascent.angle, climbedAt, 'ascents'),
@@ -335,6 +346,8 @@ async function importJsonExportData(
       if (!climbUuid) { result.attempts.failed++; return rows; }
 
       const climbedAt = normalizeTimestamp(attempt.climbed_at);
+      if (!climbedAt) { result.attempts.failed++; return rows; }
+
       const tickKey = `${climbUuid}:${attempt.angle}:${climbedAt}`;
       if (existingKeys.has(tickKey)) { result.attempts.skipped++; return rows; }
 
@@ -353,7 +366,7 @@ async function importJsonExportData(
         isBenchmark: false,
         comment: '',
         climbedAt,
-        createdAt: attempt.created_at ? normalizeTimestamp(attempt.created_at) : now,
+        createdAt: normalizeTimestamp(attempt.created_at) ?? now,
         updatedAt: now,
         auroraType: 'bids' as const,
         auroraId: generateJsonImportAuroraId(userId, climbUuid, attempt.angle, climbedAt, 'bids'),
