@@ -12,11 +12,10 @@
  *   - Sync: https://sync1.kiltergrips.com/sync/stream
  */
 
-import type { KilterTokenResponse, KilterLoginResult, KilterSyncData } from './types';
+import type { KilterTokenResponse, KilterLoginResult } from './types';
 
 const KILTER_IDP_URL = 'https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token';
 const KILTER_API_BASE = 'https://portal.kiltergrips.com/api';
-const KILTER_SYNC_URL = 'https://sync1.kiltergrips.com/sync/stream';
 
 /**
  * Decode a JWT and return the payload. Does NOT verify the signature —
@@ -170,34 +169,6 @@ export class KilterClient {
     return response.json() as Promise<T>;
   }
 
-  /**
-   * Call the Kilter sync stream endpoint.
-   * Accepts URL-encoded form data (same format as old Aurora /sync)
-   * but uses Bearer auth instead of Cookie auth.
-   */
-  async syncStream(formBody: string): Promise<KilterSyncData> {
-    if (!this.accessToken) {
-      throw new Error('Not authenticated — call signIn() first');
-    }
-
-    const response = await fetch(KILTER_SYNC_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formBody,
-      signal: AbortSignal.timeout(60000), // Sync can be slow
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Kilter sync stream failed: ${response.status} ${text}`);
-    }
-
-    return response.json() as Promise<KilterSyncData>;
-  }
 }
 
 export default KilterClient;

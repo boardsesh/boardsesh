@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
-import { eq, and, or, isNotNull, asc } from 'drizzle-orm';
+import { eq, and, or, isNotNull, sql } from 'drizzle-orm';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import * as schema from '@/app/lib/db/schema';
 import { KilterClient, syncKilterUserData } from '@boardsesh/kilter-sync';
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
               isNotNull(schema.auroraCredentials.encryptedPassword),
             ),
           )
-          .orderBy(asc(schema.auroraCredentials.lastSyncAt))
+          .orderBy(sql`${schema.auroraCredentials.lastSyncAt} ASC NULLS FIRST`)
           .limit(1);
       } finally {
         client.release();

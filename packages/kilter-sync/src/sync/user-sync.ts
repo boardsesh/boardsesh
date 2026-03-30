@@ -265,30 +265,20 @@ async function upsertTableData(
     case 'tags': {
       const tagsSchema = UNIFIED_TABLES.tags;
       await processBatches(data, BATCH_SIZE, async (batch) => {
-        for (const item of batch) {
-          const result = await db
-            .update(tagsSchema)
-            .set({ isListed: Boolean(item.is_listed) })
-            .where(
-              and(
-                eq(tagsSchema.boardType, BOARD_TYPE),
-                eq(tagsSchema.entityUuid, item.entity_uuid),
-                eq(tagsSchema.userId, Number(auroraUserId)),
-                eq(tagsSchema.name, item.name),
-              ),
-            )
-            .returning();
-
-          if (result.length === 0) {
-            await db.insert(tagsSchema).values({
-              boardType: BOARD_TYPE,
-              entityUuid: item.entity_uuid,
-              userId: Number(auroraUserId),
-              name: item.name,
-              isListed: Boolean(item.is_listed),
-            });
-          }
-        }
+        const values = batch.map((item) => ({
+          boardType: BOARD_TYPE,
+          entityUuid: item.entity_uuid,
+          userId: Number(auroraUserId),
+          name: item.name,
+          isListed: Boolean(item.is_listed),
+        }));
+        await db
+          .insert(tagsSchema)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [tagsSchema.boardType, tagsSchema.entityUuid, tagsSchema.userId, tagsSchema.name],
+            set: { isListed: sql`excluded.is_listed` },
+          });
       });
       break;
     }
@@ -365,20 +355,29 @@ async function upsertTableData(
           if (item.climbs && Array.isArray(item.climbs)) {
             await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
+            const climbValues: Array<{
+              playlistId: bigint;
+              climbUuid: string;
+              angle: number | null;
+              position: number;
+            }> = [];
             for (let i = 0; i < item.climbs.length; i++) {
-              const climb = item.climbs[i];
+              const climb = item.climbs[i] as Record<string, unknown>;
               const climbUuid = climb.climb_uuid || climb.uuid || climb;
-              const climbAngle = climb.angle ?? null;
-              const climbPosition = climb.position ?? i;
-
               if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
+                climbValues.push({
                   playlistId: playlist.id,
                   climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
+                  angle: (climb.angle as number) ?? null,
+                  position: (climb.position as number) ?? i,
                 });
               }
+            }
+
+            if (climbValues.length > 0) {
+              await processBatches(climbValues, BATCH_SIZE, async (batch) => {
+                await db.insert(playlistClimbs).values(batch);
+              });
             }
           }
         }
