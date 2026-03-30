@@ -1,4 +1,9 @@
-import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
+import {
+  FONT_GRADE_COLORS,
+  V_GRADE_COLORS,
+  getGradeColorWithOpacity,
+  type GradeDisplayFormat,
+} from '@/app/lib/grade-colors';
 import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
 
 export interface UserProfile {
@@ -36,31 +41,94 @@ export type AggregatedTimeframeType = 'today' | 'lastWeek' | 'lastMonth' | 'last
 
 export const BOARD_TYPES = SUPPORTED_BOARDS;
 
-export const difficultyMapping: Record<number, string> = {
-  10: '4a',
-  11: '4b',
-  12: '4c',
-  13: '5a',
-  14: '5b',
-  15: '5c',
-  16: '6a',
-  17: '6a+',
-  18: '6b',
-  19: '6b+',
-  20: '6c',
-  21: '6c+',
-  22: '7a',
-  23: '7a+',
-  24: '7b',
-  25: '7b+',
-  26: '7c',
-  27: '7c+',
-  28: '8a',
-  29: '8a+',
-  30: '8b',
-  31: '8b+',
-  32: '8c',
-  33: '8c+',
+// Font grade mapping (uppercase for display)
+const fontGradeMapping: Record<number, string> = {
+  10: '4A',
+  11: '4B',
+  12: '4C',
+  13: '5A',
+  14: '5B',
+  15: '5C',
+  16: '6A',
+  17: '6A+',
+  18: '6B',
+  19: '6B+',
+  20: '6C',
+  21: '6C+',
+  22: '7A',
+  23: '7A+',
+  24: '7B',
+  25: '7B+',
+  26: '7C',
+  27: '7C+',
+  28: '8A',
+  29: '8A+',
+  30: '8B',
+  31: '8B+',
+  32: '8C',
+  33: '8C+',
+};
+
+// V-grade mapping
+const vGradeMapping: Record<number, string> = {
+  10: 'V0',
+  11: 'V0',
+  12: 'V0',
+  13: 'V1',
+  14: 'V1',
+  15: 'V2',
+  16: 'V3',
+  17: 'V3+',
+  18: 'V4',
+  19: 'V4+',
+  20: 'V5',
+  21: 'V5+',
+  22: 'V6',
+  23: 'V7',
+  24: 'V8',
+  25: 'V8+',
+  26: 'V9',
+  27: 'V10',
+  28: 'V11',
+  29: 'V12',
+  30: 'V13',
+  31: 'V14',
+  32: 'V15',
+  33: 'V16',
+};
+
+// Default mapping (for backwards compatibility - uses Font grades)
+export const difficultyMapping: Record<number, string> = fontGradeMapping;
+
+// Get difficulty mapping based on format preference
+export const getDifficultyMapping = (format: GradeDisplayFormat): Record<number, string> => {
+  return format === 'v-grade' ? vGradeMapping : fontGradeMapping;
+};
+
+// Build reverse mapping from grade string to numeric difficulty for sorting
+const buildGradeOrder = (mapping: Record<number, string>): Map<string, number> => {
+  const order = new Map<string, number>();
+  for (const [numStr, grade] of Object.entries(mapping)) {
+    const num = parseInt(numStr, 10);
+    // For grades that map to the same string (e.g., V0 from 10, 11, 12), keep the lowest number
+    if (!order.has(grade) || num < (order.get(grade) ?? Infinity)) {
+      order.set(grade, num);
+    }
+  }
+  return order;
+};
+
+const fontGradeOrder = buildGradeOrder(fontGradeMapping);
+const vGradeOrder = buildGradeOrder(vGradeMapping);
+
+// Sort grades by their numeric difficulty value
+export const sortGrades = (grades: string[], format: GradeDisplayFormat): string[] => {
+  const gradeOrder = format === 'v-grade' ? vGradeOrder : fontGradeOrder;
+  return [...grades].sort((a, b) => {
+    const orderA = gradeOrder.get(a) ?? 999;
+    const orderB = gradeOrder.get(b) ?? 999;
+    return orderA - orderB;
+  });
 };
 
 export const angleColors = [
@@ -125,6 +193,12 @@ export const getLayoutColor = (boardType: string, layoutId: number | null | unde
 };
 
 export const getGradeChartColor = (grade: string): string => {
+  // Check V-grade first (e.g., "V3", "V5+")
+  const normalizedVGrade = grade.toUpperCase().replace(/\+$/, '');
+  if (V_GRADE_COLORS[normalizedVGrade]) {
+    return getGradeColorWithOpacity(V_GRADE_COLORS[normalizedVGrade], 0.8);
+  }
+  // Then check Font grade (e.g., "6A", "7C+")
   const hexColor = FONT_GRADE_COLORS[grade.toLowerCase()];
   return hexColor ? getGradeColorWithOpacity(hexColor, 0.8) : 'rgba(200, 200, 200, 0.7)';
 };

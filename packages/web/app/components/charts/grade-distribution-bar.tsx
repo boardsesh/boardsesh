@@ -3,7 +3,7 @@
 import React from 'react';
 import { Bar } from 'react-chartjs-2';
 import './chart-registry'; // Ensure Chart.js components are registered
-import { formatVGrade } from '@/app/lib/grade-colors';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
 
 export interface GradeDistributionItem {
   grade: string;
@@ -24,15 +24,6 @@ interface GradeDistributionBarProps {
   stacked?: boolean;
 }
 
-/**
- * Format grade strings to V-grade labels for chart display.
- * Uses formatVGrade which appends "+" when the Font grade has a "+"
- * (e.g., "6c+/V5" → "V5+").
- */
-export function formatGradeLabels(grades: string[]): string[] {
-  return grades.map((g) => formatVGrade(g) ?? g);
-}
-
 // Match profile page "Ascents by Difficulty" colors
 const FLASH_COLOR = 'rgba(75,192,192,0.5)';
 const SEND_COLOR = 'rgba(192,75,75,0.5)';
@@ -45,12 +36,14 @@ export default function GradeDistributionBar({
   showAttempts = true,
   stacked = true,
 }: GradeDistributionBarProps) {
+  const { formatGrade } = useGradeFormat();
+
   if (gradeDistribution.length === 0) return null;
 
   // Data comes sorted hardest-first from backend; reverse to show lowest→highest on x-axis
   const sorted = [...gradeDistribution].reverse();
 
-  const labels = formatGradeLabels(sorted.map((g) => g.grade));
+  const labels = sorted.map((g) => formatGrade(g.grade) ?? g.grade);
 
   // In compact mode, use near-full width bars for a dense chart
   const barPct = compact ? 0.95 : 0.8;

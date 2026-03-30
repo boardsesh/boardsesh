@@ -21,7 +21,7 @@ import RemoveCircleOutlineOutlined from '@mui/icons-material/RemoveCircleOutline
 import type { SessionFeedParticipant, SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { deduplicateBy } from '@/app/utils/deduplicate';
 import GradeDistributionBar from '@/app/components/charts/grade-distribution-bar';
-import { formatVGrade } from '@/app/lib/grade-colors';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
 
 interface SessionOverviewPanelProps {
   participants: SessionFeedParticipant[];
@@ -88,6 +88,8 @@ export default function SessionOverviewPanel({
   removingUserId = null,
   getParticipantHref,
 }: SessionOverviewPanelProps) {
+  const { formatGrade } = useGradeFormat();
+
   // Defensive dedup: during WebSocket reconnection race conditions the server
   // may briefly report the same participant twice. Deduplicating by userId
   // keeps the UI stable until the next authoritative state sync arrives.
@@ -214,7 +216,7 @@ export default function SessionOverviewPanel({
         )}
         <Chip label={`${tickCount} climb${tickCount !== 1 ? 's' : ''}`} variant="outlined" />
         {hardestGrade && (
-          <Chip label={`Hardest: ${formatVGrade(hardestGrade) ?? hardestGrade}`} variant="outlined" />
+          <Chip label={`Hardest: ${formatGrade(hardestGrade) ?? hardestGrade}`} variant="outlined" />
         )}
       </Box>
 

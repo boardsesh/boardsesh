@@ -53,7 +53,16 @@ vi.mock('@/app/theme/theme-config', () => ({
 vi.mock('@/app/lib/grade-colors', () => ({
   getGradeColor: () => '#F44336',
   getGradeTextColor: () => '#FFFFFF',
-  formatVGrade: (g: string | null | undefined) => g ?? null,
+}));
+
+vi.mock('@/app/hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    gradeFormat: 'v-grade',
+    formatGrade: (g: string | null | undefined) => g ?? null,
+    getGradeColor: vi.fn(),
+    loaded: true,
+    setGradeFormat: vi.fn(),
+  }),
 }));
 
 import SessionFeedCard from '../session-feed-card';

@@ -5,8 +5,8 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import CopyrightOutlined from '@mui/icons-material/CopyrightOutlined';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getSoftVGradeColor, formatVGrade } from '@/app/lib/grade-colors';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
 
 export type ClimbTitleData = {
   name?: string;
@@ -62,6 +62,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
   gradePosition = 'inline',
 }) => {
   const isDark = useIsDarkMode();
+  const { formatGrade, getGradeColor } = useGradeFormat();
 
   if (!climb) {
     return (
@@ -88,7 +89,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
   const benchmarkValue = climb.benchmark_difficulty != null ? Number(climb.benchmark_difficulty) : null;
   const isBenchmark = benchmarkValue !== null && benchmarkValue > 0 && !Number.isNaN(benchmarkValue);
 
-  const vGrade = formatVGrade(displayDifficulty);
+  const formattedGrade = formatGrade(displayDifficulty);
 
   const textOverflowStyles = ellipsis
     ? {
@@ -147,9 +148,9 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
     </Typography>
   );
 
-  const gradeColor = vGrade ? getSoftVGradeColor(vGrade, isDark) : undefined;
+  const gradeColor = formattedGrade ? getGradeColor(displayDifficulty, isDark) : undefined;
 
-  const largeGradeElement = vGrade && (
+  const largeGradeElement = formattedGrade && (
     <Typography
       variant="body2"
       component="span"
@@ -160,7 +161,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
         color: gradeColor ?? 'text.secondary',
       }}
     >
-      {vGrade}
+      {formattedGrade}
     </Typography>
   );
 
@@ -219,7 +220,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px`, flexShrink: 0 }}>
           {rightAddon}
           {largeGradeElement}
-          {!vGrade && displayDifficulty && (
+          {!formattedGrade && displayDifficulty && (
             <Typography
               variant="body2"
               component="span"

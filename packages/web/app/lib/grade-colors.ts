@@ -162,6 +162,67 @@ export function formatVGrade(difficulty: string | null | undefined): string | nu
 }
 
 /**
+ * Extract Font grade from a difficulty string (e.g., "6a/V3" -> "6A")
+ * @param difficulty - Difficulty string that may contain Font grade
+ * @returns Uppercase Font grade string for display (e.g., "6A", "7B+") or null if not found
+ */
+function extractFontGrade(difficulty: string | null | undefined): string | null {
+  if (!difficulty) return null;
+  // Try to extract from "6a/V3" format first
+  const slashIndex = difficulty.indexOf('/');
+  if (slashIndex > 0) {
+    return difficulty.substring(0, slashIndex).toUpperCase();
+  }
+  // Fall back to regex match for standalone Font grade
+  const fontGradeMatch = difficulty.match(/\d[abc]\+?/i);
+  return fontGradeMatch ? fontGradeMatch[0].toUpperCase() : null;
+}
+
+/**
+ * Format a difficulty string to a Font grade display label.
+ * @param difficulty - Difficulty string (e.g., "6a/V3", "7b+/V8")
+ * @returns Font grade string (e.g., "6a", "7b+") or null if not found
+ */
+export function formatFontGrade(difficulty: string | null | undefined): string | null {
+  return extractFontGrade(difficulty);
+}
+
+export type GradeDisplayFormat = 'v-grade' | 'font';
+
+/**
+ * Format a difficulty string based on the specified format preference.
+ * @param difficulty - Difficulty string (e.g., "6a/V3")
+ * @param format - Display format: 'v-grade' or 'font'
+ * @returns Formatted grade string based on the format, or null if not found
+ */
+export function formatGrade(difficulty: string | null | undefined, format: GradeDisplayFormat): string | null {
+  if (format === 'font') {
+    return formatFontGrade(difficulty);
+  }
+  return formatVGrade(difficulty);
+}
+
+/**
+ * Get a softened grade color based on the display format.
+ * @param difficulty - Difficulty string (e.g., "6a/V3")
+ * @param format - Display format: 'v-grade' or 'font'
+ * @param darkMode - Whether dark mode is active
+ * @returns Softened color string suitable for text display
+ */
+export function getSoftGradeColorByFormat(
+  difficulty: string | null | undefined,
+  format: GradeDisplayFormat,
+  darkMode?: boolean
+): string | undefined {
+  if (format === 'font') {
+    const fontGrade = extractFontGrade(difficulty);
+    return getSoftFontGradeColor(fontGrade, darkMode);
+  }
+  const vGrade = extractVGrade(difficulty);
+  return getSoftVGradeColor(vGrade, darkMode);
+}
+
+/**
  * Get a semi-transparent version of a grade color for backgrounds
  * @param color - Hex color string
  * @param opacity - Opacity value between 0 and 1

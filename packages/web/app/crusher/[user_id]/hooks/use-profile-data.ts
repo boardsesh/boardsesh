@@ -12,6 +12,7 @@ import {
   type GetUserProfileStatsQueryResponse,
 } from '@/app/lib/graphql/operations';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import {
   type UserProfile,
   type LogbookEntry,
@@ -29,6 +30,7 @@ import {
 export function useProfileData(userId: string) {
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
+  const { gradeFormat } = useGradeFormat();
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -158,18 +160,18 @@ export function useProfileData(userId: string) {
   );
 
   const chartDataAggregated = useMemo(
-    () => buildAggregatedChartData(allBoardsTicks, aggregatedTimeframe),
-    [allBoardsTicks, aggregatedTimeframe],
+    () => buildAggregatedChartData(allBoardsTicks, aggregatedTimeframe, gradeFormat),
+    [allBoardsTicks, aggregatedTimeframe, gradeFormat],
   );
 
   const boardChartData = useMemo(
-    () => buildBoardChartData(filteredLogbook),
-    [filteredLogbook],
+    () => buildBoardChartData(filteredLogbook, gradeFormat),
+    [filteredLogbook, gradeFormat],
   );
 
   const statisticsSummary = useMemo(
-    () => buildStatisticsSummary(profileStats),
-    [profileStats],
+    () => buildStatisticsSummary(profileStats, gradeFormat),
+    [profileStats, gradeFormat],
   );
 
   return {

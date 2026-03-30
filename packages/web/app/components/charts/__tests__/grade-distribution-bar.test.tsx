@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 
@@ -11,45 +11,28 @@ vi.mock('react-chartjs-2', () => ({
 
 vi.mock('../chart-registry', () => ({}));
 
-import GradeDistributionBar, { formatGradeLabels } from '../grade-distribution-bar';
+// Mock the useGradeFormat hook
+const mockFormatGrade = vi.fn((grade: string | null | undefined) => {
+  if (!grade) return null;
+  // Extract V-grade by default (mimicking v-grade format)
+  const vGradeMatch = grade.match(/V\d+/i);
+  return vGradeMatch ? vGradeMatch[0].toUpperCase() : grade;
+});
 
-describe('formatGradeLabels', () => {
-  it('extracts V-grade from combined Font/V-grade strings', () => {
-    expect(formatGradeLabels(['6a/V3', '6b/V4'])).toEqual(['V3', 'V4']);
-  });
+vi.mock('@/app/hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    gradeFormat: 'v-grade',
+    formatGrade: mockFormatGrade,
+    getGradeColor: vi.fn(),
+    loaded: true,
+    setGradeFormat: vi.fn(),
+  }),
+}));
 
-  it('passes through bare V-grade strings', () => {
-    expect(formatGradeLabels(['V3', 'V5'])).toEqual(['V3', 'V5']);
-  });
+import GradeDistributionBar from '../grade-distribution-bar';
 
-  it('adds "+" when Font grade has "+" suffix (e.g., 6c+ → V5+)', () => {
-    expect(formatGradeLabels(['6c/V5', '6c+/V5'])).toEqual(['V5', 'V5+']);
-  });
-
-  it('handles mix of single and dual Font grades per V-grade', () => {
-    expect(formatGradeLabels(['5c/V2', '6a/V3', '6a+/V3', '6b/V4'])).toEqual([
-      'V2', 'V3', 'V3+', 'V4',
-    ]);
-  });
-
-  it('falls back to original string when no V-grade is found', () => {
-    expect(formatGradeLabels(['6A', '7A+'])).toEqual(['6A', '7A+']);
-  });
-
-  it('only adds "+" when V-grade has multiple Font grades', () => {
-    // 7a+/V7: V7 has only one Font grade (7a+), so no "+" needed
-    expect(formatGradeLabels(['7a/V6', '7a+/V7'])).toEqual(['V6', 'V7']);
-    // 6b+/V4: V4 has two Font grades (6b, 6b+), so "+" is added
-    expect(formatGradeLabels(['6b/V4', '6b+/V4'])).toEqual(['V4', 'V4+']);
-  });
-
-  it('handles empty array', () => {
-    expect(formatGradeLabels([])).toEqual([]);
-  });
-
-  it('handles numeric-only grades that lack V prefix', () => {
-    expect(formatGradeLabels(['0', '1', '2'])).toEqual(['0', '1', '2']);
-  });
+beforeEach(() => {
+  mockFormatGrade.mockClear();
 });
 
 describe('GradeDistributionBar', () => {
@@ -96,7 +79,7 @@ describe('GradeDistributionBar', () => {
     expect(data.datasets).toHaveLength(2); // Flash, Send only
   });
 
-  it('renders V-grade labels on x-axis from combined Font/V-grade strings', () => {
+  it('renders grade labels on x-axis using formatGrade hook', () => {
     const gradeDistribution = [
       { grade: '6a+/V3', flash: 1, send: 1, attempt: 0 },
       { grade: '6a/V3', flash: 2, send: 3, attempt: 1 },
@@ -105,11 +88,15 @@ describe('GradeDistributionBar', () => {
     render(<GradeDistributionBar gradeDistribution={gradeDistribution} />);
     const chartEl = screen.getByTestId('chart-bar');
     const data = JSON.parse(chartEl.getAttribute('data-data') || '{}');
-    // Data is reversed (hardest-first → easiest-first), so 6a/V3 comes before 6a+/V3
-    expect(data.labels).toEqual(['V3', 'V3+']);
+    // Data is reversed (hardest-first → easiest-first)
+    // Mock returns V-grade extracted from the string
+    expect(data.labels).toEqual(['V3', 'V3']);
+    // Verify formatGrade was called for each grade
+    expect(mockFormatGrade).toHaveBeenCalledWith('6a/V3');
+    expect(mockFormatGrade).toHaveBeenCalledWith('6a+/V3');
   });
 
-  it('does not add "+" when V-grade has only one Font grade mapping', () => {
+  it('uses formatGrade hook for grade formatting', () => {
     const gradeDistribution = [
       { grade: '7a+/V7', flash: 0, send: 1, attempt: 0 },
       { grade: '7a/V6', flash: 1, send: 0, attempt: 0 },
@@ -118,7 +105,6 @@ describe('GradeDistributionBar', () => {
     render(<GradeDistributionBar gradeDistribution={gradeDistribution} />);
     const chartEl = screen.getByTestId('chart-bar');
     const data = JSON.parse(chartEl.getAttribute('data-data') || '{}');
-    // V7 has only one Font grade (7a+), so no "+" is added
     expect(data.labels).toEqual(['V6', 'V7']);
   });
 });

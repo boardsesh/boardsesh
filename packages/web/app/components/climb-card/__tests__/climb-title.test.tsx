@@ -8,13 +8,22 @@ vi.mock('@/app/hooks/use-is-dark-mode', () => ({
   useIsDarkMode: () => false,
 }));
 
-vi.mock('@/app/lib/grade-colors', () => ({
-  getSoftVGradeColor: (vGrade: string) => `#color-${vGrade}`,
-  formatVGrade: (d: string | null | undefined) => {
-    if (!d) return null;
-    const match = d.match(/V\d+\+?/i);
-    return match ? match[0].toUpperCase() : null;
-  },
+vi.mock('@/app/hooks/use-grade-format', () => ({
+  useGradeFormat: () => ({
+    gradeFormat: 'v-grade',
+    formatGrade: (d: string | null | undefined) => {
+      if (!d) return null;
+      const match = d.match(/V\d+\+?/i);
+      return match ? match[0].toUpperCase() : null;
+    },
+    getGradeColor: (d: string | null | undefined) => {
+      if (!d) return undefined;
+      const match = d.match(/V\d+\+?/i);
+      return match ? `#color-${match[0].toUpperCase()}` : undefined;
+    },
+    loaded: true,
+    setGradeFormat: vi.fn(),
+  }),
 }));
 
 vi.mock('@/app/theme/theme-config', () => ({

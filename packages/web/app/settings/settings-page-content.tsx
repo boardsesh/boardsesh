@@ -26,6 +26,9 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -58,6 +61,7 @@ export default function SettingsPageContent() {
   const { refreshProfile: refreshPartyProfile } = usePartyProfile();
   const { showMessage } = useSnackbar();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { gradeFormat, setGradeFormat, loaded: gradeFormatLoaded } = useGradeFormat();
 
   // Redirect unauthenticated users to login with a return URL
   useEffect(() => {
@@ -392,6 +396,40 @@ export default function SettingsPageContent() {
                   Save Changes
                 </Button>
               </Box>
+            </Box>
+          </CardContent>
+        </Card>
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <Card>
+          <CardContent>
+            <Typography variant="h5">Display Preferences</Typography>
+            <Typography variant="body2" component="span" color="text.secondary" sx={{ display: 'block', marginBottom: 3 }}>
+              Customize how grades and other data are displayed
+            </Typography>
+
+            <Box>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>Grade Display Format</Typography>
+              <ToggleButtonGroup
+                value={gradeFormat}
+                exclusive
+                onChange={(_e, newFormat) => {
+                  if (newFormat !== null) {
+                    setGradeFormat(newFormat);
+                  }
+                }}
+                disabled={!gradeFormatLoaded}
+                size="small"
+                fullWidth
+              >
+                <ToggleButton value="v-grade">
+                  V-Grade (V3, V6, ...)
+                </ToggleButton>
+                <ToggleButton value="font">
+                  Font (6A, 7C+, ...)
+                </ToggleButton>
+              </ToggleButtonGroup>
             </Box>
           </CardContent>
         </Card>

@@ -4,11 +4,13 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import type { ChartData } from '../profile-stats-charts';
 import type { GetUserProfileStatsQueryResponse } from '@/app/lib/graphql/operations';
+import { type GradeDisplayFormat } from '@/app/lib/grade-colors';
 import {
   type LogbookEntry,
   type TimeframeType,
   type AggregatedTimeframeType,
-  difficultyMapping,
+  getDifficultyMapping,
+  sortGrades,
   angleColors,
   getGradeChartColor,
   getLayoutKey,
@@ -49,8 +51,10 @@ export function filterLogbookByTimeframe(
 export function buildAggregatedChartData(
   allBoardsTicks: Record<string, LogbookEntry[]>,
   aggregatedTimeframe: AggregatedTimeframeType,
+  gradeFormat: GradeDisplayFormat = 'v-grade',
 ): ChartData | null {
   const now = dayjs();
+  const difficultyMapping = getDifficultyMapping(gradeFormat);
 
   const filterByTimeframe = (entry: LogbookEntry) => {
     const climbedAt = dayjs(entry.climbed_at);
@@ -99,7 +103,7 @@ export function buildAggregatedChartData(
     return null;
   }
 
-  const sortedGrades = Object.values(difficultyMapping).filter((g) => allGrades.has(g));
+  const sortedGrades = sortGrades(Array.from(allGrades), gradeFormat);
 
   const layoutOrder = [
     'kilter-1', 'kilter-8', 'tension-9', 'tension-10', 'tension-11',
@@ -127,7 +131,10 @@ export function buildAggregatedChartData(
   return { labels: sortedGrades, datasets };
 }
 
-export function buildBoardChartData(filteredLogbook: LogbookEntry[]): {
+export function buildBoardChartData(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): {
   chartDataBar: ChartData | null;
   chartDataPie: ChartData | null;
   chartDataWeeklyBar: ChartData | null;
@@ -135,6 +142,8 @@ export function buildBoardChartData(filteredLogbook: LogbookEntry[]): {
   if (filteredLogbook.length === 0) {
     return { chartDataBar: null, chartDataPie: null, chartDataWeeklyBar: null };
   }
+
+  const difficultyMapping = getDifficultyMapping(gradeFormat);
 
   // Bar chart - Flash vs Redpoint
   const greaterThanOne: Record<string, number> = {};
@@ -150,7 +159,7 @@ export function buildBoardChartData(filteredLogbook: LogbookEntry[]): {
       }
     }
   });
-  const barLabels = Object.keys({ ...greaterThanOne, ...equalToOne }).sort();
+  const barLabels = sortGrades(Object.keys({ ...greaterThanOne, ...equalToOne }), gradeFormat);
   const chartDataBar: ChartData = {
     labels: barLabels,
     datasets: [
@@ -199,13 +208,18 @@ export function buildBoardChartData(filteredLogbook: LogbookEntry[]): {
       weeklyData[week] = { ...(weeklyData[week] || {}), [difficulty]: (weeklyData[week]?.[difficulty] || 0) + 1 };
     }
   });
-  const datasets = Object.values(difficultyMapping)
-    .map((difficulty) => ({
-      label: difficulty,
-      data: weeks.map((week) => weeklyData[week]?.[difficulty] || 0),
-      backgroundColor: getGradeChartColor(difficulty),
-    }))
-    .filter((dataset) => dataset.data.some((value) => value > 0));
+  // Get unique grades that appear in the data, sorted properly
+  const usedGrades = new Set<string>();
+  Object.values(weeklyData).forEach((weekGrades) => {
+    Object.keys(weekGrades).forEach((grade) => usedGrades.add(grade));
+  });
+  const sortedUsedGrades = sortGrades(Array.from(usedGrades), gradeFormat);
+
+  const datasets = sortedUsedGrades.map((difficulty) => ({
+    label: difficulty,
+    data: weeks.map((week) => weeklyData[week]?.[difficulty] || 0),
+    backgroundColor: getGradeChartColor(difficulty),
+  }));
   const chartDataWeeklyBar: ChartData = { labels: weeks, datasets };
 
   return { chartDataBar, chartDataPie, chartDataWeeklyBar };
@@ -224,11 +238,13 @@ export interface LayoutPercentage {
 
 export function buildStatisticsSummary(
   profileStats: GetUserProfileStatsQueryResponse['userProfileStats'] | null,
+  gradeFormat: GradeDisplayFormat = 'v-grade',
 ): { totalAscents: number; layoutPercentages: LayoutPercentage[] } {
   if (!profileStats) {
     return { totalAscents: 0, layoutPercentages: [] };
   }
 
+  const difficultyMapping = getDifficultyMapping(gradeFormat);
   const totalAscents = profileStats.totalDistinctClimbs;
 
   const layoutsWithExactPercentages = profileStats.layoutStats
