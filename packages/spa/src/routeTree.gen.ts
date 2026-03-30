@@ -9,17 +9,79 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as MyLibraryRouteImport } from './routes/my-library'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PlaylistsIndexRouteImport } from './routes/playlists/index'
+import { Route as SetterUsernameRouteImport } from './routes/setter/$username'
+import { Route as SessionSessionIdRouteImport } from './routes/session/$sessionId'
+import { Route as PlaylistsUuidRouteImport } from './routes/playlists/$uuid'
+import { Route as JoinSessionIdRouteImport } from './routes/join/$sessionId'
+import { Route as CrusherUserIdRouteImport } from './routes/crusher/$userId'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as BSlugAngleRouteImport } from './routes/b/$slug/$angle'
 import { Route as BSlugAngleListRouteImport } from './routes/b/$slug/$angle/list'
+import { Route as BSlugAngleLikedRouteImport } from './routes/b/$slug/$angle/liked'
+import { Route as BSlugAngleCreateRouteImport } from './routes/b/$slug/$angle/create'
 import { Route as BSlugAngleViewClimbUuidRouteImport } from './routes/b/$slug/$angle/view/$climbUuid'
 import { Route as BSlugAnglePlayClimbUuidRouteImport } from './routes/b/$slug/$angle/play/$climbUuid'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MyLibraryRoute = MyLibraryRouteImport.update({
+  id: '/my-library',
+  path: '/my-library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlaylistsIndexRoute = PlaylistsIndexRouteImport.update({
+  id: '/playlists/',
+  path: '/playlists/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetterUsernameRoute = SetterUsernameRouteImport.update({
+  id: '/setter/$username',
+  path: '/setter/$username',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SessionSessionIdRoute = SessionSessionIdRouteImport.update({
+  id: '/session/$sessionId',
+  path: '/session/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlaylistsUuidRoute = PlaylistsUuidRouteImport.update({
+  id: '/playlists/$uuid',
+  path: '/playlists/$uuid',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinSessionIdRoute = JoinSessionIdRouteImport.update({
+  id: '/join/$sessionId',
+  path: '/join/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrusherUserIdRoute = CrusherUserIdRouteImport.update({
+  id: '/crusher/$userId',
+  path: '/crusher/$userId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
@@ -42,6 +104,16 @@ const BSlugAngleListRoute = BSlugAngleListRouteImport.update({
   path: '/list',
   getParentRoute: () => BSlugAngleRoute,
 } as any)
+const BSlugAngleLikedRoute = BSlugAngleLikedRouteImport.update({
+  id: '/liked',
+  path: '/liked',
+  getParentRoute: () => BSlugAngleRoute,
+} as any)
+const BSlugAngleCreateRoute = BSlugAngleCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => BSlugAngleRoute,
+} as any)
 const BSlugAngleViewClimbUuidRoute = BSlugAngleViewClimbUuidRouteImport.update({
   id: '/view/$climbUuid',
   path: '/view/$climbUuid',
@@ -55,18 +127,42 @@ const BSlugAnglePlayClimbUuidRoute = BSlugAnglePlayClimbUuidRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/my-library': typeof MyLibraryRoute
+  '/notifications': typeof NotificationsRoute
+  '/settings': typeof SettingsRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/crusher/$userId': typeof CrusherUserIdRoute
+  '/join/$sessionId': typeof JoinSessionIdRoute
+  '/playlists/$uuid': typeof PlaylistsUuidRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/setter/$username': typeof SetterUsernameRoute
+  '/playlists/': typeof PlaylistsIndexRoute
   '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/create': typeof BSlugAngleCreateRoute
+  '/b/$slug/$angle/liked': typeof BSlugAngleLikedRoute
   '/b/$slug/$angle/list': typeof BSlugAngleListRoute
   '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
   '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/my-library': typeof MyLibraryRoute
+  '/notifications': typeof NotificationsRoute
+  '/settings': typeof SettingsRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/crusher/$userId': typeof CrusherUserIdRoute
+  '/join/$sessionId': typeof JoinSessionIdRoute
+  '/playlists/$uuid': typeof PlaylistsUuidRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/setter/$username': typeof SetterUsernameRoute
+  '/playlists': typeof PlaylistsIndexRoute
   '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/create': typeof BSlugAngleCreateRoute
+  '/b/$slug/$angle/liked': typeof BSlugAngleLikedRoute
   '/b/$slug/$angle/list': typeof BSlugAngleListRoute
   '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
   '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
@@ -74,9 +170,21 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/my-library': typeof MyLibraryRoute
+  '/notifications': typeof NotificationsRoute
+  '/settings': typeof SettingsRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/crusher/$userId': typeof CrusherUserIdRoute
+  '/join/$sessionId': typeof JoinSessionIdRoute
+  '/playlists/$uuid': typeof PlaylistsUuidRoute
+  '/session/$sessionId': typeof SessionSessionIdRoute
+  '/setter/$username': typeof SetterUsernameRoute
+  '/playlists/': typeof PlaylistsIndexRoute
   '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/create': typeof BSlugAngleCreateRoute
+  '/b/$slug/$angle/liked': typeof BSlugAngleLikedRoute
   '/b/$slug/$angle/list': typeof BSlugAngleListRoute
   '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
   '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
@@ -85,27 +193,63 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
+    | '/my-library'
+    | '/notifications'
+    | '/settings'
     | '/auth/login'
     | '/auth/register'
+    | '/crusher/$userId'
+    | '/join/$sessionId'
+    | '/playlists/$uuid'
+    | '/session/$sessionId'
+    | '/setter/$username'
+    | '/playlists/'
     | '/b/$slug/$angle'
+    | '/b/$slug/$angle/create'
+    | '/b/$slug/$angle/liked'
     | '/b/$slug/$angle/list'
     | '/b/$slug/$angle/play/$climbUuid'
     | '/b/$slug/$angle/view/$climbUuid'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
+    | '/my-library'
+    | '/notifications'
+    | '/settings'
     | '/auth/login'
     | '/auth/register'
+    | '/crusher/$userId'
+    | '/join/$sessionId'
+    | '/playlists/$uuid'
+    | '/session/$sessionId'
+    | '/setter/$username'
+    | '/playlists'
     | '/b/$slug/$angle'
+    | '/b/$slug/$angle/create'
+    | '/b/$slug/$angle/liked'
     | '/b/$slug/$angle/list'
     | '/b/$slug/$angle/play/$climbUuid'
     | '/b/$slug/$angle/view/$climbUuid'
   id:
     | '__root__'
     | '/'
+    | '/about'
+    | '/my-library'
+    | '/notifications'
+    | '/settings'
     | '/auth/login'
     | '/auth/register'
+    | '/crusher/$userId'
+    | '/join/$sessionId'
+    | '/playlists/$uuid'
+    | '/session/$sessionId'
+    | '/setter/$username'
+    | '/playlists/'
     | '/b/$slug/$angle'
+    | '/b/$slug/$angle/create'
+    | '/b/$slug/$angle/liked'
     | '/b/$slug/$angle/list'
     | '/b/$slug/$angle/play/$climbUuid'
     | '/b/$slug/$angle/view/$climbUuid'
@@ -113,18 +257,98 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
+  MyLibraryRoute: typeof MyLibraryRoute
+  NotificationsRoute: typeof NotificationsRoute
+  SettingsRoute: typeof SettingsRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  CrusherUserIdRoute: typeof CrusherUserIdRoute
+  JoinSessionIdRoute: typeof JoinSessionIdRoute
+  PlaylistsUuidRoute: typeof PlaylistsUuidRoute
+  SessionSessionIdRoute: typeof SessionSessionIdRoute
+  SetterUsernameRoute: typeof SetterUsernameRoute
+  PlaylistsIndexRoute: typeof PlaylistsIndexRoute
   BSlugAngleRoute: typeof BSlugAngleRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/my-library': {
+      id: '/my-library'
+      path: '/my-library'
+      fullPath: '/my-library'
+      preLoaderRoute: typeof MyLibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/playlists/': {
+      id: '/playlists/'
+      path: '/playlists'
+      fullPath: '/playlists/'
+      preLoaderRoute: typeof PlaylistsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setter/$username': {
+      id: '/setter/$username'
+      path: '/setter/$username'
+      fullPath: '/setter/$username'
+      preLoaderRoute: typeof SetterUsernameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/session/$sessionId': {
+      id: '/session/$sessionId'
+      path: '/session/$sessionId'
+      fullPath: '/session/$sessionId'
+      preLoaderRoute: typeof SessionSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/playlists/$uuid': {
+      id: '/playlists/$uuid'
+      path: '/playlists/$uuid'
+      fullPath: '/playlists/$uuid'
+      preLoaderRoute: typeof PlaylistsUuidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join/$sessionId': {
+      id: '/join/$sessionId'
+      path: '/join/$sessionId'
+      fullPath: '/join/$sessionId'
+      preLoaderRoute: typeof JoinSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crusher/$userId': {
+      id: '/crusher/$userId'
+      path: '/crusher/$userId'
+      fullPath: '/crusher/$userId'
+      preLoaderRoute: typeof CrusherUserIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/register': {
@@ -155,6 +379,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BSlugAngleListRouteImport
       parentRoute: typeof BSlugAngleRoute
     }
+    '/b/$slug/$angle/liked': {
+      id: '/b/$slug/$angle/liked'
+      path: '/liked'
+      fullPath: '/b/$slug/$angle/liked'
+      preLoaderRoute: typeof BSlugAngleLikedRouteImport
+      parentRoute: typeof BSlugAngleRoute
+    }
+    '/b/$slug/$angle/create': {
+      id: '/b/$slug/$angle/create'
+      path: '/create'
+      fullPath: '/b/$slug/$angle/create'
+      preLoaderRoute: typeof BSlugAngleCreateRouteImport
+      parentRoute: typeof BSlugAngleRoute
+    }
     '/b/$slug/$angle/view/$climbUuid': {
       id: '/b/$slug/$angle/view/$climbUuid'
       path: '/view/$climbUuid'
@@ -173,12 +411,16 @@ declare module '@tanstack/react-router' {
 }
 
 interface BSlugAngleRouteChildren {
+  BSlugAngleCreateRoute: typeof BSlugAngleCreateRoute
+  BSlugAngleLikedRoute: typeof BSlugAngleLikedRoute
   BSlugAngleListRoute: typeof BSlugAngleListRoute
   BSlugAnglePlayClimbUuidRoute: typeof BSlugAnglePlayClimbUuidRoute
   BSlugAngleViewClimbUuidRoute: typeof BSlugAngleViewClimbUuidRoute
 }
 
 const BSlugAngleRouteChildren: BSlugAngleRouteChildren = {
+  BSlugAngleCreateRoute: BSlugAngleCreateRoute,
+  BSlugAngleLikedRoute: BSlugAngleLikedRoute,
   BSlugAngleListRoute: BSlugAngleListRoute,
   BSlugAnglePlayClimbUuidRoute: BSlugAnglePlayClimbUuidRoute,
   BSlugAngleViewClimbUuidRoute: BSlugAngleViewClimbUuidRoute,
@@ -190,8 +432,18 @@ const BSlugAngleRouteWithChildren = BSlugAngleRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
+  MyLibraryRoute: MyLibraryRoute,
+  NotificationsRoute: NotificationsRoute,
+  SettingsRoute: SettingsRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  CrusherUserIdRoute: CrusherUserIdRoute,
+  JoinSessionIdRoute: JoinSessionIdRoute,
+  PlaylistsUuidRoute: PlaylistsUuidRoute,
+  SessionSessionIdRoute: SessionSessionIdRoute,
+  SetterUsernameRoute: SetterUsernameRoute,
+  PlaylistsIndexRoute: PlaylistsIndexRoute,
   BSlugAngleRoute: BSlugAngleRouteWithChildren,
 }
 export const routeTree = rootRouteImport

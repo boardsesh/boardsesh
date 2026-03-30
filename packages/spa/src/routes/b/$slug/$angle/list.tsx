@@ -15,7 +15,7 @@ import InputLabel from '@mui/material/InputLabel'
 import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
 import SearchIcon from '@mui/icons-material/Search'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { graphqlClient } from '@/lib/graphql-client'
 import { SEARCH_CLIMBS } from '@/lib/graphql-queries'
 import { useBoardConfig } from '@/lib/board-context'
@@ -50,6 +50,8 @@ function ClimbListPage() {
   const board = useBoardConfig()
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS)
   const [searchInput, setSearchInput] = useState('')
+  const [accumulatedClimbs, setAccumulatedClimbs] = useState<Climb[]>([])
+  const prevFiltersKey = useRef('')
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['searchClimbs', board.slug, board.angle, filters],
@@ -75,6 +77,23 @@ function ClimbListPage() {
     },
   })
 
+  // Build a key from the filter fields that should reset accumulated results when changed
+  const filtersKey = `${board.slug}-${board.angle}-${filters.name}-${filters.sortBy}-${filters.sortOrder}-${filters.minAscents}`
+
+  useEffect(() => {
+    if (!data) return
+    if (filtersKey !== prevFiltersKey.current) {
+      // Filters changed: replace accumulated climbs with fresh results
+      setAccumulatedClimbs(data.climbs)
+      prevFiltersKey.current = filtersKey
+    } else if (filters.page > 0) {
+      // Same filters, new page: append results
+      setAccumulatedClimbs((prev) => [...prev, ...data.climbs])
+    } else {
+      setAccumulatedClimbs(data.climbs)
+    }
+  }, [data, filtersKey, filters.page])
+
   const handleSearch = useCallback(() => {
     setFilters((prev) => ({ ...prev, name: searchInput, page: 0 }))
   }, [searchInput])
@@ -91,7 +110,7 @@ function ClimbListPage() {
     setFilters((prev) => ({ ...prev, page: prev.page + 1 }))
   }, [])
 
-  const climbs = data?.climbs ?? []
+  const climbs = accumulatedClimbs
   const hasMore = data?.hasMore ?? false
 
   return (

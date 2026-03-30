@@ -256,7 +256,9 @@ function ClimbViewPage() {
             <Typography variant="subtitle2" gutterBottom>
               Beta Videos
             </Typography>
-            {betaLinks.map((beta) => (
+            {betaLinks
+              .filter((beta) => /^https?:\/\//i.test(beta.link))
+              .map((beta) => (
               <Box key={beta.link} sx={{ py: 0.5 }}>
                 <Typography
                   component="a"
