@@ -6,6 +6,7 @@ import { validateNextAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
+import { cacheHeadersPlugin } from './cache-headers-plugin';
 
 /**
  * Create and configure the GraphQL Yoga instance
@@ -23,6 +24,7 @@ export function createYogaInstance() {
     plugins: [
       maxDepthPlugin({ n: 10 }),
       costLimitPlugin({ maxCost: 5000 }),
+      cacheHeadersPlugin(),
     ],
     // Context function - extract auth from HTTP requests
     // HTTP requests are stateless and don't need to be tracked in the connections Map.

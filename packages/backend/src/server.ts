@@ -13,6 +13,7 @@ import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleStaticAvatar } from './handlers/static';
 import { handleSyncCron } from './handlers/sync';
+import { handleSharedSyncCron } from './handlers/shared-sync';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -103,6 +104,13 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
       // Sync cron endpoint (triggered by external cron service)
       if (pathname === '/sync-cron' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleSyncCron(req, res);
+        return;
+      }
+
+      // Shared sync cron endpoint (triggered by external cron service)
+      // Usage: GET /shared-sync-cron?board=kilter
+      if (pathname === '/shared-sync-cron' && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleSharedSyncCron(req, res);
         return;
       }
 
