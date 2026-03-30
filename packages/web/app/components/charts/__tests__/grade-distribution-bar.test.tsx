@@ -32,8 +32,7 @@ describe('formatGradeLabels', () => {
     ])).toEqual(['V2', 'V3', 'V3+', 'V4']);
   });
 
-  it('falls back to original string when no V-grade is found and no lookup match', () => {
-    // MoonBoard uppercase Font grades not in the Kilter/Tension BOULDER_GRADES lookup
+  it('converts MoonBoard uppercase Font grades to V-grades via case-insensitive lookup', () => {
     expect(formatGradeLabels([{ grade: '6A' }, { grade: '7A+' }])).toEqual(['V3', 'V7']);
   });
 
