@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import MuiCard from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -17,13 +17,19 @@ import {
 import { useSession } from 'next-auth/react';
 import AuthModal from '@/app/components/auth/auth-modal';
 import BoardImportPrompt from '@/app/components/settings/board-import-prompt';
+import UserSmartCard from '@/app/components/user-smart-card/user-smart-card';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './aurora-migration.module.css';
 
 export default function AuroraMigrationContent() {
   const { data: session, status } = useSession();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [smartCardRefreshKey, setSmartCardRefreshKey] = useState(0);
   const isAuthenticated = status === 'authenticated';
+
+  const handleImportComplete = useCallback(() => {
+    setSmartCardRefreshKey((prev) => prev + 1);
+  }, []);
 
   return (
     <Box className={styles.pageLayout}>
@@ -153,7 +159,7 @@ export default function AuroraMigrationContent() {
                   </div>
                 </div>
 
-                {/* Step 3: Link Aurora account & import data */}
+                {/* Step 3: Import data */}
                 <div className={styles.stepRow}>
                   <MuiAvatar
                     className={styles.stepNumber}
@@ -186,10 +192,46 @@ export default function AuroraMigrationContent() {
                       Kilter. For Tension, linking your account will automatically sync
                       your data every 12 hours so you always have a backup.
                     </Typography>
-                    <BoardImportPrompt boardType="kilter" />
-                    <BoardImportPrompt boardType="tension" />
+                    <BoardImportPrompt boardType="kilter" onImportComplete={handleImportComplete} />
+                    <BoardImportPrompt boardType="tension" onImportComplete={handleImportComplete} />
                   </Stack>
                 )}
+
+                {/* Step 4: Your Profile */}
+                <div className={styles.stepRow}>
+                  <MuiAvatar
+                    className={styles.stepNumber}
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      bgcolor: themeTokens.colors.primary,
+                    }}
+                  >
+                    4
+                  </MuiAvatar>
+                  <div className={styles.stepContent}>
+                    <Typography variant="h6" sx={{ mb: 1 }}>
+                      Check out your profile
+                    </Typography>
+                    {isAuthenticated && session?.user?.id ? (
+                      <Stack spacing={1.5}>
+                        <Typography variant="body1" component="p">
+                          Your climbing stats live here. After importing, this card updates with your data.
+                        </Typography>
+                        <UserSmartCard
+                          userId={session.user.id}
+                          refreshKey={smartCardRefreshKey}
+                        />
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        Sign in to see a preview of your profile.
+                      </Typography>
+                    )}
+                  </div>
+                </div>
               </Stack>
             </CardContent>
           </MuiCard>

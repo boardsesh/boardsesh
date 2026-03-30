@@ -1,0 +1,61 @@
+.card {
+  overflow: hidden;
+}
+
+.cardContent {
+  padding: 16px !important;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.statsSection {
+  margin-top: 12px;
+}
+
+.climbCount {
+  margin-bottom: 6px !important;
+  font-weight: 500;
+}
+
+.percentageBar {
+  display: flex;
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--neutral-100);
+}
+
+.percentageSegment {
+  min-width: 2px;
+  transition: width 300ms ease;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
