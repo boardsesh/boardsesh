@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Button from '@mui/material/Button';
 import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
@@ -10,6 +10,7 @@ import { useSearchDrawerBridge } from '@/app/components/search-drawer/search-dra
 import UserDrawer from '@/app/components/user-drawer/user-drawer';
 import StartSeshDrawer from '@/app/components/session-creation/start-sesh-drawer';
 import SeshSettingsDrawer from '@/app/components/sesh-settings/sesh-settings-drawer';
+import { TOUR_SESH_OVERVIEW_EVENT } from '@/app/components/onboarding/onboarding-tour';
 import { usePersistentSession, useIsOnBoardRoute } from '@/app/components/persistent-session/persistent-session-context';
 import { BoardConfigData } from '@/app/lib/server-board-configs';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -31,10 +32,27 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [startSeshOpen, setStartSeshOpen] = useState(false);
   const [seshSettingsOpen, setSeshSettingsOpen] = useState(false);
+  const [seshOverviewTourMode, setSeshOverviewTourMode] = useState(false);
   const { activeSession } = usePersistentSession();
   const isOnBoardRoute = useIsOnBoardRoute();
   const { openClimbSearchDrawer, searchPillSummary, hasActiveFilters: filtersActive } = useSearchDrawerBridge();
   const pathname = usePathname();
+
+  // Listen for tour events to open/close the session overview drawer
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { open } = (e as CustomEvent<{ open: boolean }>).detail;
+      if (open) {
+        setSeshOverviewTourMode(true);
+        setSeshSettingsOpen(true);
+      } else {
+        setSeshSettingsOpen(false);
+        setSeshOverviewTourMode(false);
+      }
+    };
+    window.addEventListener(TOUR_SESH_OVERVIEW_EVENT, handler);
+    return () => window.removeEventListener(TOUR_SESH_OVERVIEW_EVENT, handler);
+  }, []);
 
   const hasActiveSession = !!activeSession;
 
@@ -118,7 +136,11 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
 
       <SeshSettingsDrawer
         open={seshSettingsOpen}
-        onClose={() => setSeshSettingsOpen(false)}
+        onClose={() => {
+          setSeshSettingsOpen(false);
+          setSeshOverviewTourMode(false);
+        }}
+        tourMode={seshOverviewTourMode}
       />
     </>
   );

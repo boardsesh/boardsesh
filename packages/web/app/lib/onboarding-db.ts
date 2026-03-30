@@ -68,3 +68,47 @@ export const shouldShowOnboarding = async (userId?: string | number | null): Pro
     return true;
   }
 };
+
+// --- Guided Tour (cross-page "Take the tour" flow) ---
+
+const GUIDED_TOUR_KEY = 'guided-tour-pending';
+
+/**
+ * Mark the guided tour as pending (set before navigating away from home page).
+ */
+export const setGuidedTourPending = async (): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.put(STORE_NAME, { pending: true, setAt: new Date().toISOString() }, GUIDED_TOUR_KEY);
+  } catch (error) {
+    console.error('Failed to set guided tour pending:', error);
+  }
+};
+
+/**
+ * Check if the guided tour is pending (called on board page mount).
+ */
+export const isGuidedTourPending = async (): Promise<boolean> => {
+  try {
+    const db = await getDB();
+    if (!db) return false;
+    const data = await db.get(STORE_NAME, GUIDED_TOUR_KEY);
+    return !!data?.pending;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Clear the guided tour pending flag (called when tour starts on board page).
+ */
+export const clearGuidedTourPending = async (): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.delete(STORE_NAME, GUIDED_TOUR_KEY);
+  } catch (error) {
+    console.error('Failed to clear guided tour pending:', error);
+  }
+};

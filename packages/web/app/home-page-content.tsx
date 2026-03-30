@@ -7,11 +7,14 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActionArea from '@mui/material/CardActionArea';
+import Backdrop from '@mui/material/Backdrop';
+import Paper from '@mui/material/Paper';
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
+import ExploreOutlined from '@mui/icons-material/ExploreOutlined';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -19,6 +22,7 @@ import StartSeshDrawer from '@/app/components/session-creation/start-sesh-drawer
 import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-drawer';
 import BoardScrollSection from '@/app/components/board-scroll/board-scroll-section';
 import BoardScrollCard from '@/app/components/board-scroll/board-scroll-card';
+import { setGuidedTourPending } from '@/app/lib/onboarding-db';
 import { useDiscoverBoards } from '@/app/hooks/use-discover-boards';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
@@ -93,10 +97,21 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
   const router = useRouter();
   const [seshDrawerOpen, setSeshDrawerOpen] = useState(false);
   const [findClimbersOpen, setFindClimbersOpen] = useState(false);
+  const [tourIntroOpen, setTourIntroOpen] = useState(false);
 
   const isAuthenticated = status === 'authenticated' ? true : (status === 'loading' ? (isAuthenticatedSSR ?? false) : false);
 
   const { boards: discoverBoards, isLoading: isBoardsLoading } = useDiscoverBoards({ limit: 20 });
+
+  const handleTakeTour = useCallback(() => {
+    setTourIntroOpen(true);
+  }, []);
+
+  const handleTourIntroGotIt = useCallback(async () => {
+    setTourIntroOpen(false);
+    await setGuidedTourPending();
+    setSeshDrawerOpen(true);
+  }, []);
 
   const handleBoardClick = useCallback((board: UserBoard) => {
     if (board.slug) {
@@ -192,6 +207,13 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
           </Typography>
 
           <OnboardingCard
+            icon={<ExploreOutlined />}
+            title="Take the tour"
+            description="Learn how to use Boardsesh step by step"
+            onClick={handleTakeTour}
+          />
+
+          <OnboardingCard
             icon={<WarningAmberOutlined />}
             title="Old Kilter app users"
             description="Migrate your data to Boardsesh before it's lost"
@@ -249,6 +271,45 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
         onClose={() => setFindClimbersOpen(false)}
         defaultCategory="users"
       />
+
+      {/* Tour intro overlay */}
+      {tourIntroOpen && (
+        <>
+          <Backdrop
+            open
+            sx={{ zIndex: 1100, backgroundColor: 'rgba(0,0,0,0.5)' }}
+            onClick={() => setTourIntroOpen(false)}
+          />
+          <Paper
+            sx={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 1101,
+              p: 3,
+              maxWidth: 320,
+              borderRadius: 2,
+              textAlign: 'center',
+            }}
+          >
+            <ExploreOutlined sx={{ fontSize: 40, color: themeTokens.colors.primary, mb: 1 }} />
+            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
+              Welcome to the tour!
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+              Let&apos;s walk through how Boardsesh works. First, create your climbing session by selecting a board and tapping Sesh.
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={handleTourIntroGotIt}
+              sx={{ textTransform: 'none', borderRadius: `${themeTokens.borderRadius.full}px` }}
+            >
+              Let&apos;s go!
+            </Button>
+          </Paper>
+        </>
+      )}
     </Box>
   );
 }

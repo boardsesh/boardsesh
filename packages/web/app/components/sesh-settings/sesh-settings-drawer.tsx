@@ -27,9 +27,119 @@ import SessionDetailContent from '@/app/session/[sessionId]/session-detail-conte
 interface SeshSettingsDrawerProps {
   open: boolean;
   onClose: () => void;
+  tourMode?: boolean;
 }
 
-export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawerProps) {
+// Mock data for the guided tour - a busy Saturday session with a grade pyramid
+function buildTourMockSession(): SessionDetail {
+  const sessionStart = new Date();
+  sessionStart.setMinutes(sessionStart.getMinutes() - 95);
+
+  // Grade pyramid: V5(6), V6(5), V7(4), V8(3), V9(2), V10(1), V11(1), V12(1) = 23 sends
+  const gradeDistribution = [
+    { grade: 'V5', flash: 2, send: 4, attempt: 6 },
+    { grade: 'V6', flash: 1, send: 4, attempt: 5 },
+    { grade: 'V7', flash: 1, send: 3, attempt: 5 },
+    { grade: 'V8', flash: 1, send: 2, attempt: 4 },
+    { grade: 'V9', flash: 0, send: 2, attempt: 3 },
+    { grade: 'V10', flash: 0, send: 1, attempt: 2 },
+    { grade: 'V11', flash: 0, send: 1, attempt: 2 },
+    { grade: 'V12', flash: 0, send: 1, attempt: 3 },
+  ];
+
+  // Build mock ticks spread across the session
+  const climbNames = [
+    'The Scoop', 'Galaxy Brain', 'Crimpy McFace', 'Sloper City',
+    'Dynomite', 'Pinch Me', 'Compression Test', 'Moonwalk',
+    'Undercling King', 'Toe Hook Special', 'Heel Hook Hero', 'The Roof Rider',
+    'Power Endurance', 'Deadpoint Deluxe', 'The Mantle', 'Campus Master',
+    'Volume Rider', 'Arete Affair', 'Slab Wizard', 'The Overhang',
+    'Gaston Groove', 'Bicycle Crunch', 'Rose Move',
+  ];
+
+  const grades = [
+    'V5', 'V5', 'V5', 'V5', 'V5', 'V5',
+    'V6', 'V6', 'V6', 'V6', 'V6',
+    'V7', 'V7', 'V7', 'V7',
+    'V8', 'V8', 'V8',
+    'V9', 'V9',
+    'V10',
+    'V11',
+    'V12',
+  ];
+
+  const difficultyMap: Record<string, number> = {
+    'V5': 17, 'V6': 18, 'V7': 19, 'V8': 20,
+    'V9': 21, 'V10': 22, 'V11': 23, 'V12': 24,
+  };
+
+  const flashIndices = new Set([0, 2, 6, 11, 15]); // 5 flashes
+  const mirrorIndices = new Set([3, 8, 14, 19]);
+  const benchmarkIndices = new Set([1, 7, 12, 20]);
+  const setters = ['alex_m', 'sarah_k', 'mike_t', 'jenny_l', 'pro_setter'];
+
+  const ticks = grades.map((grade, i) => {
+    const tickTime = new Date(sessionStart);
+    tickTime.setMinutes(tickTime.getMinutes() + Math.floor((i / grades.length) * 95));
+
+    const isFlash = flashIndices.has(i);
+    return {
+      uuid: `tour-tick-${i}`,
+      userId: i % 3 === 0 ? 'tour-user-2' : i % 3 === 1 ? 'tour-user-3' : 'tour-user-1',
+      climbUuid: `tour-climb-${i}`,
+      climbName: climbNames[i],
+      boardType: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      status: isFlash ? 'flash' : 'send',
+      attemptCount: isFlash ? 1 : Math.ceil(Math.random() * 4) + 1,
+      difficulty: difficultyMap[grade],
+      difficultyName: grade,
+      quality: Math.floor(Math.random() * 3) + 1,
+      isMirror: mirrorIndices.has(i),
+      isBenchmark: benchmarkIndices.has(i),
+      comment: null,
+      frames: null,
+      setterUsername: setters[i % setters.length],
+      climbedAt: tickTime.toISOString(),
+      upvotes: 0,
+      totalAttempts: null,
+    };
+  });
+
+  // Reverse so most recent first
+  ticks.reverse();
+
+  return {
+    sessionId: 'tour-mock-session',
+    sessionType: 'party',
+    sessionName: 'Saturday Proj Session',
+    ownerUserId: 'tour-user-1',
+    participants: [
+      { userId: 'tour-user-1', displayName: 'You', avatarUrl: null, sends: 10, flashes: 2, attempts: 18 },
+      { userId: 'tour-user-2', displayName: 'Alex', avatarUrl: null, sends: 8, flashes: 2, attempts: 16 },
+      { userId: 'tour-user-3', displayName: 'Sarah', avatarUrl: null, sends: 5, flashes: 1, attempts: 14 },
+    ],
+    totalSends: 23,
+    totalFlashes: 5,
+    totalAttempts: 48,
+    tickCount: 23,
+    gradeDistribution,
+    boardTypes: ['kilter'],
+    hardestGrade: 'V12',
+    firstTickAt: sessionStart.toISOString(),
+    lastTickAt: new Date().toISOString(),
+    durationMinutes: 95,
+    goal: 'Send a V12',
+    ticks,
+    upvotes: 0,
+    downvotes: 0,
+    voteScore: 0,
+    commentCount: 0,
+  };
+}
+
+export default function SeshSettingsDrawer({ open, onClose, tourMode }: SeshSettingsDrawerProps) {
   const { activeSession, session, users, endSessionWithSummary, liveSessionStats } = usePersistentSession();
   const { boardDetails, angle } = useQueueBridgeBoardInfo();
   const { token: authToken } = useWsAuthToken();
@@ -62,7 +172,7 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
       const client = createGraphQLHttpClient(authToken);
       return client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, { sessionId });
     },
-    enabled: open && !!sessionId && !!authToken,
+    enabled: open && !tourMode && !!sessionId && !!authToken,
     staleTime: 5000,
     refetchOnWindowFocus: false,
   });
@@ -86,6 +196,7 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
   // Build a placeholder SessionDetail from live context when the real
   // sessionDetail hasn't loaded yet (or isn't available at all).
   const fallbackSession = useMemo<SessionDetail | null>(() => {
+    if (tourMode) return null;
     if (!activeSession || !sessionId) return null;
     if (sessionDetail) return null; // not needed when we have real data
 
@@ -125,9 +236,17 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
       voteScore: 0,
       commentCount: 0,
     };
-  }, [activeSession, sessionId, sessionDetail, session?.startedAt, session?.name, session?.goal, users, boardDetails?.board_name]);
+  }, [tourMode, activeSession, sessionId, sessionDetail, session?.startedAt, session?.name, session?.goal, users, boardDetails?.board_name]);
+
+  // Tour mode mock data
+  const tourMockSession = useMemo<SessionDetail | null>(() => {
+    if (!tourMode) return null;
+    return buildTourMockSession();
+  }, [tourMode]);
 
   const sessionForView = useMemo<SessionDetail | null>(() => {
+    if (tourMode) return tourMockSession;
+
     const base = sessionDetail ?? fallbackSession;
     if (!base) return null;
 
@@ -157,13 +276,14 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
       lastTickAt,
       ticks: mergedTicks,
     };
-  }, [sessionDetail, fallbackSession, mergedStats]);
+  }, [tourMode, tourMockSession, sessionDetail, fallbackSession, mergedStats]);
 
-  if (!activeSession) return null;
+  // In tour mode, always render even without an active session
+  if (!tourMode && !activeSession) return null;
 
   return (
     <SwipeableDrawer
-      title="Sesh Settings"
+      title="Session Overview"
       placement="top"
       open={open}
       onClose={onClose}
@@ -172,7 +292,7 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
         wrapper: { height: '100dvh' },
         body: { padding: 0, paddingBottom: 0 },
       }}
-      footer={(
+      footer={!tourMode ? (
         <Button
           variant="outlined"
           color="error"
@@ -190,16 +310,16 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
         >
           Stop Session
         </Button>
-      )}
+      ) : undefined}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 2 }}>
-        {isLoading && !sessionForView && (
+        {!tourMode && isLoading && !sessionForView && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={28} />
           </Box>
         )}
 
-        {isError && (
+        {!tourMode && isError && (
           <Alert severity="warning" sx={{ mx: 1 }}>
             Couldn&apos;t load full session details. Live stats will continue when available.
           </Alert>
@@ -214,21 +334,25 @@ export default function SeshSettingsDrawer({ open, onClose }: SeshSettingsDrawer
           />
         )}
 
-        <Divider />
+        {!tourMode && (
+          <>
+            <Divider />
 
-        {boardDetails && angle !== undefined && (
-          <Box sx={{ px: 1 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-              Angle
-            </Typography>
-            <AngleSelector
-              boardName={boardDetails.board_name}
-              boardDetails={boardDetails}
-              currentAngle={angle}
-              currentClimb={null}
-              onAngleChange={handleAngleChange}
-            />
-          </Box>
+            {boardDetails && angle !== undefined && (
+              <Box sx={{ px: 1 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                  Angle
+                </Typography>
+                <AngleSelector
+                  boardName={boardDetails.board_name}
+                  boardDetails={boardDetails}
+                  currentAngle={angle}
+                  currentClimb={null}
+                  onAngleChange={handleAngleChange}
+                />
+              </Box>
+            )}
+          </>
         )}
       </Box>
     </SwipeableDrawer>

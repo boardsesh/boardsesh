@@ -15,9 +15,17 @@ import {
   SearchOutlined,
   GridOnOutlined,
   DragIndicatorOutlined,
+  SwipeOutlined,
+  PlayCircleOutlineOutlined,
+  AssessmentOutlined,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
-import { shouldShowOnboarding, saveOnboardingStatus } from '@/app/lib/onboarding-db';
+import {
+  shouldShowOnboarding,
+  saveOnboardingStatus,
+  isGuidedTourPending,
+  clearGuidedTourPending,
+} from '@/app/lib/onboarding-db';
 import styles from './onboarding-tour.module.css';
 
 // Delay in ms before the tour starts after the page loads
@@ -25,20 +33,30 @@ const TOUR_START_DELAY = 800;
 // Delay in ms for drawer open/close animation
 const DRAWER_ANIMATION_DELAY = 450;
 
-// Custom event name for controlling the queue drawer from the tour
+// Custom event names for controlling drawers from the tour
 export const TOUR_DRAWER_EVENT = 'onboarding-tour:set-queue-drawer';
+export const TOUR_PLAY_VIEW_EVENT = 'onboarding-tour:set-play-view';
+export const TOUR_SESH_OVERVIEW_EVENT = 'onboarding-tour:set-sesh-overview';
 
 // Helper to create a target function that resolves a CSS selector to an element
 const getTarget = (selector: string): (() => HTMLElement) | null => {
   return (() => document.querySelector<HTMLElement>(selector)!) as (() => HTMLElement) | null;
 };
 
-// Dispatch a custom event to open/close the queue drawer
+// Dispatch custom events to open/close drawers
 const setTourDrawer = (open: boolean) => {
   window.dispatchEvent(new CustomEvent(TOUR_DRAWER_EVENT, { detail: { open } }));
 };
 
-interface TourStep {
+const setTourPlayView = (open: boolean) => {
+  window.dispatchEvent(new CustomEvent(TOUR_PLAY_VIEW_EVENT, { detail: { open } }));
+};
+
+const setTourSeshOverview = (open: boolean) => {
+  window.dispatchEvent(new CustomEvent(TOUR_SESH_OVERVIEW_EVENT, { detail: { open } }));
+};
+
+export interface TourStep {
   title: string;
   description: React.ReactNode;
   target: (() => HTMLElement) | null;
@@ -47,7 +65,7 @@ interface TourStep {
   cover?: React.ReactNode;
 }
 
-function CustomTour({
+export function CustomTour({
   open,
   current,
   steps,
@@ -145,14 +163,35 @@ const isOnboardingTourEnabled = process.env.NEXT_PUBLIC_ENABLE_ONBOARDING_TOUR =
 const OnboardingTour: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState(0);
+  const [isGuidedMode, setIsGuidedMode] = useState(false);
   const { data: session } = useSession();
   const drawerOpenedByTour = useRef(false);
+  const playViewOpenedByTour = useRef(false);
+  const seshOverviewOpenedByTour = useRef(false);
   const isMobileRef = useRef(false);
 
+  // Check for guided tour pending flag (set from home page "Take the tour")
+  useEffect(() => {
+    const checkGuidedTour = async () => {
+      const pending = await isGuidedTourPending();
+      if (pending) {
+        await clearGuidedTourPending();
+        setIsGuidedMode(true);
+        // Wait for the page to settle
+        setTimeout(() => {
+          setOpen(true);
+        }, TOUR_START_DELAY);
+      }
+    };
+
+    checkGuidedTour();
+  }, []);
+
+  // Existing auto-onboarding (env var + mobile only)
   useEffect(() => {
     if (!isOnboardingTourEnabled) return;
+    if (isGuidedMode) return; // Don't double-trigger if guided tour is active
 
-    // Only show on mobile
     const checkMobile = () => {
       isMobileRef.current = window.matchMedia('(max-width: 768px)').matches;
     };
@@ -164,9 +203,7 @@ const OnboardingTour: React.FC = () => {
       const userId = session?.user?.id;
       const shouldShow = await shouldShowOnboarding(userId);
       if (shouldShow) {
-        // Wait for the page to settle before showing the tour
         setTimeout(() => {
-          // Double-check that the climb card exists (page has loaded)
           const climbCard = document.getElementById('onboarding-climb-card');
           if (climbCard) {
             setOpen(true);
@@ -176,17 +213,26 @@ const OnboardingTour: React.FC = () => {
     };
 
     checkOnboarding();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, isGuidedMode]);
 
   const handleClose = useCallback(async () => {
-    // Close the drawer if it was opened by the tour
+    // Close any drawers opened by the tour
     if (drawerOpenedByTour.current) {
       setTourDrawer(false);
       drawerOpenedByTour.current = false;
     }
+    if (playViewOpenedByTour.current) {
+      setTourPlayView(false);
+      playViewOpenedByTour.current = false;
+    }
+    if (seshOverviewOpenedByTour.current) {
+      setTourSeshOverview(false);
+      seshOverviewOpenedByTour.current = false;
+    }
 
     setOpen(false);
     setCurrent(0);
+    setIsGuidedMode(false);
 
     // Save completion status
     const userId = session?.user?.id;
@@ -194,20 +240,26 @@ const OnboardingTour: React.FC = () => {
   }, [session?.user?.id]);
 
   const handleStepChange = useCallback((step: number) => {
-    // Steps 3-5 are inside the queue drawer (swipe actions, drag & drop, close drawer)
+    if (isGuidedMode) {
+      handleGuidedStepChange(step);
+    } else {
+      handleOriginalStepChange(step);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGuidedMode]);
+
+  // Original onboarding step change logic
+  const handleOriginalStepChange = useCallback((step: number) => {
     const QUEUE_DRAWER_OPEN_STEP = 3;
     const QUEUE_DRAWER_CLOSE_STEP = 6;
 
-    // Opening the queue drawer before step 5 (index 4)
     if (step === QUEUE_DRAWER_OPEN_STEP && !drawerOpenedByTour.current) {
       setTourDrawer(true);
       drawerOpenedByTour.current = true;
-      // Delay step transition to let drawer animate in
       setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
       return;
     }
 
-    // Close the queue drawer when moving to the step after drawer section
     if (step === QUEUE_DRAWER_CLOSE_STEP && drawerOpenedByTour.current) {
       setTourDrawer(false);
       drawerOpenedByTour.current = false;
@@ -215,10 +267,66 @@ const OnboardingTour: React.FC = () => {
       return;
     }
 
-    // Going backwards out of the drawer section - close drawer
     if (step === QUEUE_DRAWER_OPEN_STEP - 1 && drawerOpenedByTour.current) {
       setTourDrawer(false);
       drawerOpenedByTour.current = false;
+      setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
+      return;
+    }
+
+    setCurrent(step);
+  }, []);
+
+  // Guided tour step change logic
+  // Steps: 0=swipe actions, 1=queue bar, 2=climb drawer (open play view), 3=session overview (open drawer), 4=done
+  const handleGuidedStepChange = useCallback((step: number) => {
+    const PLAY_VIEW_STEP = 2;
+    const SESH_OVERVIEW_STEP = 3;
+
+    // Opening play view
+    if (step === PLAY_VIEW_STEP && !playViewOpenedByTour.current) {
+      setTourPlayView(true);
+      playViewOpenedByTour.current = true;
+      setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
+      return;
+    }
+
+    // Closing play view, opening session overview
+    if (step === SESH_OVERVIEW_STEP && playViewOpenedByTour.current) {
+      setTourPlayView(false);
+      playViewOpenedByTour.current = false;
+      setTimeout(() => {
+        setTourSeshOverview(true);
+        seshOverviewOpenedByTour.current = true;
+        setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
+      }, DRAWER_ANIMATION_DELAY);
+      return;
+    }
+
+    // Opening session overview directly (if play view wasn't open)
+    if (step === SESH_OVERVIEW_STEP && !seshOverviewOpenedByTour.current) {
+      setTourSeshOverview(true);
+      seshOverviewOpenedByTour.current = true;
+      setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
+      return;
+    }
+
+    // Going back from session overview
+    if (step === SESH_OVERVIEW_STEP - 1 && seshOverviewOpenedByTour.current) {
+      setTourSeshOverview(false);
+      seshOverviewOpenedByTour.current = false;
+      setTimeout(() => {
+        setTourPlayView(true);
+        playViewOpenedByTour.current = true;
+        setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
+      }, DRAWER_ANIMATION_DELAY);
+      return;
+    }
+
+    // Going back from play view
+    if (step === PLAY_VIEW_STEP - 1 && playViewOpenedByTour.current) {
+      setTourPlayView(false);
+      playViewOpenedByTour.current = false;
       setTimeout(() => setCurrent(step), DRAWER_ANIMATION_DELAY);
       return;
     }
@@ -236,7 +344,7 @@ const OnboardingTour: React.FC = () => {
     </>
   );
 
-  const tourSteps: TourStep[] = [
+  const originalTourSteps: TourStep[] = [
     {
       title: 'Select a Climb',
       description: withSkip('Double-tap any climb card to make it the active climb and add it to your queue.'),
@@ -326,7 +434,64 @@ const OnboardingTour: React.FC = () => {
     },
   ];
 
-  if (!isOnboardingTourEnabled || !open) return null;
+  const guidedTourSteps: TourStep[] = [
+    {
+      title: 'Swipe Actions',
+      description: withSkip(
+        'Swipe any climb card left to add it to your queue, or swipe right to favorite it. Try a long swipe right to add it to a playlist.',
+      ),
+      target: getTarget('#onboarding-climb-card'),
+      placement: 'bottom',
+      cover: (
+        <div className={styles.stepIcon}>
+          <SwipeOutlined />
+        </div>
+      ),
+    },
+    {
+      title: 'Queue Control Bar',
+      description: withSkip(
+        'This bar shows your current climb. Swipe left or right to navigate between queued climbs. Double-tap a climb card above to add it here.',
+      ),
+      target: getTarget('#onboarding-queue-bar'),
+      cover: (
+        <div className={styles.stepIcon}>
+          <ViewWeekOutlined />
+        </div>
+      ),
+    },
+    {
+      title: 'Climb Detail View',
+      description: withSkip(
+        'Tap the queue bar to open the full climb view. Here you can see the board with lit holds, log ascents, and browse your queue.',
+      ),
+      target: null,
+      mask: false,
+      cover: (
+        <div className={styles.stepIcon}>
+          <PlayCircleOutlineOutlined />
+        </div>
+      ),
+    },
+    {
+      title: 'Session Overview',
+      description: withSkip(
+        'Track your session progress here. See your sends, grade pyramid, and session stats. Tap the Sesh button in the header to open this anytime.',
+      ),
+      target: null,
+      mask: false,
+      cover: (
+        <div className={styles.stepIcon}>
+          <AssessmentOutlined />
+        </div>
+      ),
+    },
+  ];
+
+  const tourSteps = isGuidedMode ? guidedTourSteps : originalTourSteps;
+
+  if (!open) return null;
+  if (!isGuidedMode && !isOnboardingTourEnabled) return null;
 
   return (
     <CustomTour

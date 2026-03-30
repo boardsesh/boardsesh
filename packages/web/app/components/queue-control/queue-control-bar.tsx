@@ -23,7 +23,7 @@ import { TickButton } from '../logbook/tick-button';
 import ClimbThumbnail from '../climb-card/climb-thumbnail';
 import ClimbTitle from '../climb-card/climb-title';
 import { themeTokens } from '@/app/theme/theme-config';
-import { TOUR_DRAWER_EVENT } from '../onboarding/onboarding-tour';
+import { TOUR_DRAWER_EVENT, TOUR_PLAY_VIEW_EVENT } from '../onboarding/onboarding-tour';
 import { ShareBoardButton } from '../board-page/share-button';
 import { useCardSwipeNavigation, EXIT_DURATION, SNAP_BACK_DURATION, ENTER_ANIMATION_DURATION } from '@/app/hooks/use-card-swipe-navigation';
 import PlayViewDrawer from '../play-view/play-view-drawer';
@@ -78,6 +78,16 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     };
     window.addEventListener(TOUR_DRAWER_EVENT, handler);
     return () => window.removeEventListener(TOUR_DRAWER_EVENT, handler);
+  }, []);
+
+  // Listen for tour events to open/close the play view drawer
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { open } = (e as CustomEvent<{ open: boolean }>).detail;
+      setActiveDrawer(open ? 'play' : 'none');
+    };
+    window.addEventListener(TOUR_PLAY_VIEW_EVENT, handler);
+    return () => window.removeEventListener(TOUR_PLAY_VIEW_EVENT, handler);
   }, []);
 
   // Scroll to current climb when drawer finishes opening

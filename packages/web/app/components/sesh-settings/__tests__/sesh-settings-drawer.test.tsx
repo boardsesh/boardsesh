@@ -170,7 +170,7 @@ describe('SeshSettingsDrawer', () => {
 
   it('renders drawer title', () => {
     render(<SeshSettingsDrawer open={true} onClose={vi.fn()} />);
-    expect(screen.getByTestId('swipeable-drawer').getAttribute('data-title')).toBe('Sesh Settings');
+    expect(screen.getByTestId('swipeable-drawer').getAttribute('data-title')).toBe('Session Overview');
   });
 
   it('renders session detail content', () => {
