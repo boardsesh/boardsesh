@@ -7,6 +7,7 @@ import { useOptionalBoardProvider } from '../../board-provider/board-provider-co
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { SEARCH_CLIMBS, SEARCH_CLIMBS_COUNT, type ClimbSearchResponse, type ClimbSearchCountResponse } from '@/app/lib/graphql/operations/climb-search';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { useSSRInitialClimbs } from '../ssr-initial-climbs-context';
 
 interface UseQueueDataFetchingProps {
   searchParams: SearchRequestPagination;
@@ -29,6 +30,16 @@ export const useQueueDataFetching = ({
   // Use wsAuthToken for GraphQL backend auth (NextAuth session token)
   const { token: wsAuthToken } = useWsAuthToken();
   const fetchedUuidsRef = useRef<string>('');
+
+  // SSR initial data bridge: when the page component fetched climbs server-side,
+  // hydrate TanStack Query to avoid a redundant client-side re-fetch.
+  const ssrInitialClimbs = useSSRInitialClimbs();
+  // Memoize the timestamp so Date.now() is computed once when SSR data is present,
+  // not on every render (which would reset the staleness clock).
+  const ssrDataTimestamp = useMemo(
+    () => (ssrInitialClimbs ? Date.now() : undefined),
+    [ssrInitialClimbs],
+  );
 
   // Create a stable query key with flattened primitive values to avoid object reference changes
   const queryKey = useMemo(() => {
@@ -120,6 +131,20 @@ export const useQueueDataFetching = ({
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
+    // Hydrate with SSR data to avoid redundant first fetch
+    ...(ssrInitialClimbs
+      ? {
+          initialData: {
+            pages: [{
+              climbs: ssrInitialClimbs.climbs,
+              totalCount: ssrInitialClimbs.climbs.length,
+              hasMore: ssrInitialClimbs.hasMore,
+            }],
+            pageParams: [0],
+          },
+          initialDataUpdatedAt: ssrDataTimestamp,
+        }
+      : {}),
   });
 
   // Count query uses instant (un-debounced) params so the count updates
@@ -169,6 +194,9 @@ export const useQueueDataFetching = ({
     },
     staleTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+    // Defer count query until after the first climb results are shown.
+    // The count is only displayed in the search footer, not needed for initial render.
+    enabled: hasDoneFirstFetch,
   });
 
   const totalSearchResultCount = countData ?? null;

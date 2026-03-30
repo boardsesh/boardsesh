@@ -14,7 +14,12 @@ import { FavoritesProvider } from '../climb-actions/favorites-batch-context';
 import { PlaylistsProvider } from '../climb-actions/playlists-batch-context';
 import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import { SUGGESTIONS_THRESHOLD } from '../board-page/constants';
-import SessionSummaryDialog from '../session-summary/session-summary-dialog';
+import dynamic from 'next/dynamic';
+
+const SessionSummaryDialog = dynamic(
+  () => import('../session-summary/session-summary-dialog'),
+  { ssr: false },
+);
 
 import { useSessionIdManagement } from './hooks/use-session-id-management';
 import { useQueueRestoration } from './hooks/use-queue-restoration';

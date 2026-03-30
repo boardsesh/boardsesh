@@ -34,6 +34,12 @@ vi.mock('../../board-page/constants', () => ({
   PAGE_LIMIT: 20
 }));
 
+// Mock SSR initial climbs context
+const mockSSRInitialClimbs = vi.fn(() => null);
+vi.mock('../../ssr-initial-climbs-context', () => ({
+  useSSRInitialClimbs: () => mockSSRInitialClimbs(),
+}));
+
 // Mock GraphQL client
 const mockGraphQLRequest = vi.fn();
 vi.mock('@/app/lib/graphql/client', () => ({
@@ -425,6 +431,192 @@ describe('useQueueDataFetching', () => {
 
     await waitFor(() => {
       expect(mockGetLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']);
+    });
+  });
+
+  describe('SSR initial data hydration', () => {
+    const ssrClimb: Climb = { ...mockClimb, uuid: 'ssr-climb-1', name: 'SSR Climb' };
+
+    it('should use SSR initial data and skip the first fetch', async () => {
+      mockSSRInitialClimbs.mockReturnValue({
+        climbs: [ssrClimb],
+        hasMore: true,
+      });
+
+      const { result } = renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: false,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch
+          }),
+        { wrapper: createWrapper() }
+      );
+
+      // With SSR initial data, results should be available immediately
+      // without waiting for a network fetch
+      expect(result.current.climbSearchResults).toEqual([ssrClimb]);
+      expect(result.current.hasMoreResults).toBe(true);
+
+      // The GraphQL client should NOT have been called for the initial search
+      // because initialData was provided
+      expect(mockGraphQLRequest).not.toHaveBeenCalled();
+
+      // Reset mock for cleanup
+      mockSSRInitialClimbs.mockReturnValue(null);
+    });
+
+    it('should set hasMoreResults=false from SSR data when no more results', async () => {
+      mockSSRInitialClimbs.mockReturnValue({
+        climbs: [ssrClimb],
+        hasMore: false,
+      });
+
+      const { result } = renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: false,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch
+          }),
+        { wrapper: createWrapper() }
+      );
+
+      expect(result.current.climbSearchResults).toEqual([ssrClimb]);
+      expect(result.current.hasMoreResults).toBe(false);
+      expect(mockGraphQLRequest).not.toHaveBeenCalled();
+
+      mockSSRInitialClimbs.mockReturnValue(null);
+    });
+
+    it('should fetch normally when no SSR data is available', async () => {
+      mockSSRInitialClimbs.mockReturnValue(null);
+
+      const { result } = renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: false,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch
+          }),
+        { wrapper: createWrapper() }
+      );
+
+      // Without SSR data, it should fetch from the API
+      await waitFor(() => {
+        expect(result.current.climbSearchResults).toEqual([mockClimb]);
+      });
+
+      expect(mockGraphQLRequest).toHaveBeenCalled();
+    });
+
+    it('should call setHasDoneFirstFetch with SSR initial data', async () => {
+      mockSSRInitialClimbs.mockReturnValue({
+        climbs: [ssrClimb],
+        hasMore: true,
+      });
+
+      renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: false,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch
+          }),
+        { wrapper: createWrapper() }
+      );
+
+      await waitFor(() => {
+        expect(mockSetHasDoneFirstFetch).toHaveBeenCalled();
+      });
+
+      mockSSRInitialClimbs.mockReturnValue(null);
+    });
+  });
+
+  describe('deferred count query', () => {
+    it('should not fire count query when hasDoneFirstFetch is false', async () => {
+      const countRequestSpy = vi.fn();
+      mockGraphQLRequest.mockImplementation(async (document) => {
+        const query = String(document);
+        if (query.includes('totalCount') && !query.includes('climbs')) {
+          countRequestSpy();
+          return { searchClimbs: { totalCount: 100 } };
+        }
+        return {
+          searchClimbs: {
+            climbs: [mockClimb],
+            totalCount: null,
+            hasMore: true,
+          },
+        };
+      });
+
+      const { result } = renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: false,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch,
+          }),
+        { wrapper: createWrapper() },
+      );
+
+      await waitFor(() => {
+        expect(result.current.climbSearchResults).toEqual([mockClimb]);
+      });
+
+      // Count query should not have fired since hasDoneFirstFetch is false
+      expect(result.current.totalSearchResultCount).toBeNull();
+    });
+
+    it('should fire count query when hasDoneFirstFetch is true', async () => {
+      mockGraphQLRequest.mockImplementation(async (document) => {
+        const query = String(document);
+        if (query.includes('searchClimbs')) {
+          return {
+            searchClimbs: {
+              climbs: [mockClimb],
+              totalCount: 42,
+              hasMore: true,
+            },
+          };
+        }
+        return {};
+      });
+
+      const { result } = renderHook(
+        () =>
+          useQueueDataFetching({
+            searchParams: mockSearchParams,
+            countSearchParams: mockSearchParams,
+            queue: mockQueue,
+            parsedParams: mockParsedParams,
+            hasDoneFirstFetch: true,
+            setHasDoneFirstFetch: mockSetHasDoneFirstFetch,
+          }),
+        { wrapper: createWrapper() },
+      );
+
+      // With hasDoneFirstFetch=true, the count query should eventually fire
+      await waitFor(() => {
+        expect(result.current.totalSearchResultCount).toBe(42);
+      });
     });
   });
 });

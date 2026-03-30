@@ -26,8 +26,13 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { TOUR_DRAWER_EVENT } from '../onboarding/onboarding-tour';
 import { ShareBoardButton } from '../board-page/share-button';
 import { useCardSwipeNavigation, EXIT_DURATION, SNAP_BACK_DURATION, ENTER_ANIMATION_DURATION } from '@/app/hooks/use-card-swipe-navigation';
-import PlayViewDrawer from '../play-view/play-view-drawer';
+import dynamic from 'next/dynamic';
 import CircularProgress from '@mui/material/CircularProgress';
+
+const PlayViewDrawer = dynamic(
+  () => import('../play-view/play-view-drawer'),
+  { ssr: false },
+);
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import { getGradeTintColor } from '@/app/lib/grade-colors';
@@ -52,6 +57,13 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const queueListRef = useRef<QueueListHandle>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const enterFallbackRef = useRef<NodeJS.Timeout | null>(null);
+  const [hasEverOpenedPlay, setHasEverOpenedPlay] = useState(false);
+
+  useEffect(() => {
+    if (activeDrawer === 'play' && !hasEverOpenedPlay) {
+      setHasEverOpenedPlay(true);
+    }
+  }, [activeDrawer, hasEverOpenedPlay]);
 
   // Reset activeDrawer on navigation
   useEffect(() => {
@@ -546,12 +558,14 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
         <QueueList ref={queueListRef} boardDetails={boardDetails} onClimbNavigate={() => setActiveDrawer('none')} />
       </SwipeableDrawer>
 
-      <PlayViewDrawer
-        activeDrawer={activeDrawer}
-        setActiveDrawer={setActiveDrawer}
-        boardDetails={boardDetails}
-        angle={angle}
-      />
+      {hasEverOpenedPlay && (
+        <PlayViewDrawer
+          activeDrawer={activeDrawer}
+          setActiveDrawer={setActiveDrawer}
+          boardDetails={boardDetails}
+          angle={angle}
+        />
+      )}
     </div>
   );
 };

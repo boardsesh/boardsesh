@@ -8,6 +8,7 @@ import {
 } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
+import { SSRInitialClimbsProvider } from '@/app/components/queue-control/ssr-initial-climbs-context';
 import { cachedSearchClimbs } from '@/app/lib/graphql/server-cached-client';
 import { SEARCH_CLIMBS, type ClimbSearchResponse } from '@/app/lib/graphql/operations/climb-search';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -158,5 +159,9 @@ export default async function DynamicResultsPage(props: {
     };
   }
 
-  return <BoardPageClimbsList {...parsedParams} boardDetails={boardDetails} initialClimbs={searchResponse.searchClimbs.climbs} />;
+  return (
+    <SSRInitialClimbsProvider initialClimbs={searchResponse.searchClimbs.climbs} hasMore={searchResponse.searchClimbs.hasMore}>
+      <BoardPageClimbsList {...parsedParams} boardDetails={boardDetails} initialClimbs={searchResponse.searchClimbs.climbs} />
+    </SSRInitialClimbsProvider>
+  );
 }
