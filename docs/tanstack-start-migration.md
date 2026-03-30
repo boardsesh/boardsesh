@@ -13,10 +13,11 @@ Migrate Boardsesh from Next.js 15 to TanStack Start with Selective SSR. This eli
 
 ---
 
-## Milestone 0: Backend GraphQL Expansion
+## Milestone 0: Backend GraphQL Expansion [DONE]
 
 **Goal**: Backend becomes self-sufficient — every REST endpoint in `packages/web/app/api/` has a GraphQL equivalent.
 **Risk**: Zero — existing Next.js app is untouched.
+**Status**: Completed.
 
 ### Tasks
 
@@ -95,10 +96,11 @@ Add to `packages/backend/src/graphql/resolvers/admin/`:
 
 ---
 
-## Milestone 1: Backend Auth (Better Auth)
+## Milestone 1: Backend Auth (Better Auth) [DONE]
 
 **Goal**: Backend handles all authentication. Dual-token validation supports both old (next-auth JWE) and new (Better Auth session) clients.
 **Depends on**: M0 (resolvers available for auth-protected operations)
+**Status**: Completed.
 
 ### Tasks
 
@@ -143,10 +145,11 @@ Add to `packages/backend/src/graphql/resolvers/admin/`:
 
 ---
 
-## Milestone 2: SPA Scaffold
+## Milestone 2: SPA Scaffold [DONE]
 
 **Goal**: TanStack Start app boots, authenticates, and renders a shell with all context providers.
 **Depends on**: M1 (auth endpoints available)
+**Status**: Completed.
 
 ### Tasks
 
@@ -206,10 +209,11 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 
 ---
 
-## Milestone 3: Core Routes
+## Milestone 3: Core Routes [DONE]
 
 **Goal**: The main user flow works end-to-end — browse, queue, play, log ascent.
 **Depends on**: M2 (scaffold with auth and providers)
+**Status**: Completed.
 
 ### Tasks
 
@@ -257,10 +261,11 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 
 ---
 
-## Milestone 4: Remaining Routes
+## Milestone 4: Remaining Routes [DONE]
 
 **Goal**: Full route parity with existing Next.js app.
 **Depends on**: M3 (core flow works)
+**Status**: Completed.
 
 ### Tasks
 
@@ -315,10 +320,11 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 
 ---
 
-## Milestone 5: Infrastructure
+## Milestone 5: Infrastructure [DONE]
 
 **Goal**: Production-ready deployment pipeline for the new app.
 **Depends on**: M4 (all routes ported)
+**Status**: Completed.
 
 ### Tasks
 
@@ -365,10 +371,11 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 
 ---
 
-## Milestone 6: Cleanup and Cutover
+## Milestone 6: Cleanup and Cutover [IN PROGRESS]
 
 **Goal**: Remove old code, merge to main.
 **Depends on**: M5 (infra verified)
+**Status**: In progress. Documentation updates and code cleanup done. packages/web/ still exists during transition.
 
 ### Tasks
 
@@ -426,15 +433,15 @@ Port from `packages/web/app/b/[board_slug]/[angle]/layout.tsx`:
 
 ## Timeline Estimate
 
-| Milestone | Scope | Notes |
-|-----------|-------|-------|
-| M0: Backend GraphQL | ~20 resolvers, schema updates | Can start immediately, zero risk |
-| M1: Backend Auth | Better Auth setup, dual validation | Depends on M0, medium complexity |
-| M2: SPA Scaffold | Vite + Router + providers | Depends on M1, foundational |
-| M3: Core Routes | 4 routes + queue + Bluetooth | Depends on M2, highest effort |
-| M4: Remaining Routes | ~15 routes | Depends on M3, parallelizable |
-| M5: Infrastructure | Docker, CI/CD, monitoring | Depends on M4, ops-focused |
-| M6: Cleanup | Delete old code, merge | Depends on M5, low risk |
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| M0: Backend GraphQL | ~20 resolvers, schema updates | DONE |
+| M1: Backend Auth | Better Auth setup, dual validation | DONE |
+| M2: SPA Scaffold | Vite + Router + providers | DONE |
+| M3: Core Routes | 4 routes + queue + Bluetooth | DONE |
+| M4: Remaining Routes | ~15 routes | DONE |
+| M5: Infrastructure | Docker, CI/CD, monitoring | DONE |
+| M6: Cleanup | Delete old code, merge | IN PROGRESS |
 
 M0 and M1 can overlap with M2 development since they modify different packages.
 

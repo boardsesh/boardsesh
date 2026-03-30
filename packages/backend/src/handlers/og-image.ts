@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'http'
+import { createElement, type ReactElement } from 'react'
 import satori from 'satori'
 import { Resvg } from '@resvg/resvg-js'
 import { applyCorsHeaders } from './cors'
 
 const OG_WIDTH = 1200
 const OG_HEIGHT = 630
+const MAX_PARAM_LENGTH = 100
 
 interface OgParams {
   type: 'climb' | 'profile' | 'session'
@@ -22,6 +24,16 @@ function parseParams(url: URL): OgParams | null {
   }
 
   if (type !== 'climb' && type !== 'profile' && type !== 'session') {
+    return null
+  }
+
+  // Limit parameter lengths to prevent abuse
+  if (id.length > MAX_PARAM_LENGTH || boardName.length > MAX_PARAM_LENGTH) {
+    return null
+  }
+
+  // Only allow alphanumeric, hyphens, and underscores in id and boardName
+  if (!/^[a-zA-Z0-9_-]+$/.test(id) || !/^[a-zA-Z0-9_-]+$/.test(boardName)) {
     return null
   }
 
@@ -48,73 +60,30 @@ function getSubtitle(params: OgParams): string {
  * Generates OG image markup for satori.
  * Uses plain objects with React-like structure that satori understands.
  */
-function buildMarkup(params: OgParams): ReturnType<typeof Object> {
+function buildMarkup(params: OgParams): ReactElement {
   const title = getTitle(params)
   const subtitle = getSubtitle(params)
 
-  return {
-    type: 'div',
-    props: {
+  return createElement(
+    'div',
+    {
       style: {
         width: '100%',
         height: '100%',
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'column' as const,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#0A0A0A',
         color: '#ffffff',
         fontFamily: 'Inter',
       },
-      children: [
-        {
-          type: 'div',
-          props: {
-            style: {
-              fontSize: 72,
-              fontWeight: 700,
-              marginBottom: 16,
-              color: '#ffffff',
-            },
-            children: 'Boardsesh',
-          },
-        },
-        {
-          type: 'div',
-          props: {
-            style: {
-              fontSize: 48,
-              fontWeight: 600,
-              marginBottom: 12,
-              color: '#e0e0e0',
-            },
-            children: title,
-          },
-        },
-        {
-          type: 'div',
-          props: {
-            style: {
-              fontSize: 32,
-              color: '#888888',
-            },
-            children: subtitle,
-          },
-        },
-        {
-          type: 'div',
-          props: {
-            style: {
-              fontSize: 24,
-              color: '#666666',
-              marginTop: 24,
-            },
-            children: `#${params.id}`,
-          },
-        },
-      ],
     },
-  }
+    createElement('div', { style: { fontSize: 72, fontWeight: 700, marginBottom: 16, color: '#ffffff' } }, 'Boardsesh'),
+    createElement('div', { style: { fontSize: 48, fontWeight: 600, marginBottom: 12, color: '#e0e0e0' } }, title),
+    createElement('div', { style: { fontSize: 32, color: '#888888' } }, subtitle),
+    createElement('div', { style: { fontSize: 24, color: '#666666', marginTop: 24 } }, `#${params.id}`),
+  )
 }
 
 /**
@@ -127,17 +96,15 @@ async function loadFont(): Promise<ArrayBuffer> {
   const fontUrl = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hiA.woff2'
 
   try {
-    const response = await fetch(fontUrl)
+    const response = await fetch(fontUrl, { signal: AbortSignal.timeout(5000) })
     if (response.ok) {
       return await response.arrayBuffer()
     }
   } catch {
-    // Fall through to fallback
+    // Fall through to error
   }
 
-  // Fallback: create a minimal font buffer (satori requires at least one font)
-  // This produces blank text but prevents crashes
-  return new ArrayBuffer(0)
+  throw new Error('Failed to load font: Google Fonts CDN unreachable')
 }
 
 let fontCache: ArrayBuffer | null = null

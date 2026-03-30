@@ -13,7 +13,8 @@ export default defineEventHandler((event) => {
       "default-src 'self'",
       // MUI uses emotion which injects styles at runtime
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self'",
+      // TanStack Start/Vite injects inline scripts for hydration and module loading
+      "script-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self' https: wss:",

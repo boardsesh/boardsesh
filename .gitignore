@@ -60,6 +60,10 @@ embedded/libs/board-data/src/board_data.cpp
 embedded/libs/board-data/src/board_hold_data.h
 embedded/libs/board-data/.board_data_hash
 
+# spa (TanStack Start / Nitro)
+packages/spa/.output
+packages/spa/.vinxi
+
 # backend
 packages/backend/dist
 

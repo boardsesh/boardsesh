@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Boardsesh is a monorepo containing a Next.js 15 application for controlling standardized interactive climbing training boards (Kilter, Tension). It adds missing functionality to boards using Aurora Climbing's software, including queue management and real-time collaborative control.
+Boardsesh is a monorepo containing applications for controlling standardized interactive climbing training boards (Kilter, Tension). It adds missing functionality to boards using Aurora Climbing's software, including queue management and real-time collaborative control.
+
+**Migration status**: The project is migrating from Next.js 15 (`packages/web/`) to TanStack Start SPA (`packages/spa/`). Both packages exist during the transition period. The Next.js app still runs in production. See `docs/tanstack-start-migration.md` for the full plan.
 
 ## Project Rules
 
@@ -22,6 +24,7 @@ Before working on a specific part of the codebase, check the `docs/` directory f
 
 - `docs/websocket-implementation.md` - WebSocket party session architecture, connection flow, failure states and recovery mechanisms
 - `docs/ai-design-guidelines.md` - Comprehensive UI design guidelines, patterns, and tokens for redesigning components
+- `docs/tanstack-start-migration.md` - Migration plan from Next.js to TanStack Start SPA (milestones, task lists, architecture decisions)
 
 **Important:**
 - Read the relevant documentation first to understand the architecture and design decisions before making changes
@@ -31,8 +34,9 @@ Before working on a specific part of the codebase, check the `docs/` directory f
 
 ```
 /packages/
-  /web/           # Next.js web application
-  /backend/       # WebSocket backend for party mode (graphql-ws)
+  /web/           # Next.js web application (production, being replaced)
+  /spa/           # TanStack Start SPA (migration target, uses Better Auth + GraphQL)
+  /backend/       # WebSocket backend for party mode (graphql-ws) + Better Auth + OG images
   /shared-schema/ # Shared GraphQL schema and TypeScript types
   /db/            # Shared database schema, client, and migrations (drizzle)
 ```
@@ -81,16 +85,19 @@ The `boardsesh-dev-db` image is published to GHCR and contains PostgreSQL 17 + P
 
 ### Common Commands (from root)
 
-- `bun run dev` - Start web development server with Turbopack
+- `bun run dev` - Start Next.js web development server with Turbopack
 - `bun run build` - Build all packages
 - `bun run build:web` - Build web package only
 - `bun run build:backend` - Build backend package only
-- `bun run lint` - Run oxlint on web package
+- `bun run lint` - Run oxlint on all packages
 - `bun run typecheck` - Type check all packages (use this instead of build for validation)
 - `bun run typecheck:web` - Type check web package only
 - `bun run typecheck:backend` - Type check backend package only
 - `bun run typecheck:db` - Type check db package only
 - `bun run typecheck:shared` - Type check shared-schema package only
+- `bun run typecheck:spa` - Type check SPA package only
+- `bun run spa:dev` - Start TanStack Start SPA development server (port 3001)
+- `bun run spa:build` - Build SPA package
 - `bun run backend:dev` - Start backend in development mode
 - `bun run backend:start` - Start backend in production mode
 - `bun run db:up` - Start development databases, run migrations, and import MoonBoard data (uses pre-built image with Kilter/Tension data)
@@ -171,6 +178,19 @@ We are using next.js app router, it's important we try to use server side compon
 3. **Redis**: Pub/sub for multi-instance backend scaling
 4. **IndexedDB**: Offline storage for auth and queue state
 5. **Aurora API**: External API integration for user data sync
+6. **Better Auth**: Auth system on the backend (used by TanStack Start SPA), with dual-token validation supporting both next-auth JWE and Better Auth session tokens during the migration
+
+### SPA Architecture (packages/spa/)
+
+The TanStack Start SPA uses a different architecture from the Next.js app:
+
+- **TanStack Router**: File-based routing with type-safe params (`/b/$slug/$angle/...`)
+- **TanStack Query**: Data fetching and caching (replaces SWR)
+- **Better Auth**: Authentication via `better-auth/react` client, session cookies on `.boardsesh.com`
+- **GraphQL-only**: All data fetching goes through the backend GraphQL API (no REST API routes)
+- **Vite + Nitro**: Build toolchain with Nitro server for production deployment
+- **Sentry**: Error tracking via `@sentry/react` + `@sentry/vite-plugin`
+- **MUI**: Same Material UI theme as the Next.js app
 
 ### Type System
 
