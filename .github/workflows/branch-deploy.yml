@@ -145,7 +145,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DEPLOYMENT_ID=$(printf '{"ref":"%s","environment":"preview-pr-%s","description":"Preview deployment for PR #%s","auto_merge":false,"required_contexts":[]}' \
+          DEPLOYMENT_ID=$(printf '{"ref":"%s","environment":"preview-pr-%s","description":"Preview deployment for PR #%s","auto_merge":false,"required_contexts":[],"transient_environment":true}' \
             "${{ github.sha }}" "${{ env.PR_NUMBER }}" "${{ env.PR_NUMBER }}" | \
             gh api repos/${{ github.repository }}/deployments \
               --method POST --input - --jq '.id')
