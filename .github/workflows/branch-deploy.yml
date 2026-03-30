@@ -162,7 +162,9 @@ jobs:
           gh api repos/${{ github.repository }}/deployments/${{ steps.create.outputs.deployment_id }}/statuses \
             --method POST \
             --field state="in_progress" \
-            --field description="Building and deploying preview..."
+            --field environment_url="https://${{ env.PR_NUMBER }}.preview.boardsesh.com" \
+            --field log_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --field description="Deploying preview..."
 
   deployment-status:
     needs: [deploy, create-deployment]
@@ -179,6 +181,7 @@ jobs:
             --method POST \
             --field state="success" \
             --field environment_url="https://${{ env.PR_NUMBER }}.preview.boardsesh.com" \
+            --field log_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --field description="Preview is live" \
             --field auto_inactive=true
 
@@ -196,4 +199,5 @@ jobs:
           gh api repos/${{ github.repository }}/deployments/${{ needs.create-deployment.outputs.deployment_id }}/statuses \
             --method POST \
             --field state="failure" \
+            --field log_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --field description="Deployment failed"
