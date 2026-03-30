@@ -119,67 +119,10 @@ export const holdClassificationsMutation = {
     const validatedFootRating = input.footRating ?? null;
     const validatedPullDirection = input.pullDirection ?? null;
 
-    // Check if exists
-    const existing = await db
-      .select()
-      .from(dbSchema.userHoldClassifications)
-      .where(
-        and(
-          eq(dbSchema.userHoldClassifications.userId, userId),
-          eq(dbSchema.userHoldClassifications.boardType, input.boardType),
-          eq(dbSchema.userHoldClassifications.layoutId, input.layoutId),
-          eq(dbSchema.userHoldClassifications.sizeId, input.sizeId),
-          eq(dbSchema.userHoldClassifications.holdId, input.holdId),
-        ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(dbSchema.userHoldClassifications)
-        .set({
-          holdType: validatedHoldType,
-          handRating: validatedHandRating,
-          footRating: validatedFootRating,
-          pullDirection: validatedPullDirection,
-          updatedAt: now,
-        })
-        .where(eq(dbSchema.userHoldClassifications.id, existing[0].id));
-
-      return {
-        id: existing[0].id.toString(),
-        userId,
-        boardType: input.boardType,
-        layoutId: input.layoutId,
-        sizeId: input.sizeId,
-        holdId: input.holdId,
-        holdType: validatedHoldType,
-        handRating: validatedHandRating,
-        footRating: validatedFootRating,
-        pullDirection: validatedPullDirection,
-        createdAt: existing[0].createdAt,
-        updatedAt: now,
-      };
-    } else {
-      const result = await db
-        .insert(dbSchema.userHoldClassifications)
-        .values({
-          userId,
-          boardType: input.boardType,
-          layoutId: input.layoutId,
-          sizeId: input.sizeId,
-          holdId: input.holdId,
-          holdType: validatedHoldType,
-          handRating: validatedHandRating,
-          footRating: validatedFootRating,
-          pullDirection: validatedPullDirection,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning();
-
-      return {
-        id: result[0].id.toString(),
+    // Atomic upsert using unique index on (userId, boardType, layoutId, sizeId, holdId)
+    const result = await db
+      .insert(dbSchema.userHoldClassifications)
+      .values({
         userId,
         boardType: input.boardType,
         layoutId: input.layoutId,
@@ -191,7 +134,38 @@ export const holdClassificationsMutation = {
         pullDirection: validatedPullDirection,
         createdAt: now,
         updatedAt: now,
-      };
-    }
+      })
+      .onConflictDoUpdate({
+        target: [
+          dbSchema.userHoldClassifications.userId,
+          dbSchema.userHoldClassifications.boardType,
+          dbSchema.userHoldClassifications.layoutId,
+          dbSchema.userHoldClassifications.sizeId,
+          dbSchema.userHoldClassifications.holdId,
+        ],
+        set: {
+          holdType: validatedHoldType,
+          handRating: validatedHandRating,
+          footRating: validatedFootRating,
+          pullDirection: validatedPullDirection,
+          updatedAt: now,
+        },
+      })
+      .returning();
+
+    return {
+      id: result[0].id.toString(),
+      userId,
+      boardType: input.boardType,
+      layoutId: input.layoutId,
+      sizeId: input.sizeId,
+      holdId: input.holdId,
+      holdType: validatedHoldType,
+      handRating: validatedHandRating,
+      footRating: validatedFootRating,
+      pullDirection: validatedPullDirection,
+      createdAt: result[0].createdAt,
+      updatedAt: now,
+    };
   },
 };

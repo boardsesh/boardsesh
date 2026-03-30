@@ -1,5 +1,7 @@
 import { AuroraClimbingClient } from '@boardsesh/aurora-sync';
+import { SyncRunner } from '@boardsesh/aurora-sync/runner';
 import type { AuroraBoardName } from '@boardsesh/aurora-sync';
+import { eq, and } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
@@ -78,6 +80,31 @@ export const auroraLoginMutation = {
       .onConflictDoUpdate({
         target: [dbSchema.boardUsers.boardType, dbSchema.boardUsers.id],
         set: { username: loginResponse.username || username },
+      });
+
+    // Fire-and-forget sync for users who have stored credentials
+    // (matches original REST behavior of calling syncUserData after login)
+    const auroraUserId = loginResponse.user_id;
+    db.select({ userId: dbSchema.auroraCredentials.userId })
+      .from(dbSchema.auroraCredentials)
+      .where(
+        and(
+          eq(dbSchema.auroraCredentials.boardType, boardName),
+          eq(dbSchema.auroraCredentials.auroraUserId, auroraUserId),
+        ),
+      )
+      .limit(1)
+      .then((creds) => {
+        if (creds.length > 0) {
+          const runner = new SyncRunner({
+            onLog: (msg: string) => console.log(`[AuroraLogin Sync] ${msg}`),
+            onError: (error: Error) => console.error('[AuroraLogin Sync] Error:', error.message),
+          });
+          return runner.syncUser(creds[0].userId, boardName);
+        }
+      })
+      .catch((err) => {
+        console.error('[AuroraLogin] Post-login sync error (non-fatal):', err);
       });
 
     return {

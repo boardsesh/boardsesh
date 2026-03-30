@@ -53,7 +53,6 @@ import { settersQuery } from './board/setters';
 import { climbRedirectQuery } from './board/climb-redirect';
 
 // New user management resolvers
-import { publicProfileQuery } from './users/public-profile';
 import { setPasswordMutation } from './users/set-password';
 import { unsyncedCredentialsQuery } from './users/unsynced-credentials';
 import { boardMappingsQuery, boardMappingsMutation } from './users/board-mappings';
@@ -109,7 +108,6 @@ export const resolvers = {
     // New Aurora proxy queries
     ...auroraGetLogbookQuery,
     // New user management queries
-    ...publicProfileQuery,
     ...unsyncedCredentialsQuery,
     ...boardMappingsQuery,
     // New admin queries
