@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -22,7 +22,7 @@ import StartSeshDrawer from '@/app/components/session-creation/start-sesh-drawer
 import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-drawer';
 import BoardScrollSection from '@/app/components/board-scroll/board-scroll-section';
 import BoardScrollCard from '@/app/components/board-scroll/board-scroll-card';
-import { setGuidedTourPending } from '@/app/lib/onboarding-db';
+import { setGuidedTourPending, clearGuidedTourPending } from '@/app/lib/onboarding-db';
 import { useDiscoverBoards } from '@/app/hooks/use-discover-boards';
 import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
@@ -98,6 +98,7 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
   const [seshDrawerOpen, setSeshDrawerOpen] = useState(false);
   const [findClimbersOpen, setFindClimbersOpen] = useState(false);
   const [tourIntroOpen, setTourIntroOpen] = useState(false);
+  const tourTriggeredSeshDrawer = useRef(false);
 
   const isAuthenticated = status === 'authenticated' ? true : (status === 'loading' ? (isAuthenticatedSSR ?? false) : false);
 
@@ -110,6 +111,7 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
   const handleTourIntroGotIt = useCallback(async () => {
     setTourIntroOpen(false);
     await setGuidedTourPending();
+    tourTriggeredSeshDrawer.current = true;
     setSeshDrawerOpen(true);
   }, []);
 
@@ -262,7 +264,15 @@ export default function HomePageContent({ boardConfigs, isAuthenticatedSSR }: Ho
 
       <StartSeshDrawer
         open={seshDrawerOpen}
-        onClose={() => setSeshDrawerOpen(false)}
+        onClose={() => {
+          setSeshDrawerOpen(false);
+          // If the tour triggered this drawer and user closed without creating a session,
+          // clear the pending flag so the tour doesn't unexpectedly start on a board page
+          if (tourTriggeredSeshDrawer.current) {
+            tourTriggeredSeshDrawer.current = false;
+            clearGuidedTourPending();
+          }
+        }}
         boardConfigs={boardConfigs}
       />
 

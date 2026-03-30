@@ -32,8 +32,8 @@ export const TOUR_PLAY_VIEW_EVENT = 'onboarding-tour:set-play-view';
 export const TOUR_SESH_OVERVIEW_EVENT = 'onboarding-tour:set-sesh-overview';
 
 // Helper to create a target function that resolves a CSS selector to an element
-const getTarget = (selector: string): (() => HTMLElement) | null => {
-  return (() => document.querySelector<HTMLElement>(selector)!) as (() => HTMLElement) | null;
+const getTarget = (selector: string): () => HTMLElement | null => {
+  return () => document.querySelector<HTMLElement>(selector);
 };
 
 // Dispatch custom events to open/close drawers
@@ -48,7 +48,7 @@ const setTourSeshOverview = (open: boolean) => {
 export interface TourStep {
   title: string;
   description: React.ReactNode;
-  target: (() => HTMLElement) | null;
+  target: (() => HTMLElement | null) | null;
   placement?: 'top' | 'bottom' | 'left' | 'right';
   mask?: boolean;
   cover?: React.ReactNode;
@@ -251,7 +251,7 @@ const OnboardingTour: React.FC = () => {
     <>
       {description}
       <div className={styles.skipLink}>
-        <a onClick={handleClose}>Skip tour</a>
+        <button type="button" onClick={handleClose}>Skip tour</button>
       </div>
     </>
   );

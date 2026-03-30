@@ -57,15 +57,30 @@ export const setGuidedTourPending = async (): Promise<void> => {
   }
 };
 
+// Pending flag expires after 5 minutes to avoid stale triggers
+const GUIDED_TOUR_EXPIRY_MS = 5 * 60 * 1000;
+
 /**
  * Check if the guided tour is pending (called on board page mount).
+ * Returns false if the flag is older than 5 minutes.
  */
 export const isGuidedTourPending = async (): Promise<boolean> => {
   try {
     const db = await getDB();
     if (!db) return false;
     const data = await db.get(STORE_NAME, GUIDED_TOUR_KEY);
-    return !!data?.pending;
+    if (!data?.pending) return false;
+
+    // Check expiry
+    if (data.setAt) {
+      const elapsed = Date.now() - new Date(data.setAt as string).getTime();
+      if (elapsed > GUIDED_TOUR_EXPIRY_MS) {
+        await db.delete(STORE_NAME, GUIDED_TOUR_KEY);
+        return false;
+      }
+    }
+
+    return true;
   } catch {
     return false;
   }
