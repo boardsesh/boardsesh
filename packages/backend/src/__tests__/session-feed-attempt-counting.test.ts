@@ -60,7 +60,7 @@ describe('buildGradeDistributionFromTicks', () => {
     ];
     const result = buildGradeDistributionFromTicks(rows);
     expect(result).toEqual([
-      { grade: 'V10', flash: 1, send: 1, attempt: 4 }, // 2 from send (3-1) + 2 from attempt
+      { grade: 'V10', difficulty: 10, flash: 1, send: 1, attempt: 4 }, // 2 from send (3-1) + 2 from attempt
     ]);
   });
 
@@ -72,8 +72,8 @@ describe('buildGradeDistributionFromTicks', () => {
     const result = buildGradeDistributionFromTicks(rows);
     // Sorted by difficulty descending
     expect(result).toEqual([
-      { grade: 'V10', flash: 0, send: 1, attempt: 1 },
-      { grade: 'V5', flash: 1, send: 0, attempt: 0 },
+      { grade: 'V10', difficulty: 10, flash: 0, send: 1, attempt: 1 },
+      { grade: 'V5', difficulty: 5, flash: 1, send: 0, attempt: 0 },
     ]);
   });
 
@@ -81,7 +81,7 @@ describe('buildGradeDistributionFromTicks', () => {
     const rows = [makeTick('send', 1, 5)];
     const result = buildGradeDistributionFromTicks(rows);
     expect(result).toEqual([
-      { grade: 'V5', flash: 0, send: 1, attempt: 0 },
+      { grade: 'V5', difficulty: 5, flash: 0, send: 1, attempt: 0 },
     ]);
   });
 
