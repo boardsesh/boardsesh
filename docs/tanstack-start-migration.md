@@ -30,8 +30,16 @@ main (production)
 
 #### 0.1 Board data resolvers
 Add to `packages/backend/src/graphql/resolvers/board/`:
-- [ ] `boardGrades(boardName: String!)` — grade list (replaces `/api/v1/[board]/grades`)
-- [ ] `boardAngles(boardName: String!, layoutId: Int!)` — angle list (replaces `/api/v1/angles/[board]/[layout]`)
+
+Already in GraphQL (verify client can use them):
+- [x] `grades` / `angles` — already exist as resolvers
+- [x] `searchClimbs` / `climb` — climb queries exist
+- [x] `saveTick` / `saveClimb` / `saveMoonBoardClimb` — mutations exist
+- [x] `favorites` / `toggleFavorite` — exist
+- [x] `auroraCredentials` / `saveAuroraCredential` / `deleteAuroraCredential` — exist
+- [x] `updateProfile` — exists
+
+New resolvers needed:
 - [ ] `climbStats(boardName: String!, climbUuid: String!)` — difficulty per angle (replaces `/api/v1/[board]/climb-stats/[uuid]`)
 - [ ] `climbBetaLinks(boardName: String!, climbUuid: String!)` — YouTube/Instagram links (replaces `/api/v1/[board]/beta/[uuid]`)
 - [ ] `holdHeatmap(input: HeatmapInput!)` — hold usage data (replaces `/api/v1/.../heatmap`)
@@ -49,15 +57,18 @@ Add to `packages/backend/src/graphql/resolvers/aurora/`:
 
 #### 0.3 User management resolvers
 Extend `packages/backend/src/graphql/resolvers/users/`:
-- [ ] `updateProfile(input: UpdateProfileInput!)` — mutation (replaces `/api/internal/profile` PATCH)
-- [ ] `publicProfile(userId: String!)` — query (replaces `/api/internal/profile/[userId]` GET)
+
+Already in GraphQL (verify client can use them):
+- [x] `updateProfile` — mutation exists
+- [x] `auroraCredentials` / `saveAuroraCredential` / `deleteAuroraCredential` — exist
+
+New resolvers needed:
+- [ ] `publicProfile(userId: String!)` — query (replaces `/api/internal/profile/[userId]` GET — includes follower counts, isFollowedByMe)
 - [ ] `setPassword(currentPassword: String!, newPassword: String!)` — mutation
-- [ ] `auroraCredentials` — query (replaces `/api/internal/aurora-credentials` GET)
-- [ ] `saveAuroraCredentials(input: AuroraCredentialsInput!)` — mutation
-- [ ] `unsyncedAuroraCredentials` — query
+- [ ] `unsyncedAuroraCredentials` — query (replaces `/api/internal/aurora-credentials/unsynced`)
 - [ ] `userBoardMappings` — query (replaces `/api/internal/user-board-mapping` GET)
 - [ ] `saveUserBoardMapping(input: UserBoardMappingInput!)` — mutation
-- [ ] `auroraImport(input: AuroraImportInput!)` — mutation
+- [ ] `auroraImport(input: AuroraImportInput!)` — mutation (note: uses streaming response — may need REST or chunked GraphQL)
 
 #### 0.4 Admin resolvers
 Add to `packages/backend/src/graphql/resolvers/admin/`:
