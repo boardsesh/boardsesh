@@ -3,7 +3,7 @@ import { hkdf } from '@panva/hkdf';
 import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
-import { validateBetterAuthSession, validateBetterAuthBearer } from '../auth/index';
+import { validateBetterAuthSession, validateBetterAuthBearer, BA_SESSION_COOKIE_REGEX } from '../auth/index';
 
 export interface AuthResult {
   userId: string;
@@ -97,7 +97,7 @@ export async function validateAuthToken(
   // Better Auth session tokens are opaque strings, not JWTs
   // Check via cookie-based validation first
   if (cookies) {
-    const sessionTokenMatch = cookies.match(/better-auth\.session_token=([^;]+)/);
+    const sessionTokenMatch = cookies.match(BA_SESSION_COOKIE_REGEX);
     if (sessionTokenMatch) {
       const result = await validateBetterAuthSession(sessionTokenMatch[1]);
       if (result) {
@@ -159,7 +159,7 @@ export function extractBetterAuthSessionToken(
 
   // Check cookies in connection params
   if (connectionParams?.cookies && typeof connectionParams.cookies === 'string') {
-    const match = connectionParams.cookies.match(/better-auth\.session_token=([^;]+)/);
+    const match = connectionParams.cookies.match(BA_SESSION_COOKIE_REGEX);
     if (match) {
       return match[1];
     }

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS "ba_accounts" (
 );
 
 CREATE INDEX IF NOT EXISTS "ba_accounts_user_idx" ON "ba_accounts" ("userId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ba_accounts_user_provider_idx" ON "ba_accounts" ("userId", "providerId");
 
 -- Better Auth sessions table
 CREATE TABLE IF NOT EXISTS "ba_sessions" (

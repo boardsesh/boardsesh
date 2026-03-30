@@ -1,4 +1,4 @@
-import { eq, and, isNull, count } from 'drizzle-orm';
+import { eq, and, isNull, count, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -23,7 +23,7 @@ export const unsyncedCredentialsQuery = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
-    // Get user's Aurora account user IDs from credentials
+    // Get user's Aurora credentials
     const credentials = await db
       .select({
         boardType: dbSchema.auroraCredentials.boardType,
@@ -37,40 +37,60 @@ export const unsyncedCredentialsQuery = {
       tension: { ascents: 0, climbs: 0 },
     };
 
-    for (const cred of credentials) {
-      if (!cred.auroraUserId) continue;
+    const validCreds = credentials.filter(
+      (c): c is typeof c & { auroraUserId: number; boardType: 'kilter' | 'tension' } =>
+        c.auroraUserId !== null && (c.boardType === 'kilter' || c.boardType === 'tension'),
+    );
 
-      const boardType = cred.boardType as 'kilter' | 'tension';
-      if (boardType !== 'kilter' && boardType !== 'tension') continue;
+    if (validCreds.length === 0) return counts;
 
-      // Count unsynced ticks
-      const [ascentResult] = await db
-        .select({ count: count() })
-        .from(dbSchema.boardseshTicks)
-        .where(
-          and(
-            eq(dbSchema.boardseshTicks.userId, userId),
-            eq(dbSchema.boardseshTicks.boardType, boardType),
-            isNull(dbSchema.boardseshTicks.auroraId),
-          ),
-        );
+    // Single query for unsynced ascents grouped by board type
+    const boardTypes = validCreds.map((c) => c.boardType);
+    const ascentCounts = await db
+      .select({
+        boardType: dbSchema.boardseshTicks.boardType,
+        count: count(),
+      })
+      .from(dbSchema.boardseshTicks)
+      .where(
+        and(
+          eq(dbSchema.boardseshTicks.userId, userId),
+          sql`${dbSchema.boardseshTicks.boardType} IN (${sql.join(boardTypes.map((t) => sql`${t}`), sql`, `)})`,
+          isNull(dbSchema.boardseshTicks.auroraId),
+        ),
+      )
+      .groupBy(dbSchema.boardseshTicks.boardType);
 
-      // Count unsynced climbs
-      const [climbResult] = await db
-        .select({ count: count() })
-        .from(dbSchema.boardClimbs)
-        .where(
-          and(
-            eq(dbSchema.boardClimbs.boardType, boardType),
-            eq(dbSchema.boardClimbs.setterId, cred.auroraUserId),
-            eq(dbSchema.boardClimbs.synced, false),
-          ),
-        );
+    for (const row of ascentCounts) {
+      const bt = row.boardType as 'kilter' | 'tension';
+      if (bt === 'kilter' || bt === 'tension') {
+        counts[bt].ascents = Number(row.count);
+      }
+    }
 
-      counts[boardType] = {
-        ascents: Number(ascentResult?.count ?? 0),
-        climbs: Number(climbResult?.count ?? 0),
-      };
+    // Single query for unsynced climbs grouped by board type
+    const setterConditions = validCreds.map(
+      (c) => sql`(${dbSchema.boardClimbs.boardType} = ${c.boardType} AND ${dbSchema.boardClimbs.setterId} = ${c.auroraUserId})`,
+    );
+    const climbCounts = await db
+      .select({
+        boardType: dbSchema.boardClimbs.boardType,
+        count: count(),
+      })
+      .from(dbSchema.boardClimbs)
+      .where(
+        and(
+          sql`(${sql.join(setterConditions, sql` OR `)})`,
+          eq(dbSchema.boardClimbs.synced, false),
+        ),
+      )
+      .groupBy(dbSchema.boardClimbs.boardType);
+
+    for (const row of climbCounts) {
+      const bt = row.boardType as 'kilter' | 'tension';
+      if (bt === 'kilter' || bt === 'tension') {
+        counts[bt].climbs = Number(row.count);
+      }
     }
 
     return counts;

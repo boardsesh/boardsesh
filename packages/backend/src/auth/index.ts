@@ -258,6 +258,12 @@ export const auth = betterAuth({
   },
 });
 
+/** Cookie name used by Better Auth for session tokens */
+export const BA_SESSION_COOKIE = 'better-auth.session_token';
+
+/** Regex to extract Better Auth session token from a cookie string */
+export const BA_SESSION_COOKIE_REGEX = /better-auth\.session_token=([^;]+)/;
+
 /**
  * Validate a Better Auth session token (from cookie).
  * Returns the user ID if the session is valid, null otherwise.
@@ -268,7 +274,7 @@ export async function validateBetterAuthSession(
   try {
     const session = await auth.api.getSession({
       headers: new Headers({
-        cookie: `better-auth.session_token=${tokenValue}`,
+        cookie: `${BA_SESSION_COOKIE}=${tokenValue}`,
       }),
     });
 

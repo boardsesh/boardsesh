@@ -4,6 +4,7 @@ import {
   integer,
   timestamp,
   primaryKey,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import type { AdapterAccount } from "next-auth/adapters";
 
@@ -83,6 +84,12 @@ export const baAccounts = pgTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
+  (table) => ({
+    userProviderIdx: uniqueIndex("ba_accounts_user_provider_idx").on(
+      table.userId,
+      table.providerId,
+    ),
+  }),
 );
 
 // Better Auth sessions table (separate from NextAuth sessions for dual-auth transition)

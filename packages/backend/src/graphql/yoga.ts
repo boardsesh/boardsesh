@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { schema } from './index';
 import { validateAuthToken } from '../middleware/auth';
-import { validateBetterAuthSession } from '../auth/index';
+import { validateBetterAuthSession, BA_SESSION_COOKIE_REGEX } from '../auth/index';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
@@ -52,7 +52,7 @@ export function createYogaInstance() {
 
       // Also check for cookie-based Better Auth sessions (no Bearer token needed)
       if (cookieHeader?.includes('better-auth.session_token')) {
-        const sessionTokenMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
+        const sessionTokenMatch = cookieHeader.match(BA_SESSION_COOKIE_REGEX);
         if (sessionTokenMatch) {
           const baResult = await validateBetterAuthSession(sessionTokenMatch[1]);
           if (baResult) {

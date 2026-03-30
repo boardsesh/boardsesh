@@ -1,10 +1,11 @@
 import { AuroraClimbingClient } from '@boardsesh/aurora-sync';
 import { SyncRunner } from '@boardsesh/aurora-sync/runner';
 import type { AuroraBoardName } from '@boardsesh/aurora-sync';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { validateInput } from '../shared/helpers';
+import { validateInput, applyRateLimit } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 
 export interface AuroraLoginResult {
@@ -26,7 +27,9 @@ export const auroraLoginMutation = {
       username: string;
       password: string;
     },
+    ctx: ConnectionContext,
   ): Promise<AuroraLoginResult> => {
+    await applyRateLimit(ctx, 10, 'auroraLogin');
     validateInput(BoardNameSchema, boardName, 'boardName');
 
     if (!isAuroraBoardName(boardName)) {
