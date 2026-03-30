@@ -9,6 +9,7 @@ import { encrypt, decrypt } from "@boardsesh/crypto";
 import AuroraClimbingClient from "@/app/lib/api-wrappers/aurora-rest-client/aurora-rest-client";
 import { AuroraBoardName } from "@/app/lib/api-wrappers/aurora/types";
 import { syncUserData } from "@/app/lib/data-sync/aurora/user-sync";
+import { KilterClient } from "@boardsesh/kilter-sync/api";
 
 const saveCredentialsSchema = z.object({
   boardType: z.enum(["kilter", "tension"]),
@@ -99,20 +100,43 @@ export async function POST(request: NextRequest) {
 
     const { boardType, username, password } = validationResult.data;
 
-    // First, verify credentials by attempting login
-    const auroraClient = new AuroraClimbingClient({ boardName: boardType as AuroraBoardName });
-    let loginResponse;
-    try {
-      loginResponse = await auroraClient.signIn(username, password);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("401")) {
-        return NextResponse.json({ error: "Invalid Aurora credentials" }, { status: 401 });
-      }
-      throw error;
-    }
+    // Authenticate — Kilter uses OAuth2/Keycloak, Tension uses old Aurora /sessions
+    let loginToken: string;
+    let loginUserId: number;
 
-    if (!loginResponse.token || !loginResponse.user_id) {
-      return NextResponse.json({ error: "Invalid login response from Aurora" }, { status: 400 });
+    if (boardType === "kilter") {
+      const kilterClient = new KilterClient();
+      let kilterLogin;
+      try {
+        kilterLogin = await kilterClient.signIn(username, password);
+      } catch (error) {
+        if (error instanceof Error && (error.message.includes("Invalid") || error.message.includes("401"))) {
+          return NextResponse.json({ error: "Invalid Kilter credentials" }, { status: 401 });
+        }
+        throw error;
+      }
+      loginToken = kilterLogin.accessToken;
+      // The new Kilter API returns a UUID, but our DB schema uses numeric IDs.
+      // We need to resolve the numeric user ID from the sync stream data.
+      // For now, store 0 and let the first sync populate it.
+      loginUserId = 0;
+    } else {
+      const auroraClient = new AuroraClimbingClient({ boardName: boardType as AuroraBoardName });
+      let loginResponse;
+      try {
+        loginResponse = await auroraClient.signIn(username, password);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("401")) {
+          return NextResponse.json({ error: "Invalid Aurora credentials" }, { status: 401 });
+        }
+        throw error;
+      }
+
+      if (!loginResponse.token || !loginResponse.user_id) {
+        return NextResponse.json({ error: "Invalid login response from Aurora" }, { status: 400 });
+      }
+      loginToken = loginResponse.token;
+      loginUserId = loginResponse.user_id;
     }
 
     const db = getDb();
@@ -121,7 +145,7 @@ export async function POST(request: NextRequest) {
     // Encrypt credentials
     const encryptedUsername = encrypt(username);
     const encryptedPassword = encrypt(password);
-    const encryptedToken = encrypt(loginResponse.token);
+    const encryptedToken = encrypt(loginToken);
 
     // Check if credentials already exist
     const existing = await db
@@ -142,7 +166,7 @@ export async function POST(request: NextRequest) {
         .set({
           encryptedUsername,
           encryptedPassword,
-          auroraUserId: loginResponse.user_id,
+          auroraUserId: loginUserId,
           auroraToken: encryptedToken,
           lastSyncAt: now,
           syncStatus: "active",
@@ -162,7 +186,7 @@ export async function POST(request: NextRequest) {
         boardType,
         encryptedUsername,
         encryptedPassword,
-        auroraUserId: loginResponse.user_id,
+        auroraUserId: loginUserId,
         auroraToken: encryptedToken,
         lastSyncAt: now,
         syncStatus: "active",
@@ -186,7 +210,7 @@ export async function POST(request: NextRequest) {
       await db
         .update(schema.userBoardMappings)
         .set({
-          boardUserId: loginResponse.user_id,
+          boardUserId: loginUserId,
           boardUsername: username,
           linkedAt: now,
         })
@@ -200,24 +224,30 @@ export async function POST(request: NextRequest) {
       await db.insert(schema.userBoardMappings).values({
         userId: session.user.id,
         boardType,
-        boardUserId: loginResponse.user_id,
+        boardUserId: loginUserId,
         boardUsername: username,
       });
     }
 
-    // Trigger sync in background
+    // Trigger initial sync — Kilter uses the new sync package, Tension uses Aurora sync
     let finalSyncStatus = "active";
     let finalSyncError: string | null = null;
 
     try {
-      // Sync user data from Aurora to boardsesh_ticks
-      await syncUserData(boardType as AuroraBoardName, loginResponse.token, loginResponse.user_id);
+      if (boardType === "kilter") {
+        // Kilter sync will happen via the cron job (KilterSyncRunner).
+        // The first sync is deferred because we may not have the numeric
+        // user ID yet (the OAuth2 token contains a UUID, not a number).
+        // Mark as active — the cron will pick it up.
+        console.log("[aurora-credentials] Kilter credentials saved. Sync will run via cron.");
+      } else {
+        await syncUserData(boardType as AuroraBoardName, loginToken, loginUserId);
+      }
     } catch (syncError) {
       console.error("Sync error (non-blocking):", syncError);
       finalSyncStatus = "error";
       finalSyncError = syncError instanceof Error ? syncError.message : "Sync failed";
 
-      // Update sync status to reflect error
       await db
         .update(schema.auroraCredentials)
         .set({
@@ -238,7 +268,7 @@ export async function POST(request: NextRequest) {
       credential: {
         boardType,
         auroraUsername: username,
-        auroraUserId: loginResponse.user_id,
+        auroraUserId: loginUserId,
         lastSyncAt: now.toISOString(),
         syncStatus: finalSyncStatus,
         syncError: finalSyncError,

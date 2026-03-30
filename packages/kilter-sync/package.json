@@ -1,0 +1,49 @@
+{
+  "name": "@boardsesh/kilter-sync",
+  "version": "1.0.0",
+  "description": "Kilter board sync using the new portal.kiltergrips.com API",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./runner": {
+      "types": "./src/runner/index.ts",
+      "import": "./src/runner/index.ts",
+      "default": "./src/runner/index.ts"
+    },
+    "./api": {
+      "types": "./src/api/index.ts",
+      "import": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "import": "./src/sync/index.ts",
+      "default": "./src/sync/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "oxlint .",
+    "lint-fix": "oxlint --fix .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@boardsesh/crypto": "*",
+    "@boardsesh/db": "*",
+    "@neondatabase/serverless": "1.0.2",
+    "drizzle-orm": "^0.45.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/ws": "^8.18.1",
+    "oxlint": "^1.50.0",
+    "typescript": "^5.9.3"
+  }
+}

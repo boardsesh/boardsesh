@@ -89,7 +89,6 @@ export function BoardCredentialCard({
 }: BoardCredentialCardProps) {
   const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
-  const isKilter = boardType === 'kilter';
 
   const getSyncStatusTag = () => {
     if (!credential) return null;
@@ -129,23 +128,15 @@ export function BoardCredentialCard({
               {boardName} Board
             </Typography>
           </div>
-          {isKilter ? (
-            <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
-              The Kilter backend has been shut down. You can import your data using an Aurora JSON export file.
-            </Typography>
-          ) : (
-            <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
-              Not connected. Link your {boardName} account to import your Aurora data, or import from a JSON export file.
-            </Typography>
-          )}
+          <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
+            Not connected. Link your {boardName} account to import your data, or import from a JSON export file.
+          </Typography>
           <div className={styles.buttonRow}>
-            {!isKilter && (
-              <Button variant="contained" startIcon={<LinkOutlined />} onClick={onAdd}>
-                Link
-              </Button>
-            )}
+            <Button variant="contained" startIcon={<LinkOutlined />} onClick={onAdd}>
+              Link
+            </Button>
             <Button
-              variant={isKilter ? 'contained' : 'outlined'}
+              variant="outlined"
               startIcon={isImporting ? <CircularProgress size={16} /> : <FileUploadOutlined />}
               onClick={onImportJson}
               disabled={isImporting}
