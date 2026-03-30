@@ -10,33 +10,7 @@ import {
   type GetUserProfileStatsQueryVariables,
   type GetUserProfileStatsQueryResponse,
 } from '@/app/lib/graphql/operations';
-
-// Layout name + color mappings for OG image
-const layoutNames: Record<string, string> = {
-  'kilter-1': 'Kilter Original',
-  'kilter-8': 'Kilter Homewall',
-  'tension-9': 'Tension Classic',
-  'tension-10': 'Tension 2 Mirror',
-  'tension-11': 'Tension 2 Spray',
-  'moonboard-1': 'MoonBoard 2010',
-  'moonboard-2': 'MoonBoard 2016',
-  'moonboard-3': 'MoonBoard 2024',
-  'moonboard-4': 'MoonBoard Masters 2017',
-  'moonboard-5': 'MoonBoard Masters 2019',
-};
-
-const layoutColors: Record<string, string> = {
-  'kilter-1': 'rgba(6, 182, 212, 0.85)',
-  'kilter-8': 'rgba(57, 255, 20, 0.85)',
-  'tension-9': 'rgba(239, 68, 68, 0.85)',
-  'tension-10': 'rgba(249, 115, 22, 0.85)',
-  'tension-11': 'rgba(234, 179, 8, 0.85)',
-  'moonboard-1': 'rgba(255, 215, 0, 0.85)',
-  'moonboard-2': 'rgba(255, 165, 0, 0.85)',
-  'moonboard-3': 'rgba(255, 140, 0, 0.85)',
-  'moonboard-4': 'rgba(255, 193, 7, 0.85)',
-  'moonboard-5': 'rgba(255, 152, 0, 0.85)',
-};
+import { getLayoutDisplayName, getLayoutColor } from './utils/profile-constants';
 
 type PageProps = {
   params: Promise<{ user_id: string }>;
@@ -83,9 +57,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           .filter((s) => s.distinctClimbCount > 0)
           .sort((a, b) => b.distinctClimbCount - a.distinctClimbCount)
           .map((s) => ({
-            name: layoutNames[s.layoutKey] || s.layoutKey,
+            name: getLayoutDisplayName(s.boardType, s.layoutId),
             pct: totalClimbs > 0 ? Math.round((s.distinctClimbCount / totalClimbs) * 100) : 0,
-            color: layoutColors[s.layoutKey] || 'rgba(150,150,150,0.7)',
+            color: getLayoutColor(s.boardType, s.layoutId),
           }));
       }
     } catch {

@@ -13,9 +13,21 @@ export async function GET(request: NextRequest) {
     const avatarUrl = searchParams.get('avatar') || null;
     const totalClimbs = parseInt(searchParams.get('totalClimbs') || '0', 10);
     const layoutsParam = searchParams.get('layouts');
-    const layouts: Array<{ name: string; pct: number; color: string }> = layoutsParam
-      ? JSON.parse(layoutsParam)
-      : [];
+    let layouts: Array<{ name: string; pct: number; color: string }> = [];
+    if (layoutsParam && layoutsParam.length < 2000) {
+      try {
+        const parsed: unknown = JSON.parse(layoutsParam);
+        if (Array.isArray(parsed)) {
+          layouts = parsed.slice(0, 10).filter(
+            (item): item is { name: string; pct: number; color: string } =>
+              typeof item === 'object' && item !== null &&
+              typeof item.name === 'string' && typeof item.pct === 'number' && typeof item.color === 'string',
+          );
+        }
+      } catch {
+        // Invalid JSON — render without layout bar
+      }
+    }
 
     return new ImageResponse(
       (
@@ -185,6 +197,9 @@ export async function GET(request: NextRequest) {
       {
         width: 1200,
         height: 630,
+        headers: {
+          'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+        },
       },
     );
   } catch (error) {
