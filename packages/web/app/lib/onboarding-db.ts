@@ -23,21 +23,6 @@ const getStorageKey = (userId?: string | number | null): string => {
 };
 
 /**
- * Get the onboarding status from IndexedDB
- */
-export const getOnboardingStatus = async (userId?: string | number | null): Promise<OnboardingStatus | null> => {
-  try {
-    const db = await getDB();
-    if (!db) return null;
-    const key = getStorageKey(userId);
-    return await db.get(STORE_NAME, key);
-  } catch (error) {
-    console.error('Failed to get onboarding status:', error);
-    return null;
-  }
-};
-
-/**
  * Save the onboarding status to IndexedDB
  */
 export const saveOnboardingStatus = async (userId?: string | number | null): Promise<void> => {
@@ -52,20 +37,6 @@ export const saveOnboardingStatus = async (userId?: string | number | null): Pro
     await db.put(STORE_NAME, status, key);
   } catch (error) {
     console.error('Failed to save onboarding status:', error);
-  }
-};
-
-/**
- * Check if onboarding should be shown.
- * Returns true if onboarding hasn't been completed or a newer version is available.
- */
-export const shouldShowOnboarding = async (userId?: string | number | null): Promise<boolean> => {
-  try {
-    const status = await getOnboardingStatus(userId);
-    if (!status) return true;
-    return status.completedVersion < ONBOARDING_VERSION;
-  } catch {
-    return true;
   }
 };
 

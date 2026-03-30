@@ -160,7 +160,7 @@ A new landing/home screen accessible via the first tab. This is a placeholder fo
 **Feature flag**: `NEXT_PUBLIC_ENABLE_HOME_SCREEN`
 - When `'true'`: Home tab navigates to the `/home` route
 - When falsy (default): Home tab navigates to `/list` instead (acts as the Climb tab)
-- This matches the existing feature flag pattern (e.g., `NEXT_PUBLIC_ENABLE_ONBOARDING_TOUR` in `onboarding-tour.tsx`)
+- This matches the existing feature flag pattern
 - Add to `.env.local`: `NEXT_PUBLIC_ENABLE_HOME_SCREEN=false`
 
 ### Files to modify
@@ -755,7 +755,7 @@ Minor refinements to the queue list to match the new design language.
 - Queue drawer now opens from the dedicated Queue button on the bar (not from tapping climb info)
 - Placement stays bottom, height stays 70%
 - Add a count badge on the Queue button showing queue length
-- **Keep**: The existing `TOUR_DRAWER_EVENT` listener that opens/closes the drawer for the onboarding tour. The tour may need to target the new Queue button instead of the old click area.
+- **Keep**: The existing `TOUR_PLAY_VIEW_EVENT` listener that opens/closes the play view for the guided tour.
 - **Keep**: The `handleDrawerOpenChange` callback that scrolls to the current climb when the drawer opens
 
 ---
