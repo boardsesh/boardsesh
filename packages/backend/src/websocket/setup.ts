@@ -8,7 +8,8 @@ import { createContext, removeContext, getContext } from '../graphql/context';
 import { validateQueryDepth } from '../graphql/query-depth';
 import { roomManager } from '../services/room-manager';
 import { pubsub } from '../pubsub/index';
-import { validateNextAuthToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
+import { validateNextAuthToken, extractAuthToken, extractBetterAuthSessionToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
+import { validateBetterAuthSession } from '../auth/index';
 import { isOriginAllowed } from '../handlers/cors';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -63,21 +64,36 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
       schema,
       // onConnect is called ONCE when client connects and sends ConnectionInit
       onConnect: async (ctx: ServerContext) => {
-        // Extract and validate auth token
-        const token = extractAuthToken(
-          ctx.connectionParams as Record<string, unknown> | undefined,
-          ctx.extra.request?.url,
-        );
+        const connectionParams = ctx.connectionParams as Record<string, unknown> | undefined;
 
         let isAuthenticated = false;
         let authenticatedUserId: string | undefined;
 
-        if (token) {
-          const authResult = await validateNextAuthToken(token);
-          if (authResult) {
+        // Strategy 1: Try Better Auth session token from connection params
+        const betterAuthToken = extractBetterAuthSessionToken(connectionParams);
+        if (betterAuthToken) {
+          const result = await validateBetterAuthSession(betterAuthToken);
+          if (result) {
             isAuthenticated = true;
-            authenticatedUserId = authResult.userId;
-            console.log(`[Auth] Authenticated user: ${authenticatedUserId}`);
+            authenticatedUserId = result.userId;
+            console.log(`[Auth] Authenticated user via Better Auth: ${authenticatedUserId}`);
+          }
+        }
+
+        // Strategy 2: Fall back to NextAuth JWE token
+        if (!isAuthenticated) {
+          const token = extractAuthToken(
+            connectionParams,
+            ctx.extra.request?.url,
+          );
+
+          if (token) {
+            const authResult = await validateNextAuthToken(token);
+            if (authResult) {
+              isAuthenticated = true;
+              authenticatedUserId = authResult.userId;
+              console.log(`[Auth] Authenticated user via NextAuth: ${authenticatedUserId}`);
+            }
           }
         }
 
@@ -85,7 +101,6 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
         let controllerId: string | undefined;
         let controllerApiKey: string | undefined;
         let controllerMac: string | undefined;
-        const connectionParams = ctx.connectionParams as Record<string, unknown> | undefined;
         const extractedControllerApiKey = extractControllerApiKey(connectionParams);
 
         if (extractedControllerApiKey) {

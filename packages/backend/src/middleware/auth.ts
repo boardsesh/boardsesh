@@ -3,6 +3,7 @@ import { hkdf } from '@panva/hkdf';
 import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
+import { validateBetterAuthSession, validateBetterAuthBearer } from '../auth/index';
 
 export interface AuthResult {
   userId: string;
@@ -35,7 +36,7 @@ async function deriveEncryptionKey(secret: string): Promise<Uint8Array> {
 }
 
 /**
- * Validate a NextAuth JWT token.
+ * Validate a NextAuth JWT token (legacy).
  * NextAuth tokens are encrypted JWTs (JWE) using the NEXTAUTH_SECRET.
  *
  * @param token - The JWT token from the client
@@ -71,10 +72,48 @@ export async function validateNextAuthToken(token: string): Promise<AuthResult |
   } catch (error) {
     // Log the error but don't expose details to caller
     if (error instanceof Error) {
-      console.warn('[Auth] Token validation failed:', error.message);
+      console.warn('[Auth] NextAuth token validation failed:', error.message);
     }
     return null;
   }
+}
+
+/**
+ * Validate an auth token using dual-strategy:
+ * 1. Try Better Auth session token first
+ * 2. Fall back to NextAuth JWE token
+ *
+ * Both paths return the same AuthResult interface.
+ *
+ * @param token - The auth token (could be Better Auth session token or NextAuth JWE)
+ * @param cookies - Optional cookie string for Better Auth session validation
+ * @returns Auth result with userId if valid, null if invalid
+ */
+export async function validateAuthToken(
+  token: string,
+  cookies?: string,
+): Promise<AuthResult | null> {
+  // Strategy 1: Try Better Auth session token
+  // Better Auth session tokens are opaque strings, not JWTs
+  // Check via cookie-based validation first
+  if (cookies) {
+    const sessionTokenMatch = cookies.match(/better-auth\.session_token=([^;]+)/);
+    if (sessionTokenMatch) {
+      const result = await validateBetterAuthSession(sessionTokenMatch[1]);
+      if (result) {
+        return { userId: result.userId, isAuthenticated: true };
+      }
+    }
+  }
+
+  // Strategy 2: Try Better Auth bearer token validation
+  const betterAuthResult = await validateBetterAuthBearer(token);
+  if (betterAuthResult) {
+    return { userId: betterAuthResult.userId, isAuthenticated: true };
+  }
+
+  // Strategy 3: Fall back to NextAuth JWE token
+  return validateNextAuthToken(token);
 }
 
 /**
@@ -100,6 +139,29 @@ export function extractAuthToken(
       }
     } catch {
       // Invalid URL, ignore
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract Better Auth session token from connection params cookies.
+ * WebSocket clients may pass cookies via connection params.
+ */
+export function extractBetterAuthSessionToken(
+  connectionParams?: Record<string, unknown>,
+): string | null {
+  // Check for explicit Better Auth session token in connection params
+  if (connectionParams?.betterAuthSessionToken && typeof connectionParams.betterAuthSessionToken === 'string') {
+    return connectionParams.betterAuthSessionToken;
+  }
+
+  // Check cookies in connection params
+  if (connectionParams?.cookies && typeof connectionParams.cookies === 'string') {
+    const match = connectionParams.cookies.match(/better-auth\.session_token=([^;]+)/);
+    if (match) {
+      return match[1];
     }
   }
 

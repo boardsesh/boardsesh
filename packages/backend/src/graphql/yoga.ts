@@ -2,7 +2,7 @@ import { createYoga } from 'graphql-yoga';
 import type { IncomingMessage } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { schema } from './index';
-import { validateNextAuthToken } from '../middleware/auth';
+import { validateAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
@@ -32,11 +32,26 @@ export function createYogaInstance() {
     context: async ({ request }): Promise<ConnectionContext> => {
       // Extract Authorization header
       const authHeader = request.headers.get('authorization');
+      const cookieHeader = request.headers.get('cookie') ?? undefined;
 
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7);
-        const authResult = await validateNextAuthToken(token);
+        // Dual validation: tries Better Auth first, falls back to NextAuth JWE
+        const authResult = await validateAuthToken(token, cookieHeader);
 
+        if (authResult) {
+          return {
+            connectionId: `http-${uuidv4()}`,
+            sessionId: undefined,
+            userId: authResult.userId,
+            isAuthenticated: true,
+          };
+        }
+      }
+
+      // Also check for cookie-based Better Auth sessions (no Bearer token needed)
+      if (cookieHeader?.includes('better-auth.session_token')) {
+        const authResult = await validateAuthToken('', cookieHeader);
         if (authResult) {
           return {
             connectionId: `http-${uuidv4()}`,

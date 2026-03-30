@@ -18,6 +18,8 @@ import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
+import { auth } from './auth/index';
+import { toNodeHandler } from 'better-auth/node';
 
 /**
  * Start the Boardsesh Backend server
@@ -58,6 +60,9 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
 
   // Create GraphQL Yoga instance
   const yoga = createYogaInstance();
+
+  // Create Better Auth Node.js handler for auth routes
+  const betterAuthHandler = toNodeHandler(auth);
 
   /**
    * Custom request handler that routes requests to appropriate handlers
@@ -114,6 +119,15 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
         return;
       }
 
+      // Better Auth routes - handle all /auth/* requests
+      if (pathname.startsWith('/auth')) {
+        // Apply CORS for auth requests
+        if (!applyCorsHeaders(req, res)) return;
+
+        await betterAuthHandler(req, res);
+        return;
+      }
+
       // GraphQL endpoint - delegate to Yoga
       if (pathname === '/graphql') {
         // Apply CORS for GraphQL requests
@@ -157,6 +171,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
     console.log(`  Avatar upload: http://0.0.0.0:${PORT}/api/avatars`);
     console.log(`  Avatar files: http://0.0.0.0:${PORT}/static/avatars/`);
     console.log(`  OCR test data: http://0.0.0.0:${PORT}/api/ocr-test-data`);
+    console.log(`  Auth (Better Auth): http://0.0.0.0:${PORT}/auth/*`);
     console.log(`  Sync cron: http://0.0.0.0:${PORT}/sync-cron`);
   });
 
