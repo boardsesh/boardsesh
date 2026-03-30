@@ -4,7 +4,7 @@ import { UNIFIED_TABLES } from '../../../db/queries/util/table-select';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema, ExternalUUIDSchema } from '../../../validation/schemas';
 
-interface BetaLink {
+export interface BetaLink {
   climbUuid: string;
   link: string;
   foreignUsername: string | null;

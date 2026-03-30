@@ -4,12 +4,12 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated } from '../shared/helpers';
 
-interface UnsyncedBoardCounts {
+export interface UnsyncedBoardCounts {
   ascents: number;
   climbs: number;
 }
 
-interface UnsyncedCounts {
+export interface UnsyncedCounts {
   kilter: UnsyncedBoardCounts;
   tension: UnsyncedBoardCounts;
 }

@@ -5,7 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 
-interface UserBoardMapping {
+export interface UserBoardMapping {
   id: string;
   userId: string;
   boardType: string;

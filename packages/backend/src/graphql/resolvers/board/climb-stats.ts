@@ -3,7 +3,7 @@ import { db } from '../../../db/client';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema, ExternalUUIDSchema } from '../../../validation/schemas';
 
-interface ClimbStatsForAngle {
+export interface ClimbStatsForAngle {
   angle: number;
   ascensionistCount: number;
   qualityAverage: number | null;
@@ -11,6 +11,17 @@ interface ClimbStatsForAngle {
   displayDifficulty: number | null;
   faUsername: string | null;
   faAt: string | null;
+  difficulty: string | null;
+}
+
+export interface ClimbStatsRow {
+  angle: number;
+  ascensionist_count: string;
+  quality_average: string | null;
+  difficulty_average: number | null;
+  display_difficulty: number | null;
+  fa_username: string | null;
+  fa_at: string | null;
   difficulty: string | null;
 }
 
@@ -22,16 +33,7 @@ export const climbStatsQuery = {
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
-    const result = await db.execute<{
-      angle: number;
-      ascensionist_count: string;
-      quality_average: string | null;
-      difficulty_average: number | null;
-      display_difficulty: number | null;
-      fa_username: string | null;
-      fa_at: string | null;
-      difficulty: string | null;
-    }>(sql`
+    const result = await db.execute(sql`
       SELECT
         climb_stats.angle,
         COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
@@ -50,8 +52,9 @@ export const climbStatsQuery = {
       ORDER BY climb_stats.angle ASC
     `);
 
-    const rows = Array.isArray(result) ? result : (result as { rows: typeof result }).rows;
-    return rows.map(r => ({
+    const rows = result as unknown as ClimbStatsRow[];
+
+    return rows.map((r) => ({
       angle: Number(r.angle),
       ascensionistCount: Number(r.ascensionist_count || 0),
       qualityAverage: r.quality_average ? Number(r.quality_average) : null,

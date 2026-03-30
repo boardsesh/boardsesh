@@ -5,7 +5,7 @@ import { getSizeEdges } from '../../../db/queries/util/product-sizes-data';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 
-interface SetterInput {
+export interface SetterInput {
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -14,7 +14,7 @@ interface SetterInput {
   search?: string;
 }
 
-interface SetterStat {
+export interface SetterStat {
   setterUsername: string;
   climbCount: number;
 }

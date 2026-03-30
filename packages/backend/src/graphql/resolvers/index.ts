@@ -43,6 +43,31 @@ import { socialCommunitySettingsQueries, socialCommunitySettingsMutations } from
 import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions';
 import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 
+// New board data resolvers
+import { climbStatsQuery } from './board/climb-stats';
+import { betaLinksQuery } from './board/beta-links';
+import { holdHeatmapQuery } from './board/hold-heatmap';
+import { resolveSlugQuery } from './board/resolve-slug';
+import { climbDetailQuery } from './board/climb-detail';
+import { settersQuery } from './board/setters';
+import { climbRedirectQuery } from './board/climb-redirect';
+
+// New user management resolvers
+import { publicProfileQuery } from './users/public-profile';
+import { setPasswordMutation } from './users/set-password';
+import { unsyncedCredentialsQuery } from './users/unsynced-credentials';
+import { boardMappingsQuery, boardMappingsMutation } from './users/board-mappings';
+
+// New admin resolvers
+import { holdClassificationsQuery, holdClassificationsMutation } from './admin/hold-classifications';
+import { adminControllerMutation } from './admin/controllers';
+
+// New Aurora proxy resolvers
+import { auroraLoginMutation } from './aurora/login';
+import { auroraSaveAscentMutation } from './aurora/save-ascent';
+import { auroraGetLogbookQuery } from './aurora/get-logbook';
+import { auroraUserSyncMutation } from './aurora/user-sync';
+
 export const resolvers = {
   // Scalar types
   JSON: GraphQLJSON,
@@ -73,6 +98,22 @@ export const resolvers = {
     ...socialRoleQueries,
     ...socialCommunitySettingsQueries,
     ...newClimbSubscriptionResolvers.Query,
+    // New board data queries
+    ...climbStatsQuery,
+    ...betaLinksQuery,
+    ...holdHeatmapQuery,
+    ...resolveSlugQuery,
+    ...climbDetailQuery,
+    ...settersQuery,
+    ...climbRedirectQuery,
+    // New Aurora proxy queries
+    ...auroraGetLogbookQuery,
+    // New user management queries
+    ...publicProfileQuery,
+    ...unsyncedCredentialsQuery,
+    ...boardMappingsQuery,
+    // New admin queries
+    ...holdClassificationsQuery,
   },
 
   Mutation: {
@@ -96,6 +137,16 @@ export const resolvers = {
     ...socialCommunitySettingsMutations,
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
+    // New Aurora proxy mutations
+    ...auroraLoginMutation,
+    ...auroraSaveAscentMutation,
+    ...auroraUserSyncMutation,
+    // New user management mutations
+    ...setPasswordMutation,
+    ...boardMappingsMutation,
+    // New admin mutations
+    ...holdClassificationsMutation,
+    ...adminControllerMutation,
   },
 
   Subscription: {

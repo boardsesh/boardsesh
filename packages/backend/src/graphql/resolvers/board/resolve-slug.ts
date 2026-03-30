@@ -25,23 +25,23 @@ function generateDescriptionSlug(description: string): string {
   return generateSlugFromText(description);
 }
 
-interface SlugLayout {
+export interface SlugLayout {
   id: number;
   name: string;
 }
 
-interface SlugSize {
+export interface SlugSize {
   id: number;
   name: string;
   description: string;
 }
 
-interface SlugSet {
+export interface SlugSet {
   id: number;
   name: string;
 }
 
-interface SlugResult {
+export interface SlugResult {
   layout?: SlugLayout | null;
   size?: SlugSize | null;
   sets?: SlugSet[] | null;
@@ -197,17 +197,16 @@ export const resolveSlugQuery = {
           throw new Error('sizeId is required for SETS slug resolution');
         }
 
-        const { sets } = UNIFIED_TABLES;
-        const { boardProductSizesLayoutsSets } = await import('@boardsesh/db/schema');
+        const { boardSets, boardProductSizesLayoutsSets } = await import('@boardsesh/db/schema');
 
         const rows = await db
-          .select({ id: sets.id, name: sets.name })
-          .from(sets)
+          .select({ id: boardSets.id, name: boardSets.name })
+          .from(boardSets)
           .innerJoin(
             boardProductSizesLayoutsSets,
             and(
-              eq(sets.boardType, boardProductSizesLayoutsSets.boardType),
-              eq(sets.id, boardProductSizesLayoutsSets.setId),
+              eq(boardSets.boardType, boardProductSizesLayoutsSets.boardType),
+              eq(boardSets.id, boardProductSizesLayoutsSets.setId),
             ),
           )
           .where(

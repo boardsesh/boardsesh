@@ -4,7 +4,7 @@ import * as schema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema, ExternalUUIDSchema } from '../../../validation/schemas';
 
-interface ClimbRedirectResult {
+export interface ClimbRedirectResult {
   url: string;
 }
 

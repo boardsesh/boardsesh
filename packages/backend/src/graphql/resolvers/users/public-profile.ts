@@ -3,19 +3,19 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
-interface ProfileDetails {
+export interface ProfileDetails {
   displayName: string | null;
   avatarUrl: string | null;
   instagramUrl: string | null;
 }
 
-interface ProfileCredential {
+export interface ProfileCredential {
   boardType: string;
   auroraUsername: string;
   auroraUserId: number;
 }
 
-interface PublicProfile {
+export interface PublicProfile {
   id: string;
   email?: string;
   name: string | null;

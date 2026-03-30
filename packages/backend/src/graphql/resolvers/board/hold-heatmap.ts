@@ -8,7 +8,7 @@ import { validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 import * as dbSchema from '@boardsesh/db/schema';
 
-interface HeatmapInput {
+export interface HeatmapInput {
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -28,7 +28,7 @@ interface HeatmapInput {
   holdsFilter?: Record<string, unknown>;
 }
 
-interface HoldStat {
+export interface HoldStat {
   holdId: number;
   totalUses: number;
   startingUses: number;

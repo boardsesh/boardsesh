@@ -5,7 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit } from '../shared/helpers';
 import bcrypt from 'bcryptjs';
 
-interface SetPasswordResult {
+export interface SetPasswordResult {
   message: string;
 }
 
