@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email, password, name } = validationResult.data;
+    const { password, name } = validationResult.data;
+    const email = validationResult.data.email.toLowerCase().trim();
     const db = getDb();
 
     // Check if user already exists

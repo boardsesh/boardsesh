@@ -97,10 +97,11 @@ providers.push(
         return null;
       }
 
+      const email = credentials.email.toLowerCase().trim();
       const db = getDb();
 
       // Look up user by email
-      const users = await db.select().from(schema.users).where(eq(schema.users.email, credentials.email)).limit(1);
+      const users = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
 
       if (users.length === 0) {
         return null;
@@ -228,7 +229,8 @@ export const authOptions: NextAuthOptions = {
       }
 
       const db = getDb();
-      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
+      const normalizedEmail = user.email.toLowerCase().trim();
+      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, normalizedEmail)).limit(1);
 
       // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
       const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
