@@ -473,5 +473,79 @@ export const queriesTypeDefs = /* GraphQL */ `
     Get vote summaries for multiple entities of the same type.
     """
     bulkVoteSummaries(input: BulkVoteSummaryInput!): [VoteSummary!]!
+
+    # ============================================
+    # Board Data Queries
+    # ============================================
+
+    """
+    Get climb difficulty stats for all angles.
+    """
+    climbStats(boardName: String!, climbUuid: String!): [ClimbStatsForAngle!]!
+
+    """
+    Get beta (video) links for a climb.
+    """
+    climbBetaLinks(boardName: String!, climbUuid: String!): [BetaLink!]!
+
+    """
+    Get hold usage heatmap data.
+    """
+    holdHeatmap(input: HeatmapInput!): [HoldStat!]!
+
+    """
+    Resolve a URL slug to board configuration IDs.
+    """
+    resolveSlug(boardName: String!, type: SlugType!, slug: String!, layoutId: Int, sizeId: Int): SlugResult!
+
+    """
+    Get full climb detail with lit-up holds.
+    """
+    climbDetail(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: String!): ClimbDetail
+
+    """
+    Get setter stats (usernames and climb counts).
+    """
+    setters(input: SetterInput!): [SetterStat!]!
+
+    # ============================================
+    # Aurora Proxy Queries
+    # ============================================
+
+    """
+    Get user logbook from Aurora.
+    """
+    auroraGetLogbook(boardName: String!, userId: String!, climbUuids: [String!]): JSON
+
+    # ============================================
+    # User Management Queries (new)
+    # ============================================
+
+    """
+    Get unsynced Aurora credential counts.
+    Requires authentication.
+    """
+    unsyncedAuroraCredentials: UnsyncedCounts!
+
+    """
+    Get user board mappings.
+    Requires authentication.
+    """
+    userBoardMappings: [UserBoardMapping!]!
+
+    # ============================================
+    # Admin/Internal Queries
+    # ============================================
+
+    """
+    Get hold classifications for a board configuration.
+    Requires authentication.
+    """
+    holdClassifications(input: HoldClassificationsInput!): [HoldClassification!]!
+
+    """
+    Resolve a climb UUID to its full URL path.
+    """
+    climbRedirect(boardType: String!, climbUuid: String!, proposalUuid: String): ClimbRedirectResult
   }
 `;

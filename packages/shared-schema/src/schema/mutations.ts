@@ -399,6 +399,59 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     revokeRole(input: RevokeRoleInput!): Boolean!
 
+    # ============================================
+    # Aurora Proxy Mutations
+    # ============================================
+
+    """
+    Login to Aurora API and get session token.
+    """
+    auroraLogin(boardName: String!, username: String!, password: String!): AuroraLoginResult!
+
+    """
+    Save an ascent via Aurora API.
+    Requires authentication.
+    """
+    auroraSaveAscent(boardName: String!, input: SaveAscentInput!): SaveAscentResult!
+
+    """
+    Sync user data from Aurora.
+    Requires authentication.
+    """
+    auroraUserSync(boardName: String!): SyncResult!
+
+    # ============================================
+    # User Management Mutations (new)
+    # ============================================
+
+    """
+    Set password for OAuth users.
+    Requires authentication.
+    """
+    setPassword(password: String!, confirmPassword: String!): SetPasswordResult!
+
+    """
+    Save a user board mapping (link NextAuth user to Aurora board user).
+    Requires authentication.
+    """
+    saveUserBoardMapping(boardType: String!, boardUserId: Int!, boardUsername: String): Boolean!
+
+    # ============================================
+    # Admin/Internal Mutations
+    # ============================================
+
+    """
+    Save a hold classification.
+    Requires authentication.
+    """
+    saveHoldClassification(input: SaveHoldClassificationInput!): HoldClassification!
+
+    """
+    Delete a registered ESP32 controller (admin API route equivalent).
+    Requires authentication.
+    """
+    deleteControllerAdmin(controllerId: ID!): Boolean!
+
     # ESP32 sends LED positions from official app Bluetooth
     # frames: Pre-built frames string from ESP32 (preferred)
     # positions: Legacy LED positions array (for backwards compatibility)
