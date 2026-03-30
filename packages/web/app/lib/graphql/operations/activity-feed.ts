@@ -24,6 +24,7 @@ const SESSION_FEED_ITEM_FIELDS = `
   tickCount
   gradeDistribution {
     grade
+    difficulty
     flash
     send
     attempt

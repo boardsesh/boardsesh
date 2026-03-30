@@ -317,6 +317,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   """
   type SessionGradeDistributionItem {
     grade: String!
+    difficulty: Int
     flash: Int!
     send: Int!
     attempt: Int!

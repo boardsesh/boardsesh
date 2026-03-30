@@ -15,40 +15,55 @@ import GradeDistributionBar, { formatGradeLabels } from '../grade-distribution-b
 
 describe('formatGradeLabels', () => {
   it('extracts V-grade from combined Font/V-grade strings', () => {
-    expect(formatGradeLabels(['6a/V3', '6b/V4'])).toEqual(['V3', 'V4']);
+    expect(formatGradeLabels([{ grade: '6a/V3' }, { grade: '6b/V4' }])).toEqual(['V3', 'V4']);
   });
 
   it('passes through bare V-grade strings', () => {
-    expect(formatGradeLabels(['V3', 'V5'])).toEqual(['V3', 'V5']);
+    expect(formatGradeLabels([{ grade: 'V3' }, { grade: 'V5' }])).toEqual(['V3', 'V5']);
   });
 
   it('adds "+" when Font grade has "+" suffix (e.g., 6c+ → V5+)', () => {
-    expect(formatGradeLabels(['6c/V5', '6c+/V5'])).toEqual(['V5', 'V5+']);
+    expect(formatGradeLabels([{ grade: '6c/V5' }, { grade: '6c+/V5' }])).toEqual(['V5', 'V5+']);
   });
 
   it('handles mix of single and dual Font grades per V-grade', () => {
-    expect(formatGradeLabels(['5c/V2', '6a/V3', '6a+/V3', '6b/V4'])).toEqual([
-      'V2', 'V3', 'V3+', 'V4',
-    ]);
+    expect(formatGradeLabels([
+      { grade: '5c/V2' }, { grade: '6a/V3' }, { grade: '6a+/V3' }, { grade: '6b/V4' },
+    ])).toEqual(['V2', 'V3', 'V3+', 'V4']);
   });
 
-  it('falls back to original string when no V-grade is found', () => {
-    expect(formatGradeLabels(['6A', '7A+'])).toEqual(['6A', '7A+']);
+  it('falls back to original string when no V-grade is found and no lookup match', () => {
+    // MoonBoard uppercase Font grades not in the Kilter/Tension BOULDER_GRADES lookup
+    expect(formatGradeLabels([{ grade: '6A' }, { grade: '7A+' }])).toEqual(['V3', 'V7']);
   });
 
   it('only adds "+" when V-grade has multiple Font grades', () => {
     // 7a+/V7: V7 has only one Font grade (7a+), so no "+" needed
-    expect(formatGradeLabels(['7a/V6', '7a+/V7'])).toEqual(['V6', 'V7']);
+    expect(formatGradeLabels([{ grade: '7a/V6' }, { grade: '7a+/V7' }])).toEqual(['V6', 'V7']);
     // 6b+/V4: V4 has two Font grades (6b, 6b+), so "+" is added
-    expect(formatGradeLabels(['6b/V4', '6b+/V4'])).toEqual(['V4', 'V4+']);
+    expect(formatGradeLabels([{ grade: '6b/V4' }, { grade: '6b+/V4' }])).toEqual(['V4', 'V4+']);
   });
 
   it('handles empty array', () => {
     expect(formatGradeLabels([])).toEqual([]);
   });
 
-  it('handles numeric-only grades that lack V prefix', () => {
-    expect(formatGradeLabels(['0', '1', '2'])).toEqual(['0', '1', '2']);
+  it('converts numeric difficulty IDs to V-grades via BOULDER_GRADES lookup', () => {
+    // difficulty_id 10 → V0, 13 → V1, 15 → V2
+    expect(formatGradeLabels([
+      { grade: '0', difficulty: 10 },
+      { grade: '1', difficulty: 13 },
+      { grade: '2', difficulty: 15 },
+    ])).toEqual(['V0', 'V1', 'V2']);
+  });
+
+  it('converts font-grade-only strings to V-grades', () => {
+    // "5a" → V1, "5c" → V2 via font grade lookup
+    expect(formatGradeLabels([{ grade: '5a' }, { grade: '5c' }])).toEqual(['V1', 'V2']);
+  });
+
+  it('falls back to original string for unknown grades without difficulty', () => {
+    expect(formatGradeLabels([{ grade: 'unknown' }])).toEqual(['unknown']);
   });
 });
 
@@ -120,5 +135,17 @@ describe('GradeDistributionBar', () => {
     const data = JSON.parse(chartEl.getAttribute('data-data') || '{}');
     // V7 has only one Font grade (7a+), so no "+" is added
     expect(data.labels).toEqual(['V6', 'V7']);
+  });
+
+  it('renders V-grade labels from numeric difficulty IDs', () => {
+    const gradeDistribution = [
+      { grade: '2', difficulty: 15, flash: 1, send: 0, attempt: 0 },
+      { grade: '0', difficulty: 10, flash: 0, send: 1, attempt: 0 },
+    ];
+
+    render(<GradeDistributionBar gradeDistribution={gradeDistribution} />);
+    const chartEl = screen.getByTestId('chart-bar');
+    const data = JSON.parse(chartEl.getAttribute('data-data') || '{}');
+    expect(data.labels).toEqual(['V0', 'V2']);
   });
 });

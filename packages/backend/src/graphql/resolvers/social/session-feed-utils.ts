@@ -52,5 +52,5 @@ export function buildGradeDistributionFromTicks(
 
   return [...gradeMap.values()]
     .sort((a, b) => b.difficulty - a.difficulty)
-    .map(({ grade, flash, send, attempt }) => ({ grade, flash, send, attempt }));
+    .map(({ grade, difficulty, flash, send, attempt }) => ({ grade, difficulty, flash, send, attempt }));
 }

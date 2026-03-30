@@ -661,7 +661,7 @@ async function fetchGradeDistributionBatch(
   for (const r of rows) {
     if (r.grade == null) continue;
     const distribution = map.get(r.effective_session_id) ?? [];
-    distribution.push({ grade: r.grade, flash: r.flash, send: r.send, attempt: r.attempt });
+    distribution.push({ grade: r.grade, difficulty: r.diff_num, flash: r.flash, send: r.send, attempt: r.attempt });
     map.set(r.effective_session_id, distribution);
   }
   return map;

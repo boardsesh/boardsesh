@@ -94,6 +94,7 @@ export type SessionFeedParticipant = {
 
 export type SessionGradeDistributionItem = {
   grade: string;
+  difficulty?: number;
   flash: number;
   send: number;
   attempt: number;

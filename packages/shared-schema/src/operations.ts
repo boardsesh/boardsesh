@@ -235,6 +235,7 @@ export const SESSION_UPDATES = `
         }
         gradeDistribution {
           grade
+          difficulty
           flash
           send
           attempt
