@@ -15,6 +15,7 @@ import { handleStaticAvatar } from './handlers/static';
 import { handleSyncCron } from './handlers/sync';
 import { handleSharedSyncCron } from './handlers/shared-sync';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
+import { handleOgImage } from './handlers/og-image';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
@@ -119,6 +120,12 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
         return;
       }
 
+      // OG image generation endpoint
+      if (pathname === '/og-image' && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleOgImage(req, res);
+        return;
+      }
+
       // Better Auth routes - handle all /auth/* requests
       if (pathname.startsWith('/auth')) {
         // Apply CORS for auth requests
@@ -172,6 +179,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
     console.log(`  Avatar files: http://0.0.0.0:${PORT}/static/avatars/`);
     console.log(`  OCR test data: http://0.0.0.0:${PORT}/api/ocr-test-data`);
     console.log(`  Auth (Better Auth): http://0.0.0.0:${PORT}/auth/*`);
+    console.log(`  OG image: http://0.0.0.0:${PORT}/og-image`);
     console.log(`  Sync cron: http://0.0.0.0:${PORT}/sync-cron`);
   });
 

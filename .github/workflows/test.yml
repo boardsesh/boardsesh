@@ -5,12 +5,14 @@ on:
     branches: [ main, develop ]
     paths:
       - 'packages/web/**'
+      - 'packages/spa/**'
       - 'packages/shared-schema/**'
       - 'packages/db/**'
       - '.github/workflows/test.yml'
   pull_request:
     paths:
       - 'packages/web/**'
+      - 'packages/spa/**'
       - 'packages/shared-schema/**'
       - 'packages/db/**'
       - '.github/workflows/test.yml'
@@ -42,9 +44,15 @@ jobs:
     - name: Run linting
       run: bun run lint
 
-    - name: Run type checking
+    - name: Run type checking (web)
       run: bunx tsc --noEmit
       working-directory: packages/web
+
+    - name: Run type checking (spa)
+      run: bun run typecheck:spa
+
+    - name: Build SPA
+      run: bun run spa:build
 
     - name: Run tests
       run: bun run --filter=@boardsesh/web test:run

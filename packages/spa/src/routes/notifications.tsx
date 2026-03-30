@@ -12,7 +12,7 @@ import Avatar from '@mui/material/Avatar'
 import AvatarGroup from '@mui/material/AvatarGroup'
 import Badge from '@mui/material/Badge'
 import Button from '@mui/material/Button'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { graphqlClient } from '@/lib/graphql-client'
 import { GROUPED_NOTIFICATIONS } from '@/lib/graphql-queries'
 import type { GroupedNotificationConnection, GroupedNotification } from '@/lib/types'
@@ -50,9 +50,16 @@ function getNotificationText(notification: GroupedNotification): string {
   return `${actorNames}${extra} ${action}`
 }
 
+function truncateComment(body: string, maxLength: number): string {
+  if (body.length <= maxLength) return `"${body}"`
+  return `"${body.slice(0, maxLength)}..."`
+}
+
 function NotificationsPage() {
   const [offset, setOffset] = useState(0)
   const pageSize = 20
+  const [accumulated, setAccumulated] = useState<GroupedNotification[]>([])
+  const prevOffset = useRef(-1)
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ['groupedNotifications', offset],
@@ -63,6 +70,23 @@ function NotificationsPage() {
       return result.groupedNotifications
     },
   })
+
+  useEffect(() => {
+    if (!data) return
+    if (offset === 0) {
+      setAccumulated(data.groups)
+    } else if (offset !== prevOffset.current) {
+      setAccumulated((prev) => [...prev, ...data.groups])
+    }
+    prevOffset.current = offset
+  }, [data, offset])
+
+  const handleLoadMore = useCallback(() => {
+    setOffset((o) => o + pageSize)
+  }, [])
+
+  const groups = accumulated
+  const hasMore = data?.hasMore ?? false
 
   return (
     <Box sx={{ maxWidth: 600, mx: 'auto', width: '100%', p: 2 }}>
@@ -83,7 +107,7 @@ function NotificationsPage() {
         <Alert severity="error" sx={{ mt: 2 }}>
           Failed to load notifications. Please make sure you are logged in.
         </Alert>
-      ) : !data || data.groups.length === 0 ? (
+      ) : groups.length === 0 ? (
         <Box sx={{ py: 4, textAlign: 'center' }}>
           <Typography variant="body1" color="text.secondary">
             No notifications yet.
@@ -92,7 +116,7 @@ function NotificationsPage() {
       ) : (
         <>
           <List disablePadding>
-            {data.groups.map((notification) => (
+            {groups.map((notification) => (
               <ListItem
                 key={notification.uuid}
                 sx={{
@@ -129,7 +153,7 @@ function NotificationsPage() {
                   secondary={
                     <>
                       {notification.climbName && `on "${notification.climbName}" `}
-                      {notification.commentBody && `"${notification.commentBody.slice(0, 80)}..." `}
+                      {notification.commentBody && `${truncateComment(notification.commentBody, 80)} `}
                       {formatRelativeTime(notification.createdAt)}
                     </>
                   }
@@ -139,11 +163,11 @@ function NotificationsPage() {
             ))}
           </List>
 
-          {data.hasMore && (
+          {hasMore && (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
               <Button
                 variant="outlined"
-                onClick={() => setOffset((o) => o + pageSize)}
+                onClick={handleLoadMore}
                 disabled={isFetching}
               >
                 {isFetching ? 'Loading...' : 'Load More'}

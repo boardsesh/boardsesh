@@ -12,7 +12,7 @@ import ListItemText from '@mui/material/ListItemText'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PublicIcon from '@mui/icons-material/Public'
 import LockIcon from '@mui/icons-material/Lock'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { graphqlClient } from '@/lib/graphql-client'
 import { PLAYLIST, PLAYLIST_CLIMBS } from '@/lib/graphql-queries'
 import type { Playlist, Climb, ClimbSearchResult } from '@/lib/types'
@@ -56,6 +56,23 @@ function PlaylistDetailPage() {
     enabled: !!playlist,
   })
 
+  const [accumulatedClimbs, setAccumulatedClimbs] = useState<Climb[]>([])
+  const prevPage = useRef(-1)
+
+  useEffect(() => {
+    if (!climbsData) return
+    if (page === 0) {
+      setAccumulatedClimbs(climbsData.climbs)
+    } else if (page !== prevPage.current) {
+      setAccumulatedClimbs((prev) => [...prev, ...climbsData.climbs])
+    }
+    prevPage.current = page
+  }, [climbsData, page])
+
+  const handleLoadMore = useCallback(() => {
+    setPage((p) => p + 1)
+  }, [])
+
   if (playlistLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -79,7 +96,7 @@ function PlaylistDetailPage() {
     )
   }
 
-  const climbs = climbsData?.climbs ?? []
+  const climbs = accumulatedClimbs
   const hasMore = climbsData?.hasMore ?? false
 
   return (
@@ -128,7 +145,7 @@ function PlaylistDetailPage() {
       ) : (
         <>
           <List disablePadding>
-            {climbs.map((climb: Climb) => (
+            {climbs.map((climb) => (
               <ListItemButton
                 key={climb.uuid}
                 sx={{ borderRadius: 1, mb: 0.5 }}
@@ -157,7 +174,7 @@ function PlaylistDetailPage() {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
               <Button
                 variant="outlined"
-                onClick={() => setPage((p) => p + 1)}
+                onClick={handleLoadMore}
                 disabled={isFetching}
               >
                 {isFetching ? 'Loading...' : 'Load More'}

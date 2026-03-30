@@ -12,10 +12,10 @@ import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Button from '@mui/material/Button'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { graphqlClient } from '@/lib/graphql-client'
 import { SETTER_PROFILE, SETTER_CLIMBS } from '@/lib/graphql-queries'
-import type { SetterProfile, SetterClimbsConnection } from '@/lib/types'
+import type { SetterProfile, SetterClimbsConnection, SetterClimb } from '@/lib/types'
 
 export const Route = createFileRoute('/setter/$username')({
   ssr: true,
@@ -63,6 +63,23 @@ function SetterProfilePage() {
     enabled: !!profile,
   })
 
+  const [accumulatedClimbs, setAccumulatedClimbs] = useState<SetterClimb[]>([])
+  const prevOffset = useRef(-1)
+
+  useEffect(() => {
+    if (!climbsData) return
+    if (offset === 0) {
+      setAccumulatedClimbs(climbsData.climbs)
+    } else if (offset !== prevOffset.current) {
+      setAccumulatedClimbs((prev) => [...prev, ...climbsData.climbs])
+    }
+    prevOffset.current = offset
+  }, [climbsData, offset])
+
+  const handleLoadMore = useCallback(() => {
+    setOffset((o) => o + pageSize)
+  }, [])
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -81,7 +98,7 @@ function SetterProfilePage() {
     )
   }
 
-  const climbs = climbsData?.climbs ?? []
+  const climbs = accumulatedClimbs
   const hasMore = climbsData?.hasMore ?? false
 
   return (
@@ -167,7 +184,7 @@ function SetterProfilePage() {
             <Box sx={{ display: 'flex', justifyContent: 'center', pt: 2 }}>
               <Button
                 variant="outlined"
-                onClick={() => setOffset((o) => o + pageSize)}
+                onClick={handleLoadMore}
                 disabled={isFetching}
               >
                 {isFetching ? 'Loading...' : 'Load More'}

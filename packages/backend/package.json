@@ -49,7 +49,9 @@
     "tsx": "^4.21.0",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "satori": "^0.12.2",
+    "@resvg/resvg-js": "^2.6.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

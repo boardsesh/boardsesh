@@ -11,7 +11,7 @@ import ListItemText from '@mui/material/ListItemText'
 import Chip from '@mui/material/Chip'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import FavoriteIcon from '@mui/icons-material/Favorite'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { graphqlClient } from '@/lib/graphql-client'
 import { USER_FAVORITE_CLIMBS } from '@/lib/graphql-queries'
 import { useBoardConfig } from '@/lib/board-context'
@@ -50,7 +50,24 @@ function LikedClimbsPage() {
     },
   })
 
-  const climbs = data?.climbs ?? []
+  const [accumulatedClimbs, setAccumulatedClimbs] = useState<Climb[]>([])
+  const prevPage = useRef(-1)
+
+  useEffect(() => {
+    if (!data) return
+    if (page === 0) {
+      setAccumulatedClimbs(data.climbs)
+    } else if (page !== prevPage.current) {
+      setAccumulatedClimbs((prev) => [...prev, ...data.climbs])
+    }
+    prevPage.current = page
+  }, [data, page])
+
+  const handleLoadMore = useCallback(() => {
+    setPage((p) => p + 1)
+  }, [])
+
+  const climbs = accumulatedClimbs
   const hasMore = data?.hasMore ?? false
 
   return (
@@ -94,7 +111,7 @@ function LikedClimbsPage() {
       ) : (
         <>
           <List disablePadding>
-            {climbs.map((climb: Climb) => (
+            {climbs.map((climb) => (
               <Link
                 key={climb.uuid}
                 to="/b/$slug/$angle/view/$climbUuid"
@@ -129,7 +146,7 @@ function LikedClimbsPage() {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
               <Button
                 variant="outlined"
-                onClick={() => setPage((p) => p + 1)}
+                onClick={handleLoadMore}
                 disabled={isFetching}
               >
                 {isFetching ? 'Loading...' : 'Load More'}
