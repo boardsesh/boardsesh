@@ -12,6 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as BSlugAngleRouteImport } from './routes/b/$slug/$angle'
+import { Route as BSlugAngleListRouteImport } from './routes/b/$slug/$angle/list'
+import { Route as BSlugAngleViewClimbUuidRouteImport } from './routes/b/$slug/$angle/view/$climbUuid'
+import { Route as BSlugAnglePlayClimbUuidRouteImport } from './routes/b/$slug/$angle/play/$climbUuid'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +32,90 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BSlugAngleRoute = BSlugAngleRouteImport.update({
+  id: '/b/$slug/$angle',
+  path: '/b/$slug/$angle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BSlugAngleListRoute = BSlugAngleListRouteImport.update({
+  id: '/list',
+  path: '/list',
+  getParentRoute: () => BSlugAngleRoute,
+} as any)
+const BSlugAngleViewClimbUuidRoute = BSlugAngleViewClimbUuidRouteImport.update({
+  id: '/view/$climbUuid',
+  path: '/view/$climbUuid',
+  getParentRoute: () => BSlugAngleRoute,
+} as any)
+const BSlugAnglePlayClimbUuidRoute = BSlugAnglePlayClimbUuidRouteImport.update({
+  id: '/play/$climbUuid',
+  path: '/play/$climbUuid',
+  getParentRoute: () => BSlugAngleRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/list': typeof BSlugAngleListRoute
+  '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
+  '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/list': typeof BSlugAngleListRoute
+  '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
+  '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/b/$slug/$angle': typeof BSlugAngleRouteWithChildren
+  '/b/$slug/$angle/list': typeof BSlugAngleListRoute
+  '/b/$slug/$angle/play/$climbUuid': typeof BSlugAnglePlayClimbUuidRoute
+  '/b/$slug/$angle/view/$climbUuid': typeof BSlugAngleViewClimbUuidRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth/login' | '/auth/register'
+  fullPaths:
+    | '/'
+    | '/auth/login'
+    | '/auth/register'
+    | '/b/$slug/$angle'
+    | '/b/$slug/$angle/list'
+    | '/b/$slug/$angle/play/$climbUuid'
+    | '/b/$slug/$angle/view/$climbUuid'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth/login' | '/auth/register'
-  id: '__root__' | '/' | '/auth/login' | '/auth/register'
+  to:
+    | '/'
+    | '/auth/login'
+    | '/auth/register'
+    | '/b/$slug/$angle'
+    | '/b/$slug/$angle/list'
+    | '/b/$slug/$angle/play/$climbUuid'
+    | '/b/$slug/$angle/view/$climbUuid'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth/login'
+    | '/auth/register'
+    | '/b/$slug/$angle'
+    | '/b/$slug/$angle/list'
+    | '/b/$slug/$angle/play/$climbUuid'
+    | '/b/$slug/$angle/view/$climbUuid'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  BSlugAngleRoute: typeof BSlugAngleRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -82,23 +141,59 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/b/$slug/$angle': {
+      id: '/b/$slug/$angle'
+      path: '/b/$slug/$angle'
+      fullPath: '/b/$slug/$angle'
+      preLoaderRoute: typeof BSlugAngleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b/$slug/$angle/list': {
+      id: '/b/$slug/$angle/list'
+      path: '/list'
+      fullPath: '/b/$slug/$angle/list'
+      preLoaderRoute: typeof BSlugAngleListRouteImport
+      parentRoute: typeof BSlugAngleRoute
+    }
+    '/b/$slug/$angle/view/$climbUuid': {
+      id: '/b/$slug/$angle/view/$climbUuid'
+      path: '/view/$climbUuid'
+      fullPath: '/b/$slug/$angle/view/$climbUuid'
+      preLoaderRoute: typeof BSlugAngleViewClimbUuidRouteImport
+      parentRoute: typeof BSlugAngleRoute
+    }
+    '/b/$slug/$angle/play/$climbUuid': {
+      id: '/b/$slug/$angle/play/$climbUuid'
+      path: '/play/$climbUuid'
+      fullPath: '/b/$slug/$angle/play/$climbUuid'
+      preLoaderRoute: typeof BSlugAnglePlayClimbUuidRouteImport
+      parentRoute: typeof BSlugAngleRoute
+    }
   }
 }
+
+interface BSlugAngleRouteChildren {
+  BSlugAngleListRoute: typeof BSlugAngleListRoute
+  BSlugAnglePlayClimbUuidRoute: typeof BSlugAnglePlayClimbUuidRoute
+  BSlugAngleViewClimbUuidRoute: typeof BSlugAngleViewClimbUuidRoute
+}
+
+const BSlugAngleRouteChildren: BSlugAngleRouteChildren = {
+  BSlugAngleListRoute: BSlugAngleListRoute,
+  BSlugAnglePlayClimbUuidRoute: BSlugAnglePlayClimbUuidRoute,
+  BSlugAngleViewClimbUuidRoute: BSlugAngleViewClimbUuidRoute,
+}
+
+const BSlugAngleRouteWithChildren = BSlugAngleRoute._addFileChildren(
+  BSlugAngleRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  BSlugAngleRoute: BSlugAngleRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
