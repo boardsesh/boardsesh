@@ -4,7 +4,7 @@ import { pubsub } from './pubsub/index';
 import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
-import { sql, eq, and, lt, isNull } from 'drizzle-orm';
+import { sql, eq, and, lt, ne, isNull } from 'drizzle-orm';
 import { db } from './db/client';
 import { sessions } from './db/schema';
 import { initCors, applyCorsHeaders } from './handlers/cors';
@@ -302,8 +302,10 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
 
   // Periodic auto-end for stale inactive sessions (every 5 minutes)
   const SESSION_AUTO_END_MINUTES = parseInt(process.env.SESSION_AUTO_END_MINUTES || '30', 10);
+  const SESSION_MAX_DURATION_MINUTES = parseInt(process.env.SESSION_MAX_DURATION_MINUTES || '360', 10);
   const AUTO_END_MAX_RETRIES = 3;
   const autoEndFailures = new Map<string, number>();
+  const maxDurationFailures = new Map<string, number>();
 
   const autoEndInterval = setInterval(async () => {
     try {
@@ -331,7 +333,9 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
           continue;
         }
 
-        await roomManager.endSession(row.id).catch((err) => {
+        await roomManager.endSession(row.id).then(() => {
+          autoEndFailures.delete(row.id);
+        }).catch((err) => {
           const failures = priorFailures + 1;
           autoEndFailures.set(row.id, failures);
           if (failures >= AUTO_END_MAX_RETRIES) {
@@ -343,6 +347,55 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
       }
     } catch (error) {
       console.error('[Server] Error in session auto-end job:', error);
+    }
+
+    // Auto-end sessions that exceeded the maximum duration (6 hours by default)
+    try {
+      const maxDurationThreshold = new Date(Date.now() - SESSION_MAX_DURATION_MINUTES * 60 * 1000);
+      const expired = await db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.isPermanent, false),
+            isNull(sessions.endedAt),
+            ne(sessions.status, 'ended'),
+            lt(sql`COALESCE(${sessions.startedAt}, ${sessions.createdAt})`, maxDurationThreshold)
+          )
+        )
+        .limit(50);
+
+      if (expired.length > 0) {
+        console.log(`[Server] Auto-ending ${expired.length} expired sessions (duration > ${SESSION_MAX_DURATION_MINUTES}min)`);
+      }
+
+      for (const row of expired) {
+        const priorFailures = maxDurationFailures.get(row.id) ?? 0;
+        if (priorFailures >= AUTO_END_MAX_RETRIES) {
+          continue;
+        }
+
+        try {
+          // Publish BEFORE endSession — endSession removes session from Redis/memory,
+          // so connected clients must receive the event while still subscribed
+          pubsub.publishSessionEvent(row.id, {
+            __typename: 'SessionEnded' as const,
+            reason: 'Session expired after 6 hours',
+          });
+          await roomManager.endSession(row.id);
+          maxDurationFailures.delete(row.id);
+        } catch (err) {
+          const failures = priorFailures + 1;
+          maxDurationFailures.set(row.id, failures);
+          if (failures >= AUTO_END_MAX_RETRIES) {
+            console.error(`[Server] Max-duration auto-end permanently failed for ${row.id} after ${AUTO_END_MAX_RETRIES} attempts:`, err);
+          } else {
+            console.error(`[Server] Max-duration auto-end failed for ${row.id} (attempt ${failures}/${AUTO_END_MAX_RETRIES}):`, err);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Server] Error in session max-duration auto-end job:', error);
     }
   }, 5 * 60 * 1000); // 5 minutes
   intervals.push(autoEndInterval);

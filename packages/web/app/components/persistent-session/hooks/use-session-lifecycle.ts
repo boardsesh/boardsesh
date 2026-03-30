@@ -18,6 +18,7 @@ import {
   type EventsReplayResponse,
 } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
+import { saveQueueState } from '@/app/lib/queue-storage-db';
 import { computeQueueStateHash } from '@/app/utils/hash';
 import { setPreference, removePreference } from '@/app/lib/user-preferences-db';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -446,10 +447,29 @@ export function useSessionLifecycle({
                           isLeader: event.leaderId === prev.clientId,
                           users: prev.users.map((u) => ({ ...u, isLeader: u.id === event.leaderId })),
                         };
-                      case 'SessionEnded':
+                      case 'SessionEnded': {
                         if (DEBUG) console.log('[PersistentSession] Session ended:', event.reason);
+
+                        // Save queue to IndexedDB so user keeps their climbs in solo mode
+                        const currentQueue = queueRef.current;
+                        const currentClimb = currentClimbQueueItemRef.current;
+                        const sessionInfo = activeSessionRef.current;
+
+                        if (sessionInfo && (currentQueue.length > 0 || currentClimb)) {
+                          saveQueueState({
+                            boardPath: sessionInfo.boardPath,
+                            queue: currentQueue,
+                            currentClimbQueueItem: currentClimb,
+                            boardDetails: sessionInfo.boardDetails,
+                            updatedAt: Date.now(),
+                          }).catch((err) => {
+                            console.error('[PersistentSession] Failed to save queue on session end:', err);
+                          });
+                        }
+
                         removePreference(ACTIVE_SESSION_KEY).catch(() => {});
                         return prev;
+                      }
                       default:
                         return prev;
                     }
