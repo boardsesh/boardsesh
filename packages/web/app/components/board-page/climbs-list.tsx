@@ -71,6 +71,7 @@ const ClimbsList = ({
   showBottomSpacer,
 }: ClimbsListProps) => {
   const isRustRendererEnabled = useFeatureFlag('rust-svg-rendering');
+  const disableSvgVirtualisation = useFeatureFlag('disable-svg-virtualisation');
 
   // Progressive rendering for grid mode only (list mode uses the virtualizer).
   // Show first batch immediately, rest after a frame. Only batch when the list
@@ -122,7 +123,7 @@ const ClimbsList = ({
   );
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const useVirtualization = viewMode === 'list' && !isRustRendererEnabled;
+  const useVirtualization = viewMode === 'list' && !isRustRendererEnabled && !disableSvgVirtualisation;
 
   // Track batch render timing after DOM commit
   useEffect(() => {

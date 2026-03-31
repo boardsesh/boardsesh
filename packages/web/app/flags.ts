@@ -28,8 +28,22 @@ export const rustSvgRendering = flag({
     : { decide: () => false as boolean }),
 });
 
+export const disableSvgVirtualisation = flag({
+  key: 'disable-svg-virtualisation',
+  defaultValue: false,
+  description: 'Disable list virtualisation when using SVG rendering (keeps SVG, skips windowing)',
+  identify,
+  options: [
+    { value: true, label: 'Enabled' },
+    { value: false, label: 'Disabled' },
+  ],
+  ...(adapter
+    ? { adapter }
+    : { decide: () => false as boolean }),
+});
+
 // Add new flags above this line, then add them to allFlags below.
-export const allFlags = [rustSvgRendering] as const;
+export const allFlags = [rustSvgRendering, disableSvgVirtualisation] as const;
 
 type FlagTuple = typeof allFlags;
 export type FeatureFlags = {

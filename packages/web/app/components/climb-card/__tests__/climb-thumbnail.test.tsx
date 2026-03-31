@@ -18,7 +18,7 @@ vi.mock('next/link', () => ({
 import ClimbThumbnail from '../climb-thumbnail';
 import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
 
-const defaultFlags = { 'rust-svg-rendering': false as const };
+const defaultFlags = { 'rust-svg-rendering': false as const, 'disable-svg-virtualisation': false as const };
 
 function renderWithFlags(ui: React.ReactElement) {
   return render(
