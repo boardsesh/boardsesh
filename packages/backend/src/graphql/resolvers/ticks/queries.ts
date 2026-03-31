@@ -457,12 +457,12 @@ export const tickQueries = {
       layoutId: number | null;
       gradeCounts: Array<{ grade: string; count: number }>;
     }> = {};
-    const allClimbUuids = new Set<string>();
+    let totalDistinctClimbs = 0;
 
     // Helper function to fetch stats for a single board type
     const fetchBoardStats = async (boardType: BoardName) => {
       // Run both queries in parallel for this board type
-      const [gradeResults, distinctClimbs] = await Promise.all([
+      const [gradeResults, [countResult]] = await Promise.all([
         // Get distinct climb counts grouped by layoutId and difficulty using SQL aggregation
         db
           .select({
@@ -487,9 +487,9 @@ export const tickQueries = {
           )
           .groupBy(dbSchema.boardClimbs.layoutId, dbSchema.boardseshTicks.difficulty),
 
-        // Get all distinct climbUuids for total count
+        // Count distinct climbUuids without fetching them all into memory
         db
-          .selectDistinct({ climbUuid: dbSchema.boardseshTicks.climbUuid })
+          .select({ total: sql<number>`count(distinct ${dbSchema.boardseshTicks.climbUuid})` })
           .from(dbSchema.boardseshTicks)
           .where(
             and(
@@ -500,18 +500,15 @@ export const tickQueries = {
           ),
       ]);
 
-      return { gradeResults, distinctClimbs, boardType };
+      return { gradeResults, distinctCount: Number(countResult?.total ?? 0), boardType };
     };
 
     // Fetch stats for all board types in parallel
     const boardResults = await Promise.all(boardTypes.map(fetchBoardStats));
 
     // Process results from all boards
-    for (const { gradeResults, distinctClimbs, boardType } of boardResults) {
-      // Add to total distinct climbs set
-      for (const row of distinctClimbs) {
-        allClimbUuids.add(row.climbUuid);
-      }
+    for (const { gradeResults, distinctCount, boardType } of boardResults) {
+      totalDistinctClimbs += distinctCount;
 
       // Process grade results into layout stats
       for (const row of gradeResults) {
@@ -551,7 +548,7 @@ export const tickQueries = {
     });
 
     return {
-      totalDistinctClimbs: allClimbUuids.size,
+      totalDistinctClimbs,
       layoutStats,
     };
   },
