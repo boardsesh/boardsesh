@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // vi.mock is hoisted above all declarations, so use vi.hoisted to define
 // the mock before vi.mock's factory runs.
 const { mockImageResponse } = vi.hoisted(() => ({
-  mockImageResponse: vi.fn().mockImplementation((_jsx: unknown, options: unknown) => {
+  mockImageResponse: vi.fn().mockImplementation(function (_jsx: unknown, options: unknown) {
     return new Response('mock-image', {
       status: 200,
       headers: {
