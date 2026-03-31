@@ -1,40 +1,43 @@
 /**
- * App Store Screenshot Generation
+ * App Store Screenshot Generation - iPad 12.9" / 13" Display
  *
- * Captures screenshots at iPhone 15 Pro Max resolution for App Store submission.
- * Screenshots are saved to mobile/screenshots/ for upload to App Store Connect.
+ * Captures screenshots at iPad Pro 12.9" resolution for App Store submission.
+ * Screenshots are saved to mobile/screenshots/ipad/ for upload to App Store Connect.
  *
  * Run (unauthenticated scenes only):
- *   bunx playwright test e2e/app-store-screenshots.spec.ts
+ *   bunx playwright test e2e/app-store-screenshots-ipad.spec.ts
  *
  * Run with authenticated scenes (queue, party mode):
  *   TEST_USER_EMAIL=$(op read "op://Boardsesh/Boardsesh local/username") \
  *   TEST_USER_PASSWORD=$(op read "op://Boardsesh/Boardsesh local/password") \
- *   bunx playwright test e2e/app-store-screenshots.spec.ts
+ *   bunx playwright test e2e/app-store-screenshots-ipad.spec.ts
  *
  * Prerequisites:
  *   - Dev server running: bun run dev
  *   - For authenticated tests: 1Password CLI installed and signed in
  *
- * Required App Store sizes:
- *   - 6.9" (iPhone 16 Pro Max): 1320x2868 -- screenshots taken at this logical size
- *   - 6.5" (iPhone 14 Plus): 1284x2778 -- App Store Connect accepts 6.9" for this slot
- *   - 12.9" iPad: 2048x2732 -- optional, not covered here
+ * Required App Store sizes for iPad 12.9" or 13" Displays:
+ *   - 2048x2732px (portrait) or 2732x2048px (landscape)
+ *   - 2064x2752px (portrait) or 2752x2064px (landscape)
+ *   - Up to 3 app previews and 10 screenshots
  */
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
 
-const SCREENSHOT_DIR = path.resolve(__dirname, '../../../mobile/screenshots');
+const SCREENSHOT_DIR = path.resolve(__dirname, '../../../mobile/screenshots/ipad');
+
+// Ensure output directory exists
+fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+
 const boardUrl = '/kilter/original/12x12-square/screw_bolt/40/list';
 
-// iPhone 15 Pro Max logical viewport. Playwright renders at 1x by default,
-// so we set deviceScaleFactor to get the actual App Store resolution.
-// 1320x2868 at 3x = 440x956 logical pixels.
-const VIEWPORT = { width: 440, height: 956 };
-const DEVICE_SCALE_FACTOR = 3;
+// iPad Pro 12.9" logical viewport at 2x scale factor.
+// 2048x2732 at 2x = 1024x1366 logical pixels.
+const VIEWPORT = { width: 1024, height: 1366 };
+const DEVICE_SCALE_FACTOR = 2;
 
-test.describe('App Store Screenshots', () => {
-  // These are heavy pages at 3x scale -- give them room to load
+test.describe('App Store Screenshots - iPad 12.9"', () => {
   test.setTimeout(90_000);
 
   test.use({
@@ -43,7 +46,7 @@ test.describe('App Store Screenshots', () => {
     isMobile: true,
     hasTouch: true,
     userAgent:
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
   });
 
   test.beforeEach(async ({ page }) => {
@@ -88,7 +91,6 @@ test.describe('App Store Screenshots', () => {
     // Double-click up to 3 climbs to populate the queue
     for (let i = 0; i < Math.min(3, count); i++) {
       await climbCards.nth(i).dblclick();
-      // Brief pause between adds
       await page.waitForTimeout(300);
     }
 
@@ -107,7 +109,7 @@ test.describe('App Store Screenshots', () => {
     await expect(queueBar).toBeVisible({ timeout: 10000 });
 
     // Click the "Connect to" button in the queue bar to open the connection drawer
-    const connectButton = page.getByLabel('Connect to');
+    const connectButton = queueBar.getByLabel('Connect to');
     await expect(connectButton).toBeVisible({ timeout: 10000 });
     await connectButton.click();
     await page.locator('[data-swipeable-drawer="true"]:visible').first().waitFor({ timeout: 10000 });
@@ -117,14 +119,14 @@ test.describe('App Store Screenshots', () => {
 });
 
 // Home page screenshot (board selection) - separate describe since different URL
-test.describe('App Store Screenshots - Home', () => {
+test.describe('App Store Screenshots - iPad 12.9" Home', () => {
   test.use({
     viewport: VIEWPORT,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
     isMobile: true,
     hasTouch: true,
     userAgent:
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
   });
 
   test('00-home', async ({ page }) => {
