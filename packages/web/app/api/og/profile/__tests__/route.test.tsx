@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock ImageResponse since @vercel/og requires edge runtime
-const mockImageResponse = vi.fn().mockImplementation((_jsx: unknown, options: unknown) => {
-  return new Response('mock-image', {
-    status: 200,
-    headers: {
-      'Content-Type': 'image/png',
-      ...((options as { headers?: Record<string, string> })?.headers ?? {}),
-    },
-  });
-});
+// vi.mock is hoisted above all declarations, so use vi.hoisted to define
+// the mock before vi.mock's factory runs.
+const { mockImageResponse } = vi.hoisted(() => ({
+  mockImageResponse: vi.fn().mockImplementation((_jsx: unknown, options: unknown) => {
+    return new Response('mock-image', {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        ...((options as { headers?: Record<string, string> })?.headers ?? {}),
+      },
+    });
+  }),
+}));
 
 vi.mock('@vercel/og', () => ({
   ImageResponse: mockImageResponse,
