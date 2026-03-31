@@ -29,6 +29,10 @@ const initDB = async (): Promise<IDBPDatabase | null> => {
           db.createObjectStore(STORE_NAME);
         }
       },
+    }).catch((error) => {
+      // Reset so subsequent calls can retry instead of being permanently broken
+      dbPromise = null;
+      throw error;
     });
   }
   return dbPromise;

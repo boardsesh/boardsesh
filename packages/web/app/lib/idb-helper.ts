@@ -27,6 +27,10 @@ export function createIndexedDBStore(
             db.createObjectStore(storeName);
           }
         },
+      }).catch((error) => {
+        // Reset so subsequent calls can retry instead of being permanently broken
+        dbPromise = null;
+        throw error;
       });
     }
     return dbPromise;
