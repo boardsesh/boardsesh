@@ -83,14 +83,13 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
       }
 
       setProfile({
-          id: profileRes.id,
-          name: profileRes.name,
-          image: profileRes.image,
-          profile: profileRes.profile,
-          followerCount: profileRes.followerCount ?? 0,
-          followingCount: profileRes.followingCount ?? 0,
-        });
-      }
+        id: profileRes.id,
+        name: profileRes.name,
+        image: profileRes.image,
+        profile: profileRes.profile,
+        followerCount: profileRes.followerCount ?? 0,
+        followingCount: profileRes.followingCount ?? 0,
+      });
 
       if (statsData) {
         const total = statsData.totalDistinctClimbs;
