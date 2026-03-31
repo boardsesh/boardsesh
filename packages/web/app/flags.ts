@@ -34,8 +34,8 @@ export const disableSvgVirtualisation = flag({
   description: 'Disable list virtualisation when using SVG rendering (keeps SVG, skips windowing)',
   identify,
   options: [
-    { value: true, label: 'Enabled' },
-    { value: false, label: 'Disabled' },
+    { value: true, label: 'Virtualisation Off' },
+    { value: false, label: 'Virtualisation On' },
   ],
   ...(adapter
     ? { adapter }
