@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import MuiCard from '@mui/material/Card';
 import CardActionArea from '@mui/material/CardActionArea';
@@ -59,6 +59,7 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
   const [stats, setStats] = useState<ProfileStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const graphqlClient = useMemo(() => createGraphQLHttpClient(null), []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -67,9 +68,8 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
       const [profileRes, statsData] = await Promise.all([
         fetch(`/api/internal/profile/${userId}`).then((r) => r.ok ? r.json() : null),
         (async () => {
-          const client = createGraphQLHttpClient(null);
           const variables: GetUserProfileStatsQueryVariables = { userId };
-          const response = await client.request<GetUserProfileStatsQueryResponse>(
+          const response = await graphqlClient.request<GetUserProfileStatsQueryResponse>(
             GET_USER_PROFILE_STATS,
             variables,
           );
@@ -112,7 +112,7 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, graphqlClient]);
 
   useEffect(() => {
     fetchData();

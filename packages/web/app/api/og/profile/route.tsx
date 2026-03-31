@@ -224,7 +224,6 @@ export async function GET(request: NextRequest) {
     );
   } catch (error) {
     console.error('Error generating profile OG image:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return new Response(`Error generating image: ${message}`, { status: 500 });
+    return new Response('Failed to generate image', { status: 500 });
   }
 }
