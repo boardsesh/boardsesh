@@ -5,12 +5,32 @@ import { themeTokens } from '@/app/theme/theme-config';
 
 export const runtime = 'edge';
 
+// Allowlisted domains for avatar URLs to prevent SSRF via the img src.
+// Unrecognized domains fall back to the initial-letter placeholder.
+const ALLOWED_AVATAR_HOSTS = [
+  'lh3.googleusercontent.com', // Google OAuth
+  'avatars.githubusercontent.com', // GitHub OAuth
+  'platform-lookaside.fbsbx.com', // Facebook OAuth
+  'cdn.discordapp.com', // Discord OAuth
+];
+
+function isAllowedAvatarUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    return ALLOWED_AVATAR_HOSTS.some((host) => parsed.hostname === host);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
     const displayName = searchParams.get('name') || 'Crusher';
-    const avatarUrl = searchParams.get('avatar') || null;
+    const rawAvatarUrl = searchParams.get('avatar') || null;
+    const avatarUrl = rawAvatarUrl && isAllowedAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : null;
     const totalClimbs = parseInt(searchParams.get('totalClimbs') || '0', 10);
     const layoutsParam = searchParams.get('layouts');
     let layouts: Array<{ name: string; pct: number; color: string }> = [];

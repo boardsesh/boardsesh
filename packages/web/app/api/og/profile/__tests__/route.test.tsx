@@ -98,6 +98,28 @@ describe('/api/og/profile', () => {
     expect(response.status).toBe(200);
   });
 
+  it('allows avatar URLs from allowlisted domains', async () => {
+    const response = await GET(
+      createRequest({ name: 'Eve', avatar: 'https://lh3.googleusercontent.com/photo123' }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects avatar URLs from non-allowlisted domains', async () => {
+    const response = await GET(
+      createRequest({ name: 'Eve', avatar: 'https://evil.com/avatar.jpg' }),
+    );
+    // Should still return 200 but render the initial-letter fallback (no img)
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects non-HTTPS avatar URLs', async () => {
+    const response = await GET(
+      createRequest({ name: 'Eve', avatar: 'http://lh3.googleusercontent.com/photo' }),
+    );
+    expect(response.status).toBe(200);
+  });
+
   it('caps layouts to 10 items', async () => {
     const layouts = JSON.stringify(
       Array.from({ length: 15 }, (_, i) => ({
