@@ -58,9 +58,11 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [stats, setStats] = useState<ProfileStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const [profileRes, statsData] = await Promise.all([
         fetch(`/api/internal/profile/${userId}`).then((r) => r.ok ? r.json() : null),
@@ -75,8 +77,12 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
         })(),
       ]);
 
-      if (profileRes) {
-        setProfile({
+      if (!profileRes) {
+        setError(true);
+        return;
+      }
+
+      setProfile({
           id: profileRes.id,
           name: profileRes.name,
           image: profileRes.image,
@@ -101,8 +107,9 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
           }));
         setStats({ totalDistinctClimbs: total, layoutStats });
       }
-    } catch (error) {
-      console.error('Failed to load smart card data:', error);
+    } catch (err) {
+      console.error('Failed to load smart card data:', err);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -132,7 +139,17 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
     );
   }
 
-  if (!profile) return null;
+  if (error || !profile) {
+    return (
+      <MuiCard className={styles.card}>
+        <CardContent className={styles.cardContent}>
+          <Typography variant="body2" color="text.secondary">
+            Couldn&apos;t load your profile. Try refreshing the page.
+          </Typography>
+        </CardContent>
+      </MuiCard>
+    );
+  }
 
   return (
     <MuiCard className={styles.card}>

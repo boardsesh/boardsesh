@@ -70,6 +70,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       ? `${displayName} has logged ${totalClimbs} distinct climbs on Boardsesh`
       : `${displayName}'s climbing profile on Boardsesh`;
 
+    // VERCEL_URL is set in all Vercel environments (preview + production).
+    // We always use the canonical domain for OG images so social crawlers
+    // get a stable URL regardless of deployment slot.
     const baseUrl = process.env.VERCEL_URL
       ? 'https://www.boardsesh.com'
       : 'http://localhost:3000';

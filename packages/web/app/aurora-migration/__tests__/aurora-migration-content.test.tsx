@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 let mockSessionStatus = 'unauthenticated';
-let mockSessionData: { user?: { email?: string } } | null = null;
+let mockSessionData: { user?: { id?: string; email?: string } } | null = null;
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: mockSessionData, status: mockSessionStatus }),
@@ -29,6 +29,12 @@ vi.mock('@/app/components/settings/board-import-prompt', () => ({
   ),
 }));
 
+vi.mock('@/app/components/user-smart-card/user-smart-card', () => ({
+  default: ({ userId }: { userId: string }) => (
+    <div data-testid="user-smart-card">Smart card for {userId}</div>
+  ),
+}));
+
 import AuroraMigrationContent from '../aurora-migration-content';
 
 describe('AuroraMigrationContent', () => {
@@ -43,12 +49,13 @@ describe('AuroraMigrationContent', () => {
     expect(screen.getByText(/The Aurora Kilter backend is gone/)).toBeTruthy();
   });
 
-  it('renders the "How to Migrate" section with 3 steps', () => {
+  it('renders the "How to Migrate" section with 4 steps', () => {
     render(<AuroraMigrationContent />);
     expect(screen.getByText('How to Migrate')).toBeTruthy();
     expect(screen.getByText('Request your data export')).toBeTruthy();
     expect(screen.getByText('Create a Boardsesh account')).toBeTruthy();
     expect(screen.getByText('Import your data')).toBeTruthy();
+    expect(screen.getByText('Check out your profile')).toBeTruthy();
   });
 
   it('renders the email link for data export request', () => {
@@ -96,7 +103,7 @@ describe('AuroraMigrationContent', () => {
   describe('when authenticated', () => {
     beforeEach(() => {
       mockSessionStatus = 'authenticated';
-      mockSessionData = { user: { email: 'test@example.com' } };
+      mockSessionData = { user: { id: 'user-1', email: 'test@example.com' } };
     });
 
     it('shows signed in confirmation', () => {
@@ -114,6 +121,19 @@ describe('AuroraMigrationContent', () => {
     it('does not show "sign in first" message', () => {
       render(<AuroraMigrationContent />);
       expect(screen.queryByText('Sign in first to import your data.')).toBeNull();
+    });
+
+    it('renders user smart card in step 4', () => {
+      render(<AuroraMigrationContent />);
+      expect(screen.getByTestId('user-smart-card')).toBeTruthy();
+    });
+  });
+
+  describe('step 4 when unauthenticated', () => {
+    it('shows sign in prompt instead of smart card', () => {
+      render(<AuroraMigrationContent />);
+      expect(screen.getByText('Sign in to see a preview of your profile.')).toBeTruthy();
+      expect(screen.queryByTestId('user-smart-card')).toBeNull();
     });
   });
 });
