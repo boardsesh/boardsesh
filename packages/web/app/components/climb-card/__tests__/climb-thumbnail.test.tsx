@@ -42,6 +42,15 @@ vi.mock('../../board-renderer/board-renderer', () => ({
 }));
 
 import ClimbThumbnail from '../climb-thumbnail';
+import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
+
+const defaultFlags = { 'rust-svg-rendering': false as const };
+
+function renderWithFlags(ui: React.ReactElement) {
+  return render(
+    <FeatureFlagsProvider flags={defaultFlags}>{ui}</FeatureFlagsProvider>,
+  );
+}
 
 const boardDetails = {
   board_name: 'kilter',
@@ -91,7 +100,7 @@ describe('ClimbThumbnail placeholder', () => {
   });
 
   it('applies maxHeight matching BoardRenderer default (10vh) to prevent layout shift', () => {
-    const { container } = render(
+    const { container } = renderWithFlags(
       <ClimbThumbnail
         boardDetails={boardDetails}
         currentClimb={climb}
@@ -104,7 +113,7 @@ describe('ClimbThumbnail placeholder', () => {
   });
 
   it('uses custom maxHeight when provided', () => {
-    const { container } = render(
+    const { container } = renderWithFlags(
       <ClimbThumbnail
         boardDetails={boardDetails}
         currentClimb={climb}
@@ -118,7 +127,7 @@ describe('ClimbThumbnail placeholder', () => {
 
   it('reflects board aspect ratio in placeholder', () => {
     const tallBoard = { ...boardDetails, boardWidth: 548, boardHeight: 868 };
-    const { container } = render(
+    const { container } = renderWithFlags(
       <ClimbThumbnail
         boardDetails={tallBoard}
         currentClimb={climb}
@@ -135,7 +144,7 @@ describe('ClimbThumbnail', () => {
   it('preserves board-slug URL context on /b routes', () => {
     mockPathname = '/b/moonrise-gym/40/list';
 
-    render(
+    renderWithFlags(
       <ClimbThumbnail
         boardDetails={boardDetails}
         currentClimb={climb}
@@ -150,7 +159,7 @@ describe('ClimbThumbnail', () => {
   it('falls back to canonical route format outside /b routes', () => {
     mockPathname = '/kilter/homewall/8x12-main/main-kicker_aux-kicker/40/list';
 
-    render(
+    renderWithFlags(
       <ClimbThumbnail
         boardDetails={boardDetails}
         currentClimb={climb}
