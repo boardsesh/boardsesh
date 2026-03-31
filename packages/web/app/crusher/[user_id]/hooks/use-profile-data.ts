@@ -136,7 +136,7 @@ export function useProfileData(userId: string) {
     setLoadingProfileStats(true);
     try {
       const client = createGraphQLHttpClient(null);
-      const variables: GetUserProfileStatsQueryVariables = { userId };
+      const variables: GetUserProfileStatsQueryVariables = { userId, gradeFormat: 'FONT' };
       const response = await client.request<GetUserProfileStatsQueryResponse>(GET_USER_PROFILE_STATS, variables);
       setProfileStats(response.userProfileStats);
     } catch (error) {

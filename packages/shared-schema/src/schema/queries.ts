@@ -155,7 +155,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     Get profile statistics with distinct climb counts per grade.
     """
-    userProfileStats(userId: ID!): ProfileStats!
+    userProfileStats(userId: ID!, gradeFormat: GradeFormat): ProfileStats!
 
     # ============================================
     # Playlist Queries (require auth)

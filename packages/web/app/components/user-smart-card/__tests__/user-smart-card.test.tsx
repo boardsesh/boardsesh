@@ -18,6 +18,14 @@ vi.mock('@/app/crusher/[user_id]/utils/profile-constants', () => ({
   getLayoutColor: () => 'rgba(100,100,100,0.7)',
 }));
 
+vi.mock('@/app/lib/grade-colors', () => ({
+  V_GRADE_COLORS: {
+    V0: '#FFEB3B',
+    V3: '#FF7043',
+    V5: '#F44336',
+  },
+}));
+
 let mockFetch: ReturnType<typeof vi.fn>;
 
 import UserSmartCard from '../user-smart-card';
@@ -40,14 +48,21 @@ const mockStatsResponse = {
         boardType: 'kilter',
         layoutId: 1,
         distinctClimbCount: 30,
-        gradeCounts: [],
+        gradeCounts: [
+          { grade: 'V0', count: 5 },
+          { grade: 'V3', count: 15 },
+          { grade: 'V5', count: 10 },
+        ],
       },
       {
         layoutKey: 'tension-9',
         boardType: 'tension',
         layoutId: 9,
         distinctClimbCount: 12,
-        gradeCounts: [],
+        gradeCounts: [
+          { grade: 'V0', count: 4 },
+          { grade: 'V3', count: 8 },
+        ],
       },
     ],
   },
@@ -141,6 +156,25 @@ describe('UserSmartCard', () => {
 
     fireEvent.click(screen.getByText('TestDisplay'));
     expect(mockPush).toHaveBeenCalledWith('/crusher/user-1');
+  });
+
+  it('renders grade distribution chart with V-grades', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockProfileResponse),
+    });
+    mockRequest.mockResolvedValue(mockStatsResponse);
+
+    render(<UserSmartCard userId="user-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('TestDisplay')).toBeTruthy();
+    });
+
+    // V-grade labels should appear in the chart
+    expect(screen.getByText('V0')).toBeTruthy();
+    expect(screen.getByText('V3')).toBeTruthy();
+    expect(screen.getByText('V5')).toBeTruthy();
   });
 
   it('refetches data when refreshKey changes', async () => {

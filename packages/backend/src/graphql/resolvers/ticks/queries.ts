@@ -1,10 +1,37 @@
 import { eq, and, desc, inArray, sql, count } from 'drizzle-orm';
 import type { ConnectionContext, BoardName } from '@boardsesh/shared-schema';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, difficultyToGrade, BOULDER_GRADE_MAP } from '@boardsesh/shared-schema';
+import type { GradeFormat } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
+
+// Build a grade sort order from the canonical grade map.
+// Font grades use difficultyId directly; V-grades use the first occurrence.
+const GRADE_SORT_ORDER = new Map<string, number>();
+for (const entry of BOULDER_GRADE_MAP) {
+  GRADE_SORT_ORDER.set(entry.fontGrade, entry.difficultyId);
+  if (!GRADE_SORT_ORDER.has(entry.vGrade)) {
+    GRADE_SORT_ORDER.set(entry.vGrade, entry.difficultyId);
+  }
+}
+
+/**
+ * Merge duplicate grade keys (e.g., two entries for "V5" from 6c and 6c+)
+ * and sort by grade difficulty.
+ */
+function aggregateAndSortGradeCounts(
+  counts: Array<{ grade: string; count: number }>,
+): Array<{ grade: string; count: number }> {
+  const merged = new Map<string, number>();
+  for (const gc of counts) {
+    merged.set(gc.grade, (merged.get(gc.grade) ?? 0) + gc.count);
+  }
+  return Array.from(merged.entries())
+    .map(([grade, count]) => ({ grade, count }))
+    .sort((a, b) => (GRADE_SORT_ORDER.get(a.grade) ?? 0) - (GRADE_SORT_ORDER.get(b.grade) ?? 0));
+}
 
 export const tickQueries = {
   /**
@@ -408,7 +435,7 @@ export const tickQueries = {
    */
   userProfileStats: async (
     _: unknown,
-    { userId }: { userId: string }
+    { userId, gradeFormat }: { userId: string; gradeFormat?: GradeFormat }
   ): Promise<{
     totalDistinctClimbs: number;
     layoutStats: Array<{
@@ -499,8 +526,10 @@ export const tickQueries = {
         }
 
         if (row.difficulty !== null) {
+          const format = gradeFormat ?? 'V_GRADE';
+          const grade = difficultyToGrade(Number(row.difficulty), format) ?? String(row.difficulty);
           layoutStatsMap[layoutKey].gradeCounts.push({
-            grade: String(row.difficulty),
+            grade,
             count: Number(row.distinctCount),
           });
         }
@@ -517,7 +546,7 @@ export const tickQueries = {
         boardType: stats.boardType,
         layoutId: stats.layoutId,
         distinctClimbCount,
-        gradeCounts: stats.gradeCounts.sort((a, b) => parseInt(a.grade) - parseInt(b.grade)),
+        gradeCounts: aggregateAndSortGradeCounts(stats.gradeCounts),
       };
     });
 

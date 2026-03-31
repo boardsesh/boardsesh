@@ -236,12 +236,8 @@ export function buildStatisticsSummary(
       const exactPercentage = totalAscents > 0 ? (stats.distinctClimbCount / totalAscents) * 100 : 0;
       const grades: Record<string, number> = {};
       stats.gradeCounts.forEach(({ grade, count }) => {
-        const difficultyNum = parseInt(grade, 10);
-        if (!isNaN(difficultyNum)) {
-          const gradeName = difficultyMapping[difficultyNum];
-          if (gradeName) {
-            grades[gradeName] = count;
-          }
+        if (grade) {
+          grades[grade] = (grades[grade] ?? 0) + count;
         }
       });
       return {

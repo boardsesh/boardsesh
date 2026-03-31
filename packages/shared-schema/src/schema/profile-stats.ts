@@ -4,6 +4,16 @@ export const profileStatsTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
+  Grade format for profile statistics.
+  """
+  enum GradeFormat {
+    "Font/Fontainebleau grade (e.g. 6c, 7a+)"
+    FONT
+    "V-grade (e.g. V5, V8)"
+    V_GRADE
+  }
+
+  """
   Count of distinct climbs at a specific grade.
   """
   type GradeCount {

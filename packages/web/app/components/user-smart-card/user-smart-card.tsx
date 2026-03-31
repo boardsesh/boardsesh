@@ -21,6 +21,7 @@ import {
   getLayoutDisplayName,
   getLayoutColor,
 } from '@/app/crusher/[user_id]/utils/profile-constants';
+import { V_GRADE_COLORS } from '@/app/lib/grade-colors';
 import styles from './user-smart-card.module.css';
 
 interface UserProfileData {
@@ -35,6 +36,12 @@ interface UserProfileData {
   followingCount: number;
 }
 
+interface GradeDistribution {
+  vGrade: string;
+  count: number;
+  color: string;
+}
+
 interface ProfileStats {
   totalDistinctClimbs: number;
   layoutStats: Array<{
@@ -45,6 +52,7 @@ interface ProfileStats {
     distinctClimbCount: number;
     percentage: number;
   }>;
+  gradeDistribution: GradeDistribution[];
 }
 
 interface UserSmartCardProps {
@@ -68,7 +76,7 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
       const [profileRes, statsData] = await Promise.all([
         fetch(`/api/internal/profile/${userId}`).then((r) => r.ok ? r.json() : null),
         (async () => {
-          const variables: GetUserProfileStatsQueryVariables = { userId };
+          const variables: GetUserProfileStatsQueryVariables = { userId, gradeFormat: 'V_GRADE' };
           const response = await graphqlClient.request<GetUserProfileStatsQueryResponse>(
             GET_USER_PROFILE_STATS,
             variables,
@@ -104,7 +112,29 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
             distinctClimbCount: s.distinctClimbCount,
             percentage: total > 0 ? Math.round((s.distinctClimbCount / total) * 100) : 0,
           }));
-        setStats({ totalDistinctClimbs: total, layoutStats });
+
+        // Aggregate grade counts across all layouts (server returns V-grades)
+        const vGradeCounts = new Map<string, number>();
+        for (const layout of statsData.layoutStats) {
+          for (const gc of layout.gradeCounts) {
+            vGradeCounts.set(gc.grade, (vGradeCounts.get(gc.grade) ?? 0) + gc.count);
+          }
+        }
+
+        // Sort by V-grade number and build distribution array
+        const gradeDistribution: GradeDistribution[] = Array.from(vGradeCounts.entries())
+          .sort((a, b) => {
+            const numA = parseInt(a[0].slice(1), 10);
+            const numB = parseInt(b[0].slice(1), 10);
+            return numA - numB;
+          })
+          .map(([vGrade, count]) => ({
+            vGrade,
+            count,
+            color: V_GRADE_COLORS[vGrade] ?? '#9CA3AF',
+          }));
+
+        setStats({ totalDistinctClimbs: total, layoutStats, gradeDistribution });
       }
     } catch (err) {
       console.error('Failed to load smart card data:', err);
@@ -211,6 +241,32 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
               </div>
             </div>
           )}
+
+          {stats && stats.gradeDistribution.length > 0 && (() => {
+            const maxCount = Math.max(...stats.gradeDistribution.map((g) => g.count));
+            return (
+              <div className={styles.gradeChart}>
+                <div className={styles.gradeChartBars}>
+                  {stats.gradeDistribution.map((g) => (
+                    <MuiTooltip key={g.vGrade} title={`${g.vGrade}: ${g.count}`}>
+                      <div className={styles.gradeChartColumn}>
+                        <div
+                          className={styles.gradeChartBar}
+                          style={{
+                            height: `${(g.count / maxCount) * 100}%`,
+                            backgroundColor: g.color,
+                          }}
+                        />
+                        <Typography variant="caption" className={styles.gradeChartLabel}>
+                          {g.vGrade}
+                        </Typography>
+                      </div>
+                    </MuiTooltip>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {(!stats || stats.totalDistinctClimbs === 0) && (
             <Box sx={{ mt: 1.5 }}>

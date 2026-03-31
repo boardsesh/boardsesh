@@ -238,8 +238,8 @@ export interface GetUserGroupedAscentsFeedQueryResponse {
 // ============================================
 
 export const GET_USER_PROFILE_STATS = gql`
-  query GetUserProfileStats($userId: ID!) {
-    userProfileStats(userId: $userId) {
+  query GetUserProfileStats($userId: ID!, $gradeFormat: GradeFormat) {
+    userProfileStats(userId: $userId, gradeFormat: $gradeFormat) {
       totalDistinctClimbs
       layoutStats {
         layoutKey
@@ -273,6 +273,7 @@ export interface LayoutStats {
 // Type for the profile stats query variables
 export interface GetUserProfileStatsQueryVariables {
   userId: string;
+  gradeFormat?: 'FONT' | 'V_GRADE';
 }
 
 // Type for the profile stats query response
