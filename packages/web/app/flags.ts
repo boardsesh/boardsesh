@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
 
 // Only use the Vercel adapter when the FLAGS env var is available (set automatically
-// on Vercel). Locally, flags fall through to their decide() functions.
+// on Vercel). Locally, flags fall through to their defaultValue.
 const adapter = process.env.FLAGS ? vercelAdapter() : undefined;
 
 async function identify() {
@@ -22,11 +22,6 @@ export const rustSvgRendering = flag({
     { value: true, label: 'Enabled' },
     { value: false, label: 'Disabled' },
   ],
-  decide() {
-    // HOTFIX: always return false — adapter is returning true incorrectly.
-    // TODO: investigate and restore adapter-based evaluation.
-    return false;
-  },
 });
 
 // Add new flags above this line, then add them to allFlags below.
