@@ -1,0 +1,44 @@
+diff --git a/SwipeableDrawer/SwipeableDrawer.js b/SwipeableDrawer/SwipeableDrawer.js
+index 6bf1a32e3806a8fc5a418787b1ed4df9bdda814e..9384df27b343bec467fcb9f0921b72b0afe220c3 100644
+--- a/SwipeableDrawer/SwipeableDrawer.js
++++ b/SwipeableDrawer/SwipeableDrawer.js
+@@ -302,7 +302,7 @@ const SwipeableDrawer = /*#__PURE__*/React.forwardRef(function SwipeableDrawer(i
+     const horizontalSwipe = (0, _Drawer.isHorizontal)(anchor);
+     const currentX = calculateCurrentX(anchorRtl, nativeEvent.touches, (0, _ownerDocument.default)(nativeEvent.currentTarget));
+     const currentY = calculateCurrentY(anchorRtl, nativeEvent.touches, (0, _ownerWindow.default)(nativeEvent.currentTarget));
+-    if (open && paperRef.current.contains(nativeEvent.target) && claimedSwipeInstance === null) {
++    if (open && paperRef.current && paperRef.current.contains(nativeEvent.target) && claimedSwipeInstance === null) {
+       const domTreeShapes = getDomTreeShapes(nativeEvent.target, paperRef.current);
+       const hasNativeHandler = computeHasNativeHandler({
+         domTreeShapes,
+@@ -400,7 +400,7 @@ const SwipeableDrawer = /*#__PURE__*/React.forwardRef(function SwipeableDrawer(i
+     }
+ 
+     // At least one element clogs the drawer interaction zone.
+-    if (open && (hideBackdrop || !backdropRef.current.contains(nativeEvent.target)) && !paperRef.current.contains(nativeEvent.target)) {
++    if (open && (hideBackdrop || !(backdropRef.current && backdropRef.current.contains(nativeEvent.target))) && !(paperRef.current && paperRef.current.contains(nativeEvent.target))) {
+       return;
+     }
+     const anchorRtl = (0, _Drawer.getAnchor)(theme, anchor);
+diff --git a/esm/SwipeableDrawer/SwipeableDrawer.js b/esm/SwipeableDrawer/SwipeableDrawer.js
+index f8ed4ec5351e64247cfa93c6e2fc0ecb1c70cc96..2a2f852241e607b70610ddd45ec0ef32dc27f999 100644
+--- a/esm/SwipeableDrawer/SwipeableDrawer.js
++++ b/esm/SwipeableDrawer/SwipeableDrawer.js
+@@ -295,7 +295,7 @@ const SwipeableDrawer = /*#__PURE__*/React.forwardRef(function SwipeableDrawer(i
+     const horizontalSwipe = isHorizontal(anchor);
+     const currentX = calculateCurrentX(anchorRtl, nativeEvent.touches, ownerDocument(nativeEvent.currentTarget));
+     const currentY = calculateCurrentY(anchorRtl, nativeEvent.touches, ownerWindow(nativeEvent.currentTarget));
+-    if (open && paperRef.current.contains(nativeEvent.target) && claimedSwipeInstance === null) {
++    if (open && paperRef.current && paperRef.current.contains(nativeEvent.target) && claimedSwipeInstance === null) {
+       const domTreeShapes = getDomTreeShapes(nativeEvent.target, paperRef.current);
+       const hasNativeHandler = computeHasNativeHandler({
+         domTreeShapes,
+@@ -393,7 +393,7 @@ const SwipeableDrawer = /*#__PURE__*/React.forwardRef(function SwipeableDrawer(i
+     }
+ 
+     // At least one element clogs the drawer interaction zone.
+-    if (open && (hideBackdrop || !backdropRef.current.contains(nativeEvent.target)) && !paperRef.current.contains(nativeEvent.target)) {
++    if (open && (hideBackdrop || !(backdropRef.current && backdropRef.current.contains(nativeEvent.target))) && !(paperRef.current && paperRef.current.contains(nativeEvent.target))) {
+       return;
+     }
+     const anchorRtl = getAnchor(theme, anchor);

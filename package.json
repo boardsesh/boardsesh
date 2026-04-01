@@ -45,5 +45,8 @@
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
+  },
+  "patchedDependencies": {
+    "@mui/material@7.3.8": "patches/@mui%2Fmaterial@7.3.8.patch"
   }
 }
