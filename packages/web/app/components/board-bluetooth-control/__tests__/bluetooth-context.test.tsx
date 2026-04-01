@@ -35,6 +35,9 @@ vi.mock('../../graphql-queue', () => ({
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-context';
 import type { BoardDetails } from '@/app/lib/types';
 
+const originalCapacitor = window.Capacitor;
+const originalBluetoothDescriptor = Object.getOwnPropertyDescriptor(navigator, 'bluetooth');
+
 function createTestBoardDetails(overrides?: Partial<BoardDetails>): BoardDetails {
   return {
     board_name: 'kilter',
@@ -67,6 +70,7 @@ function createWrapper(boardDetails?: BoardDetails) {
 describe('BluetoothProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockCurrentClimbQueueItem = null;
     mockBluetoothState = {
       isConnected: false,
@@ -75,6 +79,16 @@ describe('BluetoothProvider', () => {
       disconnect: mockDisconnect,
       sendFramesToBoard: mockSendFramesToBoard,
     };
+    if (originalCapacitor === undefined) {
+      delete (window as Window & { Capacitor?: unknown }).Capacitor;
+    } else {
+      window.Capacitor = originalCapacitor;
+    }
+    if (originalBluetoothDescriptor) {
+      Object.defineProperty(navigator, 'bluetooth', originalBluetoothDescriptor);
+    } else {
+      delete (navigator as Navigator & { bluetooth?: unknown }).bluetooth;
+    }
   });
 
   describe('useBluetoothContext', () => {
@@ -98,6 +112,7 @@ describe('BluetoothProvider', () => {
       expect(result.current).toHaveProperty('disconnect');
       expect(result.current).toHaveProperty('sendFramesToBoard');
       expect(result.current).toHaveProperty('isBluetoothSupported');
+      expect(result.current).toHaveProperty('isBluetoothSupportResolved');
       expect(result.current).toHaveProperty('isIOS');
     });
 
@@ -108,6 +123,54 @@ describe('BluetoothProvider', () => {
 
       expect(result.current.isConnected).toBe(false);
       expect(result.current.loading).toBe(false);
+    });
+  });
+
+  describe('bluetooth support detection', () => {
+    it('treats Web Bluetooth as supported immediately', () => {
+      Object.defineProperty(navigator, 'bluetooth', {
+        value: {},
+        configurable: true,
+      });
+
+      const { result } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.isBluetoothSupported).toBe(true);
+      expect(result.current.isBluetoothSupportResolved).toBe(true);
+    });
+
+    it('waits for the Capacitor BLE plugin before marking native support unavailable', async () => {
+      vi.useFakeTimers();
+
+      delete (window as Window & { Capacitor?: unknown }).Capacitor;
+
+      const { result } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.isBluetoothSupported).toBe(false);
+      expect(result.current.isBluetoothSupportResolved).toBe(false);
+
+      Object.defineProperty(window, 'Capacitor', {
+        value: {
+          isNativePlatform: () => true,
+          getPlatform: () => 'android',
+          Plugins: {
+            BluetoothLe: {},
+          },
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+      });
+
+      expect(result.current.isBluetoothSupported).toBe(true);
+      expect(result.current.isBluetoothSupportResolved).toBe(true);
     });
   });
 

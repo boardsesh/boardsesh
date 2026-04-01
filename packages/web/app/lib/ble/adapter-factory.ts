@@ -1,8 +1,8 @@
-import { isCapacitor } from './capacitor-utils';
+import { hasCapacitorPlugin } from './capacitor-utils';
 import type { BluetoothAdapter } from './types';
 
 export async function createBluetoothAdapter(): Promise<BluetoothAdapter> {
-  if (isCapacitor()) {
+  if (hasCapacitorPlugin('BluetoothLe')) {
     const { CapacitorBleAdapter } = await import('./capacitor-adapter');
     return new CapacitorBleAdapter();
   }

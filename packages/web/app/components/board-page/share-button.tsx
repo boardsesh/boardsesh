@@ -53,6 +53,7 @@ function LedConnectionTab() {
     connect,
     disconnect,
     isBluetoothSupported,
+    isBluetoothSupportResolved,
     isIOS,
   } = useBluetoothContext();
   const { currentClimbQueueItem } = useQueueContext();
@@ -74,7 +75,7 @@ function LedConnectionTab() {
         Light up holds on your board. Routes switch automatically as you move through your queue.
       </Typography>
 
-      {!isBluetoothSupported && (
+      {isBluetoothSupportResolved && !isBluetoothSupported && (
         <Box
           sx={{
             display: 'flex',

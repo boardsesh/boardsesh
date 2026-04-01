@@ -6,16 +6,16 @@
     "generate-assets": "bun run scripts/generate-assets.ts"
   },
   "dependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/ios": "^6.0.0",
-    "@capacitor/browser": "^6.0.0",
-    "@capacitor/geolocation": "^6.0.0",
-    "@capacitor-community/bluetooth-le": "^6.0.0",
-    "@capacitor-community/keep-awake": "^6.0.0"
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor-community/bluetooth-le": "^8.0.0",
+    "@capacitor-community/keep-awake": "^8.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.0.0",
+    "@capacitor/cli": "^8.0.0",
     "typescript": "^5.9.3"
   }
 }
