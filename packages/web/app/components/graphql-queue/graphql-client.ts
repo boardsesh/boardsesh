@@ -75,6 +75,9 @@ export function createGraphQLClient(
       this.addEventListener('error', (event) => {
         if (DEBUG) console.log(`[GraphQL] Client #${clientId} WebSocket native error suppressed`, event);
       });
+      this.addEventListener('close', (event) => {
+        if (DEBUG) console.log(`[GraphQL] Client #${clientId} WebSocket close event handled`, event);
+      });
     }
   }
 
@@ -142,11 +145,15 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 
   if (DEBUG) console.log(`[GraphQL] execute START: ${opName}`);
 
+  // Hoist unsubscribe so the timeout can clean up the dangling subscription,
+  // preventing CloseEvent from escaping as an unhandled promise rejection.
+  let unsubscribe: () => void = () => {};
+
   const executionPromise = new Promise<TData>((resolve, reject) => {
     let result: TData | undefined;
     let hasResolved = false;
 
-    const unsubscribe = client.subscribe<TData>(
+    unsubscribe = client.subscribe<TData>(
       { query: operation.query, variables: operation.variables as Record<string, unknown> },
       {
         next: (data) => {
@@ -187,14 +194,20 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
     );
   });
 
-  // Add timeout to prevent mutations from hanging forever
+  // Timeout with cleanup: unsubscribe the dangling subscription so that
+  // a later dispose() / WebSocket close doesn't produce an unhandled rejection.
+  let timeoutId: ReturnType<typeof setTimeout>;
+
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      unsubscribe();
       reject(new Error(`GraphQL mutation '${opName}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
-  return Promise.race([executionPromise, timeoutPromise]);
+  return Promise.race([executionPromise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
 }
 
 /**
