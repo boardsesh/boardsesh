@@ -284,9 +284,10 @@ function formatDisplayName(
   return `${shortLayout} ${shortSize}${setLabel}`.trim();
 }
 
-const REDIS_CACHE_KEY = 'boardsesh:popular-board-configs';
+const CACHE_VERSION = 'v1';
+const REDIS_CACHE_KEY = `boardsesh:popular-board-configs:${CACHE_VERSION}`;
 const REDIS_CACHE_TTL_SECONDS = 365 * 24 * 60 * 60; // 1 year
-const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
+const REDIS_LOCK_KEY = `boardsesh:popular-board-configs:${CACHE_VERSION}:lock`;
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
 
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {

@@ -91,11 +91,42 @@ export function usePopularBoardConfigs({
   }, [limit]);
 
   useEffect(() => {
-    // Skip the initial fetch when SSR data is provided
+    // Skip the initial fetch when SSR data is provided — the revalidation
+    // effect below handles refreshing stale static data.
     if (hasInitialData) return;
     offsetRef.current = 0;
     fetchPage(0, true);
   }, [fetchPage, hasInitialData]);
+
+  // Revalidate SSR data in the background to handle stale static pages
+  // (e.g., when the backend was unavailable during the Vercel build).
+  useEffect(() => {
+    if (!hasInitialData) return;
+
+    let cancelled = false;
+    const revalidate = async () => {
+      try {
+        const client = createGraphQLHttpClient();
+        const result = await client.request<GetPopularBoardConfigsQueryResponse>(
+          GET_POPULAR_BOARD_CONFIGS,
+          { input: { limit, offset: 0 } },
+        );
+        if (cancelled) return;
+        const { configs: freshConfigs, hasMore: more } = result.popularBoardConfigs;
+        // Only replace if backend returned data — avoid wiping SSR data on transient failure
+        if (freshConfigs.length > 0) {
+          setConfigs(freshConfigs);
+          setHasMore(more);
+          hasMoreRef.current = more;
+          offsetRef.current = freshConfigs.length;
+        }
+      } catch {
+        // Silent failure — SSR data is already displayed
+      }
+    };
+    revalidate();
+    return () => { cancelled = true; };
+  }, [hasInitialData, limit]);
 
   const loadMore = useCallback(() => {
     if (hasMoreRef.current && !isFetchingRef.current) {
