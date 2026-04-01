@@ -214,9 +214,15 @@ Failed to decrypt credentials
 - Verify user has `syncStatus: active` or `error` (not `disabled`)
 - Check Aurora API is accessible from the environment
 
+## Kilter Sync (New API)
+
+The original Kilter backend (`kilterboardapp.com`) was shut down in early 2026 and replaced by a new platform at `portal.kiltergrips.com` with OAuth2/Keycloak authentication. Kilter sync is now handled by the separate `@boardsesh/kilter-sync` package — see [docs/kilter-sync.md](./kilter-sync.md) for details.
+
+The `@boardsesh/aurora-sync` package only syncs **Tension** users. Kilter credentials are excluded from its runner via `ne(auroraCredentials.boardType, 'kilter')`.
+
 ## JSON Export Import (Alternative to API Sync)
 
-Since the Kilter backend has been shut down, API-based sync is no longer available for Kilter users. As an alternative, users can import their data from Aurora's JSON export file.
+Users can also import their data from Aurora's JSON export file as a fallback.
 
 ### How It Works
 

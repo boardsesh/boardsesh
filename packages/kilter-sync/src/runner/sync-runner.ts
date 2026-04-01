@@ -138,8 +138,8 @@ export class KilterSyncRunner {
   }
 
   private async syncSingleCredential(cred: KilterCredentialRecord): Promise<void> {
-    if (!cred.encryptedUsername || !cred.encryptedPassword || !cred.auroraUserId) {
-      throw new Error('Missing credentials or user ID');
+    if (!cred.encryptedUsername || !cred.encryptedPassword) {
+      throw new Error('Missing credentials');
     }
 
     let username: string;
@@ -171,15 +171,22 @@ export class KilterSyncRunner {
     // Sync user data
     const pool = createFreshPool();
     try {
-      this.log(`[KilterSyncRunner] Syncing data for user ${cred.userId}...`);
-      await syncKilterUserData(
+      const auroraUserId = cred.auroraUserId || 0;
+      this.log(`[KilterSyncRunner] Syncing data for user ${cred.userId} (aurora ID: ${auroraUserId})...`);
+      const syncResult = await syncKilterUserData(
         pool,
         accessToken,
-        cred.auroraUserId,
+        auroraUserId,
         cred.userId,
         undefined,
         this.log.bind(this),
       );
+
+      // Back-populate the numeric user ID if we discovered it
+      if (syncResult.discoveredAuroraUserId && syncResult.discoveredAuroraUserId !== auroraUserId) {
+        this.log(`[KilterSyncRunner] Back-populating auroraUserId: ${syncResult.discoveredAuroraUserId}`);
+        await this.updateAuroraUserId(cred.userId, syncResult.discoveredAuroraUserId);
+      }
 
       await this.updateCredentialStatus(cred.userId, 'active', null, new Date());
     } finally {
@@ -206,6 +213,14 @@ export class KilterSyncRunner {
     await db
       .update(auroraCredentials)
       .set(updateData)
+      .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, 'kilter')));
+  }
+
+  private async updateAuroraUserId(userId: string, auroraUserId: number): Promise<void> {
+    const db = createHttpDb();
+    await db
+      .update(auroraCredentials)
+      .set({ auroraUserId, updatedAt: new Date() })
       .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, 'kilter')));
   }
 

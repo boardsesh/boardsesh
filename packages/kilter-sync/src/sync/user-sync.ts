@@ -444,15 +444,23 @@ export interface SyncTableResult {
 }
 
 export interface KilterSyncUserDataResult {
-  [tableName: string]: SyncTableResult;
+  tables: Record<string, SyncTableResult>;
+  /** The numeric Aurora user ID discovered from the sync response. Null if not found. */
+  discoveredAuroraUserId: number | null;
 }
 
 /**
  * Sync user data from the new Kilter API into the Boardsesh database.
  *
+ * The new Kilter OAuth2 flow gives us a UUID (from JWT), but the sync stream
+ * still uses numeric Aurora user IDs internally. On the first sync, pass
+ * `auroraUserId = 0` — this function will discover the real numeric ID from
+ * the sync response's `user_syncs` array and return it in the result so the
+ * caller can back-populate `auroraCredentials.auroraUserId`.
+ *
  * @param pool      - Neon connection pool
  * @param accessToken - Kilter OAuth2 access token (Bearer)
- * @param auroraUserId - The user's numeric Aurora user ID (still used in sync stream data)
+ * @param auroraUserId - The user's numeric Aurora user ID (0 if unknown)
  * @param nextAuthUserId - The Boardsesh NextAuth user ID
  * @param tables    - Which tables to sync (defaults to all user tables)
  * @param log       - Logger function
@@ -480,17 +488,37 @@ export async function syncKilterUserData(
 
   log(`[KilterSync] Syncing ${tables.length} tables for user ${auroraUserId}`);
 
-  const totalResults: KilterSyncUserDataResult = {};
+  const totalResults: Record<string, SyncTableResult> = {};
   let currentOptions = syncOptions;
   let isComplete = false;
   let attempts = 0;
   const maxAttempts = 50;
 
+  // Track the real numeric user ID discovered from the sync response
+  let resolvedUserId = auroraUserId;
+  let discoveredAuroraUserId: number | null = null;
+
   while (!isComplete && attempts < maxAttempts) {
     attempts++;
-    log(`[KilterSync] Sync batch ${attempts} for user ${auroraUserId}`);
+    log(`[KilterSync] Sync batch ${attempts} for user ${resolvedUserId}`);
 
     const syncResults = await kilterUserSync(accessToken, currentOptions) as KilterSyncData;
+
+    // Discover the numeric user ID from user_syncs on the first batch
+    if (discoveredAuroraUserId === null && syncResults['user_syncs'] && Array.isArray(syncResults['user_syncs'])) {
+      const userSyncsData = syncResults['user_syncs'] as Array<{
+        table_name: string;
+        last_synchronized_at: string;
+        user_id: number;
+      }>;
+      if (userSyncsData.length > 0 && userSyncsData[0].user_id > 0) {
+        discoveredAuroraUserId = userSyncsData[0].user_id;
+        if (resolvedUserId === 0) {
+          resolvedUserId = discoveredAuroraUserId;
+          log(`[KilterSync] Discovered numeric user ID: ${resolvedUserId}`);
+        }
+      }
+    }
 
     // Process batch in a transaction
     const client = await pool.connect();
@@ -503,7 +531,7 @@ export async function syncKilterUserData(
         if (syncResults[tableName] && Array.isArray(syncResults[tableName])) {
           const data = syncResults[tableName] as SyncRow[];
 
-          const upsertResult = await upsertTableData(tx, tableName, auroraUserId, nextAuthUserId, data, log);
+          const upsertResult = await upsertTableData(tx, tableName, resolvedUserId, nextAuthUserId, data, log);
 
           if (!totalResults[tableName]) {
             totalResults[tableName] = { synced: 0 };
@@ -532,7 +560,7 @@ export async function syncKilterUserData(
           userSyncs: userSyncsData.map((s) => ({
             table_name: s.table_name,
             last_synchronized_at: s.last_synchronized_at,
-            user_id: Number(auroraUserId),
+            user_id: Number(resolvedUserId),
           })),
         };
       }
@@ -565,5 +593,5 @@ export async function syncKilterUserData(
     log(`[KilterSync] Reached max attempts (${maxAttempts})`);
   }
 
-  return totalResults;
+  return { tables: totalResults, discoveredAuroraUserId };
 }

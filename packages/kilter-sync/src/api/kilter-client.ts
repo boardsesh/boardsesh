@@ -30,7 +30,11 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   // Base64url → Base64
   const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
   const json = Buffer.from(base64, 'base64').toString('utf-8');
-  return JSON.parse(json);
+  try {
+    return JSON.parse(json);
+  } catch {
+    throw new Error('Failed to parse JWT payload — token may be malformed');
+  }
 }
 
 /**

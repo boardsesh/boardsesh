@@ -104,27 +104,34 @@ export async function GET(request: Request) {
           ),
         );
 
-      // If we don't have a numeric user ID yet, we need the sync to discover it.
-      // The sync stream will return user data that includes the numeric ID.
+      // auroraUserId may be 0 on the first sync (new Kilter OAuth2 doesn't
+      // return numeric IDs). The sync function discovers it from the response.
       const auroraUserId = cred.auroraUserId || 0;
 
       console.log(`[Kilter Sync Cron] Syncing data for user ${cred.userId} (aurora ID: ${auroraUserId})...`);
 
-      await syncKilterUserData(pool, loginResult.accessToken, auroraUserId, cred.userId);
+      const syncResult = await syncKilterUserData(pool, loginResult.accessToken, auroraUserId, cred.userId);
 
-      // Update last sync time on success
+      // Update last sync time and back-populate the numeric user ID if discovered
       {
         const updateClient = await pool.connect();
         try {
           const updateDb = drizzle(updateClient);
+          const updateFields: Record<string, unknown> = {
+            lastSyncAt: new Date(),
+            syncStatus: 'active',
+            syncError: null,
+            updatedAt: new Date(),
+          };
+
+          if (syncResult.discoveredAuroraUserId && syncResult.discoveredAuroraUserId !== auroraUserId) {
+            updateFields.auroraUserId = syncResult.discoveredAuroraUserId;
+            console.log(`[Kilter Sync Cron] Back-populated auroraUserId: ${syncResult.discoveredAuroraUserId}`);
+          }
+
           await updateDb
             .update(schema.auroraCredentials)
-            .set({
-              lastSyncAt: new Date(),
-              syncStatus: 'active',
-              syncError: null,
-              updatedAt: new Date(),
-            })
+            .set(updateFields)
             .where(
               and(
                 eq(schema.auroraCredentials.userId, cred.userId),
