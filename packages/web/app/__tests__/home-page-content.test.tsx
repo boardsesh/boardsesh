@@ -28,10 +28,10 @@ vi.mock('@/app/hooks/use-discover-boards', () => ({
 const mockUsePopularBoardConfigs = vi.fn().mockReturnValue({
   configs: [],
   isLoading: false,
-  isLoadingMore: false,
-  hasMore: false,
+  isFetchingNextPage: false,
+  hasNextPage: false,
   error: null,
-  loadMore: vi.fn(),
+  fetchNextPage: vi.fn(),
 });
 
 vi.mock('@/app/hooks/use-popular-board-configs', () => ({
@@ -88,10 +88,10 @@ describe('HomePageContent', () => {
     mockUsePopularBoardConfigs.mockReturnValue({
       configs: [],
       isLoading: false,
-      isLoadingMore: false,
-      hasMore: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
       error: null,
-      loadMore: vi.fn(),
+      fetchNextPage: vi.fn(),
     });
   });
 
@@ -222,7 +222,7 @@ describe('HomePageContent', () => {
       render(<HomePageContent {...defaultProps} initialPopularConfigs={initialConfigs} />);
 
       expect(mockUsePopularBoardConfigs).toHaveBeenCalledWith({
-        limit: 12,
+        limit: 7,
         initialData: initialConfigs,
       });
     });
@@ -231,7 +231,7 @@ describe('HomePageContent', () => {
       render(<HomePageContent {...defaultProps} />);
 
       expect(mockUsePopularBoardConfigs).toHaveBeenCalledWith({
-        limit: 12,
+        limit: 7,
         initialData: undefined,
       });
     });

@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useCallback } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   GET_POPULAR_BOARD_CONFIGS,
   type GetPopularBoardConfigsQueryResponse,
 } from '@/app/lib/graphql/operations';
-import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { PopularBoardConfig, PopularBoardConfigConnection } from '@boardsesh/shared-schema';
 
 interface UsePopularBoardConfigsOptions {
   /** Number of configs per page */
@@ -16,92 +18,84 @@ interface UsePopularBoardConfigsOptions {
 interface PopularBoardConfigsResult {
   configs: PopularBoardConfig[];
   isLoading: boolean;
-  isLoadingMore: boolean;
-  hasMore: boolean;
+  isFetchingNextPage: boolean;
+  hasNextPage: boolean;
   error: string | null;
-  loadMore: () => void;
+  fetchNextPage: () => void;
 }
+
+const DEFAULT_LIMIT = 7;
 
 /**
  * Fetches popular board configurations with pagination support.
  * These are catalog configurations (board type + layout + size + sets)
  * ranked by climb count, for users who can't find a nearby board.
+ *
+ * Uses TanStack Query's useInfiniteQuery for caching & pagination,
+ * consistent with the rest of the app (climb lists, activity feeds, etc.).
  */
 export function usePopularBoardConfigs({
-  limit = 12,
+  limit = DEFAULT_LIMIT,
   initialData,
 }: UsePopularBoardConfigsOptions = {}): PopularBoardConfigsResult {
   const hasInitialData = initialData !== undefined && initialData.length > 0;
-  // If initialData has fewer items than the limit, the server returned everything — no more pages
   const initialHasMore = hasInitialData && initialData.length >= limit;
-  const [configs, setConfigs] = useState<PopularBoardConfig[]>(hasInitialData ? initialData : []);
-  const [isLoading, setIsLoading] = useState(!hasInitialData);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(initialHasMore);
-  const [error, setError] = useState<string | null>(null);
-  const hasMoreRef = useRef(initialHasMore);
-  const offsetRef = useRef(hasInitialData ? initialData.length : 0);
-  const isFetchingRef = useRef(false);
-  const loadMoreFailCountRef = useRef(0);
 
-  const fetchPage = useCallback(async (offset: number, isInitial: boolean) => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
+  const tanstackInitialData = useMemo<InfiniteData<PopularBoardConfigConnection> | undefined>(() => {
+    if (!hasInitialData) return undefined;
+    return {
+      pages: [{
+        configs: initialData,
+        totalCount: initialData.length,
+        hasMore: initialHasMore,
+      }],
+      pageParams: [0],
+    };
+  }, [hasInitialData, initialData, initialHasMore]);
 
-    if (isInitial) {
-      setIsLoading(true);
-    } else {
-      setIsLoadingMore(true);
-    }
-
-    try {
+  const {
+    data,
+    fetchNextPage: tanstackFetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error: queryError,
+  } = useInfiniteQuery<PopularBoardConfigConnection, Error>({
+    queryKey: ['popularBoardConfigs', limit],
+    queryFn: async ({ pageParam }: { pageParam: number }) => {
       const client = createGraphQLHttpClient();
       const result = await client.request<GetPopularBoardConfigsQueryResponse>(
         GET_POPULAR_BOARD_CONFIGS,
-        { input: { limit, offset } },
+        { input: { limit, offset: pageParam } },
       );
+      return result.popularBoardConfigs;
+    },
+    initialPageParam: 0 as number,
+    getNextPageParam: (lastPage: PopularBoardConfigConnection, _allPages: PopularBoardConfigConnection[], lastPageParam: number) => {
+      if (!lastPage.hasMore) return undefined;
+      return lastPageParam + lastPage.configs.length;
+    },
+    initialData: tanstackInitialData,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 2,
+  });
 
-      const { configs: newConfigs, hasMore: more } = result.popularBoardConfigs;
+  const configs = useMemo(
+    () => data?.pages.flatMap((page: PopularBoardConfigConnection) => page.configs) ?? [],
+    [data],
+  );
 
-      setConfigs((prev) => isInitial ? newConfigs : [...prev, ...newConfigs]);
-      setHasMore(more);
-      hasMoreRef.current = more;
-      offsetRef.current = offset + newConfigs.length;
-      loadMoreFailCountRef.current = 0;
-    } catch (err) {
-      console.error('Failed to fetch popular board configs:', err);
-      if (isInitial) {
-        setError('Failed to load board configurations');
-      } else {
-        // Stop infinite retries from IntersectionObserver by disabling loadMore after 3 failures
-        loadMoreFailCountRef.current += 1;
-        if (loadMoreFailCountRef.current >= 3) {
-          setHasMore(false);
-          hasMoreRef.current = false;
-        }
-      }
-    } finally {
-      if (isInitial) {
-        setIsLoading(false);
-      } else {
-        setIsLoadingMore(false);
-      }
-      isFetchingRef.current = false;
-    }
-  }, [limit]);
+  const fetchNextPage = useCallback(() => {
+    tanstackFetchNextPage();
+  }, [tanstackFetchNextPage]);
 
-  useEffect(() => {
-    // Skip the initial fetch when SSR data is provided
-    if (hasInitialData) return;
-    offsetRef.current = 0;
-    fetchPage(0, true);
-  }, [fetchPage, hasInitialData]);
-
-  const loadMore = useCallback(() => {
-    if (hasMoreRef.current && !isFetchingRef.current) {
-      fetchPage(offsetRef.current, false);
-    }
-  }, [fetchPage]);
-
-  return { configs, isLoading, isLoadingMore, hasMore, error, loadMore };
+  return {
+    configs,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage: hasNextPage ?? false,
+    error: queryError ? 'Failed to load board configurations' : null,
+    fetchNextPage,
+  };
 }

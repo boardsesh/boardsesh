@@ -32,7 +32,7 @@ export const getPopularBoardConfigs = React.cache(async (): Promise<PopularBoard
     });
     const result = await client.request<GetPopularBoardConfigsQueryResponse>(
       GET_POPULAR_BOARD_CONFIGS,
-      { input: { limit: 12, offset: 0 } },
+      { input: { limit: 7, offset: 0 } },
     );
     return result.popularBoardConfigs.configs;
   } catch {

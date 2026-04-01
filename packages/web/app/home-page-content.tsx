@@ -149,7 +149,7 @@ export default function HomePageContent({ boardConfigs, initialPopularConfigs }:
 
   const [locationEnabled, setLocationEnabled] = useState(false);
   const { boards: discoverBoards, isLoading: isBoardsLoading, hasLocation, error: discoverError } = useDiscoverBoards({ limit: 20, enableLocation: locationEnabled });
-  const { configs: popularConfigs, isLoading: isConfigsLoading, isLoadingMore, hasMore, loadMore } = usePopularBoardConfigs({ limit: 12, initialData: initialPopularConfigs });
+  const { configs: popularConfigs, isLoading: isConfigsLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = usePopularBoardConfigs({ limit: 7, initialData: initialPopularConfigs });
 
   const handleBoardClick = useCallback((board: UserBoard) => {
     if (board.slug) {
@@ -256,9 +256,9 @@ export default function HomePageContent({ boardConfigs, initialPopularConfigs }:
           <BoardScrollSection
             title="Boards near you"
             loading={isBoardsLoading && popularConfigs.length === 0}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-            isLoadingMore={isLoadingMore}
+            onLoadMore={fetchNextPage}
+            hasMore={hasNextPage}
+            isLoadingMore={isFetchingNextPage}
           >
             {discoverBoards.length === 0 && (
               <FindNearbyCard
