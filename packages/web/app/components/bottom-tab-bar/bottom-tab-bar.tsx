@@ -242,12 +242,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
       // Ignore errors loading recent searches
     }
 
-    // Preserve active session param so BoardSessionBridge can re-activate the session
-    if (activeSession?.sessionId && url) {
-      const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}session=${activeSession.sessionId}`;
-    }
-
     const currentUrl = pathname + (typeof window !== 'undefined' ? window.location.search : '');
     if (url !== currentUrl) {
       router.push(url);

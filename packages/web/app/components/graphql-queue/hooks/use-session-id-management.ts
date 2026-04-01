@@ -35,14 +35,9 @@ export function useSessionIdManagement({
   const { token: wsAuthToken } = useWsAuthToken();
   const persistentSession = usePersistentSession();
 
-  // Session ID source differs by mode:
-  // - Board mode: read from cookie (previously URL ?session= param)
-  // - Off-board mode: read from persistent IndexedDB storage
+  // Session ID always comes from the cookie (global, path=/)
   const sessionIdFromCookie = getClimbSessionCookie();
-  const persistentSessionId = persistentSession.activeSession?.sessionId ?? null;
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(
-    isOffBoardMode ? persistentSessionId : sessionIdFromCookie,
-  );
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionIdFromCookie);
 
   // Backward compat: migrate ?session= URL param to cookie and strip from URL
   useEffect(() => {
@@ -57,12 +52,6 @@ export function useSessionIdManagement({
       router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
     }
   }, [searchParams, isOffBoardMode, pathname, router]);
-
-  // Sync activeSessionId from persistent session (off-board mode only)
-  useEffect(() => {
-    if (!isOffBoardMode) return;
-    setActiveSessionId(persistentSessionId);
-  }, [isOffBoardMode, persistentSessionId]);
 
   const sessionId = activeSessionId;
 
