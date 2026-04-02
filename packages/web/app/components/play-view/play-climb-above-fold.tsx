@@ -13,9 +13,11 @@ import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOu
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import SwipeBoardCarousel from '../board-renderer/swipe-board-carousel';
 import ClimbDetailHeader from '@/app/components/climb-detail/climb-detail-header';
-import { useFavorite } from '../climb-actions';
+import { useFavorite, ClimbActions } from '../climb-actions';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import { useQueueContext } from '../graphql-queue';
+import { ShareBoardButton } from '../board-page/share-button';
+import { usePathname } from 'next/navigation';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import styles from './play-view-drawer.module.css';
@@ -27,6 +29,7 @@ interface PlayClimbAboveFoldProps {
   onOpenActions?: () => void;
   onOpenQueue?: () => void;
   onOpenTick?: () => void;
+  showPrevNextButtons?: boolean;
 }
 
 export default function PlayClimbAboveFold({
@@ -36,6 +39,7 @@ export default function PlayClimbAboveFold({
   onOpenActions,
   onOpenQueue,
   onOpenTick,
+  showPrevNextButtons = true,
 }: PlayClimbAboveFoldProps) {
   const {
     mirrorClimb,
@@ -46,6 +50,7 @@ export default function PlayClimbAboveFold({
     queue,
     viewOnlyMode,
   } = useQueueContext();
+  const pathname = usePathname();
   const { logbook } = useBoardProvider();
 
   const { isFavorited, toggleFavorite } = useFavorite({
@@ -107,7 +112,6 @@ export default function PlayClimbAboveFold({
           <button
             className={`${styles.tickFab} ${hasSuccessfulAscent ? styles.tickFabSuccess : ''}`}
             onClick={onOpenTick}
-            disabled={!onOpenTick}
             aria-label="Log ascent"
           >
             <CheckOutlined className={styles.tickFabIcon} />
@@ -119,15 +123,17 @@ export default function PlayClimbAboveFold({
       </div>
 
       <div className={styles.actionBar}>
-        <IconButton
-          disabled={!canSwipePrevious}
-          onClick={() => {
-            const prev = getPreviousClimbQueueItem();
-            if (prev) setCurrentClimbQueueItem(prev);
-          }}
-        >
-          <SkipPreviousOutlined />
-        </IconButton>
+        {showPrevNextButtons && (
+          <IconButton
+            disabled={!canSwipePrevious}
+            onClick={() => {
+              const prev = getPreviousClimbQueueItem();
+              if (prev) setCurrentClimbQueueItem(prev);
+            }}
+          >
+            <SkipPreviousOutlined />
+          </IconButton>
+        )}
 
         {boardDetails.supportsMirroring && (
           <IconButton
@@ -147,25 +153,43 @@ export default function PlayClimbAboveFold({
           {isFavorited ? <Favorite sx={{ color: themeTokens.colors.error }} /> : <FavoriteBorderOutlined />}
         </IconButton>
 
-        <IconButton onClick={onOpenActions} aria-label="Climb actions" disabled={!onOpenActions}>
-          <MoreHorizOutlined />
-        </IconButton>
+        <ClimbActions
+          climb={climb}
+          boardDetails={boardDetails}
+          angle={angle}
+          currentPathname={pathname}
+          viewMode="button"
+          include={['share']}
+          size="default"
+        />
 
-        <MuiBadge badgeContent={remainingQueueCount} max={99} sx={{ '& .MuiBadge-badge': { backgroundColor: themeTokens.colors.primary, color: 'common.white' } }}>
-          <IconButton onClick={onOpenQueue} aria-label="Open queue" disabled={!onOpenQueue}>
-            <FormatListBulletedOutlined />
+        <ShareBoardButton />
+
+        {onOpenActions && (
+          <IconButton onClick={onOpenActions} aria-label="Climb actions">
+            <MoreHorizOutlined />
           </IconButton>
-        </MuiBadge>
+        )}
 
-        <IconButton
-          disabled={!canSwipeNext}
-          onClick={() => {
-            const next = getNextClimbQueueItem();
-            if (next) setCurrentClimbQueueItem(next);
-          }}
-        >
-          <SkipNextOutlined />
-        </IconButton>
+        {onOpenQueue && (
+          <MuiBadge badgeContent={remainingQueueCount} max={99} sx={{ '& .MuiBadge-badge': { backgroundColor: themeTokens.colors.primary, color: 'common.white' } }}>
+            <IconButton onClick={onOpenQueue} aria-label="Open queue">
+              <FormatListBulletedOutlined />
+            </IconButton>
+          </MuiBadge>
+        )}
+
+        {showPrevNextButtons && (
+          <IconButton
+            disabled={!canSwipeNext}
+            onClick={() => {
+              const next = getNextClimbQueueItem();
+              if (next) setCurrentClimbQueueItem(next);
+            }}
+          >
+            <SkipNextOutlined />
+          </IconButton>
+        )}
       </div>
     </>
   );

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import BackButton from '@/app/components/back-button';
 import ClimbDetailShellClient from '@/app/components/climb-detail/climb-detail-shell.client';
 import { useBuildClimbDetailSections } from '@/app/components/climb-detail/build-climb-detail-sections';
 import PlayClimbAboveFold from '@/app/components/play-view/play-climb-above-fold';
+import { LogAscentDrawer } from '@/app/components/logbook/log-ascent-drawer';
 import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
@@ -16,6 +17,8 @@ interface PlayStyleClimbDetailClientProps {
 }
 
 export default function PlayStyleClimbDetailClient({ climb, boardDetails, angle }: PlayStyleClimbDetailClientProps) {
+  const [tickOpen, setTickOpen] = useState(false);
+
   const sections = useBuildClimbDetailSections({
     climb,
     climbUuid: climb.uuid,
@@ -36,15 +39,31 @@ export default function PlayStyleClimbDetailClient({ climb, boardDetails, angle 
   }, [boardDetails, angle]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pb: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', pt: 1 }}>
-        <BackButton fallbackUrl={backUrl} />
+    <>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', pt: 1 }}>
+          <BackButton fallbackUrl={backUrl} />
+        </Box>
+        <ClimbDetailShellClient
+          mode="play"
+          aboveFold={(
+            <PlayClimbAboveFold
+              climb={climb}
+              boardDetails={boardDetails}
+              angle={angle}
+              onOpenTick={() => setTickOpen(true)}
+              showPrevNextButtons={false}
+            />
+          )}
+          sections={sections}
+        />
       </Box>
-      <ClimbDetailShellClient
-        mode="play"
-        aboveFold={<PlayClimbAboveFold climb={climb} boardDetails={boardDetails} angle={angle} />}
-        sections={sections}
+      <LogAscentDrawer
+        open={tickOpen}
+        onClose={() => setTickOpen(false)}
+        currentClimb={climb}
+        boardDetails={boardDetails}
       />
-    </Box>
+    </>
   );
 }
