@@ -118,7 +118,9 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
 
   const nextClimb = getNextClimbQueueItem();
   const previousClimb = getPreviousClimbQueueItem();
-  const shouldNavigate = isViewPage || isPlayPage;
+  // Queue navigation should move to the selected climb from anywhere in the app.
+  // On play pages we preserve in-place URL behavior; elsewhere we route to view pages.
+  const shouldNavigate = true;
 
   // Build URL for a climb item (for navigation on view/play pages)
   const buildClimbUrl = useCallback((climb: { uuid: string; name: string }) => {
@@ -519,8 +521,8 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                   {/* Navigation buttons - desktop only */}
                   <span className={styles.navButtons}>
                     <Stack direction="row" spacing={1}>
-                      <PreviousClimbButton navigate={isViewPage || isPlayPage} boardDetails={boardDetails} />
-                      <NextClimbButton navigate={isViewPage || isPlayPage} boardDetails={boardDetails} />
+                      <PreviousClimbButton navigate={true} boardDetails={boardDetails} />
+                      <NextClimbButton navigate={true} boardDetails={boardDetails} />
                     </Stack>
                   </span>
                   {/* Party button */}
