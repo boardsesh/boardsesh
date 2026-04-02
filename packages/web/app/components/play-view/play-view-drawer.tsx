@@ -1,35 +1,22 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import MuiBadge from '@mui/material/Badge';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MuiButton from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
-import SyncOutlined from '@mui/icons-material/SyncOutlined';
-import FavoriteBorderOutlined from '@mui/icons-material/FavoriteBorderOutlined';
-import Favorite from '@mui/icons-material/Favorite';
-import SkipPreviousOutlined from '@mui/icons-material/SkipPreviousOutlined';
-import SkipNextOutlined from '@mui/icons-material/SkipNextOutlined';
-import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
-import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
-import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { useQueueContext } from '../graphql-queue';
-import { useFavorite, ClimbActions } from '../climb-actions';
+import { ClimbActions } from '../climb-actions';
 import PlaylistSelectionContent from '../climb-actions/playlist-selection-content';
-import { ShareBoardButton } from '../board-page/share-button';
-import { useBoardProvider } from '../board-provider/board-provider-context';
 import QueueList, { QueueListHandle } from '../queue-control/queue-list';
-import SwipeBoardCarousel from '../board-renderer/swipe-board-carousel';
 import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
 import { themeTokens } from '@/app/theme/theme-config';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
-import ClimbDetailHeader from '@/app/components/climb-detail/climb-detail-header';
 import { LogAscentDrawer } from '../logbook/log-ascent-drawer';
 import type { ActiveDrawer } from '../queue-control/queue-control-bar';
 import type { BoardDetails, Angle, Climb } from '@/app/lib/types';
@@ -39,6 +26,7 @@ import styles from './play-view-drawer.module.css';
 import drawerStyles from '../swipeable-drawer/swipeable-drawer.module.css';
 import ClimbDetailShellClient from '@/app/components/climb-detail/climb-detail-shell.client';
 import { useBuildClimbDetailSections } from '@/app/components/climb-detail/build-climb-detail-sections';
+import PlayClimbAboveFold from './play-climb-above-fold';
 
 
 
@@ -90,34 +78,12 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const queueScrollRef = useRef<HTMLDivElement>(null);
   const [queueScrollEl, setQueueScrollEl] = useState<HTMLDivElement | null>(null);
 
-  // Get logbook data for tick FAB badge
-  const { logbook } = useBoardProvider();
-
   const queueScrollCallbackRef = useCallback((node: HTMLDivElement | null) => {
     queueScrollRef.current = node;
     setQueueScrollEl(node);
   }, []);
 
-  const {
-    currentClimb,
-    currentClimbQueueItem,
-    mirrorClimb,
-    queue,
-    setQueue,
-    getNextClimbQueueItem,
-    getPreviousClimbQueueItem,
-    setCurrentClimbQueueItem,
-    viewOnlyMode,
-  } = useQueueContext();
-
-  const { isFavorited, toggleFavorite } = useFavorite({
-    climbUuid: currentClimb?.uuid ?? '',
-  });
-
-  const currentQueueIndex = currentClimbQueueItem
-    ? queue.findIndex(item => item.uuid === currentClimbQueueItem.uuid)
-    : -1;
-  const remainingQueueCount = currentQueueIndex >= 0 ? queue.length - currentQueueIndex : queue.length;
+  const { currentClimb, queue, setQueue, viewOnlyMode } = useQueueContext();
 
   // Wake lock when drawer is open
   useWakeLock(isOpen);
@@ -219,38 +185,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     }
   }, [setActiveDrawer, isActionsOpen, isQueueOpen, isPlaylistSelectorOpen, isTickDrawerOpen]);
 
-  // Compute ascent info for tick FAB badge
   const currentAngle = typeof angle === 'string' ? parseInt(angle, 10) : angle;
-  const filteredLogbook = useMemo(() => {
-    if (!logbook || !currentClimb) return [];
-    return logbook.filter(
-      (asc) => asc.climb_uuid === currentClimb.uuid && Number(asc.angle) === currentAngle
-    );
-  }, [logbook, currentClimb, currentAngle]);
-
-  const hasSuccessfulAscent = filteredLogbook.some((asc) => asc.is_ascent);
-  const ascentCount = filteredLogbook.length;
-
-  // Card-swipe navigation
-  const nextItem = getNextClimbQueueItem();
-  const prevItem = getPreviousClimbQueueItem();
-
-  const handleSwipeNext = useCallback(() => {
-    const next = getNextClimbQueueItem();
-    if (!next || viewOnlyMode) return;
-    setCurrentClimbQueueItem(next);
-  }, [getNextClimbQueueItem, setCurrentClimbQueueItem, viewOnlyMode]);
-
-  const handleSwipePrevious = useCallback(() => {
-    const prev = getPreviousClimbQueueItem();
-    if (!prev || viewOnlyMode) return;
-    setCurrentClimbQueueItem(prev);
-  }, [getPreviousClimbQueueItem, setCurrentClimbQueueItem, viewOnlyMode]);
-
-  const canSwipeNext = !viewOnlyMode && !!nextItem;
-  const canSwipePrevious = !viewOnlyMode && !!prevItem;
-
-  const isMirrored = !!currentClimb?.mirrored;
 
 
   return (
@@ -275,123 +210,22 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             boardType={boardDetails.board_name}
             angle={currentAngle}
             aboveFold={
-            <>
-              {/* Header: Grade | Name | Angle Selector */}
-              <div className={styles.headerSection}>
-                <ClimbDetailHeader
-                  climb={currentClimb}
-                  boardDetails={boardDetails}
-                  angle={currentAngle}
-                  isAngleAdjustable={true}
-                />
-              </div>
-
-              {/* Board renderer with card-swipe and floating Tick FAB */}
-              <div className={styles.boardSectionWrapper}>
-                {currentClimb && (
-                  <SwipeBoardCarousel
-                    boardDetails={boardDetails}
-                    currentClimb={currentClimb}
-                    nextClimb={nextItem?.climb}
-                    previousClimb={prevItem?.climb}
-                    onSwipeNext={handleSwipeNext}
-                    onSwipePrevious={handleSwipePrevious}
-                    canSwipeNext={canSwipeNext}
-                    canSwipePrevious={canSwipePrevious}
-                    className={styles.boardSection}
-                    boardContainerClassName={styles.swipeCardContainer}
-                    fillContainer
-                  />
-                )}
-
-                {/* Floating Tick FAB - Spotify style */}
-                <div className={styles.tickFabContainer}>
-                  <button
-                    className={`${styles.tickFab} ${hasSuccessfulAscent ? styles.tickFabSuccess : ''}`}
-                    onClick={() => setIsTickDrawerOpen(true)}
-                    aria-label="Log ascent"
-                  >
-                    <CheckOutlined className={styles.tickFabIcon} />
-                    {ascentCount > 0 && (
-                      <span className={styles.tickFabBadge}>{ascentCount}</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <div className={styles.actionBar}>
-            <IconButton
-              disabled={!canSwipePrevious}
-              onClick={() => {
-                const prev = getPreviousClimbQueueItem();
-                if (prev) setCurrentClimbQueueItem(prev);
-              }}
-            >
-              <SkipPreviousOutlined />
-            </IconButton>
-
-            {/* Mirror */}
-            {boardDetails.supportsMirroring && (
-              <IconButton
-                color={isMirrored ? 'primary' : 'default'}
-                onClick={() => mirrorClimb()}
-                sx={
-                  isMirrored
-                    ? { backgroundColor: themeTokens.colors.purple, borderColor: themeTokens.colors.purple, color: 'common.white', '&:hover': { backgroundColor: themeTokens.colors.purple } }
-                    : undefined
-                }
-              >
-                <SyncOutlined />
-              </IconButton>
-            )}
-
-            {/* Favorite */}
-            <IconButton
-              onClick={() => toggleFavorite()}
-            >
-              {isFavorited ? <Favorite sx={{ color: themeTokens.colors.error }} /> : <FavoriteBorderOutlined />}
-            </IconButton>
-
-            {/* Party / LED */}
-            <ShareBoardButton />
-
-            {/* More actions */}
-            <IconButton
-              onClick={() => {
-                setIsQueueOpen(false);
-                setIsPlaylistSelectorOpen(false);
-                setIsActionsOpen(true);
-              }}
-              aria-label="Climb actions"
-            >
-              <MoreHorizOutlined />
-            </IconButton>
-
-            {/* Queue */}
-            <MuiBadge badgeContent={remainingQueueCount} max={99} sx={{ '& .MuiBadge-badge': { backgroundColor: themeTokens.colors.primary, color: 'common.white' } }}>
-              <IconButton
-                onClick={() => {
+              <PlayClimbAboveFold
+                climb={currentClimb}
+                boardDetails={boardDetails}
+                angle={currentAngle}
+                onOpenTick={() => setIsTickDrawerOpen(true)}
+                onOpenActions={() => {
+                  setIsQueueOpen(false);
+                  setIsPlaylistSelectorOpen(false);
+                  setIsActionsOpen(true);
+                }}
+                onOpenQueue={() => {
                   setIsActionsOpen(false);
                   setIsPlaylistSelectorOpen(false);
                   setIsQueueOpen(true);
                 }}
-                aria-label="Open queue"
-              >
-                <FormatListBulletedOutlined />
-              </IconButton>
-            </MuiBadge>
-
-            <IconButton
-              disabled={!canSwipeNext}
-              onClick={() => {
-                const next = getNextClimbQueueItem();
-                if (next) setCurrentClimbQueueItem(next);
-              }}
-            >
-              <SkipNextOutlined />
-            </IconButton>
-              </div>
-            </>
+              />
             }
           />
         ) : (
