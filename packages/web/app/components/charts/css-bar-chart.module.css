@@ -57,15 +57,18 @@
 /* Angled x-axis labels for dense charts (e.g. weekly) */
 .legendAngled {
   position: relative;
-  height: 28px;
+  height: 40px;
+  overflow: hidden;
 }
 
 .legendAngled .legendLabel {
   position: relative;
+  display: inline-block;
   transform: rotate(-45deg);
-  transform-origin: top center;
-  text-align: right;
+  transform-origin: top left;
+  text-align: left;
   overflow: visible;
+  vertical-align: top;
 }
 
 /* Stacked legend (for charts with multiple segment colors) */
