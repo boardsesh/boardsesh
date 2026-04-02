@@ -17,6 +17,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import boardScrollStyles from '@/app/components/board-scroll/board-scroll.module.css';
 import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-drawer';
+import { themeTokens } from '@/app/theme/theme-config';
 
 type FeedTab = 'sessions' | 'proposals' | 'comments';
 const VALID_TABS: FeedTab[] = ['sessions', 'proposals', 'comments'];
@@ -80,7 +81,7 @@ export default function FeedPageContent({
   }, [updateParam]);
 
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', pb: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}>
+    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', pb: themeTokens.layout.bottomNavSpacer }}>
       {/* Feed */}
       <Box component="main" sx={{ flex: 1, px: 2, py: 2, pt: 'calc(var(--global-header-height) + 16px)' }}>
         {isAuthenticated && (myBoards.length > 0 || isLoadingBoards) && (

@@ -27,6 +27,7 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
+import { themeTokens } from '@/app/theme/theme-config';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -267,7 +268,7 @@ export default function SettingsPageContent() {
         </Typography>
       </Box>
 
-      <Box component="main" sx={{ padding: '24px', paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))', maxWidth: 600, margin: '0 auto', width: '100%' }}>
+      <Box component="main" sx={{ padding: '24px', paddingBottom: themeTokens.layout.bottomNavSpacer, maxWidth: 600, margin: '0 auto', width: '100%' }}>
         <Card>
           <CardContent>
             <Typography variant="h5">Profile</Typography>

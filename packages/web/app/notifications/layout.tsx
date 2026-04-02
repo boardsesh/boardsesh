@@ -1,4 +1,6 @@
 import React from 'react';
+import Box from '@mui/material/Box';
+import { themeTokens } from '@/app/theme/theme-config';
 
 export default function NotificationsLayout({
   children,
@@ -6,8 +8,8 @@ export default function NotificationsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ minHeight: '100dvh', paddingTop: 'var(--global-header-height)', paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}>
+    <Box sx={{ minHeight: '100dvh', pt: 'var(--global-header-height)', pb: themeTokens.layout.bottomNavSpacer }}>
       {children}
-    </div>
+    </Box>
   );
 }
