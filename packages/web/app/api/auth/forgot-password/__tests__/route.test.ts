@@ -101,4 +101,16 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockTransaction).toHaveBeenCalled();
     expect(mockSendPasswordResetEmail).toHaveBeenCalled();
   });
+
+  it('returns generic response and does not send email for OAuth-only account', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'oauth-user' }]);
+    mockCredentialsLimit.mockResolvedValue([]);
+
+    const response = await POST(createRequest({ email: 'oauth@example.com' }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.message).toContain('If an account exists');
+    expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
+  });
 });

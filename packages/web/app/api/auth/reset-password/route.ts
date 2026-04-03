@@ -19,17 +19,28 @@ const resetPasswordSchema = z
   });
 
 const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
+const MIN_RESPONSE_TIME_MS = 1500;
 
 function getResetIdentifier(email: string): string {
   return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
 }
 
+async function consistentDelay(startTime: number): Promise<void> {
+  const elapsed = Date.now() - startTime;
+  const remaining = MIN_RESPONSE_TIME_MS - elapsed;
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
   try {
     const clientIp = getClientIp(request);
     const rateLimitResult = checkRateLimit(`reset-password:${clientIp}`, 10, 60_000);
 
     if (rateLimitResult.limited) {
+      await consistentDelay(startTime);
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         {
@@ -45,6 +56,7 @@ export async function POST(request: NextRequest) {
     const validationResult = resetPasswordSchema.safeParse(body);
 
     if (!validationResult.success) {
+      await consistentDelay(startTime);
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
@@ -59,17 +71,20 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (resetToken.length === 0) {
+      await consistentDelay(startTime);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
     if (new Date() > resetToken[0].expires) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      await consistentDelay(startTime);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
     const user = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
     if (user.length === 0) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      await consistentDelay(startTime);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
@@ -102,11 +117,13 @@ export async function POST(request: NextRequest) {
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
     });
 
+    await consistentDelay(startTime);
     return NextResponse.json({
       message: 'Password reset successful. You can now sign in with your new password.',
     });
   } catch (error) {
     console.error('Reset password error:', error);
+    await consistentDelay(startTime);
     return NextResponse.json({ error: 'Failed to reset password' }, { status: 500 });
   }
 }
