@@ -25,13 +25,12 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({ delete: mockTxDelete, insert: mockTxInsert });
 });
 
-let selectCall = 0;
-const mockSelect = vi.fn(() => {
-  selectCall += 1;
+const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
+  const limitMock = selection?.id ? mockUserLimit : mockCredentialsLimit;
   return {
     from: () => ({
       where: () => ({
-        limit: selectCall === 1 ? mockUserLimit : mockCredentialsLimit,
+        limit: limitMock,
       }),
     }),
   };
@@ -63,7 +62,6 @@ function createRequest(body: Record<string, unknown>): NextRequest {
 describe('POST /api/auth/forgot-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    selectCall = 0;
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
   });
@@ -112,5 +110,23 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.status).toBe(200);
     expect(data.message).toContain('If an account exists');
     expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when email delivery fails', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    mockSendPasswordResetEmail.mockRejectedValue(new Error('smtp failed'));
+
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+    expect(response.status).toBe(500);
+  });
+
+  it('returns 500 when database transaction fails', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    mockTransaction.mockRejectedValueOnce(new Error('db transaction failed'));
+
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+    expect(response.status).toBe(500);
   });
 });
