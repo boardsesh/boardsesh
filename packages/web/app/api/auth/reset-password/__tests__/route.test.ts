@@ -40,13 +40,12 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn(tx);
 });
 
-let selectCall = 0;
-const mockSelect = vi.fn(() => {
-  selectCall += 1;
+const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
+  const limitMock = selection?.id ? mockUserLimit : mockTokenLimit;
   return {
     from: () => ({
       where: () => ({
-        limit: selectCall === 1 ? mockTokenLimit : mockUserLimit,
+        limit: limitMock,
       }),
     }),
   };
@@ -79,11 +78,26 @@ function createRequest(body: Record<string, unknown>): NextRequest {
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    selectCall = 0;
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     mockHash.mockResolvedValue('hashed-password');
     mockTxCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+  });
+
+  it('returns 429 when rate limited', async () => {
+    mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 25 });
+
+    const response = await POST(
+      createRequest({
+        email: 'test@example.com',
+        token: crypto.randomUUID(),
+        password: 'validpassword',
+        confirmPassword: 'validpassword',
+      })
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe('25');
   });
 
   it('returns 400 for invalid request body', async () => {
@@ -158,5 +172,22 @@ describe('POST /api/auth/reset-password', () => {
 
     expect(response.status).toBe(200);
     expect(mockTxInsertValues).toHaveBeenCalled();
+  });
+
+  it('returns 500 when transaction fails unexpectedly', async () => {
+    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockTransaction.mockRejectedValueOnce(new Error('db transaction failed'));
+
+    const response = await POST(
+      createRequest({
+        email: 'test@example.com',
+        token: crypto.randomUUID(),
+        password: 'validpassword',
+        confirmPassword: 'validpassword',
+      })
+    );
+
+    expect(response.status).toBe(500);
   });
 });
