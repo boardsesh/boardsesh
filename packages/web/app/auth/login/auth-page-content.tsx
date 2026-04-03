@@ -315,6 +315,10 @@ export default function AuthPageContent() {
                 >
                   Login
                 </Button>
+
+                <Button variant="text" href="/auth/forgot-password">
+                  Forgot password?
+                </Button>
               </Box>
             </TabPanel>
 
