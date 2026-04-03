@@ -16,8 +16,6 @@ import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export default function ForgotPasswordContent() {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -27,11 +25,6 @@ export default function ForgotPasswordContent() {
   const handleSubmit = async () => {
     if (!email) {
       setEmailError('Please enter your email');
-      return;
-    }
-
-    if (!EMAIL_REGEX.test(email)) {
-      setEmailError('Please enter a valid email');
       return;
     }
 
@@ -90,6 +83,7 @@ export default function ForgotPasswordContent() {
 
               <TextField
                 label="Email"
+                type="email"
                 placeholder="your@email.com"
                 value={email}
                 onChange={(e) => {
@@ -98,6 +92,7 @@ export default function ForgotPasswordContent() {
                 }}
                 error={!!emailError}
                 helperText={emailError}
+                required
                 slotProps={{
                   input: {
                     startAdornment: (
