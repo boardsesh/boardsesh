@@ -5,9 +5,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
-import Collapse from '@mui/material/Collapse';
 import Typography from '@mui/material/Typography';
-import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { signIn } from 'next-auth/react';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
 
@@ -66,7 +64,6 @@ export default function SocialLoginButtons({
   const [loading, setLoading] = useState(true);
   const [isBluefy, setIsBluefy] = useState(false);
   const [isCapacitorApp, setIsCapacitorApp] = useState(false);
-  const [showOAuthInfo, setShowOAuthInfo] = useState(false);
 
   useEffect(() => {
     if (typeof navigator !== 'undefined') {
@@ -89,7 +86,28 @@ export default function SocialLoginButtons({
       });
   }, []);
 
-  const handleSocialSignIn = (provider: string) => {
+  const handleSocialSignIn = async (provider: string) => {
+    if (isCapacitorApp) {
+      const browser = window.Capacitor?.Plugins?.Browser;
+      if (!browser) {
+        return;
+      }
+
+      const nextPath = callbackUrl.startsWith('/') ? callbackUrl : '/';
+      const nativeCallbackUrl =
+        `${window.location.origin}/api/auth/native/callback?next=${encodeURIComponent(nextPath)}`;
+
+      const result = await signIn(provider, {
+        callbackUrl: nativeCallbackUrl,
+        redirect: false,
+      });
+
+      if (result?.url) {
+        await browser.open({ url: result.url });
+      }
+      return;
+    }
+
     signIn(provider, { callbackUrl });
   };
 
@@ -106,33 +124,19 @@ export default function SocialLoginButtons({
     return null;
   }
 
-  if (isBluefy || isCapacitorApp) {
-    const appName = isCapacitorApp ? 'the Boardsesh app' : 'Bluefy';
+  if (isBluefy) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Button
-          fullWidth
-          size="large"
-          variant="outlined"
-          startIcon={<InfoOutlined />}
-          onClick={() => setShowOAuthInfo((prev) => !prev)}
-        >
-          Sign-in options unavailable in {appName}
-        </Button>
-        <Collapse in={showOAuthInfo}>
-          <Alert severity="info" sx={{ mt: 1 }}>
-            <Typography variant="body2" component="div">
-              Google, Apple, and Facebook sign-in are not supported in {appName}.
-            </Typography>
-            <Typography variant="body2" component="div" sx={{ mt: 1 }}>
-              To sign in, open <strong>boardsesh.com</strong> in
-              Safari, sign in with your preferred provider, then go
-              to <strong>Settings</strong> and set a password. You can then use
-              that email and password to log in here.
-            </Typography>
-          </Alert>
-        </Collapse>
-      </Box>
+      <Alert severity="info" sx={{ mt: 1 }}>
+        <Typography variant="body2" component="div">
+          Google, Apple, and Facebook sign-in are not supported in Bluefy.
+        </Typography>
+        <Typography variant="body2" component="div" sx={{ mt: 1 }}>
+          To sign in, open <strong>boardsesh.com</strong> in
+          Safari, sign in with your preferred provider, then go
+          to <strong>Settings</strong> and set a password. You can then use
+          that email and password to log in here.
+        </Typography>
+      </Alert>
     );
   }
 

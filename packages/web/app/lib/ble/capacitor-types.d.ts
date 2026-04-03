@@ -31,6 +31,13 @@ interface CapacitorBrowserPlugin {
   close(): Promise<void>;
 }
 
+interface CapacitorAppPlugin {
+  addListener(
+    eventName: 'appUrlOpen',
+    listenerFunc: (event: { url: string }) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
+}
+
 interface CapacitorGlobal {
   isNativePlatform(): boolean;
   getPlatform(): string;
@@ -39,6 +46,7 @@ interface CapacitorGlobal {
     Geolocation?: CapacitorGeolocationPlugin;
     KeepAwake?: CapacitorKeepAwakePlugin;
     Browser?: CapacitorBrowserPlugin;
+    App?: CapacitorAppPlugin;
     [key: string]: unknown;
   };
 }
