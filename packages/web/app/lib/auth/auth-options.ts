@@ -222,21 +222,13 @@ export const authOptions: NextAuthOptions = {
         return true;
       }
 
-      // For credentials, check if email is verified
+      // For credentials, just verify we have an email
       if (!user.email) {
         return false;
       }
 
-      const db = getDb();
-      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
-
-      // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
-      const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
-      if (emailVerificationEnabled && existingUser.length > 0 && !existingUser[0].emailVerified) {
-        // Redirect to verification page with error
-        return '/auth/verify-request?error=EmailNotVerified';
-      }
-
+      // Email verification is non-blocking — credentials users sign in regardless of
+      // verified status. Verification emails (when SMTP is configured) are informational.
       return true;
     },
     async session({ session, token }) {

@@ -120,18 +120,12 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
         return;
       }
 
-      // Check if email verification is required
-      if (data.requiresVerification) {
-        showMessage(t('login.toasts.checkEmail'), 'info');
-        setActiveTab('login');
-        setLoginValues((prev) => ({ ...prev, email: registerValues.email }));
-        setRegisterValues(initialRegisterValues);
-        setRegisterErrors({});
-        return;
-      }
-
-      // Email verification disabled - auto-login after successful registration
-      showMessage(t('login.toasts.accountCreated'), 'success');
+      // Verification is non-blocking: always auto-login. When a verification email went
+      // out, nudge the user to check their inbox; otherwise just confirm and sign in.
+      showMessage(
+        data.emailSent ? t('login.toasts.accountCreatedCheckEmail') : t('login.toasts.accountCreated'),
+        'success',
+      );
 
       const loginResult = await signIn('credentials', {
         email: registerValues.email,

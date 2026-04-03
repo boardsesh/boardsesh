@@ -159,34 +159,23 @@ export default function AuthPageContent() {
 
       track('Signup Completed', {
         auth_method: 'credentials',
-        requires_verification: Boolean(data.requiresVerification),
+        verification_email_sent: Boolean(data.emailSent),
       });
       // First-touch attribution — written once and never overwritten.
       // PostHog merges these onto the authenticated user once alias() runs
-      // in party-profile-context after the auto-signin below.
-      //
-      // Caveat: if requires_verification is true, we hit the early return below
-      // and the auto-signin never runs, so alias() may not fire in this session.
-      // signup_at / signup_auth_method then live on the anonymous distinct_id
-      // until the user comes back to verify and log in — at which point PostHog
-      // merges them onto the authenticated user. Until that merge they're
-      // visible in Live Events under the anon profile, which can briefly skew
-      // person-property dashboards.
+      // in party-profile-context after the auto-signin below. Verification is
+      // non-blocking, so the auto-signin always runs and alias() fires this session.
       setPersonProperties(undefined, {
         signup_at: new Date().toISOString(),
         signup_auth_method: 'credentials',
       });
 
-      // Check if email verification is required
-      if (data.requiresVerification) {
-        showMessage(t('login.toasts.checkEmail'), 'info');
-        setActiveTab('login');
-        setLoginValues((prev) => ({ ...prev, email: registerValues.email }));
-        return;
-      }
-
-      // Email verification disabled - auto-login after successful registration
-      showMessage(t('login.toasts.accountCreated'), 'success');
+      // Verification is non-blocking: always auto-login. When a verification email went
+      // out, nudge the user to check their inbox; otherwise just confirm and sign in.
+      showMessage(
+        data.emailSent ? t('login.toasts.accountCreatedCheckEmail') : t('login.toasts.accountCreated'),
+        'success',
+      );
 
       const loginResult = await signIn('credentials', {
         email: registerValues.email,

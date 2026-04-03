@@ -68,6 +68,6 @@ export async function GET(request: NextRequest) {
       .where(and(eq(schema.verificationTokens.identifier, email), eq(schema.verificationTokens.token, token)));
   });
 
-  // Redirect to login with success message
-  return NextResponse.redirect(new URL('/auth/login?verified=true', request.url));
+  // Redirect to the app — the user is likely already logged in
+  return NextResponse.redirect(new URL('/?verified=true', request.url));
 }

@@ -69,7 +69,7 @@ Boardsesh uses NextAuth.js v4 for authentication with the following components:
 ### Key Features
 
 - **Conditional Providers**: OAuth buttons only appear when provider credentials are configured
-- **Email Verification**: New email/password accounts require email verification
+- **Email Verification**: Non-blocking — verification emails are sent when SMTP is configured, but users can log in immediately
 - **Account Linking**: Accounts are automatically linked by email — signing in with OAuth using an email that already has a password account links both methods to the same user
 - **JWT Sessions**: Stateless authentication with 5-minute refresh interval
 - **Rate Limiting**: In-memory rate limiting on auth endpoints (best-effort in serverless)
@@ -296,7 +296,7 @@ ngrok http 3000
 
 ## Email Verification Setup
 
-Email verification is required for email/password accounts. OAuth accounts are pre-verified by the provider.
+Email verification is non-blocking. When SMTP credentials (`SMTP_USER` and `SMTP_PASSWORD`) are configured, verification emails are sent on registration, but users can log in and use the app immediately. OAuth accounts are pre-verified by the provider. SMTP credential presence auto-enables verification emails. To disable verification entirely (even with SMTP configured), set `EMAIL_VERIFICATION_ENABLED=false` as an emergency kill switch.
 
 ### Fastmail Setup (Recommended)
 
@@ -340,10 +340,9 @@ open http://localhost:3000/auth/login
 
 1. Click **Create Account** tab
 2. Enter email, password, and name
-3. Submit the form
-4. Check inbox for verification email
-5. Click verification link
-6. Login with credentials
+3. Submit the form — user is auto-logged in immediately
+4. Check inbox for verification email (if SMTP configured)
+5. Click verification link — redirects to app with `?verified=true`
 
 ### 2. Test OAuth Providers
 

@@ -23,7 +23,9 @@ import { themeTokens } from '@/app/theme/theme-config';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const KNOWN_VERIFY_ERROR_CODES = new Set(['EmailNotVerified', 'InvalidToken', 'TokenExpired', 'TooManyAttempts']);
+// EmailNotVerified is intentionally absent: verification is non-blocking, so the
+// sign-in callback never redirects here with that code.
+const KNOWN_VERIFY_ERROR_CODES = new Set(['InvalidToken', 'TokenExpired', 'TooManyAttempts']);
 
 type EmailErrors = { email?: string };
 
