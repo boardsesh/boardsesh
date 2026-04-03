@@ -17,45 +17,38 @@ vi.mock('bcryptjs', () => ({
   },
 }));
 
-const mockTokenLimit = vi.fn();
 const mockUserLimit = vi.fn();
 const mockTxCredentialsLimit = vi.fn();
+const mockTxConsumeTokenReturning = vi.fn();
 const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxUserUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const mockTxTokenDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxInsertValues = vi.fn().mockResolvedValue(undefined);
-const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+  let txSelectCall = 0;
   const tx = {
-    select: () => ({ from: () => ({ where: () => ({ limit: mockTxCredentialsLimit }) }) }),
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => {
+            txSelectCall += 1;
+            return txSelectCall === 1 ? mockUserLimit() : mockTxCredentialsLimit();
+          },
+        }),
+      }),
+    }),
     update: (table: unknown) => ({
       set: () => ({
         where: table === 'userCredentials' ? mockTxUpdateWhere : mockTxUserUpdateWhere,
       }),
     }),
     insert: () => ({ values: mockTxInsertValues }),
-    delete: () => ({ where: mockTxTokenDeleteWhere }),
+    delete: () => ({ where: () => ({ returning: mockTxConsumeTokenReturning }) }),
   };
   await fn(tx);
 });
 
-let selectCall = 0;
-const mockSelect = vi.fn(() => {
-  selectCall += 1;
-  return {
-    from: () => ({
-      where: () => ({
-        limit: selectCall === 1 ? mockTokenLimit : mockUserLimit,
-      }),
-    }),
-  };
-});
-
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: mockSelect,
-    delete: mockDelete,
     transaction: mockTransaction,
   }),
 }));
@@ -79,11 +72,12 @@ function createRequest(body: Record<string, unknown>): NextRequest {
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    selectCall = 0;
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     mockHash.mockResolvedValue('hashed-password');
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockTxCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    mockTxConsumeTokenReturning.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
   });
 
   it('returns 400 for invalid request body', async () => {
@@ -92,7 +86,7 @@ describe('POST /api/auth/reset-password', () => {
   });
 
   it('returns 400 when reset token does not exist', async () => {
-    mockTokenLimit.mockResolvedValue([]);
+    mockTxConsumeTokenReturning.mockResolvedValue([]);
 
     const response = await POST(
       createRequest({
@@ -107,9 +101,6 @@ describe('POST /api/auth/reset-password', () => {
   });
 
   it('resets password successfully', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-
     const response = await POST(
       createRequest({
         email: 'test@example.com',
@@ -126,8 +117,7 @@ describe('POST /api/auth/reset-password', () => {
   });
 
   it('returns 400 when token is expired', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() - 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockTxConsumeTokenReturning.mockResolvedValue([{ expires: new Date(Date.now() - 60_000) }]);
 
     const response = await POST(
       createRequest({
@@ -139,11 +129,9 @@ describe('POST /api/auth/reset-password', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(mockDelete).toHaveBeenCalled();
   });
 
   it('inserts credentials when user does not already have password credentials', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
     mockUserLimit.mockResolvedValue([{ id: 'oauth-user' }]);
     mockTxCredentialsLimit.mockResolvedValue([]);
 

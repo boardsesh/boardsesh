@@ -64,33 +64,23 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     const identifier = getResetIdentifier(email);
 
-    const resetToken = await db
-      .select()
-      .from(schema.verificationTokens)
-      .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, token)))
-      .limit(1);
-
-    if (resetToken.length === 0) {
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
-
-    if (new Date() > resetToken[0].expires) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
-
-    const user = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
-    if (user.length === 0) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
-
     const passwordHash = await bcrypt.hash(password, 12);
 
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      const consumedToken = await tx
+        .delete(schema.verificationTokens)
+        .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, token)))
+        .returning({ expires: schema.verificationTokens.expires });
+
+      if (consumedToken.length === 0 || new Date() > consumedToken[0].expires) {
+        return { success: false as const };
+      }
+
+      const user = await tx.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+      if (user.length === 0) {
+        return { success: false as const };
+      }
+
       const existingCredentials = await tx
         .select({ userId: schema.userCredentials.userId })
         .from(schema.userCredentials)
@@ -113,9 +103,13 @@ export async function POST(request: NextRequest) {
         .update(schema.users)
         .set({ emailVerified: new Date(), updatedAt: new Date() })
         .where(and(eq(schema.users.id, user[0].id), isNull(schema.users.emailVerified)));
-
-      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      return { success: true as const };
     });
+
+    if (!result.success) {
+      await consistentDelay(startTime);
+      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+    }
 
     await consistentDelay(startTime);
     return NextResponse.json({
