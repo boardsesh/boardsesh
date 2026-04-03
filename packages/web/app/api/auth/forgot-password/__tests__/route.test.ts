@@ -113,4 +113,16 @@ describe('POST /api/auth/forgot-password', () => {
     expect(data.message).toContain('If an account exists');
     expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
   });
+
+  it('returns generic response when mailer fails', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    mockSendPasswordResetEmail.mockRejectedValue(new Error('SMTP down'));
+
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.message).toContain('If an account exists');
+  });
 });

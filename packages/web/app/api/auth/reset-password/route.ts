@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
@@ -64,33 +64,33 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     const identifier = getResetIdentifier(email);
 
-    const resetToken = await db
-      .select()
-      .from(schema.verificationTokens)
-      .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, token)))
-      .limit(1);
+    const transactionResult = await db.transaction(async (tx) => {
+      const consumedToken = await tx
+        .delete(schema.verificationTokens)
+        .where(
+          and(
+            eq(schema.verificationTokens.identifier, identifier),
+            eq(schema.verificationTokens.token, token),
+            gt(schema.verificationTokens.expires, new Date()),
+          ),
+        )
+        .returning({ identifier: schema.verificationTokens.identifier });
 
-    if (resetToken.length === 0) {
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
+      if (consumedToken.length === 0) {
+        return { ok: false as const };
+      }
 
-    if (new Date() > resetToken[0].expires) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
+      const user = await tx
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.email, email))
+        .limit(1);
 
-    const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
-    if (user.length === 0) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
+      if (user.length === 0) {
+        return { ok: false as const };
+      }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    await db.transaction(async (tx) => {
+      const passwordHash = await bcrypt.hash(password, 12);
       const existingCredentials = await tx
         .select()
         .from(schema.userCredentials)
@@ -114,8 +114,13 @@ export async function POST(request: NextRequest) {
         .set({ emailVerified: new Date(), updatedAt: new Date() })
         .where(and(eq(schema.users.id, user[0].id), isNull(schema.users.emailVerified)));
 
-      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      return { ok: true as const };
     });
+
+    if (!transactionResult.ok) {
+      await consistentDelay(startTime);
+      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
+    }
 
     await consistentDelay(startTime);
     return NextResponse.json({

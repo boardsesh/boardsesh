@@ -97,7 +97,12 @@ export async function POST(request: NextRequest) {
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-    await sendPasswordResetEmail(email, token, baseUrl);
+    try {
+      await sendPasswordResetEmail(email, token, baseUrl);
+    } catch (emailError) {
+      // Do not leak whether an account exists during mailer outages.
+      console.error('Failed to send password reset email:', emailError);
+    }
 
     await consistentDelay(startTime);
     return NextResponse.json({ message: genericMessage }, { status: 200 });

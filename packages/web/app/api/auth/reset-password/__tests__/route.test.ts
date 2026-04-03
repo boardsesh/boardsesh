@@ -17,53 +17,54 @@ vi.mock('bcryptjs', () => ({
   },
 }));
 
-const mockTokenLimit = vi.fn();
 const mockUserLimit = vi.fn();
 const mockTxCredentialsLimit = vi.fn();
 const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxUserUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const mockTxTokenDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxInsertValues = vi.fn().mockResolvedValue(undefined);
-const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
-const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+const mockTxConsumedTokenReturning = vi.fn();
+const mockUsersTable = { id: 'users.id', email: 'users.email', emailVerified: 'users.emailVerified' };
+const mockUserCredentialsTable = { userId: 'userCredentials.userId' };
+const mockVerificationTokensTable = {
+  identifier: 'verificationTokens.identifier',
+  token: 'verificationTokens.token',
+  expires: 'verificationTokens.expires',
+};
+
+const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
   const tx = {
-    select: () => ({ from: () => ({ where: () => ({ limit: mockTxCredentialsLimit }) }) }),
+    delete: () => ({
+      where: () => ({
+        returning: mockTxConsumedTokenReturning,
+      }),
+    }),
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: table === mockUsersTable ? mockUserLimit : mockTxCredentialsLimit,
+        }),
+      }),
+    }),
     update: (table: unknown) => ({
       set: () => ({
-        where: table === 'userCredentials' ? mockTxUpdateWhere : mockTxUserUpdateWhere,
+        where: table === mockUserCredentialsTable ? mockTxUpdateWhere : mockTxUserUpdateWhere,
       }),
     }),
     insert: () => ({ values: mockTxInsertValues }),
-    delete: () => ({ where: mockTxTokenDeleteWhere }),
   };
-  await fn(tx);
-});
-
-let selectCall = 0;
-const mockSelect = vi.fn(() => {
-  selectCall += 1;
-  return {
-    from: () => ({
-      where: () => ({
-        limit: selectCall === 1 ? mockTokenLimit : mockUserLimit,
-      }),
-    }),
-  };
+  return await fn(tx);
 });
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: mockSelect,
-    delete: mockDelete,
     transaction: mockTransaction,
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  verificationTokens: { identifier: 'verificationTokens.identifier', token: 'verificationTokens.token', expires: 'verificationTokens.expires' },
-  users: { id: 'users.id', email: 'users.email', emailVerified: 'users.emailVerified' },
-  userCredentials: 'userCredentials',
+  verificationTokens: mockVerificationTokensTable,
+  users: mockUsersTable,
+  userCredentials: mockUserCredentialsTable,
 }));
 
 import { POST } from '../route';
@@ -79,10 +80,11 @@ function createRequest(body: Record<string, unknown>): NextRequest {
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    selectCall = 0;
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     mockHash.mockResolvedValue('hashed-password');
+    mockTxConsumedTokenReturning.mockResolvedValue([{ identifier: 'password-reset:test@example.com' }]);
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockTxCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
   });
 
@@ -91,8 +93,8 @@ describe('POST /api/auth/reset-password', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 400 when reset token does not exist', async () => {
-    mockTokenLimit.mockResolvedValue([]);
+  it('returns 400 when token is not consumed (invalid or expired)', async () => {
+    mockTxConsumedTokenReturning.mockResolvedValue([]);
 
     const response = await POST(
       createRequest({
@@ -107,9 +109,6 @@ describe('POST /api/auth/reset-password', () => {
   });
 
   it('resets password successfully', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-
     const response = await POST(
       createRequest({
         email: 'test@example.com',
@@ -125,26 +124,7 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockTxUpdateWhere).toHaveBeenCalled();
   });
 
-  it('returns 400 when token is expired', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() - 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-
-    const response = await POST(
-      createRequest({
-        email: 'test@example.com',
-        token: crypto.randomUUID(),
-        password: 'validpassword',
-        confirmPassword: 'validpassword',
-      })
-    );
-
-    expect(response.status).toBe(400);
-    expect(mockDelete).toHaveBeenCalled();
-  });
-
   it('inserts credentials when user does not already have password credentials', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'oauth-user' }]);
     mockTxCredentialsLimit.mockResolvedValue([]);
 
     const response = await POST(
