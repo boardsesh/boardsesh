@@ -334,6 +334,10 @@ export default function AuthPageContent() {
                 >
                   {t('login.submit.signIn')}
                 </Button>
+
+                <Button variant="text" href="/auth/forgot-password">
+                  Forgot password?
+                </Button>
               </Box>
             </TabPanel>
 
