@@ -17,3 +17,10 @@ export const SaveAuroraCredentialInputSchema = z.object({
   username: z.string().min(1, 'Username cannot be empty').max(100),
   password: z.string().min(1, 'Password cannot be empty').max(100),
 });
+
+/**
+ * Delete account input validation schema
+ */
+export const DeleteAccountInputSchema = z.object({
+  removeSetterName: z.boolean(),
+});

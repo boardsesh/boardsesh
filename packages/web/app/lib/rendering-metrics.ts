@@ -8,11 +8,7 @@ const MAX_RENDER_EVENTS = 5;
 let renderEventCount = 0;
 let errorEventCount = 0;
 
-export function trackRenderComplete(
-  durationMs: number,
-  context: RenderContext,
-  renderer: 'svg' | 'rust-wasm',
-) {
+export function trackRenderComplete(durationMs: number, context: RenderContext, renderer: 'svg' | 'wasm') {
   if (renderEventCount >= MAX_RENDER_EVENTS) return;
   renderEventCount++;
   track('Board Render Complete', {
@@ -22,10 +18,7 @@ export function trackRenderComplete(
   });
 }
 
-export function trackRenderError(
-  context: RenderContext,
-  renderer: 'svg' | 'rust-wasm',
-) {
+export function trackRenderError(context: RenderContext, renderer: 'svg' | 'wasm') {
   if (errorEventCount >= MAX_RENDER_EVENTS) return;
   errorEventCount++;
   track('Board Render Error', { context, renderer });
@@ -38,7 +31,7 @@ export function trackListBatchRender(
   durationMs: number,
   props: {
     viewMode: 'grid' | 'list';
-    renderer: 'svg' | 'rust-wasm';
+    renderer: 'svg' | 'wasm';
     batchSize: number;
     totalItems: number;
     isInitial: boolean;

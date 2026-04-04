@@ -70,6 +70,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
       searchParamsObject,
       isDefaultSearch,
       userId,
+      { cacheable: !hasProgressFilters },
     );
   } catch (error) {
     console.error('Error fetching climb search results:', error);

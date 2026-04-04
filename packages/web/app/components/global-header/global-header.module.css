@@ -69,6 +69,28 @@
   flex-shrink: 0;
 }
 
+.headerTransparent {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--global-header-height);
+  padding: 0 16px;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: transparent;
+  border-bottom: none;
+  pointer-events: none;
+  touch-action: manipulation;
+}
+
+.headerTransparent > * {
+  pointer-events: auto;
+}
+
 :global(html[data-theme="dark"]) .header {
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.4));
   -webkit-backdrop-filter: blur(20px);

@@ -571,6 +571,7 @@ The `DistributedStateManager` enables true horizontal scaling:
 | Session Membership | Aggregated user list from all instances |
 | Leader Election | Atomic Lua scripts ensure consistent leader |
 | Instance Heartbeat | 30s heartbeat detects dead instances |
+| WebSocket Ping/Pong | 30s ping detects dead connections on live instances |
 | Graceful Cleanup | Connections cleaned up on instance shutdown |
 
 ### Redis Pub/Sub for Cross-Instance Events
@@ -674,6 +675,25 @@ sequenceDiagram
 - Delta sync attempted if gap ≤ 100 events
 - Falls back to full sync if gap too large
 - Client-side supervisor detects stale connections and triggers reconnect (see [Client-Side Connection Supervisor](#client-side-connection-supervisor))
+
+**Offline queue support:**
+
+While disconnected (`isDisconnected` state in `useMutationGuard`), the client can continue operating on its local queue. The mutation guard allows local mutations once the session has been connected at least once:
+
+- **All mutations** apply to local state immediately via the reducer
+- **Additions** (addToQueue, setCurrentClimb) are buffered in a 500-item offline buffer (`useOfflineQueueBuffer`) for reconciliation on reconnect
+- **Other mutations** (removeFromQueue, setQueue, setCurrentClimbQueueItem, mirrorClimb) apply locally only — they are not buffered because reconciling removals/reorders across multiple users is conflict-prone
+- **IndexedDB persistence** is enabled during offline party mode so the queue survives app restarts
+
+On reconnect, the reconciliation hook (`useOfflineReconciliation`) waits for the FullSync event and then chooses a strategy:
+
+- **Client wins** (full local state pushed via `setQueue`): when only 1 user is in the session, or when the server sequence number hasn't changed (no one else modified the queue while we were offline)
+- **Server wins with additions merge** (default): server queue state is authoritative; only buffered additions are pushed via individual idempotent `addQueueItem` calls
+- **Safety timeout**: if no FullSync arrives within 15 seconds, falls back to additions-only reconciliation against the current local queue
+
+The FullSync handler in the event processor also merges offline-buffered items into the displayed queue for visual continuity — items the user added offline don't briefly disappear during the reconciliation window.
+
+The UI shows the normal queue controls with a "Disconnected" indicator (CloudOff icon) instead of the blocking "Reconnecting..." spinner, so users can keep interacting.
 
 ### 2. Redis Connection Failure
 
@@ -1084,11 +1104,15 @@ sequenceDiagram
     P->>P: Exit
 ```
 
-### Dead Instance Detection and Active Cleanup
+### Dead Connection and Instance Detection
 
-When an instance crashes or terminates without graceful shutdown, the system uses a combination of active cleanup and TTL-based self-healing:
+The system uses multiple layers to detect and clean up dead connections:
 
-**1. Instance Heartbeat (60s TTL, refreshed every 30s)**
+**1. WebSocket Ping/Pong (30s interval)**
+
+The WebSocket server pings every connected client every 30 seconds. If a client doesn't respond with a pong before the next ping cycle, the socket is terminated. This detects half-open TCP connections caused by network drops (phone sleep, WiFi switch, browser tab killed without close frame). When `terminate()` is called, the `ws` close event fires, graphql-ws triggers `onDisconnect`, and the existing Redis cleanup runs. Dead connections are detected within 30–60 seconds.
+
+**2. Instance Heartbeat (60s TTL, refreshed every 30s)**
 
 ```
 boardsesh:instance:{id}:heartbeat = timestamp (60s TTL)
@@ -1096,7 +1120,7 @@ boardsesh:instance:{id}:heartbeat = timestamp (60s TTL)
 
 When an instance dies unexpectedly, its heartbeat key expires after 60 seconds.
 
-**2. Active Dead Instance Cleanup**
+**3. Active Dead Instance Cleanup**
 
 The `DistributedStateManager` actively discovers and cleans up dead instances:
 
@@ -1110,15 +1134,19 @@ The cleanup process:
 4. Deletes all orphaned connection hashes and instance tracking keys
 5. Runs `PRUNE_STALE_SESSION_MEMBERS_SCRIPT` (Lua) per affected session to atomically remove stale members and re-elect leader if needed
 
-**3. Stale-Filtering at Read Time**
+**4. Active Session Stale Member Cleanup**
+
+On the same ~2 minute cadence, each instance also prunes stale members from sessions it participates in. This catches edge cases where a connection on the current instance died between ping intervals (e.g., race between ping check and socket termination).
+
+**5. Self-Healing Reads**
 
 Even between cleanup cycles, stale entries never inflate participant counts:
 
 - `getSessionMemberCount()` pipelines `EXISTS` checks against each member's connection hash — only live connections are counted
-- `getSessionMembers()` filters out members whose connection data is missing
+- `getSessionMembers()` filters out members whose connection data is missing **and** fires a background cleanup to remove stale IDs from the Redis set
 - `hasSessionMembers()` delegates to the filtered count
 
-**4. TTL Self-Healing (defense in depth)**
+**6. TTL Self-Healing (defense in depth)**
 
 | Key | TTL | Refreshed |
 |-----|-----|-----------|
@@ -1127,7 +1155,7 @@ Even between cleanup cycles, stale entries never inflate participant counts:
 | `boardsesh:instance:{id}:heartbeat` | 60 seconds | Every 30s |
 | `boardsesh:session:{id}:members` | 4 hours | On join/leave/refresh |
 
-Even if active cleanup fails, orphaned data expires naturally via these TTLs.
+Even if all active cleanup fails, orphaned data expires naturally via these TTLs.
 
 ---
 
@@ -1330,6 +1358,7 @@ Requires user authentication and controller ownership.
 | Hash verification | 60s | State drift detection |
 | Subscription queue | 1000 | Max pending events |
 | Connection TTL | 1 hour | Distributed connection expiry |
+| WebSocket ping interval | 30s | Dead connection detection |
 | Instance heartbeat | 30s | Heartbeat update interval |
 | Instance heartbeat TTL | 60s | Dead instance detection |
 | Session members TTL | 4 hours | Matches session TTL |

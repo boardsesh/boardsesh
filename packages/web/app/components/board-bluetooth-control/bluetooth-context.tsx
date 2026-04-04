@@ -5,22 +5,7 @@ import { track } from '@vercel/analytics';
 import { useBoardBluetooth } from './use-board-bluetooth';
 import { useQueueContext } from '../graphql-queue';
 import type { BoardDetails } from '@/app/lib/types';
-import { hasCapacitorPlugin } from '@/app/lib/ble/capacitor-utils';
-
-const BLUETOOTH_SUPPORT_PROBE_INTERVAL_MS = 100;
-const BLUETOOTH_SUPPORT_PROBE_TIMEOUT_MS = 1500;
-
-function hasWebBluetooth(): boolean {
-  return typeof navigator !== 'undefined' && !!navigator.bluetooth;
-}
-
-function hasNativeBlePlugin(): boolean {
-  return hasCapacitorPlugin('BluetoothLe');
-}
-
-function probeBluetoothSupport(): boolean {
-  return hasWebBluetooth() || hasNativeBlePlugin();
-}
+import { isCapacitor, isCapacitorWebView, waitForCapacitor, CAPACITOR_BRIDGE_TIMEOUT_MS } from '@/app/lib/ble/capacitor-utils';
 
 interface BluetoothContextValue {
   isConnected: boolean;
@@ -29,7 +14,6 @@ interface BluetoothContextValue {
   disconnect: () => void;
   sendFramesToBoard: (frames: string, mirrored?: boolean) => Promise<boolean | undefined>;
   isBluetoothSupported: boolean;
-  isBluetoothSupportResolved: boolean;
   isIOS: boolean;
 }
 
@@ -46,13 +30,30 @@ export function BluetoothProvider({
   const { isConnected, loading, connect, disconnect, sendFramesToBoard } =
     useBoardBluetooth({ boardDetails });
 
-  const [isBluetoothSupported, setIsBluetoothSupported] = useState(() => probeBluetoothSupport());
-  const [isBluetoothSupportResolved, setIsBluetoothSupportResolved] = useState(() =>
-    probeBluetoothSupport(),
-  );
+  const [isBluetoothSupported, setIsBluetoothSupported] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
+    let cancelPolling: (() => void) | undefined;
+
+    if (isCapacitor()) {
+      // Bridge already available — confirmed native environment
+      setIsBluetoothSupported(true);
+    } else if (typeof navigator !== 'undefined' && !!navigator.bluetooth) {
+      // Web Bluetooth API present (Chrome, Edge, etc.)
+      setIsBluetoothSupported(true);
+    } else if (isCapacitorWebView()) {
+      // UA looks like a native WebView — bridge may not be injected yet.
+      // Poll for window.Capacitor; only confirm support once the bridge appears.
+      let cancelled = false;
+      waitForCapacitor(CAPACITOR_BRIDGE_TIMEOUT_MS).then((found) => {
+        if (!cancelled && found) {
+          setIsBluetoothSupported(true);
+        }
+      });
+      cancelPolling = () => { cancelled = true; };
+    }
+
     if (
       typeof navigator !== 'undefined' &&
       /iPhone|iPad|iPod/i.test(
@@ -62,45 +63,7 @@ export function BluetoothProvider({
       setIsIOS(true);
     }
 
-    let cancelled = false;
-    let elapsedMs = 0;
-
-    const updateBluetoothSupport = () => {
-      if (cancelled) return true;
-
-      const supported = probeBluetoothSupport();
-      if (supported) {
-        setIsBluetoothSupported(true);
-        setIsBluetoothSupportResolved(true);
-        return true;
-      }
-
-      elapsedMs += BLUETOOTH_SUPPORT_PROBE_INTERVAL_MS;
-      if (elapsedMs >= BLUETOOTH_SUPPORT_PROBE_TIMEOUT_MS) {
-        setIsBluetoothSupported(false);
-        setIsBluetoothSupportResolved(true);
-        return true;
-      }
-
-      return false;
-    };
-
-    if (updateBluetoothSupport()) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const intervalId = window.setInterval(() => {
-      if (updateBluetoothSupport()) {
-        window.clearInterval(intervalId);
-      }
-    }, BLUETOOTH_SUPPORT_PROBE_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
+    return () => cancelPolling?.();
   }, []);
 
   // Auto-send climb when currentClimbQueueItem changes (only if connected)
@@ -145,7 +108,6 @@ export function BluetoothProvider({
       disconnect,
       sendFramesToBoard,
       isBluetoothSupported,
-      isBluetoothSupportResolved,
       isIOS,
     }),
     [
@@ -155,7 +117,6 @@ export function BluetoothProvider({
       disconnect,
       sendFramesToBoard,
       isBluetoothSupported,
-      isBluetoothSupportResolved,
       isIOS,
     ],
   );

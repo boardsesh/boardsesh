@@ -40,12 +40,24 @@ export const getBluetoothPacket = (frames: string, placementPositions: LedPlacem
   const resultArray: number[][] = [];
   let tempArray = [PACKET_MIDDLE];
 
+  let skippedCount = 0;
+
   frames.split('p').forEach((frame) => {
     if (!frame) return;
 
     const [placement, role] = frame.split('r');
+    const placementId = Number(placement);
+    const ledPosition = placementPositions[placementId];
+
+    // Skip placements that don't have an LED in this board configuration
+    // (matches backend behavior in controller/subscriptions.ts)
+    if (ledPosition === undefined) {
+      skippedCount++;
+      return;
+    }
+
     const encodedFrame = encodePositionAndColor(
-      Number(placementPositions[Number(placement)]),
+      ledPosition,
       HOLD_STATE_MAP[board_name][Number(role)].color.replace('#', ''),
     );
 
@@ -55,6 +67,10 @@ export const getBluetoothPacket = (frames: string, placementPositions: LedPlacem
     }
     tempArray.push(...encodedFrame);
   });
+
+  if (skippedCount > 0) {
+    console.warn(`[BLE] Skipped ${skippedCount} placements with no LED mapping for this board configuration`);
+  }
 
   resultArray.push(tempArray);
   if (resultArray.length === 1) resultArray[0][0] = PACKET_ONLY;

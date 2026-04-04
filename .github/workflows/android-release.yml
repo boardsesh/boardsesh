@@ -28,6 +28,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -43,7 +48,7 @@ jobs:
       - name: Accept licenses and install SDK components
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install Node.js dependencies
         working-directory: mobile
@@ -56,7 +61,7 @@ jobs:
       - name: Set version code
         working-directory: mobile/android
         run: |
-          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" app/build.gradle
+          sed -Ei "s/^([[:space:]]*)versionCode[[:space:]]*=.*$/\\1versionCode = ${{ github.run_number }}/" app/build.gradle
           echo "Version code set to ${{ github.run_number }}"
 
       - name: Build debug APK

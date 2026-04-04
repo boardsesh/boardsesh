@@ -3,12 +3,9 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { BoardDetails, BoardName } from '@/app/lib/types';
-import BoardRenderer from '@/app/components/board-renderer/board-renderer';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
 import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-renderer';
-import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
 import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
-import { convertLitUpHoldsStringToMap } from '@/app/components/board-renderer/util';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import { constructClimbViewUrlWithSlugs, constructClimbViewUrl } from '@/app/lib/url-utils';
@@ -34,10 +31,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   frames,
   isMirror,
 }) => {
-  const isRustRendererEnabled = useFeatureFlag('rust-svg-rendering');
-  const isWasmRendererEnabled = useFeatureFlag('wasm-rendering');
-  const canvasReady = useCanvasRendererReady(!!isWasmRendererEnabled);
-  const useRustRenderer = !!isRustRendererEnabled || !!isWasmRendererEnabled;
+  const canvasReady = useCanvasRendererReady();
   // Memoize board details to avoid recomputing on every render
   const boardDetails = useMemo<BoardDetails | null>(() => {
     if (!layoutId) return null;
@@ -58,14 +52,6 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
       return null;
     }
   }, [boardType, layoutId]);
-
-  // Memoize lit up holds map (only needed for legacy SVG renderer)
-  const litUpHoldsMap = useMemo(() => {
-    if (useRustRenderer) return undefined;
-    if (!frames || !boardType) return undefined;
-    const framesData = convertLitUpHoldsStringToMap(frames, boardType as BoardName);
-    return framesData[0];
-  }, [frames, boardType, useRustRenderer]);
 
   // Reuse the already-memoized boardDetails to build the climb view URL
   const climbViewPath = useMemo(() => {
@@ -102,9 +88,6 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   if (!boardDetails || !climbViewPath) {
     return null;
   }
-  if (!useRustRenderer && !litUpHoldsMap) {
-    return null;
-  }
 
   const thumbnailStyle: React.CSSProperties = {
     aspectRatio: `${boardDetails.boardWidth} / ${boardDetails.boardHeight}`,
@@ -123,7 +106,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
         style={thumbnailStyle}
       />
     );
-  } else if (useRustRenderer && frames) {
+  } else if (frames) {
     thumbnailContent = (
       <BoardImageLayers
         boardDetails={boardDetails}
@@ -135,24 +118,13 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     );
   } else {
     thumbnailContent = (
-      <BoardRenderer
-        boardDetails={boardDetails}
-        litUpHoldsMap={litUpHoldsMap}
-        mirrored={isMirror}
-        thumbnail
-      />
+      <BoardImageLayers boardDetails={boardDetails} mirrored={isMirror} thumbnail style={thumbnailStyle} />
     );
   }
 
   return (
-    <Link
-      href={climbViewPath}
-      className={styles.thumbnailLink}
-      title={`View ${climbName}`}
-    >
-      <div className={styles.thumbnailContainer}>
-        {thumbnailContent}
-      </div>
+    <Link href={climbViewPath} className={styles.thumbnailLink} title={`View ${climbName}`}>
+      <div className={styles.thumbnailContainer}>{thumbnailContent}</div>
     </Link>
   );
 };

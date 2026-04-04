@@ -7,11 +7,13 @@ import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutl
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-drawer';
 import { useSearchDrawerBridge } from '@/app/components/search-drawer/search-drawer-bridge-context';
+import { DEFAULT_CLIMB_SEARCH_SUMMARY } from '@/app/components/search-drawer/search-summary-utils';
 import UserDrawer from '@/app/components/user-drawer/user-drawer';
 import StartSeshDrawer from '@/app/components/session-creation/start-sesh-drawer';
 import SeshSettingsDrawer from '@/app/components/sesh-settings/sesh-settings-drawer';
 import { usePersistentSession, useIsOnBoardRoute } from '@/app/components/persistent-session/persistent-session-context';
 import { BoardConfigData } from '@/app/lib/server-board-configs';
+import { isBoardListPath } from '@/app/lib/board-route-paths';
 import { themeTokens } from '@/app/theme/theme-config';
 import { usePathname } from 'next/navigation';
 import BackButton from '@/app/components/back-button';
@@ -41,9 +43,13 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
 
   const hasActiveSession = !!activeSession;
 
-  // Hide header completely on certain pages
+  // On hidden-header pages, show only the avatar in a transparent bar
   if (HIDDEN_HEADER_PAGES.includes(pathname)) {
-    return null;
+    return (
+      <header className={styles.headerTransparent}>
+        <UserDrawer boardConfigs={boardConfigs} />
+      </header>
+    );
   }
 
   // Check if current page wants a simple title header
@@ -51,6 +57,7 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
 
   // When the bridge is active (on a board list page), delegate to the board route's drawer
   const useClimbSearchBridge = openClimbSearchDrawer !== null;
+  const defaultSearchPillText = isBoardListPath(pathname) ? DEFAULT_CLIMB_SEARCH_SUMMARY : 'Search';
 
   const handleSearchClick = () => {
     if (useClimbSearchBridge) {
@@ -68,7 +75,7 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
     }
   };
 
-  const pillText = useClimbSearchBridge && searchPillSummary ? searchPillSummary : 'Search';
+  const pillText = useClimbSearchBridge ? (searchPillSummary ?? defaultSearchPillText) : defaultSearchPillText;
 
   // Simple title header for specific pages (back button + title, no search/sesh)
   if (titleHeaderPage) {

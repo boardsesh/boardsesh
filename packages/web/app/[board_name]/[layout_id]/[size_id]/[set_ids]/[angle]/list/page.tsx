@@ -108,6 +108,7 @@ export default async function DynamicResultsPage(props: {
       searchParamsObject,
       isDefaultSearch,
       userId,
+      { cacheable: !hasProgressFilters },
     );
   } catch (error) {
     console.error(

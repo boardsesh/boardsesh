@@ -1,4 +1,3 @@
-import { rustSvgRendering } from '@/app/flags';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
@@ -29,9 +28,6 @@ async function warmOverlays(options: {
   maxImages?: number;
 }): Promise<void> {
   try {
-    const isEnabled = await rustSvgRendering();
-    if (!isEnabled) return;
-
     const { boardDetails, climbs, variant, maxImages = 20 } = options;
     const isThumbnail = variant === 'thumbnail';
     const toWarm = climbs.slice(0, maxImages);

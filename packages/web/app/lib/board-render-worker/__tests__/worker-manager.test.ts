@@ -90,10 +90,7 @@ function stubGlobals() {
   // Patch the URL constructor so that `new URL('./board-render.worker.ts', import.meta.url)`
   // works in the test environment (vitest's import.meta.url can be a file:// path, which
   // may get mangled by vitest's internal URL$1 wrapper).
-  const PatchedURL = function UrlProxy(
-    input: string | URL,
-    base?: string | URL,
-  ) {
+  const PatchedURL = function UrlProxy(input: string | URL, base?: string | URL) {
     try {
       return new OriginalURL(input, base);
     } catch {
@@ -124,8 +121,7 @@ function stubGlobals() {
   // fetch stub — returns a fake blob for image preloading
   (globalThis as Record<string, unknown>).fetch = vi.fn(() =>
     Promise.resolve({
-      blob: () =>
-        Promise.resolve(new Blob(['fake-image'], { type: 'image/png' })),
+      blob: () => Promise.resolve(new Blob(['fake-image'], { type: 'image/png' })),
     }),
   );
 
@@ -186,9 +182,7 @@ function isRenderMessage(msg: unknown): msg is Record<string, unknown> & { id: n
   return typeof m.id === 'number' && 'frames' in m;
 }
 
-function findWorkerWithRenderMsg(
-  frames?: string,
-): FakeWorker | undefined {
+function findWorkerWithRenderMsg(frames?: string): FakeWorker | undefined {
   return fakeWorkerInstances.find((w) =>
     w.postMessage.mock.calls.some((call) => {
       const msg = call[0] as Record<string, unknown>;
@@ -198,10 +192,7 @@ function findWorkerWithRenderMsg(
   );
 }
 
-function findRenderCall(
-  worker: FakeWorker,
-  frames?: string,
-): Record<string, unknown> | undefined {
+function findRenderCall(worker: FakeWorker, frames?: string): Record<string, unknown> | undefined {
   const call = worker.postMessage.mock.calls.find((c) => {
     const msg = c[0] as Record<string, unknown>;
     if (!isRenderMessage(msg)) return false;
@@ -210,11 +201,7 @@ function findRenderCall(
   return call ? (call[0] as Record<string, unknown>) : undefined;
 }
 
-function resolveWorkerRequest(
-  worker: FakeWorker,
-  requestId: number,
-  bitmap: ImageBitmap,
-): void {
+function resolveWorkerRequest(worker: FakeWorker, requestId: number, bitmap: ImageBitmap): void {
   worker.onmessage!(
     new MessageEvent('message', {
       data: { id: requestId, bitmap },
@@ -222,11 +209,7 @@ function resolveWorkerRequest(
   );
 }
 
-function rejectWorkerRequest(
-  worker: FakeWorker,
-  requestId: number,
-  errorMessage: string,
-): void {
+function rejectWorkerRequest(worker: FakeWorker, requestId: number, errorMessage: string): void {
   worker.onmessage!(
     new MessageEvent('message', {
       data: { id: requestId, error: errorMessage },
@@ -295,17 +278,10 @@ describe('useCanvasRendererReady', () => {
     vi.resetModules();
   });
 
-  it('stays false when the feature flag is disabled', async () => {
+  it('returns true after mount when browser supports it', async () => {
     stubGlobals();
     const { useCanvasRendererReady } = await import('../worker-manager');
-    const { result } = renderHook(() => useCanvasRendererReady(false));
-    expect(result.current).toBe(false);
-  });
-
-  it('returns true after mount when flag is enabled and browser supports it', async () => {
-    stubGlobals();
-    const { useCanvasRendererReady } = await import('../worker-manager');
-    const { result } = renderHook(() => useCanvasRendererReady(true));
+    const { result } = renderHook(() => useCanvasRendererReady());
     expect(result.current).toBe(true);
   });
 
@@ -318,7 +294,7 @@ describe('useCanvasRendererReady', () => {
     });
 
     const { useCanvasRendererReady } = await import('../worker-manager');
-    const { result } = renderHook(() => useCanvasRendererReady(true));
+    const { result } = renderHook(() => useCanvasRendererReady());
     expect(result.current).toBe(false);
   });
 
@@ -327,13 +303,13 @@ describe('useCanvasRendererReady', () => {
     const { useCanvasRendererReady } = await import('../worker-manager');
 
     // First instance — triggers the useEffect that sets globalCanvasReady
-    const { result: first } = renderHook(() => useCanvasRendererReady(true));
+    const { result: first } = renderHook(() => useCanvasRendererReady());
     expect(first.current).toBe(true);
 
     // Second instance — should initialise with true immediately (no false→true flash)
     let initialValue: boolean | undefined;
     renderHook(() => {
-      const ready = useCanvasRendererReady(true);
+      const ready = useCanvasRendererReady();
       if (initialValue === undefined) {
         initialValue = ready;
       }
@@ -428,19 +404,13 @@ describe('renderBoard', () => {
     expect(firstResult).toBe(fakeBitmap);
 
     // Second call — should resolve immediately from cache without posting a new message
-    const postMessageCallCountBefore = fakeWorkerInstances.reduce(
-      (sum, w) => sum + w.postMessage.mock.calls.length,
-      0,
-    );
+    const postMessageCallCountBefore = fakeWorkerInstances.reduce((sum, w) => sum + w.postMessage.mock.calls.length, 0);
 
     const secondResult = await renderBoard(options);
     expect(secondResult).toBe(fakeBitmap);
 
     // No additional postMessage calls should have occurred (cache hit)
-    const postMessageCallCountAfter = fakeWorkerInstances.reduce(
-      (sum, w) => sum + w.postMessage.mock.calls.length,
-      0,
-    );
+    const postMessageCallCountAfter = fakeWorkerInstances.reduce((sum, w) => sum + w.postMessage.mock.calls.length, 0);
     expect(postMessageCallCountAfter).toBe(postMessageCallCountBefore);
   });
 
@@ -538,9 +508,7 @@ describe('renderBoard', () => {
     // Resolve both to clean up
     await vi.waitFor(() => {
       const renderMsgCount = fakeWorkerInstances.reduce(
-        (count, w) =>
-          count +
-          w.postMessage.mock.calls.filter((call) => isRenderMessage(call[0])).length,
+        (count, w) => count + w.postMessage.mock.calls.filter((call) => isRenderMessage(call[0])).length,
         0,
       );
       expect(renderMsgCount).toBeGreaterThanOrEqual(2);
@@ -576,9 +544,7 @@ describe('renderBoard', () => {
     // Resolve both to clean up
     await vi.waitFor(() => {
       const renderMsgCount = fakeWorkerInstances.reduce(
-        (count, w) =>
-          count +
-          w.postMessage.mock.calls.filter((call) => isRenderMessage(call[0])).length,
+        (count, w) => count + w.postMessage.mock.calls.filter((call) => isRenderMessage(call[0])).length,
         0,
       );
       expect(renderMsgCount).toBeGreaterThanOrEqual(2);
@@ -647,9 +613,7 @@ describe('renderBoard', () => {
 
     // Verify holds are mapped correctly
     const holds = request.holds as Array<Record<string, unknown>>;
-    expect(holds).toEqual([
-      { id: 1, mirrored_hold_id: null, cx: 100, cy: 200, r: 15 },
-    ]);
+    expect(holds).toEqual([{ id: 1, mirrored_hold_id: null, cx: 100, cy: 200, r: 15 }]);
 
     // Verify holdStateMap contains kilter states
     const holdStateMap = request.holdStateMap as Record<number, { color: string }>;

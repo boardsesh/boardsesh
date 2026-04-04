@@ -190,25 +190,40 @@ export function isWorkerRenderingSupported(): boolean {
  * BoardImageLayers and the API request it triggers.
  */
 let globalCanvasReady = false;
+const canvasReadyListeners = new Set<() => void>();
+
+function subscribeCanvasReady(listener: () => void): () => void {
+  canvasReadyListeners.add(listener);
+  return () => {
+    canvasReadyListeners.delete(listener);
+  };
+}
+
+function markCanvasReady(): void {
+  if (globalCanvasReady) return;
+  globalCanvasReady = true;
+  canvasReadyListeners.forEach((listener) => listener());
+}
 
 /**
  * Hook that returns true once the Web Worker canvas renderer is ready (client-side only).
- * Returns false during SSR and initial hydration so the server-rendered BoardImageLayers
- * HTML matches the client. After mount, flips to true and the canvas renderer takes over.
- *
- * After the first mount, `globalCanvasReady` is set so that new component instances
- * (from infinite scroll, navigation, etc.) skip the false→true transition entirely.
+ * `useSyncExternalStore` ensures hydration always starts from the server snapshot (`false`),
+ * so SSR image-layer markup matches the first client render. After the first mount marks
+ * the renderer ready, later client-only mounts can read `true` immediately from the store.
  */
-export function useCanvasRendererReady(featureFlagEnabled: boolean): boolean {
-  const [ready, setReady] = React.useState(
-    () => globalCanvasReady && featureFlagEnabled && isWorkerRenderingSupported(),
+export function useCanvasRendererReady(): boolean {
+  const ready = React.useSyncExternalStore(
+    subscribeCanvasReady,
+    () => globalCanvasReady && isWorkerRenderingSupported(),
+    () => false,
   );
+
   React.useEffect(() => {
-    if (featureFlagEnabled && isWorkerRenderingSupported()) {
-      globalCanvasReady = true;
-      setReady(true);
+    if (isWorkerRenderingSupported()) {
+      markCanvasReady();
     }
-  }, [featureFlagEnabled]);
+  }, []);
+
   return ready;
 }
 

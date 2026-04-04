@@ -107,7 +107,11 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
         throw new Error(error.error || 'Failed to save credentials');
       }
 
-      showMessage(`${boardName} account linked successfully`, 'success');
+      if (boardType === 'tension') {
+        showMessage('Tension account linked. Your data will show up within 12 hours.', 'success');
+      } else {
+        showMessage(`${boardName} account linked successfully`, 'success');
+      }
       setIsModalOpen(false);
       setFormValues({ username: '', password: '' });
       await fetchCredential();
@@ -300,7 +304,7 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
         <DialogContent>
           <Typography variant="body2" component="span" color="text.secondary" className={styles.modalDescription}>
             Enter your {boardName} Board username and password to import your Aurora data.
-            Your credentials are encrypted and securely stored. Data syncs every 6 hours.
+            Your credentials are encrypted and securely stored. Data syncs every 12 hours.
           </Typography>
           <Box
             component="form"

@@ -193,17 +193,17 @@ describe('ClimbListItem', () => {
       expect(buttons.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('opens actions drawer on ellipsis click even with disableSwipe', () => {
+    it('opens actions drawer on ellipsis click even with disableSwipe', async () => {
       render(
         <ClimbListItem climb={makeClimb()} boardDetails={makeBoardDetails()} disableSwipe />,
       );
 
       // Click the ellipsis menu button
-      const button = screen.getAllByRole('button')[0];
+      const button = screen.getByLabelText('More actions');
       fireEvent.click(button);
 
       // Actions drawer should now be mounted
-      expect(screen.getByTestId('climb-actions')).toBeTruthy();
+      expect(await screen.findByTestId('climb-actions')).toBeTruthy();
     });
   });
 

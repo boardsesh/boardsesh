@@ -1335,4 +1335,46 @@ describe.skipIf(!redisAvailable)('DistributedStateManager - Dead Instance Cleanu
       expect(count).toBe(0);
     });
   });
+
+  describe('getSessionMembers - self-healing cleanup', () => {
+    it('should remove stale member IDs from the session set on read', async () => {
+      await liveManager.registerConnection('live-conn-sh', 'LiveUser');
+      await liveManager.joinSession('live-conn-sh', 'self-heal-session');
+
+      // Add stale members directly (no connection hash)
+      await redis.sadd('boardsesh:session:self-heal-session:members', 'ghost-a', 'ghost-b');
+
+      // Raw set has 3 members
+      const rawBefore = await redis.scard('boardsesh:session:self-heal-session:members');
+      expect(rawBefore).toBe(3);
+
+      // getSessionMembers returns only the live one
+      const members = await liveManager.getSessionMembers('self-heal-session');
+      expect(members.length).toBe(1);
+      expect(members[0].username).toBe('LiveUser');
+
+      // Wait briefly for fire-and-forget cleanup to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // The stale IDs should now be removed from the Redis set
+      const rawAfter = await redis.scard('boardsesh:session:self-heal-session:members');
+      expect(rawAfter).toBe(1);
+    });
+
+    it('should not remove anything when all members are live', async () => {
+      await liveManager.registerConnection('ok-conn-1', 'User1');
+      await liveManager.registerConnection('ok-conn-2', 'User2');
+      await liveManager.joinSession('ok-conn-1', 'healthy-session-sh');
+      await liveManager.joinSession('ok-conn-2', 'healthy-session-sh');
+
+      const members = await liveManager.getSessionMembers('healthy-session-sh');
+      expect(members.length).toBe(2);
+
+      // Wait briefly for any fire-and-forget to run
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const rawCount = await redis.scard('boardsesh:session:healthy-session-sh:members');
+      expect(rawCount).toBe(2);
+    });
+  });
 });

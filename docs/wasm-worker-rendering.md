@@ -5,7 +5,7 @@ This document describes the board rendering pipeline used in Boardsesh. The syst
 ## Table of Contents
 
 1. [Rendering Tiers](#rendering-tiers)
-2. [Feature Flags](#feature-flags)
+2. [Renderer Modes](#renderer-modes)
 3. [Architecture Overview](#architecture-overview)
 4. [Rendering Flow](#rendering-flow)
 5. [Worker Pool](#worker-pool)
@@ -19,28 +19,24 @@ This document describes the board rendering pipeline used in Boardsesh. The syst
 
 ## Rendering Tiers
 
-The board rendering pipeline has three tiers, controlled by two feature flags (`rust-svg-rendering` and `wasm-rendering`):
+The board rendering pipeline has two active tiers:
 
-| Tier | Component | Rendering Method | When Used |
-|------|-----------|-----------------|-----------|
-| 1 (legacy) | `BoardRenderer` | Inline SVG circles | Neither flag enabled |
-| 2 (server WASM) | `BoardImageLayers` | `<img>` overlay from `/api/internal/board-render` | `rust-svg-rendering` enabled |
-| 3 (client WASM) | `BoardCanvasRenderer` | OffscreenCanvas in Web Worker | `wasm-rendering` enabled |
+| Tier            | Component             | Rendering Method                                  | When Used                                        |
+| --------------- | --------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| 1 (server WASM) | `BoardImageLayers`    | `<img>` overlay from `/api/internal/board-render` | SSR fallback before the worker is ready          |
+| 2 (client WASM) | `BoardCanvasRenderer` | OffscreenCanvas in Web Worker                     | After hydration, when the canvas worker is ready |
 
-Tier 3 always uses Tier 2 as its SSR fallback. Tier 2 can be used independently without Tier 3.
+`BoardCanvasRenderer` always uses `BoardImageLayers` as its SSR fallback.
 
 ---
 
-## Feature Flags
+## Renderer Modes
 
-Both flags are defined in `packages/web/app/flags.ts`.
+The rollout flags have been removed. The supported behavior is:
 
-| Flag | Effect |
-|------|--------|
-| `rust-svg-rendering` | Enables `BoardImageLayers`, which renders board overlays as `<img>` tags with the overlay fetched from the server-side WASM API route (`/api/internal/board-render`). |
-| `wasm-rendering` | Enables `BoardCanvasRenderer`, which takes over rendering on the client after hydration. Implies `rust-svg-rendering` for SSR fallback -- the server always renders `BoardImageLayers` HTML so that the initial page load has content before the worker is ready. |
-
-Both flags can be enabled independently. When only `rust-svg-rendering` is on, the client stays on `BoardImageLayers` permanently. When `wasm-rendering` is also on, the client upgrades to `BoardCanvasRenderer` after mount.
+- Server render with `BoardImageLayers`
+- Upgrade to `BoardCanvasRenderer` after hydration when the worker pool is ready
+- Fall back to `BoardImageLayers` on clients that are not ready yet
 
 ---
 
@@ -114,7 +110,7 @@ React hydrates `BoardImageLayers`. The DOM matches the server-rendered HTML, so 
 
 ### 3. Worker Takeover
 
-After mount, `useCanvasRendererReady` resolves to `true` once the browser supports `OffscreenCanvas` and the feature flag is enabled. `BoardCanvasRenderer` replaces `BoardImageLayers` in the visible layout.
+After mount, `useCanvasRendererReady` resolves to `true` once the browser supports `OffscreenCanvas` and the worker pool is initialized. `BoardCanvasRenderer` replaces `BoardImageLayers` in the visible layout.
 
 A module-level `globalCanvasReady` flag ensures that only the first batch of component instances goes through the `false`→`true` transition. Subsequent instances (e.g. from infinite scroll) initialise with `true` immediately, avoiding a one-frame flash of `BoardImageLayers` and the API request it would trigger.
 
@@ -134,10 +130,10 @@ When the user navigates to a different climb, the same flow repeats from step 1 
 
 The `WorkerManager` maintains a pool of Web Workers, each running its own instance of the WASM module.
 
-| Environment | Worker Count |
-|-------------|-------------|
-| Browser | 3 |
-| Capacitor WebView | 5 |
+| Environment       | Worker Count |
+| ----------------- | ------------ |
+| Browser           | 3            |
+| Capacitor WebView | 5            |
 
 Workers are allocated by round-robin. Each worker loads the WASM module from `/public/wasm/` on initialization. The pool is created once and reused for the lifetime of the page.
 
@@ -167,11 +163,11 @@ Board background images (the static board photos) are fetched once on the main t
 
 ## Browser Support
 
-| Feature | Minimum Version |
-|---------|----------------|
+| Feature         | Minimum Version                        |
+| --------------- | -------------------------------------- |
 | OffscreenCanvas | Safari 16.4+, Chrome 69+, Firefox 105+ |
-| Web Workers | All modern browsers |
-| WebAssembly | All modern browsers |
+| Web Workers     | All modern browsers                    |
+| WebAssembly     | All modern browsers                    |
 
 If `OffscreenCanvas` is unavailable, the system stays on `BoardImageLayers` (Tier 2). The `BoardCanvasRenderer` component checks for `OffscreenCanvas` support before attempting to initialize the worker pool.
 
@@ -195,11 +191,11 @@ If a background image fails to load during preloading, the error is logged but d
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `packages/web/app/lib/board-render-worker/worker-manager.ts` | Worker pool lifecycle, LRU cache, request deduplication, background image preloading |
-| `packages/web/app/lib/board-render-worker/board-render.worker.ts` | Worker code: WASM loading, OffscreenCanvas compositing, message handling |
-| `packages/web/app/components/board-renderer/board-canvas-renderer.tsx` | Client-side canvas renderer component, error fallback to BoardImageLayers |
-| `packages/web/app/components/board-renderer/board-image-layers.tsx` | Server-rendered image layer component (Tier 2) |
-| `packages/web/app/api/internal/board-render/route.ts` | Server-side WASM API route, generates PNG overlay |
-| `packages/web/app/flags.ts` | Feature flag definitions (`rust-svg-rendering`, `wasm-rendering`) |
+| File                                                                   | Purpose                                                                              |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `packages/web/app/lib/board-render-worker/worker-manager.ts`           | Worker pool lifecycle, LRU cache, request deduplication, background image preloading |
+| `packages/web/app/lib/board-render-worker/board-render.worker.ts`      | Worker code: WASM loading, OffscreenCanvas compositing, message handling             |
+| `packages/web/app/components/board-renderer/board-canvas-renderer.tsx` | Client-side canvas renderer component, error fallback to BoardImageLayers            |
+| `packages/web/app/components/board-renderer/board-image-layers.tsx`    | Server-rendered image layer component (Tier 2)                                       |
+| `packages/web/app/api/internal/board-render/route.ts`                  | Server-side WASM API route, generates PNG overlay                                    |
+| `packages/web/app/flags.ts`                                            | Empty feature flag placeholder kept for future flags                                 |

@@ -1,5 +1,5 @@
-import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
-import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
+import { V_GRADE_COLORS } from '@/app/lib/grade-colors';
+import { SUPPORTED_BOARDS, BOULDER_GRADES } from '@/app/lib/board-data';
 
 export interface UserProfile {
   id: string;
@@ -36,48 +36,12 @@ export type AggregatedTimeframeType = 'today' | 'lastWeek' | 'lastMonth' | 'last
 
 export const BOARD_TYPES = SUPPORTED_BOARDS;
 
-export const difficultyMapping: Record<number, string> = {
-  10: '4a',
-  11: '4b',
-  12: '4c',
-  13: '5a',
-  14: '5b',
-  15: '5c',
-  16: '6a',
-  17: '6a+',
-  18: '6b',
-  19: '6b+',
-  20: '6c',
-  21: '6c+',
-  22: '7a',
-  23: '7a+',
-  24: '7b',
-  25: '7b+',
-  26: '7c',
-  27: '7c+',
-  28: '8a',
-  29: '8a+',
-  30: '8b',
-  31: '8b+',
-  32: '8c',
-  33: '8c+',
-};
-
-export const angleColors = [
-  'rgba(255,77,77,0.7)',
-  'rgba(51,0,102,1)',
-  'rgba(77,128,255,0.7)',
-  'rgba(255,204,51,0.7)',
-  'rgba(204,51,153,0.7)',
-  'rgba(51,204,204,0.7)',
-  'rgba(255,230,25,0.7)',
-  'rgba(102,102,255,0.7)',
-  'rgba(51,153,255,0.7)',
-  'rgba(25,179,255,0.7)',
-  'rgba(255,255,51,0.7)',
-  'rgba(102,51,153,1)',
-  'rgba(179,255,128,0.7)',
-];
+// Maps difficulty IDs to V-grades (e.g., 16 → "V3", 17 → "V3").
+// Multiple Font grades collapse into the same V-grade, which is what we want
+// for chart aggregation and display labels.
+export const difficultyMapping: Record<number, string> = Object.fromEntries(
+  BOULDER_GRADES.map((g) => [g.difficulty_id, g.v_grade]),
+);
 
 // Layout name mapping: boardType-layoutId -> display name
 const layoutNames: Record<string, string> = {
@@ -93,18 +57,18 @@ const layoutNames: Record<string, string> = {
   'moonboard-5': 'MoonBoard Masters 2019',
 };
 
-// Colors for each layout
+// Colors for each layout — soft, muted palette that feels cohesive
 const layoutColors: Record<string, string> = {
-  'kilter-1': 'rgba(6, 182, 212, 0.7)',
-  'kilter-8': 'rgba(57, 255, 20, 0.7)',
-  'tension-9': 'rgba(239, 68, 68, 0.7)',
-  'tension-10': 'rgba(249, 115, 22, 0.7)',
-  'tension-11': 'rgba(234, 179, 8, 0.7)',
-  'moonboard-1': 'rgba(255, 215, 0, 0.7)',
-  'moonboard-2': 'rgba(255, 165, 0, 0.7)',
-  'moonboard-3': 'rgba(255, 140, 0, 0.7)',
-  'moonboard-4': 'rgba(255, 193, 7, 0.7)',
-  'moonboard-5': 'rgba(255, 152, 0, 0.7)',
+  'kilter-1': 'hsla(190, 55%, 52%, 0.7)',   // Muted teal
+  'kilter-8': 'hsla(160, 40%, 50%, 0.7)',    // Soft sage green
+  'tension-9': 'hsla(350, 50%, 58%, 0.7)',   // Dusty rose
+  'tension-10': 'hsla(20, 55%, 58%, 0.7)',   // Warm terracotta
+  'tension-11': 'hsla(42, 50%, 55%, 0.7)',   // Muted gold
+  'moonboard-1': 'hsla(270, 40%, 58%, 0.7)', // Soft lavender
+  'moonboard-2': 'hsla(250, 40%, 55%, 0.7)', // Muted indigo
+  'moonboard-3': 'hsla(290, 35%, 55%, 0.7)', // Soft plum
+  'moonboard-4': 'hsla(230, 40%, 58%, 0.7)', // Dusty blue
+  'moonboard-5': 'hsla(210, 45%, 55%, 0.7)', // Slate blue
 };
 
 export const getLayoutKey = (boardType: string, layoutId: number | null | undefined): string => {
@@ -124,9 +88,39 @@ export const getLayoutColor = (boardType: string, layoutId: number | null | unde
   return layoutColors[key] || (boardType === 'kilter' ? 'rgba(6, 182, 212, 0.5)' : 'rgba(239, 68, 68, 0.5)');
 };
 
+/**
+ * Softened grade color for chart bars — preserves hue but lowers saturation
+ * and raises lightness for a cohesive, muted look.
+ */
 export const getGradeChartColor = (grade: string): string => {
-  const hexColor = FONT_GRADE_COLORS[grade.toLowerCase()];
-  return hexColor ? getGradeColorWithOpacity(hexColor, 0.8) : 'rgba(200, 200, 200, 0.7)';
+  // Strip trailing "+" so "V5+" looks up the same color as "V5"
+  const normalized = grade.replace(/\+$/, '');
+  const hexColor = V_GRADE_COLORS[normalized];
+  if (!hexColor) return 'hsla(0, 0%, 78%, 0.7)';
+
+  // Convert hex to HSL for smoother control
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+
+  // Muted: cap saturation at 50%, raise lightness to 55%, 75% opacity
+  const hDeg = Math.round(h * 360);
+  const sMuted = Math.min(Math.round(s * 100), 50);
+  const lMuted = Math.max(Math.round(l * 100), 48);
+  return `hsla(${hDeg}, ${sMuted}%, ${lMuted}%, 0.75)`;
 };
 
 export const boardOptions = BOARD_TYPES.map((boardType) => ({

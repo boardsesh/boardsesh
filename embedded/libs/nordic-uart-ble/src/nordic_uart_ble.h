@@ -47,6 +47,9 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     // Used by BLE proxy to forward data to the actual board
     void setRawForwardCallback(BLERawForwardCallback callback);
 
+    // Enable protocol decoder debug logging for packet/frame inspection.
+    void setProtocolDebug(bool enabled);
+
     // NimBLE callbacks
     void onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) override;
     void onDisconnect(NimBLEServer* server, ble_gap_conn_desc* desc) override;

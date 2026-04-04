@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Doughnut } from 'react-chartjs-2';
-import './chart-registry';
+import { PieChart } from '@mui/x-charts/PieChart';
 
 const FLASH_COLOR = 'rgba(75,192,192,0.7)';
 const SEND_COLOR = 'rgba(192,75,75,0.7)';
@@ -27,31 +26,30 @@ export default function OutcomeDoughnut({
   const total = flashes + sends + attempts;
   if (total === 0) return null;
 
-  const data = {
-    labels: ['Flash', 'Redpoint', 'Attempt'],
-    datasets: [
-      {
-        data: [flashes, sends, attempts],
-        backgroundColor: [FLASH_COLOR, SEND_COLOR, ATTEMPT_COLOR],
-        borderWidth: 0,
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    cutout: '55%',
-    plugins: {
-      legend: { display: !compact },
-      tooltip: { enabled: !compact },
-    },
-    ...(compact && { layout: { padding: 0 } }),
-  };
+  const data = [
+    { id: 'flash', value: flashes, color: FLASH_COLOR, label: 'Flash' },
+    { id: 'send', value: sends, color: SEND_COLOR, label: 'Redpoint' },
+    { id: 'attempt', value: attempts, color: ATTEMPT_COLOR, label: 'Attempt' },
+  ].filter((d) => d.value > 0);
 
   return (
     <div data-testid="outcome-doughnut" style={{ height }}>
-      <Doughnut data={data} options={options} />
+      <PieChart
+        series={[{
+          data,
+          innerRadius: '55%',
+          paddingAngle: 1,
+        }]}
+        height={height}
+        margin={{ top: 0, bottom: 0, left: 0, right: compact ? 0 : 100 }}
+        hideLegend={compact}
+        slotProps={{
+          legend: {
+            direction: 'vertical',
+            sx: { fontSize: 11 },
+          },
+        }}
+      />
     </div>
   );
 }

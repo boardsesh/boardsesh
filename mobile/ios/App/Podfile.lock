@@ -1,28 +1,53 @@
 PODS:
-  - Capacitor (6.2.1):
+  - Capacitor (8.3.0):
     - CapacitorCordova
-  - CapacitorCommunityBluetoothLe (6.1.0):
+  - CapacitorBrowser (8.0.3):
     - Capacitor
-  - CapacitorCordova (6.2.1)
+  - CapacitorCommunityBluetoothLe (8.1.3):
+    - Capacitor
+  - CapacitorCommunityKeepAwake (8.0.0):
+    - Capacitor
+  - CapacitorCordova (8.3.0)
+  - CapacitorGeolocation (8.2.0):
+    - Capacitor
+    - IONGeolocationLib (= 2.1.0)
+  - IONGeolocationLib (2.1.0)
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
   - "CapacitorCommunityBluetoothLe (from `../../node_modules/@capacitor-community/bluetooth-le`)"
+  - "CapacitorCommunityKeepAwake (from `../../node_modules/@capacitor-community/keep-awake`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorGeolocation (from `../../node_modules/@capacitor/geolocation`)"
+
+SPEC REPOS:
+  trunk:
+    - IONGeolocationLib
 
 EXTERNAL SOURCES:
   Capacitor:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorBrowser:
+    :path: "../../node_modules/@capacitor/browser"
   CapacitorCommunityBluetoothLe:
     :path: "../../node_modules/@capacitor-community/bluetooth-le"
+  CapacitorCommunityKeepAwake:
+    :path: "../../node_modules/@capacitor-community/keep-awake"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorGeolocation:
+    :path: "../../node_modules/@capacitor/geolocation"
 
 SPEC CHECKSUMS:
-  Capacitor: c95400d761e376be9da6be5a05f226c0e865cebf
-  CapacitorCommunityBluetoothLe: 0d4d197e0d0eadb84d4c3a6683768088253419d9
-  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
+  Capacitor: 22e541237135648c9aa736232bb4d2eec35fddcb
+  CapacitorBrowser: c987c73d09d8bd3b5ec13f06338b1e14d5d2be69
+  CapacitorCommunityBluetoothLe: ab4b04474c7c13315cd591dee0995f1adce73c98
+  CapacitorCommunityKeepAwake: 332bf035bbdf0b1c244fd492b35a8a06c8802111
+  CapacitorCordova: 2e1e2bb93b2f365309dc4ff18b72b9a69a7814a9
+  CapacitorGeolocation: b36f6287bfc9f2eefa04dc900496f2c8ae666136
+  IONGeolocationLib: 6a7b6f76063fb1b01cfb14fae7d0f526e3c9b271
 
-PODFILE CHECKSUM: 47998e176d73fb1dcd46c2cd81d1fab8a9f392d8
+PODFILE CHECKSUM: 865102380a7b2fade5c7cfa1a513c41d27ac08cb
 
 COCOAPODS: 1.16.2

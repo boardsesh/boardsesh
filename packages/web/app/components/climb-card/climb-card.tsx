@@ -22,6 +22,7 @@ type ClimbCardProps = {
   coverLinkToClimb?: boolean;
   onCoverClick?: () => void;
   onCoverDoubleClick?: () => void;
+  preferImageLayers?: boolean;
   selected?: boolean;
   /** When true, the card is visually dimmed (greyed out) but still interactive */
   unsupported?: boolean;
@@ -34,10 +35,7 @@ type ClimbCardProps = {
  * Compare actions arrays for memo equality.
  * Handles common cases: both undefined, both empty arrays, or same reference.
  */
-const areActionsEqual = (
-  prev: React.JSX.Element[] | undefined,
-  next: React.JSX.Element[] | undefined,
-): boolean => {
+const areActionsEqual = (prev: React.JSX.Element[] | undefined, next: React.JSX.Element[] | undefined): boolean => {
   // Same reference (including both undefined)
   if (prev === next) return true;
   // One undefined, one not
@@ -62,6 +60,7 @@ function ClimbCardWithActions({
   boardDetails,
   onCoverClick,
   onCoverDoubleClick,
+  preferImageLayers,
   selected,
   unsupported,
 }: {
@@ -69,13 +68,22 @@ function ClimbCardWithActions({
   boardDetails: BoardDetails;
   onCoverClick?: () => void;
   onCoverDoubleClick?: () => void;
+  preferImageLayers?: boolean;
   selected?: boolean;
   unsupported?: boolean;
 }) {
   const pathname = usePathname();
   const { mode } = useColorMode();
   const isDark = mode === 'dark';
-  const cover = <ClimbCardCover climb={climb} boardDetails={boardDetails} onClick={onCoverClick} onDoubleClick={onCoverDoubleClick} />;
+  const cover = (
+    <ClimbCardCover
+      climb={climb}
+      boardDetails={boardDetails}
+      onClick={onCoverClick}
+      onDoubleClick={onCoverDoubleClick}
+      preferImageLayers={preferImageLayers}
+    />
+  );
   const cardTitle = <ClimbTitle climb={climb} layout="horizontal" showSetterInfo />;
 
   const excludeActions = getExcludedClimbActions(boardDetails.board_name, 'card');
@@ -90,12 +98,12 @@ function ClimbCardWithActions({
         <CardContent
           sx={{
             padding: `${themeTokens.spacing[1] + 2}px`,
-            backgroundColor: selected ? (getGradeTintColor(climb.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)') : undefined,
+            backgroundColor: selected
+              ? (getGradeTintColor(climb.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)')
+              : undefined,
           }}
         >
-          <div style={{ position: 'relative' }}>
-            {cover}
-          </div>
+          <div style={{ position: 'relative' }}>{cover}</div>
         </CardContent>
         {/* Actions rendered as a proper component to support hooks */}
         <CardActions
@@ -127,18 +135,23 @@ const ClimbCardStatic = React.memo(
     boardDetails,
     onCoverClick,
     onCoverDoubleClick,
+    preferImageLayers,
     selected,
     actions,
     expandedContent,
   }: ClimbCardProps) => {
     const { mode } = useColorMode();
     const isDark = mode === 'dark';
-    const cover = <ClimbCardCover climb={climb} boardDetails={boardDetails} onClick={onCoverClick} onDoubleClick={onCoverDoubleClick} />;
-    const cardTitle = climb ? (
-      <ClimbTitle climb={climb} layout="horizontal" showSetterInfo />
-    ) : (
-      'Loading...'
+    const cover = (
+      <ClimbCardCover
+        climb={climb}
+        boardDetails={boardDetails}
+        onClick={onCoverClick}
+        onDoubleClick={onCoverDoubleClick}
+        preferImageLayers={preferImageLayers}
+      />
     );
+    const cardTitle = climb ? <ClimbTitle climb={climb} layout="horizontal" showSetterInfo /> : 'Loading...';
 
     return (
       <div data-testid="climb-card">
@@ -150,7 +163,9 @@ const ClimbCardStatic = React.memo(
           <CardContent
             sx={{
               padding: `${themeTokens.spacing[1] + 2}px`,
-              backgroundColor: selected ? (getGradeTintColor(climb?.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)') : undefined,
+              backgroundColor: selected
+                ? (getGradeTintColor(climb?.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)')
+                : undefined,
             }}
           >
             <div style={{ position: 'relative' }}>
@@ -188,6 +203,7 @@ const ClimbCardStatic = React.memo(
     // Compare callbacks by reference (parent should memoize with useCallback)
     if (prevProps.onCoverClick !== nextProps.onCoverClick) return false;
     if (prevProps.onCoverDoubleClick !== nextProps.onCoverDoubleClick) return false;
+    if (prevProps.preferImageLayers !== nextProps.preferImageLayers) return false;
     // Compare actions arrays properly
     if (!areActionsEqual(prevProps.actions, nextProps.actions)) return false;
     // Compare expandedContent by reference
@@ -208,7 +224,9 @@ ClimbCardStatic.displayName = 'ClimbCardStatic';
  * - When no climb, shows loading state
  */
 function ClimbCard(props: ClimbCardProps) {
-  const { climb, boardDetails, onCoverClick, onCoverDoubleClick, selected, unsupported, actions, expandedContent } = props;
+  const { climb, boardDetails, onCoverClick, onCoverDoubleClick, selected, unsupported, actions, expandedContent } =
+    props;
+  const { preferImageLayers } = props;
 
   // When actions or expandedContent are provided externally, use the memoized static version
   if (actions !== undefined || expandedContent !== undefined) {
@@ -218,6 +236,7 @@ function ClimbCard(props: ClimbCardProps) {
         boardDetails={boardDetails}
         onCoverClick={onCoverClick}
         onCoverDoubleClick={onCoverDoubleClick}
+        preferImageLayers={preferImageLayers}
         selected={selected}
         actions={actions}
         expandedContent={expandedContent}
@@ -234,6 +253,7 @@ function ClimbCard(props: ClimbCardProps) {
         boardDetails={boardDetails}
         onCoverClick={onCoverClick}
         onCoverDoubleClick={onCoverDoubleClick}
+        preferImageLayers={preferImageLayers}
         selected={selected}
         unsupported={unsupported}
       />
@@ -247,6 +267,7 @@ function ClimbCard(props: ClimbCardProps) {
       boardDetails={boardDetails}
       onCoverClick={onCoverClick}
       onCoverDoubleClick={onCoverDoubleClick}
+      preferImageLayers={preferImageLayers}
       selected={selected}
       actions={[]}
     />

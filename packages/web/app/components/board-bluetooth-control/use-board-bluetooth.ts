@@ -69,6 +69,15 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
       const { getLedPlacements } = await import('@/app/lib/__generated__/led-placements-data');
       const placementPositions = getLedPlacements(boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id);
 
+      if (Object.keys(placementPositions).length === 0) {
+        console.error(
+          `[BLE] LED placement map is empty for ${boardDetails.board_name} layout=${boardDetails.layout_id} size=${boardDetails.size_id}. ` +
+          'Board configuration may be incorrect or LED data may need regeneration.',
+        );
+        showMessage('Could not send to board — LED data missing for this board configuration.', 'error');
+        return false;
+      }
+
       if (mirrored) {
         if (!boardDetails.holdsData || Object.keys(boardDetails.holdsData).length === 0) {
           console.error('Cannot mirror frames: holdsData is missing or empty');

@@ -1,17 +1,9 @@
-import { redirect, notFound } from 'next/navigation';
-import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
 import { dbz } from '@/app/lib/db/db';
 import { boardSessions } from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { SessionIdSchema } from '@/app/lib/validation/session';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
-import InvalidSessionError from './invalid-session-error';
-
-interface JoinPageProps {
-  params: Promise<{
-    sessionId: string;
-  }>;
-}
 
 // Default angle to use when boardPath doesn't include one (for backward compatibility)
 const DEFAULT_ANGLE = 40;
@@ -41,15 +33,21 @@ function ensureViewSegment(path: string): string {
   return `${path}/${DEFAULT_ANGLE}/list`;
 }
 
-export default async function JoinPage({ params }: JoinPageProps) {
+function getBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
+  const baseUrl = getBaseUrl(request);
 
   // Validate session ID format using Zod
   const validationResult = SessionIdSchema.safeParse(sessionId);
 
   if (!validationResult.success) {
-    const errorMessage = validationResult.error.issues[0]?.message || 'Invalid session ID format';
-    return <InvalidSessionError sessionId={sessionId} errorMessage={errorMessage} />;
+    // Redirect to an error page or return a simple error response
+    return new NextResponse('Invalid session ID format', { status: 400 });
   }
 
   const validatedSessionId = validationResult.data;
@@ -59,19 +57,17 @@ export default async function JoinPage({ params }: JoinPageProps) {
     .select({
       id: boardSessions.id,
       boardPath: boardSessions.boardPath,
-      status: boardSessions.status,
     })
     .from(boardSessions)
     .where(eq(boardSessions.id, validatedSessionId))
     .limit(1);
 
   if (session.length === 0) {
-    notFound();
+    return new NextResponse('Session not found', { status: 404 });
   }
 
   const { boardPath } = session[0];
 
-  // Set session ID as a cookie so the list page URL stays clean for CDN caching
   // boardPath format: {board_name}/{layout_id}/{size_id}/{set_ids}[/{angle}][/list|/play/uuid]
   // Strip leading slashes to avoid creating protocol-relative URLs (//kilter/... → kilter as host)
   const cleanPath = boardPath.replace(/^\/+/, '');
@@ -79,12 +75,12 @@ export default async function JoinPage({ params }: JoinPageProps) {
   // Ensure the path ends with a view segment (/list) for a good user experience
   const redirectPath = ensureViewSegment(cleanPath);
 
-  const cookieStore = await cookies();
-  cookieStore.set(CLIMB_SESSION_COOKIE, validatedSessionId, {
+  const response = NextResponse.redirect(`${baseUrl}/${redirectPath}`, 307);
+  response.cookies.set(CLIMB_SESSION_COOKIE, validatedSessionId, {
     path: '/',
     sameSite: 'lax',
     maxAge: 86400,
   });
 
-  redirect(`/${redirectPath}`);
+  return response;
 }

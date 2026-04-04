@@ -7,6 +7,7 @@ import { PersistentSessionProvider, usePersistentSession } from '../persistent-s
 import { QueueBridgeProvider, useQueueBridgeBoardInfo } from '../queue-control/queue-bridge-context';
 import { useQueueContext } from '../graphql-queue';
 import QueueControlBar from '../queue-control/queue-control-bar';
+import QueueControlBarShell from '../queue-control/queue-control-bar-shell';
 import BottomTabBar from '../bottom-tab-bar/bottom-tab-bar';
 import { BoardProvider } from '../board-provider/board-provider-context';
 import { ConnectionSettingsProvider } from '../connection-manager/connection-settings-context';
@@ -18,6 +19,7 @@ import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import ErrorBoundary from '../error-boundary';
 import bottomBarStyles from '../bottom-tab-bar/bottom-bar-wrapper.module.css';
 import { BoardConfigData } from '@/app/lib/server-board-configs';
+import { isBoardRoutePath } from '@/app/lib/board-route-paths';
 import GlobalHeader from '../global-header/global-header';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
 import { SearchDrawerBridgeProvider } from '../search-drawer/search-drawer-bridge-context';
@@ -69,11 +71,12 @@ function RootSessionSummaryDialog() {
 /** Pages where the bottom tab bar is hidden unless there's an active queue */
 const HIDE_TAB_BAR_PAGES = ['/aurora-migration'];
 
-function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData }) {
+export function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData }) {
   const { boardDetails, angle, hasActiveQueue } = useQueueBridgeBoardInfo();
   const pathname = usePathname();
 
   const hideTabBar = HIDE_TAB_BAR_PAGES.some((prefix) => pathname.startsWith(prefix)) && !hasActiveQueue;
+  const shouldShowQueueShell = isBoardRoutePath(pathname) && !hasActiveQueue && !boardDetails;
 
   return (
     <div className={bottomBarStyles.bottomBarWrapper} data-testid="bottom-bar-wrapper">
@@ -90,6 +93,7 @@ function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData }) {
           </BoardProvider>
         </ErrorBoundary>
       )}
+      {shouldShowQueueShell && <QueueControlBarShell />}
       {!hideTabBar && <BottomTabBar boardConfigs={boardConfigs} />}
     </div>
   );

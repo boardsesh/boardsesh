@@ -6,7 +6,7 @@ export default function NotificationsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ minHeight: '100dvh', paddingTop: 'var(--global-header-height)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <div style={{ minHeight: '100dvh', paddingTop: 'var(--global-header-height)', paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}>
       {children}
     </div>
   );

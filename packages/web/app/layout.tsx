@@ -11,9 +11,8 @@ import PersistentSessionWrapper from './components/providers/persistent-session-
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import { VercelToolbar } from '@vercel/toolbar/next';
-import { FlagValues } from 'flags/react';
 import { getAllBoardConfigs } from './lib/server-board-configs';
-import { evaluateAllFlags } from './flags';
+import { EMPTY_FEATURE_FLAGS } from './flags';
 import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
@@ -24,8 +23,7 @@ export const metadata: Metadata = {
     default: 'Boardsesh - Train smarter on your climbing board',
     template: '%s | Boardsesh',
   },
-  description:
-    'Track your sends across Kilter, Tension, and MoonBoard. One app for your boards.',
+  description: 'Track your sends across Kilter, Tension, and MoonBoard. One app for your boards.',
   openGraph: {
     type: 'website',
     siteName: 'Boardsesh',
@@ -48,19 +46,17 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const boardConfigs = await getAllBoardConfigs();
-  const featureFlags = await evaluateAllFlags();
 
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <Analytics />
-        <FlagValues values={featureFlags} />
         <QueryClientProvider>
           <SessionProviderWrapper>
             <AppRouterCacheProvider>
               <ColorModeProvider>
                 <SnackbarProvider>
-                  <FeatureFlagsProvider flags={featureFlags}>
+                  <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
                     <PersistentSessionWrapper boardConfigs={boardConfigs}>
                       <NavigationLoadingProvider>
                         <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>

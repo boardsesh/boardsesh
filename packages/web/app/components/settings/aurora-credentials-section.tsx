@@ -353,7 +353,11 @@ export default function AuroraCredentialsSection() {
         throw new Error(error.error || 'Failed to save credentials');
       }
 
-      showMessage(`${selectedBoard.charAt(0).toUpperCase() + selectedBoard.slice(1)} account linked successfully`, 'success');
+      if (selectedBoard === 'tension') {
+        showMessage('Tension account linked. Your data will show up within 12 hours.', 'success');
+      } else {
+        showMessage(`${selectedBoard.charAt(0).toUpperCase() + selectedBoard.slice(1)} account linked successfully`, 'success');
+      }
       setIsModalOpen(false);
       setFormValues({ username: '', password: '' });
       await fetchCredentials();
@@ -546,7 +550,7 @@ export default function AuroraCredentialsSection() {
           <Typography variant="h5">Board Accounts</Typography>
           <Typography variant="body2" component="span" color="text.secondary" className={styles.sectionDescription}>
             Link your board accounts to import your Aurora data to Boardsesh, or import from a JSON export file.
-            We'll automatically sync your logbook, ascents, and climbs FROM Aurora every 6 hours.
+            We'll automatically sync your logbook, ascents, and climbs FROM Aurora every 12 hours.
             Data created in Boardsesh stays local and does not sync back to Aurora.
           </Typography>
 
@@ -597,7 +601,7 @@ export default function AuroraCredentialsSection() {
         <Typography variant="body2" component="span" color="text.secondary" className={styles.modalDescription}>
           Enter your {selectedBoard.charAt(0).toUpperCase() + selectedBoard.slice(1)} Board
           username and password to import your Aurora data.
-          Your credentials are encrypted and securely stored. Data syncs every 6 hours.
+          Your credentials are encrypted and securely stored. Data syncs every 12 hours.
         </Typography>
         <Box
           component="form"

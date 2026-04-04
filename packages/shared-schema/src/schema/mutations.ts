@@ -77,6 +77,14 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     updateProfile(input: UpdateProfileInput!): UserProfile!
 
+    """
+    Delete the current user's account.
+    Deletes draft climbs, optionally removes setter name from published climbs,
+    then deletes the user row (cascading all related data).
+    Requires authentication.
+    """
+    deleteAccount(input: DeleteAccountInput!): Boolean!
+
     # ============================================
     # Aurora Credentials Mutations (require auth)
     # ============================================

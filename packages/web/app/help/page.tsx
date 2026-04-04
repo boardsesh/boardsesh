@@ -1,12 +1,13 @@
 import React from 'react';
-import { Metadata } from 'next';
+import { createPageMetadata } from '@/app/lib/seo/metadata';
 import HelpContent from './help-content';
 
-export const metadata: Metadata = {
-  title: 'Help | Boardsesh',
+export const metadata = createPageMetadata({
+  title: 'Help',
   description:
     'Learn about Boardsesh features including heatmaps, party mode, playlist generator, and more.',
-};
+  path: '/help',
+});
 
 export default function HelpPage() {
   return <HelpContent />;

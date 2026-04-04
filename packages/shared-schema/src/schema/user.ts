@@ -70,4 +70,20 @@ export const userTypeDefs = /* GraphQL */ `
     "Aurora account password"
     password: String!
   }
+
+  """
+  Information needed before account deletion.
+  """
+  type DeleteAccountInfo {
+    "Number of published (non-draft) climbs the user has created"
+    publishedClimbCount: Int!
+  }
+
+  """
+  Input for the deleteAccount mutation.
+  """
+  input DeleteAccountInput {
+    "Whether to remove the setter name from published climbs"
+    removeSetterName: Boolean!
+  }
 `;

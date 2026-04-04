@@ -8,7 +8,8 @@ import { DEBUG } from '../types';
 interface UseEventProcessorArgs {
   refs: Pick<SharedRefs,
     'lastReceivedSequenceRef' | 'triggerResyncRef' | 'lastCorruptionResyncRef' |
-    'isFilteringCorruptedItemsRef' | 'queueEventSubscribersRef' | 'sessionEventSubscribersRef'
+    'isFilteringCorruptedItemsRef' | 'queueEventSubscribersRef' | 'sessionEventSubscribersRef' |
+    'offlineBufferRef'
   >;
 }
 
@@ -37,6 +38,7 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
     isFilteringCorruptedItemsRef,
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
+    offlineBufferRef,
   } = refs;
 
   const [queue, setQueueState] = useState<LocalClimbQueueItem[]>([]);
@@ -90,12 +92,24 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
     }
 
     switch (event.__typename) {
-      case 'FullSync':
-        setQueueState((event.state.queue as LocalClimbQueueItem[]).filter(item => item != null));
+      case 'FullSync': {
+        const serverQueue = (event.state.queue as LocalClimbQueueItem[]).filter(item => item != null);
+        // Merge offline-buffered items for visual continuity during reconciliation
+        const pending = offlineBufferRef.current;
+        if (pending.length > 0) {
+          const serverUuids = new Set(serverQueue.map(item => item.uuid));
+          for (const item of pending) {
+            if (!serverUuids.has(item.uuid)) {
+              serverQueue.push(item);
+            }
+          }
+        }
+        setQueueState(serverQueue);
         setCurrentClimbQueueItem(event.state.currentClimbQueueItem as LocalClimbQueueItem | null);
         updateLastReceivedSequence(event.sequence);
         setLastReceivedStateHash(event.state.stateHash);
         break;
+      }
       case 'QueueItemAdded':
         if (event.addedItem == null) {
           console.error('[PersistentSession] Received QueueItemAdded with null/undefined item, skipping');
@@ -145,7 +159,7 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
 
     // Notify external subscribers
     notifyQueueSubscribers(event);
-  }, [lastReceivedSequenceRef, triggerResyncRef, notifyQueueSubscribers, updateLastReceivedSequence]);
+  }, [lastReceivedSequenceRef, triggerResyncRef, notifyQueueSubscribers, updateLastReceivedSequence, offlineBufferRef]);
 
   // Handle session events internally
   const handleSessionEvent = useCallback((event: SessionEvent) => {

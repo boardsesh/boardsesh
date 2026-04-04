@@ -47,8 +47,19 @@ vi.mock('../[sessionId]/user-search-dialog', () => ({
   default: () => null,
 }));
 
-vi.mock('@/app/components/charts/grade-distribution-bar', () => ({
-  default: () => <div data-testid="grade-distribution-bar" />,
+vi.mock('@/app/components/charts/css-bar-chart', () => ({
+  CssBarChart: (props: { ariaLabel?: string }) => (
+    <div data-testid="css-bar-chart" aria-label={props.ariaLabel} />
+  ),
+}));
+
+vi.mock('@/app/components/charts/session-grade-bars', () => ({
+  buildSessionGradeBars: () => [],
+  SESSION_GRADE_LEGEND: [
+    { label: 'Flash', color: '#6B908099' },
+    { label: 'Send', color: '#B8524C99' },
+    { label: 'Attempt', color: '#D1D5DB99' },
+  ],
 }));
 
 vi.mock('@/app/components/social/vote-button', () => ({
@@ -298,13 +309,13 @@ describe('SessionDetailContent', () => {
 
   it('renders grade distribution chart', () => {
     render(<SessionDetailContent session={makeSession()} />);
-    expect(screen.getByTestId('grade-distribution-bar')).toBeTruthy();
+    expect(screen.getByTestId('css-bar-chart')).toBeTruthy();
     expect(screen.getByText('Grade Distribution')).toBeTruthy();
   });
 
   it('hides grade chart when distribution is empty', () => {
     render(<SessionDetailContent session={makeSession({ gradeDistribution: [] })} />);
-    expect(screen.queryByTestId('grade-distribution-bar')).toBeNull();
+    expect(screen.queryByTestId('css-bar-chart')).toBeNull();
   });
 
   it('shows back button linking to home', () => {

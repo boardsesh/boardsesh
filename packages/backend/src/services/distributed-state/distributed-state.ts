@@ -1,7 +1,7 @@
 import type Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import type { SessionUser } from '@boardsesh/shared-schema';
-import type { DistributedConnection } from './constants';
+import { KEYS, type DistributedConnection } from './constants';
 import {
   registerConnection,
   getConnection,
@@ -208,6 +208,35 @@ export class DistributedStateManager {
     return cleanupEmptySession(this.redis, sessionId);
   }
 
+  /**
+   * Prune stale members from sessions that this instance's connections belong to.
+   * Catches cases where a connection on THIS instance died but wasn't cleaned up
+   * (e.g., half-open TCP between ping intervals).
+   */
+  private async cleanupActiveSessionMembers(): Promise<void> {
+    const connectionIds = await this.redis.smembers(KEYS.instanceConnections(this.instanceId));
+    if (connectionIds.length === 0) return;
+
+    const pipeline = this.redis.pipeline();
+    for (const connId of connectionIds) {
+      pipeline.hget(KEYS.connection(connId), 'sessionId');
+    }
+    const results = await pipeline.exec();
+
+    const sessionIds = new Set<string>();
+    if (results) {
+      for (const [err, sessionId] of results) {
+        if (!err && sessionId && typeof sessionId === 'string' && sessionId !== '') {
+          sessionIds.add(sessionId);
+        }
+      }
+    }
+
+    for (const sessionId of sessionIds) {
+      await cleanupStaleSessionMembers(this.redis, sessionId);
+    }
+  }
+
   /** Update heartbeat with automatic recovery on failure. */
   private async updateHeartbeatWithRecovery(): Promise<void> {
     try {
@@ -225,11 +254,16 @@ export class DistributedStateManager {
         this.isHealthy = true;
       }
 
-      // Piggyback dead instance cleanup on every Nth heartbeat (~2 min)
+      // Piggyback cleanup on every Nth heartbeat (~2 min)
       this.heartbeatCount++;
       if (this.heartbeatCount % this.cleanupEveryNHeartbeats === 0) {
+        // Clean up connections from dead backend instances
         this.cleanupDeadInstanceConnections().catch((err) => {
           console.error('[DistributedState] Periodic dead instance cleanup failed:', err);
+        });
+        // Clean up stale members from sessions this instance participates in
+        this.cleanupActiveSessionMembers().catch((err) => {
+          console.error('[DistributedState] Periodic active session cleanup failed:', err);
         });
       }
     } catch (err) {

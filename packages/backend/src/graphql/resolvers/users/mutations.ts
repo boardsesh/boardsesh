@@ -1,9 +1,9 @@
 import { eq, and } from 'drizzle-orm';
-import type { ConnectionContext, UserProfile, AuroraCredentialStatus } from '@boardsesh/shared-schema';
+import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInput } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
-import { UpdateProfileInputSchema, SaveAuroraCredentialInputSchema, BoardNameSchema } from '../../../validation/schemas';
+import { UpdateProfileInputSchema, SaveAuroraCredentialInputSchema, BoardNameSchema, DeleteAccountInputSchema } from '../../../validation/schemas';
 import { encrypt } from '@boardsesh/crypto';
 
 export const userMutations = {
@@ -148,6 +148,58 @@ export const userMutations = {
           eq(dbSchema.auroraCredentials.boardType, boardType)
         )
       );
+
+    return true;
+  },
+
+  /**
+   * Delete the current user's account.
+   * 1. Deletes draft climbs
+   * 2. Optionally removes setter name from published climbs
+   * 3. Deletes the user row (cascading all related data)
+   */
+  deleteAccount: async (
+    _: unknown,
+    { input }: { input: DeleteAccountInput },
+    ctx: ConnectionContext
+  ): Promise<boolean> => {
+    requireAuthenticated(ctx);
+    validateInput(DeleteAccountInputSchema, input, 'input');
+
+    const userId = ctx.userId!;
+
+    await db.transaction(async (tx) => {
+      // Delete draft climbs created by this user
+      await tx
+        .delete(dbSchema.boardClimbs)
+        .where(
+          and(
+            eq(dbSchema.boardClimbs.userId, userId),
+            eq(dbSchema.boardClimbs.isDraft, true)
+          )
+        );
+
+      // Optionally remove setter name from published climbs
+      if (input.removeSetterName) {
+        await tx
+          .update(dbSchema.boardClimbs)
+          .set({ setterUsername: null })
+          .where(
+            and(
+              eq(dbSchema.boardClimbs.userId, userId),
+              eq(dbSchema.boardClimbs.isDraft, false)
+            )
+          );
+      }
+
+      // Delete the user row — all related tables with onDelete: cascade
+      // will be cleaned up automatically by the database.
+      // boardClimbs.userId has onDelete: 'set null', so published climbs
+      // will have their userId set to null (preserved).
+      await tx
+        .delete(dbSchema.users)
+        .where(eq(dbSchema.users.id, userId));
+    });
 
     return true;
   },

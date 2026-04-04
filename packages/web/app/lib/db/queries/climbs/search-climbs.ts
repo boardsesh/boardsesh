@@ -10,7 +10,7 @@ import { sortObjectKeys } from '@/app/lib/cache-utils';
 /**
  * Cache durations for climb search queries (in seconds)
  */
-const CACHE_DURATION_DEFAULT_SEARCH = 30 * 24 * 60 * 60; // 30 days for default searches
+const CACHE_DURATION_DEFAULT_SEARCH = 24 * 60 * 60; // 24 hours for default searches
 const CACHE_DURATION_FILTERED_SEARCH = 60 * 60; // 1 hour for filtered searches
 
 /**
@@ -27,10 +27,61 @@ export async function cachedSearchClimbs(
   searchParams: SearchRequestPagination,
   isDefaultSearch: boolean,
   userId?: string,
+  options?: { cacheable?: boolean },
 ): Promise<{ climbs: Climb[]; hasMore: boolean }> {
+  const cacheable = options?.cacheable ?? !userId;
+
   const revalidate = isDefaultSearch
     ? CACHE_DURATION_DEFAULT_SEARCH
     : CACHE_DURATION_FILTERED_SEARCH;
+
+  const executeQuery = async () => {
+    const sizeEdges = getSizeEdges(params.board_name, params.size_id);
+    if (!sizeEdges) {
+      return { climbs: [], hasMore: false };
+    }
+
+    const db = getDb();
+    const result = await sharedSearchClimbs(db, params, {
+      page: searchParams.page,
+      pageSize: searchParams.pageSize,
+      gradeAccuracy: searchParams.gradeAccuracy ? Number(searchParams.gradeAccuracy) : undefined,
+      minGrade: searchParams.minGrade || undefined,
+      maxGrade: searchParams.maxGrade || undefined,
+      minAscents: searchParams.minAscents || undefined,
+      minRating: searchParams.minRating || undefined,
+      sortBy: searchParams.sortBy || 'ascents',
+      sortOrder: searchParams.sortOrder || 'desc',
+      name: searchParams.name || undefined,
+      settername: searchParams.settername && searchParams.settername.length > 0 ? searchParams.settername : undefined,
+      onlyTallClimbs: searchParams.onlyTallClimbs || undefined,
+      holdsFilter: searchParams.holdsFilter && Object.keys(searchParams.holdsFilter).length > 0
+        ? Object.fromEntries(
+            Object.entries(searchParams.holdsFilter).map(([key, value]) => [
+              key.replace('hold_', ''),
+              typeof value === 'object' && value !== null ? (value as { state: string }).state : value,
+            ])
+          )
+        : undefined,
+      hideAttempted: searchParams.hideAttempted || undefined,
+      hideCompleted: searchParams.hideCompleted || undefined,
+      showOnlyAttempted: searchParams.showOnlyAttempted || undefined,
+      showOnlyCompleted: searchParams.showOnlyCompleted || undefined,
+      onlyDrafts: searchParams.onlyDrafts || undefined,
+    }, sizeEdges, userId);
+
+    // Map ClimbRow to the web Climb type
+    const climbs: Climb[] = result.climbs.map((row) => ({
+      ...row,
+      mirrored: undefined,
+    }));
+
+    return { climbs, hasMore: result.hasMore };
+  };
+
+  if (!cacheable) {
+    return executeQuery();
+  }
 
   const cacheKey = [
     'climb-search-direct',
@@ -59,53 +110,10 @@ export async function cachedSearchClimbs(
       showOnlyCompleted: searchParams.showOnlyCompleted,
       onlyDrafts: searchParams.onlyDrafts,
     })),
-    ...(userId ? [`user:${userId}`] : []),
   ];
 
   const cachedFn = unstable_cache(
-    async () => {
-      const sizeEdges = getSizeEdges(params.board_name, params.size_id);
-      if (!sizeEdges) {
-        return { climbs: [], hasMore: false };
-      }
-
-      const db = getDb();
-      const result = await sharedSearchClimbs(db, params, {
-        page: searchParams.page,
-        pageSize: searchParams.pageSize,
-        gradeAccuracy: searchParams.gradeAccuracy ? Number(searchParams.gradeAccuracy) : undefined,
-        minGrade: searchParams.minGrade || undefined,
-        maxGrade: searchParams.maxGrade || undefined,
-        minAscents: searchParams.minAscents || undefined,
-        minRating: searchParams.minRating || undefined,
-        sortBy: searchParams.sortBy || 'ascents',
-        sortOrder: searchParams.sortOrder || 'desc',
-        name: searchParams.name || undefined,
-        settername: searchParams.settername && searchParams.settername.length > 0 ? searchParams.settername : undefined,
-        onlyTallClimbs: searchParams.onlyTallClimbs || undefined,
-        holdsFilter: searchParams.holdsFilter && Object.keys(searchParams.holdsFilter).length > 0
-          ? Object.fromEntries(
-              Object.entries(searchParams.holdsFilter).map(([key, value]) => [
-                key.replace('hold_', ''),
-                typeof value === 'object' && value !== null ? (value as { state: string }).state : value,
-              ])
-            )
-          : undefined,
-        hideAttempted: searchParams.hideAttempted || undefined,
-        hideCompleted: searchParams.hideCompleted || undefined,
-        showOnlyAttempted: searchParams.showOnlyAttempted || undefined,
-        showOnlyCompleted: searchParams.showOnlyCompleted || undefined,
-        onlyDrafts: searchParams.onlyDrafts || undefined,
-      }, sizeEdges, userId);
-
-      // Map ClimbRow to the web Climb type
-      const climbs: Climb[] = result.climbs.map((row) => ({
-        ...row,
-        mirrored: undefined,
-      }));
-
-      return { climbs, hasMore: result.hasMore };
-    },
+    executeQuery,
     cacheKey,
     {
       revalidate,

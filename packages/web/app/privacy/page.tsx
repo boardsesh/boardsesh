@@ -3,12 +3,13 @@ import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
 import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
-import type { Metadata } from 'next';
+import { createPageMetadata } from '@/app/lib/seo/metadata';
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: 'Privacy Policy',
   description: 'Boardsesh privacy policy - how we handle your data.',
-};
+  path: '/privacy',
+});
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

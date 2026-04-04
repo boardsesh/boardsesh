@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import BoardRenderer from './board-renderer';
+import React, { useEffect, useRef } from 'react';
 import BoardImageLayers from './board-image-layers';
 import BoardCanvasRenderer from './board-canvas-renderer';
 import {
@@ -11,9 +10,7 @@ import {
   ENTER_ANIMATION_DURATION,
 } from '@/app/hooks/use-card-swipe-navigation';
 import type { BoardDetails } from '@/app/lib/types';
-import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
 import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
-import { convertLitUpHoldsStringToMap } from './util';
 import styles from './swipe-board-carousel.module.css';
 
 interface ClimbBoardData {
@@ -92,25 +89,9 @@ const SwipeBoardCarousel: React.FC<SwipeBoardCarouselProps> = ({
   };
 
   const transition = getSwipeTransition();
-  const isRustRendererEnabled = useFeatureFlag('rust-svg-rendering');
-  const isWasmRendererEnabled = useFeatureFlag('wasm-rendering');
-  const canvasReady = useCanvasRendererReady(!!isWasmRendererEnabled);
-  const useRustRenderer = !!isRustRendererEnabled || !!isWasmRendererEnabled;
+  const canvasReady = useCanvasRendererReady();
 
-  const currentLitUpHoldsMap = useMemo(
-    () => useRustRenderer
-      ? undefined
-      : convertLitUpHoldsStringToMap(currentClimb.frames, boardDetails.board_name)[0],
-    [currentClimb.frames, boardDetails.board_name, useRustRenderer],
-  );
-  const peekLitUpHoldsMap = useMemo(
-    () => useRustRenderer || !peekClimb
-      ? undefined
-      : convertLitUpHoldsStringToMap(peekClimb.frames, boardDetails.board_name)[0],
-    [peekClimb, boardDetails.board_name, useRustRenderer],
-  );
-
-  const renderBoard = (climb: ClimbBoardData, litUpHoldsMap: ReturnType<typeof convertLitUpHoldsStringToMap>[0] | undefined) => {
+  const renderBoard = (climb: ClimbBoardData) => {
     if (canvasReady) {
       return (
         <BoardCanvasRenderer
@@ -122,23 +103,13 @@ const SwipeBoardCarousel: React.FC<SwipeBoardCarouselProps> = ({
         />
       );
     }
-    if (useRustRenderer) {
-      return (
-        <BoardImageLayers
-          boardDetails={boardDetails}
-          frames={climb.frames}
-          mirrored={!!climb.mirrored}
-          contain
-          style={{ width: '100%', height: '100%' }}
-        />
-      );
-    }
     return (
-      <BoardRenderer
+      <BoardImageLayers
         boardDetails={boardDetails}
-        litUpHoldsMap={litUpHoldsMap}
+        frames={climb.frames}
         mirrored={!!climb.mirrored}
-        fillHeight
+        contain
+        style={{ width: '100%', height: '100%' }}
       />
     );
   };
@@ -156,7 +127,7 @@ const SwipeBoardCarousel: React.FC<SwipeBoardCarouselProps> = ({
           transition,
         }}
       >
-        {renderBoard(currentClimb, currentLitUpHoldsMap)}
+        {renderBoard(currentClimb)}
       </div>
       {showPeek && peekClimb && (
         <div
@@ -166,7 +137,7 @@ const SwipeBoardCarousel: React.FC<SwipeBoardCarouselProps> = ({
             transition,
           }}
         >
-          {renderBoard(peekClimb, peekLitUpHoldsMap)}
+          {renderBoard(peekClimb)}
         </div>
       )}
     </div>

@@ -213,6 +213,94 @@ When writing user-facing text, follow these rules:
 - Frame migrations and warnings around what users gain, not what they lose.
 - Watch for AI-writing tells: em dash overuse, "not only X but Y" constructions, triple parallel structures, bolded-keyword-colon-explanation bullets, and generic adjectives like "seamless" or "comprehensive." See https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
 
+## SEO for New Pages
+
+When adding a new route in `packages/web/app/`, decide up front whether it is a search surface or a utility surface. Do not let every page default to "indexable".
+
+### Decide if the page should rank
+
+- Treat landing pages, public board pages, climb view pages, public profiles, public setter pages, and public playlists as SEO surfaces by default.
+- Treat `/auth`, `/settings`, `/join`, `/notifications`, session utilities, and similar signed-in flows as non-SEO surfaces by default.
+- Treat alternate experiences like `/play/...` as duplicate or utility surfaces unless there is a strong reason to index them separately.
+- If a page is private, auth-gated, ephemeral, or only useful inside an active session, default to `robots: { index: false, follow: true }`.
+
+### Metadata requirements
+
+- Every indexable page must define a unique `title`, `description`, canonical URL via `alternates.canonical`, Open Graph metadata, and Twitter metadata.
+- Every non-indexable page must set an explicit `robots` directive instead of relying on default behavior.
+- Avoid generic metadata like `Profile | Boardsesh`, `Playlist | Boardsesh`, `Play Mode | Boardsesh`, or `View details and climbs`.
+- Prefer title formats like `Topic or Entity | Boardsesh`.
+- Lead titles with the thing people actually search for, then the brand.
+- Match search intent naturally in titles and descriptions. Descriptive phrases like `Kilter Board app alternative` are okay when the page clearly states Boardsesh is a compatible alternative and not the official Kilter app.
+
+Good examples:
+
+- `Kilter Board App Alternative | Boardsesh`
+- `MoonBoard Screenshot Import | Boardsesh`
+- `Marco's Kilter Sessions | Boardsesh`
+
+Bad examples:
+
+- `Home | Boardsesh`
+- `Profile | Boardsesh`
+- `Play Mode | Boardsesh`
+
+### First-render content requirements
+
+- If a page should rank, the first server-rendered HTML must include meaningful public content.
+- Ship one clear `h1`, one or more descriptive paragraphs, and crawlable internal links near the top of the page.
+- Put primary copy above heavy widgets, drawers, or client-only controls.
+- Do not ship an indexable page whose first render is only a spinner, app shell, board canvas, or client-fetched placeholder.
+- If the important content can only be loaded client-side, either move the summary content into a server component or mark the page `noindex`.
+
+### Canonical and noindex defaults
+
+- Canonicalize filtered, sorted, paginated, and query-param variants to the clean base page unless the variant is intentionally indexable as its own document.
+- Canonicalize alternate experiences to the primary route. In this app, `/play/...` should normally point to the equivalent `/view/...` route.
+- Keep private, auth-gated, utility, and session-entry routes out of the index.
+- Do not let duplicate numeric and slug-based URLs compete if one is the preferred public route.
+
+### Internal linking requirements
+
+- Important public pages must be reachable through crawlable `Link href` or `<a href>` links.
+- Do not rely on `router.push`, clickable cards built from `div`s, or button-only flows for key SEO destinations.
+- Every new indexable page should have at least 2 to 3 meaningful internal links to or from other public pages.
+- Use descriptive anchor text like `Browse Kilter climbs`, `Migrate from the old Kilter app`, or `Open Marco's profile` instead of generic text like `Click here` or `Learn more`.
+
+### Structured data defaults
+
+- Use JSON-LD when the page type clearly supports it.
+- Homepage: consider `Organization` and `WebSite`.
+- Page hierarchies: consider `BreadcrumbList`.
+- Public profile-like pages: consider `ProfilePage`.
+- Only add structured data that matches the visible content on the page.
+- Validate rich-result markup before shipping when relevant.
+
+### Sitemap inclusion
+
+- Review sitemap generation whenever you add a new public page type.
+- Add only public, canonical, indexable URLs to the sitemap.
+- Keep utility, duplicate, filtered, query-param, and auth-only routes out of the sitemap.
+- Use real content timestamps where possible instead of setting every entry to the current time.
+
+### Boardsesh-specific examples
+
+- Public board pages, climb view pages, migration pages, and search-focused landing pages are SEO surfaces.
+- Settings, auth, session-join flows, notifications, and alternate `/play/...` views are non-SEO surfaces by default.
+- If you add a new public page type, update the sitemap implementation in `packages/web/app/sitemap.ts` or its replacement sitemap handlers in the same change.
+- Prefer server components for page summaries and metadata generation wherever possible.
+- Reconcile keyword targeting with trademark-safe wording: describe compatibility and alternatives clearly, but never imply endorsement or affiliation.
+
+### Pre-ship SEO checklist
+
+- Is this page supposed to rank?
+- Does it have unique metadata and a canonical URL?
+- Does the first server-rendered HTML contain useful copy without hydration?
+- Should it be `noindex` instead?
+- Can crawlers reach it through normal links?
+- Should it be added to the sitemap?
+- If trademarked board names are used, is the wording descriptive and non-affiliative?
+
 ### Trademark Usage (Kilter, Tension, MoonBoard)
 
 - Always capitalize correctly: **MoonBoard** (not Moonboard), **Kilter**, **Tension**

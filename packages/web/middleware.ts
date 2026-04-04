@@ -55,20 +55,25 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
+  let response: NextResponse | undefined;
+
   // Use Vercel-CDN-Cache-Control because Next.js overwrites Cache-Control
   // for dynamic pages (pages that use searchParams) with "private, no-store".
   // Vercel-CDN-Cache-Control is the highest-priority header for Vercel's CDN
   // and is not touched by Next.js rendering.
   const cacheTTL = getListPageCacheTTL(pathname, request.nextUrl.searchParams);
   if (cacheTTL !== null) {
+    response = NextResponse.next();
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL * 7}`;
-    const response = NextResponse.next();
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);
     response.headers.set('CDN-Cache-Control', cdnCacheValue);
-    return response;
   }
 
-  return NextResponse.next();
+  if (!response) {
+    response = NextResponse.next();
+  }
+
+  return response;
 }
 
 export const config = {

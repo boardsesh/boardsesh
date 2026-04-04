@@ -2,6 +2,8 @@ import { SearchRequestPagination } from '@/app/lib/types';
 import { TENSION_KILTER_GRADES } from '@/app/lib/board-data';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 
+export const DEFAULT_CLIMB_SEARCH_SUMMARY = 'Search climbs...';
+
 function getGradeName(gradeId: number): string {
   const grade = TENSION_KILTER_GRADES.find((g) => g.difficulty_id === gradeId);
   return grade?.v_grade ?? `Grade ${gradeId}`;
@@ -107,7 +109,7 @@ export function getSearchPillSummary(params: SearchRequestPagination): string {
     ...getHoldsPanelSummary(params),
   ];
 
-  if (allParts.length === 0) return 'Search climbs...';
+  if (allParts.length === 0) return DEFAULT_CLIMB_SEARCH_SUMMARY;
 
   // Show max 2 items, append "+N more" if more
   if (allParts.length <= 2) {
@@ -129,6 +131,6 @@ export function getSearchPillFullSummary(params: SearchRequestPagination): strin
     ...getHoldsPanelSummary(params),
   ];
 
-  if (allParts.length === 0) return 'Search climbs...';
+  if (allParts.length === 0) return DEFAULT_CLIMB_SEARCH_SUMMARY;
   return allParts.join(' \u00B7 ');
 }

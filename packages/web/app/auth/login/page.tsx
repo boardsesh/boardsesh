@@ -1,11 +1,12 @@
 import React, { Suspense } from 'react';
-import { Metadata } from 'next';
+import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import AuthPageContent from './auth-page-content';
 
-export const metadata: Metadata = {
-  title: 'Login | Boardsesh',
+export const metadata = createNoIndexMetadata({
+  title: 'Login',
   description: 'Sign in or create an account on Boardsesh',
-};
+  path: '/auth/login',
+});
 
 function AuthPageFallback() {
   return (

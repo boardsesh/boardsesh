@@ -34,6 +34,31 @@
   flex-shrink: 0;
 }
 
+.pillShadow {
+  pointer-events: none;
+  cursor: default;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 2px 10px;
+}
+
+.pillShadow:hover,
+.pillShadow:active {
+  background: var(--semantic-surface);
+  border-color: var(--neutral-300);
+}
+
+.pillShadowIcon {
+  color: var(--neutral-200);
+}
+
+.pillShadowLabel {
+  display: block;
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--neutral-200);
+}
+
 .pill:hover {
   background: var(--neutral-100);
   border-color: var(--neutral-400);
@@ -68,4 +93,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:global(html[data-theme="dark"]) .pillShadowIcon {
+  color: rgba(255, 255, 255, 0.12);
+}
+
+:global(html[data-theme="dark"]) .pillShadowLabel {
+  background: rgba(255, 255, 255, 0.12);
 }

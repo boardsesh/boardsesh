@@ -1,8 +1,8 @@
-import { eq, and } from 'drizzle-orm';
-import type { ConnectionContext, UserProfile, AuroraCredentialStatus } from '@boardsesh/shared-schema';
+import { eq, and, count } from 'drizzle-orm';
+import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInfo } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { validateInput } from '../shared/helpers';
+import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
 
 export const userQueries = {
@@ -98,6 +98,31 @@ export const userQueries = {
       syncedAt: c.lastSyncAt?.toISOString() || undefined,
       // Note: We don't expose the actual token for security
       token: c.auroraToken ? '[ENCRYPTED]' : undefined,
+    };
+  },
+
+  /**
+   * Get info needed before account deletion (published climb count)
+   */
+  deleteAccountInfo: async (
+    _: unknown,
+    __: unknown,
+    ctx: ConnectionContext
+  ): Promise<DeleteAccountInfo> => {
+    requireAuthenticated(ctx);
+
+    const result = await db
+      .select({ count: count() })
+      .from(dbSchema.boardClimbs)
+      .where(
+        and(
+          eq(dbSchema.boardClimbs.userId, ctx.userId!),
+          eq(dbSchema.boardClimbs.isDraft, false)
+        )
+      );
+
+    return {
+      publishedClimbCount: result[0]?.count ?? 0,
     };
   },
 };

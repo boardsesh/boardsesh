@@ -60,7 +60,7 @@
 .instagramLink {
   display: inline-flex;
   align-items: center;
-  gap: 6px; /* spacing between icon and text */
+  gap: 6px;
   color: #E1306C; /* Instagram brand color */
   font-size: 14px;
   margin-top: 4px;
@@ -104,32 +104,6 @@
   padding: 48px 0; /* spacing.12 */
 }
 
-.chartsContainer {
-  margin-top: 24px; /* spacing.6 */
-}
-
-.chartWrapper {
-  height: 400px;
-  margin-bottom: 24px; /* spacing.6 */
-}
-
-.bottomChartsRow {
-  display: flex;
-  gap: 24px; /* spacing.6 */
-  flex-wrap: wrap;
-}
-
-.barChartWrapper {
-  flex: 1;
-  min-width: 280px;
-  height: 300px;
-}
-
-.pieChartWrapper {
-  flex: 0 0 280px;
-  height: 300px;
-}
-
 /* Statistics Summary Styles */
 .statsSummaryHeader {
   display: flex;
@@ -153,37 +127,6 @@
 .totalAscentsValue {
   margin: 0 !important;
   color: var(--neutral-900);
-}
-
-.quickStats {
-  display: flex;
-  gap: 24px; /* spacing.6 */
-}
-
-.quickStat {
-  display: flex;
-  align-items: center;
-  gap: 8px; /* spacing.2 */
-}
-
-.quickStatIcon {
-  font-size: 24px;
-  color: var(--color-primary);
-}
-
-.quickStatContent {
-  display: flex;
-  flex-direction: column;
-}
-
-.quickStatValue {
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.quickStatLabel {
-  font-size: 12px;
 }
 
 /* Percentage Bar */
@@ -240,86 +183,81 @@
   color: var(--neutral-700);
 }
 
-/* Grade Blocks */
-.gradeBlocksContainer {
+/* Grade Distribution Section */
+.gradeDistributionSection {
   border-top: 1px solid var(--neutral-200);
   padding-top: 16px; /* spacing.4 */
 }
 
-.gradeBlocksTitle {
-  display: block;
-  margin-bottom: 16px; /* spacing.4 */
+.gradeDistributionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px; /* spacing.3 */
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gradeDistributionTitle {
   font-size: 14px;
 }
 
-.layoutGradeRow {
-  margin-bottom: 16px; /* spacing.4 */
-}
-
-.layoutGradeRow:last-child {
-  margin-bottom: 0;
-}
-
-.layoutGradeHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px; /* spacing.2 */
-  margin-bottom: 8px; /* spacing.2 */
-}
-
-.layoutIndicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.gradeDistributionToggle {
   flex-shrink: 0;
 }
 
-.layoutName {
-  font-size: 14px;
-  font-weight: 500;
+.flashRedpointSection {
+  border-top: 1px solid var(--neutral-200);
+  padding-top: 16px; /* spacing.4 */
+  margin-top: 16px; /* spacing.4 */
 }
 
-.layoutCount {
-  font-size: 12px;
-  margin-left: auto;
-}
-
-.gradeBlocks {
+.stackedChartLegend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 12px; /* spacing.3 */
+  margin-top: 8px; /* spacing.2 */
 }
 
-.gradeBlock {
+.legendButton {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 6px 10px;
-  border-radius: 6px;
-  min-width: 44px;
-  cursor: default;
-  transition: transform 150ms ease;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.gradeBlock:hover {
-  transform: scale(1.05);
+.legendButton:hover {
+  background-color: var(--neutral-100);
 }
 
-.gradeBlockLabel {
-  font-size: 11px;
-  font-weight: 600;
-  color: white;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  line-height: 1;
+/* Board Charts */
+.boardChartsContainer {
+  margin-top: 16px; /* spacing.4 */
 }
 
-.gradeBlockCount {
-  font-size: 14px;
-  font-weight: 700;
-  color: white;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  line-height: 1.2;
+.boardChartSection {
+  margin-bottom: 24px; /* spacing.6 */
+}
+
+.boardChartSection:last-child {
+  margin-bottom: 0;
+}
+
+.boardChartTitle {
+  display: block;
+  font-size: 13px;
+  color: var(--neutral-600);
+  margin-bottom: 8px; /* spacing.2 */
+}
+
+.weeklyDateRange {
+  margin-bottom: 12px; /* spacing.3 */
 }
 
 @media (max-width: 768px) {
@@ -341,25 +279,6 @@
     align-items: center;
   }
 
-  .bottomChartsRow {
-    flex-direction: column;
-  }
-
-  .barChartWrapper,
-  .pieChartWrapper {
-    width: 100%;
-    flex: none;
-  }
-
-  .chartWrapper {
-    height: 300px;
-  }
-
-  .barChartWrapper,
-  .pieChartWrapper {
-    height: 250px;
-  }
-
   /* Statistics Summary Mobile Styles */
   .statsSummaryHeader {
     flex-direction: column;
@@ -370,11 +289,6 @@
   .totalAscentsContainer {
     align-items: center;
     margin-bottom: 16px;
-  }
-
-  .quickStats {
-    justify-content: center;
-    gap: 32px;
   }
 
   .percentageBar {
@@ -389,36 +303,8 @@
     justify-content: center;
   }
 
-  .gradeBlocksContainer {
-    text-align: center;
-  }
-
-  .layoutGradeHeader {
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  .layoutCount {
-    margin-left: 0;
-    width: 100%;
-    text-align: center;
-    margin-top: 4px;
-  }
-
-  .gradeBlocks {
-    justify-content: center;
-  }
-
-  .gradeBlock {
-    padding: 4px 8px;
-    min-width: 38px;
-  }
-
-  .gradeBlockLabel {
-    font-size: 10px;
-  }
-
-  .gradeBlockCount {
-    font-size: 12px;
+  .gradeDistributionHeader {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

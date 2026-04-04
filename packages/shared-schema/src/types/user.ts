@@ -35,3 +35,11 @@ export type SaveAuroraCredentialInput = {
   username: string;
   password: string;
 };
+
+export type DeleteAccountInfo = {
+  publishedClimbCount: number;
+};
+
+export type DeleteAccountInput = {
+  removeSetterName: boolean;
+};

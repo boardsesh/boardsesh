@@ -717,7 +717,15 @@ export const getLedPlacements = (
   sizeId: number
 ): Record<number, number> => {
   const key = \`\${layoutId}-\${sizeId}\`;
-  return LED_PLACEMENTS[boardName]?.[key] ?? {};
+  const placements = LED_PLACEMENTS[boardName]?.[key];
+  if (!placements) {
+    console.warn(
+      \`[LED] No LED placements found for \${boardName} layout=\${layoutId} size=\${sizeId}. \` +
+      \`Available keys: \${Object.keys(LED_PLACEMENTS[boardName] || {}).join(', ')}\`
+    );
+    return {};
+  }
+  return placements;
 };
 `;
 

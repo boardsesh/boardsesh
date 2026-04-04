@@ -17,7 +17,7 @@ const layerContainStyle: React.CSSProperties = {
 
 export interface BoardImageLayersProps {
   boardDetails: BoardDetails;
-  frames: string;
+  frames?: string;
   mirrored: boolean;
   thumbnail?: boolean;
   /** Use object-fit: contain (for swipe carousel where container controls sizing) */
@@ -40,17 +40,20 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   contain,
   style,
 }: BoardImageLayersProps) {
-  const overlayUrl = buildOverlayUrl(boardDetails, frames, thumbnail);
+  const overlayUrl = frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null;
   const backgroundUrls = useMemo(
     () => Object.keys(boardDetails.images_to_holds).map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),
     [boardDetails.images_to_holds, boardDetails.board_name, thumbnail],
   );
 
-  const containerStyle = useMemo<React.CSSProperties>(() => ({
-    position: 'relative',
-    ...style,
-    transform: mirrored ? 'scaleX(-1)' : style?.transform,
-  }), [style, mirrored]);
+  const containerStyle = useMemo<React.CSSProperties>(
+    () => ({
+      position: 'relative',
+      ...style,
+      transform: mirrored ? 'scaleX(-1)' : style?.transform,
+    }),
+    [style, mirrored],
+  );
 
   const imgStyle = contain ? layerContainStyle : layerStyle;
 
@@ -62,11 +65,11 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   const handleOverlayLoad = useCallback(() => {
     if (hasFired.current) return;
     hasFired.current = true;
-    trackRenderComplete(performance.now() - mountTime.current, renderContext, 'rust-wasm');
+    trackRenderComplete(performance.now() - mountTime.current, renderContext, 'wasm');
   }, [renderContext]);
 
   const handleOverlayError = useCallback(() => {
-    trackRenderError(renderContext, 'rust-wasm');
+    trackRenderError(renderContext, 'wasm');
   }, [renderContext]);
 
   return (
@@ -75,8 +78,17 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
         // eslint-disable-next-line @next/next/no-img-element
         <img key={url} src={url} alt="" style={imgStyle} />
       ))}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={overlayUrl} alt="" loading="lazy" style={imgStyle} onLoad={handleOverlayLoad} onError={handleOverlayError} />
+      {overlayUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={overlayUrl}
+          alt=""
+          loading="lazy"
+          style={imgStyle}
+          onLoad={handleOverlayLoad}
+          onError={handleOverlayError}
+        />
+      )}
     </div>
   );
 });

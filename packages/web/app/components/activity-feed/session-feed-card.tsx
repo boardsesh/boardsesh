@@ -16,7 +16,8 @@ import ErrorOutlineOutlined from '@mui/icons-material/ErrorOutlineOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import Link from 'next/link';
 import type { SessionFeedItem } from '@boardsesh/shared-schema';
-import GradeDistributionBar from '@/app/components/charts/grade-distribution-bar';
+import { CssBarChart } from '@/app/components/charts/css-bar-chart';
+import { buildSessionGradeBars } from '@/app/components/charts/session-grade-bars';
 import OutcomeDoughnut from '@/app/components/charts/outcome-doughnut';
 import VoteButton from '@/app/components/social/vote-button';
 import FeedCommentButton from '@/app/components/social/feed-comment-button';
@@ -90,6 +91,11 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
 
   const hardestGradeColor = getGradeColor(hardestGrade);
   const hardestGradeTextColor = getGradeTextColor(hardestGradeColor);
+
+  const gradeBars = React.useMemo(
+    () => buildSessionGradeBars(gradeDistribution),
+    [gradeDistribution],
+  );
 
   return (
     <Card
@@ -251,12 +257,13 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
               }}
             >
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <GradeDistributionBar
-                  gradeDistribution={gradeDistribution}
-                  height={100}
-                  compact
-                  showAttempts
-                  stacked
+                <CssBarChart
+                  bars={gradeBars}
+                  height={80}
+                  mobileHeight={60}
+                  showLegend={false}
+                  gap={2}
+                  ariaLabel="Session grade distribution"
                 />
               </Box>
               <Box

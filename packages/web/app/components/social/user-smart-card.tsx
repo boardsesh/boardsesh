@@ -18,7 +18,7 @@ import {
   type GetUserProfileStatsQueryResponse,
 } from '@/app/lib/graphql/operations';
 import { difficultyMapping } from '@/app/crusher/[user_id]/utils/profile-constants';
-import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
+import { V_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import styles from './user-smart-card.module.css';
 
 interface UserSmartCardProps {
@@ -48,7 +48,7 @@ interface GradeBar {
   color: string;
 }
 
-const GRADE_ORDER = Object.values(difficultyMapping);
+const GRADE_ORDER = [...new Set(Object.values(difficultyMapping))];
 const CHIP_SX = { height: 20, fontSize: '0.7rem' } as const;
 
 export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardProps) {
@@ -84,23 +84,22 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
       if (statsData) {
         setTotalClimbs(statsData.totalDistinctClimbs);
 
-        // Aggregate grade counts across all layouts
-        const gradeAgg: Record<number, number> = {};
+        // Aggregate grade counts across all layouts, grouped by V-grade
+        const gradeAgg: Record<string, number> = {};
         for (const layout of statsData.layoutStats) {
           for (const gc of layout.gradeCounts) {
             const num = parseInt(gc.grade, 10);
-            if (!isNaN(num)) {
-              gradeAgg[num] = (gradeAgg[num] || 0) + gc.count;
-            }
+            if (isNaN(num)) continue;
+            const grade = difficultyMapping[num];
+            if (!grade) continue;
+            gradeAgg[grade] = (gradeAgg[grade] || 0) + gc.count;
           }
         }
 
         // Convert to sorted bars
         const bars: GradeBar[] = Object.entries(gradeAgg)
-          .map(([numStr, count]) => {
-            const num = parseInt(numStr, 10);
-            const grade = difficultyMapping[num] || numStr;
-            const hex = FONT_GRADE_COLORS[grade.toLowerCase()];
+          .map(([grade, count]) => {
+            const hex = V_GRADE_COLORS[grade];
             const color = hex ? getGradeColorWithOpacity(hex, 0.4) : 'rgba(200, 200, 200, 0.4)';
             return { grade, count, color };
           })

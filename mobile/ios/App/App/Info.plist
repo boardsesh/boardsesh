@@ -33,22 +33,15 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Boardsesh uses Bluetooth to connect to your climbing training board and illuminate routes.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Boardsesh uses your location to make your session discoverable to nearby climbers and support nearby session features.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Boardsesh uses your location to make your session discoverable to nearby climbers.</string>
+	<string>Boardsesh uses your location to make your session discoverable to nearby climbers and support nearby session features.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

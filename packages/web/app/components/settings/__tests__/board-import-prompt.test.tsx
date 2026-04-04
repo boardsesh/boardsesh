@@ -142,7 +142,7 @@ describe('BoardImportPrompt', () => {
       });
 
       await waitFor(() => {
-        expect(mockShowMessage).toHaveBeenCalledWith('Tension account linked successfully', 'success');
+        expect(mockShowMessage).toHaveBeenCalledWith('Tension account linked. Your data will show up within 12 hours.', 'success');
       });
     });
 

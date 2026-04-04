@@ -10,16 +10,18 @@ import Box from '@mui/material/Box';
 import { DeleteOutlined } from '@mui/icons-material';
 import { track } from '@vercel/analytics';
 import { BoardDetails } from '@/app/lib/types';
+import dynamic from 'next/dynamic';
 
 import { getImageUrl } from '@/app/components/board-renderer/util';
-import AccordionSearchForm from '@/app/components/search-drawer/accordion-search-form';
-import SearchResultsFooter from '@/app/components/search-drawer/search-results-footer';
-import QueueList from '@/app/components/queue-control/queue-list';
 import { useQueueContext } from '@/app/components/graphql-queue';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { TabPanel } from '@/app/components/ui/tab-panel';
-import OnboardingTour from '@/app/components/onboarding/onboarding-tour';
 import styles from './layout-client.module.css';
+
+const AccordionSearchForm = dynamic(() => import('@/app/components/search-drawer/accordion-search-form'), { ssr: false });
+const SearchResultsFooter = dynamic(() => import('@/app/components/search-drawer/search-results-footer'), { ssr: false });
+const QueueList = dynamic(() => import('@/app/components/queue-control/queue-list'), { ssr: false });
+const OnboardingTour = dynamic(() => import('@/app/components/onboarding/onboarding-tour'), { ssr: false });
 
 
 interface ListLayoutClientProps {

@@ -5,15 +5,6 @@ import React from 'react';
 // Mock server-only
 vi.mock('server-only', () => ({}));
 
-// Mock next/dynamic to render a placeholder instead of the real chart
-vi.mock('next/dynamic', () => ({
-  default: () => {
-    const Stub = () => <div data-testid="profile-stats-charts" />;
-    Stub.displayName = 'DynamicProfileStatsCharts';
-    return Stub;
-  },
-}));
-
 // Mock BoardImportPrompt to a simple stub so we can detect when it renders
 vi.mock('@/app/components/settings/board-import-prompt', () => ({
   default: ({ boardType }: { boardType: string }) => (
@@ -24,6 +15,12 @@ vi.mock('@/app/components/settings/board-import-prompt', () => ({
 // Mock the CSS module
 vi.mock('../../profile-page.module.css', () => ({
   default: {},
+}));
+
+// Mock CssBarChart components
+vi.mock('@/app/components/charts/css-bar-chart', () => ({
+  CssBarChart: () => <div data-testid="css-bar-chart" />,
+  GroupedBarChart: () => <div data-testid="grouped-bar-chart" />,
 }));
 
 // Mock MUI DatePicker to avoid LocalizationProvider requirement
@@ -44,10 +41,12 @@ const defaultProps = {
   onToDateChange: vi.fn(),
   loadingStats: false,
   filteredLogbook: [],
-  chartDataBar: null,
-  chartDataPie: null,
-  chartDataWeeklyBar: null,
+  weeklyBars: null,
   isOwnProfile: false,
+  weeklyFromDate: '',
+  onWeeklyFromDateChange: vi.fn(),
+  weeklyToDate: '',
+  onWeeklyToDateChange: vi.fn(),
 };
 
 describe('BoardStatsSection empty state conditional rendering', () => {
@@ -100,16 +99,25 @@ describe('BoardStatsSection empty state conditional rendering', () => {
       climbUuid: 'uuid-1',
     };
 
+    const weeklyBars = [
+      {
+        key: 'W1',
+        label: 'W1',
+        segments: [{ value: 1, color: 'rgba(255,235,59,0.8)', label: '4a' }],
+      },
+    ];
+
     render(
       <BoardStatsSection
         {...defaultProps}
         isOwnProfile={true}
         selectedBoard="kilter"
         filteredLogbook={[logbookEntry]}
+        weeklyBars={weeklyBars}
       />,
     );
 
-    expect(screen.getByTestId('profile-stats-charts')).toBeTruthy();
+    expect(screen.getByTestId('css-bar-chart')).toBeTruthy();
     expect(screen.queryByTestId('board-import-prompt')).toBeNull();
     expect(screen.queryByText('No climbing data for this period')).toBeNull();
   });

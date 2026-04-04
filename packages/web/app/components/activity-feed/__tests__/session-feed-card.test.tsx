@@ -10,8 +10,14 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-vi.mock('@/app/components/charts/grade-distribution-bar', () => ({
-  default: () => <div data-testid="grade-distribution-bar" />,
+vi.mock('@/app/components/charts/css-bar-chart', () => ({
+  CssBarChart: (props: { ariaLabel?: string }) => (
+    <div data-testid="css-bar-chart" aria-label={props.ariaLabel} />
+  ),
+}));
+
+vi.mock('@/app/components/charts/session-grade-bars', () => ({
+  buildSessionGradeBars: () => [],
 }));
 
 vi.mock('@/app/components/charts/outcome-doughnut', () => ({
@@ -173,7 +179,7 @@ describe('SessionFeedCard', () => {
 
   it('handles empty grade distribution gracefully', () => {
     render(<SessionFeedCard session={makeSession({ gradeDistribution: [] })} />);
-    expect(screen.queryByTestId('grade-distribution-bar')).toBeNull();
+    expect(screen.queryByTestId('css-bar-chart')).toBeNull();
   });
 
   it('formats duration as minutes when under 60', () => {

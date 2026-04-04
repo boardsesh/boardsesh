@@ -21,8 +21,9 @@ import {
 } from '../utils/profile-constants';
 import {
   filterLogbookByTimeframe,
-  buildAggregatedChartData,
-  buildBoardChartData,
+  buildAggregatedStackedBars,
+  buildWeeklyBars,
+  buildAggregatedFlashRedpointBars,
   buildStatisticsSummary,
 } from '../utils/chart-data-builders';
 
@@ -45,6 +46,8 @@ export function useProfileData(userId: string) {
   const [profileStats, setProfileStats] = useState<GetUserProfileStatsQueryResponse['userProfileStats'] | null>(null);
   const [loadingProfileStats, setLoadingProfileStats] = useState(false);
   const [activeTab, setActiveTab] = useState<'activity' | 'createdClimbs'>('activity');
+  const [weeklyFromDate, setWeeklyFromDate] = useState<string>('');
+  const [weeklyToDate, setWeeklyToDate] = useState<string>('');
 
   const isOwnProfile = session?.user?.id === userId;
   const hasCredentials = (profile?.credentials?.length ?? 0) > 0;
@@ -157,14 +160,19 @@ export function useProfileData(userId: string) {
     [logbook, timeframe, fromDate, toDate],
   );
 
-  const chartDataAggregated = useMemo(
-    () => buildAggregatedChartData(allBoardsTicks, aggregatedTimeframe),
+  const aggregatedStackedBars = useMemo(
+    () => buildAggregatedStackedBars(allBoardsTicks, aggregatedTimeframe),
     [allBoardsTicks, aggregatedTimeframe],
   );
 
-  const boardChartData = useMemo(
-    () => buildBoardChartData(filteredLogbook),
-    [filteredLogbook],
+  const weeklyBars = useMemo(
+    () => buildWeeklyBars(filteredLogbook, weeklyFromDate || undefined, weeklyToDate || undefined),
+    [filteredLogbook, weeklyFromDate, weeklyToDate],
+  );
+
+  const aggregatedFlashRedpointBars = useMemo(
+    () => buildAggregatedFlashRedpointBars(allBoardsTicks, aggregatedTimeframe),
+    [allBoardsTicks, aggregatedTimeframe],
   );
 
   const statisticsSummary = useMemo(
@@ -195,13 +203,18 @@ export function useProfileData(userId: string) {
     setFromDate,
     toDate,
     setToDate,
-    boardChartData,
+    weeklyBars,
+    weeklyFromDate,
+    setWeeklyFromDate,
+    weeklyToDate,
+    setWeeklyToDate,
 
     // Aggregated stats
     aggregatedTimeframe,
     setAggregatedTimeframe,
     loadingAggregated,
-    chartDataAggregated,
+    aggregatedStackedBars,
+    aggregatedFlashRedpointBars,
 
     // Profile stats summary
     loadingProfileStats,

@@ -267,7 +267,7 @@ export default function SettingsPageContent() {
         </Typography>
       </Box>
 
-      <Box component="main" sx={{ padding: '24px', maxWidth: 600, margin: '0 auto', width: '100%' }}>
+      <Box component="main" sx={{ padding: '24px', paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))', maxWidth: 600, margin: '0 auto', width: '100%' }}>
         <Card>
           <CardContent>
             <Typography variant="h5">Profile</Typography>

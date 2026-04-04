@@ -23,6 +23,8 @@ export interface BoardCanvasRendererProps {
  * returning an ImageBitmap that is drawn directly onto the canvas.
  * Falls back to BoardImageLayers if the worker render fails.
  */
+const THUMBNAIL_WIDTH = 300;
+
 const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
   boardDetails,
   frames,
@@ -34,6 +36,15 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasFired = useRef(false);
   const [failed, setFailed] = useState(false);
+
+  // Compute initial canvas dimensions to match worker output, so the element
+  // has a correct intrinsic aspect ratio before the bitmap arrives. Older
+  // iOS Safari (18.x) mis-renders canvases that start at the default 300×150
+  // inside aspect-ratio containers with absolute positioning.
+  const initialWidth = thumbnail ? THUMBNAIL_WIDTH : boardDetails.boardWidth;
+  const initialHeight = thumbnail
+    ? Math.round((THUMBNAIL_WIDTH * boardDetails.boardHeight) / boardDetails.boardWidth)
+    : boardDetails.boardHeight;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -55,14 +66,14 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
         }
         if (!hasFired.current) {
           hasFired.current = true;
-          trackRenderComplete(performance.now() - startTime, context, 'rust-wasm');
+          trackRenderComplete(performance.now() - startTime, context, 'wasm');
         }
       })
       .catch((err) => {
         if (!cancelled) {
           console.error('Board canvas render failed:', err);
           setFailed(true);
-          trackRenderError(context, 'rust-wasm');
+          trackRenderError(context, 'wasm');
         }
       });
 
@@ -85,16 +96,37 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
     );
   }
 
+  if (contain) {
+    return (
+      <canvas
+        ref={canvasRef}
+        width={initialWidth}
+        height={initialHeight}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          ...style,
+        }}
+      />
+    );
+  }
+
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        objectFit: contain ? 'contain' : undefined,
-        ...style,
-      }}
-    />
+    <div style={{ position: 'relative', ...style }}>
+      <canvas
+        ref={canvasRef}
+        width={initialWidth}
+        height={initialHeight}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+        }}
+      />
+    </div>
   );
 });
 

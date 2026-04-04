@@ -132,11 +132,11 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
   // Create HTTP server with custom request handler
   const httpServer = createServer(handleRequest);
 
-  // Setup WebSocket server for GraphQL subscriptions
-  const wss = setupWebSocketServer(httpServer);
+  // Setup WebSocket server for GraphQL subscriptions (includes ping/pong heartbeat)
+  const { wss, pingInterval } = setupWebSocketServer(httpServer);
 
   // Track intervals for cleanup
-  const intervals: NodeJS.Timeout[] = [];
+  const intervals: NodeJS.Timeout[] = [pingInterval];
 
   console.log(`Boardsesh Backend starting on port ${PORT}...`);
 

@@ -14,6 +14,14 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
+/** Ping interval in milliseconds for detecting dead WebSocket connections. */
+const WS_PING_INTERVAL_MS = 30_000;
+
+/** WebSocket extended with liveness tracking for ping/pong. */
+interface AliveWebSocket extends WebSocket {
+  isAlive: boolean;
+}
+
 // Extend Extra type with our custom context
 interface CustomExtra extends WsExtra {
   context?: ConnectionContext;
@@ -29,7 +37,7 @@ type ServerContext = GqlWsContext<Record<string, unknown>, CustomExtra>;
  * @param httpServer The HTTP server to attach the WebSocket server to
  * @returns The WebSocket server instance
  */
-export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
+export function setupWebSocketServer(httpServer: HttpServer): { wss: WebSocketServer; pingInterval: NodeJS.Timeout } {
   // Create WebSocket server on /graphql path with origin validation
   const wss = new WebSocketServer({
     server: httpServer,
@@ -197,5 +205,31 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
     wss,
   );
 
-  return wss;
+  // Ping/pong heartbeat to detect dead connections.
+  // When a client's network drops silently (phone sleep, WiFi switch, tab killed),
+  // the TCP connection becomes half-open and onDisconnect never fires.
+  // This interval pings every client; if it doesn't respond before the next ping,
+  // the socket is terminated, which triggers onDisconnect and cleans up Redis state.
+  wss.on('connection', (ws: WebSocket) => {
+    const aliveWs = ws as AliveWebSocket;
+    aliveWs.isAlive = true;
+    aliveWs.on('pong', () => {
+      aliveWs.isAlive = true;
+    });
+  });
+
+  const pingInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      const aliveWs = ws as AliveWebSocket;
+      if (!aliveWs.isAlive) {
+        if (DEBUG) console.log('[WebSocket] Terminating unresponsive connection');
+        aliveWs.terminate();
+        return;
+      }
+      aliveWs.isAlive = false;
+      aliveWs.ping();
+    });
+  }, WS_PING_INTERVAL_MS);
+
+  return { wss, pingInterval };
 }

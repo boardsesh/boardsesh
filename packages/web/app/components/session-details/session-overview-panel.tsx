@@ -20,7 +20,8 @@ import PersonAddOutlined from '@mui/icons-material/PersonAddOutlined';
 import RemoveCircleOutlineOutlined from '@mui/icons-material/RemoveCircleOutlineOutlined';
 import type { SessionFeedParticipant, SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { deduplicateBy } from '@/app/utils/deduplicate';
-import GradeDistributionBar from '@/app/components/charts/grade-distribution-bar';
+import { CssBarChart } from '@/app/components/charts/css-bar-chart';
+import { buildSessionGradeBars, SESSION_GRADE_LEGEND } from '@/app/components/charts/session-grade-bars';
 import { formatVGrade } from '@/app/lib/grade-colors';
 
 interface SessionOverviewPanelProps {
@@ -97,6 +98,11 @@ export default function SessionOverviewPanel({
   );
 
   const isMultiUser = uniqueParticipants.length > 1;
+
+  const gradeBars = React.useMemo(
+    () => buildSessionGradeBars(gradeDistribution),
+    [gradeDistribution],
+  );
 
   return (
     <>
@@ -237,13 +243,21 @@ export default function SessionOverviewPanel({
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               Grade Distribution
             </Typography>
-            <GradeDistributionBar
-              gradeDistribution={gradeDistribution}
-              height={200}
-              compact={false}
-              showAttempts
-              stacked
+            <CssBarChart
+              bars={gradeBars}
+              height={160}
+              mobileHeight={120}
+              gap={3}
+              ariaLabel="Session grade distribution"
             />
+            <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center', mt: 1 }}>
+              {SESSION_GRADE_LEGEND.map((entry) => (
+                <Box key={entry.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: entry.color }} />
+                  <Typography variant="caption" color="text.secondary">{entry.label}</Typography>
+                </Box>
+              ))}
+            </Box>
           </CardContent>
         </Card>
       )}

@@ -661,6 +661,12 @@ The real-time queue/party features use this auth flow:
    - Pass the stored token to WebSocket connection params as a backup
 3. **Session refresh:** Add logic to detect expired sessions and prompt re-login with a native-feeling sheet, not a full page redirect
 
+### Native OAuth (Implemented)
+
+Social login (Google, Apple, Facebook) cannot use `signIn()` from the WebView because the WebView and external browser have separate cookie jars. Instead, the app opens `/auth/native-start` in the Capacitor Browser plugin, which runs the entire OAuth flow in the external browser's cookie context. After OAuth completes, the server issues a short-lived HMAC-signed transfer token and redirects to a `com.boardsesh.app://` deep link. The native app intercepts the deep link, closes the browser, and uses the transfer token to create a session inside the WebView via a `native-oauth` credentials provider.
+
+See [OAuth Setup: Native App Authentication](./oauth-setup.md#native-app-authentication-capacitor) for the full flow and file references.
+
 ### CORS Considerations
 
 The backend CORS handler (`packages/backend/src/handlers/cors.ts`) whitelists specific origins:
@@ -767,7 +773,7 @@ The backend CORS handler (`packages/backend/src/handlers/cors.ts`) whitelists sp
 - [ ] Add `@capacitor/app` for back button handling (Android)
 - [ ] Test pull-to-refresh behavior
 - [ ] **Offline handling:**
-  - [ ] Install `@capacitor/network` plugin
+  - [x] Install `@capacitor/network` plugin *(superseded: implemented native Android/iOS connectivity monitoring directly in shell code)*
   - [ ] Add offline detection screen showing cached queue from IndexedDB
   - [ ] Show "reconnecting..." banner when connectivity is lost mid-session
   - [ ] Ensure app has *some* functionality without internet (cached queue view, BLE connection to board)
@@ -1256,8 +1262,7 @@ Push notifications (Milestone 4) ship as a v1.1 update post-launch.
 - `boardsesh://board/{boardName}/{layoutId}/{sizeId}/{setIds}/{angle}` — Open board config
 
 **Universal Links (iOS) / App Links (Android):**
-- `https://boardsesh.com/party/*` → opens app if installed (party session links only)
-- `https://boardsesh.com/invite/*` → opens app if installed (invite links only)
+- `https://boardsesh.com/join/*` → opens app if installed (session invite links only)
 - **Do NOT register the entire `boardsesh.com` domain** — this would hijack all links and prevent users from using the website in their browser
 - Requires `apple-app-site-association` file on `boardsesh.com` (iOS)
 - Requires `assetlinks.json` on `boardsesh.com` (Android)

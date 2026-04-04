@@ -181,6 +181,7 @@ export async function getSessionMembers(redis: Redis, sessionId: string): Promis
 
   const results = await pipeline.exec();
   const users: SessionUser[] = [];
+  const staleMemberIds: string[] = [];
 
   if (results) {
     for (let i = 0; i < results.length; i++) {
@@ -193,8 +194,25 @@ export async function getSessionMembers(redis: Redis, sessionId: string): Promis
           isLeader: connection.isLeader,
           avatarUrl: connection.avatarUrl || undefined,
         });
+      } else if (!err) {
+        // Connection hash expired — mark for removal from the session set
+        staleMemberIds.push(memberIds[i]);
       }
     }
+  }
+
+  // Fire-and-forget cleanup of stale members so the set self-heals on every read
+  if (staleMemberIds.length > 0) {
+    const cleanupPipeline = redis.pipeline();
+    for (const id of staleMemberIds) {
+      cleanupPipeline.srem(KEYS.sessionMembers(sessionId), id);
+    }
+    cleanupPipeline.exec().catch((err) => {
+      console.error(
+        `[DistributedState] Failed to prune ${staleMemberIds.length} stale members from session ${sessionId.slice(0, 8)}:`,
+        err
+      );
+    });
   }
 
   return users;

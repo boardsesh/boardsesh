@@ -1,20 +1,16 @@
 'use client';
 
 import { createContext, useContext, ReactNode } from 'react';
-import type { FeatureFlags } from '@/app/flags';
+import { EMPTY_FEATURE_FLAGS, type FeatureFlags } from '@/app/flags';
 
-const FeatureFlagsContext = createContext<FeatureFlags | null>(null);
+const FeatureFlagsContext = createContext<FeatureFlags>(EMPTY_FEATURE_FLAGS);
 
 export function FeatureFlagsProvider({ flags, children }: { flags: FeatureFlags; children: ReactNode }) {
   return <FeatureFlagsContext.Provider value={flags}>{children}</FeatureFlagsContext.Provider>;
 }
 
 export function useFeatureFlags(): FeatureFlags {
-  const ctx = useContext(FeatureFlagsContext);
-  if (ctx === null) {
-    throw new Error('useFeatureFlags must be used within FeatureFlagsProvider');
-  }
-  return ctx;
+  return useContext(FeatureFlagsContext);
 }
 
 export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {

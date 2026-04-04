@@ -10,6 +10,7 @@ interface UseQueueStorageSyncParams {
   currentClimbQueueItem: ClimbQueueItem | null;
   baseBoardPath: string;
   boardDetails: BoardDetails;
+  isDisconnected: boolean;
   persistentSession: {
     setLocalQueueState: (
       queue: ClimbQueueItem[],
@@ -22,8 +23,9 @@ interface UseQueueStorageSyncParams {
 
 /**
  * Persists queue changes to IndexedDB (via persistent session local queue)
- * when not in party mode. Gated by `hasRestored` to prevent overwriting
- * valid data with empty initial reducer state.
+ * when not in party mode, OR when in party mode but offline.
+ * Gated by `hasRestored` to prevent overwriting valid data with empty initial
+ * reducer state.
  */
 export function useQueueStorageSync({
   hasRestored,
@@ -33,14 +35,16 @@ export function useQueueStorageSync({
   currentClimbQueueItem,
   baseBoardPath,
   boardDetails,
+  isDisconnected,
   persistentSession,
 }: UseQueueStorageSyncParams) {
   useEffect(() => {
     // Don't sync until initial restoration is complete
     if (!hasRestored) return;
 
-    // Only sync when NOT in party mode
-    if (isPersistentSessionActive || sessionId) return;
+    // When in party mode and online, don't sync locally (server is source of truth)
+    if (isPersistentSessionActive && !isDisconnected) return;
+    if (sessionId && !isPersistentSessionActive && !isDisconnected) return;
 
     // Sync queue state to persistent session for local storage
     persistentSession.setLocalQueueState(
@@ -57,6 +61,7 @@ export function useQueueStorageSync({
     boardDetails,
     isPersistentSessionActive,
     sessionId,
+    isDisconnected,
     persistentSession,
   ]);
 }

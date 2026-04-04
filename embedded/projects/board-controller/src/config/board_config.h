@@ -43,6 +43,6 @@
 
 // Debug options
 #define DEBUG_SERIAL true
-#define DEBUG_BLE false
+#define DEBUG_BLE true
 
 #endif

@@ -200,4 +200,36 @@ describe('GlobalHeader', () => {
       expect(screen.getByText('Search')).toBeTruthy();
     });
   });
+
+  it('shows "Search climbs..." on board list routes before the bridge registers', () => {
+    mockPathname = '/b/test-board/40/list';
+
+    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
+
+    expect(screen.getByText('Search climbs...')).toBeTruthy();
+    expect(screen.queryByText('Search')).toBeNull();
+  });
+
+  it('keeps "Search" on non-list routes when the bridge is inactive', () => {
+    mockPathname = '/b/test-board/40/view/some-climb';
+
+    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
+
+    expect(screen.getByText('Search')).toBeTruthy();
+    expect(screen.queryByText('Search climbs...')).toBeNull();
+  });
+
+  it('falls back to "Search climbs..." when the bridge is active on a list route but summary is null', () => {
+    mockPathname = '/b/test-board/40/list';
+    mockBridgeState = {
+      openClimbSearchDrawer: mockOpenClimbSearchDrawer,
+      searchPillSummary: null,
+      hasActiveFilters: false,
+    };
+
+    render(<GlobalHeader boardConfigs={mockBoardConfigs} />);
+
+    expect(screen.getByText('Search climbs...')).toBeTruthy();
+    expect(screen.queryByText('Search')).toBeNull();
+  });
 });

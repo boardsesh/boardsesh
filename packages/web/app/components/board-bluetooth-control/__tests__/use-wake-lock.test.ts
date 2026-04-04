@@ -57,13 +57,13 @@ describe('useWakeLock', () => {
   });
 
   it('isSupported is false when navigator.wakeLock is not available', () => {
+    // Remove the property entirely to make 'wakeLock' in navigator return false
     Object.defineProperty(navigator, 'wakeLock', {
       value: undefined,
       writable: true,
       configurable: true,
     });
-    // Delete the property entirely to make 'wakeLock' in navigator return false
-    delete (navigator as unknown as Record<string, unknown>).wakeLock;
+    Reflect.deleteProperty(navigator as unknown as Record<string, unknown>, 'wakeLock');
 
     const { result } = renderHook(() => useWakeLock(false));
     expect(result.current.isSupported).toBe(false);

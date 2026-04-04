@@ -80,7 +80,7 @@ export default function FeedPageContent({
   }, [updateParam]);
 
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', pb: '60px' }}>
+    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', pb: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}>
       {/* Feed */}
       <Box component="main" sx={{ flex: 1, px: 2, py: 2, pt: 'calc(var(--global-header-height) + 16px)' }}>
         {isAuthenticated && (myBoards.length > 0 || isLoadingBoards) && (

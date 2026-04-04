@@ -95,6 +95,10 @@ void NordicUartBLE::setRawForwardCallback(BLERawForwardCallback callback) {
     rawForwardCallback = callback;
 }
 
+void NordicUartBLE::setProtocolDebug(bool enabled) {
+    protocol.setDebug(enabled);
+}
+
 void NordicUartBLE::onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) {
     deviceConnected = true;
     advertising = false;

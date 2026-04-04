@@ -10,21 +10,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/link', () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
-    <a href={href} {...rest}>{children}</a>
+  default: ({ href, children, prefetch: _prefetch, ...rest }: { href: string; children: React.ReactNode; prefetch?: boolean }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
 }));
 
 import ClimbThumbnail from '../climb-thumbnail';
-import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
-
-const defaultFlags = { 'rust-svg-rendering': false as const, 'wasm-rendering': false as const };
-
-function renderWithFlags(ui: React.ReactElement) {
-  return render(
-    <FeatureFlagsProvider flags={defaultFlags}>{ui}</FeatureFlagsProvider>,
-  );
-}
 
 const boardDetails = {
   board_name: 'kilter',
@@ -64,13 +57,7 @@ describe('ClimbThumbnail', () => {
   it('preserves board-slug URL context on /b routes', () => {
     mockPathname = '/b/moonrise-gym/40/list';
 
-    renderWithFlags(
-      <ClimbThumbnail
-        boardDetails={boardDetails}
-        currentClimb={climb}
-        enableNavigation
-      />,
-    );
+    render(<ClimbThumbnail boardDetails={boardDetails} currentClimb={climb} enableNavigation />);
 
     const link = screen.getByTestId('climb-thumbnail-link');
     expect(link.getAttribute('href')).toBe('/b/moonrise-gym/40/view/moon-landing-ABC123');
@@ -79,15 +66,11 @@ describe('ClimbThumbnail', () => {
   it('falls back to canonical route format outside /b routes', () => {
     mockPathname = '/kilter/homewall/8x12-main/main-kicker_aux-kicker/40/list';
 
-    renderWithFlags(
-      <ClimbThumbnail
-        boardDetails={boardDetails}
-        currentClimb={climb}
-        enableNavigation
-      />,
-    );
+    render(<ClimbThumbnail boardDetails={boardDetails} currentClimb={climb} enableNavigation />);
 
     const link = screen.getByTestId('climb-thumbnail-link');
-    expect(link.getAttribute('href')).toBe('/kilter/homewall/8x12-main/main-kicker_aux-kicker/40/view/moon-landing-ABC123');
+    expect(link.getAttribute('href')).toBe(
+      '/kilter/homewall/8x12-main/main-kicker_aux-kicker/40/view/moon-landing-ABC123',
+    );
   });
 });

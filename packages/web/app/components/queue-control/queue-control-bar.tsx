@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import SyncOutlined from '@mui/icons-material/SyncOutlined';
+import CloudOffOutlined from '@mui/icons-material/CloudOffOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import OpenInFullOutlined from '@mui/icons-material/OpenInFullOutlined';
 import { track } from '@vercel/analytics';
@@ -105,16 +106,28 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     sessionId,
     endSession,
     disconnect,
+    isDisconnected,
+    users,
   } = useQueueContext();
 
   const { showMessage } = useSnackbar();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [dismissedDisconnect, setDismissedDisconnect] = useState(false);
+
+  // Reset dismissed state when connection is restored so banner reappears on next disconnect
+  useEffect(() => {
+    if (!isDisconnected) {
+      setDismissedDisconnect(false);
+    }
+  }, [isDisconnected]);
 
   const { mode } = useColorMode();
   const isDark = mode === 'dark';
   const gradeTintColor = useMemo(() => getGradeTintColor(currentClimb?.difficulty, 'default', isDark), [currentClimb?.difficulty, isDark]);
 
-  const isReconnecting = !!sessionId && (connectionState === 'reconnecting' || connectionState === 'stale' || connectionState === 'error');
+  // Show reconnecting UI only when online but WebSocket is down.
+  // When truly offline (browser has no network), show normal controls with an offline indicator instead.
+  const isReconnecting = !!sessionId && !isDisconnected && (connectionState === 'reconnecting' || connectionState === 'stale' || connectionState === 'error');
 
   const nextClimb = getNextClimbQueueItem();
   const previousClimb = getPreviousClimbQueueItem();
@@ -409,6 +422,25 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
 
   return (
     <div id="onboarding-queue-bar" className={`queue-bar-shadow ${styles.queueBar}`} data-testid="queue-control-bar">
+      {/* Offline indicator */}
+      {isDisconnected && !dismissedDisconnect && (
+        <div
+          className={styles.offlineBanner}
+          onClick={() => setDismissedDisconnect(true)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDismissedDisconnect(true); } }}
+        >
+          <CloudOffOutlined sx={{ fontSize: 'body2.fontSize', flexShrink: 0 }} />
+          <span className={styles.offlineBannerText}>
+            {sessionId
+              ? users && users.length > 1
+                ? 'Offline. Queued climbs will still sync.'
+                : 'Offline. Changes will sync when you reconnect.'
+              : 'Offline'}
+          </span>
+        </div>
+      )}
       {/* Main Control Bar */}
       <MuiCard variant="outlined" className={styles.card} sx={{ border: 'none', backgroundColor: 'transparent' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>

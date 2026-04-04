@@ -492,8 +492,49 @@ curl http://localhost:3000/api/auth/providers-config
 
 ---
 
+## Native App Authentication (Capacitor)
+
+OAuth in the Capacitor WebView requires special handling because the WebView and the external browser (Chrome Custom Tab / SFSafariViewController) have **separate cookie jars**. Calling `signIn()` from the WebView would set OAuth state cookies that the external browser never sees, breaking the callback.
+
+### Transfer Token Flow
+
+Instead, the entire OAuth flow runs in the external browser, and the result is transferred back to the WebView via a short-lived HMAC-signed token:
+
+1. **User taps a social login button** in the WebView
+2. The Capacitor Browser plugin opens `/auth/native-start?provider=google&callbackUrl=...` in the external browser
+3. That page fetches a CSRF token and auto-submits the NextAuth sign-in form — all in the external browser's cookie context
+4. The OAuth provider flow completes normally (redirect to Google/Apple/Facebook → callback → session created in external browser)
+5. NextAuth redirects to `/api/auth/native/callback`, which reads the session, issues a **transfer token** (HMAC-SHA256 signed, 120s TTL), and redirects to `com.boardsesh.app://auth/callback?transferToken=...`
+6. The native app intercepts the deep link, closes the external browser, and calls `signIn('native-oauth', { transferToken })` inside the WebView
+7. The `native-oauth` credentials provider verifies the token signature/expiry/iat, looks up the user, and creates a session in the WebView
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `packages/web/app/lib/auth/native-oauth-transfer.ts` | Issue and verify HMAC-signed transfer tokens |
+| `packages/web/app/api/auth/native/callback/route.ts` | Server endpoint that issues a transfer token and redirects to the deep link |
+| `packages/web/app/auth/native-start/` | Auto-submit page opened in the external browser to start the OAuth flow |
+| `packages/web/app/components/providers/session-provider.tsx` | Listens for `appUrlOpen` deep links and completes the sign-in in the WebView |
+| `packages/web/app/components/auth/social-login-buttons.tsx` | Detects Capacitor and opens the external browser instead of calling `signIn()` |
+| `packages/web/app/lib/auth/auth-options.ts` | Contains the `native-oauth` credentials provider |
+
+### Security Properties
+
+- Transfer tokens are HMAC-SHA256 signed with `NEXTAUTH_SECRET` — cannot be forged without the server secret
+- 120-second TTL with both `exp` and `iat` validation (rejects tokens issued in the future)
+- Path sanitization on both issue and verify (only relative paths starting with `/` are accepted)
+- The token only carries a user ID — the credentials provider re-fetches the user from the database to confirm existence
+
+### No Additional Environment Variables
+
+The native OAuth flow reuses `NEXTAUTH_SECRET` for token signing. No extra configuration is needed beyond the standard OAuth provider setup described above.
+
+---
+
 ## Related Documentation
 
 - [NextAuth.js Documentation](https://next-auth.js.org/)
 - [Drizzle ORM Documentation](https://orm.drizzle.team/)
 - [WebSocket Authentication](./websocket-implementation.md) - How auth integrates with real-time features
+- [Mobile App Plan](./mobile-app-plan.md) - Capacitor architecture and auth persistence strategy

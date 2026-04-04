@@ -1,11 +1,12 @@
 import React, { Suspense } from 'react';
-import { Metadata } from 'next';
+import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import VerifyRequestContent from './verify-request-content';
 
-export const metadata: Metadata = {
-  title: 'Verify Email | Boardsesh',
+export const metadata = createNoIndexMetadata({
+  title: 'Verify Email',
   description: 'Verify your email address',
-};
+  path: '/auth/verify-request',
+});
 
 export default function VerifyRequestPage() {
   return (

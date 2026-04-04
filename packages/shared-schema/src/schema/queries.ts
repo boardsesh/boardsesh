@@ -86,6 +86,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     profile: UserProfile
 
     """
+    Get info needed before account deletion (published climb count).
+    Requires authentication.
+    """
+    deleteAccountInfo: DeleteAccountInfo!
+
+    """
     Get status of all stored Aurora credentials.
     Requires authentication.
     """

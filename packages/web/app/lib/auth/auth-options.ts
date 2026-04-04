@@ -8,6 +8,7 @@ import { getDb } from "@/app/lib/db/db";
 import * as schema from "@/app/lib/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { verifyNativeOAuthTransferToken } from "@/app/lib/auth/native-oauth-transfer";
 
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
@@ -43,6 +44,46 @@ if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
 }
 
 // Always add credentials provider
+providers.push(
+  CredentialsProvider({
+    id: "native-oauth",
+    name: "Native OAuth",
+    credentials: {
+      transferToken: { label: "Transfer Token", type: "text" },
+    },
+    async authorize(credentials) {
+      if (!credentials?.transferToken) {
+        return null;
+      }
+
+      const decoded = verifyNativeOAuthTransferToken(credentials.transferToken);
+      if (!decoded) {
+        return null;
+      }
+
+      const db = getDb();
+      const users = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, decoded.userId))
+        .limit(1);
+
+      if (users.length === 0) {
+        return null;
+      }
+
+      const user = users[0];
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image,
+      };
+    },
+  }),
+);
+
+// Always add email/password credentials provider
 providers.push(
   CredentialsProvider({
       name: "Email",
