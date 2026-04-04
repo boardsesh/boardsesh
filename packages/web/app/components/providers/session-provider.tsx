@@ -28,29 +28,38 @@ export default function SessionProviderWrapper({ children }: SessionProviderWrap
         return;
       }
 
-      const parsed = new URL(url);
-      const callbackError = parsed.searchParams.get('error');
-      const transferToken = parsed.searchParams.get('transferToken');
-      const nextPath = parsed.searchParams.get('next') ?? '/';
+      try {
+        const parsed = new URL(url);
+        const callbackError = parsed.searchParams.get('error');
+        const transferToken = parsed.searchParams.get('transferToken');
+        const nextPath = parsed.searchParams.get('next') ?? '/';
+        const safeCallbackUrl = nextPath.startsWith('/') ? nextPath : '/';
 
-      await window.Capacitor?.Plugins?.Browser?.close?.();
+        if (callbackError || !transferToken) {
+          window.location.assign('/auth/login?error=OAuthCallback');
+          return;
+        }
 
-      if (callbackError || !transferToken) {
+        const result = await signIn('native-oauth', {
+          transferToken,
+          callbackUrl: safeCallbackUrl,
+          redirect: false,
+        });
+
+        if (result?.error) {
+          window.location.assign('/auth/login?error=OAuthCallback');
+          return;
+        }
+
+        if (result?.url) {
+          window.location.assign(result.url);
+        } else {
+          window.location.assign(safeCallbackUrl);
+        }
+      } catch {
         window.location.assign('/auth/login?error=OAuthCallback');
-        return;
-      }
-
-      const safeCallbackUrl = nextPath.startsWith('/') ? nextPath : '/';
-      const result = await signIn('native-oauth', {
-        transferToken,
-        callbackUrl: safeCallbackUrl,
-        redirect: false,
-      });
-
-      if (result?.url) {
-        window.location.assign(result.url);
-      } else {
-        window.location.assign(safeCallbackUrl);
+      } finally {
+        await window.Capacitor?.Plugins?.Browser?.close?.();
       }
     }).then((handle) => {
       listenerHandle = handle;
@@ -59,7 +68,12 @@ export default function SessionProviderWrapper({ children }: SessionProviderWrap
     });
 
     return () => {
-      void listenerHandle?.remove();
+      if (!listenerHandle) {
+        return;
+      }
+      void listenerHandle.remove().catch((error) => {
+        console.error('[Native OAuth] Failed to remove appUrlOpen listener:', error);
+      });
     };
   }, []);
 

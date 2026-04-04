@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNativeOAuthSignInUrl } from '../social-login-buttons';
+import { buildNativeOAuthSignInUrl } from '@/app/lib/auth/native-oauth-url';
 
 describe('buildNativeOAuthSignInUrl', () => {
   it('builds a provider sign-in URL with native callback route', () => {
@@ -24,4 +24,3 @@ describe('buildNativeOAuthSignInUrl', () => {
     expect(url).toContain('next%3D%252F');
   });
 });
-

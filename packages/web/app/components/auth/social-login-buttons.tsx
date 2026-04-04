@@ -8,6 +8,7 @@ import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
 import { signIn } from 'next-auth/react';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
+import { buildNativeOAuthSignInUrl } from '@/app/lib/auth/native-oauth-url';
 
 // Note: OAuth provider icons and button colors use brand-specific colors
 // per Google/Apple/Facebook brand guidelines, not design system tokens
@@ -54,24 +55,6 @@ type ProvidersConfig = {
 type SocialLoginButtonsProps = {
   callbackUrl?: string;
   disabled?: boolean;
-};
-
-const sanitizeRelativePath = (path: string): string => (path.startsWith('/') ? path : '/');
-
-export const buildNativeOAuthSignInUrl = ({
-  origin,
-  provider,
-  callbackPath,
-}: {
-  origin: string;
-  provider: string;
-  callbackPath: string;
-}): string => {
-  const nextPath = sanitizeRelativePath(callbackPath);
-  const nativeCallbackUrl = `${origin}/api/auth/native/callback?next=${encodeURIComponent(nextPath)}`;
-  const signInUrl = new URL(`/api/auth/signin/${provider}`, origin);
-  signInUrl.searchParams.set('callbackUrl', nativeCallbackUrl);
-  return signInUrl.toString();
 };
 
 export default function SocialLoginButtons({
