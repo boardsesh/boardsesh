@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { SessionProvider, signIn } from 'next-auth/react';
 import { ReactNode } from 'react';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
+import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
 
 interface SessionProviderWrapperProps {
   children: ReactNode;
@@ -23,17 +24,19 @@ export default function SessionProviderWrapper({ children }: SessionProviderWrap
     let listenerHandle: { remove: () => Promise<void> } | null = null;
 
     appPlugin.addListener('appUrlOpen', async ({ url }) => {
-      if (!url.startsWith('com.boardsesh.app://auth/callback')) {
+      if (!url.startsWith(NATIVE_OAUTH_CALLBACK_SCHEME)) {
         return;
       }
 
       const parsed = new URL(url);
+      const callbackError = parsed.searchParams.get('error');
       const transferToken = parsed.searchParams.get('transferToken');
       const nextPath = parsed.searchParams.get('next') ?? '/';
 
       await window.Capacitor?.Plugins?.Browser?.close?.();
 
-      if (!transferToken) {
+      if (callbackError || !transferToken) {
+        window.location.assign('/auth/login?error=OAuthCallback');
         return;
       }
 

@@ -56,6 +56,24 @@ type SocialLoginButtonsProps = {
   disabled?: boolean;
 };
 
+const sanitizeRelativePath = (path: string): string => (path.startsWith('/') ? path : '/');
+
+export const buildNativeOAuthSignInUrl = ({
+  origin,
+  provider,
+  callbackPath,
+}: {
+  origin: string;
+  provider: string;
+  callbackPath: string;
+}): string => {
+  const nextPath = sanitizeRelativePath(callbackPath);
+  const nativeCallbackUrl = `${origin}/api/auth/native/callback?next=${encodeURIComponent(nextPath)}`;
+  const signInUrl = new URL(`/api/auth/signin/${provider}`, origin);
+  signInUrl.searchParams.set('callbackUrl', nativeCallbackUrl);
+  return signInUrl.toString();
+};
+
 export default function SocialLoginButtons({
   callbackUrl = '/',
   disabled = false,
@@ -93,18 +111,13 @@ export default function SocialLoginButtons({
         return;
       }
 
-      const nextPath = callbackUrl.startsWith('/') ? callbackUrl : '/';
-      const nativeCallbackUrl =
-        `${window.location.origin}/api/auth/native/callback?next=${encodeURIComponent(nextPath)}`;
-
-      const result = await signIn(provider, {
-        callbackUrl: nativeCallbackUrl,
-        redirect: false,
+      const url = buildNativeOAuthSignInUrl({
+        origin: window.location.origin,
+        provider,
+        callbackPath: callbackUrl,
       });
 
-      if (result?.url) {
-        await browser.open({ url: result.url });
-      }
+      await browser.open({ url });
       return;
     }
 
