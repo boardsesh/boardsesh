@@ -4,9 +4,20 @@ import Capacitor
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
+    /// Universal link URL received during cold start, before the Capacitor bridge is ready.
+    var pendingUniversalLinkURL: URL?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = (scene as? UIWindowScene) else { return }
+
+        // Save any universal link that triggered this cold start.
+        // The bridge isn't ready yet, so we store it and let
+        // BoardseshViewController pick it up after viewDidLoad.
+        if let userActivity = connectionOptions.userActivities.first(where: {
+            $0.activityType == NSUserActivityTypeBrowsingWeb
+        }), let url = userActivity.webpageURL {
+            pendingUniversalLinkURL = url
+        }
 
         let window = UIWindow(windowScene: windowScene)
         let storyboard = UIStoryboard(name: "Main", bundle: nil)
