@@ -24,11 +24,22 @@ async function consistentDelay(startTime: number): Promise<void> {
   }
 }
 
+const smtpConfigured = !!(process.env.SMTP_USER && process.env.SMTP_PASSWORD);
+const emailVerificationActive = smtpConfigured && process.env.EMAIL_VERIFICATION_ENABLED !== "false";
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   const genericMessage = 'If an account exists and needs verification, a verification email will be sent';
 
   try {
+    // If email verification is disabled or SMTP is not configured, return generic message
+    if (!emailVerificationActive) {
+      await consistentDelay(startTime);
+      return NextResponse.json(
+        { message: genericMessage },
+        { status: 200 }
+      );
+    }
     // Rate limiting - 5 requests per minute per IP
     const clientIp = getClientIp(request);
     const rateLimitResult = checkRateLimit(`resend-verification:${clientIp}`, 5, 60_000);
