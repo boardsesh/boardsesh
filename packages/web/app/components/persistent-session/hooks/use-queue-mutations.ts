@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { execute, Client } from '../../graphql-queue/graphql-client';
+import { NativeWSClient } from '../../graphql-queue/native-ws-client';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
@@ -11,8 +12,18 @@ import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/
 import type { Session } from '../types';
 import { toClimbQueueItemInput } from '../types';
 
+type TransportClient = Client | NativeWSClient;
+
+/** Execute an operation on either a graphql-ws Client or NativeWSClient. */
+function executeOnTransport<T>(client: TransportClient, operation: { query: string; variables?: Record<string, unknown> }): Promise<T> {
+  if (client instanceof NativeWSClient) {
+    return client.execute<T>(operation);
+  }
+  return execute<T>(client, operation);
+}
+
 interface UseQueueMutationsArgs {
-  client: Client | null;
+  client: TransportClient | null;
   session: Session | null;
 }
 
@@ -28,7 +39,7 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   const addQueueItem = useCallback(
     async (item: LocalClimbQueueItem, position?: number) => {
       if (!client || !session) throw new Error('Not connected to session');
-      await execute(client, {
+      await executeOnTransport(client, {
         query: ADD_QUEUE_ITEM,
         variables: { item: toClimbQueueItemInput(item), position },
       });
@@ -39,7 +50,7 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   const removeQueueItem = useCallback(
     async (uuid: string) => {
       if (!client || !session) throw new Error('Not connected to session');
-      await execute(client, {
+      await executeOnTransport(client, {
         query: REMOVE_QUEUE_ITEM,
         variables: { uuid },
       });
@@ -50,7 +61,7 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   const setCurrentClimb = useCallback(
     async (item: LocalClimbQueueItem | null, shouldAddToQueue?: boolean, correlationId?: string) => {
       if (!client || !session) throw new Error('Not connected to session');
-      await execute(client, {
+      await executeOnTransport(client, {
         query: SET_CURRENT_CLIMB,
         variables: {
           item: item ? toClimbQueueItemInput(item) : null,
@@ -65,7 +76,7 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   const mirrorCurrentClimb = useCallback(
     async (mirrored: boolean) => {
       if (!client || !session) throw new Error('Not connected to session');
-      await execute(client, {
+      await executeOnTransport(client, {
         query: MIRROR_CURRENT_CLIMB,
         variables: { mirrored },
       });
@@ -76,7 +87,7 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   const setQueue = useCallback(
     async (newQueue: LocalClimbQueueItem[], newCurrentClimbQueueItem?: LocalClimbQueueItem | null) => {
       if (!client || !session) throw new Error('Not connected to session');
-      await execute(client, {
+      await executeOnTransport(client, {
         query: SET_QUEUE,
         variables: {
           queue: newQueue.map(toClimbQueueItemInput),

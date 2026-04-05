@@ -127,10 +127,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             defaults.set(setIds, forKey: SharedConstants.setIdsKey)
         }
 
-        // For party mode (real session), connect the WebSocket manager
+        // Register the queue state callback on the shared WebSocket manager
         // so queue updates flow through to the Live Activity.
-        // Set callback BEFORE connect to avoid race where a fast connection
-        // fires events before the callback is installed.
+        // The WebSocket connection itself is managed by NativeWebSocketPlugin —
+        // LiveActivityPlugin only observes queue state changes.
         let wsManager = SessionWebSocketManager.shared
         let activityManager = LiveActivityManager.shared
 
@@ -147,9 +147,6 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 await activityManager.updateActivity(state: state)
             }
         }
-
-        // Connect after callback is set to ensure no events are missed.
-        wsManager.connect(serverUrl: serverUrl, sessionId: sessionId, authToken: authToken, wsUrl: wsUrl)
 
         // Observe widget navigation intents and forward to JS.
         startDarwinObservation()
@@ -187,9 +184,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func endSession(_ call: CAPPluginCall) {
         stopDarwinObservation()
 
+        // Clear the queue state callback. The WebSocket connection itself
+        // is managed by NativeWebSocketPlugin — we only clean up our observer.
         let wsManager = SessionWebSocketManager.shared
         wsManager.onQueueStateChanged = nil
-        wsManager.disconnect()
 
         // Clear shared UserDefaults queue state.
         if let defaults = SharedConstants.sharedDefaults {

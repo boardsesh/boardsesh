@@ -184,6 +184,13 @@ enum QueueMessageParser {
     }
 }
 
+// MARK: - WebSocket Message Delegate
+
+protocol WebSocketMessageDelegate: AnyObject {
+    func didReceiveRawMessage(_ text: String)
+    func connectionStateDidChange(connected: Bool, reconnectAttempt: Int)
+}
+
 // MARK: - Session WebSocket Manager
 
 final class SessionWebSocketManager {
@@ -200,6 +207,22 @@ final class SessionWebSocketManager {
         get { stateQueue.sync { _onQueueStateChanged } }
         set { stateQueue.sync { _onQueueStateChanged = newValue } }
     }
+
+    // MARK: - Message Delegate
+
+    private weak var _messageDelegate: WebSocketMessageDelegate?
+
+    var messageDelegate: WebSocketMessageDelegate? {
+        get { stateQueue.sync { _messageDelegate } }
+        set { stateQueue.sync { _messageDelegate = newValue } }
+    }
+
+    // MARK: - Webview Buffering
+
+    private var _isWebviewActive: Bool = true
+    private var _messageBuffer: [String] = []
+    private var _needsFullResync: Bool = false
+    private let maxBufferSize = 500
 
     // MARK: - Configuration
 
@@ -218,14 +241,24 @@ final class SessionWebSocketManager {
 
     private var urlSession: URLSession
     private var webSocketTask: URLSessionWebSocketTask?
-    private(set) var isConnected = false
-    private var subscriptionId: String = "1"
+    private var _isConnected = false
+    /// Thread-safe accessor for connection state.
+    var isConnected: Bool {
+        get { stateQueue.sync { _isConnected } }
+    }
+    private let internalSubscriptionId: String = "1"
+    private var activeSubscriptionIds: Set<String> = ["1"]
     private var lastSequence: Int = -1
 
     // MARK: - Reconnection
 
-    // internal(set) so @testable import AppTests can write this in reconnect-delay tests
-    internal(set) var reconnectAttempt: Int = 0
+    private var _reconnectAttempt: Int = 0
+    /// Thread-safe accessor for reconnect attempt count.
+    var reconnectAttempt: Int {
+        get { stateQueue.sync { _reconnectAttempt } }
+        // internal(set) so @testable import AppTests can write this in reconnect-delay tests
+        set { stateQueue.sync { _reconnectAttempt = newValue } }
+    }
     private var reconnectWorkItem: DispatchWorkItem?
     private let maxBackoff: TimeInterval = 30
     private let maxReconnectAttempts: Int = 20
@@ -276,11 +309,108 @@ final class SessionWebSocketManager {
             self.reconnectWorkItem = nil
             self.pingTimeoutTimer?.cancel()
             self.pingTimeoutTimer = nil
-            self.sendComplete()
+            // Send complete for all active subscriptions
+            for subId in self.activeSubscriptionIds {
+                let completeMsg: [String: Any] = [
+                    "type": GQLMessageType.complete.rawValue,
+                    "id": subId
+                ]
+                self.sendJSON(completeMsg)
+            }
+            self.activeSubscriptionIds = [self.internalSubscriptionId]
             self.webSocketTask?.cancel(with: .goingAway, reason: nil)
             self.webSocketTask = nil
-            self.isConnected = false
+            self._isConnected = false
+            if let delegate = self._messageDelegate {
+                DispatchQueue.main.async { delegate.connectionStateDidChange(connected: false, reconnectAttempt: 0) }
+            }
         }
+    }
+
+    // MARK: - Webview Active / Buffering
+
+    func setWebviewActive(_ active: Bool) {
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            self._isWebviewActive = active
+            if active {
+                self._flushBufferOnQueue()
+            }
+        }
+    }
+
+    /// Must be called on `stateQueue`.
+    private func _flushBufferOnQueue() {
+        guard let delegate = _messageDelegate else {
+            _messageBuffer.removeAll()
+            _needsFullResync = false
+            return
+        }
+        if _needsFullResync {
+            _needsFullResync = false
+            _messageBuffer.removeAll()
+            DispatchQueue.main.async {
+                delegate.didReceiveRawMessage("{\"type\":\"resync_needed\"}")
+            }
+        } else {
+            let buffered = _messageBuffer
+            _messageBuffer.removeAll()
+            DispatchQueue.main.async {
+                for message in buffered {
+                    delegate.didReceiveRawMessage(message)
+                }
+            }
+        }
+    }
+
+    // MARK: - Auth Token Update
+
+    func updateAuthToken(_ token: String) {
+        stateQueue.async { [weak self] in
+            self?.authToken = token
+        }
+    }
+
+    // MARK: - Generic Operation Sending
+
+    func sendOperation(query: String, variables: [String: Any], operationId: String) {
+        let message: [String: Any] = [
+            "type": GQLMessageType.subscribe.rawValue,
+            "id": operationId,
+            "payload": [
+                "query": query,
+                "variables": variables
+            ] as [String: Any]
+        ]
+        sendJSON(message)
+    }
+
+    // MARK: - External Subscription Management
+
+    func addSubscription(query: String, variables: [String: Any], subscriptionId: String) {
+        stateQueue.async { [weak self] in
+            self?.activeSubscriptionIds.insert(subscriptionId)
+        }
+        let message: [String: Any] = [
+            "type": GQLMessageType.subscribe.rawValue,
+            "id": subscriptionId,
+            "payload": [
+                "query": query,
+                "variables": variables
+            ] as [String: Any]
+        ]
+        sendJSON(message)
+    }
+
+    func removeSubscription(_ subscriptionId: String) {
+        stateQueue.async { [weak self] in
+            self?.activeSubscriptionIds.remove(subscriptionId)
+        }
+        let message: [String: Any] = [
+            "type": GQLMessageType.complete.rawValue,
+            "id": subscriptionId
+        ]
+        sendJSON(message)
     }
 
     // MARK: - Connection Lifecycle
@@ -399,7 +529,7 @@ final class SessionWebSocketManager {
 
         let message: [String: Any] = [
             "type": GQLMessageType.subscribe.rawValue,
-            "id": subscriptionId,
+            "id": internalSubscriptionId,
             "payload": [
                 "query": query,
                 "variables": ["sessionId": sessionId]
@@ -446,7 +576,7 @@ final class SessionWebSocketManager {
     private func sendComplete() {
         let message: [String: Any] = [
             "type": GQLMessageType.complete.rawValue,
-            "id": subscriptionId
+            "id": internalSubscriptionId
         ]
         sendJSON(message)
     }
@@ -529,9 +659,11 @@ final class SessionWebSocketManager {
     }
 
     private func handleMessage(_ text: String) {
+        // Forward raw message to delegate BEFORE parsing
         stateQueue.async { [weak self] in
             guard let self = self else { return }
             self.lastMessageReceived = Date()
+            self._forwardRawMessageOnQueue(text)
         }
         guard let msg = GQLMessage.parse(text) else { return }
 
@@ -539,8 +671,11 @@ final class SessionWebSocketManager {
         case .connectionAck:
             stateQueue.async { [weak self] in
                 guard let self = self else { return }
-                self.isConnected = true
-                self.reconnectAttempt = 0
+                self._isConnected = true
+                self._reconnectAttempt = 0
+                if let delegate = self._messageDelegate {
+                    DispatchQueue.main.async { delegate.connectionStateDidChange(connected: true, reconnectAttempt: 0) }
+                }
                 self.sendJoinSession()
                 self.sendSubscription()
             }
@@ -560,6 +695,23 @@ final class SessionWebSocketManager {
 
         default:
             break
+        }
+    }
+
+    /// Must be called on `stateQueue`.
+    private func _forwardRawMessageOnQueue(_ text: String) {
+        guard let delegate = _messageDelegate else { return }
+        if _isWebviewActive {
+            // Dispatch off stateQueue to avoid blocking it on the Capacitor bridge
+            DispatchQueue.main.async {
+                delegate.didReceiveRawMessage(text)
+            }
+        } else {
+            _messageBuffer.append(text)
+            if _messageBuffer.count > maxBufferSize {
+                _messageBuffer.removeAll()
+                _needsFullResync = true
+            }
         }
     }
 
@@ -685,20 +837,24 @@ final class SessionWebSocketManager {
                 return
             }
 
-            self.isConnected = false
+            self._isConnected = false
             self.webSocketTask = nil
             self.pingTimeoutTimer?.cancel()
             self.pingTimeoutTimer = nil
+            if let delegate = self._messageDelegate {
+                let attempt = self._reconnectAttempt
+                DispatchQueue.main.async { delegate.connectionStateDidChange(connected: false, reconnectAttempt: attempt) }
+            }
 
             guard !self.intentionalDisconnect else { return }
 
-            guard self.reconnectAttempt < self.maxReconnectAttempts else {
+            guard self._reconnectAttempt < self.maxReconnectAttempts else {
                 print("[SessionWS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached, giving up")
                 return
             }
 
             let delay = self.reconnectDelay()
-            self.reconnectAttempt += 1
+            self._reconnectAttempt += 1
 
             let workItem = DispatchWorkItem { [weak self] in
                 self?.openConnection()

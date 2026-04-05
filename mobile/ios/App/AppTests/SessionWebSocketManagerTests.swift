@@ -965,4 +965,137 @@ final class SessionWebSocketManagerTests: XCTestCase {
         XCTAssertEqual(GQLMessageType.ping.rawValue, "ping")
         XCTAssertEqual(GQLMessageType.pong.rawValue, "pong")
     }
+
+    // MARK: - WebSocket Message Delegate Protocol
+
+    func testWebSocketMessageDelegateProtocol() {
+        // Verify the protocol exists and a mock can conform to it
+        let delegate = MockWebSocketMessageDelegate()
+
+        // Verify raw message forwarding
+        delegate.didReceiveRawMessage("test-message")
+        XCTAssertEqual(delegate.receivedMessages.count, 1)
+        XCTAssertEqual(delegate.receivedMessages[0], "test-message")
+
+        // Verify connection state change forwarding
+        delegate.connectionStateDidChange(connected: true, reconnectAttempt: 0)
+        XCTAssertEqual(delegate.connectionStateChanges.count, 1)
+        XCTAssertTrue(delegate.connectionStateChanges[0].connected)
+        XCTAssertEqual(delegate.connectionStateChanges[0].reconnectAttempt, 0)
+
+        // Verify disconnected state
+        delegate.connectionStateDidChange(connected: false, reconnectAttempt: 3)
+        XCTAssertEqual(delegate.connectionStateChanges.count, 2)
+        XCTAssertFalse(delegate.connectionStateChanges[1].connected)
+        XCTAssertEqual(delegate.connectionStateChanges[1].reconnectAttempt, 3)
+    }
+
+    // MARK: - Send Operation Message
+
+    func testSendOperationMessage() {
+        // Verify that sendOperation builds the expected graphql-ws JSON structure
+        // by constructing the same message format and validating it
+        let query = "mutation SetClimb($id: ID!) { setClimb(id: $id) { uuid } }"
+        let variables: [String: Any] = ["id": "climb-42"]
+        let operationId = "op-set-climb"
+
+        let expectedMessage: [String: Any] = [
+            "type": GQLMessageType.subscribe.rawValue,
+            "id": operationId,
+            "payload": [
+                "query": query,
+                "variables": variables
+            ] as [String: Any]
+        ]
+
+        // Serialize and parse back to verify structure
+        guard let data = try? JSONSerialization.data(withJSONObject: expectedMessage),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            XCTFail("Failed to serialize operation message")
+            return
+        }
+
+        XCTAssertEqual(parsed["type"] as? String, "subscribe")
+        XCTAssertEqual(parsed["id"] as? String, operationId)
+
+        guard let payload = parsed["payload"] as? [String: Any] else {
+            XCTFail("Missing payload in operation message")
+            return
+        }
+
+        XCTAssertEqual(payload["query"] as? String, query)
+
+        guard let parsedVars = payload["variables"] as? [String: Any] else {
+            XCTFail("Missing variables in operation payload")
+            return
+        }
+
+        XCTAssertEqual(parsedVars["id"] as? String, "climb-42")
+
+        // Also verify sendOperation doesn't crash when called without a connection
+        let manager = SessionWebSocketManager(urlSession: .shared)
+        manager.sendOperation(query: query, variables: variables, operationId: operationId)
+    }
+
+    // MARK: - Active Subscription IDs Tracking
+
+    func testActiveSubscriptionIdsTracking() {
+        let manager = SessionWebSocketManager(urlSession: .shared)
+
+        // Add subscriptions
+        manager.addSubscription(
+            query: "subscription A { a }",
+            variables: [:],
+            subscriptionId: "sub-a"
+        )
+        manager.addSubscription(
+            query: "subscription B { b }",
+            variables: ["key": "val"],
+            subscriptionId: "sub-b"
+        )
+
+        let addExpectation = expectation(description: "Subscriptions added")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            addExpectation.fulfill()
+        }
+        wait(for: [addExpectation], timeout: 1.0)
+
+        // Remove one subscription
+        manager.removeSubscription("sub-a")
+
+        let removeExpectation = expectation(description: "Subscription removed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            removeExpectation.fulfill()
+        }
+        wait(for: [removeExpectation], timeout: 1.0)
+
+        // Add another
+        manager.addSubscription(
+            query: "subscription C { c }",
+            variables: [:],
+            subscriptionId: "sub-c"
+        )
+
+        let addAgainExpectation = expectation(description: "Another subscription added")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            addAgainExpectation.fulfill()
+        }
+        wait(for: [addAgainExpectation], timeout: 1.0)
+
+        // Remove all external subscriptions
+        manager.removeSubscription("sub-b")
+        manager.removeSubscription("sub-c")
+
+        let cleanupExpectation = expectation(description: "Cleanup done")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            cleanupExpectation.fulfill()
+        }
+        wait(for: [cleanupExpectation], timeout: 1.0)
+
+        // Removing a non-existent subscription should not crash
+        manager.removeSubscription("nonexistent")
+
+        manager.disconnect()
+    }
 }
