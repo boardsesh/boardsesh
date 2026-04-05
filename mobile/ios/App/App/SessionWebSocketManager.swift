@@ -252,6 +252,8 @@ final class SessionWebSocketManager {
     }
     private let internalSubscriptionId: String = "1"
     private var activeSubscriptionIds: Set<String> = ["1"]
+    /// Stores query/variables for external subscriptions so they can be re-established after reconnect.
+    private var externalSubscriptions: [String: (query: String, variables: [String: Any])] = [:]
     private var lastSequence: Int = -1
 
     // MARK: - Reconnection
@@ -314,17 +316,21 @@ final class SessionWebSocketManager {
             self.pingTimeoutTimer?.cancel()
             self.pingTimeoutTimer = nil
             // Send complete for all active subscriptions before closing the task
-            for subId in self.activeSubscriptionIds {
-                let completeMsg: [String: Any] = [
-                    "type": GQLMessageType.complete.rawValue,
-                    "id": subId
-                ]
-                if let data = try? JSONSerialization.data(withJSONObject: completeMsg),
-                   let text = String(data: data, encoding: .utf8) {
-                    self.webSocketTask?.send(.string(text)) { _ in }
+            // Only send if connected (protocol requires connection_ack before any messages)
+            if self._isConnected {
+                for subId in self.activeSubscriptionIds {
+                    let completeMsg: [String: Any] = [
+                        "type": GQLMessageType.complete.rawValue,
+                        "id": subId
+                    ]
+                    if let data = try? JSONSerialization.data(withJSONObject: completeMsg),
+                       let text = String(data: data, encoding: .utf8) {
+                        self.webSocketTask?.send(.string(text)) { _ in }
+                    }
                 }
             }
             self.activeSubscriptionIds = [self.internalSubscriptionId]
+            self.externalSubscriptions.removeAll()
             self.webSocketTask?.cancel(with: .goingAway, reason: nil)
             self.webSocketTask = nil
             self._isConnected = false
@@ -395,6 +401,39 @@ final class SessionWebSocketManager {
     // MARK: - External Subscription Management
 
     func addSubscription(query: String, variables: [String: Any], subscriptionId: String) {
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.activeSubscriptionIds.insert(subscriptionId)
+            self.externalSubscriptions[subscriptionId] = (query: query, variables: variables)
+            // Only send if connected (protocol requires connection_ack first)
+            guard self._isConnected else { return }
+            self._sendSubscribeMessageOnQueue(subscriptionId: subscriptionId, query: query, variables: variables)
+        }
+    }
+
+    func removeSubscription(_ subscriptionId: String) {
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.activeSubscriptionIds.remove(subscriptionId)
+            self.externalSubscriptions.removeValue(forKey: subscriptionId)
+            guard self._isConnected else { return }
+            let message: [String: Any] = [
+                "type": GQLMessageType.complete.rawValue,
+                "id": subscriptionId
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: message),
+               let text = String(data: data, encoding: .utf8) {
+                self.webSocketTask?.send(.string(text)) { error in
+                    if let error = error {
+                        print("[SessionWS] Send complete failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Must be called on `stateQueue`.
+    private func _sendSubscribeMessageOnQueue(subscriptionId: String, query: String, variables: [String: Any]) {
         let message: [String: Any] = [
             "type": GQLMessageType.subscribe.rawValue,
             "id": subscriptionId,
@@ -403,34 +442,11 @@ final class SessionWebSocketManager {
                 "variables": variables
             ] as [String: Any]
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let text = String(data: data, encoding: .utf8)
-        else { return }
-        stateQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.activeSubscriptionIds.insert(subscriptionId)
+        if let data = try? JSONSerialization.data(withJSONObject: message),
+           let text = String(data: data, encoding: .utf8) {
             self.webSocketTask?.send(.string(text)) { error in
                 if let error = error {
                     print("[SessionWS] Send subscribe failed: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    func removeSubscription(_ subscriptionId: String) {
-        let message: [String: Any] = [
-            "type": GQLMessageType.complete.rawValue,
-            "id": subscriptionId
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: message),
-              let text = String(data: data, encoding: .utf8)
-        else { return }
-        stateQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.activeSubscriptionIds.remove(subscriptionId)
-            self.webSocketTask?.send(.string(text)) { error in
-                if let error = error {
-                    print("[SessionWS] Send complete failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -701,6 +717,10 @@ final class SessionWebSocketManager {
                 }
                 self.sendJoinSession()
                 self.sendSubscription()
+                // Re-establish any external subscriptions after reconnect
+                for (subId, sub) in self.externalSubscriptions {
+                    self._sendSubscribeMessageOnQueue(subscriptionId: subId, query: sub.query, variables: sub.variables)
+                }
             }
             startPingTimeoutTimer()
 
@@ -843,7 +863,13 @@ final class SessionWebSocketManager {
         if let defaults = SharedConstants.sharedDefaults {
             SharedQueueState.save(items: queueItems, currentIndex: currentIndex, to: defaults)
         }
-        _onQueueStateChanged?(queueItems, currentIndex)
+        if let callback = _onQueueStateChanged {
+            let items = queueItems
+            let index = currentIndex
+            DispatchQueue.main.async {
+                callback(items, index)
+            }
+        }
     }
 
     // MARK: - Reconnection
@@ -887,10 +913,9 @@ final class SessionWebSocketManager {
         }
     }
 
-    func reconnectDelay(attempt: Int? = nil) -> TimeInterval {
-        let effectiveAttempt = attempt ?? reconnectAttempt
+    func reconnectDelay(attempt: Int) -> TimeInterval {
         let base: TimeInterval = 1
-        let exponential = base * pow(2, Double(effectiveAttempt))
+        let exponential = base * pow(2, Double(attempt))
         return min(exponential, maxBackoff)
     }
 
