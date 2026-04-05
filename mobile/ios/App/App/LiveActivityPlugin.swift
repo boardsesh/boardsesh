@@ -44,6 +44,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    deinit {
+        stopDarwinObservation()
+    }
+
     private func stopDarwinObservation() {
         guard observingDarwinNotification else { return }
         observingDarwinNotification = false

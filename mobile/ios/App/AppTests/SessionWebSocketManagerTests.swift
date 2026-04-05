@@ -689,7 +689,7 @@ final class SessionWebSocketManagerTests: XCTestCase {
         let manager = SessionWebSocketManager(urlSession: .shared)
 
         // First attempt: 1s
-        let first = manager.reconnectDelay()
+        let first = manager.reconnectDelay(attempt: 0)
         XCTAssertEqual(first, 1.0, accuracy: 0.01)
     }
 
@@ -876,32 +876,25 @@ final class SessionWebSocketManagerTests: XCTestCase {
     func testReconnectDelayIncrementsOnSubsequentCalls() {
         let manager = SessionWebSocketManager(urlSession: .shared)
 
-        // reconnectDelay() is a pure function of reconnectAttempt.
-        // In production, handleDisconnect() increments reconnectAttempt after each call.
-        // Simulate that here by checking delay at each attempt level.
-        XCTAssertEqual(manager.reconnectAttempt, 0)
-        let first = manager.reconnectDelay()  // 2^0 = 1
+        // reconnectDelay() is a pure function of the attempt parameter.
+        let first = manager.reconnectDelay(attempt: 0)  // 2^0 = 1
         XCTAssertEqual(first, 1.0, accuracy: 0.01)
 
-        manager.reconnectAttempt = 1
-        let second = manager.reconnectDelay()  // 2^1 = 2
+        let second = manager.reconnectDelay(attempt: 1)  // 2^1 = 2
         XCTAssertEqual(second, 2.0, accuracy: 0.01)
 
-        manager.reconnectAttempt = 2
-        let third = manager.reconnectDelay()  // 2^2 = 4
+        let third = manager.reconnectDelay(attempt: 2)  // 2^2 = 4
         XCTAssertEqual(third, 4.0, accuracy: 0.01)
 
-        manager.reconnectAttempt = 3
-        let fourth = manager.reconnectDelay()  // 2^3 = 8
+        let fourth = manager.reconnectDelay(attempt: 3)  // 2^3 = 8
         XCTAssertEqual(fourth, 8.0, accuracy: 0.01)
     }
 
     func testReconnectDelayCapsAt30Seconds() {
         let manager = SessionWebSocketManager(urlSession: .shared)
 
-        // Set attempt high enough that 2^n > 30
-        manager.reconnectAttempt = 5  // 2^5 = 32, capped at 30
-        let delay = manager.reconnectDelay()
+        // 2^5 = 32, capped at 30
+        let delay = manager.reconnectDelay(attempt: 5)
 
         XCTAssertEqual(delay, 30.0, accuracy: 0.01)
     }
