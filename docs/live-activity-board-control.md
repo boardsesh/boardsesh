@@ -107,45 +107,28 @@ Remove the dependency on the webview for hold data by including placements in th
 
 **Definition of done:** The native layer can illuminate any climb's LEDs without the webview being active, using hold data received purely through the WebSocket stream.
 
-### Phase 3b: Rust Crate UniFFI Bindings (Optional)
+### Phase 4: Expanded Widget Controls
 
-If we accumulate enough shared logic between Swift, TypeScript, and the backend, consolidate into the existing Rust board-renderer crate with UniFFI bindings for native iOS/Android.
+Add more actions to the Lock Screen widget, including workout support.
 
-**What already lives in the Rust crate (`packages/board-renderer-wasm/`):**
-- `HoldData` struct (id, cx, cy, r, mirrored_hold_id)
-- `HoldStateInfo` (color mapping)
-- Frame string parser (`p<hold_id>r<state_code>` format)
-- Aurora hold state → color mapping (42=start, 43=hand, 44=finish, 45=foot)
-- Board rendering with tiny-skia
-
-**What could be added:**
-- `ble_encode(frame_string, holds) -> Vec<u8>` -- UART packet encoding for LED control
-- `parse_queue_event(json) -> QueueEvent` -- shared event parsing
-- Hold placement lookup by climb UUID
-
-**Build changes:**
-- Add `uniffi` dependency and `.udl` interface definition to the crate
-- Add a `staticlib` crate-type alongside existing `cdylib` + `rlib`
-- Generate Swift bindings via `uniffi-bindgen-swift` (outputs `.swift` + `.h` + `.modulemap`)
-- Generate Kotlin bindings via `uniffi-bindgen-kotlin` for Android
-- WASM build (`wasm-pack`) continues working unchanged -- UniFFI targets are additive
-- CI adds cross-compilation for `aarch64-apple-ios` and `aarch64-linux-android`
-
-**When to do this:** When we have 3+ pieces of non-trivial logic duplicated across Swift and TypeScript. The frame parser + UART encoder + hold lookup together would cross that threshold.
-
-### Phase 4: Expanded Widget Controls (Optional)
-
-Add more queue management actions to the Lock Screen widget.
-
-**Possible additions:**
+**Queue controls:**
 - Mirror toggle (flip the current climb)
 - Skip/remove current climb from queue
 - Tick/log the current climb as sent
 
-**Constraints:**
-- iOS widget interaction is limited (buttons only, no complex input)
+**Workout controls (future):**
+When workouts land in Boardsesh, the Live Activity becomes the primary workout interface on the wall. The widget will need to display and control:
+- Current set and rep within the workout (e.g., "Set 2/4, Rep 3/6")
+- Rest timer countdown between sets (Live Activities support timer rendering natively via `Text.DateStyle.timer`)
+- Start/complete rep buttons
+- Skip set or end workout early
+
+The workout state lives server-side and arrives via the same WebSocket subscription. The widget complexity grows (more UI states, timer logic, conditional layouts) but the underlying transport stays the same: WS event → `SessionWebSocketManager` → App Group → Live Activity update. The native Swift state machine may need a workout-specific event type alongside the existing queue events, but the plumbing is identical.
+
+**Design constraints:**
+- iOS widget interaction is buttons only, no complex input
 - Each action follows the same pattern: optimistic App Group update → Darwin notification → main app sends mutation → server confirms → all clients update
-- Keep the widget focused -- too many buttons make it cluttered
+- Lock Screen expanded view has ~160pt height -- plan layouts for queue mode and workout mode
 
 ### Phase 5: Android Parity (Future)
 
@@ -183,8 +166,8 @@ The board renderer at `packages/board-renderer-wasm/` is a production Rust → W
 - **Backend:** `packages/web/app/api/internal/board-render/route.ts` loads WASM server-side, renders hold overlays, composites with `sharp` to WebP
 - **Frontend:** `packages/web/app/lib/board-render-worker/board-render.worker.ts` runs WASM in a Web Worker with OffscreenCanvas
 - **Types:** `HoldData { id, mirrored_hold_id, cx, cy, r }`, `HoldStateInfo { color }`, frame string parser
-- **No iOS/Android bindings yet** -- UniFFI can be added incrementally (see Phase 3b)
+- UniFFI could be added to generate Swift/Kotlin bindings if needed for BLE encoding, but not planned currently
 
-### What We Decided Not To Do (For Now)
+### What We Decided Not To Do
 
-**Shared Rust queue state machine**: The queue state machine is ~200 lines in Swift and ~150 in TypeScript. Adding UniFFI bindings just for this isn't worth it. However, when we add BLE packet encoding (Phase 1) and hold data lookup (Phase 3), we'll have 3+ pieces of duplicated logic. At that point, consolidating into the Rust crate with UniFFI bindings becomes worthwhile (Phase 3b). The WASM build continues working unchanged -- UniFFI targets are additive to the existing `cdylib` crate type.
+**Shared Rust/WASM state machine**: The queue state machine is ~200 lines in Swift and ~150 in TypeScript. Complexity will grow in the widget UI layer (workout timers, rest countdowns, set tracking) not in the WS state machine itself. The state machine is just "apply event to queue" and that won't change much even with workouts -- workout events are just another event type through the same transport. Maintaining two small, language-idiomatic implementations is simpler than adding UniFFI bindings, cross-compilation CI, and FFI debugging overhead for code that rarely changes.
