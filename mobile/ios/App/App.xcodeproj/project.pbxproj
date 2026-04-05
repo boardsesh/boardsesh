@@ -36,6 +36,7 @@
 		LA100032 /* LiveActivityManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200032 /* LiveActivityManagerTests.swift */; };
 		LA100033 /* AppIntentNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200033 /* AppIntentNavigationTests.swift */; };
 		LA100034 /* VGradeFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200034 /* VGradeFormatterTests.swift */; };
+		LA100035 /* NativeWebSocketPluginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200035 /* NativeWebSocketPluginTests.swift */; };
 		LA100040 /* BoardseshWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = LA300001 /* BoardseshWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		PI100001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PI200001 /* PrivacyInfo.xcprivacy */; };
 		PI100002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PI200002 /* PrivacyInfo.xcprivacy */; };
@@ -106,6 +107,7 @@
 		LA200032 /* LiveActivityManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManagerTests.swift; sourceTree = "<group>"; };
 		LA200033 /* AppIntentNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNavigationTests.swift; sourceTree = "<group>"; };
 		LA200034 /* VGradeFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VGradeFormatterTests.swift; sourceTree = "<group>"; };
+		LA200035 /* NativeWebSocketPluginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWebSocketPluginTests.swift; sourceTree = "<group>"; };
 		LA300001 /* BoardseshWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BoardseshWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		PI200001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		PI200002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				LA200032 /* LiveActivityManagerTests.swift */,
 				LA200033 /* AppIntentNavigationTests.swift */,
 				LA200034 /* VGradeFormatterTests.swift */,
+				LA200035 /* NativeWebSocketPluginTests.swift */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -443,6 +446,7 @@
 				LA100032 /* LiveActivityManagerTests.swift in Sources */,
 				LA100033 /* AppIntentNavigationTests.swift in Sources */,
 				LA100034 /* VGradeFormatterTests.swift in Sources */,
+				LA100035 /* NativeWebSocketPluginTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

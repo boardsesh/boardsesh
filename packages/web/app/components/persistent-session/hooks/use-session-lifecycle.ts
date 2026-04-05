@@ -1,5 +1,8 @@
 import { useState, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { createGraphQLClient, execute, subscribe, Client } from '../../graphql-queue/graphql-client';
+import { createNativeWSClient, isNativeWebSocketAvailable, NativeWSClient } from '../../graphql-queue/native-ws-client';
+import { getNativeWebSocketPlugin } from '@/app/lib/native-ws/native-ws-plugin';
+import { getBackendWsUrl } from '@/app/lib/backend-url';
 import {
   INITIAL_RETRY_DELAY_MS,
   MAX_RETRY_DELAY_MS,
@@ -70,9 +73,12 @@ interface UseSessionLifecycleArgs {
   >;
 }
 
+/** A transport client that can be either a graphql-ws Client or a NativeWSClient. */
+export type TransportClient = Client | NativeWSClient;
+
 export interface SessionLifecycleState {
   activeSession: ActiveSessionInfo | null;
-  client: Client | null;
+  client: TransportClient | null;
   session: Session | null;
   isConnecting: boolean;
   hasConnected: boolean;
@@ -111,7 +117,7 @@ export function useSessionLifecycle({
   } = refs;
 
   const [activeSession, setActiveSession] = useState<ActiveSessionInfo | null>(null);
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<TransportClient | null>(null);
   const [session, setSessionLocal] = useState<Session | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [hasConnected, setHasConnected] = useState(false);
@@ -207,11 +213,32 @@ export function useSessionLifecycle({
 
     mountedRef.current = true;
     const connectionGeneration = ++connectionGenerationRef.current;
-    let graphqlClient: Client | null = null;
+    let graphqlClient: TransportClient | null = null;
     let retryConnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let transientRetryCount = 0;
+    const useNativeWs = isNativeWebSocketAvailable();
 
-    async function joinSession(clientToUse: Client): Promise<Session | null> {
+    // Helper to execute operations on either client type
+    function executeOnClient<T>(clientToUse: TransportClient, operation: { query: string; variables?: Record<string, unknown> }): Promise<T> {
+      if (clientToUse instanceof NativeWSClient) {
+        return clientToUse.execute<T>(operation);
+      }
+      return execute<T>(clientToUse, operation);
+    }
+
+    // Helper to subscribe on either client type
+    function subscribeOnClient<T>(
+      clientToUse: TransportClient,
+      operation: { query: string; variables?: Record<string, unknown> },
+      sink: { next: (value: T) => void; error: (error: unknown) => void; complete: () => void },
+    ): () => void {
+      if (clientToUse instanceof NativeWSClient) {
+        return clientToUse.subscribe<T>(operation, sink);
+      }
+      return subscribe<T>(clientToUse, operation, sink);
+    }
+
+    async function joinSession(clientToUse: TransportClient): Promise<Session | null> {
       if (DEBUG) console.log('[PersistentSession] Calling joinSession mutation...');
       try {
         const initialQueueData =
@@ -236,7 +263,7 @@ export function useSessionLifecycle({
           ...(sessionName && { sessionName }),
         };
 
-        const response = await execute<{ joinSession: Session }>(clientToUse, {
+        const response = await executeOnClient<{ joinSession: Session }>(clientToUse, {
           query: JOIN_SESSION,
           variables,
         });
@@ -283,7 +310,7 @@ export function useSessionLifecycle({
           try {
             if (DEBUG) console.log(`[PersistentSession] Attempting delta sync for ${gap} missed events...`);
 
-            const response = await execute<{ eventsReplay: EventsReplayResponse }>(graphqlClient, {
+            const response = await executeOnClient<{ eventsReplay: EventsReplayResponse }>(graphqlClient, {
               query: EVENTS_REPLAY,
               variables: { sessionId, sinceSequence: lastSeq },
             });
@@ -354,12 +381,31 @@ export function useSessionLifecycle({
       setError(null);
 
       try {
-        graphqlClient = createGraphQLClient({
-          url: backendUrl!,
-          authToken: wsAuthTokenRef.current,
-          onReconnect: handleReconnect,
-          connectionName: 'session',
-        });
+        if (useNativeWs) {
+          // Native iOS WebSocket path: connect via Capacitor plugin
+          const nativePlugin = getNativeWebSocketPlugin();
+          if (!nativePlugin) throw new Error('Native WebSocket plugin not available');
+
+          graphqlClient = createNativeWSClient({ onReconnect: handleReconnect });
+
+          await nativePlugin.connect({
+            serverUrl: typeof window !== 'undefined' ? window.location.origin : '',
+            sessionId,
+            authToken: wsAuthTokenRef.current,
+            wsUrl: getBackendWsUrl() ?? undefined,
+          });
+
+          // Notify native side that webview is active
+          nativePlugin.setWebviewActive({ active: true }).catch(() => {});
+        } else {
+          // Standard graphql-ws path for web browsers
+          graphqlClient = createGraphQLClient({
+            url: backendUrl!,
+            authToken: wsAuthTokenRef.current,
+            onReconnect: handleReconnect,
+            connectionName: 'session',
+          });
+        }
 
         if (!mountedRef.current) {
           graphqlClient.dispose();
@@ -400,7 +446,7 @@ export function useSessionLifecycle({
         }
 
         // Subscribe to queue updates
-        queueUnsubscribeRef.current = subscribe<{ queueUpdates: SubscriptionQueueEvent }>(
+        queueUnsubscribeRef.current = subscribeOnClient<{ queueUpdates: SubscriptionQueueEvent }>(
           graphqlClient,
           { query: QUEUE_UPDATES, variables: { sessionId } },
           {
@@ -424,7 +470,7 @@ export function useSessionLifecycle({
         );
 
         // Subscribe to session updates
-        sessionUnsubscribeRef.current = subscribe<{ sessionUpdates: SessionEvent }>(
+        sessionUnsubscribeRef.current = subscribeOnClient<{ sessionUpdates: SessionEvent }>(
           graphqlClient,
           { query: SESSION_UPDATES, variables: { sessionId } },
           {
@@ -533,7 +579,7 @@ export function useSessionLifecycle({
       if (clientToCleanup) {
         Promise.resolve().then(async () => {
           if (sessionRef.current) {
-            await execute(clientToCleanup, { query: LEAVE_SESSION }).catch(() => {});
+            await executeOnClient(clientToCleanup, { query: LEAVE_SESSION }).catch(() => {});
           }
           clientToCleanup.dispose();
         }).catch((err) => {

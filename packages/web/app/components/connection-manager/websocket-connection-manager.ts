@@ -125,20 +125,6 @@ class WebSocketConnectionManager {
     };
   }
 
-  getSnapshot(): ConnectionSnapshot {
-    const primary = this.getPrimary();
-    if (!primary) {
-      return { name: null, state: 'idle', lastActivity: null, error: null };
-    }
-
-    return {
-      name: primary.name,
-      state: primary.state,
-      lastActivity: primary.lastActivity,
-      error: primary.error,
-    };
-  }
-
   forceReconnect(targetName?: string) {
     const target = this.getPrimary(targetName);
     if (target && typeof target.client.terminate === 'function') {
@@ -220,12 +206,64 @@ class WebSocketConnectionManager {
     this.listeners.forEach((listener) => listener(snapshot));
   }
 
+  // MARK: - Native WebSocket state tracking
+
+  private nativeState: ConnectionState = 'idle';
+  private nativeActive = false;
+
+  /**
+   * Update connection state from the native iOS WebSocket.
+   * When the native WS is active, its state is used as the primary state
+   * instead of graphql-ws client state.
+   */
+  updateNativeState(state: 'connected' | 'connecting' | 'reconnecting' | 'disconnected') {
+    this.nativeActive = true;
+    const mapped: ConnectionState = state === 'disconnected' ? 'reconnecting' : state;
+    this.nativeState = mapped;
+    this.notify();
+  }
+
+  /**
+   * Clear the native connection state (e.g., when disconnecting from native WS).
+   */
+  clearNativeState() {
+    this.nativeActive = false;
+    this.nativeState = 'idle';
+    this.notify();
+  }
+
+  getSnapshot(): ConnectionSnapshot {
+    // When native WS is active, use its state as the primary
+    if (this.nativeActive) {
+      return {
+        name: 'native',
+        state: this.nativeState,
+        lastActivity: Date.now(),
+        error: null,
+      };
+    }
+
+    const primary = this.getPrimary();
+    if (!primary) {
+      return { name: null, state: 'idle', lastActivity: null, error: null };
+    }
+
+    return {
+      name: primary.name,
+      state: primary.state,
+      lastActivity: primary.lastActivity,
+      error: primary.error,
+    };
+  }
+
   /**
    * Testing utility – clears all registered clients and timers.
    */
   __resetForTests() {
     this.clients.clear();
     this.primaryName = null;
+    this.nativeActive = false;
+    this.nativeState = 'idle';
     this.listeners.clear();
     this.stopHealthCheck();
 
@@ -246,6 +284,8 @@ export const connectionManager = typeof window !== 'undefined'
       getSnapshot: (): ConnectionSnapshot => ({ name: null, state: 'idle', lastActivity: null, error: null }),
       forceReconnect: () => {},
       setPrimaryName: () => {},
+      updateNativeState: () => {},
+      clearNativeState: () => {},
       dispose: () => {},
       __resetForTests: () => {},
     } as unknown as WebSocketConnectionManager;
