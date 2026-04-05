@@ -70,12 +70,7 @@ The UART packet encoding (frame string → LED bytes) already exists in the Type
 
 Recommend **Option A** for Phase 1 -- keep it simple, ship fast. Revisit Option B if we add more shared logic to the Rust crate (see Phase 3b).
 
-**Hold data requirement:** To illuminate LEDs, the native layer needs the hold positions for the current climb. Options:
-- **Option A:** Store the current climb's hold placements in App Group when the climb changes (simplest, widget-compatible)
-- **Option B:** Query the local database from native code (requires SQLite/Drizzle access from Swift, complex)
-- **Option C:** Include hold data in the GraphQL subscription payload (increases message size but keeps everything in the WS stream)
-
-Recommend **Option A** for Phase 1. The webview already knows the holds -- serialize them to App Group when the current climb changes. The native BLE manager reads them from there.
+**Hold data requirement:** To illuminate LEDs, the native layer needs hold positions and LED mappings. For Phase 1, the webview can write the current climb's hold data to App Group when the climb changes. Phase 3 replaces this with compiled-in static data generated from the same pipeline that produces the TypeScript and C++ constants, so the native layer can resolve any climb's LEDs independently.
 
 **Definition of done:** Board LEDs light up when navigating climbs via the Lock Screen widget while the app is in the background.
 
@@ -92,20 +87,36 @@ Ensure the CoreBluetooth connection survives app backgrounding and can recover.
 
 **Definition of done:** BLE connection persists through backgrounding and app suspension. LED writes work reliably after returning from background.
 
-### Phase 3: Hold Data in the WebSocket Stream
+### Phase 3: Embedded Hold/LED Placement Data in Native Code
 
-Remove the dependency on the webview for hold data by including placements in the subscription payload.
+The native layer needs hold positions and LED mappings to illuminate the board. Rather than sending this over the WebSocket (which would bloat every message), embed the static board data directly in the compiled Swift code -- the same approach already used for TypeScript and the ESP32 controller.
+
+**Existing generated data pipeline:**
+- `packages/web/scripts/generate-size-edges.ts` queries PostgreSQL and generates:
+  - `packages/web/app/lib/__generated__/product-sizes-data.ts` -- hold placements as `HoldTuple[]` (`[placementId, mirroredPlacementId, x, y]`), indexed by `boardName` → `"layoutId-setId"`
+  - `packages/web/app/lib/__generated__/led-placements-data.ts` -- LED strip positions as `Record<placementId, ledIndex>`, indexed by `boardName` → `"layoutId-sizeId"`
+- `packages/board-controller/esp32/scripts/generate-led-mapping.js` reads the TS LED data and generates a C++ header (`led_placement_map.h`) for the embedded controller
 
 **Key work:**
-- Extend the `queueUpdates` GraphQL subscription to include hold placement data in `FullSync` and `ItemAdded` events
-- Alternatively, add a `currentClimbHolds` field to `CurrentClimbChanged` events
-- Update `SessionWebSocketManager` to parse and store hold placements alongside queue items
-- Persist hold data to App Group so the BLE manager can read it
-- Update `SharedQueueItem` to include hold placement data (or store separately keyed by climb UUID)
+- Extend the generator script to also output a portable format (JSON) alongside the TypeScript files
+- Add a second codegen step that converts the JSON to a Swift file (e.g., `mobile/ios/App/App/__generated__/BoardPlacementData.swift`) with static dictionaries
+- Include both hole placements (for rendering/BLE) and LED placements (for UART packet encoding)
+- The Swift data is compiled into the app binary -- no runtime fetching, no App Group, no WebSocket overhead
+- Each climb's `frames` string (already in `SharedQueueItem`) contains `p<placementId>r<stateCode>` pairs. The native BLE manager looks up each placementId in the embedded data to get the LED index, then encodes the UART packet.
 
-**Trade-off:** This increases WebSocket message size. A typical climb has 10-30 holds, each with position + color + role = ~50 bytes. So ~500-1500 bytes per climb. For a full sync of 20 climbs, that's ~10-30KB -- acceptable for a one-time sync.
+**Generator output structure:**
+```
+packages/web/scripts/generate-size-edges.ts
+  → packages/web/app/lib/__generated__/product-sizes-data.ts     (existing, TypeScript)
+  �� packages/web/app/lib/__generated__/led-placements-data.ts    (existing, TypeScript)
+  → packages/shared-data/board-placements.json                   (new, portable)
+  → mobile/ios/App/App/__generated__/BoardPlacementData.swift    (new, from JSON)
+  → packages/board-controller/esp32/src/config/led_placement_map.h (existing, C++)
+```
 
-**Definition of done:** The native layer can illuminate any climb's LEDs without the webview being active, using hold data received purely through the WebSocket stream.
+**Trade-off:** Board data changes require regenerating and recompiling the app. This is fine -- board hardware configurations are static and change at most once per board revision (years). The generator already runs manually (`bunx tsx scripts/generate-size-edges.ts`), adding one more output target is trivial.
+
+**Definition of done:** The native layer can look up LED positions for any hold placement without the webview, using data compiled into the app binary. `BoardBleManager` can encode a UART packet from a frames string alone.
 
 ### Phase 4: Expanded Widget Controls
 
