@@ -48,14 +48,14 @@ The rollout flags have been removed. The supported behavior is:
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Page Component                                                          │
 │    └── BoardImageLayers                                                  │
-│          ├── <img> background (static board image)                       │
-│          └── <img> overlay (from /api/internal/board-render)             │
+│          └── <img> composited (from /api/internal/board-render)           │
 │                                    │                                     │
 │                                    ▼                                     │
 │                     ┌──────────────────────────┐                         │
 │                     │ /api/internal/board-render│                         │
-│                     │ WASM module (server-side) │                         │
-│                     │ Generates PNG overlay     │                         │
+│                     │ WASM overlay + sharp      │                         │
+│                     │ composites bg + holds     │                         │
+│                     │ into single WebP          │                         │
 │                     └──────────────────────────┘                         │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
@@ -97,10 +97,7 @@ The rollout flags have been removed. The supported behavior is:
 
 ### 1. Server-Side Render
 
-The page component renders `BoardImageLayers`, which produces two `<img>` tags:
-
-- A background image (the static board photo).
-- An overlay image, with `src` pointing to `/api/internal/board-render`. This API route runs the WASM module server-side to generate a PNG of the hold circles for the current climb.
+The page component renders `BoardImageLayers`, which produces a single `<img>` tag pointing to `/api/internal/board-render?...&include_background=1`. This API route runs the WASM module server-side to generate a hold overlay, then uses sharp to composite it with the board background images into a single WebP. When no climb is selected (no `frames`), `BoardImageLayers` falls back to rendering the static background images as separate `<img>` tags.
 
 This HTML is sent to the client. The user sees a fully rendered board before any JavaScript executes.
 
@@ -197,5 +194,5 @@ If a background image fails to load during preloading, the error is logged but d
 | `packages/web/app/lib/board-render-worker/board-render.worker.ts`      | Worker code: WASM loading, OffscreenCanvas compositing, message handling             |
 | `packages/web/app/components/board-renderer/board-canvas-renderer.tsx` | Client-side canvas renderer component, error fallback to BoardImageLayers            |
 | `packages/web/app/components/board-renderer/board-image-layers.tsx`    | Server-rendered image layer component (Tier 2)                                       |
-| `packages/web/app/api/internal/board-render/route.ts`                  | Server-side WASM API route, generates PNG overlay                                    |
+| `packages/web/app/api/internal/board-render/route.ts`                  | Server-side WASM API route, composites background + overlay into WebP                |
 | `packages/web/app/flags.ts`                                            | Empty feature flag placeholder kept for future flags                                 |
