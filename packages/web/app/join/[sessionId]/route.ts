@@ -44,7 +44,8 @@ function getBaseUrl(request: Request): string {
     const forwardedHost = headers.get('x-forwarded-host');
     const forwardedProto = headers.get('x-forwarded-proto');
     if (forwardedHost) {
-      const proto = forwardedProto?.split(',')[0].trim() ?? 'http';
+      const rawProto = forwardedProto?.split(',')[0].trim();
+      const proto = rawProto === 'http' || rawProto === 'https' ? rawProto : 'http';
       return `${proto}://${forwardedHost}`;
     }
   }
