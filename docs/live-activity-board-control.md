@@ -138,6 +138,55 @@ If/when the Android app needs the same capabilities:
 - Media notification or custom notification for lock-screen controls (Android doesn't have Live Activities)
 - Same WebSocket consolidation pattern as iOS (native WS → Capacitor bridge)
 
+## Pre-Phase 1: Golden Test Fixtures for Queue State Machine
+
+Before reimplementing the queue state machine in Swift, establish a shared test suite that both implementations run against. This catches drift between platforms without shared code.
+
+### What to test
+
+The pure `queueReducer(state, action) => state` in `packages/web/app/components/queue-control/reducer.ts` is the primary target. It handles all delta event types:
+
+| Action | Reducer case | Behavior |
+|--------|-------------|----------|
+| `DELTA_ADD_QUEUE_ITEM` | Idempotent insert at position or end |
+| `DELTA_REMOVE_QUEUE_ITEM` | Filter by uuid, clear current if removed |
+| `DELTA_REORDER_QUEUE_ITEM` | Validate indices, splice-based reorder |
+| `DELTA_UPDATE_CURRENT_CLIMB` | Echo detection via correlationId/clientId |
+| `DELTA_MIRROR_CURRENT_CLIMB` | Toggle mirrored on current climb + queue copy |
+| `INITIAL_QUEUE_DATA` | Full state replacement (maps to FullSync) |
+
+Secondary targets:
+- `insertQueueItemIdempotent(queue, item, position?)` in `persistent-session/event-utils.ts`
+- `evaluateQueueEventSequence(lastSequence, eventSequence)` returning `'apply' | 'ignore-stale' | 'gap'`
+
+### Fixture format
+
+A JSON file with an array of test cases:
+
+```json
+[
+  {
+    "name": "add item to empty queue",
+    "initialState": { "queue": [], "currentClimbQueueItem": null, "lastReceivedSequence": 0 },
+    "event": { "type": "DELTA_ADD_QUEUE_ITEM", "item": { "uuid": "a", "climb": { ... } }, "position": 0 },
+    "expectedState": { "queue": [{ "uuid": "a", ... }], "currentClimbQueueItem": null, "lastReceivedSequence": 1 }
+  }
+]
+```
+
+### How both platforms consume fixtures
+
+- **TypeScript (Vitest):** Load JSON, loop through cases, call `queueReducer(initialState, action)`, deep-equal against `expectedState`
+- **Swift (XCTest):** Load same JSON from test bundle, decode into Swift types, apply the equivalent Swift state machine function, assert equality
+
+The fixture file lives in `packages/shared-schema/test-fixtures/queue-state-machine.json` (or similar shared location accessible to both test targets).
+
+### Existing test coverage
+
+- `packages/web/app/components/queue-control/__tests__/reducer.test.ts` -- existing Vitest tests for the reducer
+- `packages/web/app/components/persistent-session/__tests__/event-utils.test.ts` -- tests for utility functions
+- These should be refactored to load from the golden fixtures instead of inline test data
+
 ## Technical Notes
 
 ### Aurora Board BLE Protocol
