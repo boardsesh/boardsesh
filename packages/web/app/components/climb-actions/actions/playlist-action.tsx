@@ -21,6 +21,7 @@ import { usePlaylists } from '../use-playlists';
 import AuthModal from '../../auth/auth-modal';
 import type { Playlist } from '../playlists-batch-context';
 import { themeTokens } from '@/app/theme/theme-config';
+import { listElementSx } from '../action-view-renderer';
 import { useSnackbar } from '../../providers/snackbar-provider';
 
 // Validate hex color format to prevent CSS injection
@@ -382,12 +383,7 @@ export function PlaylistAction({
         fullWidth
         onClick={handleClick}
         disabled={disabled}
-        sx={{
-          height: 48,
-          justifyContent: 'flex-start',
-          paddingLeft: `${themeTokens.spacing[4]}px`,
-          fontSize: themeTokens.typography.fontSize.base,
-        }}
+        sx={listElementSx}
       >
         {inPlaylistCount > 0 ? `${label} (${inPlaylistCount})` : label}
       </MuiButton>

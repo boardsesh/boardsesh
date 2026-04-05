@@ -8,8 +8,7 @@ import Link from 'next/link';
 import { track } from '@vercel/analytics';
 import { ClimbActionProps, ClimbActionResult } from '../types';
 import { constructCreateClimbUrl } from '@/app/lib/url-utils';
-import { themeTokens } from '@/app/theme/theme-config';
-import { buildActionResult, computeActionDisplay } from '../action-view-renderer';
+import { buildActionResult, computeActionDisplay, listElementSx } from '../action-view-renderer';
 
 const linkResetStyle: React.CSSProperties = { color: 'inherit', textDecoration: 'none' };
 
@@ -92,19 +91,7 @@ export function ForkAction({
           startIcon={icon}
           fullWidth
           disabled={disabled}
-          sx={{
-            height: 48,
-            justifyContent: 'flex-start',
-            paddingLeft: `${themeTokens.spacing[4]}px`,
-            fontSize: themeTokens.typography.fontSize.base,
-            color: 'text.primary',
-            '& .MuiButton-startIcon': {
-              color: 'text.secondary',
-            },
-            '&:hover': {
-              backgroundColor: 'action.hover',
-            },
-          }}
+          sx={listElementSx}
         >
           {label}
         </MuiButton>

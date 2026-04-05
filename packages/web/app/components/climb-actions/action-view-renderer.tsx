@@ -91,6 +91,24 @@ export function ActionButtonElement({
 }
 
 /**
+ * Shared sx styles for list-mode action buttons.
+ * Used by ActionListElement and Link-wrapped action variants.
+ */
+export const listElementSx = {
+  height: 48,
+  justifyContent: 'flex-start',
+  paddingLeft: `${themeTokens.spacing[4]}px`,
+  fontSize: themeTokens.typography.fontSize.base,
+  color: 'text.primary',
+  '& .MuiButton-startIcon': {
+    color: 'text.secondary',
+  },
+  '&:hover': {
+    backgroundColor: 'action.hover',
+  },
+} as const;
+
+/**
  * Standard list element for action components (list mode / drawer menus).
  * All actions share identical styling for list mode.
  */
@@ -115,19 +133,7 @@ export function ActionListElement({
         fullWidth
         onClick={onClick}
         disabled={disabled}
-        sx={{
-          height: 48,
-          justifyContent: 'flex-start',
-          paddingLeft: `${themeTokens.spacing[4]}px`,
-          fontSize: themeTokens.typography.fontSize.base,
-          color: 'text.primary',
-          '& .MuiButton-startIcon': {
-            color: 'text.secondary',
-          },
-          '&:hover': {
-            backgroundColor: 'action.hover',
-          },
-        }}
+        sx={listElementSx}
       >
         {label}
       </MuiButton>

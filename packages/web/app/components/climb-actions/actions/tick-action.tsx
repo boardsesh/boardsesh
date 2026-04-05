@@ -19,6 +19,7 @@ import { track } from '@vercel/analytics';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
+import { listElementSx } from '../action-view-renderer';
 import { useAlwaysTickInApp } from '@/app/hooks/use-always-tick-in-app';
 import { useSession } from 'next-auth/react';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
@@ -339,12 +340,7 @@ export function TickAction({
         fullWidth
         onClick={handleClick}
         disabled={disabled}
-        sx={{
-          height: 48,
-          justifyContent: 'flex-start',
-          paddingLeft: `${themeTokens.spacing[4]}px`,
-          fontSize: themeTokens.typography.fontSize.base,
-        }}
+        sx={listElementSx}
       >
         {badgeCount > 0 ? `${label} (${badgeCount})` : label}
       </MuiButton>
