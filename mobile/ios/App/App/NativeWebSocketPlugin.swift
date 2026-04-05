@@ -40,6 +40,10 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 
+    deinit {
+        stopAppLifecycleObservation()
+    }
+
     private func stopAppLifecycleObservation() {
         guard observingAppLifecycle else { return }
         observingAppLifecycle = false

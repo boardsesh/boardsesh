@@ -1384,37 +1384,95 @@ Requires user authentication and controller ownership.
 
 ## Native iOS WebSocket Client
 
-The iOS app includes a native WebSocket client (`SessionWebSocketManager`) that maintains its own connection to the GraphQL backend, independent of the web view's connection. This enables Live Activities (Lock Screen and Dynamic Island widgets) to receive real-time queue updates even when the web view is backgrounded.
+On iOS, a single native `URLSessionWebSocketTask` owned by `SessionWebSocketManager` serves as the sole WebSocket connection for both the web view and Live Activities. The web view does not open its own browser-based WebSocket. Instead, raw `graphql-ws` JSON messages are forwarded between the JavaScript layer and the native connection through a Capacitor plugin bridge (`NativeWebSocketPlugin`).
 
-### Why a Separate Native Client
+### Why a Single Native Connection
 
-The web view's `graphql-ws` connection is tied to the web view's lifecycle — when iOS suspends the web view (backgrounding, Lock Screen), the connection drops. Live Activities need continuous updates to show the current climb on the Lock Screen. A native `URLSessionWebSocketTask` connection persists longer and can be managed by the app's main process.
+Previously, the web view and the native layer each maintained independent WebSocket connections. This doubled the server connection load per user and created synchronization issues. The consolidated architecture:
+
+- **Halves server connections** — one `URLSessionWebSocketTask` replaces two separate WebSockets
+- **Survives backgrounding** — the native connection persists when iOS suspends the web view, with messages buffered and replayed on foreground
+- **Enables lock-screen control** — Live Activities receive real-time queue updates through the same connection
+- **Simplifies auth** — the web UI acquires the authentication token and passes it to the native layer via `updateAuthToken()`
+
+### Architecture
+
+```
+JS (NativeWSClient)
+  │ subscribe() / execute() / dispose()
+  ▼
+Capacitor Plugin (NativeWebSocketPlugin)
+  │ sendOperation / subscribe / unsubscribe
+  │ forwards wsMessage + connectionStateChanged events to JS
+  ▼
+SessionWebSocketManager (native URLSessionWebSocketTask)
+  │ single graphql-transport-ws connection
+  │ WebSocketMessageDelegate forwards raw JSON to plugin
+  │ onQueueStateChanged callback updates Live Activity
+  ▼
+GraphQL Backend
+```
+
+Messages flow back through the same path. On non-iOS platforms (web, Android), the standard browser-based `graphql-ws` client is used instead.
 
 ### Protocol
 
-The native client implements the same `graphql-ws` protocol as the web client:
+The native client implements the `graphql-transport-ws` protocol:
 
 1. **ConnectionInit** — Sent on connect with optional `authToken` in `connectionParams`
-2. **ConnectionAck** — Server confirms
-3. **JoinSession** — Mutation to join the session, which sets `ctx.sessionId` on the server so subsequent mutations are authorized
-4. **Subscribe** — `queueUpdates(sessionId:)` subscription for queue delta events
-5. **Next** — Queue delta events (FullSync, CurrentClimbChanged, QueueItemAdded, etc.)
+2. **ConnectionAck** — Server confirms, triggers re-subscription of all tracked subscriptions
+3. **Subscribe** — Internal `queueUpdates(sessionId:)` subscription plus any external subscriptions registered by JS
+4. **Next** — Queue delta events (FullSync, CurrentClimbChanged, QueueItemAdded, etc.)
+5. **Complete** — Sent when unsubscribing; only sent if connection is established (protocol requires `connection_ack` first)
 6. **Ping/Pong** — Server sends pings every 30s, client responds with pong
+
+### Message Forwarding and Buffering
+
+`SessionWebSocketManager` implements a `WebSocketMessageDelegate` protocol that forwards every raw JSON message to `NativeWebSocketPlugin`, which emits it as a Capacitor `wsMessage` event to JavaScript.
+
+When the app is backgrounded:
+1. `NativeWebSocketPlugin` detects `UIApplication.didEnterBackgroundNotification` and calls `setWebviewActive(false)`
+2. Messages are buffered in a bounded array (max 500 messages)
+3. If the buffer overflows, all messages are discarded and a `_needsFullResync` flag is set
+4. On foreground (`willEnterForegroundNotification`), buffered messages are flushed to JS, or a synthetic `{"type":"resync_needed"}` message is sent if the buffer overflowed
+5. `NativeWSClient` on the JS side handles `resync_needed` by triggering the `onReconnect` callback, which requests a full state replay from the server
+
+### External Subscription Management
+
+The JS layer can register arbitrary GraphQL subscriptions through the native connection:
+
+- `addSubscription(query, variables, subscriptionId)` — Tracks the subscription and sends a `subscribe` message (only if connected)
+- `removeSubscription(subscriptionId)` — Removes tracking and sends a `complete` message (only if connected)
+- On reconnect, all external subscriptions stored in `externalSubscriptions` are automatically re-established after `connection_ack`
+
+### NativeWSClient (JavaScript)
+
+`NativeWSClient` provides `subscribe<T>()` and `execute<T>()` methods matching the `graphql-ws` `Client` interface:
+
+- **subscribe**: Generates a unique subscription ID, registers a handler in a `Map`, calls the native plugin's `subscribe()`, and routes incoming `wsMessage` events by ID to the correct sink
+- **execute**: Sends a one-shot operation via `sendOperation()`, races against a 30s timeout, and cleans up the handler on completion, error, or timeout
+- **Connection state**: Listens for `connectionStateChanged` events and updates the shared `connectionManager`
+- **Reconnection**: Tracks `hasConnectedOnce` and fires `onReconnect` on subsequent connections or `resync_needed`
+
+### Conditional Transport Selection
+
+`use-session-lifecycle.ts` checks `isNativeWebSocketAvailable()` (true on iOS native) and creates either a `NativeWSClient` or a standard `graphql-ws` `Client`. The `TransportClient` union type and helper functions (`executeOnClient`, `subscribeOnClient`) provide polymorphic dispatch across both code paths.
 
 ### Reconnection
 
-Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s. Reconnection stops on intentional disconnect (session end, app termination). After reconnection, the first event from the server is always a `FullSync`, which resets the client's queue state.
+Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s. Reconnection stops on intentional disconnect (session end, app termination). After reconnection, the server sends a `FullSync` event to reset queue state. All external subscriptions are re-established automatically.
 
 ### Sequence Gap Detection
 
 Each queue event carries a `sequence` number. The native client tracks the last received sequence and detects gaps (missed events). When a gap is detected, the client relies on the server's next `FullSync` to recover — no explicit resync request is needed since the server sends a full state on reconnection.
 
-### Data Flow
+### Live Activity Data Flow
 
 ```
 SessionWebSocketManager
-  │ subscribes to queueUpdates(sessionId:)
-  │ receives delta events
+  │ subscribes to queueUpdates(sessionId:) (internal subscription id "1")
+  │ receives delta events, updates local queue state
+  │ persists to App Group UserDefaults
   ▼
 LiveActivityManager
   │ calls Activity.update() with new ContentState
@@ -1440,8 +1498,12 @@ SessionWebSocketManager
   │ sends setCurrentClimb mutation via native WS
   ▼
 Backend publishes CurrentClimbChanged
-  │ all clients (web + native) receive update
+  │ all connected clients receive update
 ```
+
+### Thread Safety
+
+All mutable state in `SessionWebSocketManager` is protected by a serial `DispatchQueue` (`stateQueue`). Properties exposed publicly (`isConnected`, `reconnectAttempt`, `sessionId`, `authToken`, etc.) use thread-safe computed accessors that read through `stateQueue.sync`. Internal code on `stateQueue` accesses the backing `_` properties directly to avoid deadlock. Delegate callbacks (`WebSocketMessageDelegate`, `onQueueStateChanged`) are dispatched to the main queue to avoid blocking `stateQueue` during Capacitor bridge or UIKit calls.
 
 ### App Group Shared State
 
@@ -1458,8 +1520,8 @@ The main app and widget extension share data via App Group (`group.com.boardsesh
 
 ### Lifecycle
 
-- **Start**: `LiveActivityPlugin.startSession()` stores board details in App Group, connects the WebSocket manager, and starts the Live Activity
-- **End**: `LiveActivityPlugin.endSession()` clears the callback, disconnects WebSocket, ends all Live Activities, and cleans up App Group state
+- **Start**: `LiveActivityPlugin.startSession()` stores board details in App Group, registers the `onQueueStateChanged` callback, and starts the Live Activity. The WebSocket connection is managed separately by `NativeWebSocketPlugin`.
+- **End**: `LiveActivityPlugin.endSession()` clears the callback, ends all Live Activities, and cleans up App Group state. `NativeWebSocketPlugin.disconnect()` handles the WebSocket teardown.
 - **App termination**: `SceneDelegate.sceneDidDisconnect` and `AppDelegate.applicationWillTerminate` attempt to end the Live Activity and disconnect the WebSocket, but these callbacks are **not reliably called** on force-quit. As a fallback, the stale date is set to 3 minutes (refreshed every 60s by the ping timer), and `SceneDelegate.sceneWillEnterForeground` / `scene(_:willConnectTo:)` clean up any stale or orphaned activities on the next app launch or foreground return
 
 ## Related Files
@@ -1479,14 +1541,21 @@ The main app and widget extension share data via App Group (`group.com.boardsesh
 ### Frontend
 
 - `packages/web/app/lib/backend-url.ts` - Runtime backend URL resolver (preview deploys, dev overrides)
-- `packages/web/app/components/graphql-queue/graphql-client.ts` - WebSocket client
+- `packages/web/app/components/graphql-queue/graphql-client.ts` - Browser-based WebSocket client (used on web/Android)
+- `packages/web/app/components/graphql-queue/native-ws-client.ts` - Native WebSocket GraphQL client for iOS (routes through Capacitor plugin)
+- `packages/web/app/lib/native-ws/native-ws-plugin.ts` - TypeScript interface for the NativeWebSocket Capacitor plugin
+- `packages/web/app/components/connection-manager/websocket-connection-manager.ts` - Unified connection state tracking (browser + native)
+- `packages/web/app/components/persistent-session/hooks/use-session-lifecycle.ts` - Session lifecycle with conditional native/web transport
+- `packages/web/app/components/persistent-session/hooks/use-queue-mutations.ts` - Queue mutations with polymorphic client dispatch
 - `packages/web/app/components/graphql-queue/use-queue-session.ts` - Session hook
 - `packages/web/app/components/persistent-session/persistent-session-context.tsx` - Root-level session management (split into ActionsContext + StateContext for render performance)
 - `packages/web/app/components/graphql-queue/QueueContext.tsx` - Queue state context (split into ActionsContext + DataContext; actions use `latestRef` pattern for stable callback identity)
 
 ### Native iOS
 
-- `mobile/ios/App/App/SessionWebSocketManager.swift` - Native graphql-ws client for queue subscriptions
+- `mobile/ios/App/App/SessionWebSocketManager.swift` - Native graphql-ws client, message forwarding, buffering, and subscription management
+- `mobile/ios/App/App/NativeWebSocketPlugin.swift` - Capacitor plugin bridging JavaScript to SessionWebSocketManager
+- `mobile/ios/App/App/NativeWebSocketPlugin.m` - Objective-C bridge for NativeWebSocketPlugin
 - `mobile/ios/App/App/LiveActivityPlugin.swift` - Capacitor plugin bridge (start/end session, update activity)
 - `mobile/ios/App/App/LiveActivityManager.swift` - ActivityKit lifecycle management
 - `mobile/ios/App/App/SharedConstants.swift` - App Group ID, UserDefaults keys, shared queue state helpers
