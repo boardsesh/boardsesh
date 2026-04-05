@@ -64,6 +64,7 @@ let capturedDoubleTapCallback: (() => void) | undefined;
 const mockOnDoubleClick = vi.fn();
 
 vi.mock('@/app/lib/hooks/use-double-tap', () => ({
+  DOUBLE_TAP_THRESHOLD: 300,
   useDoubleTap: (callback: (() => void) | undefined) => {
     capturedDoubleTapCallback = callback;
     mockOnDoubleClick.mockImplementation(() => callback?.());
