@@ -10,12 +10,14 @@ Control the climbing board from the lock screen while the app is backgrounded. T
 - Next/Previous buttons navigate the queue optimistically (App Group UserDefaults) and send `setCurrentClimb` mutation via native WS
 - All queue delta events (FullSync, ItemAdded, ItemRemoved, CurrentClimbChanged, Reordered) are processed natively and persisted to App Group
 - Message buffering when webview is backgrounded, with flush or resync on foreground
+- Rust board renderer (`packages/board-renderer-wasm/`) compiles to WASM, used in both Node.js backend (server-rendered thumbnails) and web frontend (Web Worker). Already has `HoldData` types, frame string parsing (`p<hold_id>r<state_code>`), and Aurora hold state color mapping
 
 **What's missing for full lock-screen board control:**
 1. No native BLE (CoreBluetooth) -- LED commands can only be sent from the webview's JS context via `@capacitor-community/bluetooth-le`
 2. Widget can only do prev/next -- no add, remove, reorder, or mirror mutations from lock screen
 3. No LED illumination when app is backgrounded (BLE connection drops with the webview)
 4. Widget extension runs in a separate process with no access to the main app's BLE connection
+5. Rust board renderer has no Swift/iOS bindings -- only targets WASM today
 
 ## Architecture Decision: Where Does BLE Live?
 
@@ -53,11 +55,20 @@ Move BLE from JS-only to a native Swift layer that can run when the webview is s
 - `mobile/ios/App/App/BoardBlePlugin.m` -- ObjC bridge
 
 **Key work:**
-- Port the UART packet encoding from `packages/web/app/lib/ble/` (Aurora protocol: placement data → LED bytes)
 - Implement CoreBluetooth scan, connect, service/characteristic discovery for Aurora boards
+- Port the UART packet encoding from `packages/web/app/lib/ble/` (Aurora protocol: placement data → LED bytes)
 - Declare `bluetooth-central` in `Info.plist` background modes
 - Keep the existing JS Capacitor BLE adapter as a fallback for non-iOS or when native BLE is unavailable
 - `BoardBleManager` is a singleton like `SessionWebSocketManager`, owns the `CBCentralManager` and `CBPeripheral` connection
+
+**UART encoding approach -- Rust vs Swift:**
+
+The UART packet encoding (frame string → LED bytes) already exists in the TypeScript BLE layer (`packages/web/app/lib/ble/`). Two options for the native side:
+
+- **Option A: Rewrite in Swift.** The encoding is ~100-150 lines. Simple byte packing, no complex logic. Easiest to debug and maintain alongside the existing Swift codebase. No new build dependencies.
+- **Option B: Add UniFFI bindings to the Rust board-renderer crate.** The crate (`packages/board-renderer-wasm/`) already has `HoldData` types and frame string parsing. Adding a `ble_encode(frame_string, holds) -> Vec<u8>` function plus UniFFI `.udl` definition would generate Swift bindings automatically. This shares the frame parsing logic with the WASM build and creates a single source of truth for the Aurora protocol.
+
+Recommend **Option A** for Phase 1 -- keep it simple, ship fast. Revisit Option B if we add more shared logic to the Rust crate (see Phase 3b).
 
 **Hold data requirement:** To illuminate LEDs, the native layer needs the hold positions for the current climb. Options:
 - **Option A:** Store the current climb's hold placements in App Group when the climb changes (simplest, widget-compatible)
@@ -95,6 +106,32 @@ Remove the dependency on the webview for hold data by including placements in th
 **Trade-off:** This increases WebSocket message size. A typical climb has 10-30 holds, each with position + color + role = ~50 bytes. So ~500-1500 bytes per climb. For a full sync of 20 climbs, that's ~10-30KB -- acceptable for a one-time sync.
 
 **Definition of done:** The native layer can illuminate any climb's LEDs without the webview being active, using hold data received purely through the WebSocket stream.
+
+### Phase 3b: Rust Crate UniFFI Bindings (Optional)
+
+If we accumulate enough shared logic between Swift, TypeScript, and the backend, consolidate into the existing Rust board-renderer crate with UniFFI bindings for native iOS/Android.
+
+**What already lives in the Rust crate (`packages/board-renderer-wasm/`):**
+- `HoldData` struct (id, cx, cy, r, mirrored_hold_id)
+- `HoldStateInfo` (color mapping)
+- Frame string parser (`p<hold_id>r<state_code>` format)
+- Aurora hold state → color mapping (42=start, 43=hand, 44=finish, 45=foot)
+- Board rendering with tiny-skia
+
+**What could be added:**
+- `ble_encode(frame_string, holds) -> Vec<u8>` -- UART packet encoding for LED control
+- `parse_queue_event(json) -> QueueEvent` -- shared event parsing
+- Hold placement lookup by climb UUID
+
+**Build changes:**
+- Add `uniffi` dependency and `.udl` interface definition to the crate
+- Add a `staticlib` crate-type alongside existing `cdylib` + `rlib`
+- Generate Swift bindings via `uniffi-bindgen-swift` (outputs `.swift` + `.h` + `.modulemap`)
+- Generate Kotlin bindings via `uniffi-bindgen-kotlin` for Android
+- WASM build (`wasm-pack`) continues working unchanged -- UniFFI targets are additive
+- CI adds cross-compilation for `aarch64-apple-ios` and `aarch64-linux-android`
+
+**When to do this:** When we have 3+ pieces of non-trivial logic duplicated across Swift and TypeScript. The frame parser + UART encoder + hold lookup together would cross that threshold.
 
 ### Phase 4: Expanded Widget Controls (Optional)
 
@@ -138,6 +175,16 @@ iOS gives backgrounded apps limited execution time. For our use case:
 
 The App Group UserDefaults is the shared state layer between the main app, widget extension, and (in the future) the BLE manager. All writes must be atomic and the widget must tolerate stale reads. The current `SharedQueueState.save()`/`load()` pattern handles this correctly.
 
-### What We Decided Not To Do
+### Existing Rust Crate
 
-**Shared Rust/WASM queue engine**: The queue state machine is ~200 lines in Swift and ~150 in TypeScript. The Rust + UniFFI + WASM build complexity isn't justified for this amount of code. If the shared logic grows significantly (optimistic mutations, conflict resolution, offline queue editing), revisit this decision.
+The board renderer at `packages/board-renderer-wasm/` is a production Rust → WASM pipeline:
+- **Crate:** `board-renderer-wasm`, edition 2024, `tiny-skia` for 2D rendering
+- **Build:** `wasm-pack build --target web`, output in `pkg/` (~465KB WASM binary)
+- **Backend:** `packages/web/app/api/internal/board-render/route.ts` loads WASM server-side, renders hold overlays, composites with `sharp` to WebP
+- **Frontend:** `packages/web/app/lib/board-render-worker/board-render.worker.ts` runs WASM in a Web Worker with OffscreenCanvas
+- **Types:** `HoldData { id, mirrored_hold_id, cx, cy, r }`, `HoldStateInfo { color }`, frame string parser
+- **No iOS/Android bindings yet** -- UniFFI can be added incrementally (see Phase 3b)
+
+### What We Decided Not To Do (For Now)
+
+**Shared Rust queue state machine**: The queue state machine is ~200 lines in Swift and ~150 in TypeScript. Adding UniFFI bindings just for this isn't worth it. However, when we add BLE packet encoding (Phase 1) and hold data lookup (Phase 3), we'll have 3+ pieces of duplicated logic. At that point, consolidating into the Rust crate with UniFFI bindings becomes worthwhile (Phase 3b). The WASM build continues working unchanged -- UniFFI targets are additive to the existing `cdylib` crate type.
