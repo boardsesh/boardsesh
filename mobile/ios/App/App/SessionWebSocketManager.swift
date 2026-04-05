@@ -226,10 +226,14 @@ final class SessionWebSocketManager {
 
     // MARK: - Configuration
 
-    private(set) var sessionId: String?
-    private(set) var serverUrl: String?
-    private(set) var wsUrl: String?
-    private(set) var authToken: String?
+    private var _sessionId: String?
+    var sessionId: String? { stateQueue.sync { _sessionId } }
+    private var _serverUrl: String?
+    var serverUrl: String? { stateQueue.sync { _serverUrl } }
+    private var _wsUrl: String?
+    var wsUrl: String? { stateQueue.sync { _wsUrl } }
+    private var _authToken: String?
+    var authToken: String? { stateQueue.sync { _authToken } }
 
     // MARK: - Thread Safety
 
@@ -291,10 +295,10 @@ final class SessionWebSocketManager {
     func connect(serverUrl: String, sessionId: String, authToken: String? = nil, wsUrl: String? = nil) {
         stateQueue.async { [weak self] in
             guard let self = self else { return }
-            self.serverUrl = serverUrl
-            self.sessionId = sessionId
-            self.authToken = authToken
-            self.wsUrl = wsUrl
+            self._serverUrl = serverUrl
+            self._sessionId = sessionId
+            self._authToken = authToken
+            self._wsUrl = wsUrl
             self.intentionalDisconnect = false
             self.lastSequence = -1
             self._openConnectionOnQueue()
@@ -309,13 +313,16 @@ final class SessionWebSocketManager {
             self.reconnectWorkItem = nil
             self.pingTimeoutTimer?.cancel()
             self.pingTimeoutTimer = nil
-            // Send complete for all active subscriptions
+            // Send complete for all active subscriptions before closing the task
             for subId in self.activeSubscriptionIds {
                 let completeMsg: [String: Any] = [
                     "type": GQLMessageType.complete.rawValue,
                     "id": subId
                 ]
-                self.sendJSON(completeMsg)
+                if let data = try? JSONSerialization.data(withJSONObject: completeMsg),
+                   let text = String(data: data, encoding: .utf8) {
+                    self.webSocketTask?.send(.string(text)) { _ in }
+                }
             }
             self.activeSubscriptionIds = [self.internalSubscriptionId]
             self.webSocketTask?.cancel(with: .goingAway, reason: nil)
@@ -367,7 +374,7 @@ final class SessionWebSocketManager {
 
     func updateAuthToken(_ token: String) {
         stateQueue.async { [weak self] in
-            self?.authToken = token
+            self?._authToken = token
         }
     }
 
@@ -388,9 +395,6 @@ final class SessionWebSocketManager {
     // MARK: - External Subscription Management
 
     func addSubscription(query: String, variables: [String: Any], subscriptionId: String) {
-        stateQueue.async { [weak self] in
-            self?.activeSubscriptionIds.insert(subscriptionId)
-        }
         let message: [String: Any] = [
             "type": GQLMessageType.subscribe.rawValue,
             "id": subscriptionId,
@@ -399,18 +403,37 @@ final class SessionWebSocketManager {
                 "variables": variables
             ] as [String: Any]
         ]
-        sendJSON(message)
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.activeSubscriptionIds.insert(subscriptionId)
+            self.webSocketTask?.send(.string(text)) { error in
+                if let error = error {
+                    print("[SessionWS] Send subscribe failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     func removeSubscription(_ subscriptionId: String) {
-        stateQueue.async { [weak self] in
-            self?.activeSubscriptionIds.remove(subscriptionId)
-        }
         let message: [String: Any] = [
             "type": GQLMessageType.complete.rawValue,
             "id": subscriptionId
         ]
-        sendJSON(message)
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.activeSubscriptionIds.remove(subscriptionId)
+            self.webSocketTask?.send(.string(text)) { error in
+                if let error = error {
+                    print("[SessionWS] Send complete failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     // MARK: - Connection Lifecycle
@@ -423,10 +446,10 @@ final class SessionWebSocketManager {
 
     /// Must be called on `stateQueue`.
     private func _openConnectionOnQueue() {
-        guard let serverUrl = self.serverUrl else { return }
+        guard let serverUrl = self._serverUrl else { return }
 
         let urlString: String
-        if let wsUrl = self.wsUrl, !wsUrl.isEmpty {
+        if let wsUrl = self._wsUrl, !wsUrl.isEmpty {
             urlString = wsUrl
         } else {
             let wsScheme = serverUrl.hasPrefix("https") ? "wss" : "ws"
@@ -437,7 +460,7 @@ final class SessionWebSocketManager {
         }
 
         guard let url = URL(string: urlString) else {
-            print("[SessionWS] Failed to construct URL from: \(urlString) (serverUrl=\(serverUrl), wsUrl=\(self.wsUrl ?? "nil"))")
+            print("[SessionWS] Failed to construct URL from: \(urlString) (serverUrl=\(serverUrl), wsUrl=\(self._wsUrl ?? "nil"))")
             return
         }
 
@@ -452,7 +475,7 @@ final class SessionWebSocketManager {
 
     private func sendConnectionInit() {
         var payload: [String: Any] = [:]
-        if let token = authToken {
+        if let token = _authToken {
             payload["authToken"] = token
         }
         let message: [String: Any] = [
@@ -463,7 +486,7 @@ final class SessionWebSocketManager {
     }
 
     private func sendSubscription() {
-        guard let sessionId = sessionId else { return }
+        guard let sessionId = _sessionId else { return }
 
         let query = """
         subscription QueueUpdates($sessionId: ID!) {
@@ -539,7 +562,7 @@ final class SessionWebSocketManager {
     }
 
     private func sendJoinSession() {
-        guard let sessionId = sessionId else { return }
+        guard let sessionId = _sessionId else { return }
 
         // Build boardPath from shared UserDefaults (stored by LiveActivityPlugin.startSession)
         let defaults = SharedConstants.sharedDefaults
@@ -853,14 +876,14 @@ final class SessionWebSocketManager {
                 return
             }
 
-            let delay = self.reconnectDelay()
+            let delay = self.reconnectDelay(attempt: self._reconnectAttempt)
             self._reconnectAttempt += 1
 
             let workItem = DispatchWorkItem { [weak self] in
                 self?.openConnection()
             }
             self.reconnectWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            self.stateQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
     }
 
