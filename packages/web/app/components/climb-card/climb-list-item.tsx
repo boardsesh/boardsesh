@@ -18,7 +18,7 @@ import HeartAnimationOverlay from './heart-animation-overlay';
 import PlaylistSelectionContent from '../climb-actions/playlist-selection-content';
 import { useOptionalQueueContext } from '../graphql-queue';
 import { useSwipeActions } from '@/app/hooks/use-swipe-actions';
-import { useDoubleTap } from '@/app/lib/hooks/use-double-tap';
+import { useDoubleTap, DOUBLE_TAP_THRESHOLD } from '@/app/lib/hooks/use-double-tap';
 import { themeTokens } from '@/app/theme/theme-config';
 import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
@@ -419,7 +419,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
                       clickTimeoutRef.current = setTimeout(() => {
                         clickTimeoutRef.current = null;
                         onThumbnailClick();
-                      }, 300);
+                      }, DOUBLE_TAP_THRESHOLD);
                     }
                   : undefined
               }

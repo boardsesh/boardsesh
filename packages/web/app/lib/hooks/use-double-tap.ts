@@ -1,6 +1,6 @@
 import { useRef, useCallback, type RefCallback } from 'react';
 
-const DOUBLE_TAP_THRESHOLD = 300;
+export const DOUBLE_TAP_THRESHOLD = 300;
 
 /**
  * Hook that handles double-tap on touch devices without triggering iOS Safari's
