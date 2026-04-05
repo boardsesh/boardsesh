@@ -22,6 +22,7 @@ import AuroraCredentialsSection from '@/app/components/settings/aurora-credentia
 import ControllersSection from '@/app/components/settings/controllers-section';
 import DeleteAccountSection from '@/app/components/settings/delete-account-section';
 import SetPasswordSection from '@/app/components/settings/set-password-section';
+import ConnectedAccountsSection from '@/app/components/settings/connected-accounts-section';
 import BackButton from '@/app/components/back-button';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
@@ -396,6 +397,14 @@ export default function SettingsPageContent() {
             </Box>
           </CardContent>
         </Card>
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <ConnectedAccountsSection
+          linkedProviders={profile?.linkedProviders ?? []}
+          hasPassword={profile?.hasPassword ?? false}
+          onProvidersChanged={fetchProfile}
+        />
 
         <MuiDivider sx={{ my: 2 }} />
 

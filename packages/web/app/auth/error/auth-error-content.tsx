@@ -37,7 +37,7 @@ export default function AuthErrorContent() {
       case 'Callback':
         return 'Error in the authentication callback.';
       case 'OAuthAccountNotLinked':
-        return 'This email is already associated with another account. Please sign in using your original method.';
+        return 'This email is already linked to an account that uses a different sign-in method. Sign in with your original method, then connect this provider in Settings.';
       case 'SessionRequired':
         return 'You must be signed in to access this page.';
       default:
@@ -82,6 +82,11 @@ export default function AuthErrorContent() {
               <CancelOutlined sx={{ fontSize: 48, color: themeTokens.colors.error, mx: 'auto' }} />
               <Typography variant="h3">Authentication Error</Typography>
               <MuiAlert severity="error">{getErrorMessage()}</MuiAlert>
+              {error === 'OAuthAccountNotLinked' && (
+                <Button variant="outlined" href="/settings" fullWidth size="large">
+                  Connect accounts in Settings
+                </Button>
+              )}
               <Button variant="contained" href="/auth/login" fullWidth size="large">
                 Back to Login
               </Button>

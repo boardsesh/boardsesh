@@ -4,11 +4,16 @@ import GoogleProvider from "next-auth/providers/google";
 import AppleProvider from "next-auth/providers/apple";
 import FacebookProvider from "next-auth/providers/facebook";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { cookies } from "next/headers";
 import { getDb } from "@/app/lib/db/db";
 import * as schema from "@/app/lib/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { verifyNativeOAuthTransferToken } from "@/app/lib/auth/native-oauth-transfer";
+import {
+  verifyAccountLinkIntentToken,
+  ACCOUNT_LINK_INTENT_COOKIE,
+} from "@/app/lib/auth/account-link-intent";
 
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
@@ -161,8 +166,53 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user, account }) {
-      // OAuth providers - allow sign in (emails are pre-verified by provider)
-      if (account?.provider !== "credentials") {
+      // OAuth providers - check for account-link-intent cookie
+      if (account && account.provider !== "credentials" && account.provider !== "native-oauth") {
+        const cookieStore = await cookies();
+        const linkCookie = cookieStore.get(ACCOUNT_LINK_INTENT_COOKIE);
+
+        if (linkCookie) {
+          // Always consume the cookie, even if verification fails
+          cookieStore.delete(ACCOUNT_LINK_INTENT_COOKIE);
+
+          const decoded = verifyAccountLinkIntentToken(linkCookie.value);
+          if (decoded && user.email) {
+            const db = getDb();
+            // Verify the OAuth email matches the existing user's email
+            const existingUsers = await db
+              .select()
+              .from(schema.users)
+              .where(eq(schema.users.id, decoded.userId))
+              .limit(1);
+
+            if (existingUsers.length > 0 && existingUsers[0].email === user.email) {
+              // Link the OAuth account to the existing user
+              await db.insert(schema.accounts).values({
+                userId: decoded.userId,
+                type: account.type as "oauth" | "email" | "oidc",
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token ?? null,
+                refresh_token: account.refresh_token ?? null,
+                expires_at: account.expires_at as number | null ?? null,
+                token_type: account.token_type ?? null,
+                scope: account.scope ?? null,
+                id_token: account.id_token ?? null,
+                session_state: (account.session_state as string | null) ?? null,
+              }).onConflictDoNothing();
+
+              // Redirect to settings with success indicator
+              return `/settings?linked=${account.provider}`;
+            }
+
+            // Email mismatch - redirect with error
+            return `/settings?link_error=email_mismatch`;
+          }
+
+          // Invalid/expired token - redirect with error
+          return `/settings?link_error=expired`;
+        }
+
         return true;
       }
 
