@@ -108,6 +108,12 @@ vi.mock('@/app/hooks/use-climb-actions-data', () => ({
   }),
 }));
 
+let mockPlatform: 'ios' | 'android' | 'web' = 'web';
+
+vi.mock('@/app/lib/ble/capacitor-utils', () => ({
+  getPlatform: () => mockPlatform,
+}));
+
 vi.mock('@/app/lib/last-used-board-db', () => ({
   getLastUsedBoard: () => Promise.resolve(null),
 }));
@@ -139,11 +145,39 @@ const boardDetails = {
 
 const boardConfigs = {} as BoardConfigData;
 
+describe('BottomTabBar iOS feed tab visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = '/';
+    mockActiveSession = null;
+    mockPlatform = 'web';
+  });
+
+  it('shows Feed tab on non-iOS platforms', () => {
+    mockPlatform = 'web';
+    render(<BottomTabBar boardConfigs={boardConfigs} />);
+    expect(screen.getByRole('button', { name: 'Feed' })).toBeTruthy();
+  });
+
+  it('hides Feed tab on iOS native app', () => {
+    mockPlatform = 'ios';
+    render(<BottomTabBar boardConfigs={boardConfigs} />);
+    expect(screen.queryByRole('button', { name: 'Feed' })).toBeNull();
+  });
+
+  it('shows Feed tab on Android native app', () => {
+    mockPlatform = 'android';
+    render(<BottomTabBar boardConfigs={boardConfigs} />);
+    expect(screen.getByRole('button', { name: 'Feed' })).toBeTruthy();
+  });
+});
+
 describe('BottomTabBar session preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname = '/';
     mockActiveSession = null;
+    mockPlatform = 'web';
   });
 
   it('includes session param when navigating to climbs with active session on /b/ board', async () => {
@@ -201,6 +235,7 @@ describe('BottomTabBar create flow', () => {
     vi.clearAllMocks();
     mockPathname = '/kilter/original/12x12-square/screw_bolt/40/list';
     mockActiveSession = null;
+    mockPlatform = 'web';
   });
 
   it('opens create drawer without immediate navigation', () => {

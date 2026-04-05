@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useContext, useMemo } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import MuiButton from '@mui/material/Button';
 import Box from '@mui/material/Box';
@@ -141,7 +141,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   const isMoonboard = playlistBoardName === 'moonboard';
 
   // Hide feed tab in iOS native app (pending block/report functionality for app store compliance)
-  const isIOSNativeApp = useMemo(() => getPlatform() === 'ios', []);
+  const isIOSNativeApp = getPlatform() === 'ios';
 
   // Determine active tab from pathname
   const activeTabFromPath = getActiveTab(pathname);
