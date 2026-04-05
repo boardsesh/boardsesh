@@ -34,6 +34,21 @@ function ensureViewSegment(path: string): string {
 }
 
 function getBaseUrl(request: Request): string {
+  const headers = request.headers;
+  const forwardedHost = headers.get('x-forwarded-host');
+  const forwardedProto = headers.get('x-forwarded-proto');
+  const host = headers.get('host');
+
+  if (forwardedHost) {
+    const proto = forwardedProto?.split(',')[0].trim() ?? 'https';
+    return `${proto}://${forwardedHost}`;
+  }
+
+  if (host) {
+    const url = new URL(request.url);
+    return `${url.protocol}//${host}`;
+  }
+
   const url = new URL(request.url);
   return `${url.protocol}//${url.host}`;
 }
