@@ -29,17 +29,8 @@ import {
 } from '@/app/lib/graphql/operations';
 import AscentThumbnail from './ascent-thumbnail';
 import AscentActionsMenu from '@/app/components/ascent-actions/ascent-actions-menu';
+import { useAscentActions } from '@/app/components/ascent-actions/use-ascent-actions';
 import type { EditAscentValues } from '@/app/components/ascent-actions/edit-ascent-dialog';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import {
-  UPDATE_TICK,
-  DELETE_TICK,
-  type UpdateTickMutationVariables,
-  type UpdateTickMutationResponse,
-  type DeleteTickMutationVariables,
-  type DeleteTickMutationResponse,
-} from '@/app/lib/graphql/operations';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './ascents-feed.module.css';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
@@ -292,10 +283,19 @@ const GroupedFeedItem: React.FC<{
 };
 
 export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10, editable = false }) => {
-  const { token } = useWsAuthToken();
-  const { showMessage } = useSnackbar();
   const queryClient = useQueryClient();
-  const [mutatingUuid, setMutatingUuid] = useState<string | null>(null);
+
+  const invalidateFeed = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['ascentsFeed', userId] });
+  }, [queryClient, userId]);
+
+  // The feed shows ticks across all board types, but useAscentActions needs a boardName.
+  // We pass a generic placeholder — the hooks only use it for logbook cache keys,
+  // and onSettled handles feed-specific invalidation.
+  const { handleUpdate, handleDelete, mutatingUuid } = useAscentActions(
+    '' as never,
+    { onSettled: invalidateFeed },
+  );
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useInfiniteQuery({
     queryKey: ['ascentsFeed', userId, pageSize],
@@ -329,50 +329,6 @@ export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10,
     hasMore: hasNextPage ?? false,
     isFetching: isFetchingNextPage,
   });
-
-  const handleUpdate = useCallback(async (uuid: string, values: EditAscentValues) => {
-    if (!token) return;
-    setMutatingUuid(uuid);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const variables: UpdateTickMutationVariables = {
-        input: {
-          uuid,
-          status: values.status,
-          attemptCount: values.attemptCount,
-          quality: values.quality,
-          comment: values.comment,
-        },
-      };
-      await client.request<UpdateTickMutationResponse>(UPDATE_TICK, variables);
-      showMessage('Ascent updated', 'success');
-      queryClient.invalidateQueries({ queryKey: ['ascentsFeed', userId] });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update ascent';
-      showMessage(message, 'error');
-    } finally {
-      setMutatingUuid(null);
-    }
-  }, [token, userId, queryClient, showMessage]);
-
-  const handleDelete = useCallback(async (uuid: string) => {
-    if (!token) return;
-    setMutatingUuid(uuid);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const variables: DeleteTickMutationVariables = {
-        input: { uuid },
-      };
-      await client.request<DeleteTickMutationResponse>(DELETE_TICK, variables);
-      showMessage('Ascent deleted', 'success');
-      queryClient.invalidateQueries({ queryKey: ['ascentsFeed', userId] });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete ascent';
-      showMessage(message, 'error');
-    } finally {
-      setMutatingUuid(null);
-    }
-  }, [token, userId, queryClient, showMessage]);
 
   if (isLoading) {
     return (

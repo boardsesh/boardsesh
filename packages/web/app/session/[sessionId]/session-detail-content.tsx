@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Avatar from '@mui/material/Avatar';
@@ -32,19 +33,9 @@ import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import AscentActionsMenu from '@/app/components/ascent-actions/ascent-actions-menu';
 import type { EditAscentValues } from '@/app/components/ascent-actions/edit-ascent-dialog';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import {
-  UPDATE_TICK,
-  DELETE_TICK,
-  type UpdateTickMutationVariables,
-  type UpdateTickMutationResponse,
-  type DeleteTickMutationVariables,
-  type DeleteTickMutationResponse,
-} from '@/app/lib/graphql/operations';
+import { useAscentActions } from '@/app/components/ascent-actions/use-ascent-actions';
 
-import { useSessionDetail } from '@/app/hooks/use-session-detail';
+import { useSessionDetail, SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import UserSearchDialog from './user-search-dialog';
@@ -242,7 +233,7 @@ function SessionTickItem({
                 uuid: tick.uuid,
                 status: tick.status as 'flash' | 'send' | 'attempt',
                 attemptCount: tick.attemptCount,
-                quality: tick.quality,
+                quality: tick.quality ?? null,
                 comment: tick.comment || '',
               }}
               onUpdate={onUpdate}
@@ -298,51 +289,18 @@ export default function SessionDetailContent({
 
   const saving = updateSessionMutation.isPending || addUserMutation.isPending;
 
-  const { token } = useWsAuthToken();
-  const { showMessage } = useSnackbar();
-  const [tickMutatingUuid, setTickMutatingUuid] = useState<string | null>(null);
-
-  const handleTickUpdate = useCallback(async (uuid: string, values: EditAscentValues) => {
-    if (!token) return;
-    setTickMutatingUuid(uuid);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const variables: UpdateTickMutationVariables = {
-        input: {
-          uuid,
-          status: values.status,
-          attemptCount: values.attemptCount,
-          quality: values.quality,
-          comment: values.comment,
-        },
-      };
-      await client.request<UpdateTickMutationResponse>(UPDATE_TICK, variables);
-      showMessage('Ascent updated', 'success');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update ascent';
-      showMessage(message, 'error');
-    } finally {
-      setTickMutatingUuid(null);
+  const queryClient = useQueryClient();
+  const invalidateSession = useCallback(() => {
+    const sid = sessionIdProp ?? initialSession?.sessionId;
+    if (sid) {
+      queryClient.invalidateQueries({ queryKey: SESSION_DETAIL_QUERY_KEY(sid) });
     }
-  }, [token, showMessage]);
+  }, [queryClient, sessionIdProp, initialSession?.sessionId]);
 
-  const handleTickDelete = useCallback(async (uuid: string) => {
-    if (!token) return;
-    setTickMutatingUuid(uuid);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const variables: DeleteTickMutationVariables = {
-        input: { uuid },
-      };
-      await client.request<DeleteTickMutationResponse>(DELETE_TICK, variables);
-      showMessage('Ascent deleted', 'success');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete ascent';
-      showMessage(message, 'error');
-    } finally {
-      setTickMutatingUuid(null);
-    }
-  }, [token, showMessage]);
+  const { handleUpdate: handleTickUpdate, handleDelete: handleTickDelete, mutatingUuid: tickMutatingUuid } = useAscentActions(
+    '' as never,
+    { onSettled: invalidateSession },
+  );
 
   const { boards: myBoards } = useMyBoards(true);
 

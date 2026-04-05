@@ -24,7 +24,7 @@ interface LogbookViewProps {
 
 export const LogbookView: React.FC<LogbookViewProps> = ({ currentClimb }) => {
   const { logbook, boardName, isAuthenticated } = useBoardProvider();
-  const { handleUpdate, handleDelete, isUpdating, isDeleting } = useAscentActions(boardName);
+  const { handleUpdate, handleDelete, mutatingUuid } = useAscentActions(boardName);
 
   // Filter ascents for current climb and sort by climbed_at
   const climbAscents = logbook
@@ -73,8 +73,8 @@ export const LogbookView: React.FC<LogbookViewProps> = ({ currentClimb }) => {
                     }}
                     onUpdate={handleUpdate}
                     onDelete={handleDelete}
-                    updating={isUpdating}
-                    deleting={isDeleting}
+                    updating={mutatingUuid === ascent.uuid}
+                    deleting={mutatingUuid === ascent.uuid}
                   />
                 )}
               </Stack>
