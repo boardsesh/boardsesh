@@ -256,6 +256,9 @@ export class NativeWSClient {
       }, timeoutMs);
     });
 
+    // Note: if the timeout fires but the mutation already succeeded server-side,
+    // the result is silently discarded. Callers should treat timeout as "unknown
+    // outcome" rather than "definitely failed".
     return Promise.race([executionPromise, timeoutPromise]).finally(() => {
       clearTimeout(timeoutId);
     });

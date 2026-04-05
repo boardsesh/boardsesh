@@ -751,7 +751,7 @@ final class SessionWebSocketManager {
             }
         } else {
             _messageBuffer.append(text)
-            if _messageBuffer.count > maxBufferSize {
+            if _messageBuffer.count >= maxBufferSize {
                 _messageBuffer.removeAll()
                 _needsFullResync = true
             }
