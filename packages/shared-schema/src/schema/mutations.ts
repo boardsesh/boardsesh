@@ -119,6 +119,16 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     saveTick(input: SaveTickInput!): Tick!
 
+    """
+    Update an existing tick (owner only).
+    """
+    updateTick(input: UpdateTickInput!): Tick!
+
+    """
+    Delete a tick (owner only).
+    """
+    deleteTick(input: DeleteTickInput!): Boolean!
+
     # ============================================
     # Climb Mutations (require auth)
     # ============================================

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import MuiCard from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import MuiTypography from '@mui/material/Typography';
@@ -8,22 +8,38 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Rating from '@mui/material/Rating';
 import CircularProgress from '@mui/material/CircularProgress';
+import Collapse from '@mui/material/Collapse';
+import IconButton from '@mui/material/IconButton';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import ElectricBoltOutlined from '@mui/icons-material/ElectricBoltOutlined';
 import CancelOutlined from '@mui/icons-material/CancelOutlined';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
+import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   GET_USER_GROUPED_ASCENTS_FEED,
   type GroupedAscentFeedItem,
+  type AscentFeedItem,
   type GetUserGroupedAscentsFeedQueryVariables,
   type GetUserGroupedAscentsFeedQueryResponse,
 } from '@/app/lib/graphql/operations';
 import AscentThumbnail from './ascent-thumbnail';
+import AscentActionsMenu from '@/app/components/ascent-actions/ascent-actions-menu';
+import type { EditAscentValues } from '@/app/components/ascent-actions/edit-ascent-dialog';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import {
+  UPDATE_TICK,
+  DELETE_TICK,
+  type UpdateTickMutationVariables,
+  type UpdateTickMutationResponse,
+  type DeleteTickMutationVariables,
+  type DeleteTickMutationResponse,
+} from '@/app/lib/graphql/operations';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './ascents-feed.module.css';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
@@ -34,6 +50,7 @@ dayjs.extend(relativeTime);
 interface AscentsFeedProps {
   userId: string;
   pageSize?: number;
+  editable?: boolean;
 }
 
 // Layout name mapping
@@ -86,7 +103,70 @@ const getGroupStatusSummary = (group: GroupedAscentFeedItem): { text: string; ic
   return { text: parts.join(', '), icon, color };
 };
 
-const GroupedFeedItem: React.FC<{ group: GroupedAscentFeedItem }> = ({ group }) => {
+function getStatusChipColor(status: string): 'success' | 'primary' | 'default' {
+  if (status === 'flash') return 'success';
+  if (status === 'send') return 'primary';
+  return 'default';
+}
+
+const AscentItemRow: React.FC<{
+  item: AscentFeedItem;
+  editable: boolean;
+  onUpdate: (uuid: string, values: EditAscentValues) => void;
+  onDelete: (uuid: string) => void;
+  mutatingUuid: string | null;
+}> = ({ item, editable, onUpdate, onDelete, mutatingUuid }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1,
+      py: 0.5,
+      borderTop: `1px solid ${themeTokens.neutral[100]}`,
+    }}
+  >
+    <Chip
+      label={item.status}
+      size="small"
+      color={getStatusChipColor(item.status)}
+      variant={item.status === 'attempt' ? 'outlined' : 'filled'}
+      sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: themeTokens.typography.fontSize.xs - 1 } }}
+    />
+    <MuiTypography variant="caption" color="text.secondary">
+      {item.attemptCount} attempt{item.attemptCount !== 1 ? 's' : ''}
+    </MuiTypography>
+    {item.quality != null && item.quality > 0 && (
+      <Rating readOnly value={item.quality} max={5} size="small" sx={{ fontSize: 14 }} />
+    )}
+    <MuiTypography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+      {dayjs(item.climbedAt).format('MMM D, h:mm A')}
+    </MuiTypography>
+    {editable && (
+      <AscentActionsMenu
+        ascent={{
+          uuid: item.uuid,
+          status: item.status,
+          attemptCount: item.attemptCount,
+          quality: item.quality,
+          comment: item.comment,
+        }}
+        onUpdate={onUpdate}
+        onDelete={onDelete}
+        updating={mutatingUuid === item.uuid}
+        deleting={mutatingUuid === item.uuid}
+      />
+    )}
+  </Box>
+);
+
+const GroupedFeedItem: React.FC<{
+  group: GroupedAscentFeedItem;
+  editable: boolean;
+  onUpdate: (uuid: string, values: EditAscentValues) => void;
+  onDelete: (uuid: string) => void;
+  mutatingUuid: string | null;
+}> = ({ group, editable, onUpdate, onDelete, mutatingUuid }) => {
+  const [expanded, setExpanded] = useState(false);
   const latestItem = group.items.reduce((latest, item) =>
     new Date(item.climbedAt) > new Date(latest.climbedAt) ? item : latest
   );
@@ -94,6 +174,7 @@ const GroupedFeedItem: React.FC<{ group: GroupedAscentFeedItem }> = ({ group }) 
   const boardDisplay = getLayoutDisplayName(group.boardType, group.layoutId);
   const statusSummary = getGroupStatusSummary(group);
   const hasSuccess = group.flashCount > 0 || group.sendCount > 0;
+  const hasMultipleItems = group.items.length > 1;
 
   return (
     <MuiCard className={styles.feedItem}>
@@ -126,9 +207,38 @@ const GroupedFeedItem: React.FC<{ group: GroupedAscentFeedItem }> = ({ group }) 
                 {group.climbName}
               </MuiTypography>
             </Box>
-            <MuiTypography variant="body2" component="span" color="text.secondary" className={styles.timeAgo}>
-              {timeAgo}
-            </MuiTypography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <MuiTypography variant="body2" component="span" color="text.secondary" className={styles.timeAgo}>
+                {timeAgo}
+              </MuiTypography>
+              {editable && !hasMultipleItems && group.items[0] && (
+                <AscentActionsMenu
+                  ascent={{
+                    uuid: group.items[0].uuid,
+                    status: group.items[0].status,
+                    attemptCount: group.items[0].attemptCount,
+                    quality: group.items[0].quality,
+                    comment: group.items[0].comment,
+                  }}
+                  onUpdate={onUpdate}
+                  onDelete={onDelete}
+                  updating={mutatingUuid === group.items[0].uuid}
+                  deleting={mutatingUuid === group.items[0].uuid}
+                />
+              )}
+              {(editable && hasMultipleItems) && (
+                <IconButton
+                  size="small"
+                  onClick={() => setExpanded((prev) => !prev)}
+                  sx={{
+                    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s',
+                  }}
+                >
+                  <ExpandMoreOutlined fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
           </Box>
 
           <Box sx={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -156,6 +266,24 @@ const GroupedFeedItem: React.FC<{ group: GroupedAscentFeedItem }> = ({ group }) 
           {group.latestComment && (
             <MuiTypography variant="body2" component="span" className={styles.comment}>{group.latestComment}</MuiTypography>
           )}
+
+          {/* Expandable individual items for edit/delete */}
+          {editable && hasMultipleItems && (
+            <Collapse in={expanded} unmountOnExit>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                {group.items.map((item) => (
+                  <AscentItemRow
+                    key={item.uuid}
+                    item={item}
+                    editable
+                    onUpdate={onUpdate}
+                    onDelete={onDelete}
+                    mutatingUuid={mutatingUuid}
+                  />
+                ))}
+              </Box>
+            </Collapse>
+          )}
         </Box>
       </Box>
       </CardContent>
@@ -163,7 +291,12 @@ const GroupedFeedItem: React.FC<{ group: GroupedAscentFeedItem }> = ({ group }) 
   );
 };
 
-export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10 }) => {
+export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10, editable = false }) => {
+  const { token } = useWsAuthToken();
+  const { showMessage } = useSnackbar();
+  const queryClient = useQueryClient();
+  const [mutatingUuid, setMutatingUuid] = useState<string | null>(null);
+
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useInfiniteQuery({
     queryKey: ['ascentsFeed', userId, pageSize],
     queryFn: async ({ pageParam }) => {
@@ -197,6 +330,50 @@ export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10 
     isFetching: isFetchingNextPage,
   });
 
+  const handleUpdate = useCallback(async (uuid: string, values: EditAscentValues) => {
+    if (!token) return;
+    setMutatingUuid(uuid);
+    try {
+      const client = createGraphQLHttpClient(token);
+      const variables: UpdateTickMutationVariables = {
+        input: {
+          uuid,
+          status: values.status,
+          attemptCount: values.attemptCount,
+          quality: values.quality,
+          comment: values.comment,
+        },
+      };
+      await client.request<UpdateTickMutationResponse>(UPDATE_TICK, variables);
+      showMessage('Ascent updated', 'success');
+      queryClient.invalidateQueries({ queryKey: ['ascentsFeed', userId] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update ascent';
+      showMessage(message, 'error');
+    } finally {
+      setMutatingUuid(null);
+    }
+  }, [token, userId, queryClient, showMessage]);
+
+  const handleDelete = useCallback(async (uuid: string) => {
+    if (!token) return;
+    setMutatingUuid(uuid);
+    try {
+      const client = createGraphQLHttpClient(token);
+      const variables: DeleteTickMutationVariables = {
+        input: { uuid },
+      };
+      await client.request<DeleteTickMutationResponse>(DELETE_TICK, variables);
+      showMessage('Ascent deleted', 'success');
+      queryClient.invalidateQueries({ queryKey: ['ascentsFeed', userId] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete ascent';
+      showMessage(message, 'error');
+    } finally {
+      setMutatingUuid(null);
+    }
+  }, [token, userId, queryClient, showMessage]);
+
   if (isLoading) {
     return (
       <div className={styles.loading}>
@@ -225,7 +402,14 @@ export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10 
     <div className={styles.feed}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {groups.map((group) => (
-          <GroupedFeedItem key={group.key} group={group} />
+          <GroupedFeedItem
+            key={group.key}
+            group={group}
+            editable={editable}
+            onUpdate={handleUpdate}
+            onDelete={handleDelete}
+            mutatingUuid={mutatingUuid}
+          />
         ))}
       </Box>
 

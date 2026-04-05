@@ -149,7 +149,7 @@ export default function ProfilePageContent({ userId }: { userId: string }) {
               <Typography variant="body2" component="span" color="text.secondary" className={styles.chartDescription}>
                 Latest ascents and attempts
               </Typography>
-              <AscentsFeed userId={userId} pageSize={10} />
+              <AscentsFeed userId={userId} pageSize={10} editable={isOwnProfile} />
             </CardContent>
           </MuiCard>
         )}

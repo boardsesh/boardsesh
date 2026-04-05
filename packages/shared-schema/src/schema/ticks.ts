@@ -100,6 +100,30 @@ export const ticksTypeDefs = /* GraphQL */ `
   }
 
   """
+  Input for updating an existing tick.
+  """
+  input UpdateTickInput {
+    "UUID of the tick to update"
+    uuid: ID!
+    "New status (flash, send, attempt)"
+    status: TickStatus
+    "New attempt count"
+    attemptCount: Int
+    "New quality rating (1-5, or null to clear)"
+    quality: Int
+    "New comment"
+    comment: String
+  }
+
+  """
+  Input for deleting a tick.
+  """
+  input DeleteTickInput {
+    "UUID of the tick to delete"
+    uuid: ID!
+  }
+
+  """
   Input for fetching user's ticks.
   """
   input GetTicksInput {

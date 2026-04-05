@@ -4,7 +4,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
-import { SaveTickInputSchema } from '../../../validation/schemas';
+import { SaveTickInputSchema, UpdateTickInputSchema, DeleteTickInputSchema } from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
 import { publishSocialEvent } from '../../../events';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
@@ -115,6 +115,101 @@ export const tickMutations = {
     }
 
     return result;
+  },
+
+  /**
+   * Update an existing tick (owner only)
+   */
+  updateTick: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext
+  ): Promise<unknown> => {
+    requireAuthenticated(ctx);
+
+    const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    // Build update fields
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (validatedInput.status !== undefined) updates.status = validatedInput.status;
+    if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
+    if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
+    if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
+
+    // Single UPDATE with ownership check — avoids extra SELECT round trip
+    const result = await db
+      .update(dbSchema.boardseshTicks)
+      .set(updates)
+      .where(
+        and(
+          eq(dbSchema.boardseshTicks.uuid, validatedInput.uuid),
+          eq(dbSchema.boardseshTicks.userId, userId),
+        ),
+      )
+      .returning();
+
+    const updatedTick = result[0];
+    if (!updatedTick) {
+      throw new Error('Tick not found or you do not have permission to edit it');
+    }
+
+    return {
+      uuid: updatedTick.uuid,
+      userId: updatedTick.userId,
+      boardType: updatedTick.boardType,
+      climbUuid: updatedTick.climbUuid,
+      angle: updatedTick.angle,
+      isMirror: updatedTick.isMirror,
+      status: updatedTick.status,
+      attemptCount: updatedTick.attemptCount,
+      quality: updatedTick.quality,
+      difficulty: updatedTick.difficulty,
+      isBenchmark: updatedTick.isBenchmark,
+      comment: updatedTick.comment,
+      climbedAt: updatedTick.climbedAt,
+      createdAt: updatedTick.createdAt,
+      updatedAt: updatedTick.updatedAt,
+      sessionId: updatedTick.sessionId,
+      boardId: updatedTick.boardId,
+      auroraType: updatedTick.auroraType,
+      auroraId: updatedTick.auroraId,
+      auroraSyncedAt: updatedTick.auroraSyncedAt,
+    };
+  },
+
+  /**
+   * Delete a tick (owner only)
+   */
+  deleteTick: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext
+  ): Promise<boolean> => {
+    requireAuthenticated(ctx);
+
+    const validatedInput = validateInput(DeleteTickInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    // Delete only if the tick belongs to the authenticated user
+    const result = await db
+      .delete(dbSchema.boardseshTicks)
+      .where(
+        and(
+          eq(dbSchema.boardseshTicks.uuid, validatedInput.uuid),
+          eq(dbSchema.boardseshTicks.userId, userId),
+        ),
+      )
+      .returning({ uuid: dbSchema.boardseshTicks.uuid });
+
+    if (result.length === 0) {
+      throw new Error('Tick not found or you do not have permission to delete it');
+    }
+
+    return true;
   },
 };
 

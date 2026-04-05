@@ -44,6 +44,18 @@ export type SaveTickInput = {
   setIds?: string;
 };
 
+export type UpdateTickInput = {
+  uuid: string;
+  status?: TickStatus;
+  attemptCount?: number;
+  quality?: number | null;
+  comment?: string;
+};
+
+export type DeleteTickInput = {
+  uuid: string;
+};
+
 export type GetTicksInput = {
   boardType: string;
   climbUuids?: string[];

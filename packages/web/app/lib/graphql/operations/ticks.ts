@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { Tick, SaveTickInput, GetTicksInput } from '@boardsesh/shared-schema';
+import type { Tick, SaveTickInput, GetTicksInput, UpdateTickInput, DeleteTickInput } from '@boardsesh/shared-schema';
 
 export const GET_TICKS = gql`
   query GetTicks($input: GetTicksInput!) {
@@ -41,6 +41,25 @@ export const SAVE_TICK = gql`
   }
 `;
 
+export const UPDATE_TICK = gql`
+  mutation UpdateTick($input: UpdateTickInput!) {
+    updateTick(input: $input) {
+      uuid
+      status
+      attemptCount
+      quality
+      comment
+      updatedAt
+    }
+  }
+`;
+
+export const DELETE_TICK = gql`
+  mutation DeleteTick($input: DeleteTickInput!) {
+    deleteTick(input: $input)
+  }
+`;
+
 // Partial types matching the fields each query actually requests
 type TickFromGetTicks = Pick<Tick, 'uuid' | 'climbUuid' | 'angle' | 'isMirror' | 'status' | 'attemptCount' | 'quality' | 'difficulty' | 'isBenchmark' | 'comment' | 'climbedAt'>;
 type TickFromGetUserTicks = Pick<Tick, 'climbUuid' | 'angle' | 'status' | 'attemptCount' | 'difficulty' | 'climbedAt' | 'layoutId'>;
@@ -69,6 +88,24 @@ export interface SaveTickMutationVariables {
 
 export interface SaveTickMutationResponse {
   saveTick: TickFromSaveTick;
+}
+
+type TickFromUpdateTick = Pick<Tick, 'uuid' | 'status' | 'attemptCount' | 'quality' | 'comment' | 'updatedAt'>;
+
+export interface UpdateTickMutationVariables {
+  input: UpdateTickInput;
+}
+
+export interface UpdateTickMutationResponse {
+  updateTick: TickFromUpdateTick;
+}
+
+export interface DeleteTickMutationVariables {
+  input: DeleteTickInput;
+}
+
+export interface DeleteTickMutationResponse {
+  deleteTick: boolean;
 }
 
 // ============================================
