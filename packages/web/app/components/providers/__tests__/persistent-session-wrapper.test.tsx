@@ -45,6 +45,8 @@ vi.mock('../../graphql-queue', () => ({
   useQueueContext: () => mockQueueContext,
   useQueueData: () => mockQueueContext,
   useQueueActions: () => mockQueueContext,
+  useCurrentClimb: () => ({ currentClimb: mockQueueContext.currentClimb ?? null, currentClimbQueueItem: null }),
+  useQueueList: () => ({ queue: mockQueueContext.queue ?? [], suggestedClimbs: [] }),
 }));
 
 vi.mock('../../queue-control/queue-control-bar', () => ({

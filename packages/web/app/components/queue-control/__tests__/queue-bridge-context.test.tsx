@@ -28,10 +28,18 @@ vi.mock('../../graphql-queue/QueueContext', () => {
   const ctx = React.createContext(undefined);
   const actionsCtx = React.createContext(undefined);
   const dataCtx = React.createContext(undefined);
+  const currentClimbCtx = React.createContext(undefined);
+  const queueListCtx = React.createContext(undefined);
+  const searchCtx = React.createContext(undefined);
+  const sessionCtx = React.createContext(undefined);
   return {
     QueueContext: ctx,
     QueueActionsContext: actionsCtx,
     QueueDataContext: dataCtx,
+    CurrentClimbContext: currentClimbCtx,
+    QueueListContext: queueListCtx,
+    SearchContext: searchCtx,
+    SessionContext: sessionCtx,
     useQueueActions: () => React.useContext(actionsCtx),
     useQueueData: () => React.useContext(dataCtx),
     __esModule: true,

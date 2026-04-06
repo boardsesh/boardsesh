@@ -27,6 +27,9 @@ vi.mock('../use-board-bluetooth', () => ({
 let mockCurrentClimbQueueItem: { climb: { uuid: string; frames: string; mirrored: boolean } } | null = null;
 
 vi.mock('../../graphql-queue', () => ({
+  useCurrentClimb: () => ({
+    currentClimbQueueItem: mockCurrentClimbQueueItem,
+  }),
   useQueueContext: () => ({
     currentClimbQueueItem: mockCurrentClimbQueueItem,
   }),

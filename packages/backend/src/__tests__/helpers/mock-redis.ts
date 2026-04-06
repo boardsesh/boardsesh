@@ -121,6 +121,37 @@ export const createMockRedis = (): MockRedis => {
       store.set(key, value);
       return 'OK';
     }),
+    scan: vi.fn(async (cursor: string, ...args: unknown[]) => {
+      // Parse MATCH pattern and COUNT from variadic args
+      let pattern = '*';
+      for (let i = 0; i < args.length - 1; i++) {
+        if (typeof args[i] === 'string' && args[i].toString().toUpperCase() === 'MATCH') {
+          pattern = args[i + 1] as string;
+        }
+      }
+      // Convert glob pattern to regex (only supports * wildcard)
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+      // Collect all known keys from all data structures
+      const allKeys = new Set<string>([
+        ...store.keys(),
+        ...sets.keys(),
+        ...hashes.keys(),
+        ...sortedSets.keys(),
+      ]);
+      const matched = Array.from(allKeys).filter(k => regex.test(k));
+      // cursor '0' means start; always return '0' (done) since we scan everything at once
+      return ['0', matched] as [string, string[]];
+    }),
+    keys: vi.fn(async (pattern: string) => {
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+      const allKeys = new Set<string>([
+        ...store.keys(),
+        ...sets.keys(),
+        ...hashes.keys(),
+        ...sortedSets.keys(),
+      ]);
+      return Array.from(allKeys).filter(k => regex.test(k));
+    }),
     watch: vi.fn(async () => 'OK'),
     unwatch: vi.fn(async () => 'OK'),
     multi: vi.fn(() => {
@@ -130,8 +161,20 @@ export const createMockRedis = (): MockRedis => {
           commands.push(() => mockRedis.hmset(key, obj));
           return chainable;
         },
+        hset: (key: string, field: string, value: string) => {
+          commands.push(() => mockRedis.hset(key, field, value));
+          return chainable;
+        },
         expire: (_key: string, _seconds: number) => {
           commands.push(() => mockRedis.expire(_key, _seconds));
+          return chainable;
+        },
+        setex: (key: string, seconds: number, value: string) => {
+          commands.push(() => mockRedis.setex(key, seconds, value));
+          return chainable;
+        },
+        set: (key: string, value: string, ...opts: unknown[]) => {
+          commands.push(() => mockRedis.set(key, value, ...opts));
           return chainable;
         },
         zadd: (key: string, score: number, member: string) => {
@@ -184,6 +227,35 @@ export const createMockRedis = (): MockRedis => {
           commands.push(async () => {
             return store.has(key) || hashes.has(key) ? 1 : 0;
           });
+          return chainable;
+        },
+        del: (...keys: string[]) => {
+          commands.push(async () => {
+            let count = 0;
+            for (const key of keys) {
+              if (store.delete(key)) count++;
+              if (sets.delete(key)) count++;
+              if (hashes.delete(key)) count++;
+              if (sortedSets.delete(key)) count++;
+            }
+            return count;
+          });
+          return chainable;
+        },
+        set: (key: string, value: string, ...opts: unknown[]) => {
+          commands.push(() => mockRedis.set(key, value, ...opts));
+          return chainable;
+        },
+        sadd: (key: string, ...members: string[]) => {
+          commands.push(() => mockRedis.sadd(key, ...members));
+          return chainable;
+        },
+        srem: (key: string, ...members: string[]) => {
+          commands.push(() => mockRedis.srem(key, ...members));
+          return chainable;
+        },
+        expire: (key: string, seconds: number) => {
+          commands.push(() => mockRedis.expire(key, seconds));
           return chainable;
         },
         exec: async () => {

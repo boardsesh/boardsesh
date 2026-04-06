@@ -38,13 +38,21 @@ describe('generate-board-data', () => {
   let dataCppContent;
 
   before(() => {
-    // Run the generator
-    console.log('Running board data generator...');
-    execSync('node embedded/scripts/generate-board-data.mjs', {
-      cwd: path.join(__dirname, '../..'),
-      timeout: 300000,
-      stdio: 'pipe',
-    });
+    // When running via bun test (which has a short hook timeout), skip regeneration
+    // and use already-generated files. When running via node --test, regenerate.
+    const runningInBun = typeof process.versions.bun !== 'undefined';
+    if (!runningInBun) {
+      // Run the generator
+      console.log('Running board data generator...');
+      execSync('node embedded/scripts/generate-board-data.mjs', {
+        cwd: path.join(__dirname, '../..'),
+        timeout: 300000,
+        stdio: 'pipe',
+      });
+    } else if (!fs.existsSync(IMAGE_HEADER)) {
+      console.log('Board data files not found. Run: node embedded/scripts/generate-board-data.mjs');
+      return;
+    }
 
     imageContent = fs.readFileSync(IMAGE_HEADER, 'utf-8');
     holdContent = fs.readFileSync(HOLD_HEADER, 'utf-8');

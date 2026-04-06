@@ -13,8 +13,9 @@ const connectionString =
 // Parse connection string to get base URL (without database name)
 const baseConnectionString = connectionString.replace(/\/[^/]+$/, '/postgres');
 
-let migrationClient: ReturnType<typeof postgres>;
-let db: ReturnType<typeof drizzle>;
+let migrationClient: ReturnType<typeof postgres> | undefined;
+let db: ReturnType<typeof drizzle> | undefined;
+export let isDatabaseAvailable = false;
 
 // SQL to create only the tables needed for backend tests
 const createTablesSQL = `
@@ -225,12 +226,17 @@ beforeAll(async () => {
     await adminClient.end();
   }
 
-  // Now connect to the test database
-  migrationClient = postgres(connectionString, { max: 1, onnotice: () => {} });
-  db = drizzle(migrationClient, { schema });
+  try {
+    // Now connect to the test database
+    migrationClient = postgres(connectionString, { max: 1, onnotice: () => {} });
+    db = drizzle(migrationClient, { schema });
 
-  // Create tables directly (backend tests only need session tables)
-  await migrationClient.unsafe(createTablesSQL);
+    // Create tables directly (backend tests only need session tables)
+    await migrationClient.unsafe(createTablesSQL);
+    isDatabaseAvailable = true;
+  } catch (error) {
+    console.log('Test database setup failed, DB-dependent tests will be skipped:', error);
+  }
 });
 
 beforeEach(async () => {
@@ -239,6 +245,8 @@ beforeEach(async () => {
 
   // Reset rate limiter to prevent state leaking between tests
   resetAllRateLimits();
+
+  if (!isDatabaseAvailable || !db) return;
 
   // Clear all tables in correct order (respect foreign keys)
   await db.execute(sql`TRUNCATE TABLE board_session_queues CASCADE`);

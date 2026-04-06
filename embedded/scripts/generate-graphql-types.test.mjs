@@ -242,14 +242,21 @@ describe('C++ Struct Generation', () => {
 
 describe('Integration: Parse and Generate', () => {
   it('should parse real schema and generate valid C++ for LedCommand', () => {
-    const schemaPath = path.join(__dirname, '../../packages/shared-schema/src/schema.ts');
+    // The schema is modular - read all .ts files from the schema directory
+    const schemaDir = path.join(__dirname, '../../packages/shared-schema/src/schema');
+    const schemaSinglePath = path.join(__dirname, '../../packages/shared-schema/src/schema.ts');
 
-    if (!fs.existsSync(schemaPath)) {
+    let schemaContent;
+    if (fs.existsSync(schemaDir) && fs.statSync(schemaDir).isDirectory()) {
+      const files = fs.readdirSync(schemaDir).filter(f => f.endsWith('.ts')).sort();
+      schemaContent = files.map(f => fs.readFileSync(path.join(schemaDir, f), 'utf-8')).join('\n');
+    } else if (fs.existsSync(schemaSinglePath)) {
+      schemaContent = fs.readFileSync(schemaSinglePath, 'utf-8');
+    } else {
       console.log('Skipping integration test: schema file not found');
       return;
     }
 
-    const schemaContent = fs.readFileSync(schemaPath, 'utf-8');
     const types = parseGraphQLSchema(schemaContent);
 
     // Verify we found the expected types

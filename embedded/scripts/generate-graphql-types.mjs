@@ -21,9 +21,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Path configuration
-const SCHEMA_PATH = path.join(__dirname, '../../packages/shared-schema/src/schema.ts');
+// The schema is modular - read all .ts files from the schema directory
+const SCHEMA_DIR = path.join(__dirname, '../../packages/shared-schema/src/schema');
+const SCHEMA_PATH = SCHEMA_DIR; // kept for backwards compat in error messages
 const OUTPUT_DIR = path.join(__dirname, '../libs/graphql-types/src');
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'graphql_types.h');
+
+/**
+ * Read all GraphQL schema content from the modular schema directory.
+ * Falls back to reading a single schema.ts file if the directory doesn't exist.
+ */
+function readSchemaContent() {
+  if (fs.existsSync(SCHEMA_DIR) && fs.statSync(SCHEMA_DIR).isDirectory()) {
+    const files = fs.readdirSync(SCHEMA_DIR).filter(f => f.endsWith('.ts')).sort();
+    return files.map(f => fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf-8')).join('\n');
+  }
+  // Fallback: try single schema.ts file
+  const singlePath = path.join(__dirname, '../../packages/shared-schema/src/schema.ts');
+  if (fs.existsSync(singlePath)) {
+    return fs.readFileSync(singlePath, 'utf-8');
+  }
+  return null;
+}
 
 // Types that the firmware needs (controller-relevant subset)
 const CONTROLLER_TYPES = [
@@ -568,12 +587,11 @@ async function main() {
 
   // Read schema
   console.log(`Reading schema from: ${SCHEMA_PATH}`);
-  if (!fs.existsSync(SCHEMA_PATH)) {
-    console.error(`Error: Schema file not found at ${SCHEMA_PATH}`);
+  const schemaContent = readSchemaContent();
+  if (!schemaContent) {
+    console.error(`Error: Schema not found at ${SCHEMA_PATH}`);
     process.exit(1);
   }
-
-  const schemaContent = fs.readFileSync(SCHEMA_PATH, 'utf-8');
 
   // Parse schema
   console.log('Parsing GraphQL schema...');

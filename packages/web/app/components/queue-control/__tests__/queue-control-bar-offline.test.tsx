@@ -14,6 +14,18 @@ vi.mock('@/app/components/graphql-queue', () => ({
   useQueueContext: () => mockQueueContext,
   useQueueData: () => mockQueueContext,
   useQueueActions: () => mockQueueContext,
+  useCurrentClimb: () => ({ currentClimb: mockQueueContext.currentClimb ?? null, currentClimbQueueItem: mockQueueContext.currentClimbQueueItem ?? null }),
+  useQueueList: () => ({ queue: mockQueueContext.queue ?? [], suggestedClimbs: [] }),
+  useSessionData: () => ({
+    viewOnlyMode: mockQueueContext.viewOnlyMode ?? false,
+    isSessionActive: mockQueueContext.isSessionActive ?? false,
+    sessionId: mockQueueContext.sessionId ?? null,
+    sessionSummary: null,
+    sessionGoal: null,
+    connectionState: mockQueueContext.connectionState ?? 'connected',
+    isDisconnected: mockQueueContext.isDisconnected ?? false,
+    users: mockQueueContext.users ?? [],
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
