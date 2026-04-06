@@ -23,6 +23,7 @@ import { isBoardRoutePath } from '@/app/lib/board-route-paths';
 import GlobalHeader from '../global-header/global-header';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
 import { SearchDrawerBridgeProvider } from '../search-drawer/search-drawer-bridge-context';
+import UsernameSetupDialog from '../username-setup-dialog/username-setup-dialog';
 
 interface PersistentSessionWrapperProps {
   children: React.ReactNode;
@@ -46,6 +47,7 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
             {children}
             <RootBottomBar boardConfigs={boardConfigs} />
             <RootSessionSummaryDialog />
+            <UsernameSetupDialog />
           </SearchDrawerBridgeProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>

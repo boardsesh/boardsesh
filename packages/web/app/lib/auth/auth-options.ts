@@ -231,10 +231,23 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
         token.id = user.id;
+      }
+      // When session is updated (e.g., after username setup), refresh name/image from DB
+      if (trigger === "update" && token.sub) {
+        const db = getDb();
+        const freshUser = await db
+          .select({ name: schema.users.name, image: schema.users.image })
+          .from(schema.users)
+          .where(eq(schema.users.id, token.sub))
+          .limit(1);
+        if (freshUser.length > 0) {
+          token.name = freshUser[0].name;
+          token.picture = freshUser[0].image;
+        }
       }
       return token;
     },
