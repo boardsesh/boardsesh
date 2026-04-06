@@ -36,7 +36,7 @@ interface LatestWinsRefs<TArgs> {
   pending: TArgs | null;
 }
 
-async function executeWithLatestWins<TArgs>(
+export async function executeWithLatestWins<TArgs>(
   refs: LatestWinsRefs<TArgs>,
   args: TArgs,
   executeFn: (args: TArgs) => Promise<void>,
