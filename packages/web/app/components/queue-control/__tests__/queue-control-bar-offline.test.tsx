@@ -14,6 +14,9 @@ vi.mock('@/app/components/graphql-queue', () => ({
   useQueueContext: () => mockQueueContext,
   useQueueData: () => mockQueueContext,
   useQueueActions: () => mockQueueContext,
+  useCurrentClimb: () => mockQueueContext,
+  useQueueList: () => mockQueueContext,
+  useSessionData: () => mockQueueContext,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -97,6 +100,10 @@ vi.mock('@/app/components/onboarding/onboarding-tour', () => ({
 
 vi.mock('@/app/components/ui/confirm-popover', () => ({
   ConfirmPopover: () => null,
+}));
+
+vi.mock('@/app/components/swipeable-drawer/swipeable-drawer', () => ({
+  default: ({ children }: { children: React.ReactNode }) => React.createElement('div', { 'data-testid': 'swipeable-drawer' }, children),
 }));
 
 vi.mock('next-auth/react', () => ({
@@ -196,8 +203,6 @@ const defaultProps = {
     edge_bottom: 0,
     edge_top: 0,
   } as never,
-  activeDrawer: 'none' as const,
-  setActiveDrawer: vi.fn(),
 };
 
 describe('QueueControlBar offline UI', () => {
