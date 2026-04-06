@@ -303,7 +303,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
       onClose={handleClose}
       onTransitionEnd={handleTransitionEnd}
       keepMounted
-      swipeEnabled={!isActionsOpen && !isQueueOpen && !isPlaylistSelectorOpen}
+      swipeEnabled={!isActionsOpen && !isQueueOpen && !isPlaylistSelectorOpen && !isTickDrawerOpen}
       showDragHandle={true}
       styles={{
         body: { padding: 0, overflow: 'hidden' },
