@@ -213,6 +213,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
     const shortSwipeLayerRef = useRef<HTMLDivElement>(null);
     const longSwipeLayerRef = useRef<HTMLDivElement>(null);
     const rightActionLayerRef = useRef<HTMLDivElement>(null);
+    const rightActionConfirmedLayerRef = useRef<HTMLDivElement>(null);
     const leftActionContainerRef = useRef<HTMLDivElement>(null);
     // Store addToQueue in a ref so the memoized handler always reads the latest
     // value without requiring addToQueue in the memo comparator.
@@ -306,11 +307,24 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       }
     }, []);
 
+    // Direct DOM manipulation for confirmed icon swap — avoids React render cycle delay
+    const handleSwipeLeftConfirm = useCallback(() => {
+      if (rightActionLayerRef.current) rightActionLayerRef.current.style.opacity = '0';
+      if (rightActionConfirmedLayerRef.current) rightActionConfirmedLayerRef.current.style.opacity = '1';
+    }, []);
+
+    const handleSwipeLeftReset = useCallback(() => {
+      if (rightActionLayerRef.current) rightActionLayerRef.current.style.opacity = '';
+      if (rightActionConfirmedLayerRef.current) rightActionConfirmedLayerRef.current.style.opacity = '0';
+    }, []);
+
     const { swipeHandlers, swipeLeftConfirmed, contentRef, leftActionRef, rightActionRef } = useSwipeActions({
       onSwipeLeft: resolvedSwipeLeft,
       onSwipeRight: handleDefaultSwipeRight,
       onSwipeRightLong: useSimpleSwipe ? undefined : handleDefaultSwipeRightLong,
       onSwipeOffsetChange: useSimpleSwipe ? undefined : handleSwipeOffset,
+      onSwipeLeftConfirm: useSimpleSwipe ? undefined : handleSwipeLeftConfirm,
+      onSwipeLeftReset: useSimpleSwipe ? undefined : handleSwipeLeftReset,
       swipeThreshold: useSimpleSwipe ? SIMPLE_SWIPE_THRESHOLD : SHORT_SWIPE_THRESHOLD,
       longSwipeRightThreshold: useSimpleSwipe ? undefined : LONG_SWIPE_THRESHOLD,
       maxSwipe: useSimpleSwipe ? SIMPLE_MAX_SWIPE : MAX_GESTURE_SWIPE,
@@ -473,8 +487,9 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
                   >
                     <AddOutlined style={iconStyle} />
                   </div>
-                  {/* Confirmed layer (Check icon) — crossfades in via CSS transition */}
+                  {/* Confirmed layer (Check icon) — crossfades in via direct DOM manipulation */}
                   <div
+                    ref={rightActionConfirmedLayerRef}
                     style={{
                       ...rightActionLayerConfirmedStyle,
                       opacity: swipeLeftConfirmed ? 1 : 0,
