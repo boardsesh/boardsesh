@@ -3,8 +3,6 @@ import { getBackendWsUrl } from '@/app/lib/backend-url';
 import type { SessionUser, SubscriptionQueueEvent, SessionEvent, SessionLiveStats, SessionSummary, QueueState } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
 import type { BoardDetails, ParsedBoardRouteParameters } from '@/app/lib/types';
-import type { StoredQueueState } from '@/app/lib/queue-storage-db';
-
 // Re-export QueueState from shared-schema for convenience
 export type { QueueState } from '@boardsesh/shared-schema';
 
@@ -36,23 +34,14 @@ export interface ActiveSessionInfo {
 
 // Stable action functions — identity rarely changes
 export interface PersistentSessionActionsType {
-  // Local queue management
+  // Local queue management (in-memory only, no IndexedDB persistence)
   setLocalQueueState: (
     queue: LocalClimbQueueItem[],
     currentItem: LocalClimbQueueItem | null,
     boardPath: string,
     boardDetails: BoardDetails,
   ) => void;
-  /** Write to IndexedDB only (debounced), without triggering React state updates.
-   *  Used by useQueueStorageSync on board pages to avoid cascading re-renders. */
-  persistToStorageOnly: (
-    queue: LocalClimbQueueItem[],
-    currentItem: LocalClimbQueueItem | null,
-    boardPath: string,
-    boardDetails: BoardDetails,
-  ) => void;
   clearLocalQueue: () => void;
-  loadStoredQueue: (boardPath: string) => Promise<StoredQueueState | null>;
 
   // Session lifecycle
   activateSession: (info: ActiveSessionInfo) => void;
@@ -185,7 +174,6 @@ export interface SharedRefs {
   isFilteringCorruptedItemsRef: MutableRefObject<boolean>;
   queueUnsubscribeRef: MutableRefObject<(() => void) | null>;
   sessionUnsubscribeRef: MutableRefObject<(() => void) | null>;
-  saveQueueTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   queueEventSubscribersRef: MutableRefObject<Set<(event: SubscriptionQueueEvent) => void>>;
   sessionEventSubscribersRef: MutableRefObject<Set<(event: SessionEvent) => void>>;
 }
@@ -198,8 +186,5 @@ export const ACTIVE_SESSION_KEY = 'activeSession';
 
 // Cooldown for corruption-triggered resyncs to prevent infinite loops
 export const CORRUPTION_RESYNC_COOLDOWN_MS = 30000; // 30 seconds
-
-// Debounce delay for saving queue to IndexedDB
-export const QUEUE_SAVE_DEBOUNCE_MS = 500;
 
 export const DEBUG = process.env.NODE_ENV === 'development';

@@ -14,7 +14,6 @@ vi.mock('uuid', () => ({
 const mockSetLocalQueueState = vi.fn();
 const mockDeactivateSession = vi.fn();
 const mockClearLocalQueue = vi.fn();
-const mockLoadStoredQueue = vi.fn().mockResolvedValue(null);
 
 let mockPersistentSession: Record<string, unknown> = {};
 
@@ -141,7 +140,6 @@ function createDefaultPersistentSession(overrides?: Record<string, unknown>) {
     isLocalQueueLoaded: false,
     setLocalQueueState: mockSetLocalQueueState,
     clearLocalQueue: mockClearLocalQueue,
-    loadStoredQueue: mockLoadStoredQueue,
     deactivateSession: mockDeactivateSession,
     activateSession: vi.fn(),
     setInitialQueueForSession: vi.fn(),

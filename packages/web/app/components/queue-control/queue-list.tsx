@@ -7,7 +7,7 @@ import Stack from '@mui/material/Stack';
 import MuiDivider from '@mui/material/Divider';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import LoginOutlined from '@mui/icons-material/LoginOutlined';
-import { useQueueActions, useQueueData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueList, useSearchData, useSessionData } from '../graphql-queue';
 import { Climb, BoardDetails } from '@/app/lib/types';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
@@ -37,15 +37,10 @@ type QueueListProps = {
 };
 
 const QueueList = forwardRef<QueueListHandle, QueueListProps>(({ boardDetails, onClimbNavigate, isEditMode = false, showHistory = false, selectedItems, onToggleSelect, scrollContainer }, ref) => {
-  const {
-    viewOnlyMode,
-    currentClimbQueueItem,
-    queue,
-    suggestedClimbs,
-    hasMoreResults,
-    isFetchingClimbs,
-    isFetchingNextPage,
-  } = useQueueData();
+  const { currentClimbQueueItem } = useCurrentClimb();
+  const { queue, suggestedClimbs } = useQueueList();
+  const { hasMoreResults, isFetchingClimbs, isFetchingNextPage } = useSearchData();
+  const { viewOnlyMode } = useSessionData();
   const {
     fetchMoreClimbs,
     setCurrentClimbQueueItem,

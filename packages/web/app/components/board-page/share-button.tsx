@@ -23,7 +23,7 @@ import Box from '@mui/material/Box';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useQueueActions, useQueueData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useSessionData } from '../graphql-queue';
 import { usePersistentSession } from '../persistent-session';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import './share-button.css';
@@ -55,7 +55,7 @@ function LedConnectionTab() {
     isBluetoothSupported,
     isIOS,
   } = useBluetoothContext();
-  const { currentClimbQueueItem } = useQueueData();
+  const { currentClimbQueueItem } = useCurrentClimb();
 
   const handleConnect = async () => {
     if (currentClimbQueueItem) {
@@ -177,7 +177,7 @@ export const ShareBoardButton = () => {
     isSessionActive,
     sessionId,
     sessionGoal,
-  } = useQueueData();
+  } = useSessionData();
   const {
     startSession,
     joinSession,

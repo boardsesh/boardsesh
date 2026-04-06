@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { PartyProfileProvider } from '../party-manager/party-profile-context';
 import { PersistentSessionProvider, usePersistentSession } from '../persistent-session';
 import { QueueBridgeProvider, useQueueBridgeBoardInfo } from '../queue-control/queue-bridge-context';
-import { useQueueData } from '../graphql-queue';
+import { useCurrentClimb, useQueueList } from '../graphql-queue';
 import QueueControlBar from '../queue-control/queue-control-bar';
 import QueueControlBarShell from '../queue-control/queue-control-bar-shell';
 import BottomTabBar from '../bottom-tab-bar/bottom-tab-bar';
@@ -111,7 +111,8 @@ function RootQueueControlBarWithProviders({
   boardDetails: NonNullable<ReturnType<typeof useQueueBridgeBoardInfo>['boardDetails']>;
   angle: number;
 }) {
-  const { queue, currentClimb } = useQueueData();
+  const { currentClimb } = useCurrentClimb();
+  const { queue } = useQueueList();
 
   const climbUuids = useMemo(() => {
     const queueUuids = queue.map((item) => item.climb?.uuid).filter(Boolean) as string[];

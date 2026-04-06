@@ -21,6 +21,7 @@ import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import { trackListBatchRender } from '@/app/lib/rendering-metrics';
 import { classifyClimbListChange } from './climb-list-utils';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
+import { SelectionStoreContext, useSelectionStore } from './selected-climb-store';
 import listStyles from './climbs-list.module.css';
 
 const SwipeableDrawer = dynamic(() => import('../swipeable-drawer/swipeable-drawer'), { ssr: false });
@@ -276,6 +277,9 @@ const ClimbsList = ({
     track('View Mode Changed', { mode });
   }, []);
 
+  const handleListView = useCallback(() => handleViewModeChange('list'), [handleViewModeChange]);
+  const handleGridView = useCallback(() => handleViewModeChange('grid'), [handleViewModeChange]);
+
   const handleLoadMore = useCallback(() => {
     track('Infinite Scroll Load More', {
       currentCount: climbs.length,
@@ -371,15 +375,8 @@ const ClimbsList = ({
     [],
   );
 
-  const iconButtonSx = useMemo(() => ({ padding: '4px' }), []);
-
-  const viewModeButtonSx = useCallback(
-    (isActive: boolean) => ({
-      padding: '4px',
-      opacity: isActive ? 1 : 0.4,
-    }),
-    [],
-  );
+  const listButtonSx = useMemo(() => ({ padding: '4px', opacity: viewMode === 'list' ? 1 : 0.4 }), [viewMode]);
+  const gridButtonSx = useMemo(() => ({ padding: '4px', opacity: viewMode === 'grid' ? 1 : 0.4 }), [viewMode]);
 
   const gridContainerSx = useMemo(
     () => ({
@@ -414,7 +411,13 @@ const ClimbsList = ({
     [],
   );
 
+  // External store for selected climb UUID — items subscribe individually via
+  // useSyncExternalStore so only 2 items re-render on selection change (old + new),
+  // without the parent list needing to iterate all items.
+  const selectionStore = useSelectionStore(selectedClimbUuid ?? null);
+
   return (
+    <SelectionStoreContext.Provider value={selectionStore}>
     <Box>
       {header}
       {/* Header: Search pills (left, scrollable) | View toggle + Angle selector (right) */}
@@ -425,18 +428,18 @@ const ClimbsList = ({
         <Box sx={rightControlsSx}>
           <Box sx={viewModeToggleBoxSx}>
             <IconButton
-              onClick={() => handleViewModeChange('list')}
+              onClick={handleListView}
               aria-label="List view"
               size="small"
-              sx={viewModeButtonSx(viewMode === 'list')}
+              sx={listButtonSx}
             >
               <FormatListBulletedOutlined fontSize="small" />
             </IconButton>
             <IconButton
-              onClick={() => handleViewModeChange('grid')}
+              onClick={handleGridView}
               aria-label="Grid view"
               size="small"
-              sx={viewModeButtonSx(viewMode === 'grid')}
+              sx={gridButtonSx}
             >
               <AppsOutlined fontSize="small" />
             </IconButton>
@@ -456,7 +459,6 @@ const ClimbsList = ({
                   climb={climb}
                   boardDetails={resolveBoardDetails(climb)}
                   preferImageLayers={index < initialImageCount}
-                  selected={selectedClimbUuid === climb.uuid}
                   onCoverClick={climbHandlersMap.get(climb.uuid)}
                   unsupported={unsupportedClimbs?.has(climb.uuid)}
                 />
@@ -481,7 +483,6 @@ const ClimbsList = ({
                     climb={climb}
                     boardDetails={resolveBoardDetails(climb)}
                     preferImageLayers={index < initialImageCount}
-                    selected={selectedClimbUuid === climb.uuid}
                     onSelect={climbHandlersMap.get(climb.uuid)}
                     onThumbnailClick={climbHandlersMap.get(climb.uuid)}
                     disableThumbnailNavigation
@@ -519,6 +520,7 @@ const ClimbsList = ({
       {/* Shared drawers — owns its own state so open/close doesn't re-render the list */}
       <SharedDrawers ref={drawerRef} boardDetails={boardDetails} resolveBoardDetails={resolveBoardDetails} />
     </Box>
+    </SelectionStoreContext.Provider>
   );
 };
 

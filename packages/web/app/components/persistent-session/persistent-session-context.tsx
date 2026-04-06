@@ -47,7 +47,6 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const isFilteringCorruptedItemsRef = useRef(false);
   const queueUnsubscribeRef = useRef<(() => void) | null>(null);
   const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
-  const saveQueueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueEventSubscribersRef = useRef<Set<(event: SubscriptionQueueEvent) => void>>(new Set());
   const sessionEventSubscribersRef = useRef<Set<(event: SessionEvent) => void>>(new Set());
 
@@ -68,7 +67,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     mountedRef, isConnectingRef, isReconnectingRef,
     connectionGenerationRef, triggerResyncRef, lastReceivedSequenceRef,
     lastCorruptionResyncRef, isFilteringCorruptedItemsRef,
-    queueUnsubscribeRef, sessionUnsubscribeRef, saveQueueTimeoutRef,
+    queueUnsubscribeRef, sessionUnsubscribeRef,
     queueEventSubscribersRef, sessionEventSubscribersRef,
   };
 
@@ -88,12 +87,10 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     refs,
   });
 
-  // 3. Queue storage: IndexedDB persistence for local queue
+  // 3. Queue storage: in-memory local queue state
   const queueStorage = useQueueStorage({
     activeSession: lifecycle.activeSession,
     setActiveSession: (val) => {
-      // The queue storage restore needs to activate sessions it finds in IndexedDB
-      if (typeof val === 'function') return;
       if (val) lifecycle.activateSession(val);
     },
   });
@@ -129,9 +126,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       mirrorCurrentClimb: mutations.mirrorCurrentClimb,
       setQueue: mutations.setQueue,
       setLocalQueueState: queueStorage.setLocalQueueState,
-      persistToStorageOnly: queueStorage.persistToStorageOnly,
       clearLocalQueue: queueStorage.clearLocalQueue,
-      loadStoredQueue: queueStorage.loadStoredQueue,
       subscribeToQueueEvents: subscriptions.subscribeToQueueEvents,
       subscribeToSessionEvents: subscriptions.subscribeToSessionEvents,
       triggerResync: subscriptions.triggerResync,
@@ -143,8 +138,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       lifecycle.endSessionWithSummary, lifecycle.dismissSessionSummary,
       mutations.addQueueItem, mutations.removeQueueItem, mutations.setCurrentClimb,
       mutations.mirrorCurrentClimb, mutations.setQueue,
-      queueStorage.setLocalQueueState, queueStorage.persistToStorageOnly,
-      queueStorage.clearLocalQueue, queueStorage.loadStoredQueue,
+      queueStorage.setLocalQueueState, queueStorage.clearLocalQueue,
       subscriptions.subscribeToQueueEvents, subscriptions.subscribeToSessionEvents, subscriptions.triggerResync,
     ],
   );

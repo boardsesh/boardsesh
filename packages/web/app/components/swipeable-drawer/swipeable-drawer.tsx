@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import MuiSwipeableDrawer from '@mui/material/SwipeableDrawer';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
@@ -186,20 +186,36 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     );
   }, [showCloseButton, placement, onClose]);
 
+  // Drag handles for top/bottom placements are rendered OUTSIDE the scrollable
+  // body Box so MUI's getDomTreeShapes doesn't find a scroll container between
+  // the drag handle and the Paper, which would block swipe-to-close gestures.
+  // Left/right vertical handles use position:absolute and stay inside.
+  const topDragHandle = useMemo(() => {
+    if (handleInHeader || !showDragHandle) return null;
+    if (placement === 'bottom') return horizontalDragHandle;
+    return null;
+  }, [handleInHeader, showDragHandle, placement, horizontalDragHandle]);
+
+  const bottomDragHandle = useMemo(() => {
+    if (handleInHeader || !showDragHandle || hasExternalBottomHandle) return null;
+    if (placement === 'top') return horizontalDragHandle;
+    return null;
+  }, [handleInHeader, showDragHandle, hasExternalBottomHandle, placement, horizontalDragHandle]);
+
   const wrappedChildren = useMemo(() => {
     if (handleInHeader) {
       return children;
     }
 
-    // Handle in body for non-titled drawers or horizontal placements
+    // Only left/right placements keep drag handles inside the body (absolute positioned)
     return (
       <>
-        {(placement === 'bottom' || placement === 'left') && (isVerticalPlacement ? horizontalDragHandle : verticalDragHandle)}
+        {placement === 'left' && verticalDragHandle}
         {children}
-        {(placement === 'right' || (placement === 'top' && !hasExternalBottomHandle)) && (isVerticalPlacement ? horizontalDragHandle : verticalDragHandle)}
+        {placement === 'right' && verticalDragHandle}
       </>
     );
-  }, [placement, horizontalDragHandle, verticalDragHandle, handleInHeader, isVerticalPlacement, children, hasExternalBottomHandle]);
+  }, [placement, verticalDragHandle, handleInHeader, children]);
 
   // Compute paper dimensions from height/width/styles.wrapper
   const paperSx = useMemo(() => {
@@ -242,10 +258,61 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     return sx;
   }, [userStyles?.wrapper, height, width, fullHeightProp]);
 
-  // SwipeableDrawer onClose handler
+  // SwipeableDrawer onClose handler.
+  // When triggered by a swipe fling, the Paper is at an intermediate position
+  // with inline styles from MUI's setPosition (translate(0, Xpx) format, no
+  // transition). We animate it to off-screen ourselves using the SAME format,
+  // then call onClose after the animation completes. This avoids the Slide
+  // transition entirely for swipe-closes — Slide's format (translateY) can't
+  // reliably interpolate with SwipeableDrawer's format in the same macrotask.
+  const closeAnimRef = useRef<number>(0);
   const handleSwipeableClose = useCallback(() => {
+    const paper = lastPaperRef.current;
+    if (paper?.style.transform) {
+      // Paper has inline transform from swipe — animate it off-screen ourselves.
+      // We use the same translate() format MUI's setPosition uses so the browser
+      // can interpolate between the current swipe position and the target.
+      const isHorizontal = placement === 'left' || placement === 'right';
+      const maxTranslate = isHorizontal ? paper.offsetWidth : paper.offsetHeight;
+      const sign = placement === 'right' || placement === 'bottom' ? 1 : -1;
+      const target = isHorizontal
+        ? `translate(${sign * maxTranslate}px, 0)`
+        : `translate(0, ${sign * maxTranslate}px)`;
+
+      // Calculate duration proportional to remaining distance so the animation
+      // feels like it carries the fling momentum. A short fling from near the
+      // top has more distance → longer duration. A deep fling has less → snappier.
+      const currentMatch = paper.style.transform.match(/translate\(\s*(.+?)px\s*,\s*(.+?)px\s*\)/);
+      let currentTranslate = 0;
+      if (currentMatch) {
+        currentTranslate = Math.abs(parseFloat(isHorizontal ? currentMatch[1] : currentMatch[2]));
+      }
+      const remaining = maxTranslate - currentTranslate;
+      const fraction = remaining / maxTranslate;
+      // Base speed: cross the full distance in 300ms. Minimum 120ms so it doesn't
+      // feel instant, maximum 300ms so it doesn't feel sluggish.
+      const duration = Math.max(120, Math.min(300, fraction * 300));
+
+      // Force reflow so the browser commits the current swipe position as the
+      // transition start value. Without this, setting transition + transform in
+      // the same microtask can cause browsers to skip the animation.
+      void paper.offsetHeight;
+
+      const ease = 'cubic-bezier(0.0, 0, 0.2, 1)'; // decelerate — momentum feel
+      paper.style.transition = `transform ${duration}ms ${ease}`;
+      paper.style.webkitTransition = `-webkit-transform ${duration}ms ${ease}`;
+      paper.style.transform = target;
+      paper.style.webkitTransform = target;
+
+      // Call onClose after animation so React state update doesn't interfere
+      clearTimeout(closeAnimRef.current);
+      closeAnimRef.current = window.setTimeout(() => {
+        onClose?.();
+      }, duration + 10);
+      return;
+    }
     onClose?.();
-  }, [onClose]);
+  }, [onClose, placement]);
 
   // Callback that controls whether swipe gestures are recognized.
   // Also prevents a parent drawer from capturing swipes that originate
@@ -299,15 +366,38 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     [userStyles?.mask, disableBackdropClick, handleBackdropClick],
   );
 
+  // IMPORTANT: Never pass `ref` in PaperProps. In MUI v7, mergeSlotProps does
+  // { ...defaults, ...external } — a PaperProps.ref (even undefined) overwrites
+  // MUI's internal handleRef, breaking swipe-to-close. We forward paperRef
+  // through the wrapper Box's callback ref instead.
   const muiPaperProps = useMemo(
-    () => ({ ref: paperRef, sx: paperSx, 'data-swipeable-drawer': 'true' }),
-    [paperRef, paperSx],
+    () => ({ sx: paperSx, 'data-swipeable-drawer': 'true' }),
+    [paperSx],
+  );
+
+  // Forward paperRef to the MUI Paper element via the wrapper Box's parent.
+  const lastPaperRef = useRef<HTMLDivElement | null>(null);
+  const wrapperBoxRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      // The wrapper Box's parentElement is the MUI Paper element
+      const paper = node?.parentElement as HTMLDivElement | null;
+      if (paper === lastPaperRef.current) return;
+      lastPaperRef.current = paper;
+      if (!paperRef) return;
+      if (typeof paperRef === 'function') {
+        paperRef(paper);
+      } else {
+        (paperRef as React.MutableRefObject<HTMLDivElement | null>).current = paper;
+      }
+    },
+    [paperRef],
   );
 
   const bodyContent = (
     <>
       {closeButton}
       {headerElement}
+      {topDragHandle}
       <Box
         sx={{
           flex: 1,
@@ -332,6 +422,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
           {footer}
         </Box>
       )}
+      {bottomDragHandle}
       {hasExternalBottomHandle && horizontalDragHandle}
     </>
   );
@@ -352,7 +443,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
       slotProps={slotProps}
       PaperProps={muiPaperProps}
     >
-      <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <Box ref={wrapperBoxRef} sx={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {bodyContent}
       </Box>
     </MuiSwipeableDrawer>

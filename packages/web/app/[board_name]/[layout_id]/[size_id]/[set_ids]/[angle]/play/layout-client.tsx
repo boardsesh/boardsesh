@@ -10,7 +10,7 @@ import { track } from '@vercel/analytics';
 import { BoardDetails } from '@/app/lib/types';
 
 import QueueList from '@/app/components/queue-control/queue-list';
-import { useQueueActions, useQueueData } from '@/app/components/graphql-queue';
+import { useQueueActions, useQueueList } from '@/app/components/graphql-queue';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import styles from './layout-client.module.css';
 
@@ -20,7 +20,7 @@ interface PlayLayoutClientProps {
 }
 
 const QueueSidebar: React.FC<{ boardDetails: BoardDetails }> = ({ boardDetails }) => {
-  const { queue } = useQueueData();
+  const { queue } = useQueueList();
   const { setQueue } = useQueueActions();
 
   const handleClearQueue = () => {

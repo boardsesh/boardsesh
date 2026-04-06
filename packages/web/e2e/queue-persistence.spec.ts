@@ -110,7 +110,7 @@ test.describe('Queue Persistence - Local Mode', () => {
     await verifyQueueShowsClimb(page, climbName);
 
     // 5. Navigate back to climb list via bottom tab bar
-    // Longer timeout: board route re-mounts its own queue bar and restores from IndexedDB
+    // Longer timeout: board route re-mounts its own queue bar and restores from in-memory bridge state
     await bottomTabButton(page, 'Climb', true).click();
     await expect(page).toHaveURL(/\/kilter\//, { timeout: 20000 });
     await verifyQueueShowsClimb(page, climbName, 15000);
@@ -139,20 +139,21 @@ test.describe('Queue Persistence - Local Mode', () => {
 });
 
 test.describe('Queue Persistence - Board Switch', () => {
-  test('queue should persist across angle changes within same board', async ({ page }) => {
+  test('queue should NOT persist across full page navigations (no IndexedDB persistence)', async ({ page }) => {
     const boardUrl1 = '/kilter/original/12x12-square/screw_bolt/40/list';
     const boardUrl2 = '/kilter/original/12x12-square/screw_bolt/45/list'; // Different angle
 
     // Navigate to first board and add a climb
     await page.goto(boardUrl1);
     await waitForBoardPage(page);
-    const climbName = await addClimbToQueue(page);
+    await addClimbToQueue(page);
 
-    // Navigate to different angle
+    // Full page navigation destroys in-memory state; queue is not persisted to IndexedDB
     await page.goto(boardUrl2);
     await waitForBoardPage(page);
 
-    // Queue bar should still show the same climb (queue bridge persists across angle changes)
-    await verifyQueueShowsClimb(page, climbName);
+    // Queue bar should NOT be visible (queue lost on full page reload)
+    const bar = page.locator(queueControlBar);
+    await expect(bar).not.toBeVisible({ timeout: 3000 });
   });
 });

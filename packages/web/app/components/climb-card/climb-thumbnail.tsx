@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -17,22 +17,22 @@ type ClimbThumbnailProps = {
   preferImageLayers?: boolean;
 };
 
-const ClimbThumbnail = ({
+const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(({
   boardDetails,
   currentClimb,
   enableNavigation = false,
   onNavigate,
   maxHeight,
   preferImageLayers = false,
-}: ClimbThumbnailProps) => {
+}) => {
   const pathname = usePathname();
   const canvasReady = useCanvasRendererReady();
 
-  const boardStyle: React.CSSProperties = {
+  const boardStyle = useMemo<React.CSSProperties>(() => ({
     aspectRatio: `${boardDetails.boardWidth} / ${boardDetails.boardHeight}`,
     maxHeight: maxHeight ?? '10vh',
     width: '100%',
-  };
+  }), [boardDetails.boardWidth, boardDetails.boardHeight, maxHeight]);
 
   let renderContent: React.ReactNode = null;
   if (currentClimb) {
@@ -78,6 +78,33 @@ const ClimbThumbnail = ({
   }
 
   return <div>{renderContent}</div>;
-};
+}, (prev, next) => {
+  // Compare boardDetails by reference
+  if (prev.boardDetails !== next.boardDetails) return false;
+
+  // Compare currentClimb by display-relevant fields
+  const prevClimb = prev.currentClimb;
+  const nextClimb = next.currentClimb;
+  if (prevClimb === nextClimb) {
+    // Same reference — check remaining props
+  } else if (prevClimb == null || nextClimb == null) {
+    return false;
+  } else if (
+    prevClimb.uuid !== nextClimb.uuid ||
+    prevClimb.frames !== nextClimb.frames ||
+    prevClimb.mirrored !== nextClimb.mirrored
+  ) {
+    return false;
+  }
+
+  return (
+    prev.enableNavigation === next.enableNavigation &&
+    prev.maxHeight === next.maxHeight &&
+    prev.preferImageLayers === next.preferImageLayers
+    // onNavigate intentionally excluded — callback stability not guaranteed
+  );
+});
+
+ClimbThumbnail.displayName = 'ClimbThumbnail';
 
 export default ClimbThumbnail;

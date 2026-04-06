@@ -12,7 +12,7 @@ import CloudOffOutlined from '@mui/icons-material/CloudOffOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import OpenInFullOutlined from '@mui/icons-material/OpenInFullOutlined';
 import { track } from '@vercel/analytics';
-import { useQueueActions, useQueueData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
 import NextClimbButton from './next-climb-button';
 import { usePathname, useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -93,15 +93,9 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const isViewPage = pathname.includes('/view/');
   const isListPage = pathname.includes('/list');
   const isPlayPage = pathname.includes('/play/');
-  const {
-    currentClimb,
-    queue,
-    viewOnlyMode,
-    connectionState,
-    sessionId,
-    isDisconnected,
-    users,
-  } = useQueueData();
+  const { currentClimb } = useCurrentClimb();
+  const { queue } = useQueueList();
+  const { viewOnlyMode, connectionState, sessionId, isDisconnected, users } = useSessionData();
   const {
     mirrorClimb,
     setQueue,
@@ -131,8 +125,8 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // When truly offline (browser has no network), show normal controls with an offline indicator instead.
   const isReconnecting = !!sessionId && !isDisconnected && (connectionState === 'reconnecting' || connectionState === 'stale' || connectionState === 'error');
 
-  const nextClimb = getNextClimbQueueItem();
-  const previousClimb = getPreviousClimbQueueItem();
+  const nextClimb = useMemo(() => getNextClimbQueueItem(), [getNextClimbQueueItem, queue, currentClimb]);
+  const previousClimb = useMemo(() => getPreviousClimbQueueItem(), [getPreviousClimbQueueItem, queue, currentClimb]);
   const shouldNavigate = isViewPage || isPlayPage;
 
   // Build URL for a climb item (for navigation on view/play pages)
@@ -242,7 +236,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     delayNavigation: true,
   });
 
-  const getPlayUrl = () => {
+  const playUrl = useMemo(() => {
     if (!currentClimb) return null;
 
     const { layout_name, size_name, size_description, set_names, board_name } = boardDetails;
@@ -277,9 +271,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       return `${baseUrl}?${queryString}`;
     }
     return baseUrl;
-  };
-
-  const playUrl = getPlayUrl();
+  }, [currentClimb, boardDetails, angle, params, searchParams]);
 
   const handleClearQueue = () => {
     setQueue([]);

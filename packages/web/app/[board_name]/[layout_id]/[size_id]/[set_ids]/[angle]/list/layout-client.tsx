@@ -13,7 +13,7 @@ import { BoardDetails } from '@/app/lib/types';
 import dynamic from 'next/dynamic';
 
 import { getImageUrl } from '@/app/components/board-renderer/util';
-import { useQueueActions, useQueueData } from '@/app/components/graphql-queue';
+import { useQueueActions, useQueueList } from '@/app/components/graphql-queue';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import styles from './layout-client.module.css';
@@ -30,7 +30,7 @@ interface ListLayoutClientProps {
 
 // Isolated component for the queue tab label - subscribes to context independently
 const QueueTabLabel: React.FC = () => {
-  const { queue } = useQueueData();
+  const { queue } = useQueueList();
   return (
     <Badge badgeContent={queue.length} max={99} invisible={queue.length === 0} color="primary" sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
       Queue
@@ -40,7 +40,7 @@ const QueueTabLabel: React.FC = () => {
 
 // Isolated component for the queue tab content - subscribes to context independently
 const QueueTabContent: React.FC<{ boardDetails: BoardDetails }> = ({ boardDetails }) => {
-  const { queue } = useQueueData();
+  const { queue } = useQueueList();
   const { setQueue } = useQueueActions();
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
 

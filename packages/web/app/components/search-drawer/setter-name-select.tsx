@@ -5,7 +5,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useUISearchParams } from '../queue-control/ui-searchparams-provider';
-import { useQueueData } from '../graphql-queue';
+import { useSearchData } from '../graphql-queue';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { constructSetterStatsUrl } from '@/app/lib/url-utils';
 
@@ -26,7 +26,7 @@ const MIN_SEARCH_LENGTH = 2; // Only search when user has typed at least 2 chara
 
 const SetterNameSelect = () => {
   const { uiSearchParams, updateFilters } = useUISearchParams();
-  const { parsedParams } = useQueueData();
+  const { parsedParams } = useSearchData();
   const [searchValue, setSearchValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 

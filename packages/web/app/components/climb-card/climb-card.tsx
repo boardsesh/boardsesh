@@ -17,6 +17,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
+import { useIsClimbSelected } from '../board-page/selected-climb-store';
 
 type ClimbCardProps = {
   climb?: Climb;
@@ -25,7 +26,6 @@ type ClimbCardProps = {
   onCoverClick?: () => void;
   onCoverDoubleClick?: () => void;
   preferImageLayers?: boolean;
-  selected?: boolean;
   /** When true, the card is visually dimmed (greyed out) but still interactive */
   unsupported?: boolean;
   actions?: React.JSX.Element[];
@@ -63,7 +63,6 @@ function ClimbCardWithActions({
   onCoverClick,
   onCoverDoubleClick,
   preferImageLayers,
-  selected,
   unsupported,
 }: {
   climb: Climb;
@@ -71,12 +70,12 @@ function ClimbCardWithActions({
   onCoverClick?: () => void;
   onCoverDoubleClick?: () => void;
   preferImageLayers?: boolean;
-  selected?: boolean;
   unsupported?: boolean;
 }) {
   const pathname = usePathname();
   const { mode } = useColorMode();
   const isDark = mode === 'dark';
+  const selected = useIsClimbSelected(climb.uuid);
 
   const {
     handleDoubleTap,
@@ -148,12 +147,12 @@ const ClimbCardStatic = React.memo(
     onCoverClick,
     onCoverDoubleClick,
     preferImageLayers,
-    selected,
     actions,
     expandedContent,
   }: ClimbCardProps) => {
     const { mode } = useColorMode();
     const isDark = mode === 'dark';
+    const selected = useIsClimbSelected(climb?.uuid ?? '');
     const cover = (
       <ClimbCardCover
         climb={climb}
@@ -197,8 +196,6 @@ const ClimbCardStatic = React.memo(
   (prevProps, nextProps) => {
     // Compare climb by uuid (stable identifier)
     if (prevProps.climb?.uuid !== nextProps.climb?.uuid) return false;
-    // Compare selected state
-    if (prevProps.selected !== nextProps.selected) return false;
     // Compare boardDetails by reference (stable from server) or by key identifiers
     if (prevProps.boardDetails !== nextProps.boardDetails) {
       // Fallback: compare by stable identifiers if references differ
@@ -236,7 +233,7 @@ ClimbCardStatic.displayName = 'ClimbCardStatic';
  * - When no climb, shows loading state
  */
 function ClimbCard(props: ClimbCardProps) {
-  const { climb, boardDetails, onCoverClick, onCoverDoubleClick, selected, unsupported, actions, expandedContent } =
+  const { climb, boardDetails, onCoverClick, onCoverDoubleClick, unsupported, actions, expandedContent } =
     props;
   const { preferImageLayers } = props;
 
@@ -249,7 +246,6 @@ function ClimbCard(props: ClimbCardProps) {
         onCoverClick={onCoverClick}
         onCoverDoubleClick={onCoverDoubleClick}
         preferImageLayers={preferImageLayers}
-        selected={selected}
         actions={actions}
         expandedContent={expandedContent}
       />
@@ -266,7 +262,6 @@ function ClimbCard(props: ClimbCardProps) {
         onCoverClick={onCoverClick}
         onCoverDoubleClick={onCoverDoubleClick}
         preferImageLayers={preferImageLayers}
-        selected={selected}
         unsupported={unsupported}
       />
     );
@@ -280,7 +275,6 @@ function ClimbCard(props: ClimbCardProps) {
       onCoverClick={onCoverClick}
       onCoverDoubleClick={onCoverDoubleClick}
       preferImageLayers={preferImageLayers}
-      selected={selected}
       actions={[]}
     />
   );

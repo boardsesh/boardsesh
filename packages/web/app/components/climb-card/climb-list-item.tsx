@@ -23,6 +23,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
+import { useIsClimbSelected } from '../board-page/selected-climb-store';
 import styles from './climb-list-item.module.css';
 
 const SwipeableDrawer = dynamic(() => import('../swipeable-drawer/swipeable-drawer'), { ssr: false });
@@ -147,6 +148,7 @@ export type SwipeActionOverride = {
 type ClimbListItemProps = {
   climb: Climb;
   boardDetails: BoardDetails;
+  /** Override selected state (e.g. in queue drawer). When omitted, subscribes to SelectionStoreContext. */
   selected?: boolean;
   /** When true, the item is visually dimmed (greyed out) but still interactive */
   unsupported?: boolean;
@@ -185,7 +187,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
   ({
     climb,
     boardDetails,
-    selected,
+    selected: selectedOverride,
     unsupported,
     disableSwipe,
     onSelect,
@@ -204,6 +206,10 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
   }) => {
     const pathname = usePathname();
     const isDark = useIsDarkMode();
+    // Subscribe to selection store — only re-renders when THIS item's selected state changes.
+    // When `selectedOverride` is provided (e.g. queue drawer), use that instead.
+    const storeSelected = useIsClimbSelected(climb.uuid);
+    const selected = selectedOverride ?? storeSelected;
     // When parent provides both drawer callbacks, skip local drawers entirely.
     // Both must be present to ensure the parent handles all drawer interactions.
     const hasParentDrawers = Boolean(onOpenActions && onOpenPlaylistSelector);
@@ -388,7 +394,10 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       }
     }, [onOpenActions, climb]);
 
-    const excludeActions = getExcludedClimbActions(boardDetails.board_name, 'list');
+    const excludeActions = useMemo(
+      () => getExcludedClimbActions(boardDetails.board_name, 'list'),
+      [boardDetails.board_name],
+    );
 
     // Memoize style objects to prevent recreation on every render
     const containerStyle = useMemo(
@@ -453,6 +462,19 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       [titleProps, climb.uuid, isFavorited],
     );
 
+    // Memoize right action layer styles to avoid inline object creation per render
+    const rightActionDefaultLayerStyle = useMemo(
+      () => swipeLeftConfirmed
+        ? { ...rightActionLayerDefaultStyle, opacity: 0 }
+        : rightActionLayerDefaultStyle,
+      [swipeLeftConfirmed],
+    );
+
+    const rightActionConfirmedLayerStyle = useMemo(
+      () => ({ ...rightActionLayerConfirmedStyle, opacity: swipeLeftConfirmed ? 1 : 0 }),
+      [swipeLeftConfirmed],
+    );
+
     return (
       <>
         <div style={containerStyle}>
@@ -478,23 +500,11 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
               ) : (
                 <div ref={rightActionRef} style={defaultRightActionStyle}>
                   {/* Default layer (Add icon) — opacity driven by swipe gesture via ref */}
-                  <div
-                    ref={rightActionLayerRef}
-                    style={{
-                      ...rightActionLayerDefaultStyle,
-                      ...(swipeLeftConfirmed ? { opacity: 0 } : {}),
-                    }}
-                  >
+                  <div ref={rightActionLayerRef} style={rightActionDefaultLayerStyle}>
                     <AddOutlined style={iconStyle} />
                   </div>
                   {/* Confirmed layer (Check icon) — crossfades in via direct DOM manipulation */}
-                  <div
-                    ref={rightActionConfirmedLayerRef}
-                    style={{
-                      ...rightActionLayerConfirmedStyle,
-                      opacity: swipeLeftConfirmed ? 1 : 0,
-                    }}
-                  >
+                  <div ref={rightActionConfirmedLayerRef} style={rightActionConfirmedLayerStyle}>
                     <CheckOutlined style={iconStyle} />
                   </div>
                 </div>

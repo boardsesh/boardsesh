@@ -20,16 +20,19 @@ import { trackQueueOperation, trackQueueOperationError, type QueueOperationMode 
 
 import { useSessionIdManagement } from './hooks/use-session-id-management';
 import { useQueueRestoration } from './hooks/use-queue-restoration';
-import { useQueueStorageSync } from './hooks/use-queue-storage-sync';
 import { useQueueEventSubscription } from './hooks/use-queue-event-subscription';
 import { usePendingUpdateCleanup } from './hooks/use-pending-update-cleanup';
 import { useMutationGuard } from './hooks/use-mutation-guard';
 import { useOfflineQueueBuffer } from './hooks/use-offline-queue-buffer';
 import { useOfflineReconciliation } from './hooks/use-offline-reconciliation';
-import type { GraphQLQueueContextType, GraphQLQueueActionsType, GraphQLQueueDataType, GraphQLQueueContextProps } from './types';
+import type {
+  GraphQLQueueContextType, GraphQLQueueActionsType, GraphQLQueueDataType, GraphQLQueueContextProps,
+  CurrentClimbDataType, QueueListDataType, SearchDataType, SessionDataType,
+} from './types';
 
 // Re-export types so direct importers still work
 export type { GraphQLQueueContextType, GraphQLQueueActionsType, GraphQLQueueDataType } from './types';
+export type { CurrentClimbDataType, QueueListDataType, SearchDataType, SessionDataType } from './types';
 
 const createClimbQueueItem = (
   climb: Climb,
@@ -49,6 +52,12 @@ export const QueueActionsContext = createContext<GraphQLQueueActionsType | undef
 export const QueueDataContext = createContext<GraphQLQueueDataType | undefined>(undefined);
 // Combined context for backward compatibility
 export const QueueContext = createContext<GraphQLQueueContextType | undefined>(undefined);
+
+// Fine-grained contexts for targeted subscriptions (reduces re-render cascade)
+export const CurrentClimbContext = createContext<CurrentClimbDataType | undefined>(undefined);
+export const QueueListContext = createContext<QueueListDataType | undefined>(undefined);
+export const SearchContext = createContext<SearchDataType | undefined>(undefined);
+export const SessionContext = createContext<SessionDataType | undefined>(undefined);
 
 export const GraphQLQueueProvider = ({ parsedParams, boardDetails, children, baseBoardPath: propsBaseBoardPath }: GraphQLQueueContextProps) => {
   const searchParamsHook = useSearchParams();
@@ -75,8 +84,8 @@ export const GraphQLQueueProvider = ({ parsedParams, boardDetails, children, bas
     currentClimbQueueItem: state.currentClimbQueueItem,
   });
 
-  // --- Queue restoration ---
-  const { hasRestored } = useQueueRestoration({
+  // --- Queue restoration (from in-memory bridge state or party session) ---
+  useQueueRestoration({
     isPersistentSessionActive,
     sessionId,
     baseBoardPath,
@@ -145,19 +154,6 @@ export const GraphQLQueueProvider = ({ parsedParams, boardDetails, children, bas
     persistentSession,
     currentQueue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
-  });
-
-  // --- Queue storage sync ---
-  useQueueStorageSync({
-    hasRestored,
-    isPersistentSessionActive,
-    sessionId,
-    queue: state.queue,
-    currentClimbQueueItem: state.currentClimbQueueItem,
-    baseBoardPath,
-    boardDetails,
-    isDisconnected,
-    persistentSession,
   });
 
   // --- Queue event subscription ---
@@ -295,33 +291,26 @@ export const GraphQLQueueProvider = ({ parsedParams, boardDetails, children, bas
     }
   }, []);
 
-  const setCurrentClimb = useCallback(async (climb: Climb) => {
+  const setCurrentClimb = useCallback((climb: Climb) => {
     const startTime = performance.now();
     const r = latestRef.current;
     if (r.guardMutation()) return;
     const mode: QueueOperationMode = !r.isPersistentSessionActive
       ? 'local' : r.isDisconnected ? 'party-offline' : 'party';
     const newItem = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
-    r.dispatch({ type: 'SET_CURRENT_CLIMB', payload: newItem });
+    const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
+    r.dispatch({ type: 'DELTA_UPDATE_CURRENT_CLIMB', payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true, correlationId } });
     if (r.isDisconnected && r.isPersistentSessionActive) {
       r.offlineBuffer.bufferAddition(newItem);
       trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
     } else if (r.hasConnected && r.isPersistentSessionActive) {
-      const previousQueue = [...r.state.queue];
-      const previousCurrentClimb = r.state.currentClimbQueueItem;
-      const currentIndex = r.state.currentClimbQueueItem
-        ? r.state.queue.findIndex((queueItem: ClimbQueueItem) => queueItem.uuid === r.state.currentClimbQueueItem?.uuid)
-        : -1;
-      const position = currentIndex === -1 ? undefined : currentIndex + 1;
-      try {
-        await r.persistentSession.addQueueItem(newItem, position);
-        await r.persistentSession.setCurrentClimb(newItem, false);
-        trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
-      } catch (error: unknown) {
-        console.error('Failed to set current climb, rolling back:', error);
-        r.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: previousQueue, currentClimbQueueItem: previousCurrentClimb } });
-        trackQueueOperationError('setCurrentClimb', mode);
-      }
+      r.persistentSession.setCurrentClimb(newItem, true, correlationId)
+        .then(() => trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode))
+        .catch((error: unknown) => {
+          console.error('Failed to set current climb:', error);
+          if (correlationId) r.dispatch({ type: 'CLEANUP_PENDING_UPDATE', payload: { correlationId } });
+          trackQueueOperationError('setCurrentClimb', mode);
+        });
     } else {
       trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
     }
@@ -504,16 +493,62 @@ export const GraphQLQueueProvider = ({ parsedParams, boardDetails, children, bas
     [dataValue, actionsValue],
   );
 
+  // --- Fine-grained context values (each only changes when its specific fields change) ---
+  const currentClimbValue: CurrentClimbDataType = useMemo(() => ({
+    currentClimbQueueItem: state.currentClimbQueueItem,
+    currentClimb: state.currentClimbQueueItem?.climb || null,
+  }), [state.currentClimbQueueItem]);
+
+  const queueListValue: QueueListDataType = useMemo(() => ({
+    queue: state.queue,
+    suggestedClimbs,
+  }), [state.queue, suggestedClimbs]);
+
+  const searchValue: SearchDataType = useMemo(() => ({
+    climbSearchParams: state.climbSearchParams,
+    climbSearchResults, totalSearchResultCount, hasMoreResults,
+    isFetchingClimbs, isFetchingNextPage,
+    hasDoneFirstFetch: state.hasDoneFirstFetch,
+    parsedParams,
+  }), [
+    state.climbSearchParams, state.hasDoneFirstFetch,
+    climbSearchResults, totalSearchResultCount, hasMoreResults,
+    isFetchingClimbs, isFetchingNextPage, parsedParams,
+  ]);
+
+  const sessionValue: SessionDataType = useMemo(() => ({
+    viewOnlyMode, isSessionActive, sessionId,
+    sessionSummary,
+    sessionGoal: isPersistentSessionActive ? (persistentSession.session?.goal ?? null) : null,
+    connectionState, canMutate, isDisconnected,
+    users, clientId, isLeader,
+    isBackendMode: !!backendUrl,
+    hasConnected, connectionError,
+  }), [
+    viewOnlyMode, isSessionActive, sessionId, sessionSummary,
+    isPersistentSessionActive, persistentSession.session?.goal,
+    connectionState, canMutate, isDisconnected, users, clientId, isLeader,
+    backendUrl, hasConnected, connectionError,
+  ]);
+
   return (
     <QueueActionsContext.Provider value={actionsValue}>
       <QueueDataContext.Provider value={dataValue}>
         <QueueContext.Provider value={contextValue}>
-          <FavoritesProvider {...favoritesProviderProps}>
-            <PlaylistsProvider {...playlistsProviderProps}>
-              {children}
-            </PlaylistsProvider>
-          </FavoritesProvider>
-          <SessionSummaryDialog summary={sessionSummary} onDismiss={stableDismissSessionSummary} />
+          <CurrentClimbContext.Provider value={currentClimbValue}>
+            <QueueListContext.Provider value={queueListValue}>
+              <SearchContext.Provider value={searchValue}>
+                <SessionContext.Provider value={sessionValue}>
+                  <FavoritesProvider {...favoritesProviderProps}>
+                    <PlaylistsProvider {...playlistsProviderProps}>
+                      {children}
+                    </PlaylistsProvider>
+                  </FavoritesProvider>
+                  <SessionSummaryDialog summary={sessionSummary} onDismiss={stableDismissSessionSummary} />
+                </SessionContext.Provider>
+              </SearchContext.Provider>
+            </QueueListContext.Provider>
+          </CurrentClimbContext.Provider>
         </QueueContext.Provider>
       </QueueDataContext.Provider>
     </QueueActionsContext.Provider>
@@ -562,3 +597,45 @@ export const useOptionalQueueContext = (): GraphQLQueueContextType | null => {
 
 // Re-export the hook with the standard name for easier migration
 export { useGraphQLQueueContext as useQueueContext };
+
+// --- Fine-grained hooks (subscribe to only what you need) ---
+
+export const useCurrentClimb = (): CurrentClimbDataType => {
+  const context = useContext(CurrentClimbContext);
+  if (!context) {
+    throw new Error('useCurrentClimb must be used within a GraphQLQueueProvider');
+  }
+  return context;
+};
+
+export const useOptionalCurrentClimb = (): CurrentClimbDataType | null => {
+  return useContext(CurrentClimbContext) ?? null;
+};
+
+export const useQueueList = (): QueueListDataType => {
+  const context = useContext(QueueListContext);
+  if (!context) {
+    throw new Error('useQueueList must be used within a GraphQLQueueProvider');
+  }
+  return context;
+};
+
+export const useSearchData = (): SearchDataType => {
+  const context = useContext(SearchContext);
+  if (!context) {
+    throw new Error('useSearchData must be used within a GraphQLQueueProvider');
+  }
+  return context;
+};
+
+export const useSessionData = (): SessionDataType => {
+  const context = useContext(SessionContext);
+  if (!context) {
+    throw new Error('useSessionData must be used within a GraphQLQueueProvider');
+  }
+  return context;
+};
+
+export const useOptionalSessionData = (): SessionDataType | null => {
+  return useContext(SessionContext) ?? null;
+};

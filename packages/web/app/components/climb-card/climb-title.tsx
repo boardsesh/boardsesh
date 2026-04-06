@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import CopyrightOutlined from '@mui/icons-material/CopyrightOutlined';
@@ -48,11 +48,125 @@ export type ClimbTitleProps = {
   favorited?: boolean;
 };
 
+// --- Static sx objects hoisted to module scope (no reactive deps) ---
+
+const noClimbSx = {
+  fontSize: themeTokens.typography.fontSize.sm,
+  fontWeight: themeTokens.typography.fontWeight.bold,
+} as const;
+
+const textOverflowSx = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+} as const;
+
+const benchmarkIconSx = {
+  marginLeft: '4px',
+  fontSize: themeTokens.typography.fontSize.xs,
+  color: themeTokens.colors.primary,
+} as const;
+
+const subtitleSx = {
+  fontSize: themeTokens.typography.fontSize.xs,
+  fontWeight: themeTokens.typography.fontWeight.normal,
+} as const;
+
+const subtitleEllipsisSx = {
+  ...subtitleSx,
+  ...textOverflowSx,
+} as const;
+
+const italicSx = { fontStyle: 'italic' } as const;
+
+const rowSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: `${themeTokens.spacing[2]}px`,
+} as const;
+
+const rowMinWidthSx = {
+  ...rowSx,
+  minWidth: 0,
+} as const;
+
+// gradePosition === 'right' layout
+const rightContainerSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: `${themeTokens.spacing[2]}px`,
+  width: '100%',
+} as const;
+
+const rightLeftColumnSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2px',
+  flex: 1,
+  minWidth: 0,
+} as const;
+
+const rightRightColumnSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: `${themeTokens.spacing[2]}px`,
+  flexShrink: 0,
+} as const;
+
+// layout === 'horizontal'
+const horizontalDefaultSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+} as const;
+
+const horizontalCenteredSx = {
+  display: 'flex',
+  alignItems: 'center',
+  position: 'relative',
+  justifyContent: 'center',
+} as const;
+
+const horizontalCenterColumnDefaultSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 0,
+  minWidth: 0,
+  alignItems: 'flex-start',
+  flex: 1,
+} as const;
+
+const horizontalCenterColumnCenteredSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 0,
+  minWidth: 0,
+  alignItems: 'center',
+} as const;
+
+const absoluteLeftSx = { position: 'absolute', left: 0 } as const;
+const absoluteRightSx = { position: 'absolute', right: 0 } as const;
+
+// default stacked layout
+const stackedDefaultSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2px',
+  alignItems: 'flex-start',
+} as const;
+
+const stackedCenteredSx = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2px',
+  alignItems: 'center',
+} as const;
+
 /**
  * Reusable component for displaying climb title and info consistently across the app.
  * Used in ClimbCard, QueueControlBar, QueueListItem, and suggested items.
  */
-const ClimbTitle: React.FC<ClimbTitleProps> = ({
+const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
   climb,
   showAngle = false,
   showSetterInfo = false,
@@ -68,40 +182,50 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
 }) => {
   const isDark = useIsDarkMode();
 
+  const resolvedSubtitleSx = ellipsis ? subtitleEllipsisSx : subtitleSx;
+
+  // Derived values — safe to compute even when climb is null (used after the guard below)
+  const displayDifficulty = climb?.communityGrade || climb?.difficulty;
+  const vGrade = formatVGrade(displayDifficulty);
+  const nameFontSize = titleFontSize ?? themeTokens.typography.fontSize.sm;
+  const gradeColor = vGrade ? getSoftVGradeColor(vGrade, isDark) : undefined;
+
+  // ALL useMemo hooks must be called unconditionally (before any early return)
+  const nameSx = useMemo(() => ({
+    fontSize: nameFontSize,
+    fontWeight: themeTokens.typography.fontWeight.bold,
+    ...(ellipsis ? textOverflowSx : {}),
+  }), [nameFontSize, ellipsis]);
+
+  const largeGradeSx = useMemo(() => ({
+    fontSize: nameFontSize,
+    fontWeight: themeTokens.typography.fontWeight.bold,
+    lineHeight: 1,
+    color: gradeColor ?? 'text.secondary',
+  }), [nameFontSize, gradeColor]);
+
+  const setterSx = useMemo(() => ({
+    ...resolvedSubtitleSx,
+    fontStyle: climb?.is_draft ? ('italic' as const) : undefined,
+  }), [resolvedSubtitleSx, climb?.is_draft]);
+
+  const fallbackGradeSx = useMemo(() => ({
+    fontSize: nameFontSize,
+    fontWeight: themeTokens.typography.fontWeight.semibold,
+    lineHeight: 1,
+  }), [nameFontSize]);
+
   if (!climb) {
     return (
-      <Typography
-        variant="body2"
-        component="span"
-        sx={{
-          fontSize: themeTokens.typography.fontSize.sm,
-          fontWeight: themeTokens.typography.fontWeight.bold,
-        }}
-      >
+      <Typography variant="body2" component="span" sx={noClimbSx}>
         No climb selected
       </Typography>
     );
   }
 
-  // Use community grade when available, otherwise fall back to original difficulty
-  const displayDifficulty = climb.communityGrade || climb.difficulty;
-
   const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
-  // A climb is a benchmark/classic if benchmark_difficulty is a positive number.
-  // Handle both string and numeric types defensively since the value may arrive
-  // as a raw number from some code paths or as a string from GraphQL.
   const benchmarkValue = climb.benchmark_difficulty != null ? Number(climb.benchmark_difficulty) : null;
   const isBenchmark = benchmarkValue !== null && benchmarkValue > 0 && !Number.isNaN(benchmarkValue);
-
-  const vGrade = formatVGrade(displayDifficulty);
-
-  const textOverflowStyles = ellipsis
-    ? {
-        whiteSpace: 'nowrap' as const,
-        overflow: 'hidden' as const,
-        textOverflow: 'ellipsis' as const,
-      }
-    : {};
 
   const renderDifficultyText = () => {
     if (hasGrade) {
@@ -109,62 +233,24 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
       return showAngle ? `${baseText} @ ${climb.angle}°` : baseText;
     }
     const projectText = showAngle ? `project @ ${climb.angle}°` : 'project';
-    return <Box component="span" sx={{ fontStyle: 'italic' }}>{projectText}</Box>;
+    return <Box component="span" sx={italicSx}>{projectText}</Box>;
   };
 
-  const nameFontSize = titleFontSize ?? themeTokens.typography.fontSize.sm;
-
   const nameElement = (
-    <Typography
-      variant="body2"
-      component="span"
-      sx={{
-        fontSize: nameFontSize,
-        fontWeight: themeTokens.typography.fontWeight.bold,
-        ...textOverflowStyles,
-      }}
-    >
+    <Typography variant="body2" component="span" sx={nameSx}>
       {climb.name}
-      {isBenchmark && (
-        <CopyrightOutlined
-          sx={{
-            marginLeft: '4px',
-            fontSize: themeTokens.typography.fontSize.xs,
-            color: themeTokens.colors.primary,
-          }}
-        />
-      )}
+      {isBenchmark && <CopyrightOutlined sx={benchmarkIconSx} />}
     </Typography>
   );
 
   const gradeElement = (
-    <Typography
-      variant="body2"
-      component="span"
-      color="text.secondary"
-      sx={{
-        fontSize: themeTokens.typography.fontSize.xs,
-        fontWeight: themeTokens.typography.fontWeight.normal,
-        ...textOverflowStyles,
-      }}
-    >
+    <Typography variant="body2" component="span" color="text.secondary" sx={resolvedSubtitleSx}>
       {renderDifficultyText()}
     </Typography>
   );
 
-  const gradeColor = vGrade ? getSoftVGradeColor(vGrade, isDark) : undefined;
-
   const largeGradeElement = vGrade && (
-    <Typography
-      variant="body2"
-      component="span"
-      sx={{
-        fontSize: nameFontSize,
-        fontWeight: themeTokens.typography.fontWeight.bold,
-        lineHeight: 1,
-        color: gradeColor ?? 'text.secondary',
-      }}
-    >
+    <Typography variant="body2" component="span" sx={largeGradeSx}>
       {vGrade}
     </Typography>
   );
@@ -174,17 +260,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
     : `By ${climb.setter_username}${climb.ascensionist_count ? ` - ${formatAscents(climb.ascensionist_count)} ascent${climb.ascensionist_count === 1 ? '' : 's'}` : ''}`;
 
   const setterElement = showSetterInfo && climb.setter_username && (
-    <Typography
-      variant="body2"
-      component="span"
-      color="text.secondary"
-      sx={{
-        fontSize: themeTokens.typography.fontSize.xs,
-        fontWeight: themeTokens.typography.fontWeight.normal,
-        fontStyle: climb.is_draft ? 'italic' : undefined,
-        ...textOverflowStyles,
-      }}
-    >
+    <Typography variant="body2" component="span" color="text.secondary" sx={setterSx}>
       {setterText}
     </Typography>
   );
@@ -210,46 +286,28 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
 
     const subtitleContent = subtitleParts.length > 0
       ? subtitleParts.join(' \u00b7 ')
-      : <Box component="span" sx={{ fontStyle: 'italic' }}>project</Box>;
+      : <Box component="span" sx={italicSx}>project</Box>;
 
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px`, width: '100%' }} className={className}>
+      <Box sx={rightContainerSx} className={className}>
         {/* Left: Name + subtitle */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+        <Box sx={rightLeftColumnSx}>
           {/* Row 1: Name with addon */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px`, minWidth: 0 }}>
+          <Box sx={rowMinWidthSx}>
             {nameElement}
             {nameAddon}
           </Box>
           {/* Row 2: Stars + setter */}
-          <Typography
-            variant="body2"
-            component="span"
-            color="text.secondary"
-            sx={{
-              fontSize: themeTokens.typography.fontSize.xs,
-              fontWeight: themeTokens.typography.fontWeight.normal,
-              ...textOverflowStyles,
-            }}
-          >
+          <Typography variant="body2" component="span" color="text.secondary" sx={resolvedSubtitleSx}>
             {subtitleContent}
           </Typography>
         </Box>
         {/* Right: rightAddon + colorized grade */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px`, flexShrink: 0 }}>
+        <Box sx={rightRightColumnSx}>
           {rightAddon}
           {largeGradeElement}
           {!vGrade && displayDifficulty && (
-            <Typography
-              variant="body2"
-              component="span"
-              color="text.secondary"
-              sx={{
-                fontSize: nameFontSize,
-                fontWeight: themeTokens.typography.fontWeight.semibold,
-                lineHeight: 1,
-              }}
-            >
+            <Typography variant="body2" component="span" color="text.secondary" sx={fallbackGradeSx}>
               {displayDifficulty}
             </Typography>
           )}
@@ -274,37 +332,28 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
     }
 
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', ...(centered ? { position: 'relative', justifyContent: 'center' } : { gap: '12px' }) }} className={className}>
+      <Box sx={centered ? horizontalCenteredSx : horizontalDefaultSx} className={className}>
         {/* Colorized V grade - absolutely positioned left when centered */}
         {largeGradeElement && (
-          <Box sx={centered ? { position: 'absolute', left: 0 } : undefined}>
+          <Box sx={centered ? absoluteLeftSx : undefined}>
             {largeGradeElement}
           </Box>
         )}
         {/* Center: Name and quality/setter stacked */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0, alignItems: centered ? 'center' : 'flex-start', ...(centered ? {} : { flex: 1 }) }}>
+        <Box sx={centered ? horizontalCenterColumnCenteredSx : horizontalCenterColumnDefaultSx}>
           {/* Row 1: Name with addon */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px` }}>
+          <Box sx={rowSx}>
             {nameElement}
             {nameAddon}
           </Box>
           {/* Row 2: Quality, setter, ascents */}
-          <Typography
-            variant="body2"
-            component="span"
-            color="text.secondary"
-            sx={{
-              fontSize: themeTokens.typography.fontSize.xs,
-              fontWeight: themeTokens.typography.fontWeight.normal,
-              ...textOverflowStyles,
-            }}
-          >
-            {secondLineContent.length > 0 ? secondLineContent.join(' · ') : <Box component="span" sx={{ fontStyle: 'italic' }}>project</Box>}
+          <Typography variant="body2" component="span" color="text.secondary" sx={resolvedSubtitleSx}>
+            {secondLineContent.length > 0 ? secondLineContent.join(' · ') : <Box component="span" sx={italicSx}>project</Box>}
           </Typography>
         </Box>
         {/* Right addon - absolutely positioned right when centered */}
         {rightAddon && (
-          <Box sx={centered ? { position: 'absolute', right: 0 } : undefined}>
+          <Box sx={centered ? absoluteRightSx : undefined}>
             {rightAddon}
           </Box>
         )}
@@ -313,9 +362,9 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: centered ? 'center' : 'flex-start' }} className={className}>
+    <Box sx={centered ? stackedCenteredSx : stackedDefaultSx} className={className}>
       {/* Row 1: Name with optional benchmark icon and addon (e.g., AscentStatus) */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: `${themeTokens.spacing[2]}px` }}>
+      <Box sx={rowSx}>
         {nameElement}
         {nameAddon}
       </Box>
@@ -325,6 +374,54 @@ const ClimbTitle: React.FC<ClimbTitleProps> = ({
       {setterElement}
     </Box>
   );
-};
+}, (prev, next) => {
+  // Fast path: same climb reference
+  if (prev.climb === next.climb) {
+    return (
+      prev.showAngle === next.showAngle &&
+      prev.showSetterInfo === next.showSetterInfo &&
+      prev.nameAddon === next.nameAddon &&
+      prev.rightAddon === next.rightAddon &&
+      prev.ellipsis === next.ellipsis &&
+      prev.className === next.className &&
+      prev.layout === next.layout &&
+      prev.centered === next.centered &&
+      prev.titleFontSize === next.titleFontSize &&
+      prev.gradePosition === next.gradePosition &&
+      prev.favorited === next.favorited
+    );
+  }
+
+  // Different climb reference — compare display-relevant fields
+  const prevClimb = prev.climb;
+  const nextClimb = next.climb;
+
+  if (prevClimb == null || nextClimb == null) return prevClimb === nextClimb;
+
+  return (
+    prevClimb.name === nextClimb.name &&
+    prevClimb.difficulty === nextClimb.difficulty &&
+    prevClimb.quality_average === nextClimb.quality_average &&
+    prevClimb.benchmark_difficulty === nextClimb.benchmark_difficulty &&
+    prevClimb.angle === nextClimb.angle &&
+    prevClimb.setter_username === nextClimb.setter_username &&
+    prevClimb.ascensionist_count === nextClimb.ascensionist_count &&
+    prevClimb.is_draft === nextClimb.is_draft &&
+    prevClimb.communityGrade === nextClimb.communityGrade &&
+    prev.showAngle === next.showAngle &&
+    prev.showSetterInfo === next.showSetterInfo &&
+    prev.nameAddon === next.nameAddon &&
+    prev.rightAddon === next.rightAddon &&
+    prev.ellipsis === next.ellipsis &&
+    prev.className === next.className &&
+    prev.layout === next.layout &&
+    prev.centered === next.centered &&
+    prev.titleFontSize === next.titleFontSize &&
+    prev.gradePosition === next.gradePosition &&
+    prev.favorited === next.favorited
+  );
+});
+
+ClimbTitle.displayName = 'ClimbTitle';
 
 export default ClimbTitle;

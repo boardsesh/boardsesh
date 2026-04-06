@@ -2,7 +2,7 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Climb, ParsedBoardRouteParameters, BoardDetails } from '@/app/lib/types';
-import { useQueueActions, useQueueData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useSearchData } from '../graphql-queue';
 import ClimbsList from './climbs-list';
 import { stabilizeClimbArrayRef } from './climb-list-utils';
 import RecentSearchPills from '../search-drawer/recent-search-pills';
@@ -22,13 +22,13 @@ const BoardPageClimbsList = ({
   set_ids,
   angle,
 }: BoardPageClimbsListProps) => {
+  const { currentClimb } = useCurrentClimb();
   const {
     climbSearchResults,
     hasMoreResults,
-    currentClimb,
     hasDoneFirstFetch,
     isFetchingClimbs,
-  } = useQueueData();
+  } = useSearchData();
   const {
     setCurrentClimb,
     addToQueue,

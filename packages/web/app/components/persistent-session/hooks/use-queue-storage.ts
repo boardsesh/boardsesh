@@ -1,14 +1,13 @@
-import { useState, useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import type { BoardDetails } from '@/app/lib/types';
-import { getStoredQueue, saveQueueState, cleanupOldQueues, getMostRecentQueue, type StoredQueueState } from '@/app/lib/queue-storage-db';
 import { getPreference } from '@/app/lib/user-preferences-db';
 import type { ActiveSessionInfo } from '../types';
-import { ACTIVE_SESSION_KEY, QUEUE_SAVE_DEBOUNCE_MS, DEBUG } from '../types';
+import { ACTIVE_SESSION_KEY, DEBUG } from '../types';
 
 interface UseQueueStorageArgs {
   activeSession: ActiveSessionInfo | null;
-  setActiveSession: Dispatch<SetStateAction<ActiveSessionInfo | null>>;
+  setActiveSession: (val: ActiveSessionInfo | null) => void;
 }
 
 export interface QueueStorageState {
@@ -26,17 +25,7 @@ export interface QueueStorageActions {
     boardPath: string,
     boardDetails: BoardDetails,
   ) => void;
-  /** Write to IndexedDB only (debounced), without triggering React state updates.
-   *  Used by useQueueStorageSync on board pages to avoid cascading re-renders
-   *  through the PersistentSessionProvider tree. */
-  persistToStorageOnly: (
-    queue: LocalClimbQueueItem[],
-    currentItem: LocalClimbQueueItem | null,
-    boardPath: string,
-    boardDetails: BoardDetails,
-  ) => void;
   clearLocalQueue: () => void;
-  loadStoredQueue: (boardPath: string) => Promise<StoredQueueState | null>;
 }
 
 export function useQueueStorage({ activeSession, setActiveSession }: UseQueueStorageArgs): QueueStorageState & QueueStorageActions {
@@ -46,33 +35,21 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
   const [localBoardDetails, setLocalBoardDetails] = useState<BoardDetails | null>(null);
   const [isLocalQueueLoaded, setIsLocalQueueLoaded] = useState(false);
 
-  // Ref for debounced IndexedDB save timer
-  const saveQueueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Ref for activeSession so callbacks have stable identity
   const activeSessionRef = useRef(activeSession);
   activeSessionRef.current = activeSession;
 
-  // Clean up old queues from IndexedDB on mount
+  // One-time cleanup: delete the old IndexedDB queue database if it exists
   useEffect(() => {
-    cleanupOldQueues(30).catch((error) => {
-      console.error('[PersistentSession] Failed to cleanup old queues:', error);
-    });
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      window.indexedDB.deleteDatabase('boardsesh-queue');
+    }
   }, []);
 
-  // Clean up debounced save timer on unmount
-  useEffect(() => {
-    return () => {
-      if (saveQueueTimeoutRef.current) {
-        clearTimeout(saveQueueTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Auto-restore session state on mount (party session OR local queue)
+  // Auto-restore session state on mount (party session only — local queues are no longer persisted)
   useEffect(() => {
     async function restoreState() {
-      // 1. Try to restore party session first (takes priority)
+      // Try to restore party session
       try {
         const persisted = await getPreference<ActiveSessionInfo>(ACTIVE_SESSION_KEY);
         if (persisted && persisted.sessionId && persisted.boardPath && persisted.boardDetails) {
@@ -85,20 +62,6 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
         console.error('[PersistentSession] Failed to restore persisted session:', error);
       }
 
-      // 2. No party session -- restore most recent local queue
-      try {
-        const stored = await getMostRecentQueue();
-        if (stored && (stored.queue.length > 0 || stored.currentClimbQueueItem)) {
-          if (DEBUG) console.log('[PersistentSession] Auto-restored most recent queue:', stored.queue.length, 'items for', stored.boardPath);
-          setLocalQueue(stored.queue);
-          setLocalCurrentClimbQueueItem(stored.currentClimbQueueItem);
-          setLocalBoardPath(stored.boardPath);
-          setLocalBoardDetails(stored.boardDetails);
-        }
-      } catch (error) {
-        console.error('[PersistentSession] Failed to auto-restore queue:', error);
-      }
-
       setIsLocalQueueLoaded(true);
     }
 
@@ -106,34 +69,7 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only on mount
 
-  // Debounced save to IndexedDB
-  const debouncedSaveToIndexedDB = useCallback(
-    (
-      newQueue: LocalClimbQueueItem[],
-      newCurrentItem: LocalClimbQueueItem | null,
-      boardPath: string,
-      boardDetails: BoardDetails,
-    ) => {
-      if (saveQueueTimeoutRef.current) {
-        clearTimeout(saveQueueTimeoutRef.current);
-      }
-
-      saveQueueTimeoutRef.current = setTimeout(() => {
-        saveQueueState({
-          boardPath,
-          queue: newQueue,
-          currentClimbQueueItem: newCurrentItem,
-          boardDetails,
-          updatedAt: Date.now(),
-        }).catch((error) => {
-          console.error('[PersistentSession] Failed to save queue to IndexedDB:', error);
-        });
-      }, QUEUE_SAVE_DEBOUNCE_MS);
-    },
-    [],
-  );
-
-  // Local queue management functions
+  // Local queue management (in-memory only)
   const setLocalQueueState = useCallback(
     (
       newQueue: LocalClimbQueueItem[],
@@ -148,26 +84,8 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
       setLocalCurrentClimbQueueItem(newCurrentItem);
       setLocalBoardPath(boardPath);
       setLocalBoardDetails(boardDetails);
-
-      debouncedSaveToIndexedDB(newQueue, newCurrentItem, boardPath, boardDetails);
     },
-    [debouncedSaveToIndexedDB],
-  );
-
-  // Storage-only persistence: schedules debounced IndexedDB write without
-  // triggering React state updates. Used by useQueueStorageSync on board pages
-  // to avoid a cascading re-render through the PersistentSessionProvider tree.
-  const persistToStorageOnly = useCallback(
-    (
-      newQueue: LocalClimbQueueItem[],
-      newCurrentItem: LocalClimbQueueItem | null,
-      boardPath: string,
-      boardDetails: BoardDetails,
-    ) => {
-      if (activeSessionRef.current) return;
-      debouncedSaveToIndexedDB(newQueue, newCurrentItem, boardPath, boardDetails);
-    },
-    [debouncedSaveToIndexedDB],
+    [],
   );
 
   const clearLocalQueue = useCallback(() => {
@@ -176,36 +94,6 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
     setLocalCurrentClimbQueueItem(null);
     setLocalBoardPath(null);
     setLocalBoardDetails(null);
-
-    if (saveQueueTimeoutRef.current) {
-      clearTimeout(saveQueueTimeoutRef.current);
-      saveQueueTimeoutRef.current = null;
-    }
-  }, []);
-
-  // Load stored queue from IndexedDB
-  const loadStoredQueue = useCallback(async (boardPath: string): Promise<StoredQueueState | null> => {
-    if (activeSessionRef.current) {
-      if (DEBUG) console.log('[PersistentSession] Skipping queue load - party session active');
-      return null;
-    }
-
-    try {
-      const stored = await getStoredQueue(boardPath);
-      if (stored) {
-        if (DEBUG) console.log('[PersistentSession] Loaded queue from IndexedDB:', stored.queue.length, 'items');
-        setLocalQueue(stored.queue);
-        setLocalCurrentClimbQueueItem(stored.currentClimbQueueItem);
-        setLocalBoardPath(stored.boardPath);
-        setLocalBoardDetails(stored.boardDetails);
-      }
-      setIsLocalQueueLoaded(true);
-      return stored;
-    } catch (error) {
-      console.error('[PersistentSession] Failed to load queue from IndexedDB:', error);
-      setIsLocalQueueLoaded(true);
-      return null;
-    }
   }, []);
 
   return {
@@ -215,8 +103,6 @@ export function useQueueStorage({ activeSession, setActiveSession }: UseQueueSto
     localBoardDetails,
     isLocalQueueLoaded,
     setLocalQueueState,
-    persistToStorageOnly,
     clearLocalQueue,
-    loadStoredQueue,
   };
 }

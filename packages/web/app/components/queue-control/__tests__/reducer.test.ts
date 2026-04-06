@@ -1072,4 +1072,126 @@ describe('queueReducer', () => {
     });
 
   });
+
+  describe('DELTA_UPDATE_CURRENT_CLIMB - insertAfterCurrent', () => {
+    it('should insert after current item position when insertAfterCurrent is true', () => {
+      const item1: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-1' };
+      const item2: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-2' };
+      const item3: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-3' };
+      const newItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithCurrent: QueueState = {
+        ...initialState,
+        queue: [item1, item2, item3],
+        currentClimbQueueItem: item2,
+      };
+
+      const result = queueReducer(stateWithCurrent, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true },
+      });
+
+      expect(result.currentClimbQueueItem).toEqual(newItem);
+      expect(result.queue).toHaveLength(4);
+      expect(result.queue).toEqual([item1, item2, newItem, item3]);
+    });
+
+    it('should append when insertAfterCurrent is true but no current item exists', () => {
+      const existingItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'existing' };
+      const newItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithQueue: QueueState = {
+        ...initialState,
+        queue: [existingItem],
+        currentClimbQueueItem: null,
+      };
+
+      const result = queueReducer(stateWithQueue, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true },
+      });
+
+      expect(result.currentClimbQueueItem).toEqual(newItem);
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue).toEqual([existingItem, newItem]);
+    });
+
+    it('should append when insertAfterCurrent is true but current item not found in queue', () => {
+      const orphanCurrent: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'orphan' };
+      const existingItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'existing' };
+      const newItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithOrphan: QueueState = {
+        ...initialState,
+        queue: [existingItem],
+        currentClimbQueueItem: orphanCurrent,
+      };
+
+      const result = queueReducer(stateWithOrphan, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true },
+      });
+
+      expect(result.currentClimbQueueItem).toEqual(newItem);
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue).toEqual([existingItem, newItem]);
+    });
+
+    it('should not add duplicate when insertAfterCurrent is true and item already in queue', () => {
+      const item1: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-1' };
+      const existingItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithItem: QueueState = {
+        ...initialState,
+        queue: [item1, existingItem],
+        currentClimbQueueItem: item1,
+      };
+
+      const result = queueReducer(stateWithItem, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: existingItem, shouldAddToQueue: true, insertAfterCurrent: true },
+      });
+
+      expect(result.queue).toHaveLength(2);
+    });
+
+    it('should still append when insertAfterCurrent is false', () => {
+      const item1: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-1' };
+      const item2: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-2' };
+      const newItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithCurrent: QueueState = {
+        ...initialState,
+        queue: [item1, item2],
+        currentClimbQueueItem: item1,
+      };
+
+      const result = queueReducer(stateWithCurrent, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: false },
+      });
+
+      expect(result.queue).toEqual([item1, item2, newItem]);
+    });
+
+    it('should insert after last item when current is at end of queue', () => {
+      const item1: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-1' };
+      const item2: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'item-2' };
+      const newItem: ClimbQueueItem = { ...mockClimbQueueItem, uuid: 'new-item' };
+
+      const stateWithCurrentAtEnd: QueueState = {
+        ...initialState,
+        queue: [item1, item2],
+        currentClimbQueueItem: item2,
+      };
+
+      const result = queueReducer(stateWithCurrentAtEnd, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true },
+      });
+
+      expect(result.queue).toEqual([item1, item2, newItem]);
+      expect(result.currentClimbQueueItem).toEqual(newItem);
+    });
+  });
 });

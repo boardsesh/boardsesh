@@ -10,6 +10,10 @@ import { useWakeLock } from './use-wake-lock';
 import type { BluetoothAdapter } from '@/app/lib/ble/types';
 import { createBluetoothAdapter } from '@/app/lib/ble/adapter-factory';
 
+// Module-level cache for LED placements loader to avoid repeated dynamic import overhead
+type GetLedPlacementsFn = (boardName: string, layoutId: number, sizeId: number) => Record<number, number>;
+let cachedGetLedPlacements: GetLedPlacementsFn | null = null;
+
 export const convertToMirroredFramesString = (frames: string, holdsData: HoldRenderData[]): string => {
   // Create a map for quick lookup of mirroredHoldId
   const holdIdToMirroredIdMap = new Map<number, number>();
@@ -65,9 +69,14 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
       if (!adapterRef.current || !frames || !boardDetails) return;
 
       let framesToSend = frames;
-      // Lazy-load LED placements data (~50KB) only when actually sending to board
-      const { getLedPlacements } = await import('@/app/lib/__generated__/led-placements-data');
-      const placementPositions = getLedPlacements(boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id);
+      // Lazy-load LED placements data (~50KB) only when actually sending to board.
+      // Cache at module level so the dynamic import only runs once.
+      if (!cachedGetLedPlacements) {
+        const mod = await import('@/app/lib/__generated__/led-placements-data');
+        cachedGetLedPlacements = mod.getLedPlacements as GetLedPlacementsFn;
+      }
+      const getLedPlacementsFn = cachedGetLedPlacements;
+      const placementPositions = getLedPlacementsFn(boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id);
 
       if (Object.keys(placementPositions).length === 0) {
         console.error(

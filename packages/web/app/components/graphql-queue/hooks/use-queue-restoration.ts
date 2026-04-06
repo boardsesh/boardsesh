@@ -14,10 +14,6 @@ interface UseQueueRestorationParams {
     localBoardPath: string | null;
     localQueue: { climb: unknown; uuid: string }[];
     localCurrentClimbQueueItem: { climb: unknown; uuid: string } | null;
-    loadStoredQueue: (boardPath: string) => Promise<{
-      queue: { climb: unknown; uuid: string }[];
-      currentClimbQueueItem: { climb: unknown; uuid: string } | null;
-    } | null>;
     clearLocalQueue: () => void;
     localBoardDetails: unknown;
   };
@@ -25,7 +21,7 @@ interface UseQueueRestorationParams {
 
 /**
  * Handles initial queue restoration from persistent session (party mode)
- * or from local IndexedDB storage (solo mode).
+ * or from in-memory local queue state (solo mode, SPA navigation).
  *
  * Returns `hasRestored` which gates storage sync to prevent overwriting
  * valid data with empty initial reducer state.
@@ -60,7 +56,7 @@ export function useQueueRestoration({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPersistentSessionActive, persistentSession.hasConnected]);
 
-  // Initialize queue state from local queue when remounting (non-party mode)
+  // Initialize queue state from in-memory local queue (SPA navigation, non-party mode)
   useEffect(() => {
     if (isPersistentSessionActive || sessionId) return;
 
@@ -80,22 +76,6 @@ export function useQueueRestoration({
       return;
     }
 
-    if (!persistentSession.isLocalQueueLoaded) {
-      persistentSession.loadStoredQueue(baseBoardPath).then((stored) => {
-        if (stored && (stored.queue.length > 0 || stored.currentClimbQueueItem)) {
-          dispatch({
-            type: 'INITIAL_QUEUE_DATA',
-            payload: {
-              queue: stored.queue as unknown as ClimbQueue,
-              currentClimbQueueItem: stored.currentClimbQueueItem as unknown as ClimbQueueItem | null,
-            },
-          });
-        }
-        setHasRestored(true);
-      });
-      return;
-    }
-
     // Local queue is loaded but empty or for a different board
     setHasRestored(true);
   // Only run on mount and when isLocalQueueLoaded changes
@@ -109,5 +89,4 @@ export function useQueueRestoration({
     }
   }, [baseBoardPath, persistentSession]);
 
-  return { hasRestored };
 }

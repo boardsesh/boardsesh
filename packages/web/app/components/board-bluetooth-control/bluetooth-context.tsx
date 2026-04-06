@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { track } from '@vercel/analytics';
 import { useBoardBluetooth } from './use-board-bluetooth';
-import { useQueueData } from '../graphql-queue';
+import { useCurrentClimb } from '../graphql-queue';
 import type { BoardDetails } from '@/app/lib/types';
 import { isCapacitor, isCapacitorWebView, waitForCapacitor, CAPACITOR_BRIDGE_TIMEOUT_MS } from '@/app/lib/ble/capacitor-utils';
 
@@ -26,7 +26,7 @@ export function BluetoothProvider({
   boardDetails: BoardDetails;
   children: React.ReactNode;
 }) {
-  const { currentClimbQueueItem } = useQueueData();
+  const { currentClimbQueueItem } = useCurrentClimb();
   const { isConnected, loading, connect, disconnect, sendFramesToBoard } =
     useBoardBluetooth({ boardDetails });
 

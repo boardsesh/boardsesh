@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useDeferredValue } from 'react';
 import MuiBadge from '@mui/material/Badge';
 import MuiButton from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -18,7 +18,7 @@ import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import { usePathname } from 'next/navigation';
-import { useQueueActions, useQueueData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
 import { ClimbActions } from '../climb-actions';
 import { useDoubleTapFavorite } from '../climb-actions/use-double-tap-favorite';
 import HeartAnimationOverlay from '../climb-card/heart-animation-overlay';
@@ -117,12 +117,21 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     setQueueScrollEl(node);
   }, []);
 
-  const {
-    currentClimb,
-    currentClimbQueueItem,
-    queue,
-    viewOnlyMode,
-  } = useQueueData();
+  // Fine-grained context hooks (only re-render when specific data changes)
+  const currentClimbData = useCurrentClimb();
+  const queueListData = useQueueList();
+  const sessionData = useSessionData();
+
+  // When the drawer is closed, defer context updates so they don't block the main
+  // thread. React will batch these into low-priority renders that yield to user input.
+  const deferredCurrentClimb = useDeferredValue(currentClimbData);
+  const deferredQueue = useDeferredValue(queueListData);
+  const deferredSession = useDeferredValue(sessionData);
+
+  // Use immediate values when open (responsive), deferred when closed (non-blocking)
+  const { currentClimb, currentClimbQueueItem } = isOpen ? currentClimbData : deferredCurrentClimb;
+  const { queue } = isOpen ? queueListData : deferredQueue;
+  const { viewOnlyMode } = isOpen ? sessionData : deferredSession;
   const {
     mirrorClimb,
     setQueue,
@@ -240,6 +249,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
 
   const handleClose = useCallback(() => {
     if (isActionsOpen || isQueueOpen || isPlaylistSelectorOpen || isTickDrawerOpen) return;
+    // Set drawerOpen false directly so React batches it with the parent state
+    // update in a single render. This avoids a multi-cycle delay that would
+    // leave the Paper sitting at the swipe position after a fling gesture.
+    setDrawerOpen(false);
     setActiveDrawer('none');
     if (window.location.hash === '#playing') {
       window.history.back();
@@ -279,18 +292,38 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
 
   const isMirrored = !!currentClimb?.mirrored;
 
-  // Keep content mounted during the close animation so the slide-out is smooth.
-  // `isOpen` drives immediate rendering; `keepMountedDuringClose` keeps content
-  // visible until the exit transition completes so the slide-out animates content.
-  const [keepMountedDuringClose, setKeepMountedDuringClose] = useState(false);
-  const showContent = isOpen || keepMountedDuringClose;
+  // Two-phase open: mount content first, then open the drawer on the next
+  // animation frame. This ensures the Slide animation runs on an already-
+  // rendered Paper instead of competing with heavy content mounting for the
+  // main thread.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showContent, setShowContent] = useState(false);
+  const openRafRef = useRef<number>(0);
 
+  // Close path: runs before paint so the Slide exit animation starts immediately
+  // (especially important after a fling where the Paper is at a mid-swipe position)
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      cancelAnimationFrame(openRafRef.current);
+      setDrawerOpen(false);
+    }
+  }, [isOpen]);
+
+  // Open path: mount content first, then open drawer after browser has painted
   useEffect(() => {
-    if (isOpen) setKeepMountedDuringClose(true);
+    if (isOpen) {
+      setShowContent(true);
+      openRafRef.current = requestAnimationFrame(() => {
+        openRafRef.current = requestAnimationFrame(() => {
+          setDrawerOpen(true);
+        });
+      });
+    }
+    return () => cancelAnimationFrame(openRafRef.current);
   }, [isOpen]);
 
   const handleTransitionEnd = useCallback((open: boolean) => {
-    if (!open) setKeepMountedDuringClose(false);
+    if (!open) setShowContent(false);
   }, []);
 
   return (
@@ -299,7 +332,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
       placement="bottom"
       height="100%"
       fullHeight
-      open={isOpen}
+      open={drawerOpen}
       onClose={handleClose}
       onTransitionEnd={handleTransitionEnd}
       keepMounted
@@ -589,8 +622,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             </Box>
           </div>
           <div className={styles.queueBodyLayout}>
-            <div 
-              ref={queueScrollCallbackRef} 
+            <div
+              ref={queueScrollCallbackRef}
               className={styles.queueScrollContainer}
               style={{ touchAction: 'pan-y' }}
             >

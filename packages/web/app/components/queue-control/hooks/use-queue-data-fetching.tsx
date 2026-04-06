@@ -192,12 +192,30 @@ export const useQueueDataFetching = ({
     [climbSearchResults, queue],
   );
 
-  // Combine and deduplicate climb UUIDs from both search results and queue
-  // Returned so callers (e.g. QueueContext) can pass to useClimbActionsData
+  // Combine and deduplicate climb UUIDs from both search results and queue.
+  // Returned so callers (e.g. QueueContext) can pass to useClimbActionsData.
+  //
+  // Stabilized with a structural-equality ref so the reference only changes when
+  // the actual set of UUIDs changes. Without this, every queue mutation (set-active,
+  // add, remove) produces a new array reference even if the UUID set is identical,
+  // which cascades through useClimbActionsData → PlaylistsProvider → every ClimbListItem.
+  const prevClimbUuidsRef = useRef<string[]>([]);
   const climbUuids = useMemo(() => {
     const searchUuids = climbSearchResults?.map((climb) => climb.uuid) || [];
-    const queueUuids = queue.map((item) => item.climb?.uuid).filter(Boolean) as string[];
-    return Array.from(new Set([...searchUuids, ...queueUuids])).sort();
+    const searchUuidSet = new Set(searchUuids);
+    // Only add queue UUIDs not already covered by search results
+    const extraQueueUuids = queue
+      .map((item) => item.climb?.uuid)
+      .filter((uuid): uuid is string => !!uuid && !searchUuidSet.has(uuid));
+    const next = [...searchUuids, ...extraQueueUuids].sort();
+
+    // Return previous reference if content hasn't changed
+    const prev = prevClimbUuidsRef.current;
+    if (prev.length === next.length && prev.every((id, i) => id === next[i])) {
+      return prev;
+    }
+    prevClimbUuidsRef.current = next;
+    return next;
   }, [climbSearchResults, queue]);
 
   const climbUuidsString = useMemo(() => JSON.stringify(climbUuids), [climbUuids]);

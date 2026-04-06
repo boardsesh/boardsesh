@@ -2,7 +2,7 @@
 
 import React, { useContext, createContext, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useQueueData } from '../graphql-queue';
+import { useSessionData } from '../graphql-queue';
 
 type ConnectedUser = {
   username: string;
@@ -20,7 +20,7 @@ const PartyContext = createContext<PartyContextType | undefined>(undefined);
 
 export const PartyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { data: session } = useSession();
-  const { users, clientId, isBackendMode, hasConnected } = useQueueData();
+  const { users, clientId, isBackendMode, hasConnected } = useSessionData();
 
   const username = session?.user?.name || '';
 

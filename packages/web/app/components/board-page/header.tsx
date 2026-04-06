@@ -11,7 +11,7 @@ import AccordionSearchForm from '../search-drawer/accordion-search-form';
 import { SearchDrawerBridgeInjector } from '../search-drawer/search-drawer-bridge-context';
 import { BoardDetails } from '@/app/lib/types';
 import { constructClimbListWithSlugs, generateLayoutSlug, generateSizeSlug, generateSetSlug } from '@/app/lib/url-utils';
-import { useQueueData } from '../graphql-queue';
+import { useCurrentClimb, useSearchData } from '../graphql-queue';
 import { useUISearchParams } from '../queue-control/ui-searchparams-provider';
 import { hasActiveFilters, getSearchPillSummary } from '../search-drawer/search-summary-utils';
 import { addRecentSearch } from '../search-drawer/recent-searches-storage';
@@ -42,7 +42,8 @@ function usePageMode(): PageMode {
 }
 
 export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable }: BoardSeshHeaderProps) {
-  const { currentClimb, totalSearchResultCount, isFetchingClimbs } = useQueueData();
+  const { currentClimb } = useCurrentClimb();
+  const { totalSearchResultCount, isFetchingClimbs } = useSearchData();
   const { uiSearchParams, clearClimbSearchParams } = useUISearchParams();
   const pageMode = usePageMode();
   const searchParams = useSearchParams();

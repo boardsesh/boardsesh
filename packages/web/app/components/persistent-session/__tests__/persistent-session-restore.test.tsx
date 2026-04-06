@@ -4,9 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { getPreference, setPreference, removePreference } from '@/app/lib/user-preferences-db';
-import { saveQueueState } from '@/app/lib/queue-storage-db';
-import type { ClimbQueueItem } from '../../queue-control/types';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardDetails } from '@/app/lib/types';
 
 // ---------------------------------------------------------------------------
 // Mock heavy dependencies that PersistentSessionProvider relies on
@@ -57,8 +55,6 @@ import { PersistentSessionProvider, usePersistentSession } from '../persistent-s
 const ACTIVE_SESSION_KEY = 'activeSession';
 const PREFS_DB_NAME = 'boardsesh-user-preferences';
 const PREFS_STORE_NAME = 'preferences';
-const QUEUE_DB_NAME = 'boardsesh-queue';
-const QUEUE_STORE_NAME = 'queues';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,31 +80,6 @@ function createTestBoardDetails(overrides?: Partial<BoardDetails>): BoardDetails
   } as BoardDetails;
 }
 
-function createTestClimbQueueItem(uuid: string): ClimbQueueItem {
-  return {
-    uuid,
-    climb: {
-      uuid: `climb-${uuid}`,
-      name: `Climb ${uuid}`,
-      setter_username: 'tester',
-      description: '',
-      frames: '',
-      angle: 40,
-      ascensionist_count: 10,
-      difficulty: '5',
-      quality_average: '3',
-      stars: 3,
-      difficulty_error: '',
-      mirrored: false,
-      benchmark_difficulty: null,
-      userAscents: 0,
-      userAttempts: 0,
-    } as Climb,
-    addedBy: null,
-    suggested: false,
-  };
-}
-
 function wrapper({ children }: { children: React.ReactNode }) {
   return <PersistentSessionProvider>{children}</PersistentSessionProvider>;
 }
@@ -129,21 +100,6 @@ beforeEach(async () => {
     });
     await prefsDb.clear(PREFS_STORE_NAME);
     prefsDb.close();
-  } catch {
-    // DB may not exist yet
-  }
-
-  // Clear queue DB
-  try {
-    const queueDb = await openDB(QUEUE_DB_NAME, 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(QUEUE_STORE_NAME)) {
-          db.createObjectStore(QUEUE_STORE_NAME);
-        }
-      },
-    });
-    await queueDb.clear(QUEUE_STORE_NAME);
-    queueDb.close();
   } catch {
     // DB may not exist yet
   }
@@ -198,33 +154,7 @@ describe('PersistentSessionProvider auto-restore on mount', () => {
     expect(result.current.activeSession).toBeNull();
   });
 
-  it('restores local queue from IndexedDB on mount', async () => {
-    const boardDetails = createTestBoardDetails();
-    const item = createTestClimbQueueItem('restored');
-
-    // Save a queue to IndexedDB before mounting the provider
-    await saveQueueState({
-      boardPath: '/kilter/1/10/1,2/40',
-      queue: [item],
-      currentClimbQueueItem: item,
-      boardDetails,
-      updatedAt: Date.now(),
-    });
-
-    const { result } = renderHook(() => usePersistentSession(), { wrapper });
-
-    await waitFor(() => {
-      expect(result.current.isLocalQueueLoaded).toBe(true);
-    });
-
-    expect(result.current.localQueue).toHaveLength(1);
-    expect(result.current.localQueue[0].uuid).toBe('restored');
-    expect(result.current.localCurrentClimbQueueItem?.uuid).toBe('restored');
-    expect(result.current.localBoardPath).toBe('/kilter/1/10/1,2/40');
-    expect(result.current.localBoardDetails).toEqual(boardDetails);
-  });
-
-  it('restores persisted party session on mount (takes priority over local queue)', async () => {
+  it('restores persisted party session on mount', async () => {
     const boardDetails = createTestBoardDetails();
     const sessionInfo = {
       sessionId: 'session-abc',
@@ -233,15 +163,7 @@ describe('PersistentSessionProvider auto-restore on mount', () => {
       parsedParams: { board_name: 'kilter' as const, layout_id: 1, size_id: 10, set_ids: [1, 2], angle: 40 },
     };
 
-    // Save both a party session AND a local queue
     await setPreference(ACTIVE_SESSION_KEY, sessionInfo);
-    await saveQueueState({
-      boardPath: '/kilter/1/10/1,2/40',
-      queue: [createTestClimbQueueItem('local')],
-      currentClimbQueueItem: null,
-      boardDetails,
-      updatedAt: Date.now(),
-    });
 
     const { result } = renderHook(() => usePersistentSession(), { wrapper });
 
@@ -251,7 +173,7 @@ describe('PersistentSessionProvider auto-restore on mount', () => {
 
     // Party session should be active
     expect(result.current.activeSession).toEqual(sessionInfo);
-    // Local queue should NOT be loaded (party session takes priority)
+    // Local queue should be empty (no IndexedDB persistence)
     expect(result.current.localQueue).toEqual([]);
   });
 

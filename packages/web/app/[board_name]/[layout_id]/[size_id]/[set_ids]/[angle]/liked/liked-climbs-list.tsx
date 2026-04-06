@@ -29,6 +29,7 @@ import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { themeTokens } from '@/app/theme/theme-config';
+import { SelectionStoreContext, useSelectionStore } from '@/app/components/board-page/selected-climb-store';
 import styles from '@/app/components/library/playlist-view.module.css';
 import listStyles from '@/app/components/board-page/climbs-list.module.css';
 
@@ -159,6 +160,7 @@ export default function LikedClimbsList({
   const { setCurrentClimb, addToQueue } = useQueueActions();
   const { showMessage } = useSnackbar();
   const [selectedClimbUuid, setSelectedClimbUuid] = useState<string | null>(null);
+  const selectionStore = useSelectionStore(selectedClimbUuid);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   useEffect(() => {
@@ -320,6 +322,7 @@ export default function LikedClimbsList({
   }
 
   return (
+    <SelectionStoreContext.Provider value={selectionStore}>
     <div className={styles.climbsSection}>
       {/* View Mode Toggle */}
       <div className={styles.viewModeToggle}>
@@ -349,7 +352,6 @@ export default function LikedClimbsList({
               <ClimbCard
                 climb={climb}
                 boardDetails={boardDetails}
-                selected={selectedClimbUuid === climb.uuid}
                 onCoverClick={climbHandlersMap.get(climb.uuid)}
               />
             </Box>
@@ -365,7 +367,6 @@ export default function LikedClimbsList({
             <ClimbListItem
               climb={climb}
               boardDetails={boardDetails}
-              selected={selectedClimbUuid === climb.uuid}
               onSelect={climbHandlersMap.get(climb.uuid)}
               onThumbnailClick={climbHandlersMap.get(climb.uuid)}
               disableThumbnailNavigation
@@ -395,5 +396,6 @@ export default function LikedClimbsList({
       {/* Shared drawers — owns its own state so open/close doesn't re-render the list */}
       <LikedDrawers ref={drawerRef} boardDetails={boardDetails} />
     </div>
+    </SelectionStoreContext.Provider>
   );
 }
