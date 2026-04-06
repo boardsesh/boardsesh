@@ -16,7 +16,7 @@
     "@capacitor/app": "^8",
     "@capacitor/browser": "^8",
     "@capacitor/core": "^8",
-    "@capacitor/geolocation": "8.1.0",
+    "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8"
   },
   "devDependencies": {
