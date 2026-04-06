@@ -413,12 +413,12 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
             <QueueContext.Provider value={effectiveContext}>
               {/* Sync queue state to iOS Live Activity (code-split, no-op on non-iOS) */}
               <LiveActivityBridge
-                queue={adapter.context.queue}
-                currentClimbQueueItem={adapter.context.currentClimbQueueItem}
-                boardDetails={adapter.boardDetails}
-                sessionId={adapter.context.sessionId}
-                isSessionActive={adapter.context.isSessionActive}
-                onSetCurrentClimb={adapter.context.setCurrentClimbQueueItem}
+                queue={effectiveContext.queue}
+                currentClimbQueueItem={effectiveContext.currentClimbQueueItem}
+                boardDetails={effectiveBoardDetails}
+                sessionId={effectiveContext.sessionId}
+                isSessionActive={effectiveContext.isSessionActive}
+                onSetCurrentClimb={effectiveContext.setCurrentClimbQueueItem}
               />
               {children}
             </QueueContext.Provider>

@@ -73,10 +73,11 @@ export function useLiveActivity({
     return () => { cancelled = true; };
   }, []);
 
-  // Start/end session — reacts to session activation, content presence, and board config.
+  // Start/end session — reacts to session activation and board config.
   // Does NOT restart when the current climb changes.
-  const hasContent = queue.length > 0 || currentClimbQueueItem !== null;
-  const shouldBeActive = isSessionActive && hasContent && stableBoardDetails !== null && available === true;
+  // No content check here: the native Live Activity shows "Loading..." until the first
+  // climb update arrives, so we start as soon as the session is active.
+  const shouldBeActive = isSessionActive && stableBoardDetails !== null && available === true;
 
   useEffect(() => {
     if (!isNativeApp() || getPlatform() !== 'ios') return;

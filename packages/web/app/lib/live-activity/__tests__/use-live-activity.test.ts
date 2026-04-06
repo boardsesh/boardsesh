@@ -224,7 +224,7 @@ describe('useLiveActivity', () => {
     await hook.unmount();
   });
 
-  it('calls endSession when queue is cleared', async () => {
+  it('keeps Live Activity running when queue is cleared but session is active', async () => {
     mockIsNativeApp.mockReturnValue(true);
     mockGetPlatform.mockReturnValue('ios');
 
@@ -247,7 +247,28 @@ describe('useLiveActivity', () => {
     });
 
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    expect(mockEndLiveActivitySession).toHaveBeenCalled();
+    // Live Activity stays running — only session deactivation ends it
+    expect(mockEndLiveActivitySession).not.toHaveBeenCalled();
+
+    await hook.unmount();
+  });
+
+  it('starts Live Activity with empty queue when session is active', async () => {
+    mockIsNativeApp.mockReturnValue(true);
+    mockGetPlatform.mockReturnValue('ios');
+
+    const hook = await renderLiveActivityHook({
+      ...defaultProps(),
+      queue: [],
+      currentClimbQueueItem: null,
+      boardDetails: makeBoardDetails(),
+      isSessionActive: true,
+      sessionId: 'test-session',
+    });
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    // Live Activity starts immediately — native side shows "Loading..."
+    expect(mockStartLiveActivitySession).toHaveBeenCalledTimes(1);
 
     await hook.unmount();
   });
