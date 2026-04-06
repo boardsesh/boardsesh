@@ -267,7 +267,6 @@ function usePersistentSessionQueueAdapter(): {
       isBackendMode: true,
       hasConnected: ps.hasConnected,
       connectionError: ps.error,
-      disconnect: ps.deactivateSession,
       isDisconnected: false,
     }),
     [
@@ -277,7 +276,6 @@ function usePersistentSessionQueueAdapter(): {
       isParty,
       ps.hasConnected,
       ps.activeSession?.sessionId,
-      ps.deactivateSession,
       ps.session?.goal,
       ps.users,
       ps.clientId,
@@ -381,7 +379,6 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
       isBackendMode: ctx.isBackendMode,
       hasConnected: ctx.hasConnected,
       connectionError: ctx.connectionError,
-      disconnect: ctx.disconnect,
       isDisconnected: ctx.isDisconnected,
     };
   }, [isInjected, adapter.dataValue, effectiveContext]);
