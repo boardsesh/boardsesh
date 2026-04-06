@@ -59,7 +59,7 @@ import {
   QueueBridgeInjector,
   useQueueBridgeBoardInfo,
 } from '../queue-bridge-context';
-import { QueueContext } from '../../graphql-queue/QueueContext';
+import { QueueContext, QueueActionsContext, QueueDataContext } from '../../graphql-queue/QueueContext';
 import type { GraphQLQueueContextType } from '../../graphql-queue/QueueContext';
 import type { BoardDetails, Climb, Angle } from '@/app/lib/types';
 import type { ClimbQueueItem } from '../types';
@@ -215,6 +215,16 @@ function createFakeQueueContext(overrides?: Partial<GraphQLQueueContextType>): G
  */
 function useTestQueueContext() {
   return React.useContext(QueueContext);
+}
+
+/** Hook to read the split QueueActionsContext */
+function useTestQueueActions() {
+  return React.useContext(QueueActionsContext);
+}
+
+/** Hook to read the split QueueDataContext */
+function useTestQueueData() {
+  return React.useContext(QueueDataContext);
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +529,48 @@ describe('queue-bridge-context', () => {
 
       // The injector's useEffect should have called updateContext
       expect(result.current.queueCtx).toBe(fakeCtx2);
+    });
+
+    it('provides disconnect through useQueueActions when injected', () => {
+      const mockDisconnect = vi.fn();
+      const fakeCtx = createFakeQueueContext({ disconnect: mockDisconnect });
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueueBridgeProvider>
+          {children}
+          <QueueContext.Provider value={fakeCtx}>
+            <QueueBridgeInjector boardDetails={bd} angle={angle} />
+          </QueueContext.Provider>
+        </QueueBridgeProvider>
+      );
+
+      const { result } = renderHook(
+        () => ({
+          actions: useTestQueueActions(),
+          data: useTestQueueData(),
+        }),
+        { wrapper },
+      );
+
+      expect(result.current.actions).toBeDefined();
+      expect(result.current.actions!.disconnect).toBe(mockDisconnect);
+      // disconnect should not be in data
+      expect((result.current.data as unknown as Record<string, unknown>)?.disconnect).toBeUndefined();
+    });
+
+    it('provides disconnect through useQueueActions in adapter mode', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueueBridgeProvider>{children}</QueueBridgeProvider>
+      );
+
+      const { result } = renderHook(
+        () => ({
+          actions: useTestQueueActions(),
+        }),
+        { wrapper },
+      );
+
+      expect(result.current.actions).toBeDefined();
+      expect(result.current.actions!.disconnect).toBe(mockDeactivateSession);
     });
 
     it('handles initially-null queueContext via deferred injection', () => {
