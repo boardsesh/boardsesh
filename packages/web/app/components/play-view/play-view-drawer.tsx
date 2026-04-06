@@ -45,9 +45,10 @@ import { renderBoard } from '@/app/lib/board-render-worker/worker-manager';
 
 
 
-/** Window with optional requestIdleCallback (not available in all browsers). */
+/** Window with optional requestIdleCallback and cancelIdleCallback (not available in all browsers). */
 type WindowWithIdleCallback = Window & {
   requestIdleCallback?: ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+  cancelIdleCallback?: ((id: number) => void) | undefined;
 };
 
 const QUEUE_DRAWER_STYLES = {
@@ -316,7 +317,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     const w = window as WindowWithIdleCallback;
     if (w.requestIdleCallback) {
       const id = w.requestIdleCallback(setReady, { timeout: 2000 });
-      return () => window.cancelIdleCallback(id);
+      return () => w.cancelIdleCallback?.(id);
     }
     const id = setTimeout(setReady, 100);
     return () => clearTimeout(id);
