@@ -72,7 +72,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
 }) => {
   // If swipeEnabled is explicitly passed, use it directly.
   // Otherwise, disable swipe when showCloseButton is explicitly false.
-  const effectiveSwipeEnabled = swipeEnabled ?? (showCloseButton !== false);
+  const effectiveSwipeEnabled = swipeEnabled ?? showCloseButton !== false;
 
   const rootClassName = userRootClassName
     ? `${styles.mobileHideClose} ${userRootClassName}`
@@ -82,22 +82,23 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
 
   const isVerticalPlacement = placement === 'top' || placement === 'bottom';
 
-  const horizontalDragHandle = useMemo(() => showDragHandle ? (
-    <div className={styles.dragHandleZoneHorizontal}>
-      <div className={styles.dragHandleBarHorizontal} />
-    </div>
-  ) : null, [showDragHandle]);
+  const horizontalDragHandle = useMemo(
+    () =>
+      showDragHandle ? (
+        <div className={styles.dragHandleZoneHorizontal}>
+          <div className={styles.dragHandleBarHorizontal} />
+        </div>
+      ) : null,
+    [showDragHandle],
+  );
 
-  const verticalDragHandle = useMemo(() => effectiveSwipeEnabled && showDragHandle ? (
-    <div
-      className={
-        placement === 'left'
-          ? styles.dragHandleZoneRight
-          : styles.dragHandleZoneLeft
-      }
-    >
-    </div>
-  ) : null, [effectiveSwipeEnabled, showDragHandle, placement]);
+  const verticalDragHandle = useMemo(
+    () =>
+      effectiveSwipeEnabled && showDragHandle ? (
+        <div className={placement === 'left' ? styles.dragHandleZoneRight : styles.dragHandleZoneLeft}></div>
+      ) : null,
+    [effectiveSwipeEnabled, showDragHandle, placement],
+  );
 
   // For bottom placement with a title:
   // Inject the drag handle into the title so it appears above the header content.
@@ -105,6 +106,32 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
 
   // For top-placed drawers, render drag handle below footer (at the bottom edge)
   const hasExternalBottomHandle = placement === 'top' && showDragHandle;
+
+  // Close button shared styles and icon
+  const closeButtonIcon = useMemo(() => {
+    const iconMap: Record<Placement, React.ReactElement> = {
+      bottom: <KeyboardArrowDownOutlined />,
+      top: <KeyboardArrowUpOutlined />,
+      left: <KeyboardArrowLeftOutlined />,
+      right: <KeyboardArrowRightOutlined />,
+    };
+    return iconMap[placement];
+  }, [placement]);
+
+  const closeButtonSx = useMemo(
+    () => ({
+      color: 'black',
+      backgroundColor: themeTokens.neutral[100],
+      '&:hover': { backgroundColor: themeTokens.neutral[200] },
+    }),
+    [],
+  );
+
+  // Determine where the close button should be rendered inline
+  // to avoid overlapping with header/footer content
+  const hasHeader = userTitle !== undefined && userTitle !== null;
+  const inlineCloseInHeader = showCloseButton !== false && hasHeader && placement !== 'top';
+  const inlineCloseInFooter = showCloseButton !== false && footer && placement === 'top';
 
   // Build the header element if title is provided
   const headerElement = useMemo(() => {
@@ -118,17 +145,30 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 1,
           padding: `${themeTokens.spacing[4]}px ${themeTokens.spacing[6]}px`,
           borderBottom: `1px solid ${themeTokens.neutral[200]}`,
           ...userStyles?.header,
         }}
       >
-        <Typography variant="h6" component="div" sx={{ flex: 1, minWidth: 0, fontWeight: themeTokens.typography.fontWeight.semibold, fontSize: themeTokens.typography.fontSize.base }}>
+        {inlineCloseInHeader && (
+          <IconButton className="drawer-close-btn" size="small" onClick={(e) => onClose?.(e)} sx={closeButtonSx}>
+            {closeButtonIcon}
+          </IconButton>
+        )}
+        <Typography
+          variant="h6"
+          component="div"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: themeTokens.typography.fontWeight.semibold,
+            fontSize: themeTokens.typography.fontSize.base,
+          }}
+        >
           {userTitle}
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {extra}
-        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>{extra}</Box>
       </Box>
     );
 
@@ -149,17 +189,11 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
         {horizontalDragHandle}
       </div>
     );
-  }, [userTitle, extra, placement, handleInHeader, horizontalDragHandle, userStyles?.header]);
+  }, [userTitle, extra, placement, handleInHeader, horizontalDragHandle, userStyles?.header, inlineCloseInHeader, onClose, closeButtonSx, closeButtonIcon]);
 
-  const closeButton = useMemo(() => {
-    if (showCloseButton === false) return null;
-
-    const iconMap: Record<Placement, React.ReactElement> = {
-      bottom: <KeyboardArrowDownOutlined />,
-      top: <KeyboardArrowUpOutlined />,
-      left: <KeyboardArrowLeftOutlined />,
-      right: <KeyboardArrowRightOutlined />,
-    };
+  // Fallback: absolute-positioned close button only when it can't be inlined
+  const absoluteCloseButton = useMemo(() => {
+    if (showCloseButton === false || inlineCloseInHeader || inlineCloseInFooter) return null;
 
     const positionMap: Record<Placement, Record<string, number | string>> = {
       bottom: { top: 8, left: 8 },
@@ -177,14 +211,13 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
           position: 'absolute',
           zIndex: 2,
           ...positionMap[placement],
-          backgroundColor: themeTokens.neutral[100],
-          '&:hover': { backgroundColor: themeTokens.neutral[200] },
+          ...closeButtonSx,
         }}
       >
-        {iconMap[placement]}
+        {closeButtonIcon}
       </IconButton>
     );
-  }, [showCloseButton, placement, onClose]);
+  }, [showCloseButton, placement, onClose, inlineCloseInHeader, inlineCloseInFooter, closeButtonSx, closeButtonIcon]);
 
   // Drag handles for top/bottom placements are rendered OUTSIDE the scrollable
   // body Box so MUI's getDomTreeShapes doesn't find a scroll container between
@@ -242,21 +275,26 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     // pass fullHeight explicitly.
     const normalizedHeight = typeof sx.height === 'string' ? sx.height.trim().toLowerCase() : '';
     const isFullHeightDrawer =
-      fullHeightProp ??
-      (normalizedHeight === '100%' || normalizedHeight === '100vh' || normalizedHeight === '100dvh');
+      fullHeightProp ?? (normalizedHeight === '100%' || normalizedHeight === '100vh' || normalizedHeight === '100dvh');
     if (isFullHeightDrawer && !sx.backgroundColor) {
       sx.backgroundColor = 'var(--semantic-background)';
     }
 
-    // Full-height bottom drawers extend to the top of the screen and need
-    // safe-area-inset-top padding to avoid rendering behind the device notch/pill.
-    // (Top/left/right anchors get this from the MUI theme overrides.)
+    // Full-height vertical drawers need explicit height (MUI auto-sizes to
+    // content) and safe-area padding so content doesn't render behind the
+    // device notch/pill or home indicator.
+    if (isFullHeightDrawer && isVerticalPlacement && !sx.height) {
+      sx.height = '100dvh';
+    }
     if (isFullHeightDrawer && placement === 'bottom' && !sx.paddingTop) {
       sx.paddingTop = 'env(safe-area-inset-top, 0px)';
     }
+    if (isFullHeightDrawer && placement === 'top' && !sx.paddingBottom) {
+      sx.paddingBottom = 'env(safe-area-inset-bottom, 0px)';
+    }
 
     return sx;
-  }, [userStyles?.wrapper, height, width, fullHeightProp]);
+  }, [userStyles?.wrapper, height, width, fullHeightProp, isVerticalPlacement, placement]);
 
   // SwipeableDrawer onClose handler.
   // When triggered by a swipe fling, the Paper is at an intermediate position
@@ -275,9 +313,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
       const isHorizontal = placement === 'left' || placement === 'right';
       const maxTranslate = isHorizontal ? paper.offsetWidth : paper.offsetHeight;
       const sign = placement === 'right' || placement === 'bottom' ? 1 : -1;
-      const target = isHorizontal
-        ? `translate(${sign * maxTranslate}px, 0)`
-        : `translate(0, ${sign * maxTranslate}px)`;
+      const target = isHorizontal ? `translate(${sign * maxTranslate}px, 0)` : `translate(0, ${sign * maxTranslate}px)`;
 
       // Calculate duration proportional to remaining distance so the animation
       // feels like it carries the fling momentum. A short fling from near the
@@ -347,10 +383,13 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     // Intentionally empty: opening is controlled by parent state
   }, []);
 
-  const slideProps = useMemo(() => ({
-    onExited: () => userOnTransitionEnd?.(false),
-    onEntered: () => userOnTransitionEnd?.(true),
-  }), [userOnTransitionEnd]);
+  const slideProps = useMemo(
+    () => ({
+      onExited: () => userOnTransitionEnd?.(false),
+      onEntered: () => userOnTransitionEnd?.(true),
+    }),
+    [userOnTransitionEnd],
+  );
 
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -370,10 +409,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
   // { ...defaults, ...external } — a PaperProps.ref (even undefined) overwrites
   // MUI's internal handleRef, breaking swipe-to-close. We forward paperRef
   // through the wrapper Box's callback ref instead.
-  const muiPaperProps = useMemo(
-    () => ({ sx: paperSx, 'data-swipeable-drawer': 'true' }),
-    [paperSx],
-  );
+  const muiPaperProps = useMemo(() => ({ sx: paperSx, 'data-swipeable-drawer': 'true' }), [paperSx]);
 
   // Forward paperRef to the MUI Paper element via the wrapper Box's parent.
   const lastPaperRef = useRef<HTMLDivElement | null>(null);
@@ -395,7 +431,7 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
 
   const bodyContent = (
     <>
-      {closeButton}
+      {absoluteCloseButton}
       {headerElement}
       {topDragHandle}
       <Box
@@ -414,12 +450,20 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
       {footer && (
         <Box
           sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
             padding: `${themeTokens.spacing[3]}px ${themeTokens.spacing[4]}px`,
             borderTop: `1px solid ${themeTokens.neutral[200]}`,
             ...userStyles?.footer,
           }}
         >
-          {footer}
+          {inlineCloseInFooter && (
+            <IconButton className="drawer-close-btn" size="small" onClick={(e) => onClose?.(e)} sx={closeButtonSx}>
+              {closeButtonIcon}
+            </IconButton>
+          )}
+          <Box sx={{ flex: 1, minWidth: 0 }}>{footer}</Box>
         </Box>
       )}
       {bottomDragHandle}
@@ -443,7 +487,10 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
       slotProps={slotProps}
       PaperProps={muiPaperProps}
     >
-      <Box ref={wrapperBoxRef} sx={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <Box
+        ref={wrapperBoxRef}
+        sx={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+      >
         {bodyContent}
       </Box>
     </MuiSwipeableDrawer>
