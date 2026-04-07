@@ -532,7 +532,7 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
     ) cc ON true
     WHERE bl.is_listed = true
       AND bps.is_listed = true
-    ORDER BY board_count DESC, total_ascents DESC, configs.board_type, bl.name
+    ORDER BY (configs.board_type = 'moonboard')::int, board_count DESC, total_ascents DESC, configs.board_type, bl.name
   `);
 
   // db.execute() returns QueryResult with .rows for neon-serverless, or an array directly for postgres-js
