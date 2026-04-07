@@ -134,8 +134,8 @@ function usePersistentSessionQueueAdapter(): {
     (item: ClimbQueueItem) => {
       const r = latestRef.current;
       if (!r.boardDetails) return;
-      const alreadyInQueue = r.queue.some(q => q.uuid === item.uuid);
-      if (alreadyInQueue && r.currentClimbQueueItem?.uuid === item.uuid) return;
+      const alreadyInQueue = r.queue.some(q => q.climb?.uuid === item.climb?.uuid);
+      if (alreadyInQueue && r.currentClimbQueueItem?.climb?.uuid === item.climb?.uuid) return;
       const newQueue = alreadyInQueue ? r.queue : [...r.queue, item];
       r.ps.setLocalQueueState(newQueue, item, r.baseBoardPath, r.boardDetails);
     },
@@ -146,6 +146,8 @@ function usePersistentSessionQueueAdapter(): {
     (climb: Climb) => {
       const r = latestRef.current;
       if (!r.boardDetails) return;
+      // Prevent the same climb from appearing in the queue twice
+      if (r.queue.some((q) => q.climb?.uuid === climb.uuid)) return;
       const newItem: ClimbQueueItem = {
         climb,
         addedBy: null,
@@ -202,6 +204,12 @@ function usePersistentSessionQueueAdapter(): {
     (climb: Climb) => {
       const r = latestRef.current;
       if (!r.boardDetails) return;
+      // If this climb is already in the queue, set it as current without adding again
+      const existing = r.queue.find(q => q.climb?.uuid === climb.uuid);
+      if (existing) {
+        r.ps.setLocalQueueState(r.queue, existing, r.baseBoardPath, r.boardDetails);
+        return;
+      }
       const newItem: ClimbQueueItem = {
         climb,
         addedBy: null,

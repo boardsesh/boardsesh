@@ -523,6 +523,28 @@ describe('queueReducer', () => {
       expect(result.queue).toHaveLength(1);
       expect(result).toBe(stateWithQueue); // Should return same state reference
     });
+
+    it('should skip adding the same climb with a different queue item uuid', () => {
+      const stateWithQueue: QueueState = {
+        ...initialState,
+        queue: [mockClimbQueueItem]
+      };
+
+      const duplicateClimbItem: ClimbQueueItem = {
+        ...mockClimbQueueItem,
+        uuid: 'queue-item-different',
+      };
+
+      const action: QueueAction = {
+        type: 'DELTA_ADD_QUEUE_ITEM',
+        payload: { item: duplicateClimbItem }
+      };
+
+      const result = queueReducer(stateWithQueue, action);
+
+      expect(result.queue).toHaveLength(1);
+      expect(result).toBe(stateWithQueue);
+    });
   });
 
   describe('DELTA_REMOVE_QUEUE_ITEM', () => {

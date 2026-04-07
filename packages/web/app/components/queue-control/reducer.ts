@@ -130,8 +130,11 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
         return state;
       }
 
-      // Idempotent insert: checks by item.uuid (NOT climb.uuid - the same climb CAN appear
-      // multiple times in the queue, e.g., user adds it again after completing it)
+      // Prevent the same climb from appearing in the queue twice
+      if (state.queue.some((q) => q.climb?.uuid === item.climb?.uuid)) {
+        return state;
+      }
+
       const newQueue = insertQueueItemIdempotent(state.queue, item, position);
       if (newQueue === state.queue) {
         return state;
@@ -226,10 +229,8 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
 
       let newQueue = state.queue;
 
-      // Add to queue if requested and this queue item doesn't already exist
-      // Check by item.uuid for idempotency - the same climb CAN appear multiple times
-      // (e.g., user adds it again after completing it)
-      if (item && item.climb && shouldAddToQueue && !state.queue.find(qItem => qItem?.uuid === item.uuid)) {
+      // Add to queue if requested and the climb isn't already in the queue
+      if (item && item.climb && shouldAddToQueue && !state.queue.some(qItem => qItem.climb?.uuid === item.climb?.uuid)) {
         if (insertAfterCurrent && state.currentClimbQueueItem) {
           const currentIndex = state.queue.findIndex(q => q.uuid === state.currentClimbQueueItem?.uuid);
           if (currentIndex >= 0) {
