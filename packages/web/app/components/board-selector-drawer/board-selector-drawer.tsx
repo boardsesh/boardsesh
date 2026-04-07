@@ -77,7 +77,7 @@ function BoardConfigSelects({
         <MuiSelect
           value={selectedLayout ?? ''}
           label="Layout"
-          onChange={(e: SelectChangeEvent<number | string>) => onLayoutChange(e.target.value as number)}
+          onChange={(e: SelectChangeEvent<number | string>) => onLayoutChange(Number(e.target.value))}
           disabled={!selectedBoard}
         >
           {layouts.map(({ id, name }) => (
@@ -92,7 +92,7 @@ function BoardConfigSelects({
           <MuiSelect
             value={selectedSize ?? ''}
             label="Size"
-            onChange={(e: SelectChangeEvent<number | string>) => onSizeChange(e.target.value as number)}
+            onChange={(e: SelectChangeEvent<number | string>) => onSizeChange(Number(e.target.value))}
             disabled={!selectedLayout}
           >
             {sizes.map(({ id, name, description }) => (

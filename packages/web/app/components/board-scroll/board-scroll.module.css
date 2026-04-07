@@ -1,5 +1,11 @@
 /* Board Scroll Section Styles */
 
+/* Card sizing tokens — 182px mobile, 208px desktop */
+:root {
+  --card-width-mobile: 182px;
+  --card-width-desktop: 208px;
+}
+
 .scrollSection {
   margin-bottom: 16px;
 }
@@ -26,7 +32,7 @@
 
 /* Board Card */
 .cardScroll {
-  width: 182px;
+  width: var(--card-width-mobile);
   flex-shrink: 0;
   scroll-snap-align: start;
   cursor: pointer;
@@ -186,7 +192,7 @@
   scroll-snap-align: start;
   width: 100px;
   /* Match the height of a normal card: square image + 8px margin + ~18px name + ~16px meta */
-  height: calc(182px + 8px + 18px + 16px);
+  height: calc(var(--card-width-mobile) + 8px + 18px + 16px);
 }
 
 .stackedCards .cardScroll {
@@ -225,7 +231,7 @@
 @media (min-width: 768px) {
   .stackedCards {
     width: 120px;
-    height: calc(208px + 8px + 18px + 16px);
+    height: calc(var(--card-width-desktop) + 8px + 18px + 16px);
   }
 }
 
@@ -266,20 +272,20 @@
 
 .myBoardCardFadeInVisible {
   opacity: 1;
-  width: 182px;
+  width: var(--card-width-mobile);
 }
 
 /* Mobile */
 @media (max-width: 767px) {
   .myBoardCardFadeInVisible {
-    width: 182px;
+    width: var(--card-width-mobile);
   }
 }
 
 /* Desktop */
 @media (min-width: 768px) {
   .myBoardCardFadeInVisible {
-    width: 208px;
+    width: var(--card-width-desktop);
   }
 }
 
@@ -366,7 +372,7 @@
 /* Mobile */
 @media (max-width: 767px) {
   .cardScroll {
-    width: 182px;
+    width: var(--card-width-mobile);
   }
 
   .cardScrollSmall {
@@ -383,7 +389,7 @@
 /* Desktop */
 @media (min-width: 768px) {
   .cardScroll {
-    width: 208px;
+    width: var(--card-width-desktop);
   }
 
   .cardScrollSmall {
