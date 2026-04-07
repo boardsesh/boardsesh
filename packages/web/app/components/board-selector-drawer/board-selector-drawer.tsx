@@ -108,7 +108,7 @@ function BoardConfigSelects({
           multiple
           value={selectedSets}
           label="Hold Sets"
-          onChange={(e) => onSetsChange(e.target.value as number[])}
+          onChange={(e) => onSetsChange((e.target.value as number[]).map(Number))}
           disabled={!selectedSize}
         >
           {sets.map(({ id, name }) => (
@@ -122,7 +122,7 @@ function BoardConfigSelects({
         <MuiSelect
           value={selectedAngle}
           label="Angle"
-          onChange={(e: SelectChangeEvent<number>) => onAngleChange(e.target.value as number)}
+          onChange={(e: SelectChangeEvent<number>) => onAngleChange(Number(e.target.value))}
           disabled={!selectedBoard}
         >
           {selectedBoard &&
