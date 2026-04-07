@@ -1,11 +1,5 @@
 /* Board Scroll Section Styles */
 
-/* Card sizing tokens — 182px mobile, 208px desktop */
-:root {
-  --card-width-mobile: 182px;
-  --card-width-desktop: 208px;
-}
-
 .scrollSection {
   margin-bottom: 16px;
 }

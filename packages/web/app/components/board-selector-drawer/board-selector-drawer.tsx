@@ -108,7 +108,7 @@ function BoardConfigSelects({
           multiple
           value={selectedSets}
           label="Hold Sets"
-          onChange={(e) => onSetsChange((e.target.value as number[]).map(Number))}
+          onChange={(e) => onSetsChange([e.target.value].flat().map(Number))}
           disabled={!selectedSize}
         >
           {sets.map(({ id, name }) => (

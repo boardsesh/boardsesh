@@ -150,6 +150,10 @@ export const themeTokens = {
     /** CSS height value for a spacer that prevents the bottom nav bar from covering content on mobile Safari.
      *  Accounts for nav height (~72px), iOS Safari 2dvh offset, and safe area inset. */
     bottomNavSpacer: 'calc(80px + env(safe-area-inset-bottom, 0px))',
+    /** Width of a board scroll card on mobile (px). */
+    cardWidthMobile: 182,
+    /** Width of a board scroll card on desktop (px). */
+    cardWidthDesktop: 208,
   },
 } as const;
 

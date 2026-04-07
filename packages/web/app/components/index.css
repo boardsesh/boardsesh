@@ -51,6 +51,8 @@
 
   /* Layout */
   --global-header-height: calc(max(8dvh, 48px) + env(safe-area-inset-top, 0px));
+  --card-width-mobile: 182px;
+  --card-width-desktop: 208px;
 }
 
 /* Dark mode overrides */
