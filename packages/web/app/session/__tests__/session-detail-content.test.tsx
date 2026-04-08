@@ -112,6 +112,14 @@ vi.mock('@/app/hooks/use-my-boards', () => ({
   useMyBoards: () => ({ boards: [], isLoading: false }),
 }));
 
+
+vi.mock('@/app/hooks/use-delete-tick', () => ({
+  useDeleteTick: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 vi.mock('@/app/lib/board-config-for-playlist', () => ({
   getBoardDetailsForPlaylist: () => ({
     board_name: 'kilter',

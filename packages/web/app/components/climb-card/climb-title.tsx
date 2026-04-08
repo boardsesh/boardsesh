@@ -3,8 +3,7 @@
 import React, { useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import CopyrightOutlined from '@mui/icons-material/CopyrightOutlined';
-import DoNotTouchOutlined from '@mui/icons-material/DoNotTouchOutlined';
+import ClimbIcons from './climb-icons';
 import { themeTokens } from '@/app/theme/theme-config';
 import { getSoftVGradeColor, formatVGrade } from '@/app/lib/grade-colors';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
@@ -20,6 +19,7 @@ export type ClimbTitleData = {
   ascensionist_count?: number;
   is_draft?: boolean;
   communityGrade?: string | null;
+  is_no_match?: boolean;
 };
 
 export type ClimbTitleProps = {
@@ -62,18 +62,6 @@ const textOverflowSx = {
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
-} as const;
-
-const benchmarkIconSx = {
-  marginLeft: '4px',
-  fontSize: themeTokens.typography.fontSize.xs,
-  color: themeTokens.colors.primary,
-} as const;
-
-const noMatchIconSx = {
-  marginLeft: '4px',
-  fontSize: themeTokens.typography.fontSize.xs,
-  color: 'text.secondary',
 } as const;
 
 const subtitleSx = {
@@ -234,8 +222,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
   }
 
   const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
-  const benchmarkValue = climb.benchmark_difficulty != null ? Number(climb.benchmark_difficulty) : null;
-  const isBenchmark = benchmarkValue !== null && benchmarkValue > 0 && !Number.isNaN(benchmarkValue);
+  const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
 
   const renderDifficultyText = () => {
     if (hasGrade) {
@@ -249,8 +236,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
   const nameElement = (
     <Typography variant="body2" component="span" sx={nameSx}>
       {climb.name}
-      {isBenchmark && <CopyrightOutlined sx={benchmarkIconSx} />}
-      {isNoMatch && <DoNotTouchOutlined sx={noMatchIconSx} />}
+      <ClimbIcons benchmarkDifficulty={climb.benchmark_difficulty} isNoMatch={resolvedIsNoMatch} />
     </Typography>
   );
 
@@ -420,6 +406,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
     prevClimb.ascensionist_count === nextClimb.ascensionist_count &&
     prevClimb.is_draft === nextClimb.is_draft &&
     prevClimb.communityGrade === nextClimb.communityGrade &&
+    prevClimb.is_no_match === nextClimb.is_no_match &&
     prev.showAngle === next.showAngle &&
     prev.showSetterInfo === next.showSetterInfo &&
     prev.nameAddon === next.nameAddon &&

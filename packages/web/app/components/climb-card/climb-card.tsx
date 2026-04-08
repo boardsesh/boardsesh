@@ -92,7 +92,7 @@ function ClimbCardWithActions({
       preferImageLayers={preferImageLayers}
     />
   );
-  const cardTitle = <ClimbTitle climb={climb} layout="horizontal" showSetterInfo isNoMatch={!!climb.is_no_match} />;
+  const cardTitle = <ClimbTitle climb={climb} layout="horizontal" showSetterInfo />;
 
   const excludeActions = getExcludedClimbActions(boardDetails.board_name, 'card');
 
@@ -162,7 +162,7 @@ const ClimbCardStatic = React.memo(
         preferImageLayers={preferImageLayers}
       />
     );
-    const cardTitle = climb ? <ClimbTitle climb={climb} layout="horizontal" showSetterInfo isNoMatch={!!climb.is_no_match} /> : 'Loading...';
+    const cardTitle = climb ? <ClimbTitle climb={climb} layout="horizontal" showSetterInfo /> : 'Loading...';
 
     return (
       <div data-testid="climb-card">
