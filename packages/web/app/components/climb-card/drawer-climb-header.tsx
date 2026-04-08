@@ -19,7 +19,7 @@ export default function DrawerClimbHeader({ climb, boardDetails }: DrawerClimbHe
       <div style={{ flexShrink: 0, width: 56 }}>
         <ClimbThumbnail boardDetails={boardDetails} currentClimb={climb} pathname={pathname} maxHeight="80px" />
       </div>
-      <ClimbTitle climb={climb} gradePosition="right" titleFontSize={themeTokens.typography.fontSize.xl} showSetterInfo isNoMatch={!!climb.is_no_match} />
+      <ClimbTitle climb={climb} gradePosition="right" titleFontSize={themeTokens.typography.fontSize.xl} showSetterInfo />
     </div>
   );
 }
