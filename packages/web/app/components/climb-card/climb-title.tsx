@@ -20,7 +20,6 @@ export type ClimbTitleData = {
   is_draft?: boolean;
   communityGrade?: string | null;
   is_no_match?: boolean;
-  isNoMatch?: boolean;
 };
 
 export type ClimbTitleProps = {
@@ -223,7 +222,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
   }
 
   const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
-  const resolvedIsNoMatch = isNoMatch || Boolean(climb.isNoMatch) || Boolean(climb.is_no_match);
+  const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
 
   const renderDifficultyText = () => {
     if (hasGrade) {
@@ -408,7 +407,6 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(({
     prevClimb.is_draft === nextClimb.is_draft &&
     prevClimb.communityGrade === nextClimb.communityGrade &&
     prevClimb.is_no_match === nextClimb.is_no_match &&
-    prevClimb.isNoMatch === nextClimb.isNoMatch &&
     prev.showAngle === next.showAngle &&
     prev.showSetterInfo === next.showSetterInfo &&
     prev.nameAddon === next.nameAddon &&
