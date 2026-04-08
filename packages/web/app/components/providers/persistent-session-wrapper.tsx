@@ -24,7 +24,7 @@ import GlobalHeader from '../global-header/global-header';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
 import { SearchDrawerBridgeProvider } from '../search-drawer/search-drawer-bridge-context';
 import { CreateHeaderBridgeProvider } from '../create-climb/create-header-bridge-context';
-import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
+import { isCapacitorWebView, isNativeApp } from '@/app/lib/ble/capacitor-utils';
 
 interface PersistentSessionWrapperProps {
   children: React.ReactNode;
@@ -78,7 +78,9 @@ const HIDE_TAB_BAR_PAGES = ['/aurora-migration'];
 export function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData }) {
   const { boardDetails, angle, hasActiveQueue } = useQueueBridgeBoardInfo();
   const pathname = usePathname();
-  const isNative = isNativeApp();
+  // Use both bridge-aware and UA-heuristic checks so native webviews get native layout
+  // even before Capacitor bridge initialization completes on first render.
+  const isNative = isNativeApp() || isCapacitorWebView();
 
   const hideTabBar = HIDE_TAB_BAR_PAGES.some((prefix) => pathname.startsWith(prefix)) && !hasActiveQueue;
   const shouldShowQueueShell = isBoardRoutePath(pathname) && !hasActiveQueue && !boardDetails;
