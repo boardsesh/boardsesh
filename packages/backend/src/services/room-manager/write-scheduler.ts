@@ -6,8 +6,6 @@ import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
 import { isForeignKeyViolation, type PendingWrite } from './types';
 
-const db = createRequestDb();
-
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY = 1000; // 1 second
 
@@ -237,6 +235,7 @@ export async function writeQueueStateToPostgres(
   state: PendingWrite,
   scheduler: WriteScheduler
 ): Promise<void> {
+  const db = createRequestDb();
   // Check if session exists to prevent FK violation
   const sessionExists = await db
     .select({ id: sessions.id })

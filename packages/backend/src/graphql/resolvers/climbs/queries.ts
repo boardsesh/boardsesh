@@ -1,6 +1,5 @@
 import { eq, and, gte, desc } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type {
   BoardName,
@@ -35,7 +34,7 @@ export const climbQueries = {
     const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 60, 'moonboard-duplicate-check');
     const validated = validateInput(CheckMoonBoardClimbDuplicatesInputSchema, input, 'input');
-    return findMoonBoardDuplicateMatches(validated.layoutId, validated.angle, validated.climbs);
+    return findMoonBoardDuplicateMatches(db, validated.layoutId, validated.angle, validated.climbs);
   },
 
   /**

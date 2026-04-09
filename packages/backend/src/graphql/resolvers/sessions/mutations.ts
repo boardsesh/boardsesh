@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
@@ -24,16 +23,14 @@ import { sessionBoards, sessions } from '../../../db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { generateSessionSummary } from './session-summary';
 
-const db = createRequestDb();
-
 /**
  * Auto-authorize all controllers owned by a user for a session.
  * Called when user joins a session to allow their ESP32 devices to connect.
  */
-async function authorizeUserControllersForSession(userId: string, sessionId: string): Promise<void> {
+async function authorizeUserControllersForSession(db: RequestDbInstance, userId: string, sessionId: string): Promise<void> {
   try {
     // Update all controllers owned by this user to be authorized for this session
-    const result = await db
+    await db
       .update(esp32Controllers)
       .set({ authorizedSessionId: sessionId })
       .where(eq(esp32Controllers.userId, userId));
@@ -102,7 +99,7 @@ export const sessionMutations = {
 
     // Auto-authorize user's ESP32 controllers for this session (if authenticated)
     if (ctx.isAuthenticated && ctx.userId) {
-      authorizeUserControllersForSession(ctx.userId, sessionId);
+      authorizeUserControllersForSession(ctx.db, ctx.userId, sessionId);
     }
 
     // Notify session about new user
@@ -276,7 +273,6 @@ export const sessionMutations = {
    * Cleans up connection context and notifies other session members
    */
   leaveSession: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
-    const db = ctx.db as RequestDbInstance;
     if (!ctx.sessionId) return false;
 
     const sessionId = ctx.sessionId;
@@ -355,7 +351,6 @@ export const sessionMutations = {
    * Re-announces the user to all session members
    */
   updateUsername: async (_: unknown, { username, avatarUrl }: { username: string; avatarUrl?: string }, ctx: ConnectionContext) => {
-    const db = ctx.db as RequestDbInstance;
     // Validate inputs
     validateInput(UsernameSchema, username, 'username');
     if (avatarUrl) validateInput(AvatarUrlSchema, avatarUrl, 'avatarUrl');

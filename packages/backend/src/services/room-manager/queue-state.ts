@@ -7,8 +7,6 @@ import { computeQueueStateHash } from '../../utils/hash';
 import { VersionConflictError, type QueueState } from './types';
 import { WriteScheduler, writeQueueStateToPostgres } from './write-scheduler';
 
-const db = createRequestDb();
-
 /**
  * Update queue state with Redis as source of truth and debounced Postgres writes.
  */
@@ -76,6 +74,7 @@ export async function updateQueueStateImmediate(
   expectedVersion: number | undefined,
   redisStore: RedisSessionStore | null
 ): Promise<number> {
+  const db = createRequestDb();
   if (expectedVersion !== undefined) {
     if (expectedVersion === 0) {
       // Version 0 means no row exists yet - try to insert
@@ -234,6 +233,7 @@ export async function getQueueState(
   sessionId: string,
   redisStore: RedisSessionStore | null
 ): Promise<QueueState> {
+  const db = createRequestDb();
   // Check Redis first (source of truth for active sessions)
   if (redisStore) {
     const redisSession = await redisStore.getSession(sessionId);

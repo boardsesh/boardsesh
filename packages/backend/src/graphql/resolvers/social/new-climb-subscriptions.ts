@@ -1,6 +1,5 @@
 import { and, eq, desc, sql } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type {
   ConnectionContext,
@@ -16,18 +15,12 @@ import {
   NewClimbSubscriptionInputSchema,
 } from '../../../validation/schemas';
 
-const db = createRequestDb();
-
-export const newClimbSubscriptionResolvers = {
-  Query: {
-    /**
-     * Public feed of newly created climbs for a board type + layout.
-     * Offset-based pagination for simplicity.
-     */
     newClimbFeed: async (
       _: unknown,
       { input }: { input: NewClimbFeedInput },
+      ctx: ConnectionContext,
     ): Promise<NewClimbFeedResult> => {
+      const db = ctx.db as RequestDbInstance;
       const validated = validateInput(NewClimbFeedInputSchema, input, 'input');
       const limit = validated.limit ?? 20;
       const offset = validated.offset ?? 0;

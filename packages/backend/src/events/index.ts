@@ -11,8 +11,6 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 
-const db = createRequestDb();
-
 export const eventBroker = new EventBroker();
 
 /**
@@ -33,6 +31,7 @@ export async function publishSocialEvent(event: SocialEvent): Promise<void> {
  * Handles the most common event types directly.
  */
 async function createInlineNotification(event: SocialEvent): Promise<void> {
+  const db = createRequestDb();
   try {
     let recipientId: string | null = null;
     let notificationType: dbSchema.NotificationType | null = null;
@@ -141,8 +140,9 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         const layoutId = parseInt(event.metadata.layoutId || '0', 10);
         if (!boardType || !layoutId) return;
 
-        const followerRecipients = await resolveClimbCreatedFollowerRecipients(event.actorId);
+        const followerRecipients = await resolveClimbCreatedFollowerRecipients(db, event.actorId);
         const subscriberRecipients = await resolveClimbCreatedSubscriptionRecipients(
+          db,
           boardType,
           layoutId,
           event.actorId,
@@ -154,7 +154,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         ].filter((r) => r.recipientId !== event.actorId);
 
         if (recipients.length === 0) {
-          await fanoutNewClimbFeedItems(event);
+          await fanoutNewClimbFeedItems(db, event);
           return;
         }
 
@@ -202,7 +202,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
           });
         }
 
-        await fanoutNewClimbFeedItems(event);
+        await fanoutNewClimbFeedItems(db, event);
 
         const [climb] = await db
           .select({
@@ -262,7 +262,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         return;
       }
       case 'ascent.logged': {
-        await fanoutFeedItems(event);
+        await fanoutFeedItems(db, event);
         // No notification for ascent.logged - it's feed-only
         return;
       }
@@ -328,6 +328,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
     console.error('[Events] Inline notification failed:', error);
   }
 }
+
 
 export { EventBroker } from './event-broker';
 export { NotificationWorker } from './notification-worker';

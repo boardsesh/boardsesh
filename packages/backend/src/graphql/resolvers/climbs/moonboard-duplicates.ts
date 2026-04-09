@@ -1,10 +1,6 @@
 import { sql } from 'drizzle-orm';
-
-import { createRequestDb } from '@boardsesh/db/client';
-
-const db = createRequestDb();
-
-import type { RequestDbInstance } from '@boardsesh/db/client';import type {
+import type { RequestDbInstance } from '@boardsesh/db/client';
+import type {
   MoonBoardClimbDuplicateCandidateInput,
   MoonBoardClimbDuplicateMatch,
   MoonBoardHoldsInput,
@@ -140,6 +136,7 @@ export function buildMoonBoardDuplicateError(existingClimbName?: string | null):
 }
 
 export async function findMoonBoardDuplicateMatches(
+  db: RequestDbInstance,
   layoutId: number,
   angle: number,
   climbs: DuplicateCandidate[],
@@ -259,10 +256,11 @@ export async function findMoonBoardDuplicateMatches(
 }
 
 export async function findMoonBoardDuplicateMatch(
+  db: RequestDbInstance,
   layoutId: number,
   angle: number,
   holds: MoonBoardHoldsInput,
 ): Promise<MoonBoardClimbDuplicateMatch | null> {
-  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }]);
+  const [match] = await findMoonBoardDuplicateMatches(db, layoutId, angle, [{ clientKey: 'save', holds }]);
   return match?.exists ? match : null;
 }

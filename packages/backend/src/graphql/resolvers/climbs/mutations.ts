@@ -18,18 +18,15 @@ import {
   SaveClimbInputSchema,
   SaveMoonBoardClimbInputSchema,
 } from '../../../validation/schemas';
-import { createRequestDb } from '@boardsesh/db/client';
 
 type SaveClimbArgs = { input: unknown };
-
-const db = createRequestDb();
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
   return crypto.randomUUID().replace(/-/g, '').toUpperCase();
 }
 
-async function getUserProfile(userId: string) {
+async function getUserProfile(db: RequestDbInstance, userId: string) {
   const [user] = await db
     .select({
       name: dbSchema.users.name,
@@ -49,7 +46,7 @@ async function getUserProfile(userId: string) {
   };
 }
 
-async function resolveDifficultyId(boardType: string, grade?: string | null): Promise<number | null> {
+async function resolveDifficultyId(db: RequestDbInstance, boardType: string, grade?: string | null): Promise<number | null> {
   if (!grade) return null;
   const fontPart = grade.split('/')[0].trim().toLowerCase();
 
@@ -90,7 +87,7 @@ export const climbMutations = {
 
     const uuid = generateClimbUuid();
     const now = new Date().toISOString();
-    const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
+    const { displayName, name, avatarUrl } = await getUserProfile(db, ctx.userId!);
     const preferredSetter = displayName || name || null;
 
     await db.insert(UNIFIED_TABLES.climbs).values({
@@ -160,10 +157,10 @@ export const climbMutations = {
 
     const uuid = generateClimbUuid();
     const now = new Date().toISOString();
-    const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
+    const { displayName, name, avatarUrl } = await getUserProfile(db, ctx.userId!);
     const preferredSetter = validated.setter || displayName || name || null;
 
-    const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
+    const duplicateMatch = await findMoonBoardDuplicateMatch(db, validated.layoutId, validated.angle, validated.holds);
     if (duplicateMatch) {
       throw new Error(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName));
     }
@@ -196,7 +193,7 @@ export const climbMutations = {
     }
 
     // Optional grade stats
-    const difficultyId = await resolveDifficultyId(validated.boardType, validated.userGrade);
+    const difficultyId = await resolveDifficultyId(db, validated.boardType, validated.userGrade);
     if (difficultyId !== null) {
       await db
         .insert(dbSchema.boardClimbStats)
