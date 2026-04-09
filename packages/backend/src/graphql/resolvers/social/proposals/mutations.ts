@@ -1,5 +1,6 @@
 import { eq, and, sql, isNull } from 'drizzle-orm';
-import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
@@ -25,6 +26,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 5);
 
@@ -203,6 +205,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -303,6 +306,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(ResolveProposalInputSchema, input, 'input');
     const { proposalUuid, status, reason } = validated;
 
@@ -356,6 +360,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(DeleteProposalInputSchema, input, 'input');
     const { proposalUuid } = validated;
 

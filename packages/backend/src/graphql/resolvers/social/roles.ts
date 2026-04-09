@@ -1,6 +1,8 @@
 import { eq, and, isNull, count } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -8,6 +10,8 @@ import {
   RevokeRoleInputSchema,
   BoardNameSchema,
 } from '../../../validation/schemas';
+
+const db = createRequestDb();
 
 /**
  * Check if a user has admin role (global or for a specific board type).
@@ -111,6 +115,7 @@ export const socialRoleQueries = {
     { boardType }: { boardType?: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const conditions = boardType
       ? [eq(dbSchema.communityRoles.boardType, boardType)]
       : [];
@@ -132,6 +137,7 @@ export const socialRoleQueries = {
     __: unknown,
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -150,6 +156,7 @@ export const socialRoleMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdmin(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -203,6 +210,7 @@ export const socialRoleMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdmin(ctx);
     await applyRateLimit(ctx, 10);
 

@@ -1,5 +1,6 @@
 import { eq, and, count, desc, inArray } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
@@ -18,6 +19,7 @@ export const socialProposalQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(GetClimbProposalsInputSchema, input, 'input');
     const { climbUuid, boardType, angle, type, status, limit: rawLimit, offset: rawOffset } = validated;
     const limitVal = rawLimit ?? 20;
@@ -60,6 +62,7 @@ export const socialProposalQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(BrowseProposalsInputSchema, input, 'input');
     const { type, status, limit: rawLimit, offset: rawOffset } = validated;
     const limitVal = rawLimit ?? 20;
@@ -120,6 +123,7 @@ export const socialProposalQueries = {
     { climbUuid, boardType, angle }: { climbUuid: string; boardType: string; angle: number },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     // Get community status
     const [status] = await db
       .select()
@@ -217,6 +221,7 @@ export const socialProposalQueries = {
     const classicMap = new Map(classicStatuses.map((s) => [s.climbUuid, s]));
 
     return climbUuids.map((uuid) => {
+    const db = ctx.db as RequestDbInstance;
       const status = statusMap.get(uuid);
       const classicStatus = classicMap.get(uuid);
       return {
@@ -240,6 +245,7 @@ export const socialProposalQueries = {
     { climbUuid, boardType }: { climbUuid: string; boardType: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const [status] = await db
       .select()
       .from(dbSchema.climbClassicStatus)

@@ -1,6 +1,10 @@
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray } from 'drizzle-orm';
-import { db } from '../../../db/client';
-import * as dbSchema from '@boardsesh/db/schema';
+
+import { createRequestDb } from '@boardsesh/db/client';
+
+const db = createRequestDb();
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { validateInput } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';

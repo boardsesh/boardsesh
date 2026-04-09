@@ -71,5 +71,13 @@ export function createNeonHttp() {
   return drizzleHttp({ client: sql, schema: fullSchema, logger: sqlLogger });
 }
 
+export function createRequestDb() {
+  configureNeonForEnvironment();
+  const { connectionString } = getConnectionConfig();
+  const sql = neon(connectionString);
+  return drizzleHttp({ client: sql, schema: fullSchema, logger: sqlLogger });
+}
+
 export type DbInstance = ReturnType<typeof createDb>;
+export type RequestDbInstance = ReturnType<typeof createRequestDb>;
 export type PoolInstance = Pool;

@@ -1,9 +1,13 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { FollowingAscentsFeedInputSchema } from '../../../validation/schemas';
+
+const db = createRequestDb();
 
 export const socialFeedQueries = {
   /**
@@ -15,6 +19,7 @@ export const socialFeedQueries = {
     { input }: { input?: { limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const myUserId = ctx.userId!;
 

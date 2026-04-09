@@ -5,7 +5,7 @@ import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { sql } from 'drizzle-orm';
-import { db } from './db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { initCors, applyCorsHeaders } from './handlers/cors';
 import { handleHealthCheck } from './handlers/health';
 import { handleSessionJoin } from './handlers/join';
@@ -17,6 +17,8 @@ import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
 import { warmPopularConfigsCache } from './graphql/resolvers/social/boards';
+
+const db = createRequestDb();
 
 /**
  * Start the Boardsesh Backend server

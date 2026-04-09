@@ -1,10 +1,12 @@
-import { db } from '../../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { sessions, type Session } from '../../db/schema';
 import { eq, and, gt, gte, lte, ne } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession } from './types';
+
+const db = createRequestDb();
 
 /**
  * Get a session by its ID from the database.

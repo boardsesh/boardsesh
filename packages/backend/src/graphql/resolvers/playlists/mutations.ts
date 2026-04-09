@@ -1,7 +1,7 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import {
@@ -22,6 +22,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(CreatePlaylistInputSchema, input, 'input');
 
@@ -81,6 +82,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(UpdatePlaylistInputSchema, input, 'input');
 
@@ -164,6 +166,7 @@ export const playlistMutations = {
     { playlistId }: { playlistId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const userId = ctx.userId!;
@@ -203,6 +206,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(AddClimbToPlaylistInputSchema, input, 'input');
 
@@ -305,6 +309,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(RemoveClimbFromPlaylistInputSchema, input, 'input');
 
@@ -362,6 +367,7 @@ export const playlistMutations = {
     { playlistId }: { playlistId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const userId = ctx.userId!;
@@ -402,6 +408,7 @@ export const playlistMutations = {
     { input }: { input: { playlistUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(FollowPlaylistInputSchema, input, 'input');
     const userId = ctx.userId!;
@@ -442,6 +449,7 @@ export const playlistMutations = {
     { input }: { input: { playlistUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(FollowPlaylistInputSchema, input, 'input');
     const userId = ctx.userId!;

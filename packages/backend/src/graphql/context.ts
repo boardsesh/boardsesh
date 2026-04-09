@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { createRequestDb, type RequestDbInstance } from '@boardsesh/db/client';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -21,9 +22,9 @@ export function createContext(
   controllerId?: string,
   controllerApiKey?: string,
   controllerMac?: string
-): ConnectionContext {
+): ConnectionContext<RequestDbInstance> {
   const id = connectionId || uuidv4();
-  const context: ConnectionContext = {
+  const context: ConnectionContext<RequestDbInstance> = {
     connectionId: id,
     sessionId: undefined,
     userId: userId,
@@ -31,12 +32,21 @@ export function createContext(
     controllerId,
     controllerApiKey,
     controllerMac,
+    db: createRequestDb(),
   };
   connections.set(id, context);
   if (DEBUG) {
     console.log(`[Context] createContext: ${id} (authenticated: ${isAuthenticated}, userId: ${userId}, controllerId: ${controllerId}, mac: ${controllerMac}). Total connections: ${connections.size}`);
   }
   return context;
+}
+
+/**
+ * Create a request-scoped database instance.
+ * Use this for HTTP requests where each request gets its own db instance.
+ */
+export function createRequestDbInstance(): RequestDbInstance {
+  return createRequestDb();
 }
 
 /**

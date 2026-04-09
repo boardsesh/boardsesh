@@ -1,5 +1,7 @@
 import type { ConnectionContext, ControllerEvent, LedUpdate, LedCommand, BoardName, QueueNavigationContext, ControllerQueueItem, ControllerQueueSync, ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { pubsub } from '../../../pubsub/index';
@@ -10,6 +12,8 @@ import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-stat
 import { requireControllerAuth } from '../shared/helpers';
 import { getGradeColor } from './grade-colors';
 import { buildNavigationContext, findClimbIndex } from './navigation-helpers';
+
+const db = createRequestDb();
 
 // LED color mapping for hold states (matches web app colors)
 const HOLD_STATE_COLORS: Record<string, { r: number; g: number; b: number }> = {

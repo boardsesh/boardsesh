@@ -1,4 +1,7 @@
 import { eq, and, gte, desc } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type {
   BoardName,
   CheckMoonBoardClimbDuplicatesInput,
@@ -18,8 +21,9 @@ import {
   ExternalUUIDSchema,
 } from '../../../validation/schemas';
 import type { ClimbSearchContext } from '../shared/types';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+
+const db = createRequestDb();
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -30,6 +34,7 @@ export const climbQueries = {
     { input }: { input: CheckMoonBoardClimbDuplicatesInput },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 60, 'moonboard-duplicate-check');
     const validated = validateInput(CheckMoonBoardClimbDuplicatesInputSchema, input, 'input');
     return findMoonBoardDuplicateMatches(validated.layoutId, validated.angle, validated.climbs);
@@ -40,6 +45,7 @@ export const climbQueries = {
    * Returns a context object that field resolvers use to fetch data lazily
    */
   searchClimbs: async (_: unknown, { input }: { input: ClimbSearchInput }, ctx: ConnectionContext): Promise<ClimbSearchContext> => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(ClimbSearchInputSchema, input, 'input');
 
     // Validate board name

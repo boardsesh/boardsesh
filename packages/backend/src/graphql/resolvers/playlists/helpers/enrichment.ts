@@ -1,6 +1,10 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+
+const db = createRequestDb();
 
 /** Raw playlist row shape from owned-playlist queries (userPlaylists, allUserPlaylists). */
 export interface OwnedPlaylistRow {

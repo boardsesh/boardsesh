@@ -1,10 +1,14 @@
 import { eq, and } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInput } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { UpdateProfileInputSchema, SaveAuroraCredentialInputSchema, BoardNameSchema, DeleteAccountInputSchema } from '../../../validation/schemas';
 import { encrypt } from '@boardsesh/crypto';
+
+const db = createRequestDb();
 
 export const userMutations = {
   /**
@@ -15,6 +19,7 @@ export const userMutations = {
     { input }: { input: { displayName?: string; avatarUrl?: string } },
     ctx: ConnectionContext
   ): Promise<UserProfile> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(UpdateProfileInputSchema, input, 'input');
 
@@ -77,6 +82,7 @@ export const userMutations = {
     { input }: { input: { boardType: string; username: string; password: string } },
     ctx: ConnectionContext
   ): Promise<AuroraCredentialStatus> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     // Validate input
@@ -137,6 +143,7 @@ export const userMutations = {
     { boardType }: { boardType: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(BoardNameSchema, boardType, 'boardType');
 

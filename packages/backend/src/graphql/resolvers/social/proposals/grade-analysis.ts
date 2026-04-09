@@ -1,7 +1,11 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting } from '../community-settings';
+
+const db = createRequestDb();
 
 /**
  * Analyze if a climb's grade at a given angle is an outlier compared to adjacent angles.

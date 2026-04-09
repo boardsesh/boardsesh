@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
@@ -10,6 +12,8 @@ import { resolveBoardFromPath } from '../social/boards';
 import { publishSocialEvent } from '../../../events';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
+
+const db = createRequestDb();
 
 export const tickMutations = {
   /**
@@ -21,6 +25,7 @@ export const tickMutations = {
     { uuid }: { uuid: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -94,6 +99,7 @@ export const tickMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     // Validate input with business rules

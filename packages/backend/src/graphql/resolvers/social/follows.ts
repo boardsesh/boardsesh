@@ -1,6 +1,6 @@
 import { eq, and, count } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { FollowInputSchema, FollowListInputSchema } from '../../../validation/schemas';
@@ -16,6 +16,7 @@ export const socialFollowQueries = {
     { input }: { input: { userId: string; limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(FollowListInputSchema, input, 'input');
     const userId = validatedInput.userId;
     const limit = validatedInput.limit ?? 20;
@@ -80,6 +81,7 @@ export const socialFollowQueries = {
     { input }: { input: { userId: string; limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(FollowListInputSchema, input, 'input');
     const userId = validatedInput.userId;
     const limit = validatedInput.limit ?? 20;
@@ -144,6 +146,7 @@ export const socialFollowQueries = {
     { userId: targetUserId }: { userId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const myUserId = ctx.userId!;
 
@@ -168,6 +171,7 @@ export const socialFollowQueries = {
     { userId }: { userId: string },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     // Get user and profile
     const users = await db
       .select({
@@ -215,6 +219,7 @@ export const socialFollowMutations = {
     { input }: { input: { userId: string } },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'follow');
 
@@ -270,6 +275,7 @@ export const socialFollowMutations = {
     { input }: { input: { userId: string } },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'follow');
 

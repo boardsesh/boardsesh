@@ -1,10 +1,12 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { sessions, sessionQueues } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
 import { isForeignKeyViolation, type PendingWrite } from './types';
+
+const db = createRequestDb();
 
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY = 1000; // 1 second

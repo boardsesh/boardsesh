@@ -1,6 +1,8 @@
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -14,6 +16,8 @@ import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
 import crypto from 'crypto';
+
+const db = createRequestDb();
 
 interface CommentRow {
   id: number;
@@ -89,6 +93,7 @@ export const socialCommentQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(CommentsInputSchema, input, 'input');
     const { entityType, entityId, parentCommentUuid, sortBy, limit = 20, offset = 0 } = validated;
 
@@ -222,6 +227,7 @@ export const socialCommentQueries = {
     { input }: { input?: Record<string, unknown> },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(GlobalCommentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
@@ -347,6 +353,7 @@ export const socialCommentMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'comment');
 
@@ -455,6 +462,7 @@ export const socialCommentMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'comment');
 
@@ -571,6 +579,7 @@ export const socialCommentMutations = {
     { commentUuid }: { commentUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 

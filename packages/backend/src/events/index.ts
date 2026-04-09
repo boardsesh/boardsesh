@@ -1,7 +1,7 @@
 import type { SocialEvent, NotificationType } from '@boardsesh/shared-schema';
 import { EventBroker } from './event-broker';
 import { pubsub } from '../pubsub/index';
-import { db } from '../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { fanoutFeedItems, fanoutNewClimbFeedItems } from './feed-fanout';
@@ -10,6 +10,8 @@ import {
   resolveClimbCreatedFollowerRecipients,
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
+
+const db = createRequestDb();
 
 export const eventBroker = new EventBroker();
 

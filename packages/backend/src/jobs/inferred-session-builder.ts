@@ -140,8 +140,9 @@ function buildSessionGroup(userId: string, ticks: TickForGrouping[]): InferredSe
  * Core logic for assigning an inferred session to a tick.
  * Extracted so it can be called with either a transaction or the global db.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function assignInferredSessionWithConn(
-  conn: Pick<typeof db, 'select' | 'insert' | 'update' | 'execute'>,
+  conn: any,
   tickUuid: string,
   userId: string,
   climbedAt: string,
@@ -230,12 +231,13 @@ async function assignInferredSessionWithConn(
  * Wraps in a transaction when called standalone. Pass an optional conn to
  * participate in an outer transaction instead.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function assignInferredSession(
   tickUuid: string,
   userId: string,
   climbedAt: string,
   _status: string,
-  conn?: Pick<typeof db, 'select' | 'insert' | 'update' | 'execute'>,
+  conn?: any,
 ): Promise<string | null> {
   if (conn) {
     return assignInferredSessionWithConn(conn, tickUuid, userId, climbedAt);

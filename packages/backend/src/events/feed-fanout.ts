@@ -1,9 +1,11 @@
 import type { SocialEvent } from '@boardsesh/shared-schema';
 import type { SocialEntityType } from '@boardsesh/db/schema';
-import { db } from '../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
+
+const db = createRequestDb();
 
 export { buildFeedItemMetadata } from './feed-metadata';
 

@@ -1,8 +1,10 @@
 import { jwtDecrypt } from 'jose';
 import { hkdf } from '@panva/hkdf';
-import { db } from '../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
+
+const db = createRequestDb();
 
 export interface AuthResult {
   userId: string;

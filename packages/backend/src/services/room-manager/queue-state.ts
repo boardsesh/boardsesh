@@ -1,11 +1,13 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import { sessionQueues } from '../../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
 import { computeQueueStateHash } from '../../utils/hash';
 import { VersionConflictError, type QueueState } from './types';
 import { WriteScheduler, writeQueueStateToPostgres } from './write-scheduler';
+
+const db = createRequestDb();
 
 /**
  * Update queue state with Redis as source of truth and debounced Postgres writes.

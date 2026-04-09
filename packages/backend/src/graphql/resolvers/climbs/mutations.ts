@@ -1,8 +1,8 @@
 import crypto from 'crypto';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SaveClimbResult } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
@@ -18,8 +18,11 @@ import {
   SaveClimbInputSchema,
   SaveMoonBoardClimbInputSchema,
 } from '../../../validation/schemas';
+import { createRequestDb } from '@boardsesh/db/client';
 
 type SaveClimbArgs = { input: unknown };
+
+const db = createRequestDb();
 
 function generateClimbUuid(): string {
   // Match Aurora-style uppercase UUID without dashes
@@ -74,6 +77,7 @@ export const climbMutations = {
     { input }: SaveClimbArgs,
     ctx: ConnectionContext
   ): Promise<SaveClimbResult> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -142,6 +146,7 @@ export const climbMutations = {
     { input }: SaveClimbArgs,
     ctx: ConnectionContext
   ): Promise<SaveClimbResult> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 

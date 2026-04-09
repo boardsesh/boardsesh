@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
-import type { ConnectionContext, ToggleFavoriteInput, ToggleFavoriteResult } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext, ToggleFavoriteInput, ToggleFavoriteResult } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { ToggleFavoriteInputSchema } from '../../../validation/schemas';
@@ -15,6 +15,7 @@ export const favoriteMutations = {
     { input }: { input: ToggleFavoriteInput },
     ctx: ConnectionContext
   ): Promise<ToggleFavoriteResult> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(ToggleFavoriteInputSchema, input, 'input');
 

@@ -1,12 +1,16 @@
 import { eq, and, sql, desc } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, Climb, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
 import { getBoardTables, isValidBoardName } from '../../../db/queries/util/table-select';
+
+const db = createRequestDb();
 
 export const favoriteClimbsQuery = {
   userFavoriteClimbs: async (

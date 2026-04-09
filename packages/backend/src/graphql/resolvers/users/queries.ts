@@ -1,6 +1,6 @@
 import { eq, and, count } from 'drizzle-orm';
-import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInfo } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInfo } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
@@ -10,6 +10,7 @@ export const userQueries = {
    * Get the authenticated user's profile
    */
   profile: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<UserProfile | null> => {
+    const db = ctx.db as RequestDbInstance;
     if (!ctx.isAuthenticated || !ctx.userId) {
       return null;
     }
@@ -47,6 +48,7 @@ export const userQueries = {
    * Get all Aurora credentials for the authenticated user
    */
   auroraCredentials: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<AuroraCredentialStatus[]> => {
+    const db = ctx.db as RequestDbInstance;
     if (!ctx.isAuthenticated || !ctx.userId) {
       return [];
     }
@@ -69,6 +71,7 @@ export const userQueries = {
    * Get a specific Aurora credential for the authenticated user by board type
    */
   auroraCredential: async (_: unknown, { boardType }: { boardType: string }, ctx: ConnectionContext) => {
+    const db = ctx.db as RequestDbInstance;
     if (!ctx.isAuthenticated || !ctx.userId) {
       return null;
     }
@@ -109,6 +112,7 @@ export const userQueries = {
     __: unknown,
     ctx: ConnectionContext
   ): Promise<DeleteAccountInfo> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const result = await db

@@ -69,7 +69,7 @@ export type SessionEvent =
       ticks: SessionDetailTick[];
     };
 
-export type ConnectionContext = {
+export type ConnectionContext<TDb = unknown> = {
   connectionId: string;
   sessionId?: string;
   userId?: string;
@@ -80,4 +80,6 @@ export type ConnectionContext = {
   controllerId?: string;
   controllerApiKey?: string;
   controllerMac?: string; // Controller's MAC address (used as clientId for BLE disconnect logic)
+  // Database instance (request-scoped for backend, not present for other consumers)
+  db?: TDb;
 };

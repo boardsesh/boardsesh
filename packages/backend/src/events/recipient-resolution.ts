@@ -1,7 +1,9 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { db } from '../db/client';
+import { createRequestDb } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
+
+const db = createRequestDb();
 
 interface RecipientInfo {
   recipientId: string;

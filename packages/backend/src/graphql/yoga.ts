@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { schema } from './index';
 import { validateNextAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { createRequestDbInstance } from './context';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 
@@ -36,6 +37,9 @@ export function createYogaInstance() {
         || request.headers.get('x-real-ip')
         || undefined;
 
+      // Create a fresh db instance for this request (HTTP mode - stateless)
+      const db = createRequestDbInstance();
+
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7);
         const authResult = await validateNextAuthToken(token);
@@ -47,6 +51,7 @@ export function createYogaInstance() {
             userId: authResult.userId,
             isAuthenticated: true,
             clientIp,
+            db,
           };
         }
       }
@@ -57,6 +62,7 @@ export function createYogaInstance() {
         userId: undefined,
         isAuthenticated: false,
         clientIp,
+        db,
       };
     },
     // Disable GraphiQL in production

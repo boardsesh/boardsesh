@@ -1,7 +1,11 @@
 import { eq, and, sql, inArray } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
+
+const db = createRequestDb();
 
 /**
  * Enrich a single proposal with proposer info, vote counts, climb data, and stats.

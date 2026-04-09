@@ -1,11 +1,15 @@
 import { sql } from 'drizzle-orm';
-import type {
+
+import { createRequestDb } from '@boardsesh/db/client';
+
+const db = createRequestDb();
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import type {
   MoonBoardClimbDuplicateCandidateInput,
   MoonBoardClimbDuplicateMatch,
   MoonBoardHoldsInput,
 } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { db } from '../../../db/client';
 import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
 
 type MoonBoardHoldState = 'STARTING' | 'HAND' | 'FINISH';

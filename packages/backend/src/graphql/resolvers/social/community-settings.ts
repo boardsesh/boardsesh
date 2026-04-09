@@ -1,10 +1,14 @@
 import { eq, and } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { SetCommunitySettingInputSchema } from '../../../validation/schemas';
 import { requireAdminOrLeader } from './roles';
+
+const db = createRequestDb();
 
 // Default community settings
 export const DEFAULTS: Record<string, string> = {
@@ -80,6 +84,7 @@ export const socialCommunitySettingsQueries = {
     { scope, scopeKey }: { scope: string; scopeKey: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const settings = await db
@@ -111,6 +116,7 @@ export const socialCommunitySettingsMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdminOrLeader(ctx);
     await applyRateLimit(ctx, 10);
 

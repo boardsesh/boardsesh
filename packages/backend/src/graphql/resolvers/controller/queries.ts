@@ -1,6 +1,6 @@
 import type { ConnectionContext, ControllerInfo } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
-import { esp32Controllers } from '@boardsesh/db/schema/app';
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { requireAuthenticated } from '../shared/helpers';
 
@@ -17,6 +17,7 @@ export const controllerQueries = {
     __: unknown,
     ctx: ConnectionContext
   ): Promise<ControllerInfo[]> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     if (!ctx.userId) {

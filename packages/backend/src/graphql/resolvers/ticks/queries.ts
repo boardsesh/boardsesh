@@ -1,10 +1,14 @@
 import { eq, and, desc, inArray, sql, count } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
+
+const db = createRequestDb();
 
 export const tickQueries = {
   /**
@@ -15,6 +19,7 @@ export const tickQueries = {
     { input }: { input: { boardType: string; climbUuids?: string[] } },
     ctx: ConnectionContext
   ): Promise<unknown[]> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(GetTicksInputSchema, input, 'input');
 

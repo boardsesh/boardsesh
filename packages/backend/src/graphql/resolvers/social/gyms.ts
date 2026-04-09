@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { eq, and, count, isNull, sql, ilike, or, desc, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -16,6 +18,8 @@ import {
   LinkBoardToGymInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
+
+const db = createRequestDb();
 
 // ============================================
 // Helpers
@@ -262,6 +266,7 @@ export const socialGymQueries = {
     { gymUuid }: { gymUuid: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(UUIDSchema, gymUuid, 'gymUuid');
 
     const [gym] = await db
@@ -279,6 +284,7 @@ export const socialGymQueries = {
     { slug }: { slug: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (!slug || slug.length > 120 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
       return null;
     }
@@ -298,6 +304,7 @@ export const socialGymQueries = {
     { input }: { input?: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(MyGymsInputSchema, input || {}, 'input');
     const userId = ctx.userId!;
@@ -356,6 +363,7 @@ export const socialGymQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
     const { query, latitude, longitude, radiusKm } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -446,6 +454,7 @@ export const socialGymQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(GymMembersInputSchema, input, 'input');
     const { gymUuid } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -513,6 +522,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -576,6 +586,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -647,6 +658,7 @@ export const socialGymMutations = {
     { gymUuid }: { gymUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -687,6 +699,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -723,6 +736,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -753,6 +767,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -793,6 +808,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -827,6 +843,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 

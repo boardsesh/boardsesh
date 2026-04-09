@@ -1,11 +1,15 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { checkRateLimit } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
 import { getContext } from '../../context';
 import { getDistributedState } from '../../../services/distributed-state';
-import { db } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
+
+const db = createRequestDb();
 
 // Re-export validateInput from validation schemas
 export { validateInput } from '../../../validation/schemas';

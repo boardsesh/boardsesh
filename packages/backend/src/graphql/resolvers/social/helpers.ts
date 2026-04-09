@@ -1,6 +1,10 @@
 import { eq, and, inArray, count } from 'drizzle-orm';
-import { db } from '../../../db/client';
-import * as dbSchema from '@boardsesh/db/schema';
+
+import { createRequestDb } from '@boardsesh/db/client';
+
+const db = createRequestDb();
+
+import type { RequestDbInstance } from '@boardsesh/db/client';import * as dbSchema from '@boardsesh/db/schema';
 
 export interface UserProfileEnrichment {
   followerCount: number;

@@ -1,4 +1,7 @@
 import { and, eq, desc, sql } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type {
   ConnectionContext,
   NewClimbFeedInput,
@@ -6,13 +9,14 @@ import type {
   NewClimbSubscription,
   NewClimbSubscriptionInput,
 } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
   NewClimbFeedInputSchema,
   NewClimbSubscriptionInputSchema,
 } from '../../../validation/schemas';
+
+const db = createRequestDb();
 
 export const newClimbSubscriptionResolvers = {
   Query: {
@@ -108,6 +112,7 @@ export const newClimbSubscriptionResolvers = {
       _args: unknown,
       ctx: ConnectionContext,
     ): Promise<NewClimbSubscription[]> => {
+    const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       const rows = await db
         .select()
@@ -129,6 +134,7 @@ export const newClimbSubscriptionResolvers = {
       { input }: { input: NewClimbSubscriptionInput },
       ctx: ConnectionContext
     ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       await applyRateLimit(ctx, 20);
       const validated = validateInput(NewClimbSubscriptionInputSchema, input, 'input');
@@ -150,6 +156,7 @@ export const newClimbSubscriptionResolvers = {
       { input }: { input: NewClimbSubscriptionInput },
       ctx: ConnectionContext
     ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       await applyRateLimit(ctx, 20);
       const validated = validateInput(NewClimbSubscriptionInputSchema, input, 'input');

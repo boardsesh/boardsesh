@@ -1,6 +1,9 @@
 import { eq, asc, and, sql } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+
+const db = createRequestDb();
 import type { Grade, Angle } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';

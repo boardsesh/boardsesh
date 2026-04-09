@@ -1,6 +1,8 @@
 import { eq, and, inArray } from 'drizzle-orm';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -10,6 +12,8 @@ import {
 } from '../../../validation/schemas';
 import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
+
+const db = createRequestDb();
 
 async function getVoteSummary(
   entityType: SocialEntityType,
@@ -67,6 +71,7 @@ export const socialVoteQueries = {
     { entityType, entityId }: { entityType: string; entityId: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedType = validateInput(SocialEntityTypeSchema, entityType, 'entityType') as SocialEntityType;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
 
@@ -78,6 +83,7 @@ export const socialVoteQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(BulkVoteSummaryInputSchema, input, 'input');
     const { entityType, entityIds } = validated;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
@@ -149,6 +155,7 @@ export const socialVoteMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'vote');
 

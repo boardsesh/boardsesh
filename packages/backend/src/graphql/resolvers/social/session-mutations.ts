@@ -1,5 +1,7 @@
 import { eq, and, sql, isNull, inArray } from 'drizzle-orm';
-import { db } from '../../../db/client';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -7,6 +9,8 @@ import type { SessionDetail } from '@boardsesh/shared-schema';
 import { sessionFeedQueries } from './session-feed';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
 import { z } from 'zod';
+
+const db = createRequestDb();
 
 const UpdateInferredSessionSchema = z.object({
   sessionId: z.string().min(1),
@@ -68,6 +72,7 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(UpdateInferredSessionSchema, input, 'input');
     const userId = ctx.userId!;
@@ -102,6 +107,7 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(AddUserToSessionSchema, input, 'input');
     const userId = ctx.userId!;
@@ -206,6 +212,7 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(RemoveUserFromSessionSchema, input, 'input');
     const userId = ctx.userId!;
@@ -337,9 +344,10 @@ const SessionStatsRowSchema = z.object({
  * Accepts an optional db/transaction connection — pass the transaction `tx`
  * when calling from within a db.transaction() to ensure consistent reads.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function recalculateSessionStats(
   sessionId: string,
-  conn: Pick<typeof db, 'execute' | 'update'> = db,
+  conn?: any,
 ): Promise<void> {
   const result = await conn.execute(sql`
     SELECT

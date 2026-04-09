@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { eq, and, count, isNull, sql, ilike, or, desc, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -16,6 +18,8 @@ import {
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug } from './gyms';
 import { redisClientManager } from '../../../redis/client';
+
+const db = createRequestDb();
 
 // ============================================
 // Helpers
@@ -619,6 +623,7 @@ export const socialBoardQueries = {
     { boardUuid }: { boardUuid: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
 
     const [board] = await db
@@ -639,6 +644,7 @@ export const socialBoardQueries = {
     { slug }: { slug: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     // Validate slug format: lowercase alphanumeric with hyphens, max 120 chars
     if (!slug || slug.length > 120 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
       return null;
@@ -662,6 +668,7 @@ export const socialBoardQueries = {
     { input }: { input?: { limit?: number; offset?: number } },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(MyBoardsInputSchema, input || {}, 'input');
     const userId = ctx.userId!;
@@ -721,6 +728,7 @@ export const socialBoardQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 20);
     const validatedInput = validateInput(SearchBoardsInputSchema, input, 'input');
     const { query, boardType, latitude, longitude, radiusKm } = validatedInput;
@@ -860,8 +868,9 @@ export const socialBoardQueries = {
   popularBoardConfigs: async (
     _: unknown,
     { input }: { input?: unknown },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(PopularBoardConfigsInputSchema, input || {}, 'input');
     const { boardType, limit, offset } = validatedInput;
 
@@ -890,6 +899,7 @@ export const socialBoardQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(BoardLeaderboardInputSchema, input, 'input');
     const { boardUuid, period } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -1015,6 +1025,7 @@ export const socialBoardQueries = {
     _args: unknown,
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -1070,6 +1081,7 @@ export const socialBoardMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -1256,6 +1268,7 @@ export const socialBoardMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -1400,6 +1413,7 @@ export const socialBoardMutations = {
     { boardUuid }: { boardUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -1436,6 +1450,7 @@ export const socialBoardMutations = {
     { input }: { input: { boardUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -1480,6 +1495,7 @@ export const socialBoardMutations = {
     { input }: { input: { boardUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 

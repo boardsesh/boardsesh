@@ -1,4 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
@@ -16,11 +19,12 @@ import {
 } from '../../../validation/schemas';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import type { CreateSessionInput } from '../shared/types';
-import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { generateSessionSummary } from './session-summary';
+
+const db = createRequestDb();
 
 /**
  * Auto-authorize all controllers owned by a user for a session.
@@ -65,6 +69,7 @@ export const sessionMutations = {
     },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (DEBUG) console.log(`[joinSession] START - connectionId: ${ctx.connectionId}, sessionId: ${sessionId}, username: ${username}, sessionName: ${sessionName}, initialQueueLength: ${initialQueue?.length || 0}`);
 
     await applyRateLimit(ctx, 10); // Limit session joins to prevent abuse
@@ -147,6 +152,7 @@ export const sessionMutations = {
     { input }: { input: CreateSessionInput },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (DEBUG) console.log(`[createSession] START - connectionId: ${ctx.connectionId}, boardPath: ${input.boardPath}`);
 
     await applyRateLimit(ctx, 5); // Limit session creation to prevent abuse
@@ -270,6 +276,7 @@ export const sessionMutations = {
    * Cleans up connection context and notifies other session members
    */
   leaveSession: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
+    const db = ctx.db as RequestDbInstance;
     if (!ctx.sessionId) return false;
 
     const sessionId = ctx.sessionId;
@@ -309,6 +316,7 @@ export const sessionMutations = {
     { sessionId }: { sessionId: string },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 5);
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
@@ -347,6 +355,7 @@ export const sessionMutations = {
    * Re-announces the user to all session members
    */
   updateUsername: async (_: unknown, { username, avatarUrl }: { username: string; avatarUrl?: string }, ctx: ConnectionContext) => {
+    const db = ctx.db as RequestDbInstance;
     // Validate inputs
     validateInput(UsernameSchema, username, 'username');
     if (avatarUrl) validateInput(AvatarUrlSchema, avatarUrl, 'avatarUrl');
