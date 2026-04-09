@@ -19,8 +19,6 @@ import {
 import { generateUniqueGymSlug } from './gyms';
 import { redisClientManager } from '../../../redis/client';
 
-const db = createRequestDb();
-
 // ============================================
 // Helpers
 // ============================================
@@ -30,6 +28,7 @@ const db = createRequestDb();
  * Slugifies the name and appends a suffix on collision.
  */
 async function generateUniqueSlug(name: string): Promise<string> {
+  const db = createRequestDb();
   const baseSlug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -75,6 +74,7 @@ export async function resolveBoardFromPath(
   sizeId: number,
   setIds: string,
 ): Promise<number | null> {
+  const db = createRequestDb();
   const [board] = await db
     .select({ id: dbSchema.userBoards.id })
     .from(dbSchema.userBoards)
@@ -101,6 +101,7 @@ async function enrichBoard(
   authenticatedUserId?: string,
   distanceMeters?: number | null,
 ) {
+  const db = createRequestDb();
   // Run all independent queries in parallel to avoid N+1 per board
   const [ownerResult, tickStatsResult, followerStatsResult, commentStatsResult, followCheckResult, gymInfoResult] =
     await Promise.all([
@@ -232,6 +233,7 @@ async function enrichBoards(
 ) {
   if (boards.length === 0) return [];
 
+  const db = createRequestDb();
   const boardIds = boards.map((b) => b.board.id);
   const boardUuids = boards.map((b) => b.board.uuid);
   const ownerIds = [...new Set(boards.map((b) => b.board.ownerId))];
@@ -449,6 +451,7 @@ const REDIS_LOCK_KEY = 'boardsesh:popular-board-configs:lock';
 const REDIS_LOCK_TTL_SECONDS = 120; // 2 min lock to prevent duplicate queries across nodes
 
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
+  const db = createRequestDb();
   // Try Redis cache first
   if (redisClientManager.isRedisConnected()) {
     try {

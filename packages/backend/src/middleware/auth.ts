@@ -4,8 +4,6 @@ import { createRequestDb } from '@boardsesh/db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 
-const db = createRequestDb();
-
 export interface AuthResult {
   userId: string;
   isAuthenticated: true;
@@ -117,43 +115,41 @@ export function extractControllerApiKey(
 ): string | null {
   if (connectionParams?.controllerApiKey && typeof connectionParams.controllerApiKey === 'string') {
     return connectionParams.controllerApiKey;
-  }
-  return null;
-}
+  /**
+   * Validate a controller API key and return controller info.
+   * Returns null if the API key is invalid or not found.
+   */
+  export async function validateControllerApiKey(
+    apiKey: string
+  ): Promise<ControllerAuthResult | null> {
+    const db = createRequestDb();
+    try {
+      const [controller] = await db
+        .select()
+        .from(esp32Controllers)
+        .where(eq(esp32Controllers.apiKey, apiKey))
+        .limit(1);
 
-/**
- * Validate a controller API key and return controller info.
- * Returns null if the API key is invalid or not found.
- */
-export async function validateControllerApiKey(
-  apiKey: string
-): Promise<ControllerAuthResult | null> {
-  try {
-    const [controller] = await db
-      .select()
-      .from(esp32Controllers)
-      .where(eq(esp32Controllers.apiKey, apiKey))
-      .limit(1);
+      if (!controller) {
+        console.warn('[Auth] Controller API key not found');
+        return null;
+      }
 
-    if (!controller) {
-      console.warn('[Auth] Controller API key not found');
+      console.log(`[Auth] Authenticated controller: ${controller.id}`);
+      return {
+        controllerId: controller.id,
+        controllerApiKey: apiKey,
+        userId: controller.userId,
+        boardName: controller.boardName,
+        layoutId: controller.layoutId,
+        sizeId: controller.sizeId,
+        setIds: controller.setIds,
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        console.warn('[Auth] Controller validation failed:', error.message);
+      }
       return null;
     }
-
-    console.log(`[Auth] Authenticated controller: ${controller.id}`);
-    return {
-      controllerId: controller.id,
-      controllerApiKey: apiKey,
-      userId: controller.userId,
-      boardName: controller.boardName,
-      layoutId: controller.layoutId,
-      sizeId: controller.sizeId,
-      setIds: controller.setIds,
-    };
-  } catch (error) {
-    if (error instanceof Error) {
-      console.warn('[Auth] Controller validation failed:', error.message);
-    }
-    return null;
   }
-}
+

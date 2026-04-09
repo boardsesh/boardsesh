@@ -18,8 +18,6 @@ import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
 import { warmPopularConfigsCache } from './graphql/resolvers/social/boards';
 
-const db = createRequestDb();
-
 /**
  * Start the Boardsesh Backend server
  *
@@ -245,6 +243,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
   // Periodic notification cleanup (once per day)
   const notificationCleanupInterval = setInterval(async () => {
     try {
+      const db = createRequestDb();
       await db.execute(sql`DELETE FROM notifications WHERE created_at < NOW() - INTERVAL '90 days'`);
     } catch (error) {
       console.error('[Server] Notification cleanup error:', error);
@@ -255,6 +254,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
   // Periodic feed items cleanup (hourly, retains 180 days)
   const feedCleanupInterval = setInterval(async () => {
     try {
+      const db = createRequestDb();
       const result = await db.execute(sql`DELETE FROM feed_items WHERE created_at < NOW() - INTERVAL '180 days'`);
       const deleted = (result as unknown as { rowCount?: number }).rowCount ?? 0;
       if (deleted > 0) {

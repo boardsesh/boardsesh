@@ -338,31 +338,36 @@ export async function removeClient(
         sessionsMap.delete(client.sessionId);
       }
     }
-  /**
-   * Ensure a session record exists in Postgres for durable history/summary reads.
-   */
-  async function ensureSessionRecordExists(
-    sessionId: string,
-    boardPath: string,
-    userId: string | null,
-    sessionName?: string
-  ): Promise<void> {
-    const db = createRequestDb();
-    const now = new Date();
-    await db
-      .insert(sessions)
-      .values({
-        id: sessionId,
-        boardPath,
-        createdAt: now,
-        lastActivity: now,
-        latitude: null,
-        longitude: null,
-        discoverable: false,
-        createdByUserId: userId,
-        name: sessionName || null,
-        startedAt: now,
-      })
-      .onConflictDoNothing();
   }
 
+  clients.delete(connectionId);
+  return { distributedStateCleanedUp };
+}
+
+/**
+ * Ensure a session record exists in Postgres for durable history/summary reads.
+ */
+async function ensureSessionRecordExists(
+  sessionId: string,
+  boardPath: string,
+  userId: string | null,
+  sessionName?: string
+): Promise<void> {
+  const db = createRequestDb();
+  const now = new Date();
+  await db
+    .insert(sessions)
+    .values({
+      id: sessionId,
+      boardPath,
+      createdAt: now,
+      lastActivity: now,
+      latitude: null,
+      longitude: null,
+      discoverable: false,
+      createdByUserId: userId,
+      name: sessionName || null,
+      startedAt: now,
+    })
+    .onConflictDoNothing();
+}
