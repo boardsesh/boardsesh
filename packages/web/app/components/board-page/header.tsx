@@ -162,6 +162,9 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
       <UnifiedSearchDrawer
         boardDetails={boardDetails}
         defaultCategory="climbs"
+        allowedCategories={['climbs']}
+        showCloseButton
+        showCloseButtonOnMobile
         open={searchDropdownOpen}
         onClose={() => {
           if (hasActiveFilters(uiSearchParams)) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
@@ -26,6 +26,12 @@ interface UnifiedSearchDrawerProps {
   renderClimbSearch?: () => React.ReactNode;
   /** Render prop for climb search footer (search/clear buttons). Only used when boardDetails is provided. */
   renderClimbFooter?: () => React.ReactNode;
+  /** Optional allow-list for category pills/results. */
+  allowedCategories?: SearchCategory[];
+  /** Show drawer close button on mobile devices. */
+  showCloseButtonOnMobile?: boolean;
+  /** Show drawer close button. */
+  showCloseButton?: boolean;
 }
 
 export default function UnifiedSearchDrawer({
@@ -36,6 +42,9 @@ export default function UnifiedSearchDrawer({
   boardDetails,
   renderClimbSearch,
   renderClimbFooter,
+  allowedCategories,
+  showCloseButtonOnMobile = false,
+  showCloseButton = false,
 }: UnifiedSearchDrawerProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<SearchCategory>(defaultCategory);
@@ -61,7 +70,16 @@ export default function UnifiedSearchDrawer({
     { key: 'playlists', label: 'Playlists', visible: true },
   ];
 
-  const visibleCategories = categories.filter((c) => c.visible);
+  const allowedCategorySet = allowedCategories ? new Set(allowedCategories) : null;
+  const visibleCategories = categories.filter((c) => c.visible && (allowedCategorySet ? allowedCategorySet.has(c.key) : true));
+  const showCategoryChips = visibleCategories.length > 1;
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) return;
+    if (!visibleCategories.some((c) => c.key === category)) {
+      setCategory(visibleCategories[0].key);
+    }
+  }, [category, visibleCategories]);
 
   return (
     <SwipeableDrawer
@@ -72,7 +90,8 @@ export default function UnifiedSearchDrawer({
       height={isClimbMode ? '100%' : '80vh'}
       fullHeight={isClimbMode}
       showDragHandle
-      showCloseButton={false}
+      showCloseButton={showCloseButton}
+      showCloseButtonOnMobile={showCloseButtonOnMobile}
       swipeEnabled
       footer={isClimbMode && renderClimbFooter ? renderClimbFooter() : undefined}
       styles={{
@@ -86,17 +105,19 @@ export default function UnifiedSearchDrawer({
       }}
     >
       {/* Category pills */}
-      <Box sx={{ display: 'flex', gap: 1, px: 2, py: 1, flexWrap: 'wrap' }}>
-        {visibleCategories.map((c) => (
-          <Chip
-            key={c.key}
-            label={c.label}
-            variant={category === c.key ? 'filled' : 'outlined'}
-            color={category === c.key ? 'primary' : 'default'}
-            onClick={() => handleCategoryChange(c.key)}
-          />
-        ))}
-      </Box>
+      {showCategoryChips && (
+        <Box sx={{ display: 'flex', gap: 1, px: 2, py: 1, flexWrap: 'wrap' }}>
+          {visibleCategories.map((c) => (
+            <Chip
+              key={c.key}
+              label={c.label}
+              variant={category === c.key ? 'filled' : 'outlined'}
+              color={category === c.key ? 'primary' : 'default'}
+              onClick={() => handleCategoryChange(c.key)}
+            />
+          ))}
+        </Box>
+      )}
 
       {/* Climb mode: render via parent's render prop (has access to queue context) */}
       {isClimbMode && renderClimbSearch()}
