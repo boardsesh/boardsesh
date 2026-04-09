@@ -1,5 +1,5 @@
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
-import { createRequestDb } from '@boardsesh/db/client';
+import { createRequestDb } from '../../db/client';
 import { sessions } from '../../db/schema';
 import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';

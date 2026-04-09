@@ -1,6 +1,6 @@
 import { eq, and, isNull, count, sql, inArray } from 'drizzle-orm';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../db/client';import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { GroupedNotificationsInputSchema } from '../../../validation/schemas';

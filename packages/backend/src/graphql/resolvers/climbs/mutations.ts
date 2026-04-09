@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SaveClimbResult } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';

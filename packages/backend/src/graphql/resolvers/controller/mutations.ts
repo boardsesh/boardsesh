@@ -9,7 +9,7 @@ import type {
   SendDeviceLogsInput,
   SendDeviceLogsResponse,
 } from '@boardsesh/shared-schema';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import { findClimbIndex } from './navigation-helpers';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, and } from 'drizzle-orm';

@@ -1,6 +1,6 @@
 import { and, eq, desc, sql } from 'drizzle-orm';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type {
   ConnectionContext,
   NewClimbFeedInput,

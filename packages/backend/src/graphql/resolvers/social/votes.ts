@@ -1,6 +1,6 @@
 import { eq, and, inArray } from 'drizzle-orm';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';

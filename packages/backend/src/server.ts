@@ -5,7 +5,7 @@ import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { sql } from 'drizzle-orm';
-import { createRequestDb } from '@boardsesh/db/client';
+import { createRequestDb } from './db/client';
 import { initCors, applyCorsHeaders } from './handlers/cors';
 import { handleHealthCheck } from './handlers/health';
 import { handleSessionJoin } from './handlers/join';

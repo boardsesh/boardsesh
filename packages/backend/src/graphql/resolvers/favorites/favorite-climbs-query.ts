@@ -1,7 +1,7 @@
 import { eq, and, sql, desc } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, Climb, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';

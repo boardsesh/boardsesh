@@ -1,7 +1,7 @@
 import { eq, asc, and, sql } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { Grade, Angle } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';

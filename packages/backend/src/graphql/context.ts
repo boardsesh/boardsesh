@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { createRequestDb, type RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 

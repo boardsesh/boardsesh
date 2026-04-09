@@ -1,6 +1,6 @@
 import { jwtDecrypt } from 'jose';
 import { hkdf } from '@panva/hkdf';
-import { createRequestDb } from '@boardsesh/db/client';
+import { createRequestDb } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 

@@ -20,6 +20,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../db/client';
 
 // Mock the database client before importing the module under test
 vi.mock('../db/client', () => {
@@ -57,6 +58,7 @@ function makeCtx(userId = 'user-1'): ConnectionContext {
   return {
     isAuthenticated: true,
     userId,
+    db: db as unknown as RequestDbInstance,
   } as ConnectionContext;
 }
 
@@ -65,7 +67,8 @@ function makeUnauthCtx(): ConnectionContext {
   return {
     isAuthenticated: false,
     userId: null,
-  } as ConnectionContext;
+    db: db as unknown as RequestDbInstance,
+  } as unknown as ConnectionContext;
 }
 
 /**

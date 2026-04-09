@@ -1,6 +1,6 @@
 import { eq, and, sql, isNull } from 'drizzle-orm';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../../db/client';import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';

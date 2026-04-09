@@ -1,6 +1,6 @@
 import { eq, and, count } from 'drizzle-orm';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInfo } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../db/client';import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInfo } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';

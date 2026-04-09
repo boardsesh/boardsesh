@@ -1,5 +1,5 @@
 // Re-export db client from @boardsesh/db
-import { createDb, createRequestDb as createRequestDbBase } from '@boardsesh/db/client';
+import { createDb, createRequestDb as createRequestDbBase, type RequestDbInstance } from '@boardsesh/db/client';
 
 // Create singleton db instance for backend
 export const db = createDb();
@@ -16,3 +16,4 @@ export function createRequestDb() {
 }
 
 export type Database = typeof db;
+export type { RequestDbInstance };

@@ -1,7 +1,7 @@
 import type { ConnectionContext, ControllerEvent, LedUpdate, LedCommand, BoardName, QueueNavigationContext, ControllerQueueItem, ControllerQueueSync, ClimbQueueItem } from '@boardsesh/shared-schema';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';
-import { createRequestDb } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
+import { createRequestDb } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { pubsub } from '../../../pubsub/index';

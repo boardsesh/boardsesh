@@ -1,4 +1,4 @@
-import { createRequestDb } from '@boardsesh/db/client';
+import { createRequestDb } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import { eq, and, gt, gte, lte, ne } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';

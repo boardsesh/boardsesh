@@ -1,5 +1,5 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { createRequestDb } from '@boardsesh/db/client';
+import { createRequestDb } from '../../db/client';
 import { sessions, sessionQueues } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';

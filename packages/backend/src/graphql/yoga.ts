@@ -5,7 +5,7 @@ import { schema } from './index';
 import { validateNextAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { createRequestDbInstance } from './context';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../db/client';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 

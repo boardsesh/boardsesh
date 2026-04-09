@@ -11,7 +11,7 @@ import { pubsub } from '../pubsub/index';
 import { validateNextAuthToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { isOriginAllowed } from '../handlers/cors';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../db/client';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 

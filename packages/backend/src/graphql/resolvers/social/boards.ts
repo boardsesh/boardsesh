@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 
-import { createRequestDb } from '@boardsesh/db/client';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import { eq, and, count, isNull, sql, ilike, or, desc, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';

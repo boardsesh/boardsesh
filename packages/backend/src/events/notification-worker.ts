@@ -1,7 +1,7 @@
 import { eq, and, sql } from 'drizzle-orm';
 import type { SocialEvent } from '@boardsesh/shared-schema';
 import type { NotificationType } from '@boardsesh/db/schema';
-import { createRequestDb, type RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../pubsub/index';
 import type { EventBroker } from './event-broker';

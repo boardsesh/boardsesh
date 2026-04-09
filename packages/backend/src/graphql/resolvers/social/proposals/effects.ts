@@ -1,7 +1,7 @@
 import { eq, and, sql, desc } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '../../../../db/client';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 const db = createRequestDb();

@@ -1,5 +1,5 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { createRequestDb, type RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
 

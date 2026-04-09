@@ -1,7 +1,7 @@
 import { sessions } from '../../../db/schema';
 
-import { createRequestDb } from '@boardsesh/db/client';
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, inArray, sql, count, desc, isNotNull } from 'drizzle-orm';
 import type { SessionSummary } from '@boardsesh/shared-schema';

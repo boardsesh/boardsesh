@@ -2,7 +2,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 import { v4 as uuidv4 } from 'uuid';
 
-import type { RequestDbInstance } from '@boardsesh/db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import { checkRateLimit } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
 import { getContext } from '../../context';
