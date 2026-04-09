@@ -99,7 +99,7 @@ export const sessionMutations = {
 
     // Auto-authorize user's ESP32 controllers for this session (if authenticated)
     if (ctx.isAuthenticated && ctx.userId) {
-      authorizeUserControllersForSession(ctx.db, ctx.userId, sessionId);
+      await authorizeUserControllersForSession(db, ctx.userId, sessionId);
     }
 
     // Notify session about new user

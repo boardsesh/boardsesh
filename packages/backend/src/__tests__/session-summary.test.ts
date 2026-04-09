@@ -23,8 +23,8 @@ const { createChainableMock } = vi.hoisted(() => ({
 }));
 
 // Mock the database client — all query builder chains resolve to mock data
-vi.mock('../db/client', () => ({
-  db: new Proxy(
+vi.mock('@boardsesh/db/client', () => ({
+  createRequestDb: () => new Proxy(
     {},
     {
       get(_, prop) {

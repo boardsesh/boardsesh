@@ -15,6 +15,8 @@ import {
   NewClimbSubscriptionInputSchema,
 } from '../../../validation/schemas';
 
+export const newClimbSubscriptionResolvers = {
+  Query: {
     newClimbFeed: async (
       _: unknown,
       { input }: { input: NewClimbFeedInput },
@@ -105,7 +107,7 @@ import {
       _args: unknown,
       ctx: ConnectionContext,
     ): Promise<NewClimbSubscription[]> => {
-    const db = ctx.db as RequestDbInstance;
+      const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       const rows = await db
         .select()
@@ -127,7 +129,7 @@ import {
       { input }: { input: NewClimbSubscriptionInput },
       ctx: ConnectionContext
     ): Promise<boolean> => {
-    const db = ctx.db as RequestDbInstance;
+      const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       await applyRateLimit(ctx, 20);
       const validated = validateInput(NewClimbSubscriptionInputSchema, input, 'input');
@@ -149,7 +151,7 @@ import {
       { input }: { input: NewClimbSubscriptionInput },
       ctx: ConnectionContext
     ): Promise<boolean> => {
-    const db = ctx.db as RequestDbInstance;
+      const db = ctx.db as RequestDbInstance;
       requireAuthenticated(ctx);
       await applyRateLimit(ctx, 20);
       const validated = validateInput(NewClimbSubscriptionInputSchema, input, 'input');

@@ -72,6 +72,11 @@ export function createNeonHttp() {
 }
 
 export function createRequestDb() {
+  const { isTest } = getConnectionConfig();
+  if (isTest) {
+    return createDb() as unknown as ReturnType<typeof createNeonHttp>;
+  }
+
   configureNeonForEnvironment();
   const { connectionString } = getConnectionConfig();
   const sql = neon(connectionString);
