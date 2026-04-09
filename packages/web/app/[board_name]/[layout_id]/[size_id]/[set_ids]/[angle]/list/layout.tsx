@@ -6,7 +6,7 @@ import { BoardRouteParameters } from '@/app/lib/types';
 import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { permanentRedirect } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import ListLayoutClient from './layout-client';
 
 
@@ -20,10 +20,18 @@ export default async function ListLayout(props: PropsWithChildren<LayoutProps>) 
   const { children } = props;
 
   const { parsedParams, isNumericFormat } = await parseRouteParams(params);
+  const resolveBoardDetailsOr404 = () => {
+    try {
+      return getBoardDetailsForBoard(parsedParams);
+    } catch (error) {
+      console.error('Error resolving board details in list layout:', error);
+      return notFound();
+    }
+  };
 
   // Redirect old numeric URLs to new slug format
   if (isNumericFormat) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = resolveBoardDetailsOr404();
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
       const newUrl = constructClimbListWithSlugs(
@@ -40,7 +48,7 @@ export default async function ListLayout(props: PropsWithChildren<LayoutProps>) 
   }
 
   // Fetch the climbs and board details server-side
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
+  const boardDetails = resolveBoardDetailsOr404();
 
   return <ListLayoutClient boardDetails={boardDetails}>{children}</ListLayoutClient>;
 }

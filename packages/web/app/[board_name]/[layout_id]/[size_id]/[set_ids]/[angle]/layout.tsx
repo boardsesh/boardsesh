@@ -3,7 +3,7 @@ import { PropsWithChildren } from 'react';
 import { BoardRouteParameters } from '@/app/lib/types';
 import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
-import { permanentRedirect } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { getBoardDetailsForBoard, generateBoardTitle } from '@/app/lib/board-utils';
 import BoardSeshHeader from '@/app/components/board-page/header';
 import { GraphQLQueueProvider } from '@/app/components/graphql-queue';
@@ -49,29 +49,37 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
   const { children } = props;
 
   const { parsedParams, isNumericFormat } = await parseRouteParams(params);
+  const resolveBoardDetailsOr404 = () => {
+    try {
+      return getBoardDetailsForBoard(parsedParams);
+    } catch (error) {
+      console.error('Error resolving board details in board layout:', error);
+      return notFound();
+    }
+  };
 
   // Redirect old numeric URLs to new slug format
   if (isNumericFormat) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = resolveBoardDetailsOr404();
 
-      if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
-        const newUrl = constructClimbListWithSlugs(
-          boardDetails.board_name,
-          boardDetails.layout_name,
-          boardDetails.size_name,
-          boardDetails.size_description,
-          boardDetails.set_names,
-          parsedParams.angle,
-        );
+    if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
+      const newUrl = constructClimbListWithSlugs(
+        boardDetails.board_name,
+        boardDetails.layout_name,
+        boardDetails.size_name,
+        boardDetails.size_description,
+        boardDetails.set_names,
+        parsedParams.angle,
+      );
 
-        permanentRedirect(newUrl);
-      }
+      permanentRedirect(newUrl);
+    }
   }
 
   const { angle } = parsedParams;
 
   // Fetch the board details server-side
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
+  const boardDetails = resolveBoardDetailsOr404();
 
   // Compute the list URL for last-used-board tracking
   const listUrl = boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names
