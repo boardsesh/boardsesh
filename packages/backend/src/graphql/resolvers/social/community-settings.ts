@@ -8,8 +8,6 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { SetCommunitySettingInputSchema } from '../../../validation/schemas';
 import { requireAdminOrLeader } from './roles';
 
-const db = createRequestDb();
-
 // Default community settings
 export const DEFAULTS: Record<string, string> = {
   approval_threshold: '5',
@@ -28,6 +26,7 @@ export async function resolveCommunitySetting(
   angle?: number | null,
   boardType?: string,
 ): Promise<string> {
+  const db = createRequestDb();
   // 1. Try climb-level
   if (climbUuid) {
     const [climbSetting] = await db

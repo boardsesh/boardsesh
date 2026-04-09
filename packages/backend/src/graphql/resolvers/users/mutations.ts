@@ -1,14 +1,11 @@
 import { eq, and } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, UserProfile, AuroraCredentialStatus, DeleteAccountInput } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { UpdateProfileInputSchema, SaveAuroraCredentialInputSchema, BoardNameSchema, DeleteAccountInputSchema } from '../../../validation/schemas';
 import { encrypt } from '@boardsesh/crypto';
-
-const db = createRequestDb();
 
 export const userMutations = {
   /**
@@ -170,6 +167,7 @@ export const userMutations = {
     { input }: { input: DeleteAccountInput },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(DeleteAccountInputSchema, input, 'input');
 

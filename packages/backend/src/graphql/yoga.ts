@@ -5,6 +5,7 @@ import { schema } from './index';
 import { validateNextAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { createRequestDbInstance } from './context';
+import type { RequestDbInstance } from '@boardsesh/db/client';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 
@@ -28,7 +29,7 @@ export function createYogaInstance() {
     // Context function - extract auth from HTTP requests
     // HTTP requests are stateless and don't need to be tracked in the connections Map.
     // Only WebSocket connections are stored there (they have onDisconnect cleanup).
-    context: async ({ request }): Promise<ConnectionContext> => {
+    context: async ({ request }): Promise<ConnectionContext<RequestDbInstance>> => {
       // Extract Authorization header
       const authHeader = request.headers.get('authorization');
 

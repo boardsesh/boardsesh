@@ -1,14 +1,11 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
-
-const db = createRequestDb();
 
 function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect) {
   const meta = (row.metadata || {}) as Record<string, unknown>;
@@ -154,7 +151,9 @@ export const activityFeedQueries = {
   trendingFeed: async (
     _: unknown,
     { input }: { input?: Record<string, unknown> },
+    ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
 

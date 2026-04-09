@@ -1,10 +1,8 @@
 import { sessions } from '../../../db/schema';
 
 import { createRequestDb } from '@boardsesh/db/client';
-
-const db = createRequestDb();
-
-import type { RequestDbInstance } from '@boardsesh/db/client';import * as dbSchema from '@boardsesh/db/schema';
+import type { RequestDbInstance } from '@boardsesh/db/client';
+import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, inArray, sql, count, desc, isNotNull } from 'drizzle-orm';
 import type { SessionSummary } from '@boardsesh/shared-schema';
 
@@ -13,6 +11,7 @@ import type { SessionSummary } from '@boardsesh/shared-schema';
  * hardest climb, participant stats, and duration.
  */
 export async function generateSessionSummary(sessionId: string): Promise<SessionSummary | null> {
+  const db = createRequestDb() as RequestDbInstance;
   // Fetch session metadata using Drizzle ORM
   const sessionRows = await db
     .select()

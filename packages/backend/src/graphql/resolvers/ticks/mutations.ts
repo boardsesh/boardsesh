@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -12,8 +11,6 @@ import { resolveBoardFromPath } from '../social/boards';
 import { publishSocialEvent } from '../../../events';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
-
-const db = createRequestDb();
 
 export const tickMutations = {
   /**
@@ -196,7 +193,7 @@ export const tickMutations = {
     // Publish ascent.logged event for feed fan-out (only for successful ascents)
     if (tick.status === 'flash' || tick.status === 'send') {
       // Fire-and-forget with retry: don't block the response on event publishing
-      publishAscentEvent(tick, userId, boardId).catch(() => {
+      publishAscentEvent(db, tick, userId, boardId).catch(() => {
         // Final failure already logged inside publishAscentEvent
       });
     }
@@ -218,6 +215,7 @@ const RETRY_BASE_DELAY_MS = 500;
  * Retries up to MAX_EVENT_RETRIES times with exponential backoff.
  */
 async function publishAscentEvent(
+  db: RequestDbInstance,
   tick: { uuid: string; climbUuid: string; boardType: string; status: string; angle: number; isMirror: boolean | null; isBenchmark: boolean | null; difficulty: number | null; quality: number | null; attemptCount: number; comment: string | null },
   userId: string,
   boardId: number | null,

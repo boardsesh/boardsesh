@@ -50,10 +50,8 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
     connectionId: 'conn-1',
     isAuthenticated: true,
     userId: 'user-123',
-    sessionId: null,
-    boardPath: null,
-    controllerId: null,
-    controllerApiKey: null,
+    sessionId: undefined,
+    db: mockDb,
     ...overrides,
   } as ConnectionContext;
 }

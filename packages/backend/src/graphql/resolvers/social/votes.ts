@@ -1,6 +1,5 @@
 import { eq, and, inArray } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -13,9 +12,8 @@ import {
 import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 
-const db = createRequestDb();
-
 async function getVoteSummary(
+  db: RequestDbInstance,
   entityType: SocialEntityType,
   entityId: string,
   authenticatedUserId: string | null | undefined,
@@ -75,7 +73,7 @@ export const socialVoteQueries = {
     const validatedType = validateInput(SocialEntityTypeSchema, entityType, 'entityType') as SocialEntityType;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
 
-    return getVoteSummary(validatedType, entityId, authenticatedUserId);
+    return getVoteSummary(db, validatedType, entityId, authenticatedUserId);
   },
 
   bulkVoteSummaries: async (
@@ -218,6 +216,6 @@ export const socialVoteMutations = {
       }).catch((err) => console.error('[Votes] Failed to publish social event:', err));
     }
 
-    return getVoteSummary(entityType as SocialEntityType, entityId, userId);
+    return getVoteSummary(db, entityType as SocialEntityType, entityId, userId);
   },
 };

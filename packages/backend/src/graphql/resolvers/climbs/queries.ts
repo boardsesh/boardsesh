@@ -23,8 +23,6 @@ import {
 import type { ClimbSearchContext } from '../shared/types';
 import * as dbSchema from '@boardsesh/db/schema';
 
-const db = createRequestDb();
-
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -170,7 +168,9 @@ export const climbQueries = {
   climbStatsHistory: async (
     _: unknown,
     { boardName, climbUuid }: { boardName: string; climbUuid: string },
+    ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 

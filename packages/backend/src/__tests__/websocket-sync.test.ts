@@ -1,9 +1,40 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
 import { roomManager } from '../services/room-manager';
-import { db } from '../db/client';
 import { sessions, sessionQueues } from '../db/schema';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+
+const { mockDb } = vi.hoisted(() => {
+  const mockDb = {
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockResolvedValue([]),
+    }),
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    }),
+  };
+  return { mockDb };
+});
+
+vi.mock('../db/client', () => ({
+  db: mockDb,
+}));
+
+import { db } from '../db/client';
 
 // Generate unique session IDs to prevent conflicts with parallel tests
 const uniqueId = () => `ws-sync-${randomUUID().slice(0, 8)}`;

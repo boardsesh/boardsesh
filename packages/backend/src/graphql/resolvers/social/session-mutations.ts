@@ -1,6 +1,5 @@
 import { eq, and, sql, isNull, inArray } from 'drizzle-orm';
 
-import { createRequestDb } from '@boardsesh/db/client';
 import type { RequestDbInstance } from '@boardsesh/db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
@@ -9,8 +8,6 @@ import type { SessionDetail } from '@boardsesh/shared-schema';
 import { sessionFeedQueries } from './session-feed';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
 import { z } from 'zod';
-
-const db = createRequestDb();
 
 const UpdateInferredSessionSchema = z.object({
   sessionId: z.string().min(1),
@@ -32,7 +29,11 @@ const RemoveUserFromSessionSchema = z.object({
  * Check if a user is a participant of an inferred session
  * (either the original owner or an added member via overrides).
  */
-async function requireSessionParticipant(sessionId: string, userId: string): Promise<void> {
+async function requireSessionParticipant(
+  db: RequestDbInstance,
+  sessionId: string,
+  userId: string
+): Promise<void> {
   // Check if user owns the session
   const [session] = await db
     .select({ userId: dbSchema.inferredSessions.userId })
@@ -77,7 +78,7 @@ export const sessionEditMutations = {
     const validated = validateInput(UpdateInferredSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Build the update set
     const updateSet: Record<string, unknown> = {};
@@ -112,7 +113,7 @@ export const sessionEditMutations = {
     const validated = validateInput(AddUserToSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Verify the target user exists
     const [targetUser] = await db
@@ -217,7 +218,7 @@ export const sessionEditMutations = {
     const validated = validateInput(RemoveUserFromSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Check that the user being removed is not the session owner
     const [session] = await db
