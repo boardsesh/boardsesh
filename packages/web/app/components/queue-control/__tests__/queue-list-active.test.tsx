@@ -100,6 +100,8 @@ vi.mock('@/app/components/providers/auth-modal-provider', () => ({
 }));
 
 // Mock child components as simple divs with data-testid
+const mockClimbListItem = vi.fn();
+
 vi.mock('../queue-climb-list-item', () => ({
   default: ({ item }: { item: ClimbQueueItem }) => (
     <div data-testid="queue-climb-list-item" data-uuid={item.uuid}>
@@ -109,11 +111,14 @@ vi.mock('../queue-climb-list-item', () => ({
 }));
 
 vi.mock('../../climb-card/climb-list-item', () => ({
-  default: ({ climb }: { climb: Climb }) => (
-    <div data-testid="climb-list-item" data-uuid={climb.uuid}>
-      {climb.name}
-    </div>
-  ),
+  default: (props: { climb: Climb; addToQueue?: (climb: Climb) => void; swipeRightAction?: unknown }) => {
+    mockClimbListItem(props);
+    return (
+      <div data-testid="climb-list-item" data-uuid={props.climb.uuid}>
+        {props.climb.name}
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../climb-card/drawer-climb-header', () => ({
@@ -227,6 +232,7 @@ function makeBoardDetails(): BoardDetails {
 describe('QueueList active prop', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClimbListItem.mockClear();
   });
 
   it('renders the "Suggestions" section header when active is true (default)', () => {
@@ -255,6 +261,17 @@ describe('QueueList active prop', () => {
     expect(items).toHaveLength(2);
     expect(screen.getByText('Suggested Boulder A')).toBeTruthy();
     expect(screen.getByText('Suggested Boulder B')).toBeTruthy();
+  });
+
+  it('passes add-to-queue swipe behavior to suggested ClimbListItems', () => {
+    render(<QueueList boardDetails={makeBoardDetails()} active={true} />);
+
+    const propsList = mockClimbListItem.mock.calls.map(([props]) => props);
+    expect(propsList).toHaveLength(2);
+    propsList.forEach((props) => {
+      expect(typeof props.addToQueue).toBe('function');
+      expect(props.swipeRightAction).toBeUndefined();
+    });
   });
 
   it('renders queue items (QueueClimbListItem) when active is true', () => {
