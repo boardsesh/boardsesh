@@ -30,14 +30,11 @@ const SwipeableDrawer = dynamic(() => import('../swipeable-drawer/swipeable-draw
 const MAX_GESTURE_SWIPE = 180;
 const SHORT_ACTION_WIDTH = 120;
 const RIGHT_ACTION_WIDTH = 100;
+const RIGHT_OVERRIDE_ACTION_WIDTH = 120;
 const LONG_SWIPE_ACTION_WIDTH = MAX_GESTURE_SWIPE;
 const SHORT_SWIPE_THRESHOLD = 60;
 const TRANSITION_START = 115;
 const LONG_SWIPE_THRESHOLD = 150;
-
-// Simple swipe constants for override mode (no long-swipe)
-const SIMPLE_MAX_SWIPE = 120;
-const SIMPLE_SWIPE_THRESHOLD = 100;
 
 // Static style objects (no reactive deps, hoisted out of component to avoid per-render allocation)
 const swipeActionLayerBaseStyle: React.CSSProperties = {
@@ -283,9 +280,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
     }, [swipeRightAction]);
 
     const resolvedSwipeLeft = hasRightOverride ? handleOverrideSwipeLeft : handleDefaultSwipeLeft;
-
-    // Use simple thresholds when right action is overridden (no long-swipe needed for left action)
-    const useSimpleSwipe = hasRightOverride;
+    const rightActionRevealWidth = hasRightOverride ? RIGHT_OVERRIDE_ACTION_WIDTH : RIGHT_ACTION_WIDTH;
 
     // Direct DOM manipulation for swipe layer opacities — zero React re-renders during gesture
     const handleSwipeOffset = useCallback((offset: number) => {
@@ -319,14 +314,14 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
     const { swipeHandlers, swipeLeftConfirmed, contentRef, leftActionRef, rightActionRef } = useSwipeActions({
       onSwipeLeft: resolvedSwipeLeft,
       onSwipeRight: handleDefaultSwipeRight,
-      onSwipeRightLong: useSimpleSwipe ? undefined : handleDefaultSwipeRightLong,
-      onSwipeOffsetChange: useSimpleSwipe ? undefined : handleSwipeOffset,
-      swipeThreshold: useSimpleSwipe ? SIMPLE_SWIPE_THRESHOLD : SHORT_SWIPE_THRESHOLD,
-      longSwipeRightThreshold: useSimpleSwipe ? undefined : LONG_SWIPE_THRESHOLD,
-      maxSwipe: useSimpleSwipe ? SIMPLE_MAX_SWIPE : MAX_GESTURE_SWIPE,
-      maxSwipeLeft: useSimpleSwipe ? undefined : RIGHT_ACTION_WIDTH,
+      onSwipeRightLong: handleDefaultSwipeRightLong,
+      onSwipeOffsetChange: handleSwipeOffset,
+      swipeThreshold: SHORT_SWIPE_THRESHOLD,
+      longSwipeRightThreshold: LONG_SWIPE_THRESHOLD,
+      maxSwipe: MAX_GESTURE_SWIPE,
+      maxSwipeLeft: rightActionRevealWidth,
       disabled: disableSwipe,
-      confirmationPeekOffset: RIGHT_ACTION_WIDTH,
+      confirmationPeekOffset: rightActionRevealWidth,
     });
 
     // Combined ref callback for left action container — avoids inline function recreation
@@ -355,12 +350,16 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
         return;
       }
       e.stopPropagation();
+      if (disableThumbnailNavigation) {
+        onThumbnailClickRef.current();
+        return;
+      }
       if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
       clickTimeoutRef.current = setTimeout(() => {
         clickTimeoutRef.current = null;
         onThumbnailClickRef.current?.();
       }, 300);
-    }, []);
+    }, [disableThumbnailNavigation]);
 
     // Thumbnail double-click handler
     const handleThumbnailDoubleClick = useCallback(() => {
@@ -406,13 +405,13 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
     );
 
 
-    const simpleRightActionStyle = useMemo(
+    const rightOverrideActionStyle = useMemo(
       () => ({
         position: 'absolute' as const,
         right: 0,
         top: 0,
         bottom: 0,
-        width: SIMPLE_MAX_SWIPE,
+        width: rightActionRevealWidth,
         backgroundColor: swipeRightAction?.color ?? themeTokens.colors.error,
         display: 'flex' as const,
         alignItems: 'center' as const,
@@ -421,7 +420,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
         opacity: 0,
         visibility: 'hidden' as const,
       }),
-      [swipeRightAction?.color],
+      [rightActionRevealWidth, swipeRightAction?.color],
     );
 
     const resolvedBg =
@@ -482,16 +481,14 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
                 <div ref={shortSwipeLayerRef} style={shortSwipeLayerInitialStyle}>
                   <LocalOfferOutlined style={iconStyle} />
                 </div>
-                {!useSimpleSwipe && (
-                  <div ref={longSwipeLayerRef} style={longSwipeLayerInitialStyle}>
-                    <MoreHorizOutlined style={iconStyle} />
-                  </div>
-                )}
+                <div ref={longSwipeLayerRef} style={longSwipeLayerInitialStyle}>
+                  <MoreHorizOutlined style={iconStyle} />
+                </div>
               </div>
 
               {/* Right action (revealed on swipe left) */}
               {hasRightOverride ? (
-                <div ref={rightActionRef} style={simpleRightActionStyle}>
+                <div ref={rightActionRef} style={rightOverrideActionStyle}>
                   {swipeRightAction?.icon ?? null}
                 </div>
               ) : (
