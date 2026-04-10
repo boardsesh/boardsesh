@@ -241,6 +241,7 @@ describe('ClimbListItem', () => {
     expect(capturedSwipeOptions?.swipeThreshold).toBe(60);
     expect(capturedSwipeOptions?.longSwipeRightThreshold).toBe(150);
     expect(capturedSwipeOptions?.maxSwipe).toBe(180);
+    expect(capturedSwipeOptions?.maxSwipeLeft).toBe(100);
     expect(typeof capturedSwipeOptions?.onSwipeRightLong).toBe('function');
   });
 
@@ -264,7 +265,7 @@ describe('ClimbListItem', () => {
       expect(screen.getByTestId('LocalOfferOutlinedIcon')).toBeTruthy();
     });
 
-    it('uses simple swipe thresholds when swipeRightAction is provided', () => {
+    it('keeps default swipe thresholds when swipeRightAction is provided', () => {
       render(
         <ClimbListItem
           pathname={defaultPathname}
@@ -276,9 +277,12 @@ describe('ClimbListItem', () => {
       );
 
       expect(capturedSwipeOptions).not.toBeNull();
-      expect(capturedSwipeOptions?.swipeThreshold).toBe(100);
-      expect(capturedSwipeOptions?.maxSwipe).toBe(120);
-      expect(capturedSwipeOptions?.longSwipeRightThreshold).toBeUndefined();
+      expect(capturedSwipeOptions?.swipeThreshold).toBe(60);
+      expect(capturedSwipeOptions?.maxSwipe).toBe(180);
+      expect(capturedSwipeOptions?.maxSwipeLeft).toBe(120);
+      expect(capturedSwipeOptions?.longSwipeRightThreshold).toBe(150);
+      expect(capturedSwipeOptions?.confirmationPeekOffset).toBe(120);
+      expect(typeof capturedSwipeOptions?.onSwipeRightLong).toBe('function');
     });
 
     it('calls swipeRightAction.onAction on swipe left', () => {
@@ -469,6 +473,25 @@ describe('ClimbListItem', () => {
       expect(onThumbnailClick).toHaveBeenCalledOnce();
 
       vi.useRealTimers();
+    });
+
+    it('calls onThumbnailClick immediately when disableThumbnailNavigation is true', () => {
+      const onThumbnailClick = vi.fn();
+      render(
+        <ClimbListItem
+          pathname={defaultPathname}
+          isDark={defaultIsDark}
+          climb={makeClimb()}
+          boardDetails={makeBoardDetails()}
+          disableThumbnailNavigation
+          onThumbnailClick={onThumbnailClick}
+        />,
+      );
+
+      const thumbnail = screen.getByTestId('climb-thumbnail').parentElement!;
+      fireEvent.click(thumbnail);
+
+      expect(onThumbnailClick).toHaveBeenCalledOnce();
     });
 
     it('cancels pending onThumbnailClick when double-click fires', () => {

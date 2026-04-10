@@ -59,7 +59,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
   const itemRef = useRef<HTMLDivElement>(null);
 
   // Only override swipe-left (right action) to tick instead of the default add-to-queue,
-  // since these items are already in the queue. Swipe-right uses the default playlist/actions.
+  // since these items are already in the queue. Swipe-right retains default playlist/actions.
   const swipeRightAction: SwipeActionOverride = useMemo(
     () => ({
       icon: <CheckOutlined style={{ color: 'white', fontSize: 20 }} />,
