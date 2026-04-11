@@ -84,7 +84,10 @@ export default function LibraryPageContent({
   );
 
   // Get current session/queue board info to use as default selection (global route only)
-  const { boardDetails: currentBoardDetails, hasActiveQueue } = useQueueBridgeBoardInfo();
+  const {
+    boardDetails: currentBoardDetails,
+    isHydrated: isQueueHydrated,
+  } = useQueueBridgeBoardInfo();
 
   useEffect(() => {
     setHasMounted(true);
@@ -110,9 +113,11 @@ export default function LibraryPageContent({
       }
       defaultBoardAppliedRef.current = true;
     } else {
-      // Global route: match from current session/queue board
-      // Wait if there's an active queue but board details haven't loaded yet
-      if (!currentBoardDetails && hasActiveQueue) return;
+      // Global route: match from current session/queue board.
+      // Wait until the persistent session has finished restoring from IndexedDB —
+      // otherwise on a fresh direct load we'd commit to "All Boards" before the
+      // real queue board is available and lock behind defaultBoardAppliedRef.
+      if (!isQueueHydrated) return;
 
       const match = currentBoardDetails ? findMatchingBoard(
         myBoards,
@@ -128,7 +133,7 @@ export default function LibraryPageContent({
       }
       defaultBoardAppliedRef.current = true;
     }
-  }, [myBoards, boardsLoading, currentBoardDetails, hasActiveQueue, boardSlug]);
+  }, [myBoards, boardsLoading, currentBoardDetails, isQueueHydrated, boardSlug]);
 
   // Data states — initialized from SSR data when available
   const [playlists, setPlaylists] = useState<Playlist[]>(initialPlaylists ?? []);
