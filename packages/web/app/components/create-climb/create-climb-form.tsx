@@ -857,7 +857,7 @@ export default function CreateClimbForm({
             type="file"
             ref={fileInputRef}
             accept="image/png,image/jpeg,image/webp"
-            style={{ display: 'none' }}
+            className={styles.hiddenFileInput}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) handleOcrImport(file);

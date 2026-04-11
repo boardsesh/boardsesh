@@ -137,6 +137,11 @@
   border-top: 1px solid var(--neutral-100);
 }
 
+/* Hidden file input for import */
+.hiddenFileInput {
+  display: none;
+}
+
 /* Settings nested drawer content */
 .settingsDrawerContent {
   display: flex;
