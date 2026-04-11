@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
@@ -16,7 +18,6 @@ import {
 } from '../../../validation/schemas';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import type { CreateSessionInput } from '../shared/types';
-import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
 import { eq, inArray } from 'drizzle-orm';
@@ -26,10 +27,10 @@ import { generateSessionSummary } from './session-summary';
  * Auto-authorize all controllers owned by a user for a session.
  * Called when user joins a session to allow their ESP32 devices to connect.
  */
-async function authorizeUserControllersForSession(userId: string, sessionId: string): Promise<void> {
+async function authorizeUserControllersForSession(db: RequestDbInstance, userId: string, sessionId: string): Promise<void> {
   try {
     // Update all controllers owned by this user to be authorized for this session
-    const result = await db
+    await db
       .update(esp32Controllers)
       .set({ authorizedSessionId: sessionId })
       .where(eq(esp32Controllers.userId, userId));
@@ -65,6 +66,7 @@ export const sessionMutations = {
     },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (DEBUG) console.log(`[joinSession] START - connectionId: ${ctx.connectionId}, sessionId: ${sessionId}, username: ${username}, sessionName: ${sessionName}, initialQueueLength: ${initialQueue?.length || 0}`);
 
     await applyRateLimit(ctx, 10); // Limit session joins to prevent abuse
@@ -97,7 +99,7 @@ export const sessionMutations = {
 
     // Auto-authorize user's ESP32 controllers for this session (if authenticated)
     if (ctx.isAuthenticated && ctx.userId) {
-      authorizeUserControllersForSession(ctx.userId, sessionId);
+      await authorizeUserControllersForSession(db, ctx.userId, sessionId);
     }
 
     // Notify session about new user
@@ -147,6 +149,7 @@ export const sessionMutations = {
     { input }: { input: CreateSessionInput },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (DEBUG) console.log(`[createSession] START - connectionId: ${ctx.connectionId}, boardPath: ${input.boardPath}`);
 
     await applyRateLimit(ctx, 5); // Limit session creation to prevent abuse
@@ -309,6 +312,7 @@ export const sessionMutations = {
     { sessionId }: { sessionId: string },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 5);
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
@@ -338,7 +342,7 @@ export const sessionMutations = {
     pubsub.publishSessionEvent(sessionId, sessionEndedEvent);
 
     // Generate and return summary
-    const summary = await generateSessionSummary(sessionId);
+    const summary = await generateSessionSummary(db, sessionId);
     return summary;
   },
 

@@ -1,5 +1,5 @@
 import { desc, sql, and, eq } from 'drizzle-orm';
-import type { DbInstance } from '../../client/neon';
+import type { AnyDbInstance } from '../../client/neon';
 import {
   boardClimbs,
   boardClimbStats,
@@ -51,7 +51,7 @@ function mapResultToClimbRow(result: RawSelectResult, angle: number): ClimbRow {
  * @param userId Optional user ID for personal progress filters
  */
 export const searchClimbs = async (
-  db: DbInstance,
+  db: AnyDbInstance,
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   userId?: string,
@@ -102,7 +102,7 @@ export const searchClimbs = async (
  * the WHERE clause — not the JOIN ON — so they apply correctly to the result set.
  */
 async function statsDrivenSearch(
-  db: DbInstance,
+  db: AnyDbInstance,
   params: BoardRouteParams,
   filters: ReturnType<typeof createClimbFilters>,
   page: number,
@@ -154,7 +154,7 @@ async function statsDrivenSearch(
  * and for draft queries.
  */
 async function standardSearch(
-  db: DbInstance,
+  db: AnyDbInstance,
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   filters: ReturnType<typeof createClimbFilters>,

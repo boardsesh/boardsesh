@@ -1,5 +1,7 @@
 import { eq, and, sql, isNull, inArray } from 'drizzle-orm';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance, TransactionDb } from '../../../db/client';
+import { withTransaction } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -28,7 +30,11 @@ const RemoveUserFromSessionSchema = z.object({
  * Check if a user is a participant of an inferred session
  * (either the original owner or an added member via overrides).
  */
-async function requireSessionParticipant(sessionId: string, userId: string): Promise<void> {
+async function requireSessionParticipant(
+  db: RequestDbInstance,
+  sessionId: string,
+  userId: string
+): Promise<void> {
   // Check if user owns the session
   const [session] = await db
     .select({ userId: dbSchema.inferredSessions.userId })
@@ -68,11 +74,12 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(UpdateInferredSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Build the update set
     const updateSet: Record<string, unknown> = {};
@@ -91,7 +98,7 @@ export const sessionEditMutations = {
     }
 
     // Return updated session detail
-    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId });
+    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId }, ctx);
   },
 
   /**
@@ -102,11 +109,12 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(AddUserToSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Verify the target user exists
     const [targetUser] = await db
@@ -162,7 +170,7 @@ export const sessionEditMutations = {
     );
 
     // Wrap tick reassignment, override insert, and stats recalculation in a transaction
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       const tickUuids = ticksToReassign.map((t) => t.uuid);
 
       // Save previousInferredSessionId and reassign
@@ -193,7 +201,7 @@ export const sessionEditMutations = {
       }
     });
 
-    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId });
+    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId }, ctx);
   },
 
   /**
@@ -206,11 +214,12 @@ export const sessionEditMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validated = validateInput(RemoveUserFromSessionSchema, input, 'input');
     const userId = ctx.userId!;
 
-    await requireSessionParticipant(validated.sessionId, userId);
+    await requireSessionParticipant(db, validated.sessionId, userId);
 
     // Check that the user being removed is not the session owner
     const [session] = await db
@@ -228,7 +237,7 @@ export const sessionEditMutations = {
     }
 
     // Wrap tick restoration + override deletion + stats recalculation in a transaction
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       // Find all ticks belonging to the removed user in this session
       const ticksToRestore = await tx
         .select({
@@ -319,7 +328,7 @@ export const sessionEditMutations = {
       }
     });
 
-    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId });
+    return sessionFeedQueries.sessionDetail(null, { sessionId: validated.sessionId }, ctx);
   },
 };
 
@@ -334,14 +343,15 @@ const SessionStatsRowSchema = z.object({
 
 /**
  * Recalculate aggregate stats for an inferred session from its current ticks.
- * Accepts an optional db/transaction connection — pass the transaction `tx`
- * when calling from within a db.transaction() to ensure consistent reads.
+ * Must be called inside a `withTransaction` callback — the caller passes the
+ * transaction handle so reads and writes see a consistent snapshot and so we
+ * don't hold an extra ephemeral connection against Neon.
  */
 export async function recalculateSessionStats(
   sessionId: string,
-  conn: Pick<typeof db, 'execute' | 'update'> = db,
+  tx: TransactionDb,
 ): Promise<void> {
-  const result = await conn.execute(sql`
+  const result = await tx.execute(sql`
     SELECT
       COUNT(*) AS tick_count,
       COUNT(*) FILTER (WHERE status IN ('flash', 'send')) AS total_sends,
@@ -358,7 +368,7 @@ export async function recalculateSessionStats(
 
   if (!parsed || !parsed.success || parsed.data.first_tick_at === null) {
     // No ticks remain — session is empty but keep it for reference
-    await conn
+    await tx
       .update(dbSchema.inferredSessions)
       .set({
         tickCount: 0,
@@ -371,7 +381,7 @@ export async function recalculateSessionStats(
   }
 
   const stats = parsed.data;
-  await conn
+  await tx
     .update(dbSchema.inferredSessions)
     .set({
       tickCount: stats.tick_count,

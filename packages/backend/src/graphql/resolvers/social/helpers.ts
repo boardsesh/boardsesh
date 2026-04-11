@@ -1,5 +1,6 @@
 import { eq, and, inArray, count } from 'drizzle-orm';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 export interface UserProfileEnrichment {
@@ -13,6 +14,7 @@ export interface UserProfileEnrichment {
  * for a list of user IDs. Replaces N+1 per-user queries with 3 batched queries.
  */
 export async function batchEnrichUserProfiles(
+  db: RequestDbInstance,
   userIds: string[],
   authenticatedUserId: string | undefined,
 ): Promise<Map<string, UserProfileEnrichment>> {

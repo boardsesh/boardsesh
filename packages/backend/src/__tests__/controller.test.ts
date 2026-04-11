@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { db } from '../db/client';
+import type { RequestDbInstance } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
@@ -11,13 +12,16 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 const TEST_USER_ID = 'test-user-controller-tests';
 const TEST_SESSION_ID = 'test-session-controller-tests';
 
-// Helper to create a mock authenticated context
+// Helper to create a mock authenticated context. Each resolver reads its
+// request-scoped db from `ctx.db`, so we thread in the test Postgres
+// singleton here.
 function createMockContext(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
     connectionId: `conn-${Date.now()}`,
     isAuthenticated: true,
     userId: TEST_USER_ID,
     sessionId: undefined,
+    db: db as unknown as RequestDbInstance,
     ...overrides,
   };
 }
@@ -35,6 +39,7 @@ function createControllerContext(
     sessionId: undefined,
     controllerId,
     controllerApiKey,
+    db: db as unknown as RequestDbInstance,
     ...overrides,
   };
 }

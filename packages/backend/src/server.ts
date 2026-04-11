@@ -5,7 +5,7 @@ import { roomManager } from './services/room-manager';
 import { redisClientManager } from './redis/client';
 import { eventBroker, NotificationWorker } from './events/index';
 import { sql } from 'drizzle-orm';
-import { db } from './db/client';
+import { createRequestDb } from './db/client';
 import { initCors, applyCorsHeaders } from './handlers/cors';
 import { handleHealthCheck } from './handlers/health';
 import { handleSessionJoin } from './handlers/join';
@@ -243,6 +243,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
   // Periodic notification cleanup (once per day)
   const notificationCleanupInterval = setInterval(async () => {
     try {
+      const db = createRequestDb();
       await db.execute(sql`DELETE FROM notifications WHERE created_at < NOW() - INTERVAL '90 days'`);
     } catch (error) {
       console.error('[Server] Notification cleanup error:', error);
@@ -253,6 +254,7 @@ export async function startServer(): Promise<{ wss: WebSocketServer; httpServer:
   // Periodic feed items cleanup (hourly, retains 180 days)
   const feedCleanupInterval = setInterval(async () => {
     try {
+      const db = createRequestDb();
       const result = await db.execute(sql`DELETE FROM feed_items WHERE created_at < NOW() - INTERVAL '180 days'`);
       const deleted = (result as unknown as { rowCount?: number }).rowCount ?? 0;
       if (deleted > 0) {

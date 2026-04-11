@@ -1,6 +1,8 @@
 import { eq, and } from 'drizzle-orm';
+
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { SetCommunitySettingInputSchema } from '../../../validation/schemas';
@@ -24,6 +26,7 @@ export async function resolveCommunitySetting(
   angle?: number | null,
   boardType?: string,
 ): Promise<string> {
+  const db = createRequestDb();
   // 1. Try climb-level
   if (climbUuid) {
     const [climbSetting] = await db
@@ -80,6 +83,7 @@ export const socialCommunitySettingsQueries = {
     { scope, scopeKey }: { scope: string; scopeKey: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const settings = await db
@@ -111,6 +115,7 @@ export const socialCommunitySettingsMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdminOrLeader(ctx);
     await applyRateLimit(ctx, 10);
 

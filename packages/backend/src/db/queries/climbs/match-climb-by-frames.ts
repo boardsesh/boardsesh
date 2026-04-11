@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../client';
+import type { RequestDbInstance } from '../../client';
 import { getBoardTables, type BoardName } from '../util/table-select';
 
 interface MatchedClimb {
@@ -11,6 +11,7 @@ interface MatchedClimb {
  * Find a climb by exact frames string match.
  * Returns the most popular climb (by ascensionist count) if multiple matches exist.
  *
+ * @param db - Request-scoped neon-http drizzle client
  * @param boardName - The board type (kilter, tension, moonboard)
  * @param layoutId - The layout ID to search within
  * @param frames - The frames string to match
@@ -18,6 +19,7 @@ interface MatchedClimb {
  * @returns The matched climb or null if not found
  */
 export async function matchClimbByFrames(
+  db: RequestDbInstance,
   boardName: BoardName,
   layoutId: number,
   frames: string,

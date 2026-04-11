@@ -40,8 +40,8 @@ vi.mock('uuid', () => ({
   v4: () => 'test-uuid-1234',
 }));
 
-vi.mock('../db/client', () => ({
-  db: {
+vi.mock('../db/client', () => {
+  const mockDb = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -50,8 +50,13 @@ vi.mock('../db/client', () => ({
     values: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
-  },
-}));
+  };
+  return {
+    db: mockDb,
+    createRequestDb: () => mockDb,
+    withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb),
+  };
+});
 
 vi.mock('./session-summary', () => ({
   generateSessionSummary: vi.fn().mockResolvedValue(null),

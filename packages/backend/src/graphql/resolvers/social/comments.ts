@@ -1,6 +1,8 @@
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
+
+import { withTransaction } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -62,7 +64,7 @@ function mapCommentRow(row: CommentRow) {
 /**
  * Helper to get aggregate vote counts for a comment from vote_counts table
  */
-async function getCommentVoteCounts(commentUuid: string) {
+async function getCommentVoteCounts(db: RequestDbInstance, commentUuid: string) {
   const [counts] = await db
     .select({
       upvotes: dbSchema.voteCounts.upvotes,
@@ -89,6 +91,7 @@ export const socialCommentQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(CommentsInputSchema, input, 'input');
     const { entityType, entityId, parentCommentUuid, sortBy, limit = 20, offset = 0 } = validated;
 
@@ -222,6 +225,7 @@ export const socialCommentQueries = {
     { input }: { input?: Record<string, unknown> },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(GlobalCommentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
@@ -347,6 +351,7 @@ export const socialCommentMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'comment');
 
@@ -354,7 +359,7 @@ export const socialCommentMutations = {
     const { entityType, entityId, parentCommentUuid, body } = validated;
     const userId = ctx.userId!;
 
-    await validateEntityExists(entityType, entityId);
+    await validateEntityExists(db, entityType, entityId);
 
     let parentCommentId: number | null = null;
     if (parentCommentUuid) {
@@ -455,6 +460,7 @@ export const socialCommentMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'comment');
 
@@ -499,7 +505,7 @@ export const socialCommentMutations = {
       .limit(1);
 
     // Fetch vote data from vote_counts
-    const { upvotes, downvotes } = await getCommentVoteCounts(commentUuid);
+    const { upvotes, downvotes } = await getCommentVoteCounts(db, commentUuid);
 
     // Reply count
     const replyResult = await db
@@ -571,6 +577,7 @@ export const socialCommentMutations = {
     { commentUuid }: { commentUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -591,7 +598,7 @@ export const socialCommentMutations = {
     }
 
     // Use transaction to prevent race condition between reply check and delete
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       const replyResult = await tx
         .select({ count: count() })
         .from(dbSchema.comments)

@@ -1,7 +1,8 @@
 import { eq, and, count, sql, ilike, inArray } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, Climb, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -27,6 +28,7 @@ export const setterFollowQueries = {
     { input }: { input: { username: string } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(SetterProfileInputSchema, input, 'input');
     const username = validatedInput.username;
 
@@ -105,8 +107,9 @@ export const setterFollowQueries = {
   setterClimbs: async (
     _: unknown,
     { input }: { input: { username: string; boardType?: string; layoutId?: number; sortBy?: string; limit?: number; offset?: number } },
-    _ctx: ConnectionContext
+    ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(SetterClimbsInputSchema, input, 'input');
     const { username, boardType, layoutId, sortBy = 'popular', limit = 20, offset = 0 } = validatedInput;
 
@@ -198,8 +201,9 @@ export const setterFollowQueries = {
       limit?: number;
       offset?: number;
     } },
-    _ctx: ConnectionContext
+    ctx: ConnectionContext
   ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(SetterClimbsFullInputSchema, input, 'input');
     const { username, boardType, sortBy = 'popular', limit = 20, offset = 0 } = validatedInput;
 
@@ -398,6 +402,7 @@ export const setterFollowQueries = {
     { input }: { input: { query: string; boardType?: string; limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 20);
 
     const validatedInput = validateInput(SearchUsersInputSchema, input, 'input');
@@ -577,6 +582,7 @@ export const setterFollowMutations = {
     { input }: { input: { setterUsername: string } },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'follow');
 
@@ -645,6 +651,7 @@ export const setterFollowMutations = {
     { input }: { input: { setterUsername: string } },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'follow');
 

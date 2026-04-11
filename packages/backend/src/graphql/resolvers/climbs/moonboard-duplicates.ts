@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm';
+import type { RequestDbInstance } from '../../../db/client';
 import type {
   MoonBoardClimbDuplicateCandidateInput,
   MoonBoardClimbDuplicateMatch,
   MoonBoardHoldsInput,
 } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { db } from '../../../db/client';
 import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
 
 type MoonBoardHoldState = 'STARTING' | 'HAND' | 'FINISH';
@@ -136,6 +136,7 @@ export function buildMoonBoardDuplicateError(existingClimbName?: string | null):
 }
 
 export async function findMoonBoardDuplicateMatches(
+  db: RequestDbInstance,
   layoutId: number,
   angle: number,
   climbs: DuplicateCandidate[],
@@ -255,10 +256,11 @@ export async function findMoonBoardDuplicateMatches(
 }
 
 export async function findMoonBoardDuplicateMatch(
+  db: RequestDbInstance,
   layoutId: number,
   angle: number,
   holds: MoonBoardHoldsInput,
 ): Promise<MoonBoardClimbDuplicateMatch | null> {
-  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }]);
+  const [match] = await findMoonBoardDuplicateMatches(db, layoutId, angle, [{ clientKey: 'save', holds }]);
   return match?.exists ? match : null;
 }

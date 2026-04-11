@@ -1,5 +1,5 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { createRequestDb } from '../../db/client';
 import { sessionQueues } from '../../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
@@ -74,6 +74,7 @@ export async function updateQueueStateImmediate(
   expectedVersion: number | undefined,
   redisStore: RedisSessionStore | null
 ): Promise<number> {
+  const db = createRequestDb();
   if (expectedVersion !== undefined) {
     if (expectedVersion === 0) {
       // Version 0 means no row exists yet - try to insert
@@ -232,6 +233,7 @@ export async function getQueueState(
   sessionId: string,
   redisStore: RedisSessionStore | null
 ): Promise<QueueState> {
+  const db = createRequestDb();
   // Check Redis first (source of truth for active sessions)
   if (redisStore) {
     const redisSession = await redisStore.getSession(sessionId);

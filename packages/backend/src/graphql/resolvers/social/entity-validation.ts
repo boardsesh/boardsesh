@@ -1,5 +1,6 @@
 import { eq, and, isNull } from 'drizzle-orm';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 
@@ -8,6 +9,7 @@ import type { SocialEntityType } from '@boardsesh/shared-schema';
  * Performs minimal SELECT ... LIMIT 1 existence checks.
  */
 export async function validateEntityExists(
+  db: RequestDbInstance,
   entityType: SocialEntityType,
   entityId: string,
 ): Promise<void> {

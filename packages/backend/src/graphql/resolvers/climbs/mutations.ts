@@ -1,8 +1,8 @@
 import crypto from 'crypto';
+import type { RequestDbInstance } from '../../../db/client';
 import { and, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SaveClimbResult } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
@@ -26,7 +26,7 @@ function generateClimbUuid(): string {
   return crypto.randomUUID().replace(/-/g, '').toUpperCase();
 }
 
-async function getUserProfile(userId: string) {
+async function getUserProfile(db: RequestDbInstance, userId: string) {
   const [user] = await db
     .select({
       name: dbSchema.users.name,
@@ -46,7 +46,7 @@ async function getUserProfile(userId: string) {
   };
 }
 
-async function resolveDifficultyId(boardType: string, grade?: string | null): Promise<number | null> {
+async function resolveDifficultyId(db: RequestDbInstance, boardType: string, grade?: string | null): Promise<number | null> {
   if (!grade) return null;
   const fontPart = grade.split('/')[0].trim().toLowerCase();
 
@@ -74,6 +74,7 @@ export const climbMutations = {
     { input }: SaveClimbArgs,
     ctx: ConnectionContext
   ): Promise<SaveClimbResult> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -86,7 +87,7 @@ export const climbMutations = {
 
     const uuid = generateClimbUuid();
     const now = new Date().toISOString();
-    const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
+    const { displayName, name, avatarUrl } = await getUserProfile(db, ctx.userId!);
     const preferredSetter = displayName || name || null;
 
     await db.insert(UNIFIED_TABLES.climbs).values({
@@ -142,6 +143,7 @@ export const climbMutations = {
     { input }: SaveClimbArgs,
     ctx: ConnectionContext
   ): Promise<SaveClimbResult> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -155,10 +157,10 @@ export const climbMutations = {
 
     const uuid = generateClimbUuid();
     const now = new Date().toISOString();
-    const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
+    const { displayName, name, avatarUrl } = await getUserProfile(db, ctx.userId!);
     const preferredSetter = validated.setter || displayName || name || null;
 
-    const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
+    const duplicateMatch = await findMoonBoardDuplicateMatch(db, validated.layoutId, validated.angle, validated.holds);
     if (duplicateMatch) {
       throw new Error(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName));
     }
@@ -191,7 +193,7 @@ export const climbMutations = {
     }
 
     // Optional grade stats
-    const difficultyId = await resolveDifficultyId(validated.boardType, validated.userGrade);
+    const difficultyId = await resolveDifficultyId(db, validated.boardType, validated.userGrade);
     if (difficultyId !== null) {
       await db
         .insert(dbSchema.boardClimbStats)

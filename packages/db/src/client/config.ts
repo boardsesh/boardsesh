@@ -31,6 +31,16 @@ export function getConnectionConfig(): ConnectionConfig {
     };
   }
 
+  // Test fallback: mirror the default used by packages/backend/src/__tests__/setup.ts
+  // so Vitest runs can hit the local test Postgres without requiring DATABASE_URL.
+  if (!connectionString && isTest) {
+    return {
+      connectionString: 'postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test',
+      isLocal,
+      isTest,
+    };
+  }
+
   if (!connectionString) {
     throw new Error('DATABASE_URL environment variable is required');
   }

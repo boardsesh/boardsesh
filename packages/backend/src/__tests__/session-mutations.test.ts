@@ -20,6 +20,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../db/client';
 
 // Mock the database client before importing the module under test
 vi.mock('../db/client', () => {
@@ -36,7 +37,13 @@ vi.mock('../db/client', () => {
     delete: vi.fn().mockReturnThis(),
     execute: vi.fn().mockResolvedValue({ rows: [] }),
   };
-  return { db: mockDb };
+  return {
+    db: mockDb,
+    createRequestDb: () => mockDb,
+    // withTransaction is not exercised in these tests (all cases throw before
+    // reaching the transaction). Stub it out so the module import resolves.
+    withTransaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb)),
+  };
 });
 
 vi.mock('../graphql/resolvers/social/session-feed', () => ({
@@ -57,6 +64,7 @@ function makeCtx(userId = 'user-1'): ConnectionContext {
   return {
     isAuthenticated: true,
     userId,
+    db: db as unknown as RequestDbInstance,
   } as ConnectionContext;
 }
 
@@ -65,7 +73,8 @@ function makeUnauthCtx(): ConnectionContext {
   return {
     isAuthenticated: false,
     userId: null,
-  } as ConnectionContext;
+    db: db as unknown as RequestDbInstance,
+  } as unknown as ConnectionContext;
 }
 
 /**

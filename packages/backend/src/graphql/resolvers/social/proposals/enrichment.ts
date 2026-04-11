@@ -1,5 +1,6 @@
 import { eq, and, sql, inArray } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
 
@@ -7,6 +8,7 @@ import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
  * Enrich a single proposal with proposer info, vote counts, climb data, and stats.
  */
 export async function enrichProposal(
+  db: RequestDbInstance,
   proposal: typeof dbSchema.climbProposals.$inferSelect,
   authenticatedUserId: string | null | undefined,
 ) {
@@ -167,6 +169,7 @@ export async function enrichProposal(
  * Batch-enrich multiple proposals in 3-4 queries total (instead of 4-7 per proposal).
  */
 export async function batchEnrichProposals(
+  db: RequestDbInstance,
   proposals: (typeof dbSchema.climbProposals.$inferSelect)[],
   authenticatedUserId: string | null | undefined,
 ) {

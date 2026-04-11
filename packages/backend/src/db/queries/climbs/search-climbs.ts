@@ -1,4 +1,4 @@
-import { db } from '../../client';
+import type { RequestDbInstance } from '../../client';
 import { searchClimbs as sharedSearchClimbs, type BoardRouteParams, type ClimbSearchParams } from '@boardsesh/db/queries';
 import type { Climb, ClimbSearchResult } from '@boardsesh/shared-schema';
 
@@ -6,6 +6,7 @@ import type { Climb, ClimbSearchResult } from '@boardsesh/shared-schema';
 export type { ClimbSearchParams, BoardRouteParams as ParsedBoardRouteParameters };
 
 export const searchClimbs = async (
+  db: RequestDbInstance,
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   userId?: string,

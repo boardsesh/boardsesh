@@ -1,6 +1,6 @@
 import { jwtDecrypt } from 'jose';
 import { hkdf } from '@panva/hkdf';
-import { db } from '../db/client';
+import { createRequestDb } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 
@@ -126,6 +126,7 @@ export function extractControllerApiKey(
 export async function validateControllerApiKey(
   apiKey: string
 ): Promise<ControllerAuthResult | null> {
+  const db = createRequestDb();
   try {
     const [controller] = await db
       .select()
@@ -155,3 +156,4 @@ export async function validateControllerApiKey(
     return null;
   }
 }
+

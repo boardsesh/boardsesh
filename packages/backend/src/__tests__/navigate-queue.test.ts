@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager } from '../services/room-manager';
 import { db } from '../db/client';
+import type { RequestDbInstance } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, sql } from 'drizzle-orm';
 import { controllerMutations } from '../graphql/resolvers/controller/mutations';
@@ -39,7 +40,8 @@ function createMockQueueItem(overrides: Partial<ClimbQueueItem> = {}): ClimbQueu
   };
 }
 
-// Helper to create mock authenticated user context
+// Helper to create mock authenticated user context. The resolver reads its
+// request-scoped db from `ctx.db`, so we pass the test Postgres singleton.
 function createMockContext(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
     connectionId: `conn-${Date.now()}`,
@@ -48,6 +50,7 @@ function createMockContext(overrides: Partial<ConnectionContext> = {}): Connecti
     sessionId: TEST_SESSION_ID,
     rateLimitTokens: 60,
     rateLimitLastReset: Date.now(),
+    db: db as unknown as RequestDbInstance,
     ...overrides,
   };
 }
@@ -67,6 +70,7 @@ function createControllerContext(
     controllerApiKey,
     rateLimitTokens: 60,
     rateLimitLastReset: Date.now(),
+    db: db as unknown as RequestDbInstance,
     ...overrides,
   };
 }

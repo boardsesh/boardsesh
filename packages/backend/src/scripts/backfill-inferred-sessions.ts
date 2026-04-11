@@ -7,11 +7,12 @@
  * (like "ug:userId:groupNumber") to the corresponding inferred session IDs.
  */
 import 'dotenv/config';
-import { db } from '../db/client';
+import { createRequestDb } from '../db/client';
 import { sql } from 'drizzle-orm';
 import { runInferredSessionBuilderBatched } from '../jobs/inferred-session-builder';
 
 async function main() {
+  const db = createRequestDb();
   console.log('=== Backfill Inferred Sessions ===');
 
   // Check how many unassigned ticks exist

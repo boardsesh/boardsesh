@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import type { RequestDbInstance } from '../../../db/client';
 import { eq, and, count, isNull, sql, ilike, or, desc, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -25,7 +26,7 @@ import {
  * Generate a unique slug from a gym name.
  * Exported for reuse in board auto-gym creation.
  */
-export async function generateUniqueGymSlug(name: string): Promise<string> {
+export async function generateUniqueGymSlug(db: RequestDbInstance, name: string): Promise<string> {
   const baseSlug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -91,6 +92,7 @@ function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$infer
  * Enrich a gym row with computed fields (counts, follow status, membership).
  */
 async function enrichGym(
+  db: RequestDbInstance,
   gym: typeof dbSchema.gyms.$inferSelect,
   authenticatedUserId?: string,
 ) {
@@ -215,6 +217,7 @@ async function enrichGym(
  * Verify user is gym owner or admin, return the gym row.
  */
 async function requireGymOwnerOrAdmin(
+  db: RequestDbInstance,
   gymUuid: string,
   userId: string,
 ): Promise<typeof dbSchema.gyms.$inferSelect> {
@@ -262,6 +265,7 @@ export const socialGymQueries = {
     { gymUuid }: { gymUuid: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(UUIDSchema, gymUuid, 'gymUuid');
 
     const [gym] = await db
@@ -271,7 +275,7 @@ export const socialGymQueries = {
       .limit(1);
 
     if (!gym) return null;
-    return enrichGym(gym, ctx.isAuthenticated ? ctx.userId : undefined);
+    return enrichGym(db, gym, ctx.isAuthenticated ? ctx.userId : undefined);
   },
 
   gymBySlug: async (
@@ -279,6 +283,7 @@ export const socialGymQueries = {
     { slug }: { slug: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     if (!slug || slug.length > 120 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
       return null;
     }
@@ -290,7 +295,7 @@ export const socialGymQueries = {
       .limit(1);
 
     if (!gym) return null;
-    return enrichGym(gym, ctx.isAuthenticated ? ctx.userId : undefined);
+    return enrichGym(db, gym, ctx.isAuthenticated ? ctx.userId : undefined);
   },
 
   myGyms: async (
@@ -298,6 +303,7 @@ export const socialGymQueries = {
     { input }: { input?: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(MyGymsInputSchema, input || {}, 'input');
     const userId = ctx.userId!;
@@ -341,7 +347,7 @@ export const socialGymQueries = {
       .offset(offset);
 
     const enrichedGyms = await Promise.all(
-      gymRows.map((g) => enrichGym(g, userId)),
+      gymRows.map((g) => enrichGym(db, g, userId)),
     );
 
     return {
@@ -356,6 +362,7 @@ export const socialGymQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
     const { query, latitude, longitude, radiusKm } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -387,7 +394,7 @@ export const socialGymQueries = {
       const mappedGyms = rows.map(mapRawGymRow);
 
       const enrichedGyms = await Promise.all(
-        mappedGyms.map((g) => enrichGym(g, ctx.isAuthenticated ? ctx.userId : undefined)),
+        mappedGyms.map((g) => enrichGym(db, g, ctx.isAuthenticated ? ctx.userId : undefined)),
       );
 
       return {
@@ -431,7 +438,7 @@ export const socialGymQueries = {
       .offset(offset);
 
     const enrichedGyms = await Promise.all(
-      gymRows.map((g) => enrichGym(g, ctx.isAuthenticated ? ctx.userId : undefined)),
+      gymRows.map((g) => enrichGym(db, g, ctx.isAuthenticated ? ctx.userId : undefined)),
     );
 
     return {
@@ -446,6 +453,7 @@ export const socialGymQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(GymMembersInputSchema, input, 'input');
     const { gymUuid } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -513,6 +521,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -520,7 +529,7 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const uuid = uuidv4();
-    const slug = await generateUniqueGymSlug(validatedInput.name);
+    const slug = await generateUniqueGymSlug(db, validatedInput.name);
 
     const [gym] = await db
       .insert(dbSchema.gyms)
@@ -568,7 +577,7 @@ export const socialGymMutations = {
       }
     }
 
-    return enrichGym(gym, userId);
+    return enrichGym(db, gym, userId);
   },
 
   updateGym: async (
@@ -576,13 +585,14 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
     const validatedInput = validateInput(UpdateGymInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+    const gym = await requireGymOwnerOrAdmin(db, validatedInput.gymUuid, userId);
 
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -639,7 +649,7 @@ export const socialGymMutations = {
       }
     }
 
-    return enrichGym(updated, userId);
+    return enrichGym(db, updated, userId);
   },
 
   deleteGym: async (
@@ -647,6 +657,7 @@ export const socialGymMutations = {
     { gymUuid }: { gymUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -687,13 +698,14 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
     const validatedInput = validateInput(AddGymMemberInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+    const gym = await requireGymOwnerOrAdmin(db, validatedInput.gymUuid, userId);
 
     // Verify target user exists
     const [targetUser] = await db
@@ -723,13 +735,14 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
     const validatedInput = validateInput(RemoveGymMemberInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+    const gym = await requireGymOwnerOrAdmin(db, validatedInput.gymUuid, userId);
 
     // Prevent removing the owner
     if (validatedInput.userId === gym.ownerId) {
@@ -753,6 +766,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -793,6 +807,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -827,6 +842,7 @@ export const socialGymMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -855,7 +871,7 @@ export const socialGymMutations = {
 
     if (validatedInput.gymUuid) {
       // Link to gym — verify gym ownership/admin
-      const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+      const gym = await requireGymOwnerOrAdmin(db, validatedInput.gymUuid, userId);
 
       await db
         .update(dbSchema.userBoards)

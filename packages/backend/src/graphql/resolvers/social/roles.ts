@@ -1,6 +1,7 @@
 import { eq, and, isNull, count } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -14,6 +15,7 @@ import {
  */
 export async function requireAdmin(ctx: ConnectionContext, boardType?: string | null): Promise<void> {
   requireAuthenticated(ctx);
+  const db = ctx.db as RequestDbInstance;
   const userId = ctx.userId!;
 
   const roles = await db
@@ -35,6 +37,7 @@ export async function requireAdmin(ctx: ConnectionContext, boardType?: string | 
  */
 export async function requireAdminOrLeader(ctx: ConnectionContext, boardType?: string | null): Promise<void> {
   requireAuthenticated(ctx);
+  const db = ctx.db as RequestDbInstance;
   const userId = ctx.userId!;
 
   const roles = await db
@@ -56,7 +59,7 @@ export async function requireAdminOrLeader(ctx: ConnectionContext, boardType?: s
 /**
  * Get a user's vote weight based on their role.
  */
-export async function getUserVoteWeight(userId: string, boardType?: string | null): Promise<number> {
+export async function getUserVoteWeight(db: RequestDbInstance, userId: string, boardType?: string | null): Promise<number> {
   const roles = await db
     .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
     .from(dbSchema.communityRoles)
@@ -72,7 +75,7 @@ export async function getUserVoteWeight(userId: string, boardType?: string | nul
   return maxWeight;
 }
 
-async function enrichRoleAssignment(role: typeof dbSchema.communityRoles.$inferSelect) {
+async function enrichRoleAssignment(db: RequestDbInstance, role: typeof dbSchema.communityRoles.$inferSelect) {
   const [user] = await db
     .select({
       displayName: dbSchema.userProfiles.displayName,
@@ -111,6 +114,7 @@ export const socialRoleQueries = {
     { boardType }: { boardType?: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const conditions = boardType
       ? [eq(dbSchema.communityRoles.boardType, boardType)]
       : [];
@@ -124,7 +128,7 @@ export const socialRoleQueries = {
           .select()
           .from(dbSchema.communityRoles);
 
-    return Promise.all(roles.map(enrichRoleAssignment));
+    return Promise.all(roles.map((r) => enrichRoleAssignment(db, r)));
   },
 
   myRoles: async (
@@ -132,6 +136,7 @@ export const socialRoleQueries = {
     __: unknown,
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -140,7 +145,7 @@ export const socialRoleQueries = {
       .from(dbSchema.communityRoles)
       .where(eq(dbSchema.communityRoles.userId, userId));
 
-    return Promise.all(roles.map(enrichRoleAssignment));
+    return Promise.all(roles.map((r) => enrichRoleAssignment(db, r)));
   },
 };
 
@@ -150,6 +155,7 @@ export const socialRoleMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdmin(ctx);
     await applyRateLimit(ctx, 10);
 
@@ -182,7 +188,7 @@ export const socialRoleMutations = {
           .limit(1);
 
     if (existing.length > 0) {
-      return enrichRoleAssignment(existing[0]);
+      return enrichRoleAssignment(db, existing[0]);
     }
 
     const [inserted] = await db
@@ -195,7 +201,7 @@ export const socialRoleMutations = {
       })
       .returning();
 
-    return enrichRoleAssignment(inserted);
+    return enrichRoleAssignment(db, inserted);
   },
 
   revokeRole: async (
@@ -203,6 +209,7 @@ export const socialRoleMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await requireAdmin(ctx);
     await applyRateLimit(ctx, 10);
 

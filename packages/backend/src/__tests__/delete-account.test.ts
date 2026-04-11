@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 // Hoist mock variables so they're available before module evaluation
-const { mockDb, txCalls } = vi.hoisted(() => {
+const { mockDb, mockWithTransaction, txCalls } = vi.hoisted(() => {
   const txCalls: Array<{ method: string; args: unknown[] }> = [];
 
   const mockDb = {
@@ -23,14 +23,17 @@ const { mockDb, txCalls } = vi.hoisted(() => {
         where: vi.fn().mockResolvedValue([{ count: 0 }]),
       }),
     }),
-    transaction: vi.fn(),
   };
 
-  return { mockDb, txCalls };
+  const mockWithTransaction = vi.fn();
+
+  return { mockDb, mockWithTransaction, txCalls };
 });
 
 vi.mock('../db/client', () => ({
   db: mockDb,
+  createRequestDb: () => mockDb,
+  withTransaction: mockWithTransaction,
 }));
 
 import { userMutations } from '../graphql/resolvers/users/mutations';
@@ -42,6 +45,7 @@ function makeAuthCtx(userId = 'user-1'): ConnectionContext {
     sessionId: undefined,
     userId,
     isAuthenticated: true,
+    db: mockDb as unknown as ConnectionContext['db'],
   };
 }
 
@@ -51,6 +55,7 @@ function makeAnonCtx(): ConnectionContext {
     sessionId: undefined,
     userId: undefined,
     isAuthenticated: false,
+    db: mockDb as unknown as ConnectionContext['db'],
   };
 }
 
@@ -61,7 +66,7 @@ function makeAnonCtx(): ConnectionContext {
 function setupTransactionMock(options?: { failOnUserDelete?: boolean }) {
   txCalls.length = 0;
 
-  mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
+  mockWithTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
     const tx = {
       delete: vi.fn().mockImplementation((table: unknown) => {
         const call = { method: 'delete', table, args: [] as unknown[] };

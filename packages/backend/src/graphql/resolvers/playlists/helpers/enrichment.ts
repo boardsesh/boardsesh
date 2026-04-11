@@ -1,5 +1,6 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 /** Raw playlist row shape from owned-playlist queries (userPlaylists, allUserPlaylists). */
@@ -21,6 +22,7 @@ export interface OwnedPlaylistRow {
 
 /** Fetch climb counts for a list of playlist numeric IDs. Returns Map<stringId, count>. */
 export async function getClimbCounts(
+  db: RequestDbInstance,
   playlistIds: bigint[],
 ): Promise<Map<string, number>> {
   if (playlistIds.length === 0) return new Map();
@@ -105,6 +107,7 @@ export function formatPublicPlaylist(p: PublicPlaylistRow) {
  * Throws if playlist not found or user lacks access to a private playlist.
  */
 export async function verifyPlaylistAccess(
+  db: RequestDbInstance,
   playlistUuid: string,
   userId: string | null,
 ): Promise<bigint> {

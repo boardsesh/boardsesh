@@ -1,7 +1,7 @@
 import { eq, and, sql } from 'drizzle-orm';
 import type { SocialEvent } from '@boardsesh/shared-schema';
 import type { NotificationType } from '@boardsesh/db/schema';
-import { db } from '../db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../pubsub/index';
 import type { EventBroker } from './event-broker';
@@ -32,37 +32,38 @@ export class NotificationWorker {
   }
 
   private async processEvent(event: SocialEvent): Promise<void> {
+    const db = createRequestDb();
     try {
       switch (event.type) {
         case 'comment.created':
-          await this.handleCommentCreated(event);
+          await this.handleCommentCreated(db, event);
           break;
         case 'comment.reply':
-          await this.handleCommentReply(event);
+          await this.handleCommentReply(db, event);
           break;
         case 'vote.cast':
-          await this.handleVoteCast(event);
+          await this.handleVoteCast(db, event);
           break;
         case 'follow.created':
-          await this.handleFollowCreated(event);
+          await this.handleFollowCreated(db, event);
           break;
         case 'ascent.logged':
-          await this.handleAscentLogged(event);
+          await this.handleAscentLogged(db, event);
           break;
         case 'proposal.voted':
-          await this.handleProposalVoted(event);
+          await this.handleProposalVoted(db, event);
           break;
         case 'proposal.approved':
-          await this.handleProposalApproved(event);
+          await this.handleProposalApproved(db, event);
           break;
         case 'proposal.rejected':
-          await this.handleProposalRejected(event);
+          await this.handleProposalRejected(db, event);
           break;
         case 'proposal.created':
-          await this.handleProposalCreated(event);
+          await this.handleProposalCreated(db, event);
           break;
         case 'climb.created':
-          await this.handleClimbCreated(event);
+          await this.handleClimbCreated(db, event);
           break;
         default:
           break;
@@ -72,14 +73,16 @@ export class NotificationWorker {
     }
   }
 
-  private async handleCommentCreated(event: SocialEvent): Promise<void> {
+  private async handleCommentCreated(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const recipients = await resolveCommentRecipients(
+      db,
       event.entityType,
       event.entityId,
     );
 
     for (const recipient of recipients) {
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -90,8 +93,9 @@ export class NotificationWorker {
     }
   }
 
-  private async handleCommentReply(event: SocialEvent): Promise<void> {
+  private async handleCommentReply(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const recipients = await resolveCommentRecipients(
+      db,
       event.entityType,
       event.entityId,
       event.metadata.parentCommentId,
@@ -99,6 +103,7 @@ export class NotificationWorker {
 
     for (const recipient of recipients) {
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -109,8 +114,9 @@ export class NotificationWorker {
     }
   }
 
-  private async handleVoteCast(event: SocialEvent): Promise<void> {
+  private async handleVoteCast(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const recipients = await resolveVoteRecipients(
+      db,
       event.entityType,
       event.entityId,
     );
@@ -118,6 +124,7 @@ export class NotificationWorker {
     for (const recipient of recipients) {
       // Deduplicate: skip if same actor voted on same entity recently (1 hour)
       const isDuplicate = await this.isDuplicate(
+        db,
         event.actorId,
         recipient.recipientId,
         recipient.notificationType,
@@ -127,6 +134,7 @@ export class NotificationWorker {
       if (isDuplicate) continue;
 
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -136,12 +144,13 @@ export class NotificationWorker {
     }
   }
 
-  private async handleFollowCreated(event: SocialEvent): Promise<void> {
+  private async handleFollowCreated(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const recipient = resolveFollowRecipient(event.metadata);
     if (!recipient) return;
 
     // Deduplicate follows within 24 hours
     const isDuplicate = await this.isDuplicate(
+      db,
       event.actorId,
       recipient.recipientId,
       recipient.notificationType,
@@ -151,6 +160,7 @@ export class NotificationWorker {
     if (isDuplicate) return;
 
     await this.createAndPublishNotification(
+      db,
       recipient.recipientId,
       event.actorId,
       recipient.notificationType,
@@ -159,15 +169,16 @@ export class NotificationWorker {
     );
   }
 
-  private async handleAscentLogged(event: SocialEvent): Promise<void> {
-    await fanoutFeedItems(event);
+  private async handleAscentLogged(db: RequestDbInstance, event: SocialEvent): Promise<void> {
+    await fanoutFeedItems(db, event);
   }
 
-  private async handleProposalVoted(event: SocialEvent): Promise<void> {
-    const recipients = await resolveProposalVoteRecipients(event.entityId);
+  private async handleProposalVoted(db: RequestDbInstance, event: SocialEvent): Promise<void> {
+    const recipients = await resolveProposalVoteRecipients(db, event.entityId);
 
     for (const recipient of recipients) {
       const isDuplicate = await this.isDuplicate(
+        db,
         event.actorId,
         recipient.recipientId,
         recipient.notificationType,
@@ -177,6 +188,7 @@ export class NotificationWorker {
       if (isDuplicate) continue;
 
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -186,11 +198,12 @@ export class NotificationWorker {
     }
   }
 
-  private async handleProposalApproved(event: SocialEvent): Promise<void> {
-    const recipients = await resolveProposalApprovalRecipients(event.entityId);
+  private async handleProposalApproved(db: RequestDbInstance, event: SocialEvent): Promise<void> {
+    const recipients = await resolveProposalApprovalRecipients(db, event.entityId);
 
     for (const recipient of recipients) {
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -200,11 +213,12 @@ export class NotificationWorker {
     }
   }
 
-  private async handleProposalRejected(event: SocialEvent): Promise<void> {
-    const recipients = await resolveProposalRejectionRecipients(event.entityId);
+  private async handleProposalRejected(db: RequestDbInstance, event: SocialEvent): Promise<void> {
+    const recipients = await resolveProposalRejectionRecipients(db, event.entityId);
 
     for (const recipient of recipients) {
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -214,15 +228,16 @@ export class NotificationWorker {
     }
   }
 
-  private async handleProposalCreated(event: SocialEvent): Promise<void> {
+  private async handleProposalCreated(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const climbUuid = event.metadata.climbUuid;
     const boardType = event.metadata.boardType;
     if (!climbUuid || !boardType) return;
 
-    const recipients = await resolveProposalCreatedRecipients(climbUuid, boardType, event.actorId);
+    const recipients = await resolveProposalCreatedRecipients(db, climbUuid, boardType, event.actorId);
 
     for (const recipient of recipients) {
       const isDuplicate = await this.isDuplicate(
+        db,
         event.actorId,
         recipient.recipientId,
         recipient.notificationType,
@@ -232,6 +247,7 @@ export class NotificationWorker {
       if (isDuplicate) continue;
 
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -245,15 +261,16 @@ export class NotificationWorker {
    * Handle climb.created events: notify followers and layout subscribers,
    * fan out feed items, and publish realtime new-climb events.
    */
-  private async handleClimbCreated(event: SocialEvent): Promise<void> {
+  private async handleClimbCreated(db: RequestDbInstance, event: SocialEvent): Promise<void> {
     const boardType = event.metadata.boardType;
     const layoutId = parseInt(event.metadata.layoutId || '0', 10);
     const climbName = event.metadata.climbName || '';
 
     if (!boardType || !layoutId) return;
 
-    const followerRecipients = await resolveClimbCreatedFollowerRecipients(event.actorId);
+    const followerRecipients = await resolveClimbCreatedFollowerRecipients(db, event.actorId);
     const subscriberRecipients = await resolveClimbCreatedSubscriptionRecipients(
+      db,
       boardType,
       layoutId,
       event.actorId,
@@ -267,6 +284,7 @@ export class NotificationWorker {
 
     for (const recipient of allRecipients) {
       await this.createAndPublishNotification(
+        db,
         recipient.recipientId,
         event.actorId,
         recipient.notificationType,
@@ -276,7 +294,7 @@ export class NotificationWorker {
     }
 
     // Fan out feed items to followers only (not global subscribers)
-    await fanoutNewClimbFeedItems(event);
+    await fanoutNewClimbFeedItems(db, event);
 
     // Publish realtime new climb event to the board+layout channel
     const [climb] = await db
@@ -337,6 +355,7 @@ export class NotificationWorker {
   }
 
   private async isDuplicate(
+    db: RequestDbInstance,
     actorId: string,
     recipientId: string,
     type: NotificationType,
@@ -357,6 +376,7 @@ export class NotificationWorker {
   }
 
   private async createAndPublishNotification(
+    db: RequestDbInstance,
     recipientId: string,
     actorId: string,
     type: NotificationType,
@@ -394,13 +414,14 @@ export class NotificationWorker {
       });
 
     // Enrich for real-time delivery
-    const enriched = await this.enrichNotification(uuid, actorId, type, entityType, entityId, commentUuid);
+    const enriched = await this.enrichNotification(db, uuid, actorId, type, entityType, entityId, commentUuid);
 
     // Push to connected WS clients via PubSub
     pubsub.publishNotificationEvent(recipientId, { notification: enriched });
   }
 
   private async enrichNotification(
+    db: RequestDbInstance,
     uuid: string,
     actorId: string,
     type: NotificationType,
@@ -502,3 +523,4 @@ export class NotificationWorker {
     };
   }
 }
+

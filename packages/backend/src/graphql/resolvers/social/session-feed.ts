@@ -1,5 +1,8 @@
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray } from 'drizzle-orm';
-import { db } from '../../../db/client';
+
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { validateInput } from '../shared/helpers';
@@ -18,7 +21,9 @@ export const sessionFeedQueries = {
   sessionGroupedFeed: async (
     _: unknown,
     { input }: { input?: Record<string, unknown> },
+    ctx?: ConnectionContext,
   ) => {
+    const db = (ctx?.db as RequestDbInstance | undefined) ?? createRequestDb();
     const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
 
@@ -160,10 +165,10 @@ export const sessionFeedQueries = {
     const sessionTypes = new Map(resultRows.map((r) => [r.session_id, r.session_type]));
 
     const [participantMap, gradeDistMap, metaMap, boardTypesMap] = await Promise.all([
-      fetchParticipantsBatch(sessionIds),
-      fetchGradeDistributionBatch(sessionIds),
-      fetchSessionMetaBatch(sessionIds, sessionTypes),
-      fetchBoardTypesBatch(sessionIds),
+      fetchParticipantsBatch(db, sessionIds),
+      fetchGradeDistributionBatch(db, sessionIds),
+      fetchSessionMetaBatch(db, sessionIds, sessionTypes),
+      fetchBoardTypesBatch(db, sessionIds),
     ]);
 
     const sessions: SessionFeedItem[] = resultRows.map((row) => {
@@ -215,7 +220,9 @@ export const sessionFeedQueries = {
   sessionDetail: async (
     _: unknown,
     { sessionId }: { sessionId: string },
+    ctx?: ConnectionContext,
   ): Promise<SessionDetail | null> => {
+    const db = (ctx?.db as RequestDbInstance | undefined) ?? createRequestDb();
     if (!sessionId) return null;
 
     // Check if it's a party mode session
@@ -416,7 +423,7 @@ export const sessionFeedQueries = {
 
     const { totalSends, totalFlashes, totalAttempts } = computeSessionAggregates(tickRows);
 
-    const participants = await fetchParticipants(sessionId, isParty ? 'party' : 'inferred', userIds);
+    const participants = await fetchParticipants(db, sessionId, isParty ? 'party' : 'inferred', userIds);
     const gradeDistribution = buildGradeDistributionFromTicks(tickRows);
 
     // Timestamps
@@ -514,6 +521,7 @@ function tickSessionFilter(sessionId: string, sessionType: string) {
  * Fetch participant info for a session
  */
 async function fetchParticipants(
+  db: RequestDbInstance,
   sessionId: string,
   sessionType: string,
   userIds: string[],
@@ -570,6 +578,7 @@ async function fetchParticipants(
  * Returns a Map from sessionId to participants array.
  */
 async function fetchParticipantsBatch(
+  db: RequestDbInstance,
   sessionIds: string[],
 ): Promise<Map<string, SessionFeedParticipant[]>> {
   if (sessionIds.length === 0) return new Map();
@@ -625,6 +634,7 @@ async function fetchParticipantsBatch(
  * Returns a Map from sessionId to grade distribution array.
  */
 async function fetchGradeDistributionBatch(
+  db: RequestDbInstance,
   sessionIds: string[],
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (sessionIds.length === 0) return new Map();
@@ -670,6 +680,7 @@ async function fetchGradeDistributionBatch(
  * Returns a Map from sessionId to metadata.
  */
 async function fetchSessionMetaBatch(
+  db: RequestDbInstance,
   sessionIds: string[],
   sessionTypes: Map<string, string>,
 ): Promise<Map<string, { name: string | null; goal: string | null; ownerUserId: string | null }>> {
@@ -722,6 +733,7 @@ async function fetchSessionMetaBatch(
  * Returns a Map from sessionId to board types array.
  */
 async function fetchBoardTypesBatch(
+  db: RequestDbInstance,
   sessionIds: string[],
 ): Promise<Map<string, string[]>> {
   if (sessionIds.length === 0) return new Map();

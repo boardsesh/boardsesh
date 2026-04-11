@@ -1,6 +1,7 @@
 import { eq, and, sql, isNull } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../../shared/helpers';
@@ -25,6 +26,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 5);
 
@@ -146,7 +148,7 @@ export const socialProposalMutations = {
       .returning();
 
     // Auto-vote with proposer's weight
-    const weight = await getUserVoteWeight(proposerId, boardType);
+    const weight = await getUserVoteWeight(db, proposerId, boardType);
     await db
       .insert(dbSchema.proposalVotes)
       .values({
@@ -157,7 +159,7 @@ export const socialProposalMutations = {
       });
 
     // Check auto-approval (atomic: only transition if still 'open')
-    const shouldApprove = await checkAutoApproval(proposal.id, boardType, climbUuid, angle ?? null);
+    const shouldApprove = await checkAutoApproval(db, proposal.id, boardType, climbUuid, angle ?? null);
     if (shouldApprove) {
       const [approved] = await db
         .update(dbSchema.climbProposals)
@@ -172,7 +174,7 @@ export const socialProposalMutations = {
         proposal.status = 'approved';
         proposal.resolvedAt = approved.resolvedAt;
 
-        await applyProposalEffect(proposal);
+        await applyProposalEffect(db, proposal);
 
         publishSocialEvent({
           type: 'proposal.approved',
@@ -195,7 +197,7 @@ export const socialProposalMutations = {
       metadata: { climbUuid, boardType, proposalType: type },
     }).catch((err) => console.error('[Proposals] Failed to publish proposal.created:', err));
 
-    return enrichProposal(proposal, proposerId);
+    return enrichProposal(db, proposal, proposerId);
   },
 
   voteOnProposal: async (
@@ -203,6 +205,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 20);
 
@@ -225,7 +228,7 @@ export const socialProposalMutations = {
     }
 
     // Compute voter's weight
-    const weight = await getUserVoteWeight(userId, proposal.boardType);
+    const weight = await getUserVoteWeight(db, userId, proposal.boardType);
 
     // UPSERT vote (toggle off if same value)
     const [existingVote] = await db
@@ -257,7 +260,7 @@ export const socialProposalMutations = {
     }
 
     // Check auto-approval (atomic: only transition if still 'open')
-    const shouldApprove = await checkAutoApproval(proposal.id, proposal.boardType, proposal.climbUuid, proposal.angle);
+    const shouldApprove = await checkAutoApproval(db, proposal.id, proposal.boardType, proposal.climbUuid, proposal.angle);
     if (shouldApprove) {
       const [approved] = await db
         .update(dbSchema.climbProposals)
@@ -272,7 +275,7 @@ export const socialProposalMutations = {
         proposal.status = 'approved';
         proposal.resolvedAt = approved.resolvedAt;
 
-        await applyProposalEffect(proposal);
+        await applyProposalEffect(db, proposal);
 
         publishSocialEvent({
           type: 'proposal.approved',
@@ -295,7 +298,7 @@ export const socialProposalMutations = {
       metadata: { value: String(value), climbUuid: proposal.climbUuid, boardType: proposal.boardType },
     }).catch((err) => console.error('[Proposals] Failed to publish proposal.voted:', err));
 
-    return enrichProposal(proposal, userId);
+    return enrichProposal(db, proposal, userId);
   },
 
   resolveProposal: async (
@@ -303,6 +306,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(ResolveProposalInputSchema, input, 'input');
     const { proposalUuid, status, reason } = validated;
 
@@ -335,7 +339,7 @@ export const socialProposalMutations = {
     proposal.resolvedBy = userId;
 
     if (status === 'approved') {
-      await applyProposalEffect(proposal);
+      await applyProposalEffect(db, proposal);
     }
 
     const eventType = status === 'approved' ? 'proposal.approved' : 'proposal.rejected';
@@ -348,7 +352,7 @@ export const socialProposalMutations = {
       metadata: { climbUuid: proposal.climbUuid, boardType: proposal.boardType, proposalType: proposal.type },
     }).catch((err) => console.error(`[Proposals] Failed to publish ${eventType}:`, err));
 
-    return enrichProposal(proposal, userId);
+    return enrichProposal(db, proposal, userId);
   },
 
   deleteProposal: async (
@@ -356,6 +360,7 @@ export const socialProposalMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(DeleteProposalInputSchema, input, 'input');
     const { proposalUuid } = validated;
 
@@ -373,7 +378,7 @@ export const socialProposalMutations = {
     const userId = ctx.userId!;
 
     // Revert the proposal's effect
-    await revertProposalEffect(proposal);
+    await revertProposalEffect(db, proposal);
 
     // Hard-delete the proposal (votes cascade-delete via FK, lastProposalId set to null via FK)
     await db

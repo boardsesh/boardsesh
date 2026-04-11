@@ -1,6 +1,7 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { BoardNameSchema, FavoritesQueryClimbUuidsSchema } from '../../../validation/schemas';
@@ -15,6 +16,7 @@ export const favoriteQueries = {
     { boardName, climbUuids, angle }: { boardName: string; climbUuids: string[]; angle: number },
     ctx: ConnectionContext
   ): Promise<string[]> => {
+    const db = ctx.db as RequestDbInstance;
     if (!ctx.isAuthenticated || !ctx.userId) {
       return [];
     }
@@ -45,6 +47,7 @@ export const favoriteQueries = {
     __: unknown,
     ctx: ConnectionContext
   ): Promise<Array<{ boardName: string; count: number }>> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const results = await db
@@ -67,6 +70,7 @@ export const favoriteQueries = {
     __: unknown,
     ctx: ConnectionContext
   ): Promise<string[]> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const userId = ctx.userId!;

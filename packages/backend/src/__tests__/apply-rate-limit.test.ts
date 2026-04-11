@@ -30,6 +30,8 @@ vi.mock('../services/distributed-state', () => ({
 // Mock db client to avoid DATABASE_URL requirement
 vi.mock('../db/client', () => ({
   db: {},
+  createRequestDb: () => ({}),
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
 }));
 
 import { applyRateLimit } from '../graphql/resolvers/shared/helpers';

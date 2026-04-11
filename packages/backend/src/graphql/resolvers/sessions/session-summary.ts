@@ -1,5 +1,6 @@
-import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
+
+import type { RequestDbInstance } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, inArray, sql, count, desc, isNotNull } from 'drizzle-orm';
 import type { SessionSummary } from '@boardsesh/shared-schema';
@@ -7,8 +8,14 @@ import type { SessionSummary } from '@boardsesh/shared-schema';
 /**
  * Generate a summary for a session including grade distribution,
  * hardest climb, participant stats, and duration.
+ *
+ * Takes a db instance from the caller so we reuse the request-scoped
+ * neon-http client instead of allocating a new one per call.
  */
-export async function generateSessionSummary(sessionId: string): Promise<SessionSummary | null> {
+export async function generateSessionSummary(
+  db: RequestDbInstance,
+  sessionId: string,
+): Promise<SessionSummary | null> {
   // Fetch session metadata using Drizzle ORM
   const sessionRows = await db
     .select()

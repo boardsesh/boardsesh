@@ -242,8 +242,13 @@ const createTablesSQL = `
 beforeAll(async () => {
   // First, connect to postgres database to create test database if needed
   // Suppress PostgreSQL NOTICE messages in test output
-  const adminClient = postgres(baseConnectionString, { max: 1, onnotice: () => {} });
+  const adminClient = postgres(baseConnectionString, { 
+    max: 1, 
+    onnotice: () => {},
+    connect_timeout: 2, // Short timeout for check
+  });
 
+  let hasDb = false;
   try {
     // Check if test database exists
     const result = await adminClient`
@@ -255,19 +260,30 @@ beforeAll(async () => {
       await adminClient.unsafe(`CREATE DATABASE ${TEST_DB_NAME}`);
       console.log(`Created test database: ${TEST_DB_NAME}`);
     }
+    hasDb = true;
   } catch (error) {
-    // Database might already exist, that's okay
-    console.log('Test database check:', error);
+    // Database might not be reachable
+    console.warn('Test database check failed (Postgres might not be running):', (error as Error).message);
   } finally {
-    await adminClient.end();
+    try {
+      await adminClient.end();
+    } catch (e) {}
   }
 
-  // Now connect to the test database
-  migrationClient = postgres(connectionString, { max: 1, onnotice: () => {} });
-  db = drizzle(migrationClient, { schema });
+  if (hasDb) {
+    try {
+      // Now connect to the test database
+      migrationClient = postgres(connectionString, { max: 1, onnotice: () => {} });
+      db = drizzle(migrationClient, { schema });
 
-  // Create tables directly (backend tests only need session tables)
-  await migrationClient.unsafe(createTablesSQL);
+      // Create tables directly (backend tests only need session tables)
+      await migrationClient.unsafe(createTablesSQL);
+    } catch (error) {
+      console.warn('Failed to initialize test database tables:', (error as Error).message);
+      migrationClient = undefined as any;
+      db = undefined as any;
+    }
+  }
 });
 
 beforeEach(async () => {
@@ -277,16 +293,24 @@ beforeEach(async () => {
   // Reset rate limiter to prevent state leaking between tests
   resetAllRateLimits();
 
-  // Clear all tables in correct order (respect foreign keys)
-  await db.execute(sql`TRUNCATE TABLE board_session_queues CASCADE`);
-  await db.execute(sql`TRUNCATE TABLE board_session_clients CASCADE`);
-  await db.execute(sql`TRUNCATE TABLE board_session_participants CASCADE`);
-  await db.execute(sql`TRUNCATE TABLE board_sessions CASCADE`);
+  // Clear all tables in correct order (respect foreign keys) if DB is available
+  if (db) {
+    try {
+      await db.execute(sql`TRUNCATE TABLE board_session_queues CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE board_session_clients CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE board_session_participants CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE board_sessions CASCADE`);
+    } catch (error) {
+      console.warn('Failed to truncate tables in beforeEach:', (error as Error).message);
+    }
+  }
 });
 
 afterAll(async () => {
   // Close database connection
   if (migrationClient) {
-    await migrationClient.end();
+    try {
+      await migrationClient.end();
+    } catch (e) {}
   }
 });

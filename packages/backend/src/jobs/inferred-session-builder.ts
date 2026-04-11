@@ -1,5 +1,6 @@
 import { v5 as uuidv5 } from 'uuid';
-import { db } from '../db/client';
+import { createRequestDb, withTransaction } from '../db/client';
+import type { TransactionDb } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sql, eq, and, isNull, desc, inArray } from 'drizzle-orm';
 import { recalculateSessionStats } from '../graphql/resolvers/social/session-mutations';
@@ -137,17 +138,17 @@ function buildSessionGroup(userId: string, ticks: TickForGrouping[]): InferredSe
  * to an existing inferred session or starts a new one.
  */
 /**
- * Core logic for assigning an inferred session to a tick.
- * Extracted so it can be called with either a transaction or the global db.
+ * Core logic for assigning an inferred session to a tick. Must run inside a
+ * transaction — the caller is responsible for opening one via `withTransaction`.
  */
 async function assignInferredSessionWithConn(
-  conn: Pick<typeof db, 'select' | 'insert' | 'update' | 'execute'>,
+  tx: TransactionDb,
   tickUuid: string,
   userId: string,
   climbedAt: string,
 ): Promise<string | null> {
   // Find user's most recent tick (excluding the current one)
-  const [prevTick] = await conn
+  const [prevTick] = await tx
     .select({
       inferredSessionId: dbSchema.boardseshTicks.inferredSessionId,
       climbedAt: dbSchema.boardseshTicks.climbedAt,
@@ -174,13 +175,13 @@ async function assignInferredSessionWithConn(
       const sessionId = prevTick.inferredSessionId;
 
       // Assign tick to the existing session
-      await conn
+      await tx
         .update(dbSchema.boardseshTicks)
         .set({ inferredSessionId: sessionId })
         .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
 
       // Recalculate stats
-      await recalculateSessionStats(sessionId, conn);
+      await recalculateSessionStats(sessionId, tx);
 
       return sessionId;
     }
@@ -189,7 +190,7 @@ async function assignInferredSessionWithConn(
   // No previous tick within 4h or no previous inferred session — create a new one
   const sessionId = generateInferredSessionId(userId, climbedAt);
 
-  await conn.insert(dbSchema.inferredSessions).values({
+  await tx.insert(dbSchema.inferredSessions).values({
     id: sessionId,
     userId,
     firstTickAt: climbedAt,
@@ -201,17 +202,17 @@ async function assignInferredSessionWithConn(
   }).onConflictDoNothing();
 
   // Assign tick to the new session
-  await conn
+  await tx
     .update(dbSchema.boardseshTicks)
     .set({ inferredSessionId: sessionId })
     .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
 
   // Recalculate stats
-  await recalculateSessionStats(sessionId, conn);
+  await recalculateSessionStats(sessionId, tx);
 
   // If there was a previous inferred session, mark it as ended
   if (prevTick?.inferredSessionId && prevTick.inferredSessionId !== sessionId) {
-    await conn
+    await tx
       .update(dbSchema.inferredSessions)
       .set({ endedAt: prevTick.climbedAt })
       .where(
@@ -227,21 +228,21 @@ async function assignInferredSessionWithConn(
 
 /**
  * Assign an inferred session to a newly-created tick (called from saveTick).
- * Wraps in a transaction when called standalone. Pass an optional conn to
- * participate in an outer transaction instead.
+ * Wraps in a transaction when called standalone. Pass an existing transaction
+ * handle to participate in an outer `withTransaction` instead.
  */
 export async function assignInferredSession(
   tickUuid: string,
   userId: string,
   climbedAt: string,
   _status: string,
-  conn?: Pick<typeof db, 'select' | 'insert' | 'update' | 'execute'>,
+  tx?: TransactionDb,
 ): Promise<string | null> {
-  if (conn) {
-    return assignInferredSessionWithConn(conn, tickUuid, userId, climbedAt);
-  }
-  return db.transaction(async (tx) => {
+  if (tx) {
     return assignInferredSessionWithConn(tx, tickUuid, userId, climbedAt);
+  }
+  return withTransaction(async (newTx) => {
+    return assignInferredSessionWithConn(newTx, tickUuid, userId, climbedAt);
   });
 }
 
@@ -250,35 +251,37 @@ export async function assignInferredSession(
  * Shared by the batched builder and the web-side post-sync builder.
  */
 async function upsertSessionAndAssignTicks(group: InferredSessionGroup): Promise<void> {
-  // Upsert the inferred session (time bounds only — stats recalculated below)
-  await db
-    .insert(dbSchema.inferredSessions)
-    .values({
-      id: group.sessionId,
-      userId: group.userId,
-      firstTickAt: group.firstTickAt,
-      lastTickAt: group.lastTickAt,
-      totalSends: group.totalSends,
-      totalFlashes: group.totalFlashes,
-      totalAttempts: group.totalAttempts,
-      tickCount: group.tickCount,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.inferredSessions.id,
-      set: {
-        firstTickAt: sql`LEAST(${dbSchema.inferredSessions.firstTickAt}, EXCLUDED.first_tick_at)`,
-        lastTickAt: sql`GREATEST(${dbSchema.inferredSessions.lastTickAt}, EXCLUDED.last_tick_at)`,
-      },
-    });
+  await withTransaction(async (tx) => {
+    // Upsert the inferred session (time bounds only — stats recalculated below)
+    await tx
+      .insert(dbSchema.inferredSessions)
+      .values({
+        id: group.sessionId,
+        userId: group.userId,
+        firstTickAt: group.firstTickAt,
+        lastTickAt: group.lastTickAt,
+        totalSends: group.totalSends,
+        totalFlashes: group.totalFlashes,
+        totalAttempts: group.totalAttempts,
+        tickCount: group.tickCount,
+      })
+      .onConflictDoUpdate({
+        target: dbSchema.inferredSessions.id,
+        set: {
+          firstTickAt: sql`LEAST(${dbSchema.inferredSessions.firstTickAt}, EXCLUDED.first_tick_at)`,
+          lastTickAt: sql`GREATEST(${dbSchema.inferredSessions.lastTickAt}, EXCLUDED.last_tick_at)`,
+        },
+      });
 
-  // Bulk-update ticks with IN (...) instead of per-tick updates
-  await db
-    .update(dbSchema.boardseshTicks)
-    .set({ inferredSessionId: group.sessionId })
-    .where(inArray(dbSchema.boardseshTicks.uuid, group.tickUuids));
+    // Bulk-update ticks with IN (...) instead of per-tick updates
+    await tx
+      .update(dbSchema.boardseshTicks)
+      .set({ inferredSessionId: group.sessionId })
+      .where(inArray(dbSchema.boardseshTicks.uuid, group.tickUuids));
 
-  // Recalculate stats from actual ticks (avoids double-counting on races)
-  await recalculateSessionStats(group.sessionId);
+    // Recalculate stats from actual ticks (avoids double-counting on races)
+    await recalculateSessionStats(group.sessionId, tx);
+  });
 }
 
 /**
@@ -291,6 +294,7 @@ export async function runInferredSessionBuilderBatched(options?: {
   batchSize?: number;
 }): Promise<{ usersProcessed: number; ticksAssigned: number }> {
   const batchSize = options?.batchSize ?? 5000;
+  const db = createRequestDb();
 
   // Find distinct users with unassigned ticks
   const userFilter = options?.userId

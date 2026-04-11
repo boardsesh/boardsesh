@@ -1,6 +1,7 @@
 import { eq, and, inArray } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import {
@@ -12,6 +13,7 @@ import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 
 async function getVoteSummary(
+  db: RequestDbInstance,
   entityType: SocialEntityType,
   entityId: string,
   authenticatedUserId: string | null | undefined,
@@ -67,10 +69,11 @@ export const socialVoteQueries = {
     { entityType, entityId }: { entityType: string; entityId: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedType = validateInput(SocialEntityTypeSchema, entityType, 'entityType') as SocialEntityType;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
 
-    return getVoteSummary(validatedType, entityId, authenticatedUserId);
+    return getVoteSummary(db, validatedType, entityId, authenticatedUserId);
   },
 
   bulkVoteSummaries: async (
@@ -78,6 +81,7 @@ export const socialVoteQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(BulkVoteSummaryInputSchema, input, 'input');
     const { entityType, entityIds } = validated;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
@@ -149,6 +153,7 @@ export const socialVoteMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'vote');
 
@@ -156,7 +161,7 @@ export const socialVoteMutations = {
     const { entityType, entityId, value } = validated;
     const userId = ctx.userId!;
 
-    await validateEntityExists(entityType as SocialEntityType, entityId);
+    await validateEntityExists(db, entityType as SocialEntityType, entityId);
 
     // Check for existing vote
     const [existing] = await db
@@ -211,6 +216,6 @@ export const socialVoteMutations = {
       }).catch((err) => console.error('[Votes] Failed to publish social event:', err));
     }
 
-    return getVoteSummary(entityType as SocialEntityType, entityId, userId);
+    return getVoteSummary(db, entityType as SocialEntityType, entityId, userId);
   },
 };

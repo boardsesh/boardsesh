@@ -1,5 +1,5 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { db } from '../db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
 
@@ -13,6 +13,7 @@ interface RecipientInfo {
  * Returns the entity owner and/or parent comment author.
  */
 export async function resolveCommentRecipients(
+  db: RequestDbInstance,
   entityType: string,
   entityId: string,
   parentCommentId?: string,
@@ -67,6 +68,7 @@ export async function resolveCommentRecipients(
  * Resolve recipients for a vote event.
  */
 export async function resolveVoteRecipients(
+  db: RequestDbInstance,
   entityType: string,
   entityId: string,
 ): Promise<RecipientInfo[]> {
@@ -108,6 +110,7 @@ export async function resolveVoteRecipients(
  * Notifies the proposer.
  */
 export async function resolveProposalVoteRecipients(
+  db: RequestDbInstance,
   proposalUuid: string,
 ): Promise<RecipientInfo[]> {
   const [proposal] = await db
@@ -129,6 +132,7 @@ export async function resolveProposalVoteRecipients(
  * Notifies the proposer and all upvoters.
  */
 export async function resolveProposalApprovalRecipients(
+  db: RequestDbInstance,
   proposalUuid: string,
 ): Promise<RecipientInfo[]> {
   const [proposal] = await db
@@ -177,6 +181,7 @@ export async function resolveProposalApprovalRecipients(
  * Notifies the proposer.
  */
 export async function resolveProposalRejectionRecipients(
+  db: RequestDbInstance,
   proposalUuid: string,
 ): Promise<RecipientInfo[]> {
   const [proposal] = await db
@@ -198,6 +203,7 @@ export async function resolveProposalRejectionRecipients(
  * Notifies users who have logged ascents or attempts on the climb.
  */
 export async function resolveProposalCreatedRecipients(
+  db: RequestDbInstance,
   climbUuid: string,
   boardType: string,
   actorId: string,
@@ -240,6 +246,7 @@ export function resolveFollowRecipient(
  * Resolve recipients when a user creates a climb: all followers of the setter.
  */
 export async function resolveClimbCreatedFollowerRecipients(
+  db: RequestDbInstance,
   setterId: string,
 ): Promise<RecipientInfo[]> {
   const followers = await db
@@ -257,6 +264,7 @@ export async function resolveClimbCreatedFollowerRecipients(
  * Resolve recipients subscribed to a board type + layout for new climb notifications.
  */
 export async function resolveClimbCreatedSubscriptionRecipients(
+  db: RequestDbInstance,
   boardType: string,
   layoutId: number,
   excludeUserId?: string,
@@ -278,3 +286,4 @@ export async function resolveClimbCreatedSubscriptionRecipients(
       notificationType: 'new_climb_global',
     }));
 }
+

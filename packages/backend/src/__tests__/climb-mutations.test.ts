@@ -17,6 +17,8 @@ const { mockDb, mockPublishSocialEvent, insertCalls } = vi.hoisted(() => {
 
 vi.mock('../db/client', () => ({
   db: mockDb,
+  createRequestDb: () => mockDb,
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb),
 }));
 
 vi.mock('../events', () => ({
@@ -42,6 +44,7 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
     boardPath: null,
     controllerId: null,
     controllerApiKey: null,
+    db: mockDb as unknown as ConnectionContext['db'],
     ...overrides,
   } as ConnectionContext;
 }

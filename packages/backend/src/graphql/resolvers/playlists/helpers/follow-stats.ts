@@ -1,5 +1,6 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 /**
@@ -7,6 +8,7 @@ import * as dbSchema from '@boardsesh/db/schema';
  * Returns a Map keyed by playlist UUID.
  */
 export async function getPlaylistFollowStats(
+  db: RequestDbInstance,
   playlistUuids: string[],
   currentUserId: string | null,
 ): Promise<Map<string, { followerCount: number; isFollowedByMe: boolean }>> {

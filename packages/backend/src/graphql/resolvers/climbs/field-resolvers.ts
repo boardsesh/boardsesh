@@ -24,7 +24,7 @@ export const climbFieldResolvers = {
 
     // User-specific queries bypass Redis cache entirely
     if (!parent._isCacheable) {
-      const result = await searchClimbsQuery(parent.params, parent.searchParams, parent.userId);
+      const result = await searchClimbsQuery(parent.db, parent.params, parent.searchParams, parent.userId);
       parent._cachedClimbs = result.climbs;
       parent._cachedHasMore = result.hasMore;
       return result.climbs;
@@ -39,7 +39,7 @@ export const climbFieldResolvers = {
     }
 
     // Cache miss — query DB and store in Redis
-    const result = await searchClimbsQuery(parent.params, parent.searchParams, parent.userId);
+    const result = await searchClimbsQuery(parent.db, parent.params, parent.searchParams, parent.userId);
     parent._cachedClimbs = result.climbs;
     parent._cachedHasMore = result.hasMore;
 
@@ -57,7 +57,7 @@ export const climbFieldResolvers = {
     }
 
     if (!parent._isCacheable) {
-      const count = await countClimbs(parent.params, parent.searchParams, parent.userId);
+      const count = await countClimbs(parent.db, parent.params, parent.searchParams, parent.userId);
       parent._cachedTotalCount = count;
       return count;
     }
@@ -69,7 +69,7 @@ export const climbFieldResolvers = {
       return cached;
     }
 
-    const count = await countClimbs(parent.params, parent.searchParams, parent.userId);
+    const count = await countClimbs(parent.db, parent.params, parent.searchParams, parent.userId);
     parent._cachedTotalCount = count;
 
     searchCache.setCachedResult(cacheKey, count, DEFAULT_SEARCH_CACHE_TTL);

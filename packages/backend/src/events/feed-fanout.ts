@@ -1,6 +1,6 @@
 import type { SocialEvent } from '@boardsesh/shared-schema';
 import type { SocialEntityType } from '@boardsesh/db/schema';
-import { db } from '../db/client';
+import { createRequestDb, type RequestDbInstance } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
@@ -13,7 +13,7 @@ const FANOUT_BATCH_SIZE = 1000;
  * Fan out feed items to all followers of the event actor.
  * Inserts in batches of FANOUT_BATCH_SIZE to avoid unbounded single inserts.
  */
-export async function fanoutFeedItems(event: SocialEvent): Promise<void> {
+export async function fanoutFeedItems(db: RequestDbInstance, event: SocialEvent): Promise<void> {
   const followers = await db
     .select({ followerId: dbSchema.userFollows.followerId })
     .from(dbSchema.userFollows)
@@ -46,7 +46,7 @@ export async function fanoutFeedItems(event: SocialEvent): Promise<void> {
 /**
    * Fan out new climb feed items to followers of the setter.
    */
-export async function fanoutNewClimbFeedItems(event: SocialEvent): Promise<void> {
+export async function fanoutNewClimbFeedItems(db: RequestDbInstance, event: SocialEvent): Promise<void> {
   const followers = await db
     .select({ followerId: dbSchema.userFollows.followerId })
     .from(dbSchema.userFollows)
@@ -71,3 +71,4 @@ export async function fanoutNewClimbFeedItems(event: SocialEvent): Promise<void>
     await db.insert(dbSchema.feedItems).values(batch);
   }
 }
+

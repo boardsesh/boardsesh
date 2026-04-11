@@ -1,6 +1,7 @@
 import { eq, and, or, isNull, inArray, desc, sql } from 'drizzle-orm';
+
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import {
@@ -43,7 +44,7 @@ const PUBLIC_PLAYLIST_GROUP_BY = [
 ] as const;
 
 /** Build the base query for public playlists with owner join + climb join. */
-function publicPlaylistBaseQuery() {
+function publicPlaylistBaseQuery(db: RequestDbInstance) {
   return db
     .select(PUBLIC_PLAYLIST_SELECT)
     .from(dbSchema.playlists)
@@ -62,7 +63,7 @@ function publicPlaylistBaseQuery() {
 }
 
 /** Build the count query for public playlists. */
-function publicPlaylistCountQuery() {
+function publicPlaylistCountQuery(db: RequestDbInstance) {
   return db
     .select({ count: sql<number>`count(DISTINCT ${dbSchema.playlists.id})::int` })
     .from(dbSchema.playlists)
@@ -98,8 +99,9 @@ export const discoverPlaylists = async (
     page?: number;
     pageSize?: number;
   } },
-  _ctx: ConnectionContext,
+  ctx: ConnectionContext,
 ): Promise<{ playlists: unknown[]; totalCount: number; hasMore: boolean }> => {
+  const db = ctx.db as RequestDbInstance;
   validateInput(DiscoverPlaylistsInputSchema, input, 'input');
 
   const page = input.page ?? 0;
@@ -127,10 +129,10 @@ export const discoverPlaylists = async (
 
   const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));
 
-  const countResult = await publicPlaylistCountQuery().where(whereClause);
+  const countResult = await publicPlaylistCountQuery(db).where(whereClause);
   const totalCount = countResult[0]?.count || 0;
 
-  const results = await publicPlaylistBaseQuery()
+  const results = await publicPlaylistBaseQuery(db)
     .where(whereClause)
     .groupBy(...PUBLIC_PLAYLIST_GROUP_BY)
     .orderBy(
@@ -163,8 +165,9 @@ export const playlistCreators = async (
     layoutId: number;
     searchQuery?: string;
   } },
-  _ctx: ConnectionContext,
+  ctx: ConnectionContext,
 ): Promise<unknown[]> => {
+  const db = ctx.db as RequestDbInstance;
   validateInput(GetPlaylistCreatorsInputSchema, input, 'input');
 
   const conditions = [

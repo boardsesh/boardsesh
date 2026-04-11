@@ -1,5 +1,5 @@
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { createRequestDb } from '../../db/client';
 import { sessions } from '../../db/schema';
 import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
@@ -339,8 +339,8 @@ export async function removeClient(
       }
     }
   }
-  clients.delete(connectionId);
 
+  clients.delete(connectionId);
   return { distributedStateCleanedUp };
 }
 
@@ -353,6 +353,7 @@ async function ensureSessionRecordExists(
   userId: string | null,
   sessionName?: string
 ): Promise<void> {
+  const db = createRequestDb();
   const now = new Date();
   await db
     .insert(sessions)

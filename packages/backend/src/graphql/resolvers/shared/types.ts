@@ -1,11 +1,17 @@
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ParsedBoardRouteParameters, ClimbSearchParams } from '../../../db/queries/climbs/index';
+import type { RequestDbInstance } from '../../../db/client';
 
 /**
  * Context object passed from searchClimbs query to ClimbSearchResult field resolvers.
  * This allows each field (climbs, totalCount, hasMore) to be resolved independently.
  */
 export type ClimbSearchContext = {
+  /**
+   * Request-scoped db handle captured in the top-level searchClimbs resolver so
+   * the field resolvers don't need to call `createRequestDb()` themselves.
+   */
+  db: RequestDbInstance;
   params: ParsedBoardRouteParameters;
   searchParams: ClimbSearchParams;
   userId: string | undefined;

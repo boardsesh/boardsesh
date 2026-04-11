@@ -1,6 +1,6 @@
 import { eq, and, isNull, count, sql, inArray } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '../../../db/client';import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { GroupedNotificationsInputSchema } from '../../../validation/schemas';
@@ -50,6 +50,7 @@ export const socialNotificationQueries = {
     { unreadOnly, limit = 20, offset = 0 }: { unreadOnly?: boolean; limit?: number; offset?: number },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -106,6 +107,7 @@ export const socialNotificationQueries = {
     args: { limit?: number; offset?: number },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -338,6 +340,7 @@ export const socialNotificationQueries = {
     __: unknown,
     ctx: ConnectionContext,
   ): Promise<number> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -361,6 +364,7 @@ export const socialNotificationMutations = {
     { notificationUuid }: { notificationUuid: string },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 60, 'notification_read');
     const userId = ctx.userId!;
@@ -383,6 +387,7 @@ export const socialNotificationMutations = {
     { type, entityType, entityId }: { type: string; entityType?: string | null; entityId?: string | null },
     ctx: ConnectionContext,
   ): Promise<number> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 60, 'notification_read');
     const userId = ctx.userId!;
@@ -420,6 +425,7 @@ export const socialNotificationMutations = {
     __: unknown,
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 5, 'notification_read_all');
     const userId = ctx.userId!;

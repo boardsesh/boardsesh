@@ -1,4 +1,5 @@
 import type { ConnectionContext, EventsReplayResponse } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../db/client';
 import { roomManager, type DiscoverableSession } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { validateInput, requireSessionMember, requireAuthenticated } from '../shared/helpers';
@@ -129,8 +130,9 @@ export const sessionQueries = {
    * Available for ended sessions or active sessions with ticks.
    */
   sessionSummary: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
-    return generateSessionSummary(sessionId);
+    return generateSessionSummary(db, sessionId);
   },
 };

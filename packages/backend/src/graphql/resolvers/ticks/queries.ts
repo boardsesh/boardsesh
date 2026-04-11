@@ -1,7 +1,8 @@
 import { eq, and, desc, asc, inArray, sql, count, ilike, gte, lte } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
@@ -15,6 +16,7 @@ export const tickQueries = {
     { input }: { input: { boardType: string; climbUuids?: string[] } },
     ctx: ConnectionContext
   ): Promise<unknown[]> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     validateInput(GetTicksInputSchema, input, 'input');
 
@@ -76,8 +78,10 @@ export const tickQueries = {
    */
   userTicks: async (
     _: unknown,
-    { userId, boardType }: { userId: string; boardType: string }
+    { userId, boardType }: { userId: string; boardType: string },
+    ctx: ConnectionContext
   ): Promise<unknown[]> => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(BoardNameSchema, boardType, 'boardType');
 
     const conditions = [
@@ -158,12 +162,14 @@ export const tickQueries = {
         fromDate?: string;
         toDate?: string;
       };
-    }
+    },
+    ctx: ConnectionContext
   ): Promise<{
     items: unknown[];
     totalCount: number;
     hasMore: boolean;
   }> => {
+    const db = ctx.db as RequestDbInstance;
     // Validate and set defaults
     const validatedInput = validateInput(AscentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -384,12 +390,14 @@ export const tickQueries = {
    */
   userGroupedAscentsFeed: async (
     _: unknown,
-    { userId, input }: { userId: string; input?: { limit?: number; offset?: number } }
+    { userId, input }: { userId: string; input?: { limit?: number; offset?: number } },
+    ctx: ConnectionContext
   ): Promise<{
     groups: unknown[];
     totalCount: number;
     hasMore: boolean;
   }> => {
+    const db = ctx.db as RequestDbInstance;
     // Validate and set defaults
     const validatedInput = validateInput(AscentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -577,7 +585,8 @@ export const tickQueries = {
    */
   userProfileStats: async (
     _: unknown,
-    { userId }: { userId: string }
+    { userId }: { userId: string },
+    ctx: ConnectionContext
   ): Promise<{
     totalDistinctClimbs: number;
     layoutStats: Array<{
@@ -588,6 +597,7 @@ export const tickQueries = {
       gradeCounts: Array<{ grade: string; count: number }>;
     }>;
   }> => {
+    const db = ctx.db as RequestDbInstance;
     // Validate userId
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       return { totalDistinctClimbs: 0, layoutStats: [] };

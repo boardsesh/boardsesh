@@ -1,6 +1,7 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
@@ -92,6 +93,7 @@ export const activityFeedQueries = {
     { input }: { input?: Record<string, unknown> },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const myUserId = ctx.userId!;
 
@@ -149,7 +151,9 @@ export const activityFeedQueries = {
   trendingFeed: async (
     _: unknown,
     { input }: { input?: Record<string, unknown> },
+    ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
 

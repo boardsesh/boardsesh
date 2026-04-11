@@ -1,5 +1,5 @@
 import { sql, and } from 'drizzle-orm';
-import { db } from '../../client';
+import type { RequestDbInstance } from '../../client';
 import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
 import { createClimbFilters, type BoardRouteParams, type ClimbSearchParams } from '@boardsesh/db/queries';
 
@@ -15,6 +15,7 @@ import { createClimbFilters, type BoardRouteParams, type ClimbSearchParams } fro
  * @see resolvers.ts ClimbSearchResult.totalCount for the field resolver
  */
 export const countClimbs = async (
+  db: RequestDbInstance,
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   userId?: string,

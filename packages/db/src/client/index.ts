@@ -1,4 +1,4 @@
-export { createDb, createPool, createNeonHttp } from './neon';
-export type { DbInstance, PoolInstance } from './neon';
+export { createDb, createPool, createNeonHttp, createRequestDb, withTransaction } from './neon';
+export type { DbInstance, RequestDbInstance, AnyDbInstance, PoolInstance, TransactionDb } from './neon';
 export { getConnectionConfig, isLocalDevelopment, configureNeonForEnvironment } from './config';
 export type { ConnectionConfig } from './config';

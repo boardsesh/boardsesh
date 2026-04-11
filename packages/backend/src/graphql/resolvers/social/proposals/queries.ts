@@ -1,6 +1,7 @@
 import { eq, and, count, desc, inArray } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import {
@@ -18,6 +19,7 @@ export const socialProposalQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(GetClimbProposalsInputSchema, input, 'input');
     const { climbUuid, boardType, angle, type, status, limit: rawLimit, offset: rawOffset } = validated;
     const limitVal = rawLimit ?? 20;
@@ -46,7 +48,7 @@ export const socialProposalQueries = {
       .where(and(...conditions));
 
     const totalCount = Number(totalResult?.count || 0);
-    const enriched = await batchEnrichProposals(proposals, authenticatedUserId);
+    const enriched = await batchEnrichProposals(db, proposals, authenticatedUserId);
 
     return {
       proposals: enriched,
@@ -60,6 +62,7 @@ export const socialProposalQueries = {
     { input }: { input: unknown },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validated = validateInput(BrowseProposalsInputSchema, input, 'input');
     const { type, status, limit: rawLimit, offset: rawOffset } = validated;
     const limitVal = rawLimit ?? 20;
@@ -106,7 +109,7 @@ export const socialProposalQueries = {
       .where(whereClause);
 
     const totalCount = Number(totalResult?.count || 0);
-    const enriched = await batchEnrichProposals(proposals, authenticatedUserId);
+    const enriched = await batchEnrichProposals(db, proposals, authenticatedUserId);
 
     return {
       proposals: enriched,
@@ -120,6 +123,7 @@ export const socialProposalQueries = {
     { climbUuid, boardType, angle }: { climbUuid: string; boardType: string; angle: number },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     // Get community status
     const [status] = await db
       .select()
@@ -168,7 +172,7 @@ export const socialProposalQueries = {
       );
 
     // Run outlier analysis
-    const outlierAnalysis = await analyzeGradeOutlier(climbUuid, boardType, angle);
+    const outlierAnalysis = await analyzeGradeOutlier(db, climbUuid, boardType, angle);
 
     return {
       climbUuid,
@@ -191,6 +195,7 @@ export const socialProposalQueries = {
     ctx: ConnectionContext,
   ) => {
     if (climbUuids.length === 0) return [];
+    const db = ctx.db as RequestDbInstance;
 
     const statuses = await db
       .select()
@@ -240,6 +245,7 @@ export const socialProposalQueries = {
     { climbUuid, boardType }: { climbUuid: string; boardType: string },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const [status] = await db
       .select()
       .from(dbSchema.climbClassicStatus)

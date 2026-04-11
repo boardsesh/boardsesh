@@ -1,11 +1,12 @@
 import { eq, and, sql, desc } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 /**
  * Apply the effect of an approved proposal to the climb community/classic status.
  */
-export async function applyProposalEffect(proposal: typeof dbSchema.climbProposals.$inferSelect): Promise<void> {
+export async function applyProposalEffect(db: RequestDbInstance, proposal: typeof dbSchema.climbProposals.$inferSelect): Promise<void> {
   if (proposal.type === 'grade' || proposal.type === 'benchmark') {
     // UPSERT climb_community_status
     const [existing] = await db
@@ -88,7 +89,7 @@ export async function applyProposalEffect(proposal: typeof dbSchema.climbProposa
  * Finds the most recent OTHER approved proposal of the same type for the same climb+angle
  * and reverts to that value (or to the default if none exists).
  */
-export async function revertProposalEffect(proposal: typeof dbSchema.climbProposals.$inferSelect): Promise<void> {
+export async function revertProposalEffect(db: RequestDbInstance, proposal: typeof dbSchema.climbProposals.$inferSelect): Promise<void> {
   if (proposal.type === 'grade' || proposal.type === 'benchmark') {
     // Find the most recent other approved proposal of the same type for this climb+angle
     const conditions = [

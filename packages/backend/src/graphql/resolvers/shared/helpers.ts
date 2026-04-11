@@ -1,9 +1,12 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+
+import { v4 as uuidv4 } from 'uuid';
+
+import type { RequestDbInstance } from '../../../db/client';
 import { checkRateLimit } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
 import { getContext } from '../../context';
 import { getDistributedState } from '../../../services/distributed-state';
-import { db } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 
@@ -190,6 +193,7 @@ export async function requireControllerAuthorizedForSession(
   sessionId: string
 ): Promise<{ controllerId: string; controllerApiKey: string }> {
   const { controllerId, controllerApiKey } = requireControllerAuth(ctx);
+  const db = ctx.db as RequestDbInstance;
 
   // Verify the controller still exists (it was already authenticated via connectionParams)
   const [controller] = await db

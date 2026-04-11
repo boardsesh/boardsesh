@@ -1,6 +1,6 @@
 import { eq, and, or, ilike, sql, count, desc, asc } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { SearchUsersInputSchema } from '../../../validation/schemas';
@@ -14,6 +14,7 @@ export const socialSearchQueries = {
     { input }: { input: { query: string; boardType?: string; limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 20);
 
     const validatedInput = validateInput(SearchUsersInputSchema, input, 'input');

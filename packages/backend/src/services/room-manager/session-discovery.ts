@@ -1,4 +1,4 @@
-import { db } from '../../db/client';
+import { createRequestDb } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import { eq, and, gt, gte, lte, ne } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
@@ -10,6 +10,7 @@ import type { DiscoverableSession } from './types';
  * Get a session by its ID from the database.
  */
 export async function getSessionById(sessionId: string): Promise<Session | null> {
+  const db = createRequestDb();
   const result = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
   return result[0] || null;
 }
@@ -28,6 +29,7 @@ export async function createDiscoverableSession(
   isPermanent?: boolean,
   color?: string
 ): Promise<Session> {
+  const db = createRequestDb();
   const now = new Date();
   const result = await db
     .insert(sessions)
@@ -78,6 +80,7 @@ export async function findNearbySessions(
   redisStore: RedisSessionStore | null,
   distributedState: DistributedStateManager | null
 ): Promise<DiscoverableSession[]> {
+  const db = createRequestDb();
   const box = getBoundingBox(latitude, longitude, radiusMeters);
 
   const candidates = await db
@@ -156,6 +159,7 @@ export async function findNearbySessions(
  * Get sessions created by a user (within 7 days).
  */
 export async function getUserSessions(userId: string): Promise<Session[]> {
+  const db = createRequestDb();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const result = await db
@@ -183,6 +187,7 @@ export async function endSession(
   sessionGraceTimers: Map<string, NodeJS.Timeout>,
   pendingJoinPersists: Map<string, Promise<void>>
 ): Promise<void> {
+  const db = createRequestDb();
   // Cancel any pending writes to prevent FK violations after session ends
   writeScheduler.cancelPendingWrites(sessionId);
 

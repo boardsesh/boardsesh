@@ -1,6 +1,8 @@
 import { eq, asc, and, sql } from 'drizzle-orm';
+
+import { createRequestDb } from '../../../db/client';
+import type { RequestDbInstance } from '../../../db/client';
 import type { Grade, Angle } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../shared/helpers';
 import { BoardNameSchema } from '../../../validation/schemas';
@@ -10,6 +12,7 @@ export const boardQueries = {
    * Get difficulty grades for a specific board type
    */
   grades: async (_: unknown, { boardName }: { boardName: string }): Promise<Grade[]> => {
+    const db = createRequestDb() as RequestDbInstance;
     validateInput(BoardNameSchema, boardName, 'boardName');
 
     // Use unified table with board_type filter
@@ -37,6 +40,7 @@ export const boardQueries = {
    * Get available angles for a specific board layout
    */
   angles: async (_: unknown, { boardName, layoutId }: { boardName: string; layoutId: number }): Promise<Angle[]> => {
+    const db = createRequestDb() as RequestDbInstance;
     validateInput(BoardNameSchema, boardName, 'boardName');
 
     // Use raw SQL with unified tables

@@ -1,5 +1,6 @@
 import { eq, and, sql } from 'drizzle-orm';
-import { db } from '../../../../db/client';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting } from '../community-settings';
 
@@ -7,6 +8,7 @@ import { resolveCommunitySetting } from '../community-settings';
  * Analyze if a climb's grade at a given angle is an outlier compared to adjacent angles.
  */
 export async function analyzeGradeOutlier(
+  db: RequestDbInstance,
   climbUuid: string,
   boardType: string,
   angle: number,
@@ -76,7 +78,7 @@ export async function analyzeGradeOutlier(
 /**
  * Check if a proposal has reached the auto-approval threshold.
  */
-export async function checkAutoApproval(proposalId: number, boardType: string, climbUuid: string, angle: number | null): Promise<boolean> {
+export async function checkAutoApproval(db: RequestDbInstance, proposalId: number, boardType: string, climbUuid: string, angle: number | null): Promise<boolean> {
   const threshold = await resolveCommunitySetting('approval_threshold', climbUuid, angle, boardType);
   const required = parseInt(threshold, 10) || 5;
 

@@ -1,6 +1,7 @@
 import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
+
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../../shared/helpers';
 import {
@@ -33,9 +34,10 @@ const PLAYLIST_ORDER = desc(
 /**
  * Enrich owned playlist rows with climb counts and follow stats.
  */
-async function enrichOwnedPlaylists(playlists: OwnedPlaylistRow[], userId: string) {
-  const countMap = await getClimbCounts(playlists.map(p => p.id));
+async function enrichOwnedPlaylists(db: RequestDbInstance, playlists: OwnedPlaylistRow[], userId: string) {
+  const countMap = await getClimbCounts(db, playlists.map(p => p.id));
   const followStats = await getPlaylistFollowStats(
+    db,
     playlists.map(p => p.uuid),
     userId,
   );
@@ -50,6 +52,7 @@ export const userPlaylists = async (
   { input }: { input: { boardType: string; layoutId: number } },
   ctx: ConnectionContext,
 ): Promise<unknown[]> => {
+  const db = ctx.db as RequestDbInstance;
   requireAuthenticated(ctx);
   validateInput(GetUserPlaylistsInputSchema, input, 'input');
 
@@ -74,7 +77,7 @@ export const userPlaylists = async (
     )
     .orderBy(PLAYLIST_ORDER);
 
-  return enrichOwnedPlaylists(userPlaylists, userId);
+  return enrichOwnedPlaylists(db, userPlaylists, userId);
 };
 
 /**
@@ -86,6 +89,7 @@ export const allUserPlaylists = async (
   { input }: { input: { boardType?: string; layoutId?: number } },
   ctx: ConnectionContext,
 ): Promise<unknown[]> => {
+  const db = ctx.db as RequestDbInstance;
   requireAuthenticated(ctx);
   validateInput(GetAllUserPlaylistsInputSchema, input, 'input');
 
@@ -117,5 +121,5 @@ export const allUserPlaylists = async (
     .where(and(...conditions))
     .orderBy(PLAYLIST_ORDER);
 
-  return enrichOwnedPlaylists(playlists, userId);
+  return enrichOwnedPlaylists(db, playlists, userId);
 };

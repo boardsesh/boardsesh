@@ -1,7 +1,8 @@
 import { eq, and, asc, sql } from 'drizzle-orm';
+
 import type { ConnectionContext, Climb, BoardName } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
@@ -29,6 +30,7 @@ function paginateResults<T>(results: T[], pageSize: number) {
  * Specific-board mode: fetch climbs filtered by board type, layout, and size edges.
  */
 async function fetchSpecificBoardClimbs(
+  db: RequestDbInstance,
   playlistId: bigint,
   input: PlaylistClimbsInput,
   page: number,
@@ -117,6 +119,7 @@ async function fetchSpecificBoardClimbs(
  * All-boards mode: fetch climbs across all board types.
  */
 async function fetchAllBoardsClimbs(
+  db: RequestDbInstance,
   playlistId: bigint,
   page: number,
   pageSize: number,
@@ -201,13 +204,14 @@ export const playlistClimbs = async (
   { input }: { input: PlaylistClimbsInput },
   ctx: ConnectionContext,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
+  const db = ctx.db as RequestDbInstance;
   validateInput(GetPlaylistClimbsInputSchema, input, 'input');
 
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
 
   // Verify access (throws if denied)
-  const playlistId = await verifyPlaylistAccess(input.playlistId, ctx.userId ?? null);
+  const playlistId = await verifyPlaylistAccess(db, input.playlistId, ctx.userId ?? null);
 
   // Get total count
   const countResult = await db
@@ -218,10 +222,10 @@ export const playlistClimbs = async (
   const totalCount = countResult[0]?.count || 0;
 
   if (input.boardName) {
-    const { climbs, hasMore } = await fetchSpecificBoardClimbs(playlistId, input, page, pageSize);
+    const { climbs, hasMore } = await fetchSpecificBoardClimbs(db, playlistId, input, page, pageSize);
     return { climbs, totalCount, hasMore };
   } else {
-    const { climbs, hasMore } = await fetchAllBoardsClimbs(playlistId, page, pageSize);
+    const { climbs, hasMore } = await fetchAllBoardsClimbs(db, playlistId, page, pageSize);
     return { climbs, totalCount, hasMore };
   }
 };

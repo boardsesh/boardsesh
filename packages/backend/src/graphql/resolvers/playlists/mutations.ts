@@ -1,7 +1,9 @@
 import { eq, and, sql } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
+import { withTransaction } from '../../../db/client';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import {
@@ -22,6 +24,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(CreatePlaylistInputSchema, input, 'input');
 
@@ -81,6 +84,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(UpdatePlaylistInputSchema, input, 'input');
 
@@ -134,7 +138,7 @@ export const playlistMutations = {
       .where(eq(dbSchema.playlistClimbs.playlistId, playlistId))
       .limit(1);
 
-    const followStats = await getPlaylistFollowStats([updated.uuid], userId);
+    const followStats = await getPlaylistFollowStats(db, [updated.uuid], userId);
     const stats = followStats.get(updated.uuid) ?? { followerCount: 0, isFollowedByMe: false };
 
     return {
@@ -164,6 +168,7 @@ export const playlistMutations = {
     { playlistId }: { playlistId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const userId = ctx.userId!;
@@ -203,6 +208,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(AddClimbToPlaylistInputSchema, input, 'input');
 
@@ -255,7 +261,7 @@ export const playlistMutations = {
     }
 
     // Use transaction to prevent race condition in position assignment
-    const playlistClimb = await db.transaction(async (tx) => {
+    const playlistClimb = await withTransaction(async (tx) => {
       // Get max position within transaction
       const maxPosition = await tx
         .select({ max: sql<number>`coalesce(max(${dbSchema.playlistClimbs.position}), -1)` })
@@ -305,6 +311,7 @@ export const playlistMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(RemoveClimbFromPlaylistInputSchema, input, 'input');
 
@@ -362,6 +369,7 @@ export const playlistMutations = {
     { playlistId }: { playlistId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     const userId = ctx.userId!;
@@ -402,6 +410,7 @@ export const playlistMutations = {
     { input }: { input: { playlistUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(FollowPlaylistInputSchema, input, 'input');
     const userId = ctx.userId!;
@@ -442,6 +451,7 @@ export const playlistMutations = {
     { input }: { input: { playlistUuid: string } },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const validatedInput = validateInput(FollowPlaylistInputSchema, input, 'input');
     const userId = ctx.userId!;

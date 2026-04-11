@@ -13,6 +13,8 @@ const { mockDb } = vi.hoisted(() => {
 
 vi.mock('../db/client', () => ({
   db: mockDb,
+  createRequestDb: () => mockDb,
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb),
 }));
 
 vi.mock('../events/index', () => ({
@@ -52,6 +54,7 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
     boardPath: null,
     controllerId: null,
     controllerApiKey: null,
+    db: mockDb as unknown as ConnectionContext['db'],
     ...overrides,
   } as ConnectionContext;
 }
@@ -80,7 +83,7 @@ describe('getPlaylistFollowStats', () => {
   });
 
   it('should return empty map for empty input', async () => {
-    const result = await getPlaylistFollowStats([], null);
+    const result = await getPlaylistFollowStats(mockDb as never,[], null);
     expect(result.size).toBe(0);
     expect(mockDb.select).not.toHaveBeenCalled();
   });
@@ -99,7 +102,7 @@ describe('getPlaylistFollowStats', () => {
     ]);
     mockDb.select.mockReturnValueOnce(followedChain);
 
-    const result = await getPlaylistFollowStats(['pl-1', 'pl-2'], 'user-123');
+    const result = await getPlaylistFollowStats(mockDb as never,['pl-1', 'pl-2'], 'user-123');
 
     expect(result.get('pl-1')).toEqual({ followerCount: 5, isFollowedByMe: true });
     expect(result.get('pl-2')).toEqual({ followerCount: 0, isFollowedByMe: false });
@@ -112,7 +115,7 @@ describe('getPlaylistFollowStats', () => {
     ]);
     mockDb.select.mockReturnValueOnce(followerCountChain);
 
-    const result = await getPlaylistFollowStats(['pl-1'], null);
+    const result = await getPlaylistFollowStats(mockDb as never,['pl-1'], null);
 
     expect(result.get('pl-1')).toEqual({ followerCount: 3, isFollowedByMe: false });
     // Only one select call (no follow check)

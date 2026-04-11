@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../client';
+import type { RequestDbInstance } from '../../client';
 import { getBoardTables, type BoardName } from '../util/table-select';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -12,7 +12,10 @@ interface GetClimbParams {
   climb_uuid: string;
 }
 
-export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | null> => {
+export const getClimbByUuid = async (
+  db: RequestDbInstance,
+  params: GetClimbParams,
+): Promise<Climb | null> => {
   const tables = getBoardTables(params.board_name);
 
   try {

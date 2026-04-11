@@ -11,6 +11,7 @@ import { pubsub } from '../pubsub/index';
 import { validateNextAuthToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { isOriginAllowed } from '../handlers/cors';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../db/client';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -24,7 +25,7 @@ interface AliveWebSocket extends WebSocket {
 
 // Extend Extra type with our custom context
 interface CustomExtra extends WsExtra {
-  context?: ConnectionContext;
+  context?: ConnectionContext<RequestDbInstance>;
   [key: PropertyKey]: unknown;
 }
 

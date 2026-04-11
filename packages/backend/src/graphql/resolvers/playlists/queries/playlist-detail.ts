@@ -1,6 +1,7 @@
 import { eq, and, or, isNull, inArray, sql } from 'drizzle-orm';
+
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../../shared/helpers';
 import {
@@ -18,6 +19,7 @@ export const playlist = async (
   { playlistId }: { playlistId: string },
   ctx: ConnectionContext,
 ): Promise<unknown | null> => {
+  const db = ctx.db as RequestDbInstance;
   const userId = ctx.userId;
 
   const playlistResult = await db
@@ -75,7 +77,7 @@ export const playlist = async (
     .limit(1);
 
   // Get follow stats
-  const followStats = await getPlaylistFollowStats([p.uuid], userId ?? null);
+  const followStats = await getPlaylistFollowStats(db, [p.uuid], userId ?? null);
   const stats = followStats.get(p.uuid) ?? { followerCount: 0, isFollowedByMe: false };
 
   return {
@@ -106,6 +108,7 @@ export const playlistsForClimb = async (
   { input }: { input: { boardType: string; layoutId: number; climbUuid: string } },
   ctx: ConnectionContext,
 ): Promise<string[]> => {
+  const db = ctx.db as RequestDbInstance;
   requireAuthenticated(ctx);
   validateInput(GetPlaylistsForClimbInputSchema, input, 'input');
 
@@ -146,6 +149,7 @@ export const playlistsForClimbs = async (
   { input }: { input: { boardType: string; layoutId: number; climbUuids: string[] } },
   ctx: ConnectionContext,
 ): Promise<Array<{ climbUuid: string; playlistUuids: string[] }>> => {
+  const db = ctx.db as RequestDbInstance;
   requireAuthenticated(ctx);
   validateInput(GetPlaylistsForClimbsInputSchema, input, 'input');
 

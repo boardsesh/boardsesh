@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Shared mock state, declared with vi.hoisted to ensure availability before mock setup
-const mockState = vi.hoisted(() => ({
-  selectCallIndex: 0,
-  sessionRows: [] as Record<string, unknown>[],
-  gradeDistRows: [] as Record<string, unknown>[],
-  hardestRows: [] as Record<string, unknown>[],
-  participantRows: [] as Record<string, unknown>[],
-}));
+// Shared mock state and a chainable Proxy stub, hoisted so both the vi.mock
+// factory and the test body share the same instances.
+const { mockState, proxyDb } = vi.hoisted(() => {
+  const mockState = {
+    selectCallIndex: 0,
+    sessionRows: [] as Record<string, unknown>[],
+    gradeDistRows: [] as Record<string, unknown>[],
+    hardestRows: [] as Record<string, unknown>[],
+    participantRows: [] as Record<string, unknown>[],
+  };
 
-// Chainable mock builder, also hoisted for use in mock factory
-const { createChainableMock } = vi.hoisted(() => ({
-  createChainableMock: (resolveData: unknown) => {
+  const createChainableMock = (resolveData: unknown) => {
     const chain: Record<string, unknown> = {};
     for (const method of ['select', 'from', 'where', 'leftJoin', 'groupBy', 'orderBy', 'limit']) {
       chain[method] = (..._args: unknown[]) => chain;
@@ -19,23 +19,16 @@ const { createChainableMock } = vi.hoisted(() => ({
     chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(resolveData).then(resolve, reject);
     return chain;
-  },
-}));
+  };
 
-// Mock the database client — all query builder chains resolve to mock data
-vi.mock('../db/client', () => ({
-  db: new Proxy(
+  const proxyDb = new Proxy(
     {},
     {
       get(_, prop) {
         if (prop === 'select') {
           return (..._args: unknown[]) => {
             const index = mockState.selectCallIndex++;
-            const dataByIndex = [
-              mockState.sessionRows,
-              mockState.gradeDistRows,
-              mockState.hardestRows,
-            ];
+            const dataByIndex = [mockState.sessionRows, mockState.gradeDistRows, mockState.hardestRows];
             return createChainableMock(dataByIndex[index] ?? []);
           };
         }
@@ -44,7 +37,15 @@ vi.mock('../db/client', () => ({
         }
       },
     },
-  ),
+  );
+
+  return { mockState, proxyDb };
+});
+
+vi.mock('../db/client', () => ({
+  db: proxyDb,
+  createRequestDb: () => proxyDb,
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(proxyDb),
 }));
 
 // Mock schema modules with empty objects (query args are ignored by the chain mock)
@@ -67,6 +68,12 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 import { generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
+import type { RequestDbInstance } from '../db/client';
+
+// Pass the same chainable Proxy stub that vi.mock exposes as `db` —
+// generateSessionSummary now takes its db instance from the caller, so we
+// feed it the proxy directly.
+const mockDbStub = proxyDb as unknown as RequestDbInstance;
 
 describe('generateSessionSummary', () => {
   beforeEach(() => {
@@ -80,7 +87,7 @@ describe('generateSessionSummary', () => {
   it('returns null when session is not found', async () => {
     mockState.sessionRows = [];
 
-    const result = await generateSessionSummary('nonexistent-id');
+    const result = await generateSessionSummary(mockDbStub, 'nonexistent-id');
     expect(result).toBeNull();
   });
 
@@ -115,7 +122,7 @@ describe('generateSessionSummary', () => {
       },
     ];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result).not.toBeNull();
     expect(result!.sessionId).toBe('session-1');
@@ -166,7 +173,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.gradeDistribution).toEqual([
       { grade: 'V3', count: 2 },
@@ -182,7 +189,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.durationMinutes).toBeNull();
   });
@@ -195,7 +202,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.durationMinutes).toBeNull();
   });
@@ -208,7 +215,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.hardestClimb).toBeNull();
   });
@@ -229,7 +236,7 @@ describe('generateSessionSummary', () => {
     ];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.hardestClimb!.climbName).toBe('Unknown climb');
   });
@@ -250,7 +257,7 @@ describe('generateSessionSummary', () => {
     ];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.hardestClimb!.grade).toBe('V20');
   });
@@ -263,7 +270,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.totalSends).toBe(0);
     expect(result!.totalAttempts).toBe(0);
@@ -278,7 +285,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.goal).toBeNull();
   });
@@ -291,7 +298,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     // '' is falsy, so `session.goal || null` returns null
     expect(result!.goal).toBeNull();
@@ -308,7 +315,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     // 45.5 minutes rounds to 46
     expect(result!.durationMinutes).toBe(46);
@@ -325,7 +332,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.startedAt).toBe('2024-06-15T14:30:00.000Z');
     expect(result!.endedAt).toBe('2024-06-15T16:45:00.000Z');
@@ -339,7 +346,7 @@ describe('generateSessionSummary', () => {
     mockState.hardestRows = [];
     mockState.participantRows = [];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.startedAt).toBeNull();
     expect(result!.endedAt).toBeNull();
@@ -357,7 +364,7 @@ describe('generateSessionSummary', () => {
       { userId: 'user-3', displayName: 'C', avatarUrl: null, sends: 0, attempts: 3 },
     ];
 
-    const result = await generateSessionSummary('session-1');
+    const result = await generateSessionSummary(mockDbStub, 'session-1');
 
     expect(result!.totalSends).toBe(15);
     expect(result!.totalAttempts).toBe(38);

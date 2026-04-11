@@ -1,6 +1,7 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { FollowingAscentsFeedInputSchema } from '../../../validation/schemas';
@@ -15,6 +16,7 @@ export const socialFeedQueries = {
     { input }: { input?: { limit?: number; offset?: number } },
     ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const myUserId = ctx.userId!;
 
@@ -114,7 +116,9 @@ export const socialFeedQueries = {
   globalAscentsFeed: async (
     _: unknown,
     { input }: { input?: { limit?: number; offset?: number } },
+    ctx: ConnectionContext
   ) => {
+    const db = ctx.db as RequestDbInstance;
     const validatedInput = validateInput(FollowingAscentsFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;

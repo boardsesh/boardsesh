@@ -9,8 +9,8 @@ import type {
   SendDeviceLogsInput,
   SendDeviceLogsResponse,
 } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../db/client';
 import { findClimbIndex } from './navigation-helpers';
-import { db } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, and } from 'drizzle-orm';
 import { requireAuthenticated, applyRateLimit, requireControllerAuth, requireControllerAuthorizedForSession } from '../shared/helpers';
@@ -39,6 +39,7 @@ export const controllerMutations = {
     { input }: { input: RegisterControllerInput },
     ctx: ConnectionContext
   ): Promise<ControllerRegistration> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10); // Lower limit for controller registration
 
@@ -77,6 +78,7 @@ export const controllerMutations = {
     { controllerId }: { controllerId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx);
 
@@ -117,6 +119,7 @@ export const controllerMutations = {
     },
     ctx: ConnectionContext
   ): Promise<ClimbMatchResult> => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 30); // Moderate limit for LED position updates
 
     // Verify controller is authenticated and authorized for this session
@@ -186,6 +189,7 @@ export const controllerMutations = {
 
     // Find matching climb by frames string
     const match = await matchClimbByFrames(
+      db,
       controller.boardName as BoardName,
       controller.layoutId,
       framesString,
@@ -215,7 +219,7 @@ export const controllerMutations = {
     }
 
     // Get full climb data
-    const climb = await getClimbByUuid({
+    const climb = await getClimbByUuid(db, {
       board_name: controller.boardName as BoardName,
       layout_id: controller.layoutId,
       size_id: controller.sizeId,
@@ -300,6 +304,7 @@ export const controllerMutations = {
     { sessionId }: { sessionId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 120); // Allow frequent heartbeats
 
     // Validate API key authentication via context
@@ -324,6 +329,7 @@ export const controllerMutations = {
     { controllerId, sessionId }: { controllerId: string; sessionId: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     await applyRateLimit(ctx);
 
@@ -372,6 +378,7 @@ export const controllerMutations = {
     { sessionId, direction, currentClimbUuid, queueItemUuid }: { sessionId: string; direction: string; currentClimbUuid?: string; queueItemUuid?: string },
     ctx: ConnectionContext
   ): Promise<ClimbQueueItem | null> => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 30);
 
     // Verify controller is authenticated and authorized for this session
@@ -487,6 +494,7 @@ export const controllerMutations = {
     { input }: { input: SendDeviceLogsInput },
     ctx: ConnectionContext
   ): Promise<SendDeviceLogsResponse> => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 100); // Allow frequent log batches
 
     const { controllerId } = requireControllerAuth(ctx);

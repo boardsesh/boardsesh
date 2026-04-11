@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import type { RequestDbInstance } from '../../../db/client';
+import { withTransaction } from '../../../db/client';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
@@ -21,6 +23,7 @@ export const tickMutations = {
     { uuid }: { uuid: string },
     ctx: ConnectionContext
   ): Promise<boolean> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -41,7 +44,7 @@ export const tickMutations = {
       throw new Error('You can only delete your own ticks');
     }
 
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       // Collect comment IDs on this tick so we can clean up their notifications
       const tickComments = await tx
         .select({ id: dbSchema.comments.id })
@@ -94,6 +97,7 @@ export const tickMutations = {
     { input }: { input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
 
     // Validate input with business rules
@@ -117,7 +121,7 @@ export const tickMutations = {
     }
 
     // Insert into database
-    const [tick] = await db.transaction(async (tx) => {
+    const [tick] = await withTransaction(async (tx) => {
       const [createdTick] = await tx
         .insert(dbSchema.boardseshTicks)
         .values({
@@ -190,7 +194,7 @@ export const tickMutations = {
     // Publish ascent.logged event for feed fan-out (only for successful ascents)
     if (tick.status === 'flash' || tick.status === 'send') {
       // Fire-and-forget with retry: don't block the response on event publishing
-      publishAscentEvent(tick, userId, boardId).catch(() => {
+      publishAscentEvent(db, tick, userId, boardId).catch(() => {
         // Final failure already logged inside publishAscentEvent
       });
     }
@@ -211,6 +215,7 @@ export const tickMutations = {
     { uuid, input }: { uuid: string; input: unknown },
     ctx: ConnectionContext
   ): Promise<unknown> => {
+    const db = ctx.db as RequestDbInstance;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
@@ -275,6 +280,7 @@ const RETRY_BASE_DELAY_MS = 500;
  * Retries up to MAX_EVENT_RETRIES times with exponential backoff.
  */
 async function publishAscentEvent(
+  db: RequestDbInstance,
   tick: { uuid: string; climbUuid: string; boardType: string; status: string; angle: number; isMirror: boolean | null; isBenchmark: boolean | null; difficulty: number | null; quality: number | null; attemptCount: number; comment: string | null },
   userId: string,
   boardId: number | null,

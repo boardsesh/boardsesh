@@ -1,5 +1,6 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { RequestDbInstance } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import { SearchPlaylistsInputSchema } from '../../../../validation/schemas';
@@ -17,8 +18,9 @@ import {
 export const searchPlaylists = async (
   _: unknown,
   { input }: { input: unknown },
-  _ctx: ConnectionContext,
+  ctx: ConnectionContext,
 ): Promise<{ playlists: unknown[]; totalCount: number; hasMore: boolean }> => {
+  const db = ctx.db as RequestDbInstance;
   const validatedInput = validateInput(SearchPlaylistsInputSchema, input, 'input');
 
   const limit = validatedInput.limit ?? 20;
@@ -36,10 +38,10 @@ export const searchPlaylists = async (
 
   const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));
 
-  const countResult = await publicPlaylistCountQuery().where(whereClause);
+  const countResult = await publicPlaylistCountQuery(db).where(whereClause);
   const totalCount = countResult[0]?.count || 0;
 
-  const results = await publicPlaylistBaseQuery()
+  const results = await publicPlaylistBaseQuery(db)
     .where(whereClause)
     .groupBy(...PUBLIC_PLAYLIST_GROUP_BY)
     .orderBy(

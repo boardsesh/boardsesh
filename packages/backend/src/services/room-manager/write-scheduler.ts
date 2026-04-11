@@ -1,5 +1,5 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../db/client';
+import { createRequestDb, withTransaction } from '../../db/client';
 import { sessions, sessionQueues } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
@@ -235,6 +235,7 @@ export async function writeQueueStateToPostgres(
   state: PendingWrite,
   scheduler: WriteScheduler
 ): Promise<void> {
+  const db = createRequestDb();
   // Check if session exists to prevent FK violation
   const sessionExists = await db
     .select({ id: sessions.id })
@@ -253,7 +254,7 @@ export async function writeQueueStateToPostgres(
 
   const now = new Date();
 
-  await db.transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await tx
       .insert(sessionQueues)
       .values({

@@ -1,5 +1,6 @@
 import type { ConnectionContext, ControllerEvent, LedUpdate, LedCommand, BoardName, QueueNavigationContext, ControllerQueueItem, ControllerQueueSync, ClimbQueueItem } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+
+import type { RequestDbInstance } from '../../../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { pubsub } from '../../../pubsub/index';
@@ -100,6 +101,7 @@ export const controllerSubscriptions = {
       { sessionId }: { sessionId: string },
       ctx: ConnectionContext
     ): AsyncGenerator<{ controllerEvents: ControllerEvent }> {
+      const db = ctx.db as RequestDbInstance;
       // Validate API key from context
       const { controllerId } = requireControllerAuth(ctx);
 

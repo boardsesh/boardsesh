@@ -1,6 +1,7 @@
 import { eq, and } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../../db/client';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../../shared/helpers';
 import {
@@ -17,6 +18,7 @@ export async function setterOverrideCommunityStatus(
   { input }: { input: unknown },
   ctx: ConnectionContext,
 ) {
+  const db = ctx.db as RequestDbInstance;
   requireAuthenticated(ctx);
   await applyRateLimit(ctx, 10);
 
@@ -131,6 +133,7 @@ export async function freezeClimb(
   { input }: { input: unknown },
   ctx: ConnectionContext,
 ) {
+  const db = ctx.db as RequestDbInstance;
   const validated = validateInput(FreezeClimbInputSchema, input, 'input');
   const { climbUuid, boardType, frozen, reason } = validated;
 

@@ -25,13 +25,18 @@ const {
   return { mockExecute, mockSelect, mockFrom, mockWhere, mockSet, mockReturning, mockUpdate };
 });
 
-vi.mock('../db/client', () => ({
-  db: {
+vi.mock('../db/client', () => {
+  const mockDb = {
     execute: mockExecute,
     select: mockSelect,
     update: mockUpdate,
-  },
-}));
+  };
+  return {
+    db: mockDb,
+    createRequestDb: () => mockDb,
+    withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(mockDb),
+  };
+});
 
 vi.mock('../pubsub/index', () => ({
   pubsub: { subscribeNotifications: vi.fn() },
@@ -61,6 +66,11 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
     boardPath: null,
     controllerId: null,
     controllerApiKey: null,
+    db: {
+      execute: mockExecute,
+      select: mockSelect,
+      update: mockUpdate,
+    } as unknown as ConnectionContext['db'],
     ...overrides,
   } as ConnectionContext;
 }

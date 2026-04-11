@@ -1,4 +1,6 @@
 import { eq, and, gte, desc } from 'drizzle-orm';
+
+import type { RequestDbInstance } from '../../../db/client';
 import type {
   BoardName,
   CheckMoonBoardClimbDuplicatesInput,
@@ -18,7 +20,6 @@ import {
   ExternalUUIDSchema,
 } from '../../../validation/schemas';
 import type { ClimbSearchContext } from '../shared/types';
-import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
 // Debug logging flag - only log in development
@@ -30,9 +31,10 @@ export const climbQueries = {
     { input }: { input: CheckMoonBoardClimbDuplicatesInput },
     ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     await applyRateLimit(ctx, 60, 'moonboard-duplicate-check');
     const validated = validateInput(CheckMoonBoardClimbDuplicatesInputSchema, input, 'input');
-    return findMoonBoardDuplicateMatches(validated.layoutId, validated.angle, validated.climbs);
+    return findMoonBoardDuplicateMatches(db, validated.layoutId, validated.angle, validated.climbs);
   },
 
   /**
@@ -40,6 +42,7 @@ export const climbQueries = {
    * Returns a context object that field resolvers use to fetch data lazily
    */
   searchClimbs: async (_: unknown, { input }: { input: ClimbSearchInput }, ctx: ConnectionContext): Promise<ClimbSearchContext> => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(ClimbSearchInputSchema, input, 'input');
 
     // Validate board name
@@ -87,6 +90,7 @@ export const climbQueries = {
     // Drafts require authentication — return empty results if not signed in
     if (input.onlyDrafts && !ctx.isAuthenticated) {
       return {
+        db,
         params,
         searchParams,
         userId: undefined,
@@ -111,6 +115,7 @@ export const climbQueries = {
     // Return context for field resolvers - queries are executed lazily per field
     // Personal progress filters now use boardsesh_ticks table with NextAuth user ID
     return {
+      db,
       params,
       searchParams,
       userId,
@@ -130,8 +135,10 @@ export const climbQueries = {
       setIds: string;
       angle: number;
       climbUuid: string
-    }
+    },
+    ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     // Validate board name
     validateInput(BoardNameSchema, boardName, 'boardName');
 
@@ -147,7 +154,7 @@ export const climbQueries = {
 
     if (DEBUG) console.log('[climb] Fetching:', { boardName, layoutId, sizeId, setIds, angle, climbUuid });
 
-    const climb = await getClimbByUuid({
+    const climb = await getClimbByUuid(db, {
       board_name: boardName as BoardName,
       layout_id: layoutId,
       size_id: sizeId,
@@ -164,7 +171,9 @@ export const climbQueries = {
   climbStatsHistory: async (
     _: unknown,
     { boardName, climbUuid }: { boardName: string; climbUuid: string },
+    ctx: ConnectionContext,
   ) => {
+    const db = ctx.db as RequestDbInstance;
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 

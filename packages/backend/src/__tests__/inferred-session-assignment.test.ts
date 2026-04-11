@@ -13,6 +13,8 @@ const mockValues = vi.fn();
 const mockOnConflictDoUpdate = vi.fn();
 
 vi.mock('../db/client', () => ({
+  createRequestDb: () => ({}),
+  withTransaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
   db: {
     select: (...args: unknown[]) => {
       mockSelect(...args);
