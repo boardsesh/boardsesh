@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import Popover from '@mui/material/Popover';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -93,10 +93,10 @@ export default function HoldTypePicker({
 }: HoldTypePickerProps) {
   const options = useMemo(() => buildOptions(boardName), [boardName]);
 
-  const handleSelect = (state: SelectableState, disabled: boolean) => {
+  const handleSelect = useCallback((state: SelectableState, disabled: boolean) => {
     if (disabled) return;
     onSelect(state);
-  };
+  }, [onSelect]);
 
   return (
     <Popover
@@ -116,7 +116,7 @@ export default function HoldTypePicker({
       }}
     >
       <Box
-        role="toolbar"
+        role="group"
         aria-label="Hold type"
         sx={{
           display: 'flex',

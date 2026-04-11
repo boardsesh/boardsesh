@@ -218,7 +218,8 @@ export default function CreateClimbForm({
   // Hold-type picker: tracks which hold the user just tapped, anchors the
   // popover against its DOM element, and routes selections back to setHoldState.
   const picker = useHoldTypePicker({ litUpHoldsMap, setHoldState });
-  const pickerBoardName = boardType === 'aurora' ? boardDetails?.board_name ?? 'kilter' : 'moonboard';
+  // boardDetails is always defined for aurora boards (all page components enforce this)
+  const pickerBoardName = boardType === 'aurora' ? boardDetails!.board_name : 'moonboard';
 
   // Wrap resetHolds to also clear the board
   const resetHolds = useCallback(() => {
