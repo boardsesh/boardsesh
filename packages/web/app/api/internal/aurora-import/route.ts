@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { auroraExportSchema, importJsonExportData } from '@/app/lib/data-sync/aurora/json-import';
 import type { ImportResult, ImportProgressEvent } from '@/app/lib/data-sync/aurora/json-import';
+import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 
 export const maxDuration = 300;
 
 const requestSchema = z.object({
-  boardType: z.enum(['kilter', 'tension']),
+  boardType: z.enum([...AURORA_BOARDS] as [AuroraBoardName, ...AuroraBoardName[]]),
   data: auroraExportSchema,
   skipSessionBuild: z.boolean().optional().default(false),
 });

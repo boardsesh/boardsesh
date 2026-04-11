@@ -4,16 +4,18 @@ import { getDb } from "@/app/lib/db/db";
 import { auroraCredentials, boardseshTicks, boardClimbs } from "@/app/lib/db/schema";
 import { eq, and, isNull, count } from "drizzle-orm";
 import { authOptions } from "@/app/lib/auth/auth-options";
+import { AURORA_BOARDS, type AuroraBoardName } from "@boardsesh/shared-schema";
 
-export interface UnsyncedCounts {
-  kilter: {
-    ascents: number;
-    climbs: number;
-  };
-  tension: {
-    ascents: number;
-    climbs: number;
-  };
+export type UnsyncedCounts = Record<AuroraBoardName, { ascents: number; climbs: number }>;
+
+function createEmptyCounts(): UnsyncedCounts {
+  return Object.fromEntries(
+    AURORA_BOARDS.map((board) => [board, { ascents: 0, climbs: 0 }]),
+  ) as UnsyncedCounts;
+}
+
+function isAuroraBoardName(value: string): value is AuroraBoardName {
+  return (AURORA_BOARDS as readonly string[]).includes(value);
 }
 
 /**
@@ -38,15 +40,13 @@ export async function GET() {
       .from(auroraCredentials)
       .where(eq(auroraCredentials.userId, session.user.id));
 
-    const counts: UnsyncedCounts = {
-      kilter: { ascents: 0, climbs: 0 },
-      tension: { ascents: 0, climbs: 0 },
-    };
+    const counts: UnsyncedCounts = createEmptyCounts();
 
     for (const cred of credentials) {
       if (!cred.auroraUserId) continue;
+      if (!isAuroraBoardName(cred.boardType)) continue;
 
-      const boardType = cred.boardType as 'kilter' | 'tension';
+      const boardType = cred.boardType;
 
       // Count unsynced ticks (ascents/bids) for this user from boardsesh_ticks
       // Note: boardsesh_ticks uses NextAuth userId, not Aurora user_id
@@ -74,13 +74,10 @@ export async function GET() {
           ),
         );
 
-      if (boardType === 'kilter') {
-        counts.kilter.ascents = ascentResult?.count ?? 0;
-        counts.kilter.climbs = climbResult?.count ?? 0;
-      } else if (boardType === 'tension') {
-        counts.tension.ascents = ascentResult?.count ?? 0;
-        counts.tension.climbs = climbResult?.count ?? 0;
-      }
+      counts[boardType] = {
+        ascents: ascentResult?.count ?? 0,
+        climbs: climbResult?.count ?? 0,
+      };
     }
 
     return NextResponse.json({ counts });

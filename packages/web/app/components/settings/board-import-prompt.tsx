@@ -26,10 +26,11 @@ import {
   type ImportProgress,
 } from './aurora-credentials-section';
 import { parseAuroraExport, type AuroraExportPreview, type StrippedExportData } from '@/app/lib/data-sync/aurora/parse-aurora-export';
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import styles from './aurora-credentials-section.module.css';
 
 interface BoardImportPromptProps {
-  boardType: 'kilter' | 'tension';
+  boardType: AuroraBoardName;
   onImportComplete?: () => void;
 }
 
@@ -107,10 +108,10 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
         throw new Error(error.error || 'Failed to save credentials');
       }
 
-      if (boardType === 'tension') {
-        showMessage('Tension account linked. Your data will show up within 12 hours.', 'success');
-      } else {
+      if (boardType === 'kilter') {
         showMessage(`${boardName} account linked successfully`, 'success');
+      } else {
+        showMessage(`${boardName} account linked. Your data will show up within 12 hours.`, 'success');
       }
       setIsModalOpen(false);
       setFormValues({ username: '', password: '' });

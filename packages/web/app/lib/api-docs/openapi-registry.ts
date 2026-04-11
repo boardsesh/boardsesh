@@ -12,6 +12,7 @@
 
 import { extendZodWithOpenApi, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 
 // Extend Zod with OpenAPI capabilities
 extendZodWithOpenApi(z);
@@ -30,7 +31,7 @@ export const ErrorResponseSchema = z
   .openapi('ErrorResponse');
 
 export const BoardNameSchema = z
-  .enum(['kilter', 'tension'])
+  .enum([...AURORA_BOARDS] as [AuroraBoardName, ...AuroraBoardName[]])
   .describe('The type of climbing board')
   .openapi('BoardName');
 

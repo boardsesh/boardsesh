@@ -17,6 +17,7 @@ import { fontGradeToDifficultyId } from '@/app/lib/board-data';
 import { LAYOUTS, HOLE_PLACEMENTS } from '@/app/lib/board-constants';
 import { buildInferredSessionsForUser } from './inferred-session-builder';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
 
 const BATCH_SIZE = 100;
 
@@ -81,7 +82,7 @@ export const auroraExportSchema = z.object({
 
 export type AuroraExportData = z.infer<typeof auroraExportSchema>;
 
-type BoardType = 'kilter' | 'tension';
+type BoardType = AuroraBoardName;
 
 // ---------------------------------------------------------------------------
 // Import result types
@@ -163,6 +164,12 @@ export function generateJsonImportAuroraId(
 const ROLE_TO_CODE: Record<BoardType, Record<string, number>> = {
   kilter: { start: 42, middle: 43, finish: 44, foot: 45 },
   tension: { start: 1, middle: 2, finish: 3, foot: 4 },
+  // Decoy, Touchstone, and Grasshopper all use the same Aurora hold-state
+  // codes as Tension (1=start, 2=middle, 3=finish, 4=foot). See
+  // packages/db/scripts/aurora-board-import-helpers.ts for the inverse mapping.
+  decoy: { start: 1, middle: 2, finish: 3, foot: 4 },
+  touchstone: { start: 1, middle: 2, finish: 3, foot: 4 },
+  grasshopper: { start: 1, middle: 2, finish: 3, foot: 4 },
 };
 
 /** Resolve a layout name (e.g. "Kilter Board Original") to a layout ID. */

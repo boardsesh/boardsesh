@@ -19,6 +19,7 @@ import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import BoardImportPrompt from '@/app/components/settings/board-import-prompt';
 import UserSmartCard from '@/app/components/social/user-smart-card';
 import { themeTokens } from '@/app/theme/theme-config';
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import styles from './aurora-migration.module.css';
 
 export default function AuroraMigrationContent() {
@@ -217,12 +218,18 @@ export default function AuroraMigrationContent() {
                 {isAuthenticated && (
                   <Stack spacing={2}>
                     <Typography variant="body1" component="p">
-                      The Kilter backend is down so only JSON import is available for
-                      Kilter. For Tension, linking your account will automatically sync
-                      your data every 12 hours so you always have a backup.
+                      The Kilter backend is down, so Kilter data can only come in via
+                      JSON import. For every other board, linking your account will
+                      automatically sync your data every 12 hours so you always have a
+                      backup.
                     </Typography>
-                    <BoardImportPrompt boardType="kilter" onImportComplete={handleImportComplete} />
-                    <BoardImportPrompt boardType="tension" onImportComplete={handleImportComplete} />
+                    {AURORA_BOARDS.map((boardType) => (
+                      <BoardImportPrompt
+                        key={boardType}
+                        boardType={boardType}
+                        onImportComplete={handleImportComplete}
+                      />
+                    ))}
                   </Stack>
                 )}
 

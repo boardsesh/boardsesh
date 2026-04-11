@@ -37,6 +37,7 @@ import type { UnsyncedCounts } from '@/app/api/internal/aurora-credentials/unsyn
 import type { ImportResult } from '@/app/lib/data-sync/aurora/json-import';
 import { streamImport } from '@/app/lib/data-sync/aurora/json-import-stream';
 import { parseAuroraExport, type AuroraExportPreview, type StrippedExportData } from '@/app/lib/data-sync/aurora/parse-aurora-export';
+import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import styles from './aurora-credentials-section.module.css';
 
 interface BoardUnsyncedCounts {
@@ -68,7 +69,7 @@ export const STEP_LABELS: Record<ImportStep, string> = {
 };
 
 export interface BoardCredentialCardProps {
-  boardType: 'kilter' | 'tension';
+  boardType: AuroraBoardName;
   credential: AuroraCredentialStatus | null;
   unsyncedCounts: BoardUnsyncedCounts;
   onAdd: () => void;
@@ -277,14 +278,14 @@ export default function AuroraCredentialsSection() {
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedBoard, setSelectedBoard] = useState<'kilter' | 'tension'>('kilter');
+  const [selectedBoard, setSelectedBoard] = useState<AuroraBoardName>('kilter');
   const [isSaving, setIsSaving] = useState(false);
   const [removingBoard, setRemovingBoard] = useState<string | null>(null);
   const [formValues, setFormValues] = useState({ username: '', password: '' });
 
   // Import state
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importingBoard, setImportingBoard] = useState<'kilter' | 'tension' | null>(null);
+  const [importingBoard, setImportingBoard] = useState<AuroraBoardName | null>(null);
   const [importPreview, setAuroraExportPreview] = useState<AuroraExportPreview | null>(null);
   const [importRawData, setImportRawData] = useState<StrippedExportData | null>(null);
   const [importPhase, setImportPhase] = useState<ImportPhase | null>(null);
@@ -324,7 +325,7 @@ export default function AuroraCredentialsSection() {
     fetchUnsyncedCounts();
   }, []);
 
-  const handleAddClick = (boardType: 'kilter' | 'tension') => {
+  const handleAddClick = (boardType: AuroraBoardName) => {
     setSelectedBoard(boardType);
     setFormValues({ username: '', password: '' });
     setIsModalOpen(true);
@@ -353,10 +354,11 @@ export default function AuroraCredentialsSection() {
         throw new Error(error.error || 'Failed to save credentials');
       }
 
-      if (selectedBoard === 'tension') {
-        showMessage('Tension account linked. Your data will show up within 12 hours.', 'success');
+      const displayName = selectedBoard.charAt(0).toUpperCase() + selectedBoard.slice(1);
+      if (selectedBoard === 'kilter') {
+        showMessage(`${displayName} account linked successfully`, 'success');
       } else {
-        showMessage(`${selectedBoard.charAt(0).toUpperCase() + selectedBoard.slice(1)} account linked successfully`, 'success');
+        showMessage(`${displayName} account linked. Your data will show up within 12 hours.`, 'success');
       }
       setIsModalOpen(false);
       setFormValues({ username: '', password: '' });
@@ -368,7 +370,7 @@ export default function AuroraCredentialsSection() {
     }
   };
 
-  const handleRemove = async (boardType: 'kilter' | 'tension') => {
+  const handleRemove = async (boardType: AuroraBoardName) => {
     setRemovingBoard(boardType);
     try {
       const response = await fetch('/api/internal/aurora-credentials', {
@@ -403,7 +405,7 @@ export default function AuroraCredentialsSection() {
     setImportError(null);
   };
 
-  const handleImportClick = (boardType: 'kilter' | 'tension') => {
+  const handleImportClick = (boardType: AuroraBoardName) => {
     setImportingBoard(boardType);
     fileInputRef.current?.click();
   };
@@ -514,7 +516,7 @@ export default function AuroraCredentialsSection() {
     resetImportState();
   };
 
-  const getCredentialForBoard = (boardType: 'kilter' | 'tension') => {
+  const getCredentialForBoard = (boardType: AuroraBoardName) => {
     return credentials.find((c) => c.boardType === boardType) || null;
   };
 
@@ -555,26 +557,19 @@ export default function AuroraCredentialsSection() {
           </Typography>
 
           <Stack spacing={2} className={styles.cardsContainer}>
-            <BoardCredentialCard
-              boardType="kilter"
-              credential={getCredentialForBoard('kilter')}
-              unsyncedCounts={unsyncedCounts?.kilter ?? { ascents: 0, climbs: 0 }}
-              onAdd={() => handleAddClick('kilter')}
-              onRemove={() => handleRemove('kilter')}
-              onImportJson={() => handleImportClick('kilter')}
-              isRemoving={removingBoard === 'kilter'}
-              isImporting={isImporting && importingBoard === 'kilter'}
-            />
-            <BoardCredentialCard
-              boardType="tension"
-              credential={getCredentialForBoard('tension')}
-              unsyncedCounts={unsyncedCounts?.tension ?? { ascents: 0, climbs: 0 }}
-              onAdd={() => handleAddClick('tension')}
-              onRemove={() => handleRemove('tension')}
-              onImportJson={() => handleImportClick('tension')}
-              isRemoving={removingBoard === 'tension'}
-              isImporting={isImporting && importingBoard === 'tension'}
-            />
+            {AURORA_BOARDS.map((boardType) => (
+              <BoardCredentialCard
+                key={boardType}
+                boardType={boardType}
+                credential={getCredentialForBoard(boardType)}
+                unsyncedCounts={unsyncedCounts?.[boardType] ?? { ascents: 0, climbs: 0 }}
+                onAdd={() => handleAddClick(boardType)}
+                onRemove={() => handleRemove(boardType)}
+                onImportJson={() => handleImportClick(boardType)}
+                isRemoving={removingBoard === boardType}
+                isImporting={isImporting && importingBoard === boardType}
+              />
+            ))}
           </Stack>
         </CardContent>
       </Card>

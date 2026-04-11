@@ -6,10 +6,11 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { authOptions } from "@/app/lib/auth/auth-options";
 import { randomBytes } from "crypto";
+import { AURORA_BOARDS, type AuroraBoardName } from "@boardsesh/shared-schema";
 
 const registerControllerSchema = z.object({
   name: z.string().max(100).optional(),
-  boardName: z.enum(["kilter", "tension"]),
+  boardName: z.enum([...AURORA_BOARDS] as [AuroraBoardName, ...AuroraBoardName[]]),
   layoutId: z.number().int().positive(),
   sizeId: z.number().int().positive(),
   setIds: z.string().min(1),

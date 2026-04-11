@@ -2,6 +2,8 @@
  * Utilities for parsing and preparing Aurora JSON export files for import.
  */
 
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
+
 export interface AuroraExportPreview {
   ascents: number;
   attempts: number;
@@ -32,7 +34,7 @@ export interface ParsedExportResult {
  */
 export function parseAuroraExport(
   json: Record<string, unknown>,
-  boardType: 'kilter' | 'tension',
+  boardType: AuroraBoardName,
 ): ParsedExportResult {
   const user = json.user as { username?: string; email_address?: string; created_at?: string } | undefined;
 
@@ -40,15 +42,16 @@ export function parseAuroraExport(
     throw new Error('Invalid file: missing user data. Please select an Aurora JSON export file.');
   }
 
-  // Check if the export's board type matches the target board
+  // Check if the export's board type matches the target board.
+  // Aurora layout strings include the board name (e.g. "Kilter Board Original",
+  // "Tension Board 2", "Grasshopper Board Standard"), so a substring check on
+  // the lowercased board name works for all Aurora boards.
   let boardWarning: string | undefined;
   const climbs = json.climbs;
   if (Array.isArray(climbs) && climbs.length > 0) {
     const layout = (climbs[0]?.layout as string | undefined)?.toLowerCase() ?? '';
     const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
-    const layoutMatchesBoard =
-      (boardType === 'kilter' && layout.includes('kilter')) ||
-      (boardType === 'tension' && layout.includes('tension'));
+    const layoutMatchesBoard = layout.includes(boardType);
 
     if (!layoutMatchesBoard && layout) {
       boardWarning = `Warning: This export appears to be from "${climbs[0].layout}" but you're importing to ${boardName}. Climbs may not match.`;

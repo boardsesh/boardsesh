@@ -3,10 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createUserBoardMapping, getUserBoardMappings } from "@/app/lib/auth/user-board-mappings";
 import { authOptions } from "@/app/lib/auth/auth-options";
 import { z } from "zod";
+import { AURORA_BOARDS, type AuroraBoardName } from "@boardsesh/shared-schema";
 
 const userBoardMappingSchema = z.object({
-  boardType: z.enum(["kilter", "tension"], {
-    message: "Board type must be kilter or tension",
+  boardType: z.enum([...AURORA_BOARDS] as [AuroraBoardName, ...AuroraBoardName[]], {
+    message: `Board type must be one of ${AURORA_BOARDS.join(", ")}`,
   }),
   boardUserId: z.number().int().positive("Board user ID must be a positive integer"),
   boardUsername: z.string().max(100, "Username too long").optional(),
