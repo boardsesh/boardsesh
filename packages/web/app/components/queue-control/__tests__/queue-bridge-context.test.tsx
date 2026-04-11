@@ -394,6 +394,18 @@ describe('queue-bridge-context', () => {
       expect(result.current.boardInfo.hasActiveQueue).toBe(true);
     });
 
+    it('isHydrated is false before isLocalQueueLoaded becomes true', () => {
+      mockPersistentSession = createDefaultPersistentSession({ isLocalQueueLoaded: false });
+      const { result } = renderBridgeHook();
+      expect(result.current.boardInfo.isHydrated).toBe(false);
+    });
+
+    it('isHydrated is true once isLocalQueueLoaded becomes true', () => {
+      mockPersistentSession = createDefaultPersistentSession({ isLocalQueueLoaded: true });
+      const { result } = renderBridgeHook();
+      expect(result.current.boardInfo.isHydrated).toBe(true);
+    });
+
     it('provides current climb uuid in adapter mode', () => {
       const item = createTestQueueItem(createTestClimb({ uuid: 'c1' }), 'u1');
       mockPersistentSession = createDefaultPersistentSession({
@@ -696,6 +708,15 @@ describe('queue-bridge-context', () => {
       // The bridge's exposed QueueContext should be the injected one
       expect(result.current.queueCtx).toBe(fakeCtx);
       expect(result.current.currentClimbUuid).toBeNull();
+    });
+
+    it('isHydrated is true when injector is active even if isLocalQueueLoaded is false', () => {
+      // Simulates a board-route page where IndexedDB hasn't finished loading yet.
+      // The injector is the source of truth, so isHydrated should be immediately true.
+      mockPersistentSession = createDefaultPersistentSession({ isLocalQueueLoaded: false });
+      const fakeCtx = createFakeQueueContext();
+      const { result } = renderInjector(fakeCtx);
+      expect(result.current.boardInfo.isHydrated).toBe(true);
     });
 
     it('clears on unmount', () => {

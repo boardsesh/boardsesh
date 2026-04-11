@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useDefaultBoardSelection } from './use-default-board-selection';
 import MuiButton from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -104,12 +105,7 @@ export default function PlaylistDetailContent({
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [listRefreshKey, setListRefreshKey] = useState(0);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  // Initialize selectedBoard from SSR data immediately (avoids flash from "All" to selected board)
-  const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(
-    () => findMatchingBoard(initialMyBoards, boardSlug, boardConfig),
-  );
   const lastAccessedUpdatedRef = useRef(false);
-  const defaultBoardAppliedRef = useRef(!!selectedBoard);
   const { token, isLoading: tokenLoading } = useWsAuthToken();
 
   // Fetch user's boards (with SSR initial data to avoid loading skeleton).
@@ -124,40 +120,18 @@ export default function PlaylistDetailContent({
     isHydrated: isQueueHydrated,
   } = useQueueBridgeBoardInfo();
 
-  // Auto-select the matching board once boards finish loading.
-  // - Route-provided boardSlug/boardConfig always wins.
-  // - Otherwise fall back to the current queue's board so the filter opens on
-  //   whatever the user is actively climbing, mirroring the playlists library page.
-  useEffect(() => {
-    if (defaultBoardAppliedRef.current || boardsLoading || myBoards.length === 0) return;
-
-    if (boardSlug || boardConfig) {
-      const match = findMatchingBoard(myBoards, boardSlug, boardConfig);
-      if (match) {
-        setSelectedBoard(match);
-      }
-      defaultBoardAppliedRef.current = true;
-      return;
-    }
-
-    // Wait until the persistent session has finished restoring from IndexedDB.
-    // On a fresh direct load both `currentBoardDetails` and `hasActiveQueue` start
-    // as null/false, so without this guard we'd commit to "All Boards" before the
-    // real queue board is available and then never re-apply because of the ref.
-    if (!isQueueHydrated) return;
-
-    const match = currentBoardDetails
-      ? findMatchingBoard(myBoards, undefined, {
-          boardType: currentBoardDetails.board_name,
-          layoutId: currentBoardDetails.layout_id,
-          sizeId: currentBoardDetails.size_id,
-        })
-      : null;
-    if (match) {
-      setSelectedBoard(match);
-    }
-    defaultBoardAppliedRef.current = true;
-  }, [myBoards, boardsLoading, boardSlug, boardConfig, currentBoardDetails, isQueueHydrated]);
+  // Manages the selected-board filter. Applies SSR data immediately (no flash),
+  // then resolves the board from route params or the active queue once both
+  // myBoards and the persistent session are ready.
+  const [selectedBoard, setSelectedBoard] = useDefaultBoardSelection({
+    initialBoard: findMatchingBoard(initialMyBoards, boardSlug, boardConfig),
+    myBoards,
+    boardsLoading,
+    boardSlug,
+    boardConfig,
+    currentBoardDetails,
+    isQueueHydrated,
+  });
 
   const fetchPlaylist = useCallback(async () => {
     if (tokenLoading) return;
