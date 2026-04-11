@@ -271,16 +271,22 @@ jobs:
             || echo "nothing to commit"
           git push origin "$BRANCH"
 
+          SCREENSHOTS_SHA=$(git rev-parse HEAD)
+          echo "SCREENSHOTS_SHA=$SCREENSHOTS_SHA" >> "$GITHUB_ENV"
+
       - name: Build screenshot gallery
         run: |
           python3 << 'PYEOF'
           import os, glob
 
-          pr   = "${{ github.event.pull_request.number }}"
-          repo = "${{ github.repository }}"
-          sha  = "${{ github.event.pull_request.head.sha }}"
-          run  = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          base = f"https://raw.githubusercontent.com/{repo}/test-screenshots/pr-{pr}"
+          pr            = "${{ github.event.pull_request.number }}"
+          repo          = "${{ github.repository }}"
+          sha           = "${{ github.event.pull_request.head.sha }}"
+          run           = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          screenshots_sha = "${{ env.SCREENSHOTS_SHA }}"
+          # Use the exact commit SHA so GitHub CDN serves fresh images each run
+          # instead of returning a cached response for the branch-name URL.
+          base = f"https://raw.githubusercontent.com/{repo}/{screenshots_sha}/pr-{pr}"
 
           app = sorted(glob.glob(f"/tmp/ss-branch/pr-{pr}/app-store/*.png"))
           hlp = sorted(glob.glob(f"/tmp/ss-branch/pr-{pr}/help/*.png"))
