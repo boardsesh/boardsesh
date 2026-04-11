@@ -20,8 +20,14 @@ interface ExecutableDb {
  * `board_placements`. This works regardless of whether `board_climb_holds` has
  * been populated.
  *
- * `compatible_size_ids` — derived by comparing the climb's edge bounding box
- * against all `board_product_sizes` for that board type.
+ * `compatible_size_ids` — derived by checking, for each product size, that
+ * every placement referenced by the climb's frames has an entry in
+ * `board_leds` for that size. An edge bounding-box check is not sufficient:
+ * a climb can fit within a board's edges while still referencing holes that
+ * have no LED mapping on that specific product size (e.g. a hold from a set
+ * that isn't LED-equipped on smaller boards). LED coverage matches the
+ * `getAuroraBluetoothPacket` check in the bluetooth code, so the search
+ * filter and the BLE sender agree on which climbs a board can light up.
  *
  * MoonBoard climbs are skipped (they have no set or size data).
  *
@@ -90,24 +96,64 @@ export async function populateDenormalizedColumns(
     WHERE c.uuid = sub.uuid AND c.board_type = ${boardType}
   `);
 
-  // Step 3: Populate compatible_size_ids from edge comparison
+  // Step 3: Populate compatible_size_ids from LED coverage.
+  // A climb is compatible with a product size iff every placement referenced
+  // in its frames has a row in board_leds for that product size. We compute
+  // this with two CTEs:
+  //   - led_mapped_placements: for each (layout, product_size), the full set
+  //     of placement IDs that can be lit. Joins board_placements to board_leds
+  //     via hole_id.
+  //   - climb_placements: for each climb, the distinct placement IDs it needs,
+  //     parsed from frames (format: "p{placementId}r{roleCode}...").
+  // Then the climb's required_placement_ids must be contained (<@) within the
+  // (layout, size)'s LED-mapped placement set for that size to qualify.
+  // COALESCE handles climbs that don't fit any size (empty array, not NULL).
   await db.execute(sql`
-    UPDATE board_climbs c SET compatible_size_ids = sub.size_ids
-    FROM (
-      SELECT c2.uuid,
-        ARRAY_AGG(ps.id ORDER BY ps.id) as size_ids
+    WITH led_mapped_placements AS (
+      SELECT
+        bp.board_type,
+        bp.layout_id,
+        bl.product_size_id,
+        ARRAY_AGG(DISTINCT bp.id ORDER BY bp.id) AS placement_ids
+      FROM board_placements bp
+      JOIN board_leds bl
+        ON bl.board_type = bp.board_type
+        AND bl.hole_id = bp.hole_id
+      WHERE bp.board_type = ${boardType}
+      GROUP BY bp.board_type, bp.layout_id, bl.product_size_id
+    ),
+    climb_placements AS (
+      SELECT
+        c2.uuid,
+        c2.board_type,
+        c2.layout_id,
+        ARRAY_AGG(DISTINCT (m.hold_id_arr[1])::int) AS required_placement_ids
       FROM board_climbs c2
-      JOIN board_product_sizes ps
-        ON ps.board_type = c2.board_type
-        AND c2.edge_left > ps.edge_left
-        AND c2.edge_right < ps.edge_right
-        AND c2.edge_bottom > ps.edge_bottom
-        AND c2.edge_top < ps.edge_top
+      CROSS JOIN LATERAL regexp_matches(c2.frames, 'p(\d+)r', 'g') AS m(hold_id_arr)
       WHERE c2.board_type = ${boardType}
         AND c2.uuid = ANY(${climbUuids}::text[])
-        AND c2.edge_left IS NOT NULL
-      GROUP BY c2.uuid
-    ) sub
-    WHERE c.uuid = sub.uuid AND c.board_type = ${boardType}
+        AND c2.frames IS NOT NULL
+      GROUP BY c2.uuid, c2.board_type, c2.layout_id
+    ),
+    climb_compatible_sizes AS (
+      SELECT
+        cp.uuid,
+        COALESCE(
+          ARRAY_AGG(lmp.product_size_id ORDER BY lmp.product_size_id) FILTER (
+            WHERE cp.required_placement_ids <@ lmp.placement_ids
+          ),
+          ARRAY[]::int[]
+        ) AS size_ids
+      FROM climb_placements cp
+      LEFT JOIN led_mapped_placements lmp
+        ON lmp.board_type = cp.board_type
+        AND lmp.layout_id = cp.layout_id
+      GROUP BY cp.uuid
+    )
+    UPDATE board_climbs c
+    SET compatible_size_ids = ccs.size_ids
+    FROM climb_compatible_sizes ccs
+    WHERE c.uuid = ccs.uuid
+      AND c.board_type = ${boardType}
   `);
 }
