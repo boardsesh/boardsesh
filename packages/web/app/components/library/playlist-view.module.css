@@ -2,6 +2,7 @@
 
 .pageContainer {
   padding: 16px;
+  padding-top: calc(var(--global-header-height) + 16px);
   min-height: 100vh;
   background-color: var(--neutral-50);
   max-width: 1400px;
@@ -196,6 +197,7 @@
 @media (max-width: 767px) {
   .pageContainer {
     padding: 12px;
+    padding-top: calc(var(--global-header-height) + 12px);
   }
 
   .actionsSection {
