@@ -11,5 +11,7 @@
 	<array>
 		<string>group.com.boardsesh.app</string>
 	</array>
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

@@ -16,6 +16,7 @@ import { playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
 import { sessionMutations } from './sessions/mutations';
+import { pushTokenMutations } from './sessions/push-tokens';
 import { sessionSubscriptions } from './sessions/subscriptions';
 import { sessionEventResolver } from './sessions/type-resolvers';
 import { queueMutations } from './queue/mutations';
@@ -77,6 +78,7 @@ export const resolvers = {
 
   Mutation: {
     ...sessionMutations,
+    ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,
     ...climbMutations,

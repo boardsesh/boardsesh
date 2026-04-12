@@ -17,6 +17,17 @@ actor LiveActivityManager {
     private let thumbnailFetcher = ThumbnailFetcher()
     private let logger = Logger(subsystem: "com.boardsesh.app", category: "LiveActivityManager")
 
+    /// Callback invoked when the ActivityKit push token is updated.
+    private var onPushTokenUpdate: (@Sendable (String) -> Void)?
+
+    /// Sets the push token update callback.
+    func setOnPushTokenUpdate(_ callback: (@Sendable (String) -> Void)?) {
+        onPushTokenUpdate = callback
+    }
+
+    /// Task tracking the push token observation loop.
+    private var pushTokenTask: Task<Void, Never>?
+
     /// Timestamp of the last ActivityKit update, used for deduplication.
     private var lastUpdateTime: Date?
 
@@ -66,12 +77,27 @@ actor LiveActivityManager {
             currentActivity = try Activity.request(
                 attributes: attributes,
                 content: content,
-                pushType: nil
+                pushType: .token
             )
             logger.info("Started Live Activity for session \(sessionId, privacy: .public)")
+            observePushTokenUpdates(for: currentActivity!)
         } catch {
             logger.error("Failed to start Live Activity: \(error.localizedDescription, privacy: .public)")
             throw error
+        }
+    }
+
+    // MARK: - Push Token Observation
+
+    private func observePushTokenUpdates(for activity: Activity<ClimbSessionAttributes>) {
+        pushTokenTask?.cancel()
+        pushTokenTask = Task { [weak self] in
+            for await tokenData in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { break }
+                let token = tokenData.map { String(format: "%02x", $0) }.joined()
+                self?.logger.info("Push token updated: \(token.prefix(8), privacy: .public)...")
+                self?.onPushTokenUpdate?(token)
+            }
         }
     }
 
@@ -130,6 +156,9 @@ actor LiveActivityManager {
     /// Ends all Live Activities, including the tracked one and any stale
     /// activities from previous sessions that may still be visible.
     func endAllActivities() async {
+        pushTokenTask?.cancel()
+        pushTokenTask = nil
+
         // End the currently tracked activity.
         if let activity = currentActivity {
             let activityId = activity.id

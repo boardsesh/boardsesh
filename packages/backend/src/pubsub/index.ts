@@ -8,6 +8,9 @@ type NotificationSubscriber = (event: NotificationEvent) => void;
 type CommentSubscriber = (event: CommentEvent) => void;
 type NewClimbSubscriber = (event: NewClimbCreatedEvent) => void;
 
+/** External hook called after every queue event publish. Fire-and-forget. */
+type QueueEventHook = (sessionId: string, event: QueueEvent) => void;
+
 // Event buffer configuration (Phase 2: Delta sync)
 const EVENT_BUFFER_SIZE = 100; // Store last 100 events per session
 const EVENT_BUFFER_TTL = 300;  // 5 minutes
@@ -33,6 +36,7 @@ class PubSub {
   private redisAdapter: RedisPubSubAdapter | null = null;
   private initialized = false;
   private redisRequired = false;
+  private queueEventHook: QueueEventHook | null = null;
 
   /**
    * Initialize the PubSub system.
@@ -79,6 +83,15 @@ class PubSub {
    */
   isRedisRequired(): boolean {
     return this.redisRequired;
+  }
+
+  /**
+   * Register an external hook that fires after every queue event publish.
+   * The hook is called fire-and-forget (not awaited, errors are caught internally).
+   * Used to wire APNs Live Activity updates without coupling PubSub to the APNs service.
+   */
+  setQueueEventHook(hook: QueueEventHook): void {
+    this.queueEventHook = hook;
   }
 
   private setupRedisMessageHandlers(): void {
@@ -299,6 +312,15 @@ class PubSub {
         // Log but don't throw - local dispatch already succeeded
         // Health check will report Redis as unhealthy if connection is lost
       });
+    }
+
+    // Fire external hook (e.g. APNs Live Activity updates)
+    if (this.queueEventHook) {
+      try {
+        this.queueEventHook(sessionId, event);
+      } catch (error) {
+        console.error('[PubSub] Queue event hook error:', error);
+      }
     }
   }
 

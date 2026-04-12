@@ -33,6 +33,7 @@
 		LA100013 /* PreviousClimbIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200013 /* PreviousClimbIntent.swift */; };
 		LA100020 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200001 /* SharedConstants.swift */; };
 		LA100021 /* ClimbSessionAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200002 /* ClimbSessionAttributes.swift */; };
+		LA100022 /* WidgetNetworking.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200016 /* WidgetNetworking.swift */; };
 		LA100030 /* SessionWebSocketManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200030 /* SessionWebSocketManagerTests.swift */; };
 		LA100031 /* ThumbnailFetcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200031 /* ThumbnailFetcherTests.swift */; };
 		LA100032 /* LiveActivityManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200032 /* LiveActivityManagerTests.swift */; };
@@ -106,6 +107,7 @@
 		LA200013 /* PreviousClimbIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviousClimbIntent.swift; sourceTree = "<group>"; };
 		LA200014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		LA200015 /* BoardseshWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BoardseshWidgets.entitlements; sourceTree = "<group>"; };
+		LA200016 /* WidgetNetworking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetNetworking.swift; sourceTree = "<group>"; };
 		LA200030 /* SessionWebSocketManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionWebSocketManagerTests.swift; sourceTree = "<group>"; };
 		LA200031 /* ThumbnailFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailFetcherTests.swift; sourceTree = "<group>"; };
 		LA200032 /* LiveActivityManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManagerTests.swift; sourceTree = "<group>"; };
@@ -229,6 +231,7 @@
 				LA200011 /* ClimbSessionLiveActivity.swift */,
 				LA200012 /* NextClimbIntent.swift */,
 				LA200013 /* PreviousClimbIntent.swift */,
+				LA200016 /* WidgetNetworking.swift */,
 				LA200014 /* Info.plist */,
 				LA200015 /* BoardseshWidgets.entitlements */,
 				PI200002 /* PrivacyInfo.xcprivacy */,
@@ -468,6 +471,7 @@
 				LA100013 /* PreviousClimbIntent.swift in Sources */,
 				LA100020 /* SharedConstants.swift in Sources */,
 				LA100021 /* ClimbSessionAttributes.swift in Sources */,
+				LA100022 /* WidgetNetworking.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

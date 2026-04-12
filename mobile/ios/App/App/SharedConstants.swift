@@ -16,6 +16,7 @@ enum SharedConstants {
     static let sizeIdKey = "bs_size_id"
     static let setIdsKey = "bs_set_ids"
     static let pendingActionKey = "bs_pending_action"
+    static let authTokenKey = "bs_auth_token"
 
     // MARK: Darwin Notification
 

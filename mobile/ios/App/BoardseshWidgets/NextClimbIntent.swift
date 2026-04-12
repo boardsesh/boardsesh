@@ -47,6 +47,10 @@ struct NextClimbIntent: LiveActivityIntent {
         defaults.set("next", forKey: SharedConstants.pendingActionKey)
         postDarwinNotification()
 
+        // Also send an HTTP request directly to the backend so navigation
+        // works even when the app is suspended and can't receive Darwin notifications.
+        await WidgetNetworking.sendNavigation(action: "next", currentIndex: nextIndex)
+
         return .result()
     }
 

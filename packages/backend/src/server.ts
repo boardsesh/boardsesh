@@ -13,10 +13,14 @@ import { handleAvatarUpload } from './handlers/avatars';
 import { handleStaticAvatar } from './handlers/static';
 import { handleSyncCron } from './handlers/sync';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
+import { handleWidgetNavigate } from './handlers/widget-navigate';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { runInferredSessionBuilderBatched } from './jobs/inferred-session-builder';
 import { warmPopularConfigsCache } from './graphql/resolvers/social/boards';
+import { initializeApns, shutdownApns, sendLiveActivityUpdate } from './services/apns';
+import type { QueueEvent } from '@boardsesh/shared-schema';
+import type { LiveActivityContentState } from './services/apns';
 
 /**
  * Start the Boardsesh Backend server
@@ -55,6 +59,54 @@ export async function startServer(): Promise<ServerResources> {
     await roomManager.initialize(); // Postgres-only mode
     console.log('[Server] No Redis - EventBroker disabled, inline notification fallback active');
   }
+
+  // Initialize APNs for iOS Live Activity push notifications
+  initializeApns();
+
+  // Wire PubSub queue events to APNs Live Activity updates.
+  // The hook is fire-and-forget: it reads queue state from roomManager and
+  // sends a debounced push via the APNs service. Failures are logged, never
+  // thrown, so they cannot block PubSub dispatch.
+  const APNS_RELEVANT_EVENTS = new Set([
+    'CurrentClimbChanged',
+    'FullSync',
+    'QueueItemAdded',
+    'QueueItemRemoved',
+    'QueueReordered',
+  ]);
+
+  pubsub.setQueueEventHook((sessionId: string, event: QueueEvent) => {
+    if (!APNS_RELEVANT_EVENTS.has(event.__typename)) return;
+
+    // Async work wrapped in a void IIFE — never awaited, never throws
+    void (async () => {
+      try {
+        const queueState = await roomManager.getQueueState(sessionId);
+        const { queue, currentClimbQueueItem } = queueState;
+
+        if (!currentClimbQueueItem) return;
+
+        const currentIndex = queue.findIndex(
+          (item) => item.uuid === currentClimbQueueItem.uuid,
+        );
+
+        const contentState: LiveActivityContentState = {
+          climbName: currentClimbQueueItem.climb.name,
+          climbDifficulty: currentClimbQueueItem.climb.difficulty,
+          angle: currentClimbQueueItem.climb.angle,
+          currentIndex: currentIndex >= 0 ? currentIndex : 0,
+          totalClimbs: queue.length,
+          hasNext: currentIndex < queue.length - 1,
+          hasPrevious: currentIndex > 0,
+          climbUuid: currentClimbQueueItem.climb.uuid,
+        };
+
+        sendLiveActivityUpdate(sessionId, contentState);
+      } catch (error) {
+        console.error(`[APNs Hook] Failed to send Live Activity update for session ${sessionId}:`, error);
+      }
+    })();
+  });
 
   const PORT = parseInt(process.env.PORT || '8080', 10);
   const BOARDSESH_URL = process.env.BOARDSESH_URL || 'https://boardsesh.com';
@@ -107,6 +159,12 @@ export async function startServer(): Promise<ServerResources> {
         }
       }
 
+      // Widget queue navigation endpoint (called by iOS lock-screen widget)
+      if (pathname === '/api/widget/navigate' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleWidgetNavigate(req, res);
+        return;
+      }
+
       // Sync cron endpoint (triggered by external cron service)
       if (pathname === '/sync-cron' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleSyncCron(req, res);
@@ -156,6 +214,7 @@ export async function startServer(): Promise<ServerResources> {
     console.log(`  Avatar upload: http://0.0.0.0:${PORT}/api/avatars`);
     console.log(`  Avatar files: http://0.0.0.0:${PORT}/static/avatars/`);
     console.log(`  OCR test data: http://0.0.0.0:${PORT}/api/ocr-test-data`);
+    console.log(`  Widget navigate: http://0.0.0.0:${PORT}/api/widget/navigate`);
     console.log(`  Sync cron: http://0.0.0.0:${PORT}/sync-cron`);
 
     // Warm up popular board configs cache in the background.
@@ -184,6 +243,13 @@ export async function startServer(): Promise<ServerResources> {
    */
   async function shutdownServices(): Promise<void> {
     eventBroker.shutdown();
+
+    try {
+      await shutdownApns();
+      console.log('[Server] APNs shutdown complete');
+    } catch (error) {
+      console.error('[Server] Error during APNs shutdown:', error);
+    }
 
     try {
       await roomManager.shutdown();

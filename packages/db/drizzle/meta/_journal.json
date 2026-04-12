@@ -526,6 +526,13 @@
       "when": 1775948680739,
       "tag": "0074_last_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1775970574256,
+      "tag": "0075_demonic_scourge",
+      "breakpoints": true
     }
   ]
 }
