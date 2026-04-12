@@ -138,11 +138,7 @@ describe('CreateClimbForm', () => {
     });
 
     await waitFor(() => {
-      const saveButton = screen
-        .getAllByLabelText('Save climb')
-        .find((el): el is HTMLButtonElement => el.tagName === 'BUTTON');
-      expect(saveButton).toBeTruthy();
-      expect(saveButton?.disabled).toBe(true);
+      expect(screen.getByLabelText<HTMLButtonElement>('Save climb').disabled).toBe(true);
     });
   });
 });
