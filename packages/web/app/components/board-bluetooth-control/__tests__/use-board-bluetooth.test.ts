@@ -205,7 +205,7 @@ describe('useBoardBluetooth', () => {
       await result.current.connect();
     });
 
-    expect(mockCreateBluetoothAdapter).toHaveBeenCalledWith('moonboard');
+    expect(mockCreateBluetoothAdapter).toHaveBeenCalledWith('moonboard', undefined);
   });
 
   it('handles connect failure', async () => {

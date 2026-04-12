@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { track } from '@vercel/analytics';
 import { useBoardBluetooth } from './use-board-bluetooth';
+import { DevicePickerDialog } from './device-picker-dialog';
 import { useCurrentClimb } from '../graphql-queue';
 import type { BoardDetails } from '@/app/lib/types';
 import { isCapacitor, isCapacitorWebView, waitForCapacitor, CAPACITOR_BRIDGE_TIMEOUT_MS } from '@/app/lib/ble/capacitor-utils';
@@ -92,7 +93,7 @@ export function BluetoothProvider({
   boardDetails: BoardDetails;
   children: React.ReactNode;
 }) {
-  const { isConnected, loading, connect, disconnect, sendFramesToBoard } =
+  const { isConnected, loading, connect, disconnect, sendFramesToBoard, pickerState } =
     useBoardBluetooth({ boardDetails });
 
   const [isBluetoothSupported, setIsBluetoothSupported] = useState(false);
@@ -167,6 +168,13 @@ export function BluetoothProvider({
         <BluetoothAutoSender
           sendFramesToBoard={sendFramesToBoard}
           layoutName={boardDetails.layout_name ?? ''}
+        />
+      )}
+      {pickerState && (
+        <DevicePickerDialog
+          devices={pickerState.devices}
+          onSelect={pickerState.onSelect}
+          onCancel={pickerState.onCancel}
         />
       )}
       {children}

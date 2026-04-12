@@ -9,8 +9,15 @@ import { getAuroraBluetoothPacket, parseApiLevel } from './bluetooth-aurora';
 import { getMoonboardBluetoothPacket } from './bluetooth-moonboard';
 import { HoldRenderData } from '../board-renderer/types';
 import { useWakeLock } from './use-wake-lock';
-import type { BluetoothAdapter } from '@/app/lib/ble/types';
+import type { BluetoothAdapter, DevicePickerFn, DiscoveredDevice } from '@/app/lib/ble/types';
 import { createBluetoothAdapter } from '@/app/lib/ble/adapter-factory';
+import { isCapacitor } from '@/app/lib/ble/capacitor-utils';
+
+export interface PickerState {
+  devices: DiscoveredDevice[];
+  onSelect: (deviceId: string) => void;
+  onCancel: () => void;
+}
 
 // Module-level cache for Aurora LED placements loader to avoid repeated dynamic import overhead
 type GetLedPlacementsFn = (boardName: string, layoutId: number, sizeId: number) => Record<number, number>;
@@ -59,6 +66,41 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
   const adapterRef = useRef<BluetoothAdapter | null>(null);
   const apiLevelRef = useRef<number>(3);
   const unsubDisconnectRef = useRef<(() => void) | null>(null);
+
+  // Device picker state for custom Capacitor scanning
+  const [pickerState, setPickerState] = useState<PickerState | null>(null);
+  const pickerResolveRef = useRef<((deviceId: string) => void) | null>(null);
+  const pickerRejectRef = useRef<((error: Error) => void) | null>(null);
+
+  // Stable device picker function for the Capacitor adapter
+  const devicePicker = useCallback<DevicePickerFn>((subscribe) => {
+    return new Promise<string>((resolve, reject) => {
+      pickerResolveRef.current = resolve;
+      pickerRejectRef.current = reject;
+
+      const handleSelect = (deviceId: string) => {
+        pickerResolveRef.current = null;
+        pickerRejectRef.current = null;
+        setPickerState(null);
+        resolve(deviceId);
+      };
+
+      const handleCancel = () => {
+        pickerResolveRef.current = null;
+        pickerRejectRef.current = null;
+        setPickerState(null);
+        reject(new Error('Device selection cancelled'));
+      };
+
+      setPickerState({ devices: [], onSelect: handleSelect, onCancel: handleCancel });
+
+      subscribe((devices) => {
+        setPickerState((prev) =>
+          prev ? { ...prev, devices } : null,
+        );
+      });
+    });
+  }, []);
 
   // Handler for device disconnection
   const handleDisconnection = useCallback(() => {
@@ -152,8 +194,13 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
       setLoading(true);
 
       try {
-        // Create a fresh adapter for each connection attempt
-        const adapter = await createBluetoothAdapter(boardDetails.board_name);
+        // Create a fresh adapter for each connection attempt.
+        // On Capacitor, inject our custom device picker so we control
+        // the scan UI and can deduplicate discovered devices.
+        const adapter = await createBluetoothAdapter(
+          boardDetails.board_name,
+          isCapacitor() ? devicePicker : undefined,
+        );
 
         const available = await adapter.isAvailable();
         if (!available) {
@@ -199,7 +246,7 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
 
       return false;
     },
-    [handleDisconnection, boardDetails, onConnectionChange, sendFramesToBoard, showMessage],
+    [handleDisconnection, boardDetails, onConnectionChange, sendFramesToBoard, showMessage, devicePicker],
   );
 
   // Disconnect from the board
@@ -226,5 +273,6 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
     connect,
     disconnect,
     sendFramesToBoard,
+    pickerState,
   };
 }

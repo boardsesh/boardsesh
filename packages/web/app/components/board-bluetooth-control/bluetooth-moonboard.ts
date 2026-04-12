@@ -15,13 +15,16 @@ const MOONBOARD_ROLE_MAP = {
 } as const;
 
 export const MOONBOARD_SCAN_SERVICE_UUIDS = [UART_SERVICE_UUID] as const;
-export const MOONBOARD_OPTIONAL_SERVICE_UUIDS = [UART_SERVICE_UUID] as const;
+// UART service is already in the scan filter — no additional services needed
+export const MOONBOARD_OPTIONAL_SERVICE_UUIDS = [] as const;
 
+// Each filter AND's service UUID + name prefix. Two filters are OR'd so we
+// match both capitalization variants without showing the same device twice.
 export const MOONBOARD_REQUEST_DEVICE_OPTIONS: RequestDeviceOptions = {
-  filters: [
-    { services: [...MOONBOARD_SCAN_SERVICE_UUIDS] },
-    ...MOONBOARD_DEVICE_NAME_PREFIXES.map((namePrefix) => ({ namePrefix })),
-  ],
+  filters: MOONBOARD_DEVICE_NAME_PREFIXES.map((namePrefix) => ({
+    services: [...MOONBOARD_SCAN_SERVICE_UUIDS],
+    namePrefix,
+  })),
   optionalServices: [...MOONBOARD_OPTIONAL_SERVICE_UUIDS],
 };
 

@@ -3,6 +3,23 @@ export interface BleConnection {
   deviceName?: string;
 }
 
+/** A BLE device discovered during scanning. */
+export interface DiscoveredDevice {
+  deviceId: string;
+  name?: string;
+  rssi: number;
+}
+
+/**
+ * Function provided by the React layer to display a custom device picker.
+ * Called with a `subscribe` function that the picker uses to receive
+ * live device list updates. Must resolve with a deviceId when the user
+ * selects a device, or reject/throw to cancel.
+ */
+export type DevicePickerFn = (
+  subscribe: (onUpdate: (devices: DiscoveredDevice[]) => void) => void,
+) => Promise<string>;
+
 export interface BluetoothAdapter {
   /** Check if BLE is available and enabled */
   isAvailable(): Promise<boolean>;
