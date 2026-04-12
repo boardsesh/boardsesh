@@ -86,8 +86,13 @@ export const createClimbFilters = (
   // Size filter: check if this climb fits on the selected board size.
   // Uses denormalized compatible_size_ids array (pre-computed from edge comparison).
   // MoonBoard has a single fixed size, so skip.
+  //
+  // For draft queries, allow NULL compatible_size_ids — denormalized columns are populated
+  // asynchronously and may be NULL for freshly saved drafts, so we must not exclude them.
   const sizeConditions: SQL[] = params.board_name === 'moonboard' ? [] : [
-    sql`${params.size_id} = ANY(${boardClimbs.compatibleSizeIds})`,
+    isOnlyDrafts
+      ? sql`(${boardClimbs.compatibleSizeIds} IS NULL OR ${params.size_id} = ANY(${boardClimbs.compatibleSizeIds}))`
+      : sql`${params.size_id} = ANY(${boardClimbs.compatibleSizeIds})`,
   ];
 
   // Conditions for climb stats

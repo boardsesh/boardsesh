@@ -211,9 +211,8 @@ async function standardSearch(
 
   const whereConditions = [
     ...filters.getClimbWhereConditions(),
-    // Draft climbs may have NULL compatible_size_ids (denormalized columns not yet populated),
-    // so skip the size filter entirely — users must be able to find their freshly saved drafts.
-    ...(isDraftsQuery ? [] : filters.getSizeConditions()),
+    // getSizeConditions() is null-safe for drafts (IS NULL OR guard when onlyDrafts is set).
+    ...filters.getSizeConditions(),
     // Draft climbs never have board_climb_stats rows, so stats-based filters
     // (grade range, min ascents, quality, accuracy) would reject every draft.
     ...(isDraftsQuery ? [] : filters.getClimbStatsConditions()),
