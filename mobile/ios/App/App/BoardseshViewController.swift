@@ -7,6 +7,7 @@ class BoardseshViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(LiveActivityPlugin())
+        bridge?.registerPluginInstance(NativeWebSocketPlugin())
     }
 
     override open func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {

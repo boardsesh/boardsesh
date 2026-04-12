@@ -383,20 +383,31 @@ export function useSessionLifecycle({
       try {
         if (useNativeWs) {
           // Native iOS WebSocket path: connect via Capacitor plugin
-          const nativePlugin = getNativeWebSocketPlugin();
-          if (!nativePlugin) throw new Error('Native WebSocket plugin not available');
+          try {
+            const nativePlugin = getNativeWebSocketPlugin();
+            if (!nativePlugin) throw new Error('Native WebSocket plugin not available');
 
-          graphqlClient = createNativeWSClient({ onReconnect: handleReconnect });
+            graphqlClient = createNativeWSClient({ onReconnect: handleReconnect });
 
-          await nativePlugin.connect({
-            serverUrl: typeof window !== 'undefined' ? window.location.origin : '',
-            sessionId,
-            authToken: wsAuthTokenRef.current,
-            wsUrl: getBackendWsUrl() ?? undefined,
-          });
+            await nativePlugin.connect({
+              serverUrl: typeof window !== 'undefined' ? window.location.origin : '',
+              sessionId,
+              authToken: wsAuthTokenRef.current,
+              wsUrl: getBackendWsUrl() ?? undefined,
+            });
 
-          // Notify native side that webview is active
-          nativePlugin.setWebviewActive({ active: true }).catch(() => {});
+            // Notify native side that webview is active
+            nativePlugin.setWebviewActive({ active: true }).catch(() => {});
+          } catch (nativeErr) {
+            console.warn('[PersistentSession] Native WebSocket init failed, falling back to web client:', nativeErr);
+            // Fall back to standard graphql-ws web client
+            graphqlClient = createGraphQLClient({
+              url: backendUrl!,
+              authToken: wsAuthTokenRef.current,
+              onReconnect: handleReconnect,
+              connectionName: 'session',
+            });
+          }
         } else {
           // Standard graphql-ws path for web browsers
           graphqlClient = createGraphQLClient({

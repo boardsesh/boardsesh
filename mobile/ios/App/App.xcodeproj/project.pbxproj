@@ -25,6 +25,8 @@
 		LA100005 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200005 /* LiveActivityManager.swift */; };
 		LA100006 /* LiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200006 /* LiveActivityPlugin.swift */; };
 		LA100007 /* LiveActivityPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200007 /* LiveActivityPlugin.m */; };
+		LA100008 /* NativeWebSocketPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200008 /* NativeWebSocketPlugin.swift */; };
+		LA100009 /* NativeWebSocketPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200009 /* NativeWebSocketPlugin.m */; };
 		LA100010 /* BoardseshWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200010 /* BoardseshWidgetsBundle.swift */; };
 		LA100011 /* ClimbSessionLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200011 /* ClimbSessionLiveActivity.swift */; };
 		LA100012 /* NextClimbIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200012 /* NextClimbIntent.swift */; };
@@ -96,6 +98,8 @@
 		LA200005 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		LA200006 /* LiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPlugin.swift; sourceTree = "<group>"; };
 		LA200007 /* LiveActivityPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = LiveActivityPlugin.m; sourceTree = "<group>"; };
+		LA200008 /* NativeWebSocketPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWebSocketPlugin.swift; sourceTree = "<group>"; };
+		LA200009 /* NativeWebSocketPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NativeWebSocketPlugin.m; sourceTree = "<group>"; };
 		LA200010 /* BoardseshWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardseshWidgetsBundle.swift; sourceTree = "<group>"; };
 		LA200011 /* ClimbSessionLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClimbSessionLiveActivity.swift; sourceTree = "<group>"; };
 		LA200012 /* NextClimbIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextClimbIntent.swift; sourceTree = "<group>"; };
@@ -183,6 +187,8 @@
 				LA200005 /* LiveActivityManager.swift */,
 				LA200006 /* LiveActivityPlugin.swift */,
 				LA200007 /* LiveActivityPlugin.m */,
+				LA200008 /* NativeWebSocketPlugin.swift */,
+				LA200009 /* NativeWebSocketPlugin.m */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -434,6 +440,8 @@
 				LA100005 /* LiveActivityManager.swift in Sources */,
 				LA100006 /* LiveActivityPlugin.swift in Sources */,
 				LA100007 /* LiveActivityPlugin.m in Sources */,
+				LA100008 /* NativeWebSocketPlugin.swift in Sources */,
+				LA100009 /* NativeWebSocketPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
