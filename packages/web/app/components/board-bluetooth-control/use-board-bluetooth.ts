@@ -67,28 +67,29 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
   const apiLevelRef = useRef<number>(3);
   const unsubDisconnectRef = useRef<(() => void) | null>(null);
 
-  // Device picker state for custom Capacitor scanning
+  // Device picker state for custom Capacitor scanning.
+  // pickerRejectRef holds the pending promise's reject so unmount cleanup
+  // can drain it, which causes the adapter's finally block to call stopLEScan.
   const [pickerState, setPickerState] = useState<PickerState | null>(null);
-  const pickerResolveRef = useRef<((deviceId: string) => void) | null>(null);
   const pickerRejectRef = useRef<((error: Error) => void) | null>(null);
 
   // Stable device picker function for the Capacitor adapter
   const devicePicker = useCallback<DevicePickerFn>((subscribe) => {
     return new Promise<string>((resolve, reject) => {
-      pickerResolveRef.current = resolve;
       pickerRejectRef.current = reject;
 
-      const handleSelect = (deviceId: string) => {
-        pickerResolveRef.current = null;
+      const cleanup = () => {
         pickerRejectRef.current = null;
         setPickerState(null);
+      };
+
+      const handleSelect = (deviceId: string) => {
+        cleanup();
         resolve(deviceId);
       };
 
       const handleCancel = () => {
-        pickerResolveRef.current = null;
-        pickerRejectRef.current = null;
-        setPickerState(null);
+        cleanup();
         reject(new Error('Device selection cancelled'));
       };
 
@@ -259,9 +260,12 @@ export function useBoardBluetooth({ boardDetails, onConnectionChange }: UseBoard
     onConnectionChange?.(false);
   }, [onConnectionChange]);
 
-  // Clean up on unmount
+  // Clean up on unmount — reject any pending picker promise so the adapter's
+  // finally block calls stopLEScan, then tear down the BLE connection.
   useEffect(() => {
     return () => {
+      pickerRejectRef.current?.(new Error('Component unmounted'));
+      pickerRejectRef.current = null;
       unsubDisconnectRef.current?.();
       adapterRef.current?.disconnect();
     };

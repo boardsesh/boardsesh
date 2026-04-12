@@ -362,10 +362,8 @@ describe('CapacitorBleAdapter', () => {
         subscribe((devices) => {
           receivedDevices = devices;
         });
-        // Wait a tick for devices to arrive, then select
-        return new Promise<string>((resolve) => {
-          setTimeout(() => resolve('dev-A'), 10);
-        });
+        // Yield to the microtask queue so scan callbacks fire first, then select
+        return Promise.resolve().then(() => 'dev-A');
       });
 
       // Emit the same device twice with updated RSSI
