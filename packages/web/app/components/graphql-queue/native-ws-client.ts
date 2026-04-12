@@ -38,12 +38,17 @@ export class NativeWSClient {
 
   private setupListeners() {
     const plugin = getNativeWebSocketPlugin();
-    if (!plugin) return;
+    if (!plugin) {
+      if (DEBUG) console.log('[NativeWS] setupListeners: plugin not available');
+      return;
+    }
+    if (DEBUG) console.log('[NativeWS] setupListeners: registering wsMessage and connectionStateChanged listeners');
 
     // Listen for raw WebSocket messages
     const handle = plugin.addListener('wsMessage', (data: Record<string, unknown>) => {
       const raw = data.raw as string;
       if (!raw) return;
+      if (DEBUG) console.log('[NativeWS] wsMessage received:', raw.slice(0, 200));
       this.handleRawMessage(raw);
     });
 
@@ -63,6 +68,7 @@ export class NativeWSClient {
     // Listen for connection state changes
     const connHandle = plugin.addListener('connectionStateChanged', (data: Record<string, unknown>) => {
       const newState = data.state as string;
+      if (DEBUG) console.log('[NativeWS] connectionStateChanged:', newState);
       this.connectionState = newState as typeof this.connectionState;
 
       if (newState === 'connected') {
@@ -94,11 +100,13 @@ export class NativeWSClient {
     try {
       msg = JSON.parse(raw) as GQLWsMessage;
     } catch {
+      if (DEBUG) console.log('[NativeWS] handleRawMessage: failed to parse JSON');
       return;
     }
 
     // Handle synthetic resync_needed message from native buffering
     if (msg.type === 'resync_needed') {
+      if (DEBUG) console.log('[NativeWS] resync_needed received');
       if (this.onReconnectCallback) {
         this.onReconnectCallback();
       }
@@ -106,10 +114,18 @@ export class NativeWSClient {
     }
 
     const { type, id, payload } = msg;
-    if (!id) return; // connection-level messages (ping/pong/ack) don't need routing
+    if (!id) {
+      if (DEBUG) console.log('[NativeWS] message without id (type=%s), skipping routing', type);
+      return;
+    }
 
     const handler = this.handlers.get(id);
-    if (!handler) return;
+    if (!handler) {
+      if (DEBUG) console.log('[NativeWS] no handler for id=%s type=%s (registered: %s)', id, type, Array.from(this.handlers.keys()).join(', '));
+      return;
+    }
+
+    if (DEBUG) console.log('[NativeWS] routing message id=%s type=%s to handler', id, type);
 
     switch (type) {
       case 'next':
@@ -117,7 +133,6 @@ export class NativeWSClient {
         break;
       case 'error':
         handler.error(payload ?? { message: 'Unknown error' });
-        // Don't remove handler on error for subscriptions - they may continue
         break;
       case 'complete':
         handler.complete();
@@ -137,7 +152,10 @@ export class NativeWSClient {
     const subscriptionId = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const plugin = getNativeWebSocketPlugin();
 
+    if (DEBUG) console.log('[NativeWS] subscribe id=%s query=%s', subscriptionId, operation.query.slice(0, 80));
+
     if (!plugin) {
+      if (DEBUG) console.log('[NativeWS] subscribe: plugin not available');
       sink.error(new Error('Native WebSocket plugin not available'));
       return () => {};
     }
@@ -191,7 +209,10 @@ export class NativeWSClient {
     const operationId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const plugin = getNativeWebSocketPlugin();
 
+    if (DEBUG) console.log('[NativeWS] execute id=%s query=%s', operationId, operation.query.slice(0, 80));
+
     if (!plugin) {
+      if (DEBUG) console.log('[NativeWS] execute: plugin not available');
       return Promise.reject(new Error('Native WebSocket plugin not available'));
     }
 

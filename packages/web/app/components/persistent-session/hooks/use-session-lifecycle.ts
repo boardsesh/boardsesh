@@ -198,7 +198,10 @@ export function useSessionLifecycle({
       return;
     }
 
-    if (isAuthLoading) {
+    // On native iOS, skip waiting for auth — the native WebSocket
+    // handles auth via its own token parameter, and the fetch to
+    // /api/internal/ws-auth may be blocked by WKWebView access controls.
+    if (isAuthLoading && !isNativeWebSocketAvailable()) {
       if (DEBUG) console.log('[PersistentSession] Waiting for auth to load...');
       return;
     }
@@ -220,7 +223,9 @@ export function useSessionLifecycle({
 
     // Helper to execute operations on either client type
     function executeOnClient<T>(clientToUse: TransportClient, operation: { query: string; variables?: Record<string, unknown> }): Promise<T> {
-      if (clientToUse instanceof NativeWSClient) {
+      const isNative = clientToUse instanceof NativeWSClient;
+      if (DEBUG) console.log('[PersistentSession] executeOnClient via %s, query=%s', isNative ? 'NativeWSClient' : 'graphql-ws', operation.query.slice(0, 60));
+      if (isNative) {
         return clientToUse.execute<T>(operation);
       }
       return execute<T>(clientToUse, operation);
@@ -384,10 +389,19 @@ export function useSessionLifecycle({
         if (useNativeWs) {
           // Native iOS WebSocket path: connect via Capacitor plugin
           try {
+            if (DEBUG) console.log('[PersistentSession] Using native WebSocket path');
             const nativePlugin = getNativeWebSocketPlugin();
             if (!nativePlugin) throw new Error('Native WebSocket plugin not available');
+            if (DEBUG) console.log('[PersistentSession] Got native plugin, creating NativeWSClient');
 
             graphqlClient = createNativeWSClient({ onReconnect: handleReconnect });
+
+            if (DEBUG) console.log('[PersistentSession] Calling nativePlugin.connect()', {
+              serverUrl: typeof window !== 'undefined' ? window.location.origin : '',
+              sessionId,
+              hasAuthToken: !!wsAuthTokenRef.current,
+              wsUrl: getBackendWsUrl() ?? undefined,
+            });
 
             await nativePlugin.connect({
               serverUrl: typeof window !== 'undefined' ? window.location.origin : '',
@@ -395,6 +409,8 @@ export function useSessionLifecycle({
               authToken: wsAuthTokenRef.current,
               wsUrl: getBackendWsUrl() ?? undefined,
             });
+
+            if (DEBUG) console.log('[PersistentSession] nativePlugin.connect() resolved — WS connected');
 
             // Notify native side that webview is active
             nativePlugin.setWebviewActive({ active: true }).catch(() => {});
@@ -426,7 +442,9 @@ export function useSessionLifecycle({
 
         setClient(graphqlClient);
 
+        if (DEBUG) console.log('[PersistentSession] Calling joinSession...');
         const sessionData = await joinSession(graphqlClient);
+        if (DEBUG) console.log('[PersistentSession] joinSession returned:', sessionData ? 'success' : 'null');
 
         if (connectionGenerationRef.current !== connectionGeneration) {
           return;

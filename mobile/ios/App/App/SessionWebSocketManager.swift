@@ -387,15 +387,29 @@ final class SessionWebSocketManager {
     // MARK: - Generic Operation Sending
 
     func sendOperation(query: String, variables: [String: Any], operationId: String) {
-        let message: [String: Any] = [
-            "type": GQLMessageType.subscribe.rawValue,
-            "id": operationId,
-            "payload": [
-                "query": query,
-                "variables": variables
-            ] as [String: Any]
-        ]
-        sendJSON(message)
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            let message: [String: Any] = [
+                "type": GQLMessageType.subscribe.rawValue,
+                "id": operationId,
+                "payload": [
+                    "query": query,
+                    "variables": variables
+                ] as [String: Any]
+            ]
+            guard self._isConnected else {
+                print("[SessionWS] sendOperation: not connected, dropping operation \(operationId)")
+                return
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: message),
+               let text = String(data: data, encoding: .utf8) {
+                self.webSocketTask?.send(.string(text)) { error in
+                    if let error = error {
+                        print("[SessionWS] sendOperation failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - External Subscription Management
@@ -719,7 +733,9 @@ final class SessionWebSocketManager {
                 if let delegate = self._messageDelegate {
                     DispatchQueue.main.async { delegate.connectionStateDidChange(connected: true, reconnectAttempt: 0) }
                 }
-                self.sendJoinSession()
+                // Note: joinSession is handled by the web layer which needs
+                // the full response (queueState, clientId, etc.) to initialize.
+                // The native side only auto-subscribes to queue updates.
                 self.sendSubscription()
                 // Re-establish any external subscriptions after reconnect
                 for (subId, sub) in self.externalSubscriptions {

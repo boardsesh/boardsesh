@@ -19,6 +19,7 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let logger = Logger(subsystem: "com.boardsesh.app", category: "NativeWebSocketPlugin")
     private var observingAppLifecycle = false
+    private var pendingConnectCall: CAPPluginCall?
 
     // MARK: - App Lifecycle
 
@@ -77,20 +78,30 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
         let authToken = call.getString("authToken")
         let wsUrl = call.getString("wsUrl")
 
+        // Hold the call until connection_ack is received so the web layer
+        // knows the WebSocket is ready before sending operations.
+        call.keepAlive = true
+        pendingConnectCall = call
+
         let manager = SessionWebSocketManager.shared
         manager.messageDelegate = self
         manager.connect(serverUrl: serverUrl, sessionId: sessionId, authToken: authToken, wsUrl: wsUrl)
 
         startAppLifecycleObservation()
 
-        logger.info("Connected to session \(sessionId, privacy: .public)")
-        call.resolve()
+        logger.info("Connecting to session \(sessionId, privacy: .public)")
     }
 
     // MARK: - disconnect
 
     @objc func disconnect(_ call: CAPPluginCall) {
         stopAppLifecycleObservation()
+
+        // Reject any pending connect call that hasn't resolved yet
+        if let pendingCall = pendingConnectCall {
+            pendingConnectCall = nil
+            pendingCall.reject("Disconnected before connection was established")
+        }
 
         let manager = SessionWebSocketManager.shared
         manager.messageDelegate = nil
@@ -220,6 +231,14 @@ extension NativeWebSocketPlugin: WebSocketMessageDelegate {
         } else {
             state = "disconnected"
         }
+
+        // Resolve the pending connect() call once connection_ack is received.
+        if connected, let call = pendingConnectCall {
+            pendingConnectCall = nil
+            logger.info("WebSocket connected — resolving connect() call")
+            call.resolve()
+        }
+
         notifyListeners("connectionStateChanged", data: [
             "state": state,
             "reconnectAttempt": reconnectAttempt,
