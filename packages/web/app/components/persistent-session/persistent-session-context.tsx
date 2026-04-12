@@ -50,8 +50,15 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const queueEventSubscribersRef = useRef<Set<(event: SubscriptionQueueEvent) => void>>(new Set());
   const sessionEventSubscribersRef = useRef<Set<(event: SessionEvent) => void>>(new Set());
 
-  // Keep auth/profile refs in sync
-  useEffect(() => { wsAuthTokenRef.current = wsAuthToken; }, [wsAuthToken]);
+  // Keep auth/profile refs in sync — also forward token to native plugin if connected
+  useEffect(() => {
+    wsAuthTokenRef.current = wsAuthToken;
+    if (wsAuthToken) {
+      import('@/app/lib/native-ws/native-ws-plugin').then(({ getNativeWebSocketPlugin }) => {
+        getNativeWebSocketPlugin()?.updateAuthToken({ token: wsAuthToken }).catch(() => {});
+      });
+    }
+  }, [wsAuthToken]);
   useEffect(() => { usernameRef.current = username; }, [username]);
   useEffect(() => { avatarUrlRef.current = avatarUrl; }, [avatarUrl]);
 

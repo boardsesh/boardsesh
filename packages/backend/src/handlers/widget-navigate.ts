@@ -100,16 +100,23 @@ export async function handleWidgetNavigate(req: IncomingMessage, res: ServerResp
       return;
     }
 
+    // Use the server's authoritative current index, not the client-supplied
+    // one which may be stale (e.g., another user changed the climb while
+    // the widget's local state was out of date).
+    const currentItem = queueState.currentClimbQueueItem;
+    const serverCurrentIndex = currentItem
+      ? queueState.queue.findIndex((q) => q.uuid === currentItem.uuid)
+      : 0;
+    const baseIndex = serverCurrentIndex >= 0 ? serverCurrentIndex : 0;
+
     let targetIndex: number;
     if (action === 'next') {
-      targetIndex = currentIndex + 1;
-      // Wrap around to the beginning
+      targetIndex = baseIndex + 1;
       if (targetIndex >= queueLength) {
         targetIndex = 0;
       }
     } else {
-      targetIndex = currentIndex - 1;
-      // Wrap around to the end
+      targetIndex = baseIndex - 1;
       if (targetIndex < 0) {
         targetIndex = queueLength - 1;
       }

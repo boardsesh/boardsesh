@@ -26,6 +26,8 @@ export class NativeWSClient {
   private handlers = new Map<string, MessageHandler>();
   private listenerHandle: { remove: () => void } | null = null;
   private connectionListenerHandle: { remove: () => void } | null = null;
+  /** Promises from async addListener calls — tracked so dispose() can clean them up. */
+  private pendingListenerPromises: Promise<void>[] = [];
   private connectionState: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' = 'disconnected';
   private onReconnectCallback: (() => void) | null = null;
   private hasConnectedOnce = false;
@@ -46,28 +48,17 @@ export class NativeWSClient {
 
     // Listen for raw WebSocket messages
     const handle = plugin.addListener('wsMessage', (data: Record<string, unknown>) => {
-      const raw = data.raw as string;
+      const raw = typeof data.raw === 'string' ? data.raw : undefined;
       if (!raw) return;
       if (DEBUG) console.log('[NativeWS] wsMessage received:', raw.slice(0, 200));
       this.handleRawMessage(raw);
     });
-
-    // Handle both sync and async listener registration (Capacitor version compat)
-    if (handle && typeof (handle as { remove?: () => void }).remove === 'function') {
-      this.listenerHandle = handle as { remove: () => void };
-    } else if (handle && typeof (handle as Promise<{ remove: () => void }>).then === 'function') {
-      (handle as Promise<{ remove: () => void }>).then((h) => {
-        if (this.disposed) {
-          h.remove();
-        } else {
-          this.listenerHandle = h;
-        }
-      });
-    }
+    this.storeListenerHandle(handle, (h) => { this.listenerHandle = h; });
 
     // Listen for connection state changes
     const connHandle = plugin.addListener('connectionStateChanged', (data: Record<string, unknown>) => {
-      const newState = data.state as string;
+      const newState = typeof data.state === 'string' ? data.state : undefined;
+      if (!newState) return;
       if (DEBUG) console.log('[NativeWS] connectionStateChanged:', newState);
       this.connectionState = newState as typeof this.connectionState;
 
@@ -78,20 +69,31 @@ export class NativeWSClient {
         this.hasConnectedOnce = true;
       }
 
-      // Update connection manager
       connectionManager.updateNativeState(newState as 'connected' | 'connecting' | 'reconnecting' | 'disconnected');
     });
+    this.storeListenerHandle(connHandle, (h) => { this.connectionListenerHandle = h; });
+  }
 
-    if (connHandle && typeof (connHandle as { remove?: () => void }).remove === 'function') {
-      this.connectionListenerHandle = connHandle as { remove: () => void };
-    } else if (connHandle && typeof (connHandle as Promise<{ remove: () => void }>).then === 'function') {
-      (connHandle as Promise<{ remove: () => void }>).then((h) => {
+  /**
+   * Handles both sync and async addListener return values (Capacitor version compat).
+   * When the handle is a Promise, tracks it so dispose() can clean up even if it
+   * resolves after disposal.
+   */
+  private storeListenerHandle(
+    handle: { remove: () => void } | Promise<{ remove: () => void }>,
+    setter: (h: { remove: () => void }) => void,
+  ) {
+    if (handle && typeof (handle as { remove?: () => void }).remove === 'function') {
+      setter(handle as { remove: () => void });
+    } else if (handle && typeof (handle as Promise<{ remove: () => void }>).then === 'function') {
+      const promise = (handle as Promise<{ remove: () => void }>).then((h) => {
         if (this.disposed) {
           h.remove();
         } else {
-          this.connectionListenerHandle = h;
+          setter(h);
         }
       });
+      this.pendingListenerPromises.push(promise);
     }
   }
 
@@ -296,6 +298,9 @@ export class NativeWSClient {
     this.connectionListenerHandle?.remove();
     this.listenerHandle = null;
     this.connectionListenerHandle = null;
+    // Any in-flight async addListener promises will check this.disposed
+    // when they resolve and call h.remove() — see storeListenerHandle().
+    this.pendingListenerPromises = [];
 
     connectionManager.clearNativeState();
 
