@@ -19,7 +19,7 @@ struct PreviousClimbIntent: LiveActivityIntent {
         }
 
         // Persist the new index so the main app picks it up.
-        SharedQueueState.save(items: items, currentIndex: prevIndex, to: defaults)
+        SharedQueueState.saveCurrentIndex(prevIndex, to: defaults)
 
         // Optimistically update every active Live Activity.
         let prevItem = items[prevIndex]
@@ -39,17 +39,19 @@ struct PreviousClimbIntent: LiveActivityIntent {
             // activities — calling update on ended/dismissed activities is a no-op
             // but logs warnings in the system.
             guard activity.activityState == .active else { continue }
-            let content = ActivityContent(state: newState, staleDate: nil)
+            let content = ActivityContent(state: newState, staleDate: Date().addingTimeInterval(180))
             await activity.update(content)
         }
 
-        // Tell the main app to send the WebSocket mutation.
-        defaults.set("previous", forKey: SharedConstants.pendingActionKey)
-        postDarwinNotification()
-
-        // Also send an HTTP request directly to the backend so navigation
-        // works even when the app is suspended and can't receive Darwin notifications.
-        await WidgetNetworking.sendNavigation(action: "previous", currentIndex: prevIndex)
+        // Send navigation to the backend directly via HTTP. This works even
+        // when the main app is suspended. Only fall back to the Darwin
+        // notification path (which wakes the main app to send a WS mutation)
+        // if the HTTP request fails.
+        let httpSuccess = await WidgetNetworking.sendNavigation(action: "previous", currentIndex: prevIndex)
+        if !httpSuccess {
+            defaults.set("previous", forKey: SharedConstants.pendingActionKey)
+            postDarwinNotification()
+        }
 
         return .result()
     }

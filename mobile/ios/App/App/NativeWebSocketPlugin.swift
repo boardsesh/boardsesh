@@ -20,6 +20,7 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
     private let logger = Logger(subsystem: "com.boardsesh.app", category: "NativeWebSocketPlugin")
     private var observingAppLifecycle = false
     private var pendingConnectCall: CAPPluginCall?
+    private var connectTimeoutWork: DispatchWorkItem?
 
     // MARK: - App Lifecycle
 
@@ -83,6 +84,18 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
         call.keepAlive = true
         pendingConnectCall = call
 
+        // Timeout: if connection_ack doesn't arrive within 30 seconds,
+        // reject the call so the web layer can fall back to graphql-ws.
+        connectTimeoutWork?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, let call = self.pendingConnectCall else { return }
+            self.pendingConnectCall = nil
+            self.logger.warning("Connect timed out waiting for connection_ack")
+            call.reject("Connection timed out")
+        }
+        connectTimeoutWork = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeout)
+
         let manager = SessionWebSocketManager.shared
         manager.messageDelegate = self
         manager.connect(serverUrl: serverUrl, sessionId: sessionId, authToken: authToken, wsUrl: wsUrl)
@@ -98,6 +111,8 @@ public class NativeWebSocketPlugin: CAPPlugin, CAPBridgedPlugin {
         stopAppLifecycleObservation()
 
         // Reject any pending connect call that hasn't resolved yet
+        connectTimeoutWork?.cancel()
+        connectTimeoutWork = nil
         if let pendingCall = pendingConnectCall {
             pendingConnectCall = nil
             pendingCall.reject("Disconnected before connection was established")
@@ -235,6 +250,8 @@ extension NativeWebSocketPlugin: WebSocketMessageDelegate {
         // Resolve the pending connect() call once connection_ack is received.
         if connected, let call = pendingConnectCall {
             pendingConnectCall = nil
+            connectTimeoutWork?.cancel()
+            connectTimeoutWork = nil
             logger.info("WebSocket connected — resolving connect() call")
             call.resolve()
         }

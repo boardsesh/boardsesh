@@ -16,9 +16,13 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let logger = Logger(subsystem: "com.boardsesh.app", category: "LiveActivityPlugin")
     private var observingDarwinNotification = false
-    private var currentPushToken: String?
-    private var currentServerUrl: String?
-    private var currentSessionId: String?
+
+    /// Serial queue protecting push token state accessed from both the Capacitor
+    /// thread and the LiveActivityManager push token callback.
+    private let tokenQueue = DispatchQueue(label: "com.boardsesh.LiveActivityPlugin.token")
+    private var _currentPushToken: String?
+    private var _currentServerUrl: String?
+    private var _currentSessionId: String?
 
     // MARK: - Darwin Notification (Widget → JS bridge)
 
@@ -186,8 +190,10 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         let wsUrl = call.getString("wsUrl")
 
         // Store session details for push token registration.
-        currentServerUrl = serverUrl
-        currentSessionId = sessionId
+        tokenQueue.sync {
+            _currentServerUrl = serverUrl
+            _currentSessionId = sessionId
+        }
 
         // Store board details in shared UserDefaults for App Intents
         // and thumbnail URL construction.
@@ -251,8 +257,11 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 // the Live Activity when the app is backgrounded/suspended.
                 await activityManager.setOnPushTokenUpdate { [weak self] token in
                     guard let self else { return }
-                    self.currentPushToken = token
-                    if let sessionId = self.currentSessionId, let serverUrl = self.currentServerUrl {
+                    self.tokenQueue.sync {
+                        self._currentPushToken = token
+                    }
+                    let (sid, surl) = self.tokenQueue.sync { (self._currentSessionId, self._currentServerUrl) }
+                    if let sessionId = sid, let serverUrl = surl {
                         self.registerPushTokenWithBackend(token: token, sessionId: sessionId, serverUrl: serverUrl)
                     }
                 }
@@ -272,12 +281,15 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         stopDarwinObservation()
 
         // Unregister the push token from the backend before tearing down.
-        if let token = currentPushToken, let serverUrl = currentServerUrl {
+        let (token, serverUrl) = tokenQueue.sync { (_currentPushToken, _currentServerUrl) }
+        if let token, let serverUrl {
             unregisterPushTokenFromBackend(token: token, serverUrl: serverUrl)
         }
-        currentPushToken = nil
-        currentServerUrl = nil
-        currentSessionId = nil
+        tokenQueue.sync {
+            _currentPushToken = nil
+            _currentServerUrl = nil
+            _currentSessionId = nil
+        }
 
         // Clear the queue state callback. The WebSocket connection itself
         // is managed by NativeWebSocketPlugin — we only clean up our observer.

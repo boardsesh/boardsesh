@@ -716,18 +716,20 @@ final class SessionWebSocketManager {
     }
 
     private func handleMessage(_ text: String) {
-        // Forward raw message to delegate BEFORE parsing
+        // Parse outside the queue (pure, no shared state), then do all
+        // state mutations + forwarding in a single stateQueue block to
+        // prevent interleaving with disconnect/connect.
+        let msg = GQLMessage.parse(text)
+
         stateQueue.async { [weak self] in
             guard let self = self else { return }
             self.lastMessageReceived = Date()
             self._forwardRawMessageOnQueue(text)
-        }
-        guard let msg = GQLMessage.parse(text) else { return }
 
-        switch msg.type {
-        case .connectionAck:
-            stateQueue.async { [weak self] in
-                guard let self = self else { return }
+            guard let msg = msg else { return }
+
+            switch msg.type {
+            case .connectionAck:
                 self._isConnected = true
                 self._reconnectAttempt = 0
                 if let delegate = self._messageDelegate {
@@ -741,23 +743,23 @@ final class SessionWebSocketManager {
                 for (subId, sub) in self.externalSubscriptions {
                     self._sendSubscribeMessageOnQueue(subscriptionId: subId, query: sub.query, variables: sub.variables)
                 }
+                self._startPingTimeoutTimerOnQueue()
+
+            case .ping:
+                self.sendPong()
+
+            case .next:
+                self._handleNextMessageOnQueue(msg)
+
+            case .error:
+                self._handleMutationErrorOnQueue(msg)
+
+            case .complete:
+                self._handleMutationCompleteOnQueue(msg)
+
+            default:
+                break
             }
-            startPingTimeoutTimer()
-
-        case .ping:
-            sendPong()
-
-        case .next:
-            handleNextMessage(msg)
-
-        case .error:
-            handleMutationError(msg)
-
-        case .complete:
-            handleMutationComplete(msg)
-
-        default:
-            break
         }
     }
 
@@ -778,30 +780,20 @@ final class SessionWebSocketManager {
         }
     }
 
-    private func handleNextMessage(_ msg: GQLMessage) {
+    /// Must be called on `stateQueue`.
+    private func _handleNextMessageOnQueue(_ msg: GQLMessage) {
         guard let updates = QueueMessageParser.extractQueueUpdates(from: msg.payload) else { return }
         guard let event = QueueMessageParser.parseQueueUpdate(updates) else { return }
 
         let receivedSeq = sequenceFromEvent(event)
 
-        // Sequence gap check and lastSequence update must be atomic
-        stateQueue.async { [weak self] in
-            guard let self = self else { return }
-
-            if QueueMessageParser.hasSequenceGap(lastKnown: self.lastSequence, received: receivedSeq) {
-                // Gap detected — cancel the current task so listenForMessages' failure
-                // path calls handleDisconnect(), which schedules a reconnect and will
-                // receive a FullSync restoring consistent state.
-                print("[SessionWS] Sequence gap: expected \(self.lastSequence + 1), got \(receivedSeq) — reconnecting")
-                self.webSocketTask?.cancel(with: .goingAway, reason: nil)
-                return
-            }
-            self.lastSequence = receivedSeq
-
-            // Apply event inline (already on stateQueue) rather than calling
-            // applyEvent which would double-dispatch
-            self.applyEventOnQueue(event)
+        if QueueMessageParser.hasSequenceGap(lastKnown: self.lastSequence, received: receivedSeq) {
+            print("[SessionWS] Sequence gap: expected \(self.lastSequence + 1), got \(receivedSeq) — reconnecting")
+            self.webSocketTask?.cancel(with: .goingAway, reason: nil)
+            return
         }
+        self.lastSequence = receivedSeq
+        self.applyEventOnQueue(event)
     }
 
     private func sequenceFromEvent(_ event: QueueUpdateEvent) -> Int {
@@ -965,70 +957,56 @@ final class SessionWebSocketManager {
 
     // MARK: - Mutation Response Handling
 
-    private func handleMutationError(_ msg: GQLMessage) {
+    /// Must be called on `stateQueue`.
+    private func _handleMutationErrorOnQueue(_ msg: GQLMessage) {
         guard let id = msg.id else { return }
 
         if id == "join-session" {
-            // joinSession failed — the connection can't send mutations without a session.
-            // Reconnect to retry.
             print("[SessionWS] joinSession failed — reconnecting")
-            stateQueue.async { [weak self] in
-                self?.webSocketTask?.cancel(with: .goingAway, reason: nil)
-            }
+            self.webSocketTask?.cancel(with: .goingAway, reason: nil)
             return
         }
 
         guard id.hasPrefix("mutation-") else { return }
         let correlationId = String(id.dropFirst("mutation-".count))
-        // Server rejected the navigation — revert to the index before the optimistic update
-        stateQueue.async { [weak self] in
-            guard let self = self else { return }
-            if let previousIndex = self.pendingMutations.removeValue(forKey: correlationId) {
-                self.currentIndex = previousIndex
-                self.persistAndNotify()
-            }
+        if let previousIndex = self.pendingMutations.removeValue(forKey: correlationId) {
+            self.currentIndex = previousIndex
+            self.persistAndNotify()
         }
     }
 
-    private func handleMutationComplete(_ msg: GQLMessage) {
+    /// Must be called on `stateQueue`.
+    private func _handleMutationCompleteOnQueue(_ msg: GQLMessage) {
         guard let id = msg.id else { return }
-        if id == "join-session" { return } // joinSession completed successfully, nothing to clean up
+        if id == "join-session" { return }
         guard id.hasPrefix("mutation-") else { return }
         let correlationId = String(id.dropFirst("mutation-".count))
-        // Mutation succeeded — clear the pending state
-        stateQueue.async { [weak self] in
-            self?.pendingMutations.removeValue(forKey: correlationId)
-        }
+        self.pendingMutations.removeValue(forKey: correlationId)
     }
 
     // MARK: - Ping Timeout
 
-    private func startPingTimeoutTimer() {
-        stateQueue.async { [weak self] in
+    /// Must be called on `stateQueue`.
+    private func _startPingTimeoutTimerOnQueue() {
+        pingTimeoutTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: stateQueue)
+        timer.schedule(deadline: .now() + pingTimeout, repeating: pingTimeout)
+        timer.setEventHandler { [weak self] in
             guard let self = self else { return }
-            self.pingTimeoutTimer?.cancel()
-            let timer = DispatchSource.makeTimerSource(queue: self.stateQueue)
-            timer.schedule(deadline: .now() + self.pingTimeout, repeating: self.pingTimeout)
-            timer.setEventHandler { [weak self] in
-                guard let self = self else { return }
-                // Already on stateQueue — safe to read lastMessageReceived and webSocketTask
-                let elapsed = Date().timeIntervalSince(self.lastMessageReceived)
-                if elapsed > self.pingTimeout {
-                    print("[SessionWS] Ping timeout — no message for \(Int(elapsed))s, reconnecting")
-                    self.webSocketTask?.cancel(with: .goingAway, reason: nil)
-                } else {
-                    // Connection is healthy — push the Live Activity stale
-                    // deadline forward so it doesn't show "Session ended".
-                    if #available(iOS 16.1, *) {
-                        Task {
-                            await LiveActivityManager.shared.refreshStaleDate()
-                        }
+            let elapsed = Date().timeIntervalSince(self.lastMessageReceived)
+            if elapsed > self.pingTimeout {
+                print("[SessionWS] Ping timeout — no message for \(Int(elapsed))s, reconnecting")
+                self.webSocketTask?.cancel(with: .goingAway, reason: nil)
+            } else {
+                if #available(iOS 16.1, *) {
+                    Task {
+                        await LiveActivityManager.shared.refreshStaleDate()
                     }
                 }
             }
-            timer.resume()
-            self.pingTimeoutTimer = timer
         }
+        timer.resume()
+        pingTimeoutTimer = timer
     }
 
     // MARK: - Transport Helpers
