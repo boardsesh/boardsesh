@@ -120,9 +120,17 @@ export function createGraphQLClient(
   if (typeof window !== 'undefined') {
     const unregister = connectionManager.registerClient(client, managerConnectionName);
     const originalDispose = client.dispose.bind(client);
+    // graphql-ws v6 dispose() is async — it awaits the in-flight `connecting` Promise
+    // and rejects if that connection attempt fails (e.g. with the plain object
+    // { code: 1000, reason: "All Subscriptions Gone" }).  Dropping the returned
+    // Promise without a .catch() produces an unhandled rejection that Sentry
+    // captures as "Object captured as promise rejection with keys: code, reason".
     client.dispose = () => {
       unregister();
-      originalDispose();
+      // Wrap in Promise.resolve() because the type is `void | Promise<void>`.
+      Promise.resolve(originalDispose()).catch((err: unknown) => {
+        if (DEBUG) console.log(`[GraphQL] Client #${clientId} dispose error suppressed:`, err);
+      });
     };
   }
 
@@ -142,11 +150,19 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 
   if (DEBUG) console.log(`[GraphQL] execute START: ${opName}`);
 
+  // Hoist unsubscribe so the timeout can cancel the subscription if it fires
+  // before the operation completes.  Without this, a timed-out execute() leaves
+  // the underlying graphql-ws subscription (and its lock) alive indefinitely,
+  // which keeps the connection retrying and can eventually feed { code, reason }
+  // objects back through dispose() as unhandled rejections.
+  let unsubscribe!: () => void;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
   const executionPromise = new Promise<TData>((resolve, reject) => {
     let result: TData | undefined;
     let hasResolved = false;
 
-    const unsubscribe = client.subscribe<TData>(
+    unsubscribe = client.subscribe<TData>(
       { query: operation.query, variables: operation.variables as Record<string, unknown> },
       {
         next: (data) => {
@@ -192,14 +208,19 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
     );
   });
 
-  // Add timeout to prevent mutations from hanging forever
+  // Add timeout to prevent mutations from hanging forever.
+  // Cancel the underlying subscription on timeout so the graphql-ws lock is
+  // released promptly instead of waiting for the next retry cycle.
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      unsubscribe();
       reject(new Error(`GraphQL mutation '${opName}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
-  return Promise.race([executionPromise, timeoutPromise]);
+  return Promise.race([executionPromise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
 }
 
 /**
