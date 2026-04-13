@@ -11,7 +11,7 @@ export function useConfetti() {
     let x = 0.5;
     let y = 0.9;
 
-    if (originElement) {
+    if (originElement && typeof window !== 'undefined') {
       const rect = originElement.getBoundingClientRect();
       x = (rect.left + rect.width / 2) / window.innerWidth;
       y = (rect.top + rect.height / 2) / window.innerHeight;

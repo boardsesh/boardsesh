@@ -373,6 +373,98 @@ describe('QuickTickBar', () => {
       // Bar should still be mounted and usable for a retry.
       expect(screen.getByTestId('quick-tick-bar')).toBeTruthy();
     });
+
+    it('calls onError when saveTick rejects', async () => {
+      mockSaveTick.mockRejectedValueOnce(new Error('network down'));
+      const onError = vi.fn();
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} onError={onError} />);
+
+      await act(async () => {
+        ref.current!.save();
+      });
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+    });
+
+    it('does not call onError when saveTick succeeds', async () => {
+      mockSaveTick.mockResolvedValueOnce(undefined);
+      const onError = vi.fn();
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} onError={onError} />);
+
+      await act(async () => {
+        ref.current!.save();
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(defaultProps.onSave).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('saveAttempt handle method', () => {
+    it('saves with status "attempt" when called via saveAttempt ref handle', async () => {
+      mockLogbookRef.current = [];
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} />);
+
+      await act(async () => {
+        ref.current!.saveAttempt();
+      });
+
+      expect(mockSaveTick).toHaveBeenCalledTimes(1);
+      const call = mockSaveTick.mock.calls[0][0];
+      expect(call.status).toBe('attempt');
+      expect(call.climbUuid).toBe('climb-1');
+      expect(defaultProps.onSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('saves with current attemptCount via saveAttempt', async () => {
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} />);
+
+      // Select 4 tries first.
+      await act(async () => {
+        screen.getByTestId('quick-tick-attempt').click();
+      });
+      await act(async () => {
+        screen.getByRole('option', { name: '4 tries' }).click();
+      });
+
+      await act(async () => {
+        ref.current!.saveAttempt();
+      });
+
+      const call = mockSaveTick.mock.calls[0][0];
+      expect(call.status).toBe('attempt');
+      expect(call.attemptCount).toBe(4);
+    });
+
+    it('calls onError via saveAttempt when saveTick rejects', async () => {
+      mockSaveTick.mockRejectedValueOnce(new Error('server error'));
+      const onError = vi.fn();
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} onError={onError} />);
+
+      await act(async () => {
+        ref.current!.saveAttempt();
+      });
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+    });
+
+    it('does not call saveTick via saveAttempt when currentClimb is null', async () => {
+      const ref = React.createRef<QuickTickBarHandle>();
+      render(<QuickTickBar ref={ref} {...defaultProps} currentClimb={null} />);
+
+      await act(async () => {
+        ref.current!.saveAttempt();
+      });
+
+      expect(mockSaveTick).not.toHaveBeenCalled();
+    });
   });
 
   describe('null currentClimb on mount', () => {
