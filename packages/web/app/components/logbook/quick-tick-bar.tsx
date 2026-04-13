@@ -7,7 +7,7 @@ import { Angle, Climb, BoardDetails } from '@/app/lib/types';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import type { LogbookEntry, TickStatus } from '@/app/hooks/use-logbook';
 import { TENSION_KILTER_GRADES } from '@/app/lib/board-data';
-import { useConfetti } from '@/app/hooks/use-confetti';
+import { useChalkPuff } from '@/app/hooks/use-chalk-puff';
 import { saveTickDraft, loadTickDraft, clearTickDraft } from '@/app/lib/tick-draft-db';
 import {
   TickControls,
@@ -47,7 +47,7 @@ export interface QuickTickBarProps {
 export interface QuickTickBarHandle {
   /** Trigger a save (ascent). Called by the parent tick button. */
   save: () => void;
-  /** Trigger a save (attempt). Pass the origin element for confetti positioning. */
+  /** Trigger a save (attempt). Pass the origin element for chalk puff positioning. */
   saveAttempt: (originElement?: HTMLElement | null) => void;
 }
 
@@ -70,7 +70,7 @@ export const QuickTickBar = forwardRef<QuickTickBarHandle, QuickTickBarProps>(({
   commentSlot,
 }, ref) => {
   const { saveTick, logbook } = useBoardProvider();
-  const fireConfetti = useConfetti();
+  const fireChalkPuff = useChalkPuff();
 
   // Snapshot the target climb the first time we get a non-null climb.
   // Uses a ref flag so it only fires once, avoiding re-snapshot when
@@ -161,7 +161,7 @@ export const QuickTickBar = forwardRef<QuickTickBarHandle, QuickTickBarProps>(({
   }, []);
 
   const handleSave = useCallback(
-    (isAscent: boolean, confettiOrigin?: HTMLElement | null) => {
+    (isAscent: boolean, chalkOrigin?: HTMLElement | null) => {
       if (!tickTarget) return;
 
       const { climb, angle: targetAngle, boardDetails: targetBoard, hasPriorHistory } = tickTarget;
@@ -176,8 +176,8 @@ export const QuickTickBar = forwardRef<QuickTickBarHandle, QuickTickBarProps>(({
       // Capture values for the draft in case the save fails.
       const draftValues = { climbUuid: climb.uuid, angle: Number(targetAngle), quality, difficulty, attemptCount, comment, status };
 
-      // Fire confetti and close the bar immediately — don't wait for the network.
-      fireConfetti(confettiOrigin ?? document.getElementById('button-tick'));
+      // Fire chalk puff and close the bar immediately — don't wait for the network.
+      fireChalkPuff(chalkOrigin ?? document.getElementById('button-tick'));
       onSave();
 
       // Fire-and-forget: the logbook cache updates optimistically via useSaveTick's onMutate.
@@ -215,7 +215,7 @@ export const QuickTickBar = forwardRef<QuickTickBarHandle, QuickTickBarProps>(({
         onError?.();
       });
     },
-    [tickTarget, quality, difficulty, comment, saveTick, onSave, attemptCount, fireConfetti, onError],
+    [tickTarget, quality, difficulty, comment, saveTick, onSave, attemptCount, fireChalkPuff, onError],
   );
 
   const handleConfirm = useCallback(() => handleSave(true), [handleSave]);

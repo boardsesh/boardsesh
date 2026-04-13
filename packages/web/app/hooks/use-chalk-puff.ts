@@ -1,13 +1,13 @@
 import { useCallback } from 'react';
-import confetti from 'canvas-confetti';
+import chalkPuff from '@/app/lib/chalk-puff';
 
 /**
- * Returns a function that fires a subtle confetti burst.
+ * Returns a function that fires a chalk puff burst.
  * Pass an HTMLElement to anchor the burst origin to that element,
  * otherwise it bursts from the bottom-center of the viewport.
  */
-export function useConfetti() {
-  const fireConfetti = useCallback((originElement?: HTMLElement | null) => {
+export function useChalkPuff() {
+  const fireChalkPuff = useCallback((originElement?: HTMLElement | null) => {
     let x = 0.5;
     let y = 0.9;
 
@@ -17,18 +17,18 @@ export function useConfetti() {
       y = (rect.top + rect.height / 2) / window.innerHeight;
     }
 
-    confetti({
-      particleCount: 35,
-      spread: 60,
-      startVelocity: 25,
-      decay: 0.92,
-      scalar: 0.8,
-      ticks: 60,
+    chalkPuff({
+      particleCount: 45,
+      spread: 120,
+      startVelocity: 22,
+      decay: 0.93,
+      scalar: 0.9,
+      ticks: 80,
       origin: { x, y },
-      gravity: 0.8,
+      gravity: -0.2,
       disableForReducedMotion: true,
     });
   }, []);
 
-  return fireConfetti;
+  return fireChalkPuff;
 }
