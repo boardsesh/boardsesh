@@ -109,6 +109,8 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         tries: tick.attemptCount,
         angle: tick.angle,
         status: tick.status,
+        layoutId: tick.layoutId,
+        boardType,
         climbUuid: tick.climbUuid,
       }));
       setLogbook(entries);
