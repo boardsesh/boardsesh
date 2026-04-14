@@ -44,7 +44,7 @@
   "devDependencies": {
     "@types/node": "^25.3.3",
     "dotenv": "^17.3.1",
-    "oxlint": "^1.50.0",
+    "oxlint": "^1.60.0",
     "vitest": "*",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

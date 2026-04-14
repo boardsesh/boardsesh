@@ -107,7 +107,7 @@
     "bufferutil": "^4.1.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
-    "oxlint": "^1.50.0",
+    "oxlint": "^1.60.0",
     "prettier": "^3.8.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

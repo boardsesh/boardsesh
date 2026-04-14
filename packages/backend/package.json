@@ -56,7 +56,7 @@
     "drizzle-kit": "^0.31.9",
     "postgres": "^3.4.8",
     "typescript": "^5.9.3",
-    "oxlint": "^1.50.0",
+    "oxlint": "^1.60.0",
     "vitest": "^4.0.18"
   }
 }
