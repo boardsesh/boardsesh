@@ -150,17 +150,17 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 
   if (DEBUG) console.log(`[GraphQL] execute START: ${opName}`);
 
-  // Hoist unsubscribe so the timeout can cancel the subscription if it fires
-  // before the operation completes.  Without this, a timed-out execute() leaves
-  // the underlying graphql-ws subscription (and its lock) alive indefinitely,
-  // which keeps the connection retrying and can eventually feed { code, reason }
-  // objects back through dispose() as unhandled rejections.
-  let unsubscribe!: () => void;
+  // Hoist these so both the timeout and the sink callbacks share the same state.
+  // unsubscribe is initialised to a no-op so the timeout can safely call it in
+  // the (impossible in practice) window before the Promise constructor assigns it.
+  // hasResolved is set to true by whichever path wins the race — timeout, error,
+  // or complete — so the other paths see the flag and skip redundant work.
+  let unsubscribe: () => void = () => {};
+  let hasResolved = false;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const executionPromise = new Promise<TData>((resolve, reject) => {
     let result: TData | undefined;
-    let hasResolved = false;
 
     unsubscribe = client.subscribe<TData>(
       { query: operation.query, variables: operation.variables as Record<string, unknown> },
@@ -184,12 +184,22 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
           if (!hasResolved) {
             hasResolved = true;
             unsubscribe();
-            // graphql-ws can pass a raw DOM Event (ErrorEvent/CloseEvent) when the
-            // WebSocket connection fails. Rejecting with a DOM Event causes Sentry to
-            // report "Event `Event` (type=error) captured as promise rejection" and
-            // prevents catch blocks from seeing a useful message. Always reject with
-            // a proper Error so callers receive a catchable, inspectable value.
-            reject(err instanceof Error ? err : new Error(String(err)));
+            // graphql-ws can pass non-Error values as sink errors:
+            //   - Raw DOM Events (ErrorEvent/CloseEvent) when the WebSocket fails
+            //   - Plain objects { code, reason } when the connection is closed
+            // Rejecting with these causes Sentry to report
+            // "Event `Event` (type=error) captured as promise rejection" or
+            // "Object captured as promise rejection with keys: code, reason".
+            // Always reject with a proper Error so callers get a catchable value.
+            let errorValue: Error;
+            if (err instanceof Error) {
+              errorValue = err;
+            } else if (typeof err === 'object' && err !== null && typeof (err as Record<string, unknown>).reason === 'string') {
+              errorValue = new Error((err as { reason: string }).reason);
+            } else {
+              errorValue = new Error(String(err));
+            }
+            reject(errorValue);
           }
         },
         complete: () => {
@@ -211,8 +221,11 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
   // Add timeout to prevent mutations from hanging forever.
   // Cancel the underlying subscription on timeout so the graphql-ws lock is
   // released promptly instead of waiting for the next retry cycle.
+  // hasResolved is set before unsubscribe() so that the complete/error callbacks
+  // fired synchronously by graphql-ws during teardown see the flag and exit early.
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
+      hasResolved = true;
       unsubscribe();
       reject(new Error(`GraphQL mutation '${opName}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
