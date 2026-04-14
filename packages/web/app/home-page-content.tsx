@@ -30,6 +30,7 @@ import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { track } from '@vercel/analytics';
 import { setClimbSessionCookie } from '@/app/lib/climb-session-cookie';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 
 const StartSeshDrawer = dynamic(() => import('@/app/components/session-creation/start-sesh-drawer'), { ssr: false });
 
@@ -247,15 +248,17 @@ export default function HomePageContent({ boardConfigs, initialPopularConfigs }:
     if (createBoardOpen) setCreateBoardMounted(true);
   }, [createBoardOpen]);
 
+  const viewMode = useViewModePreference();
+
   const isAuthenticated = status === 'authenticated';
 
   const handleBoardClick = useCallback(
     (board: UserBoard) => {
       if (board.slug) {
-        router.push(constructBoardSlugListUrl(board.slug, board.angle));
+        router.push(constructBoardSlugListUrl(board.slug, board.angle, viewMode));
       }
     },
-    [router],
+    [router, viewMode],
   );
 
   const handleConfigClick = useCallback(
@@ -270,18 +273,19 @@ export default function HomePageContent({ boardConfigs, initialPopularConfigs }:
             config.sizeDescription ?? undefined,
             config.setNames,
             angle,
+            viewMode,
           ),
         );
       } else {
         const setIds = config.setIds.join(',');
         const numericFallback = `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
         router.push(
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
+          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle, viewMode) ??
             numericFallback,
         );
       }
     },
-    [router],
+    [router, viewMode],
   );
 
   const handleCustomClick = useCallback(() => {

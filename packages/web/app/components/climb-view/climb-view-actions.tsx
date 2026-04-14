@@ -7,6 +7,7 @@ import styles from './climb-view-actions.module.css';
 import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
 import BackButton from '../back-button';
 import { ClimbActions } from '../climb-actions';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 
 type ClimbViewActionsProps = {
   climb: Climb;
@@ -17,17 +18,18 @@ type ClimbViewActionsProps = {
 
 const ClimbViewActions = ({ climb, boardDetails, auroraAppUrl, angle }: ClimbViewActionsProps) => {
   const pathname = usePathname();
+  const viewMode = useViewModePreference();
 
   const getBackToListUrl = () => {
     const { board_name, layout_name, size_name, size_description, set_names } = boardDetails;
 
     // Use slug-based URL construction if slug names are available
     if (layout_name && size_name && set_names) {
-      return constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle);
+      return constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle, viewMode);
     }
 
     // Fallback to numeric format
-    return `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
+    return `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/${viewMode}`;
   };
 
   return (

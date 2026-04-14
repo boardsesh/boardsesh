@@ -13,6 +13,7 @@ import { constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardName } from '@/app/lib/types';
 import { ANGLES } from '@/app/lib/board-data';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 import BoardForm from './board-form';
 
 interface CreateBoardFormProps {
@@ -36,6 +37,7 @@ export default function CreateBoardForm({
 }: CreateBoardFormProps) {
   const { showMessage } = useSnackbar();
   const router = useRouter();
+  const viewMode = useViewModePreference();
 
   const availableAngles = ANGLES[boardType as BoardName] ?? [];
 
@@ -90,7 +92,7 @@ export default function CreateBoardForm({
         if (onSuccess) {
           onSuccess(board);
         } else {
-          router.push(constructBoardSlugListUrl(board.slug, defaultAngle));
+          router.push(constructBoardSlugListUrl(board.slug, defaultAngle, viewMode));
         }
       }
     },

@@ -1,10 +1,5 @@
-import React from 'react';
-
-import { notFound, permanentRedirect } from 'next/navigation';
-import { BoardRouteParametersWithUuid, SearchRequestPagination, BoardDetails } from '@/app/lib/types';
-import { parsedRouteSearchParamsToSearchParams, constructClimbListWithSlugs } from '@/app/lib/url-utils';
-import { parseRouteParams } from '@/app/lib/url-utils.server';
-import BoardPageClimbsList from '@/app/components/board-page/board-page-climbs-list';
+import { SearchRequestPagination, BoardDetails, Climb, ParsedBoardRouteParameters } from '@/app/lib/types';
+import { parsedRouteSearchParamsToSearchParams } from '@/app/lib/url-utils';
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
 import { hasUserSpecificFilters } from '@/app/lib/list-page-cache';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -14,46 +9,20 @@ import { authOptions } from '@/app/lib/auth/auth-options';
 import { scheduleOverlayWarming } from '@/app/lib/warm-overlay-cache';
 import { buildOverlayUrl } from '@/app/components/board-renderer/util';
 
-export default async function DynamicResultsPage(props: {
-  params: Promise<BoardRouteParametersWithUuid>;
-  searchParams: Promise<SearchRequestPagination>;
-}) {
-  const searchParams = await props.searchParams;
-  const params = await props.params;
-  const { parsedParams, isNumericFormat } = await parseRouteParams(params);
+export type ClimbPageData = {
+  boardDetails: BoardDetails;
+  climbs: Climb[];
+  preloadUrl: string | null;
+};
 
-  // Redirect old numeric URLs to new slug format
-  if (isNumericFormat) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
-
-    if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
-      const newUrl = constructClimbListWithSlugs(
-        boardDetails.board_name,
-        boardDetails.layout_name,
-        boardDetails.size_name,
-        boardDetails.size_description,
-        boardDetails.set_names,
-        parsedParams.angle,
-      );
-
-      // Preserve search parameters
-      const searchString = new URLSearchParams(
-        Object.entries(searchParams).reduce(
-          (acc, [key, value]) => {
-            if (value !== undefined) {
-              acc[key] = String(value);
-            }
-            return acc;
-          },
-          {} as Record<string, string>,
-        ),
-      ).toString();
-      const finalUrl = searchString ? `${newUrl}?${searchString}` : newUrl;
-
-      permanentRedirect(finalUrl);
-    }
-  }
-
+/**
+ * Shared SSR data fetching for both list and grid page routes.
+ * Handles search param parsing, climb search, overlay warming, and preload URL generation.
+ */
+export async function fetchClimbPageData(
+  parsedParams: ParsedBoardRouteParameters,
+  searchParams: SearchRequestPagination,
+): Promise<ClimbPageData | null> {
   const searchParamsObject: SearchRequestPagination = parsedRouteSearchParamsToSearchParams(searchParams);
 
   // For the SSR version we increase the pageSize so it also gets whatever page number
@@ -88,7 +57,7 @@ export default async function DynamicResultsPage(props: {
     boardDetails = getBoardDetailsForBoard(parsedParams);
   } catch (error) {
     console.error('Error resolving board details:', error);
-    return notFound();
+    return null;
   }
 
   // Resolve userId for personal progress filters
@@ -98,7 +67,7 @@ export default async function DynamicResultsPage(props: {
     userId = session?.user?.id;
   }
 
-  let searchResponse: { climbs: import('@/app/lib/types').Climb[]; hasMore: boolean };
+  let searchResponse: { climbs: Climb[]; hasMore: boolean };
 
   try {
     searchResponse = await cachedSearchClimbs(parsedParams, searchParamsObject, isDefaultSearch, userId, {
@@ -116,14 +85,12 @@ export default async function DynamicResultsPage(props: {
   scheduleOverlayWarming({ boardDetails, climbs: searchResponse.climbs, variant: 'thumbnail' });
 
   // Preload the first climb's thumbnail so the browser can fetch it before JS hydration.
-  // The climb list is virtualized (client-only), so the LCP image isn't in the initial HTML.
   const firstClimb = searchResponse.climbs[0];
   const preloadUrl = firstClimb?.frames ? buildOverlayUrl(boardDetails, firstClimb.frames, true) : null;
 
-  return (
-    <>
-      {preloadUrl && <link rel="preload" as="image" href={preloadUrl} fetchPriority="high" />}
-      <BoardPageClimbsList {...parsedParams} boardDetails={boardDetails} initialClimbs={searchResponse.climbs} />
-    </>
-  );
+  return {
+    boardDetails,
+    climbs: searchResponse.climbs,
+    preloadUrl,
+  };
 }

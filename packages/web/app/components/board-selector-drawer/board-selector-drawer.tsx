@@ -22,6 +22,7 @@ import { saveBoardConfig, StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
 import type { BoardRouteIdentity } from '@/app/lib/types';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 
 const CreateBoardForm = lazy(() => import('../board-entity/create-board-form'));
 
@@ -161,6 +162,7 @@ export default function BoardSelectorDrawer({
 }: BoardSelectorDrawerProps) {
   const router = useRouter();
   const guardBoardSwitch = useBoardSwitchGuard();
+  const viewMode = useViewModePreference();
   const [showCreateBoardForm, setShowCreateBoardForm] = useState(false);
 
   // Board config form state
@@ -257,10 +259,11 @@ export default function BoardSelectorDrawer({
         size.description,
         selectedSetNames,
         selectedAngle,
+        viewMode,
       );
     }
     return null;
-  }, [selectedBoard, selectedLayout, selectedSize, selectedSets, selectedAngle, layouts, sizes, sets]);
+  }, [selectedBoard, selectedLayout, selectedSize, selectedSets, selectedAngle, viewMode, layouts, sizes, sets]);
 
   const handleStartClimbing = useCallback(async () => {
     if (!selectedBoard || !selectedLayout || !selectedSize || selectedSets.length === 0 || !targetUrl) {
@@ -438,7 +441,7 @@ export default function BoardSelectorDrawer({
                 defaultAngle={selectedAngle}
                 onSuccess={(board: UserBoard) => {
                   setShowCreateBoardForm(false);
-                  const url = constructBoardSlugListUrl(board.slug, board.angle);
+                  const url = constructBoardSlugListUrl(board.slug, board.angle, viewMode);
                   if (onBoardSelected) {
                     onBoardSelected(url);
                     onClose();

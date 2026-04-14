@@ -11,6 +11,7 @@ import ClimbTitle from '@/app/components/climb-card/climb-title';
 import { AscentStatus } from '@/app/components/climb-card/ascent-status';
 import { constructClimbListWithSlugs, constructPlayUrlWithSlugs, extractUuidFromSlug } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import PlayViewBetaSlider from '@/app/components/play-view/play-view-beta-slider';
 import PlayViewComments from '@/app/components/play-view/play-view-comments';
@@ -25,6 +26,7 @@ type PlayViewClientProps = {
 const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialClimb, angle }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const viewMode = useViewModePreference();
   const { currentClimb } = useCurrentClimb();
   const { queue } = useQueueList();
   const { setCurrentClimbQueueItem, getNextClimbQueueItem, getPreviousClimbQueueItem } = useQueueActions();
@@ -63,9 +65,9 @@ const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialCl
 
     let baseUrl: string;
     if (layout_name && size_name && set_names) {
-      baseUrl = constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle);
+      baseUrl = constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle, viewMode);
     } else {
-      baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
+      baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/${viewMode}`;
     }
 
     const queryString = searchParams.toString();
@@ -73,7 +75,7 @@ const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialCl
       return `${baseUrl}?${queryString}`;
     }
     return baseUrl;
-  }, [boardDetails, angle, searchParams]);
+  }, [boardDetails, angle, searchParams, viewMode]);
 
   const navigateToClimb = useCallback(
     (climb: Climb) => {

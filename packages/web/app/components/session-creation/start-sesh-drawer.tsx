@@ -22,6 +22,7 @@ import BoardScrollCard from '@/app/components/board-scroll/board-scroll-card';
 import { useCreateSession } from '@/app/hooks/use-create-session';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useSession } from 'next-auth/react';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   constructBoardSlugListUrl,
@@ -129,6 +130,8 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     }
   }, [open, boards, localBoardPath, localBoardDetails, pathname]);
 
+  const viewMode = useViewModePreference();
+
   const isLoggedIn = status === 'authenticated';
 
   const handleClose = useCallback(() => {
@@ -166,12 +169,13 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
         config.sizeDescription ?? undefined,
         config.setNames,
         angle,
+        viewMode,
       );
     } else {
       const setIds = config.setIds.join(',');
       url =
-        tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-        `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
+        tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle, viewMode) ??
+        `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/${viewMode}`;
     }
     // Store as custom path selection
     setSelectedCustomPath(url);
@@ -202,7 +206,7 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
 
     if (selectedBoard) {
       boardPath = `/b/${selectedBoard.slug}`;
-      navigateUrl = constructBoardSlugListUrl(selectedBoard.slug, selectedBoard.angle);
+      navigateUrl = constructBoardSlugListUrl(selectedBoard.slug, selectedBoard.angle, viewMode);
     } else if (selectedCustomPath) {
       boardPath = selectedCustomPath;
       navigateUrl = selectedCustomPath;

@@ -818,6 +818,18 @@ describe('getBaseBoardPath', () => {
     });
   });
 
+  describe('stripping /grid segment', () => {
+    it('should strip /grid from path with angle', () => {
+      expect(getBaseBoardPath('/kilter/original/12x12/default/45/grid'))
+        .toBe('/kilter/original/12x12/default');
+    });
+
+    it('should handle different board configurations with grid', () => {
+      expect(getBaseBoardPath('/tension/two-zone/10x12/main_aux/40/grid'))
+        .toBe('/tension/two-zone/10x12/main_aux');
+    });
+  });
+
   describe('stripping /create segment', () => {
     it('should strip /create from path with angle', () => {
       expect(getBaseBoardPath('/kilter/original/12x12/default/45/create')).toBe('/kilter/original/12x12/default');
@@ -1263,6 +1275,22 @@ describe('constructClimbListWithSlugs', () => {
     );
     expect(result).toBe('/tension/original/8x12/screw/25/list');
   });
+
+  it('should construct slug-based grid URL when viewMode is grid', () => {
+    const result = constructClimbListWithSlugs(
+      'kilter', 'Kilter Board Original', '16 x 12', 'Super Wide',
+      ['Bolt Ons', 'Screw Ons'], 40, 'grid',
+    );
+    expect(result).toBe('/kilter/original/16x12-super-wide/screw_bolt/40/grid');
+  });
+
+  it('should default to list when viewMode is omitted', () => {
+    const result = constructClimbListWithSlugs(
+      'kilter', 'Kilter Board Original', '16 x 12', 'Super Wide',
+      ['Bolt Ons', 'Screw Ons'], 40,
+    );
+    expect(result).toBe('/kilter/original/16x12-super-wide/screw_bolt/40/list');
+  });
 });
 
 describe('constructPlayUrlWithSlugs', () => {
@@ -1386,6 +1414,14 @@ describe('tryConstructSlugListUrl', () => {
     expect(result).not.toBeNull();
     expect(result).toContain('/kilter/');
     expect(result).toContain('/list');
+    expect(result).not.toMatch(/\/\d+\/\d+\//);
+  });
+
+  it('should return a slug-based grid URL when viewMode is grid', () => {
+    const result = tryConstructSlugListUrl('kilter', 1, 7, [1, 20], 40, 'grid');
+    expect(result).not.toBeNull();
+    expect(result).toContain('/kilter/');
+    expect(result).toContain('/grid');
     expect(result).not.toMatch(/\/\d+\/\d+\//);
   });
 

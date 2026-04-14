@@ -13,7 +13,7 @@ interface LayoutProps {
   params: Promise<BoardRouteParameters>;
 }
 
-export default async function ListLayout(props: PropsWithChildren<LayoutProps>) {
+export default async function ClimbsLayout(props: PropsWithChildren<LayoutProps>) {
   const params = await props.params;
 
   const { children } = props;

@@ -47,6 +47,7 @@ import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import { isValidHexColor } from '@/app/lib/color-utils';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
 import type { BoardRouteIdentity } from '@/app/lib/types';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 
 type Tab = 'home' | 'climbs' | 'library' | 'feed' | 'create' | 'you';
 type PendingCreateAction = 'climb' | 'playlist' | null;
@@ -103,6 +104,7 @@ const actionSx = {
 function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) {
   const { mode } = useColorMode();
   const isDark = mode === 'dark';
+  const viewMode = useViewModePreference();
   const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
   const [isCreatePlaylistRendered, setIsCreatePlaylistRendered] = useState(false);
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
@@ -177,14 +179,14 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
       const segments = pathname.split('/');
       // /b/{slug}/{angle}/... → /b/{slug}/{angle}/list
       if (segments.length >= 4) {
-        return `/b/${segments[2]}/${segments[3]}/list`;
+        return `/b/${segments[2]}/${segments[3]}/${viewMode}`;
       }
     }
     // Fallback: use active session's board path if it's a /b/ slug route
     if (activeSession?.boardPath?.startsWith('/b/')) {
       const segments = activeSession.boardPath.split('/');
       if (segments.length >= 4) {
-        return `/b/${segments[2]}/${segments[3]}/list`;
+        return `/b/${segments[2]}/${segments[3]}/${viewMode}`;
       }
     }
     if (!effectiveBoardDetails) return null;
@@ -197,6 +199,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
         size_description,
         set_names,
         effectiveAngle,
+        viewMode,
       );
     }
     return null;
@@ -450,7 +453,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   const handleDiscoveryBoardClick = useCallback(
     (board: UserBoard) => {
       if (board.slug) {
-        const url = constructBoardSlugListUrl(board.slug, board.angle);
+        const url = constructBoardSlugListUrl(board.slug, board.angle, viewMode);
         const config: StoredBoardConfig = {
           name: board.name,
           board: board.boardType as BoardName,
@@ -464,7 +467,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
       }
       setIsBoardSelectorOpen(false);
     },
-    [handleBoardSelected],
+    [handleBoardSelected, viewMode],
   );
 
   const handleDiscoveryConfigClick = useCallback(
@@ -479,12 +482,13 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           config.sizeDescription ?? undefined,
           config.setNames,
           angle,
+          viewMode,
         );
       } else {
         const setIds = config.setIds.join(',');
         url =
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
+          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle, viewMode) ??
+          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/${viewMode}`;
       }
       const storedConfig: StoredBoardConfig = {
         name: config.layoutName ?? `${config.boardType} board`,
@@ -498,7 +502,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
       handleBoardSelected(url, storedConfig);
       setIsBoardSelectorOpen(false);
     },
-    [handleBoardSelected],
+    [handleBoardSelected, viewMode],
   );
 
   const validatePlaylistForm = useCallback((): boolean => {

@@ -324,11 +324,12 @@ export const constructClimbListWithSlugs = (
   sizeDescription: string | undefined,
   setNames: string[],
   angle: number,
+  viewMode: 'list' | 'grid' = 'list',
 ) => {
   const layoutSlug = generateLayoutSlug(layoutName);
   const sizeSlug = generateSizeSlug(sizeName, sizeDescription);
   const setSlug = generateSetSlug(setNames);
-  return `/${board_name}/${layoutSlug}/${sizeSlug}/${setSlug}/${angle}/list`;
+  return `/${board_name}/${layoutSlug}/${sizeSlug}/${setSlug}/${angle}/${viewMode}`;
 };
 
 /**
@@ -649,10 +650,19 @@ export const tryConstructSlugListUrl = (
   size_id: number,
   set_ids: number[],
   angle: number,
+  viewMode: 'list' | 'grid' = 'list',
 ): string | null => {
   const d = tryResolveBoardSlugs(board_name, layout_id, size_id, set_ids);
   return d
-    ? constructClimbListWithSlugs(d.board_name, d.layout_name, d.size_name, d.size_description, d.set_names, angle)
+    ? constructClimbListWithSlugs(
+        d.board_name,
+        d.layout_name,
+        d.size_name,
+        d.size_description,
+        d.set_names,
+        angle,
+        viewMode,
+      )
     : null;
 };
 
@@ -689,7 +699,7 @@ export function getBaseBoardPath(pathname: string): string {
     return boardSlugMatch[1];
   }
 
-  // URL structure: /{board}/{layout}/{size}/{sets}/{angle}[/play/uuid|/view/slug|/list|/create]
+  // URL structure: /{board}/{layout}/{size}/{sets}/{angle}[/play/uuid|/view/slug|/list|/grid|/create]
   // We want to extract: /{board}/{layout}/{size}/{sets}
 
   // First, strip off trailing view segments if present
@@ -705,7 +715,7 @@ export function getBaseBoardPath(pathname: string): string {
     if (viewMatch) {
       path = viewMatch[1];
     } else {
-      const listMatch = path.match(/^(.+?)\/list$/);
+      const listMatch = path.match(/^(.+?)\/(list|grid)$/);
       if (listMatch) {
         path = listMatch[1];
       } else {
@@ -739,10 +749,11 @@ export const constructBoardSlugUrl = (slug: string, angle: number, path?: string
   `/b/${slug}/${angle}${path ? `/${path}` : ''}`;
 
 /**
- * Construct a board slug URL for the climb list.
- * /b/{board-slug}/{angle}/list
+ * Construct a board slug URL for the climb browse view.
+ * /b/{board-slug}/{angle}/list or /b/{board-slug}/{angle}/grid
  */
-export const constructBoardSlugListUrl = (slug: string, angle: number) => constructBoardSlugUrl(slug, angle, 'list');
+export const constructBoardSlugListUrl = (slug: string, angle: number, viewMode: 'list' | 'grid' = 'list') =>
+  constructBoardSlugUrl(slug, angle, viewMode);
 
 /**
  * Construct a board slug URL for the play view.

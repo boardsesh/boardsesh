@@ -22,6 +22,7 @@ import DarkModeOutlined from '@mui/icons-material/DarkModeOutlined';
 
 import { useSession, signOut } from 'next-auth/react';
 import { useColorMode } from '@/app/hooks/use-color-mode';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -79,6 +80,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   const [recentSessions, setRecentSessions] = useState<StoredSession[]>([]);
 
   const { mode, toggleMode } = useColorMode();
+  const viewMode = useViewModePreference();
   const isMoonboard = boardDetails?.board_name === 'moonboard';
   const guardBoardSwitch = useBoardSwitchGuard();
 
@@ -114,7 +116,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
       if (!board.slug) return;
       const boardName = asBoardName(board.boardType);
       const navigate = () => {
-        router.push(constructBoardSlugListUrl(board.slug!, board.angle));
+        router.push(constructBoardSlugListUrl(board.slug!, board.angle, viewMode));
         setShowBoardSelector(false);
       };
       if (!boardName) {
@@ -129,7 +131,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
       };
       guardBoardSwitch(target, navigate);
     },
-    [router, guardBoardSwitch],
+    [router, guardBoardSwitch, viewMode],
   );
 
   const handleChangeConfigClick = useCallback(
@@ -144,12 +146,13 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
           config.sizeDescription ?? undefined,
           config.setNames,
           angle,
+          viewMode,
         );
       } else {
         const setIds = config.setIds.join(',');
         url =
-          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle) ??
-          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/list`;
+          tryConstructSlugListUrl(config.boardType, config.layoutId, config.sizeId, config.setIds, angle, viewMode) ??
+          `/${config.boardType}/${config.layoutId}/${config.sizeId}/${setIds}/${angle}/${viewMode}`;
       }
       const navigate = () => {
         router.push(url);
@@ -168,7 +171,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
       };
       guardBoardSwitch(target, navigate);
     },
-    [router, guardBoardSwitch],
+    [router, guardBoardSwitch, viewMode],
   );
 
   const handleSignOut = () => {

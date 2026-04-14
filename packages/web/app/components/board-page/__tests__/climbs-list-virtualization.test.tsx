@@ -8,6 +8,7 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/kilter/original/12x12/default/40/list',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/app/hooks/use-is-dark-mode', () => ({
@@ -72,6 +73,11 @@ vi.mock('../board-page-skeleton', () => ({
 vi.mock('@/app/lib/user-preferences-db', () => ({
   getPreference: vi.fn(() => Promise.resolve('list')),
   setPreference: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('@/app/hooks/use-view-mode-preference', () => ({
+  useViewModePreference: () => 'list',
+  useUpdateViewModePreference: () => vi.fn(),
 }));
 
 vi.mock('@/app/hooks/use-infinite-scroll', () => ({

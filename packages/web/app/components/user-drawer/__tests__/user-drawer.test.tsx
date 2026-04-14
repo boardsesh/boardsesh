@@ -104,6 +104,10 @@ vi.mock('@/app/components/board-scroll/board-discovery-scroll', () => ({
   },
 }));
 
+vi.mock('@/app/hooks/use-view-mode-preference', () => ({
+  useViewModePreference: () => 'list',
+}));
+
 vi.mock('@/app/components/board-selector-drawer/board-selector-drawer', () => ({
   default: () => null,
 }));

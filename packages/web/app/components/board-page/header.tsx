@@ -17,6 +17,7 @@ import {
   generateSetSlug,
 } from '@/app/lib/url-utils';
 import { useCurrentClimb, useSearchData } from '../graphql-queue';
+import { useViewModePreference } from '@/app/hooks/use-view-mode-preference';
 import { useUISearchParams } from '../queue-control/ui-searchparams-provider';
 import {
   hasActiveFilters,
@@ -43,6 +44,7 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
   const { uiSearchParams, clearClimbSearchParams, updateFilters } = useUISearchParams();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const viewMode = useViewModePreference();
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const isCreatePage = pathname.includes('/create');
   const isListPage = pathname.includes('/list');
@@ -78,9 +80,9 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
 
     let baseUrl: string;
     if (layout_name && size_name && set_names && angle !== undefined) {
-      baseUrl = constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle);
+      baseUrl = constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle, viewMode);
     } else {
-      baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
+      baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/${viewMode}`;
     }
 
     // Preserve search params when going back
