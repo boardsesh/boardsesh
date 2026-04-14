@@ -129,6 +129,7 @@ export const themeTokens = {
     fast: '150ms ease',
     normal: '200ms ease',
     slow: '300ms ease',
+    drawerHeight: 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
   },
 
   // Z-index scale

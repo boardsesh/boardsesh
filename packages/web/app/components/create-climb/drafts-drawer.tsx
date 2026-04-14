@@ -25,7 +25,7 @@ import drawerStyles from '../swipeable-drawer/swipeable-drawer.module.css';
 const DRAFTS_DRAWER_STYLES = {
   wrapper: {
     touchAction: 'pan-y' as const,
-    transition: 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    transition: themeTokens.transitions.drawerHeight,
   },
   body: { padding: 0, overflow: 'hidden' as const, touchAction: 'pan-y' as const },
 } as const;

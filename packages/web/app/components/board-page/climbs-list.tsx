@@ -48,7 +48,7 @@ const sharedDrawerStyles = {
   wrapper: {
     width: '100%',
     touchAction: 'pan-y' as const,
-    transition: 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    transition: themeTokens.transitions.drawerHeight,
   },
   body: { padding: `${themeTokens.spacing[2]}px 0` },
   header: {

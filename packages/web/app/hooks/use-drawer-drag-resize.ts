@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
+import { themeTokens } from '@/app/theme/theme-config';
 
 export const DRAG_MOVE_THRESHOLD = 10;
 /** Minimum velocity (px/ms) for a flick to close the drawer. */
@@ -184,7 +185,7 @@ export function useDrawerDragResize({
 
     // Re-enable transition for the snap animation
     if (paper) {
-      paper.style.transition = 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+      paper.style.transition = themeTokens.transitions.drawerHeight;
     }
 
     if (!isDragGesture.current) return;
