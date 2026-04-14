@@ -111,9 +111,12 @@ export function setupWebSocketServer(httpServer: HttpServer): { wss: WebSocketSe
           console.log(`[Auth] Controller MAC: ${controllerMac}`);
         }
 
+        // Detect hidden connections (e.g. iOS layer) that should not appear as session participants
+        const isHidden = connectionParams?.isHidden === true;
+
         // Create context on initial connection with auth info
-        const context = createContext(undefined, isAuthenticated, authenticatedUserId, controllerId, controllerApiKey, controllerMac);
-        await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
+        const context = createContext(undefined, isAuthenticated, authenticatedUserId, controllerId, controllerApiKey, controllerMac, isHidden);
+        await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId, undefined, isHidden);
         console.log(`Client connected: ${context.connectionId} (authenticated: ${isAuthenticated})`);
 
         // Store context in ctx.extra for access in other hooks
@@ -157,8 +160,8 @@ export function setupWebSocketServer(httpServer: HttpServer): { wss: WebSocketSe
             const result = await roomManager.leaveSession(context.connectionId);
 
             if (result) {
-              // Notify session about user leaving
-              if (latestContext.userId) {
+              // Notify session about user leaving (skip for hidden connections)
+              if (latestContext.userId && !latestContext.isHidden) {
                 pubsub.publishSessionEvent(result.sessionId, {
                   __typename: 'UserLeft',
                   userId: latestContext.userId,

@@ -80,4 +80,6 @@ export type ConnectionContext = {
   controllerId?: string;
   controllerApiKey?: string;
   controllerMac?: string; // Controller's MAC address (used as clientId for BLE disconnect logic)
+  // If true, this connection is excluded from session participant lists (e.g. iOS layer)
+  isHidden?: boolean;
 };

@@ -10,6 +10,7 @@ export interface DistributedConnection {
   avatarUrl: string | null;
   isLeader: boolean;
   connectedAt: number; // Unix timestamp ms
+  isHidden: boolean;
 }
 
 /**
@@ -74,6 +75,7 @@ export function connectionToHash(conn: DistributedConnection): Record<string, st
     avatarUrl: conn.avatarUrl || '',
     isLeader: conn.isLeader ? 'true' : 'false',
     connectedAt: conn.connectedAt.toString(),
+    isHidden: conn.isHidden ? 'true' : 'false',
   };
 }
 
@@ -107,5 +109,6 @@ export function hashToConnection(hash: Record<string, string>): DistributedConne
     avatarUrl,
     isLeader: hash.isLeader === 'true',
     connectedAt,
+    isHidden: hash.isHidden === 'true',
   };
 }

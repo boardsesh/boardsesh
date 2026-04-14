@@ -108,9 +108,10 @@ export class DistributedStateManager {
     connectionId: string,
     username: string,
     userId?: string | null,
-    avatarUrl?: string | null
+    avatarUrl?: string | null,
+    isHidden?: boolean
   ): Promise<void> {
-    return registerConnection(this.redis, this.instanceId, connectionId, username, userId, avatarUrl);
+    return registerConnection(this.redis, this.instanceId, connectionId, username, userId, avatarUrl, isHidden);
   }
 
   /** Remove a connection from distributed state. */

@@ -188,13 +188,15 @@ export async function getSessionMembers(redis: Redis, sessionId: string): Promis
       const [err, data] = results[i] as [Error | null, Record<string, string>];
       if (!err && data && data.connectionId) {
         const connection = hashToConnection(data);
-        users.push({
-          id: connection.connectionId,
-          username: connection.username,
-          isLeader: connection.isLeader,
-          avatarUrl: connection.avatarUrl || undefined,
-          userId: connection.userId,
-        });
+        if (!connection.isHidden) {
+          users.push({
+            id: connection.connectionId,
+            username: connection.username,
+            isLeader: connection.isLeader,
+            avatarUrl: connection.avatarUrl || undefined,
+            userId: connection.userId,
+          });
+        }
       } else if (!err) {
         // Connection hash expired — mark for removal from the session set
         staleMemberIds.push(memberIds[i]);

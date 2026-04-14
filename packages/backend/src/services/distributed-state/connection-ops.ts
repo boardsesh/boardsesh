@@ -18,7 +18,8 @@ export async function registerConnection(
   connectionId: string,
   username: string,
   userId?: string | null,
-  avatarUrl?: string | null
+  avatarUrl?: string | null,
+  isHidden?: boolean
 ): Promise<void> {
   validateConnectionId(connectionId);
 
@@ -31,6 +32,7 @@ export async function registerConnection(
     avatarUrl: avatarUrl || null,
     isLeader: false,
     connectedAt: Date.now(),
+    isHidden: isHidden ?? false,
   };
 
   const multi = redis.multi();

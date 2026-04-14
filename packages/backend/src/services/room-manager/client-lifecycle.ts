@@ -17,7 +17,8 @@ export async function registerClient(
   distributedState: DistributedStateManager | null,
   username?: string,
   userId?: string,
-  avatarUrl?: string
+  avatarUrl?: string,
+  isHidden?: boolean
 ): Promise<string> {
   const defaultUsername = username || `User-${connectionId.substring(0, 6)}`;
   clients.set(connectionId, {
@@ -28,11 +29,12 @@ export async function registerClient(
     isLeader: false,
     connectedAt: new Date(),
     avatarUrl,
+    isHidden,
   });
 
   if (distributedState) {
     try {
-      await distributedState.registerConnection(connectionId, defaultUsername, userId, avatarUrl);
+      await distributedState.registerConnection(connectionId, defaultUsername, userId, avatarUrl, isHidden);
     } catch (err) {
       clients.delete(connectionId);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

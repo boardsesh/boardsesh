@@ -16,6 +16,7 @@ export interface ConnectedClient {
   avatarUrl?: string;
   isLeader: boolean;
   connectedAt: Date;
+  isHidden?: boolean;
 }
 
 export type DiscoverableSession = {

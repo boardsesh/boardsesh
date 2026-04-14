@@ -97,8 +97,8 @@ class RoomManager {
     return this.distributedState !== null;
   }
 
-  async registerClient(connectionId: string, username?: string, userId?: string, avatarUrl?: string): Promise<string> {
-    return registerClientFn(connectionId, this.clients, this.distributedState, username, userId, avatarUrl);
+  async registerClient(connectionId: string, username?: string, userId?: string, avatarUrl?: string, isHidden?: boolean): Promise<string> {
+    return registerClientFn(connectionId, this.clients, this.distributedState, username, userId, avatarUrl, isHidden);
   }
 
   getClient(connectionId: string): ConnectedClient | undefined {
@@ -191,7 +191,7 @@ class RoomManager {
     const users: SessionUser[] = [];
     for (const clientId of sessionClientIds) {
       const client = this.clients.get(clientId);
-      if (client) {
+      if (client && !client.isHidden) {
         users.push({
           id: client.connectionId,
           username: client.username,

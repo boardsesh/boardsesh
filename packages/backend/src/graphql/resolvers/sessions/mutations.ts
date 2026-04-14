@@ -100,17 +100,19 @@ export const sessionMutations = {
       authorizeUserControllersForSession(ctx.userId, sessionId);
     }
 
-    // Notify session about new user
-    const userJoinedEvent: SessionEvent = {
-      __typename: 'UserJoined',
-      user: {
-        id: result.clientId,
-        username: username || `User-${result.clientId.substring(0, 6)}`,
-        isLeader: result.isLeader,
-        avatarUrl: avatarUrl,
-      },
-    };
-    pubsub.publishSessionEvent(sessionId, userJoinedEvent);
+    // Notify session about new user (skip for hidden connections e.g. iOS layer)
+    if (!ctx.isHidden) {
+      const userJoinedEvent: SessionEvent = {
+        __typename: 'UserJoined',
+        user: {
+          id: result.clientId,
+          username: username || `User-${result.clientId.substring(0, 6)}`,
+          isLeader: result.isLeader,
+          avatarUrl: avatarUrl,
+        },
+      };
+      pubsub.publishSessionEvent(sessionId, userJoinedEvent);
+    }
 
     // Fetch session data for new fields
     const sessionData = await roomManager.getSessionById(sessionId);
