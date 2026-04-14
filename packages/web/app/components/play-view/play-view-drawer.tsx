@@ -603,6 +603,12 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     boardPull.onTouchEnd();
   }, [boardPull]);
 
+  const handleToggleFavorite = useCallback(() => {
+    void toggleFavorite().catch(() => {
+      // Errors are handled by the mutation's onError handler (snackbar + rollback)
+    });
+  }, [toggleFavorite]);
+
   const aboveFold = useMemo(() => {
     if (!currentClimb) return null;
     return (
@@ -677,7 +683,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
           onPrevClick={handlePrevNavClick}
           onNextClick={handleNextNavClick}
           onMirror={mirrorClimb}
-          onToggleFavorite={toggleFavorite}
+          onToggleFavorite={handleToggleFavorite}
           onOpenActions={handleOpenActionsMenu}
           onOpenQueue={handleOpenQueueDrawer}
           angleSelector={
@@ -717,7 +723,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     handlePrevNavClick,
     handleNextNavClick,
     mirrorClimb,
-    toggleFavorite,
+    handleToggleFavorite,
     handleOpenActionsMenu,
     handleOpenQueueDrawer,
     angle,

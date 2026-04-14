@@ -51,7 +51,9 @@ export function useDoubleTapFavorite({ climbUuid }: UseDoubleTapFavoriteOptions)
 
     // Only toggle if not already favorited (Instagram behavior)
     if (!isFavoritedRef.current) {
-      toggleFavorite();
+      void toggleFavorite().catch(() => {
+        // Errors are handled by the mutation's onError handler (snackbar + rollback)
+      });
     }
   }, [isAuthenticated, toggleFavorite, openAuthModal]);
 
