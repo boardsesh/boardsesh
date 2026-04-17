@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/internal/beta-link-revalidation",
-      "schedule": "15 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
