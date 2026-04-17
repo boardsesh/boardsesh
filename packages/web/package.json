@@ -7,6 +7,7 @@
     "build": "bun run generate:openapi && next build",
     "build:ci": "bun run generate:openapi && next build",
     "generate:openapi": "tsx scripts/generate-openapi.ts",
+    "backfill:beta-links": "tsx scripts/backfill-beta-link-accessibility.ts",
     "start": "next start",
     "lint": "oxlint .",
     "lint-fix": "oxlint --fix .",
