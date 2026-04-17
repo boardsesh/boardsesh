@@ -1,6 +1,6 @@
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 
-export const INSTAGRAM_URL_REGEX = /(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([\w-]+)/;
+export const INSTAGRAM_URL_REGEX = /^https?:\/\/(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([\w-]+)(?:[/?#]|$)/i;
 
 export function isInstagramUrl(url: string): boolean {
   return INSTAGRAM_URL_REGEX.test(url);

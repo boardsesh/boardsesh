@@ -11,6 +11,75 @@ import { resolveBoardFromPath } from '../social/boards';
 import { publishSocialEvent } from '../../../events';
 import { assignInferredSession } from '../../../jobs/inferred-session-builder';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
+import { InstagramBetaValidationError, parseInstagramMediaId, validateInstagramBetaLink } from '../../../utils/instagram-beta-validation';
+
+async function getClimbNameForBetaValidation(boardType: string, climbUuid: string): Promise<string> {
+  const [climb] = await db
+    .select({ name: dbSchema.boardClimbs.name })
+    .from(dbSchema.boardClimbs)
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.boardType, boardType),
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+      ),
+    )
+    .limit(1);
+
+  const climbName = climb?.name?.trim();
+  if (!climbName) {
+    throw new Error('Couldn’t verify this Instagram link for the selected climb');
+  }
+
+  return climbName;
+}
+
+async function ensureInstagramShortcodeIsNotAlreadyLinked(
+  boardType: string,
+  selectedClimbUuid: string,
+  instagramUrl: string,
+): Promise<void> {
+  const incomingShortcode = parseInstagramMediaId(instagramUrl);
+
+  if (!incomingShortcode) {
+    return;
+  }
+
+  const existingLinks = await db
+    .select({
+      climbName: dbSchema.boardClimbs.name,
+      climbUuid: dbSchema.boardBetaLinks.climbUuid,
+      link: dbSchema.boardBetaLinks.link,
+    })
+    .from(dbSchema.boardBetaLinks)
+    .innerJoin(
+      dbSchema.boardClimbs,
+      and(
+        eq(dbSchema.boardClimbs.boardType, dbSchema.boardBetaLinks.boardType),
+        eq(dbSchema.boardClimbs.uuid, dbSchema.boardBetaLinks.climbUuid),
+      ),
+    )
+    .where(
+      eq(dbSchema.boardBetaLinks.boardType, boardType),
+    );
+
+  for (const entry of existingLinks) {
+    const existingShortcode = parseInstagramMediaId(entry.link);
+
+    if (existingShortcode !== incomingShortcode) {
+      continue;
+    }
+
+    if (entry.climbUuid === selectedClimbUuid) {
+      throw new InstagramBetaValidationError(
+        'We already have this Instagram video linked for this climb. Try a different post or reel.',
+      );
+    }
+
+    throw new InstagramBetaValidationError(
+      `This Instagram video is already linked to "${entry.climbName}". Please use a post or reel for the selected climb instead.`,
+    );
+  }
+}
 
 export const tickMutations = {
   /**
@@ -117,6 +186,22 @@ export const tickMutations = {
       );
     }
 
+    const shouldAttachBeta =
+      validatedInput.videoUrl &&
+      (validatedInput.status === 'flash' || validatedInput.status === 'send');
+    if (shouldAttachBeta) {
+      const climbName = await getClimbNameForBetaValidation(
+        validatedInput.boardType,
+        validatedInput.climbUuid,
+      );
+      await ensureInstagramShortcodeIsNotAlreadyLinked(
+        validatedInput.boardType,
+        validatedInput.climbUuid,
+        validatedInput.videoUrl!,
+      );
+      await validateInstagramBetaLink(validatedInput.videoUrl!, climbName);
+    }
+
     // Insert into database
     const [tick] = await db.transaction(async (tx) => {
       const [createdTick] = await tx
@@ -158,9 +243,6 @@ export const tickMutations = {
       // user provided one on a successful ascent. Zod already validated the
       // URL format; the (boardType, climbUuid, link) PK makes re-submission
       // idempotent.
-      const shouldAttachBeta =
-        validatedInput.videoUrl &&
-        (validatedInput.status === 'flash' || validatedInput.status === 'send');
       if (shouldAttachBeta) {
         await tx
           .insert(dbSchema.boardBetaLinks)
@@ -238,6 +320,14 @@ export const tickMutations = {
 
     const validated = validateInput(AttachBetaLinkInputSchema, input, 'input');
     const now = new Date().toISOString();
+    const climbName = await getClimbNameForBetaValidation(validated.boardType, validated.climbUuid);
+
+    await ensureInstagramShortcodeIsNotAlreadyLinked(
+      validated.boardType,
+      validated.climbUuid,
+      validated.link,
+    );
+    await validateInstagramBetaLink(validated.link, climbName);
 
     await db
       .insert(dbSchema.boardBetaLinks)

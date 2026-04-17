@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
-const INSTAGRAM_URL_REGEX = /(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([\w-]+)/;
+const INSTAGRAM_URL_REGEX = /^https?:\/\/(?:www\.)?(?:instagram\.com|instagr\.am)\/(?:p|reel|tv)\/([\w-]+)(?:[/?#]|$)/i;
 
 /**
  * Tick status validation schema

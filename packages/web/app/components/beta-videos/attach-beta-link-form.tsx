@@ -38,7 +38,7 @@ export const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
   angle,
   resetTrigger,
   submitLabel = 'Share beta',
-  helperText = 'Paste a reel or post link so others can see your beta.',
+  helperText,
   onSuccess,
   onCancel,
   showCancel = false,
@@ -80,8 +80,19 @@ export const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
       setUrl('');
       onSuccess?.();
     },
-    onError: () => {
-      showMessage('Couldn’t add video. Try again.', 'error');
+    onError: (error) => {
+      let message = 'Couldn’t add video. Try again.';
+      if (error instanceof Error) {
+        if ('response' in error && typeof error.response === 'object' && error.response !== null) {
+          const response = error.response as { errors?: Array<{ message: string }> };
+          if (response.errors?.length) {
+            message = response.errors[0].message;
+          }
+        } else {
+          message = error.message;
+        }
+      }
+      showMessage(message, 'error');
     },
   });
 
@@ -97,7 +108,13 @@ export const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         error={!!validationError}
-        helperText={validationError ?? helperText}
+        helperText={
+          validationError ??
+          helperText ??
+          (climbName
+            ? `Paste a public Instagram reel or post that mentions ${climbName}.`
+            : 'Paste a public Instagram reel or post URL.')
+        }
         onKeyDown={(e) => {
           if (e.key === 'Enter' && canSubmit) {
             e.preventDefault();
