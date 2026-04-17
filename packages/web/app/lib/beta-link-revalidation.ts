@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import { dbz } from '@/app/lib/db/db';
 import { UNIFIED_TABLES } from '@/app/lib/db/queries/util/table-select';
 import { checkInstagramAccessibility } from '@/app/lib/instagram-validation';
@@ -54,6 +54,101 @@ export function queueBetaLinkRevalidation(row: BetaLinkRevalidationRow): void {
       inFlightChecks.delete(key);
     }
   })();
+}
+
+export async function runBetaLinkRevalidationBatch(options?: {
+  batchSize?: number;
+  concurrency?: number;
+  deadlineMs?: number;
+}): Promise<{
+  processed: number;
+  madeAccessible: number;
+  madeInaccessible: number;
+  remainingEligible: number;
+}> {
+  const { betaLinks } = UNIFIED_TABLES;
+  const batchSize = options?.batchSize ?? 250;
+  const concurrency = options?.concurrency ?? 6;
+  const deadline = Date.now() + (options?.deadlineMs ?? 45_000);
+
+  const eligibleWhere = or(
+    isNull(betaLinks.isAccessible),
+    and(
+      eq(betaLinks.isAccessible, false),
+      or(
+        isNull(betaLinks.checkedAt),
+        sql`${betaLinks.checkedAt} < NOW() - INTERVAL '7 days'`,
+      ),
+    ),
+  );
+
+  const rows = await dbz
+    .select({
+      boardType: betaLinks.boardType,
+      climbUuid: betaLinks.climbUuid,
+      link: betaLinks.link,
+      isAccessible: betaLinks.isAccessible,
+      checkedAt: betaLinks.checkedAt,
+    })
+    .from(betaLinks)
+    .where(eligibleWhere)
+    .orderBy(
+      asc(sql`CASE WHEN ${betaLinks.isAccessible} IS NULL THEN 0 ELSE 1 END`),
+      asc(betaLinks.checkedAt),
+      asc(betaLinks.createdAt),
+    )
+    .limit(batchSize);
+
+  let processed = 0;
+  let madeAccessible = 0;
+  let madeInaccessible = 0;
+
+  for (let index = 0; index < rows.length && Date.now() < deadline; index += concurrency) {
+    const chunk = rows.slice(index, index + concurrency);
+    const results = await Promise.allSettled(
+      chunk.map(async (row) => {
+        const accessible = await checkInstagramAccessibility(row.link);
+        await dbz
+          .update(betaLinks)
+          .set({ isAccessible: accessible, checkedAt: new Date() })
+          .where(
+            and(
+              eq(betaLinks.boardType, row.boardType),
+              eq(betaLinks.climbUuid, row.climbUuid),
+              eq(betaLinks.link, row.link),
+            ),
+          );
+        return accessible;
+      }),
+    );
+
+    for (const accessible of results) {
+      if (accessible.status !== 'fulfilled') {
+        console.error('[Beta link revalidation] Failed to check link:', accessible.reason);
+        continue;
+      }
+
+      processed += 1;
+      if (accessible.value) {
+        madeAccessible += 1;
+      } else {
+        madeInaccessible += 1;
+      }
+    }
+  }
+
+  const remainingResult = await dbz
+    .select({ count: sql<number>`count(*)` })
+    .from(betaLinks)
+    .where(eligibleWhere)
+    .limit(1);
+
+  return {
+    processed,
+    madeAccessible,
+    madeInaccessible,
+    remainingEligible: Number(remainingResult[0]?.count ?? 0),
+  };
 }
 
 /**
