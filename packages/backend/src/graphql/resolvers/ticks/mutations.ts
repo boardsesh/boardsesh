@@ -46,20 +46,14 @@ async function ensureInstagramShortcodeIsNotAlreadyLinked(
 
   const existingLinks = await db
     .select({
-      climbName: dbSchema.boardClimbs.name,
-      climbUuid: dbSchema.boardBetaLinks.climbUuid,
       link: dbSchema.boardBetaLinks.link,
     })
     .from(dbSchema.boardBetaLinks)
-    .innerJoin(
-      dbSchema.boardClimbs,
-      and(
-        eq(dbSchema.boardClimbs.boardType, dbSchema.boardBetaLinks.boardType),
-        eq(dbSchema.boardClimbs.uuid, dbSchema.boardBetaLinks.climbUuid),
-      ),
-    )
     .where(
-      eq(dbSchema.boardBetaLinks.boardType, boardType),
+      and(
+        eq(dbSchema.boardBetaLinks.boardType, boardType),
+        eq(dbSchema.boardBetaLinks.climbUuid, selectedClimbUuid),
+      ),
     );
 
   for (const entry of existingLinks) {
@@ -69,14 +63,8 @@ async function ensureInstagramShortcodeIsNotAlreadyLinked(
       continue;
     }
 
-    if (entry.climbUuid === selectedClimbUuid) {
-      throw new InstagramBetaValidationError(
-        'We already have this Instagram video linked for this climb. Try a different post or reel.',
-      );
-    }
-
     throw new InstagramBetaValidationError(
-      `This Instagram video is already linked to "${entry.climbName}". Please use a post or reel for the selected climb instead.`,
+      'We already have this Instagram video linked for this climb. Try a different post or reel.',
     );
   }
 }
