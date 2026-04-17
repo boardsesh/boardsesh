@@ -3,7 +3,6 @@
 import { loadEnvConfig } from '@next/env';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { runBetaLinkRevalidationBatch } from '../app/lib/beta-link-revalidation';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(__dirname, '..');
@@ -20,6 +19,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function main() {
+  const { runBetaLinkRevalidationBatch } = await import('../app/lib/beta-link-revalidation');
+
   console.log('=== Backfill Beta Link Accessibility ===');
   console.log(`batchSize=${batchSize} concurrency=${concurrency} deadlineMs=${deadlineMs}`);
 

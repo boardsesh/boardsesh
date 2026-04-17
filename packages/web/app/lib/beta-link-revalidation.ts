@@ -1,7 +1,9 @@
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
-import { dbz } from '@/app/lib/db/db';
+import { createNeonHttp } from '@boardsesh/db/client';
 import { UNIFIED_TABLES } from '@/app/lib/db/queries/util/table-select';
 import { checkInstagramAccessibility } from '@/app/lib/instagram-validation';
+
+const dbz = createNeonHttp();
 
 // Re-check each link at most every 7 days. Instagram posts flip state
 // rarely, so once we know a link is live (or dead) we don't need to
