@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import { UNIFIED_TABLES } from '@/app/lib/db/queries/util/table-select';
 import { climbCommunityStatus } from '@/app/lib/db/schema';
+import { filterAndRevalidateBetaLinks } from '@/app/lib/beta-link-revalidation';
 
 interface FetchClimbDetailDataParams {
   boardName: string;
@@ -21,7 +22,12 @@ export async function fetchClimbDetailData({ boardName, climbUuid, angle }: Fetc
           and(eq(betaLinks.boardType, boardName), eq(betaLinks.climbUuid, climbUuid)),
         );
 
-      return results.map((link) => ({
+      // Hide rows we've affirmatively marked broken, and kick off
+      // background revalidation for unknown/stale rows. Same rule the
+      // `/api/v1/.../beta/...` route uses — keep them in lockstep.
+      const visible = filterAndRevalidateBetaLinks(results);
+
+      return visible.map((link) => ({
         climb_uuid: link.climbUuid,
         link: link.link,
         foreign_username: link.foreignUsername,

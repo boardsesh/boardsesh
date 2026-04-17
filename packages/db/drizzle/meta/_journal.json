@@ -554,6 +554,13 @@
       "when": 1776299787420,
       "tag": "0078_yummy_kylun",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1776500000000,
+      "tag": "0079_gorgeous_daredevil",
+      "breakpoints": true
     }
   ]
 }

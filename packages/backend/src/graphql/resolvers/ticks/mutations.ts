@@ -241,8 +241,10 @@ export const tickMutations = {
 
       // Attach the Instagram URL as community beta for this climb if the
       // user provided one on a successful ascent. Zod already validated the
-      // URL format; the (boardType, climbUuid, link) PK makes re-submission
-      // idempotent.
+      // URL format; `validateInstagramBetaLink` above confirmed the post is
+      // live and matches the climb name, so we stamp `isAccessible=true`
+      // straight away — no need for the web GET route to re-probe. The
+      // (boardType, climbUuid, link) PK makes re-submission idempotent.
       if (shouldAttachBeta) {
         await tx
           .insert(dbSchema.boardBetaLinks)
@@ -253,6 +255,8 @@ export const tickMutations = {
             angle: validatedInput.angle,
             isListed: true,
             createdAt: now,
+            isAccessible: true,
+            checkedAt: new Date(),
           })
           .onConflictDoNothing();
       }
@@ -329,6 +333,8 @@ export const tickMutations = {
     );
     await validateInstagramBetaLink(validated.link, climbName);
 
+    // `validateInstagramBetaLink` above already proved this post is live and
+    // matches the climb name — no need to probe again from the web GET route.
     await db
       .insert(dbSchema.boardBetaLinks)
       .values({
@@ -338,6 +344,8 @@ export const tickMutations = {
         angle: validated.angle ?? null,
         isListed: true,
         createdAt: now,
+        isAccessible: true,
+        checkedAt: new Date(),
       })
       .onConflictDoNothing();
 

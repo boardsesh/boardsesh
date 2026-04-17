@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { BoardName } from '@/app/lib/types';
 import { extractUuidFromSlug } from '@/app/lib/url-utils';
 import { UNIFIED_TABLES, isValidUnifiedBoardName } from '@/app/lib/db/queries/util/table-select';
+import { filterAndRevalidateBetaLinks } from '@/app/lib/beta-link-revalidation';
 
 export async function GET(
   request: NextRequest,
@@ -25,8 +26,11 @@ export async function GET(
       .from(betaLinks)
       .where(and(eq(betaLinks.boardType, board_name), eq(betaLinks.climbUuid, climb_uuid)));
 
-    // Transform the database results to match the BetaLink interface
-    const transformedLinks = results.map((link) => ({
+    // Hide affirmatively-broken links and kick off background revalidation
+    // for unknown/stale rows. Never blocks the response.
+    const visible = filterAndRevalidateBetaLinks(results);
+
+    const transformedLinks = visible.map((link) => ({
       climb_uuid: link.climbUuid,
       link: link.link,
       foreign_username: link.foreignUsername,

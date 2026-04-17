@@ -349,6 +349,11 @@ export const boardBetaLinks = pgTable('board_beta_links', {
   thumbnail: text(),
   isListed: boolean('is_listed'),
   createdAt: text('created_at'),
+  // Accessibility check state. null = never checked (render optimistically),
+  // true = last check passed (render), false = last check failed (hide).
+  // See checkInstagramAccessibility for detection logic.
+  isAccessible: boolean('is_accessible'),
+  checkedAt: timestamp('checked_at', { withTimezone: true }),
 }, (table) => ({
   pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.link] }),
   // Note: No FK to board_climbs - beta links may arrive before their corresponding climbs during sync
