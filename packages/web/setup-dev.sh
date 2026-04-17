@@ -253,7 +253,7 @@ if docker exec db-postgres-1 psql postgresql://postgres:password@localhost:5432/
     print_success "Database is already set up with board data"
 else
     echo "Starting PostgreSQL database with Docker..."
-    cd db/
+    cd packages/web/db/
     if docker compose version >/dev/null 2>&1; then
       if ! docker compose up -d; then
           print_error "Failed to start database container"

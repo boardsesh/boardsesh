@@ -221,7 +221,6 @@ export default function AuthModal({
             >
               <TextField
                 id="login_email"
-                label="Email"
                 placeholder="your@email.com"
                 variant="outlined"
                 size="medium"
@@ -235,6 +234,8 @@ export default function AuthModal({
                 helperText={loginErrors.email}
                 slotProps={{
                   input: {
+                    type: 'email',
+                    autoCapitalize: 'none',
                     startAdornment: (
                       <InputAdornment position="start">
                         <MailOutlined />
@@ -246,10 +247,9 @@ export default function AuthModal({
 
               <TextField
                 id="login_password"
-                label="Password"
                 type="password"
                 placeholder="Password"
-                variant="outlined"
+                variant='outlined'
                 size="medium"
                 fullWidth
                 value={loginValues.password}
@@ -315,7 +315,7 @@ export default function AuthModal({
 
               <TextField
                 label="Email"
-                placeholder="your@email.com"
+                placeholder="your@emai5.com"
                 variant="outlined"
                 size="medium"
                 fullWidth
@@ -328,6 +328,8 @@ export default function AuthModal({
                 helperText={registerErrors.email}
                 slotProps={{
                   input: {
+                    type: 'email',
+                    autoCapitalize: 'none',
                     startAdornment: (
                       <InputAdornment position="start">
                         <MailOutlined />
