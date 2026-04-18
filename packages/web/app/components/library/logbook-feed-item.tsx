@@ -138,6 +138,7 @@ function LogbookGradeRow({
   onExpandControl,
   gradeButtonRef,
   triesButtonRef,
+  grades,
 }: {
   consensusDifficultyName: string | null;
   qualityAverage: number | null;
@@ -152,6 +153,7 @@ function LogbookGradeRow({
   onExpandControl?: (control: ExpandedControl) => void;
   gradeButtonRef?: React.RefObject<HTMLButtonElement | null>;
   triesButtonRef?: React.RefObject<HTMLButtonElement | null>;
+  grades?: readonly { difficulty_id: number; difficulty_name: string }[];
 }) {
   const isDark = useIsDarkMode();
   const { formatGrade, getGradeColor } = useGradeFormat();
@@ -166,12 +168,13 @@ function LogbookGradeRow({
   const userColor = difficultyName ? getGradeColor(difficultyName, isDark) : undefined;
   const userLabel = userFormatted ?? (difficultyName || '\u2014');
 
-  // For editing mode, look up the editDifficulty in TENSION_KILTER_GRADES
+  // For editing mode, look up the editDifficulty in the board-specific grades
+  const gradeList = grades ?? TENSION_KILTER_GRADES;
   const editGradeName = useMemo(() => {
     if (!isEditing || editDifficulty === undefined) return undefined;
-    const grade = TENSION_KILTER_GRADES.find((g) => g.difficulty_id === editDifficulty);
+    const grade = gradeList.find((g) => g.difficulty_id === editDifficulty);
     return grade?.difficulty_name;
-  }, [isEditing, editDifficulty]);
+  }, [isEditing, editDifficulty, gradeList]);
 
   const editGradeFormatted = editGradeName ? formatGrade(editGradeName) : null;
   const editGradeColor = editGradeName ? getGradeColor(editGradeName, isDark) : undefined;
@@ -278,6 +281,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
 }) => {
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [instagramDialogOpen, setInstagramDialogOpen] = useState(false);
+  const [instagramMode, setInstagramMode] = useState<'post' | 'link'>('post');
 
   // --- Edit state ---
   const { mutateAsync: updateTickAsync, isPending: isSaving } = useUpdateTick();
@@ -500,8 +504,15 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
     onDelete?.(item.uuid);
   }, [handleCloseActions, onDelete, item.uuid]);
 
-  const handleOpenInstagram = useCallback(() => {
+  const handleOpenInstagramPost = useCallback(() => {
     handleCloseActions();
+    setInstagramMode('post');
+    setInstagramDialogOpen(true);
+  }, [handleCloseActions]);
+
+  const handleOpenInstagramLink = useCallback(() => {
+    handleCloseActions();
+    setInstagramMode('link');
     setInstagramDialogOpen(true);
   }, [handleCloseActions]);
 
@@ -513,13 +524,13 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
     <>
       <div className={styles.container}>
         {/* Left action layer — Delete (revealed on long swipe right) */}
-        <div ref={leftActionCombinedRef} className={styles.leftActionLayer}>
+        <div ref={leftActionCombinedRef} className={styles.leftActionLayer} aria-hidden="true">
           <DeleteOutlined className={styles.swipeIcon} />
           <span className={styles.deleteLabel}>Delete</span>
         </div>
 
         {/* Right action layer — Edit (revealed on swipe left) */}
-        <div ref={rightActionRef} className={styles.rightActionLayer}>
+        <div ref={rightActionRef} className={styles.rightActionLayer} aria-hidden="true">
           <EditOutlined className={styles.swipeIcon} />
         </div>
 
@@ -620,6 +631,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
               onExpandControl={setExpandedControl}
               gradeButtonRef={gradeButtonRef}
               triesButtonRef={triesButtonRef}
+              grades={grades}
             />
 
           </div>
@@ -772,13 +784,13 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
             </MenuItem>
           )}
           {allowInstagramPosting && (
-            <MenuItem onClick={handleOpenInstagram}>
+            <MenuItem onClick={handleOpenInstagramPost}>
               <ListItemIcon><InstagramIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Post to Instagram</ListItemText>
             </MenuItem>
           )}
           {allowInstagramLinking && (
-            <MenuItem onClick={handleOpenInstagram}>
+            <MenuItem onClick={handleOpenInstagramLink}>
               <ListItemIcon><LinkOutlined fontSize="small" /></ListItemIcon>
               <ListItemText>Link Instagram post</ListItemText>
             </MenuItem>
@@ -800,6 +812,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(({
         <PostToInstagramDialog
           open={instagramDialogOpen}
           onClose={handleCloseInstagram}
+          mode={instagramMode}
           item={instagramDialogOpen ? {
             boardType: item.boardType,
             climbUuid: item.climbUuid,

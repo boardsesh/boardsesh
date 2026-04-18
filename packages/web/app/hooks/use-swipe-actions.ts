@@ -170,6 +170,8 @@ export function useSwipeActions({
       contentEl.current.style.transition = 'transform 120ms ease-out';
       contentEl.current.style.transform = `translateX(${-confirmationPeekOffset}px)`;
     }
+    // Keep offsetRef in sync with the visual state (E4 fix)
+    offsetRef.current = -confirmationPeekOffset;
 
     // Keep the right action layer fully visible during confirmation
     if (rightActionEl.current) {
@@ -180,6 +182,8 @@ export function useSwipeActions({
     // After the confirmation display, snap back
     confirmationTimerRef.current = setTimeout(() => {
       confirmationTimerRef.current = null;
+      // Guard against unmounted element (E5 fix — safe for list virtualization)
+      if (!contentEl.current) return;
       // Set transition on right action before applyOffset changes values so it fades out smoothly
       if (rightActionEl.current) {
         rightActionEl.current.style.transition = 'opacity 200ms ease-out, visibility 0s 200ms';

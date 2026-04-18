@@ -404,6 +404,10 @@ export default function LogbookFeed() {
     isFetching: isFetchingNextPage,
   });
 
+  // Ref-based token to avoid re-rendering all LogbookFeedItem components on auth refresh (E9)
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
   const pendingDeleteRef = useRef<{ uuid: string; item: AscentFeedItem; timerId: ReturnType<typeof setTimeout> } | null>(null);
 
   useEffect(() => {
@@ -420,7 +424,7 @@ export default function LogbookFeed() {
       const { uuid: prevUuid, timerId } = pendingDeleteRef.current;
       clearTimeout(timerId);
       pendingDeleteRef.current = null;
-      const client = createGraphQLHttpClient(token ?? null);
+      const client = createGraphQLHttpClient(tokenRef.current ?? null);
       client.request<{ deleteTick: boolean }, DeleteTickMutationVariables>(DELETE_TICK, { uuid: prevUuid }).catch(() => {
         showMessage('Failed to delete tick', 'error');
       });
@@ -449,7 +453,7 @@ export default function LogbookFeed() {
 
     const timerId = setTimeout(() => {
       pendingDeleteRef.current = null;
-      const client = createGraphQLHttpClient(token ?? null);
+      const client = createGraphQLHttpClient(tokenRef.current ?? null);
       client
         .request<{ deleteTick: boolean }, DeleteTickMutationVariables>(DELETE_TICK, { uuid })
         .then(() => {
@@ -477,7 +481,7 @@ export default function LogbookFeed() {
         }
       },
     }, 5000);
-  }, [token, queryClient, showMessage, userId, boardTypeParam, selectedLayoutIds, climbNameParam, activeFilters, sortParams]);
+  }, [queryClient, showMessage, userId, boardTypeParam, selectedLayoutIds, climbNameParam, activeFilters, sortParams]);
 
   const handleEdit = useCallback((item: AscentFeedItem) => {
     setEditingItemUuid(item.uuid);
