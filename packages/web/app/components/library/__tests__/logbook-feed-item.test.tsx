@@ -27,6 +27,7 @@ let capturedSwipeOptions: SwipeOptions | null = null;
 const updateTickAsyncMock = vi.fn();
 const setCurrentClimbMock = vi.fn();
 const dispatchOpenPlayDrawerMock = vi.fn();
+const showMessageMock = vi.fn();
 const boardDataMocks = vi.hoisted(() => ({
   getGradesForBoard: vi.fn((boardName: string) =>
     boardName === 'moonboard'
@@ -136,6 +137,10 @@ vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 
+vi.mock('@/app/components/providers/snackbar-provider', () => ({
+  useSnackbar: () => ({ showMessage: showMessageMock }),
+}));
+
 vi.mock('@/app/components/ascent-status/ascent-status-icon', () => ({
   AscentStatusIcon: () => <span data-testid="status-icon" />,
 }));
@@ -212,6 +217,7 @@ beforeEach(() => {
   setCurrentClimbMock.mockReset();
   dispatchOpenPlayDrawerMock.mockReset();
   boardDataMocks.getGradesForBoard.mockClear();
+  showMessageMock.mockReset();
   queueActionsState.value = { setCurrentClimb: setCurrentClimbMock };
   updateTickState.isPending = false;
 });
@@ -465,6 +471,26 @@ describe('LogbookFeedItem', () => {
     render(<LogbookFeedItem item={makeItem()} />);
     fireEvent.click(screen.getByLabelText('More actions'));
     expect(setCurrentClimbMock).not.toHaveBeenCalled();
+  });
+
+  it('shows error snackbar when row click setCurrentClimb rejects', async () => {
+    setCurrentClimbMock.mockRejectedValue(new Error('network'));
+    const { container } = render(<LogbookFeedItem item={makeItem()} />);
+    const row = container.querySelector('.swipeableContent') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(row);
+    });
+    expect(showMessageMock).toHaveBeenCalledWith("Couldn't load that climb. Try again.", 'error');
+  });
+
+  it('shows error snackbar when thumbnail click setCurrentClimb rejects', async () => {
+    setCurrentClimbMock.mockRejectedValue(new Error('network'));
+    render(<LogbookFeedItem item={makeItem()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('ascent-thumbnail'));
+    });
+    expect(showMessageMock).toHaveBeenCalledWith("Couldn't load that climb. Try again.", 'error');
+    expect(dispatchOpenPlayDrawerMock).not.toHaveBeenCalled();
   });
 
   it('keeps the comment row container mounted in both modes (U8)', () => {

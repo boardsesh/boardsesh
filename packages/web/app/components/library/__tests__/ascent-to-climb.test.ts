@@ -82,6 +82,13 @@ describe('ascentFeedItemToClimb', () => {
     expect(result.benchmark_difficulty).toBeNull();
   });
 
+  it('sets benchmark_difficulty to null when isBenchmark is true but consensusDifficultyName is undefined', () => {
+    const result = ascentFeedItemToClimb(
+      makeItem({ isBenchmark: true, consensusDifficultyName: undefined as unknown as null }),
+    );
+    expect(result.benchmark_difficulty).toBeNull();
+  });
+
   it('defaults setter_username to empty string when null', () => {
     const result = ascentFeedItemToClimb(makeItem({ setterUsername: null }));
     expect(result.setter_username).toBe('');
