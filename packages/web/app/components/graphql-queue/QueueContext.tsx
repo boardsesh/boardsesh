@@ -131,6 +131,16 @@ export const GraphQLQueueProvider = ({
     currentClimbQueueItem: state.currentClimbQueueItem,
   });
 
+  // Board config for the current route — passed into hooks so ingress
+  // normalization can backfill legacy queue items that lack `boardConfig`.
+  const routeBoardConfig: BoardConfig = useMemo(() => ({
+    boardName: boardDetails.board_name,
+    layoutId: boardDetails.layout_id,
+    sizeId: boardDetails.size_id,
+    setIds: boardDetails.set_ids,
+    angle: parsedParams.angle,
+  }), [boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id, boardDetails.set_ids, parsedParams.angle]);
+
   // --- Queue restoration (from in-memory bridge state or party session) ---
   useQueueRestoration({
     isPersistentSessionActive,
@@ -138,6 +148,7 @@ export const GraphQLQueueProvider = ({
     baseBoardPath,
     dispatch,
     persistentSession,
+    fallbackBoardConfig: routeBoardConfig,
   });
 
   // --- Session & connection derived state ---
@@ -212,6 +223,7 @@ export const GraphQLQueueProvider = ({
     dispatch,
     persistentSession,
     needsResync: state.needsResync,
+    fallbackBoardConfig: routeBoardConfig,
   });
 
   // --- Pending update cleanup ---
@@ -297,17 +309,6 @@ export const GraphQLQueueProvider = ({
   const confirmApi = useQueueAddConfirm();
   const router = useRouter();
 
-  // --- Current board config for multi-board queue items ---
-  // Every item added from this provider carries the route's full BoardConfig
-  // so the queue stays self-describing across boards.
-  const currentBoardConfig: BoardConfig = useMemo(() => ({
-    boardName: boardDetails.board_name,
-    layoutId: boardDetails.layout_id,
-    sizeId: boardDetails.size_id,
-    setIds: boardDetails.set_ids,
-    angle: parsedParams.angle,
-  }), [boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id, boardDetails.set_ids, parsedParams.angle]);
-
   // --- Ref holding latest values so action callbacks can be stable ---
   const latestRef = useRef({
     state,
@@ -334,7 +335,7 @@ export const GraphQLQueueProvider = ({
     validateQueueAdd,
     confirmApi,
     router,
-    currentBoardConfig,
+    currentBoardConfig: routeBoardConfig,
     boardId: propsBoardId ?? null,
   });
   // Sync ref every render (synchronous — safe for refs)
@@ -363,7 +364,7 @@ export const GraphQLQueueProvider = ({
     validateQueueAdd,
     confirmApi,
     router,
-    currentBoardConfig,
+    currentBoardConfig: routeBoardConfig,
     boardId: propsBoardId ?? null,
   };
 

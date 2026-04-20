@@ -1,6 +1,7 @@
 import { useEffect, Dispatch } from 'react';
-import { SubscriptionQueueEvent } from '@boardsesh/shared-schema';
+import { SubscriptionQueueEvent, type BoardConfig } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, QueueAction } from '../../queue-control/types';
+import { normalizeQueueItem } from '@/app/lib/board-config';
 
 interface UseQueueEventSubscriptionParams {
   isPersistentSessionActive: boolean;
@@ -11,6 +12,12 @@ interface UseQueueEventSubscriptionParams {
     triggerResync: () => void;
   };
   needsResync: boolean;
+  /**
+   * Fallback `BoardConfig` used by the ingress normalizer to backfill legacy
+   * queue items (from older clients that didn't stamp `boardConfig`). Set this
+   * to the current route's config or the session's primary board.
+   */
+  fallbackBoardConfig: BoardConfig | null;
 }
 
 /**
@@ -23,10 +30,21 @@ export function useQueueEventSubscription({
   dispatch,
   persistentSession,
   needsResync,
+  fallbackBoardConfig,
 }: UseQueueEventSubscriptionParams) {
   // Subscribe to queue events from persistent session
   useEffect(() => {
     if (!isPersistentSessionActive) return;
+
+    // Ingress normalizer: ensure every incoming item carries `boardConfig`
+    // and a populated `climb.boardType`/`climb.layoutId`. Legacy items from
+    // older clients (or from sessions created before the multi-board queue
+    // work shipped) fall through without `boardConfig` — we backfill with
+    // the current route / session fallback so UI stays self-describing.
+    const normalize = (item: ClimbQueueItem): ClimbQueueItem =>
+      normalizeQueueItem(item, fallbackBoardConfig);
+    const normalizeNullable = (item: ClimbQueueItem | null): ClimbQueueItem | null =>
+      item ? normalize(item) : null;
 
     const unsubscribe = persistentSession.subscribeToQueueEvents((event: SubscriptionQueueEvent) => {
       switch (event.__typename) {
@@ -34,8 +52,8 @@ export function useQueueEventSubscription({
           dispatch({
             type: 'INITIAL_QUEUE_DATA',
             payload: {
-              queue: event.state.queue as ClimbQueueItem[],
-              currentClimbQueueItem: event.state.currentClimbQueueItem as ClimbQueueItem | null,
+              queue: (event.state.queue as ClimbQueueItem[]).map(normalize),
+              currentClimbQueueItem: normalizeNullable(event.state.currentClimbQueueItem as ClimbQueueItem | null),
             },
           });
           break;
@@ -43,7 +61,7 @@ export function useQueueEventSubscription({
           dispatch({
             type: 'DELTA_ADD_QUEUE_ITEM',
             payload: {
-              item: event.addedItem as ClimbQueueItem,
+              item: normalize(event.addedItem as ClimbQueueItem),
               position: event.position,
             },
           });
@@ -68,7 +86,7 @@ export function useQueueEventSubscription({
           dispatch({
             type: 'DELTA_UPDATE_CURRENT_CLIMB',
             payload: {
-              item: event.currentItem as ClimbQueueItem | null,
+              item: normalizeNullable(event.currentItem as ClimbQueueItem | null),
               shouldAddToQueue: (event.currentItem as ClimbQueueItem | null)?.suggested ?? false,
               isServerEvent: true,
               eventClientId: event.clientId || undefined,
@@ -87,7 +105,7 @@ export function useQueueEventSubscription({
     });
 
     return unsubscribe;
-  }, [isPersistentSessionActive, persistentSession, dispatch]);
+  }, [isPersistentSessionActive, persistentSession, dispatch, fallbackBoardConfig]);
 
   // Trigger resync when corrupted data is detected
   useEffect(() => {

@@ -1,5 +1,7 @@
 import { useState, useEffect, Dispatch } from 'react';
+import type { BoardConfig } from '@boardsesh/shared-schema';
 import type { QueueAction, ClimbQueue, ClimbQueueItem } from '../../queue-control/types';
+import { normalizeQueueItem } from '@/app/lib/board-config';
 
 interface UseQueueRestorationParams {
   isPersistentSessionActive: boolean;
@@ -17,6 +19,11 @@ interface UseQueueRestorationParams {
     clearLocalQueue: () => void;
     localBoardDetails: unknown;
   };
+  /**
+   * Fallback `BoardConfig` used by the ingress normalizer when restoring a
+   * queue whose items predate multi-board support (no `boardConfig` stamped).
+   */
+  fallbackBoardConfig: BoardConfig | null;
 }
 
 /**
@@ -32,6 +39,7 @@ export function useQueueRestoration({
   baseBoardPath,
   dispatch,
   persistentSession,
+  fallbackBoardConfig,
 }: UseQueueRestorationParams) {
   // Guard to prevent syncing empty initial state before restoration completes.
   // Uses useState (not useRef) so the sync effect only sees hasRestored=true
@@ -42,23 +50,17 @@ export function useQueueRestoration({
   useEffect(() => {
     if (isPersistentSessionActive && persistentSession.hasConnected) {
       if (persistentSession.queue.length > 0 || persistentSession.currentClimbQueueItem) {
+        const normalizedQueue = (persistentSession.queue as unknown as ClimbQueueItem[]).map((item) =>
+          normalizeQueueItem(item, fallbackBoardConfig),
+        );
+        const normalizedCurrent = persistentSession.currentClimbQueueItem
+          ? normalizeQueueItem(persistentSession.currentClimbQueueItem as unknown as ClimbQueueItem, fallbackBoardConfig)
+          : null;
         dispatch({
           type: 'INITIAL_QUEUE_DATA',
           payload: {
-            queue: persistentSession.queue as Parameters<typeof dispatch>[0] extends {
-              payload: infer P;
-            }
-              ? P extends { queue: infer Q }
-                ? Q
-                : never
-              : never,
-            currentClimbQueueItem: persistentSession.currentClimbQueueItem as Parameters<typeof dispatch>[0] extends {
-              payload: infer P;
-            }
-              ? P extends { currentClimbQueueItem?: infer C }
-                ? C
-                : never
-              : never,
+            queue: normalizedQueue,
+            currentClimbQueueItem: normalizedCurrent,
           },
         });
       }
@@ -77,11 +79,20 @@ export function useQueueRestoration({
       persistentSession.localBoardPath === baseBoardPath &&
       (persistentSession.localQueue.length > 0 || persistentSession.localCurrentClimbQueueItem)
     ) {
+      const normalizedQueue = (persistentSession.localQueue as unknown as ClimbQueueItem[]).map((item) =>
+        normalizeQueueItem(item, fallbackBoardConfig),
+      );
+      const normalizedCurrent = persistentSession.localCurrentClimbQueueItem
+        ? normalizeQueueItem(
+            persistentSession.localCurrentClimbQueueItem as unknown as ClimbQueueItem,
+            fallbackBoardConfig,
+          )
+        : null;
       dispatch({
         type: 'INITIAL_QUEUE_DATA',
         payload: {
-          queue: persistentSession.localQueue as unknown as ClimbQueue,
-          currentClimbQueueItem: persistentSession.localCurrentClimbQueueItem as unknown as ClimbQueueItem | null,
+          queue: normalizedQueue as unknown as ClimbQueue,
+          currentClimbQueueItem: normalizedCurrent,
         },
       });
       setHasRestored(true);
