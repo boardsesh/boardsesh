@@ -20,15 +20,17 @@ type RawSelectResult = {
   description: string | null;
   created_at: string | null;
   published_at: string | null;
+  board_type: string | null;
+  layout_id: number | null;
 };
 
-function mapResultToClimbRow(result: RawSelectResult, angle: number): ClimbRow {
+function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams): ClimbRow {
   return {
     uuid: result.uuid,
     setter_username: result.setter_username || '',
     name: result.name || '',
     frames: result.frames || '',
-    angle,
+    angle: params.angle,
     ascensionist_count: Number(result.ascensionist_count || 0),
     difficulty: getGradeLabel(result.difficulty_id),
     quality_average: result.quality_average?.toString() || '0',
@@ -40,6 +42,10 @@ function mapResultToClimbRow(result: RawSelectResult, angle: number): ClimbRow {
     description: result.description || '',
     created_at: result.created_at,
     published_at: result.published_at,
+    // Fall back to route params so callers always get a populated config even
+    // if the denormalized columns are briefly absent in tests/fixtures.
+    boardType: result.board_type ?? params.board_name,
+    layoutId: result.layout_id ?? params.layout_id,
   };
 }
 
@@ -127,6 +133,8 @@ async function statsDrivenSearch(
     description: boardClimbs.description,
     created_at: boardClimbs.createdAt,
     published_at: boardClimbs.publishedAt,
+    board_type: boardClimbs.boardType,
+    layout_id: boardClimbs.layoutId,
   };
 
   const results: RawSelectResult[] = (await db
@@ -152,7 +160,7 @@ async function statsDrivenSearch(
 
   const hasMore = results.length > pageSize;
   const trimmed = hasMore ? results.slice(0, pageSize) : results;
-  const climbs = trimmed.map((r) => mapResultToClimbRow(r, params.angle));
+  const climbs = trimmed.map((r) => mapResultToClimbRow(r, params));
   return { climbs, hasMore };
 }
 
@@ -241,6 +249,8 @@ async function standardSearch(
     description: boardClimbs.description,
     created_at: boardClimbs.createdAt,
     published_at: boardClimbs.publishedAt,
+    board_type: boardClimbs.boardType,
+    layout_id: boardClimbs.layoutId,
   };
 
   const orderByClause = sortOrder === 'asc' ? sql`${sortColumn} ASC NULLS FIRST` : sql`${sortColumn} DESC NULLS LAST`;
@@ -264,6 +274,6 @@ async function standardSearch(
   const hasMore = results.length > pageSize;
   const trimmed = hasMore ? results.slice(0, pageSize) : results;
 
-  const climbs = trimmed.map((r) => mapResultToClimbRow(r, params.angle));
+  const climbs = trimmed.map((r) => mapResultToClimbRow(r, params));
   return { climbs, hasMore };
 }

@@ -76,6 +76,10 @@ export const climbTypeDefs = /* GraphQL */ `
     published_at: String
     userAscents: Int
     userAttempts: Int
+    "Board type this climb belongs to. Optional; round-tripped so multi-board queue items can render without a follow-up lookup."
+    boardType: String
+    "Layout ID this climb belongs to. Optional; round-tripped like boardType."
+    layoutId: Int
   }
 
   # ============================================

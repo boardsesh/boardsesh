@@ -1,6 +1,9 @@
 import { Climb, SearchRequestPagination, ParsedBoardRouteParameters } from '@/app/lib/types';
 import { SessionUser } from '@boardsesh/shared-schema';
+import type { BoardConfig } from '@boardsesh/shared-schema';
 import type { ConnectionState } from '../connection-manager/websocket-connection-manager';
+
+export type { BoardConfig };
 
 export type PeerId = string | null;
 export type UserName = PeerId;
@@ -18,6 +21,19 @@ export interface ClimbQueueItem {
   climb: Climb;
   uuid: string;
   suggested?: boolean;
+  /**
+   * Full board configuration this item is meant to render/send against.
+   * Denormalized so multi-board queues don't need a per-render DB lookup.
+   * Optional for back-compat with legacy items; ingress normalizes from the
+   * session primary when absent.
+   */
+  boardConfig?: BoardConfig | null;
+  /**
+   * UUID of a named UserBoard this item was queued against. Always co-present
+   * with `boardConfig` when set — `boardConfig` is the authoritative render
+   * target so we never have to resolve the UserBoard to render a row.
+   */
+  boardId?: string | null;
 }
 
 export type ClimbQueue = ClimbQueueItem[];

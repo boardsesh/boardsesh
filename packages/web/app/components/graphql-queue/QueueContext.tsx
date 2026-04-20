@@ -26,6 +26,10 @@ import { useMutationGuard } from './hooks/use-mutation-guard';
 import { useOfflineQueueBuffer } from './hooks/use-offline-queue-buffer';
 import { useOfflineReconciliation } from './hooks/use-offline-reconciliation';
 import { useQueueAddValidator } from '../board-lock/use-queue-add-validator';
+import { useQueueAddConfirm, type AddOutcome } from '../queue-control/queue-add-confirm-context';
+import { boardConfigToBaseBoardPath } from '@/app/lib/board-config';
+import { useRouter } from 'next/navigation';
+import type { BoardConfig } from '@boardsesh/shared-schema';
 import type {
   GraphQLQueueContextType,
   GraphQLQueueActionsType,
@@ -41,17 +45,34 @@ import type {
 export type { GraphQLQueueContextType, GraphQLQueueActionsType, GraphQLQueueDataType } from './types';
 export type { CurrentClimbDataType, QueueListDataType, SearchDataType, SessionDataType } from './types';
 
+/**
+ * Construct a queue item. When `boardConfig` is supplied, it's stamped on the
+ * item and its `boardName`/`layoutId` are also mirrored onto `climb` so
+ * downstream UI never has to fall back to the context to know a climb's
+ * board. `boardId` (named-board UUID) is only stamped when paired with a
+ * `boardConfig` — see the co-presence invariant in the plan.
+ */
 const createClimbQueueItem = (
   climb: Climb,
   addedBy: UserName,
   addedByUser?: QueueItemUser,
   suggested?: boolean,
+  boardConfig?: BoardConfig | null,
+  boardId?: string | null,
 ): ClimbQueueItem => ({
-  climb,
+  climb: boardConfig
+    ? {
+        ...climb,
+        boardType: climb.boardType ?? boardConfig.boardName,
+        layoutId: climb.layoutId ?? boardConfig.layoutId,
+      }
+    : climb,
   addedBy,
   addedByUser,
   uuid: uuidv4(),
   suggested: !!suggested,
+  boardConfig: boardConfig ?? null,
+  boardId: boardConfig ? (boardId ?? null) : null,
 });
 
 // Split contexts: actions (stable) vs data (changes frequently)
@@ -75,6 +96,7 @@ export const GraphQLQueueProvider = ({
   boardDetails,
   children,
   baseBoardPath: propsBaseBoardPath,
+  boardId: propsBoardId,
 }: GraphQLQueueContextProps) => {
   const searchParamsHook = useSearchParams();
   const initialSearchParams = urlParamsToSearchParams(searchParamsHook);
@@ -271,6 +293,21 @@ export const GraphQLQueueProvider = ({
   // --- Queue-add compatibility validator ---
   const validateQueueAdd = useQueueAddValidator();
 
+  // --- Confirmation gate for cross-board / cross-size adds ---
+  const confirmApi = useQueueAddConfirm();
+  const router = useRouter();
+
+  // --- Current board config for multi-board queue items ---
+  // Every item added from this provider carries the route's full BoardConfig
+  // so the queue stays self-describing across boards.
+  const currentBoardConfig: BoardConfig = useMemo(() => ({
+    boardName: boardDetails.board_name,
+    layoutId: boardDetails.layout_id,
+    sizeId: boardDetails.size_id,
+    setIds: boardDetails.set_ids,
+    angle: parsedParams.angle,
+  }), [boardDetails.board_name, boardDetails.layout_id, boardDetails.size_id, boardDetails.set_ids, parsedParams.angle]);
+
   // --- Ref holding latest values so action callbacks can be stable ---
   const latestRef = useRef({
     state,
@@ -295,6 +332,10 @@ export const GraphQLQueueProvider = ({
     dismissSessionSummary,
     fetchMoreClimbs,
     validateQueueAdd,
+    confirmApi,
+    router,
+    currentBoardConfig,
+    boardId: propsBoardId ?? null,
   });
   // Sync ref every render (synchronous — safe for refs)
   latestRef.current = {
@@ -320,6 +361,10 @@ export const GraphQLQueueProvider = ({
     dismissSessionSummary,
     fetchMoreClimbs,
     validateQueueAdd,
+    confirmApi,
+    router,
+    currentBoardConfig,
+    boardId: propsBoardId ?? null,
   };
 
   // --- Stable action callbacks (read from latestRef, never recreated) ---
@@ -333,22 +378,60 @@ export const GraphQLQueueProvider = ({
       : r.isDisconnected
         ? 'party-offline'
         : 'party';
-    const newItem = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
-    r.dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item: newItem } });
-    if (r.isDisconnected && r.isPersistentSessionActive) {
-      r.offlineBuffer.bufferAddition(newItem);
-      trackQueueOperation('addToQueue', performance.now() - startTime, mode);
-    } else if (r.hasConnected && r.isPersistentSessionActive) {
-      r.persistentSession
-        .addQueueItem(newItem)
-        .then(() => trackQueueOperation('addToQueue', performance.now() - startTime, mode))
-        .catch((error: unknown) => {
-          console.error('Failed to add queue item:', error);
-          trackQueueOperationError('addToQueue', mode);
+    const newItem = createClimbQueueItem(
+      climb,
+      r.clientId,
+      r.currentUserInfo,
+      false,
+      r.currentBoardConfig,
+      r.boardId,
+    );
+
+    // Fire-and-forget async gate: may show a confirmation dialog for
+    // cross-board / larger-size adds. No dialog when the queue is empty
+    // or the incoming config is already accepted.
+    const commitAdd = () => {
+      r.dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item: newItem } });
+      if (r.isDisconnected && r.isPersistentSessionActive) {
+        r.offlineBuffer.bufferAddition(newItem);
+        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
+      } else if (r.hasConnected && r.isPersistentSessionActive) {
+        r.persistentSession
+          .addQueueItem(newItem)
+          .then(() => trackQueueOperation('addToQueue', performance.now() - startTime, mode))
+          .catch((error: unknown) => {
+            console.error('Failed to add queue item:', error);
+            trackQueueOperationError('addToQueue', mode);
+          });
+      } else {
+        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
+      }
+    };
+
+    (async () => {
+      let outcome: AddOutcome = 'allow';
+      if (r.confirmApi) {
+        outcome = await r.confirmApi.gate(r.currentBoardConfig, r.state.queue);
+      }
+      if (outcome === 'cancel') return;
+      if (outcome === 'switch') {
+        // Replace the queue with just this item and navigate to the target board's route.
+        r.dispatch({
+          type: 'UPDATE_QUEUE',
+          payload: { queue: [newItem], currentClimbQueueItem: newItem },
         });
-    } else {
-      trackQueueOperation('addToQueue', performance.now() - startTime, mode);
-    }
+        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
+        try {
+          r.router.push(
+            `${boardConfigToBaseBoardPath(r.currentBoardConfig)}/${r.currentBoardConfig.angle}/list`,
+          );
+        } catch {
+          // Router not available (e.g. in tests) — navigation is best-effort.
+        }
+        return;
+      }
+      commitAdd();
+    })();
   }, []);
 
   const removeFromQueue = useCallback((item: ClimbQueueItem) => {
@@ -388,8 +471,41 @@ export const GraphQLQueueProvider = ({
       : r.isDisconnected
         ? 'party-offline'
         : 'party';
-    const newItem = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
+
+    // Gate on cross-board / larger-size before dispatching anything so the
+    // optimistic update doesn't flash when the user will ultimately cancel.
+    let outcome: AddOutcome = 'allow';
+    if (r.confirmApi) {
+      outcome = await r.confirmApi.gate(r.currentBoardConfig, r.state.queue);
+    }
+    if (outcome === 'cancel') return null;
+
+    const newItem = createClimbQueueItem(
+      climb,
+      r.clientId,
+      r.currentUserInfo,
+      false,
+      r.currentBoardConfig,
+      r.boardId,
+    );
     const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
+
+    if (outcome === 'switch') {
+      r.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [newItem], currentClimbQueueItem: newItem },
+      });
+      trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
+      try {
+        r.router.push(
+          `${boardConfigToBaseBoardPath(r.currentBoardConfig)}/${r.currentBoardConfig.angle}/list`,
+        );
+      } catch {
+        // Router not available — best-effort navigation.
+      }
+      return newItem;
+    }
+
     r.dispatch({
       type: 'DELTA_UPDATE_CURRENT_CLIMB',
       payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true, correlationId },
@@ -432,7 +548,14 @@ export const GraphQLQueueProvider = ({
       : r.isDisconnected
         ? 'party-offline'
         : 'party';
-    const base = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
+    const base = createClimbQueueItem(
+      climb,
+      r.clientId,
+      r.currentUserInfo,
+      false,
+      r.currentBoardConfig,
+      r.boardId,
+    );
     const newItem: ClimbQueueItem = {
       ...base,
       uuid: queueItemUuid,
@@ -568,7 +691,7 @@ export const GraphQLQueueProvider = ({
       const nextClimb = r.suggestedClimbs.find(
         (climb: Climb) => !r.state.queue.some((qItem: ClimbQueueItem) => qItem.climb?.uuid === climb.uuid),
       );
-      return nextClimb ? createClimbQueueItem(nextClimb, r.clientId, r.currentUserInfo, true) : null;
+      return nextClimb ? createClimbQueueItem(nextClimb, r.clientId, r.currentUserInfo, true, r.currentBoardConfig, r.boardId) : null;
     }
     return queueItemIndex >= r.state.queue.length - 1 ? null : r.state.queue[queueItemIndex + 1];
   }, []);

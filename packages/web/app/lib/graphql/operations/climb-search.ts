@@ -24,6 +24,8 @@ const CLIMB_SEARCH_FIELDS = `
   is_no_match
   published_at
   created_at
+  boardType
+  layoutId
 `;
 
 const CLIMB_DRAFT_FIELDS = `
@@ -52,6 +54,8 @@ const CLIMB_DETAIL_FIELDS = `
   is_draft
   created_at
   published_at
+  boardType
+  layoutId
 `;
 
 export const SEARCH_CLIMBS = gql`

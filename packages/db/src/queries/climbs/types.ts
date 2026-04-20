@@ -74,4 +74,8 @@ export interface ClimbRow {
   is_draft: boolean;
   created_at: string | null;
   published_at: string | null;
+  /** Board type this climb belongs to (e.g. 'kilter', 'tension'). */
+  boardType: string;
+  /** Layout ID this climb belongs to. */
+  layoutId: number;
 }

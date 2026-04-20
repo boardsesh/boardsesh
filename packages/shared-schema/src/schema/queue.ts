@@ -21,6 +21,30 @@ export const queueTypeDefs = /* GraphQL */ `
   }
 
   """
+  The board configuration a queue item should render and send against.
+  Denormalized onto the item so multi-board queues don't need a per-render
+  lookup to resolve a saved UserBoard.
+  """
+  type BoardConfig {
+    boardName: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: [Int!]!
+    angle: Int!
+  }
+
+  """
+  Input type for BoardConfig.
+  """
+  input BoardConfigInput {
+    boardName: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: [Int!]!
+    angle: Int!
+  }
+
+  """
   An item in the climb queue, representing a climb that someone wants to attempt.
   """
   type ClimbQueueItem {
@@ -36,6 +60,10 @@ export const queueTypeDefs = /* GraphQL */ `
     tickedBy: [String!]
     "Whether this climb was suggested by the system"
     suggested: Boolean
+    "Board configuration this item was queued against. Optional for back-compat; ingress normalizers fill it in from the session's primary board when absent."
+    boardConfig: BoardConfig
+    "UUID of a named UserBoard this item was queued against, when applicable. Always co-present with boardConfig — boardConfig is the authoritative render target."
+    boardId: ID
   }
 
   """
@@ -48,6 +76,8 @@ export const queueTypeDefs = /* GraphQL */ `
     addedByUser: QueueItemUserInput
     tickedBy: [String!]
     suggested: Boolean
+    boardConfig: BoardConfigInput
+    boardId: ID
   }
 
   """

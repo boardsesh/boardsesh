@@ -12,6 +12,8 @@ import {
   CAPACITOR_BRIDGE_TIMEOUT_MS,
 } from '@/app/lib/ble/capacitor-utils';
 import { registerBluetoothConnection } from './bluetooth-status-store';
+import { canAddClimbToBoard } from '@/app/lib/board-compatibility';
+import { useSnackbar } from '../providers/snackbar-provider';
 
 interface BluetoothContextValue {
   isConnected: boolean;
@@ -34,12 +36,18 @@ const BluetoothContext = createContext<BluetoothContextValue | null>(null);
 function BluetoothAutoSender({
   sendFramesToBoard,
   layoutName,
+  boardDetails,
 }: {
   sendFramesToBoard: (frames: string, mirrored?: boolean, signal?: AbortSignal) => Promise<boolean | undefined>;
   layoutName: string;
+  boardDetails: BoardDetails;
 }) {
   const { currentClimbQueueItem } = useCurrentClimb();
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { showMessage } = useSnackbar();
+  // Track which queue-item UUIDs we've already warned about so the snackbar
+  // only fires once per climb change, not on every re-render.
+  const warnedItemRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!currentClimbQueueItem) return;
@@ -48,6 +56,36 @@ function BluetoothAutoSender({
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    // Multi-board queue: the current climb may belong to a different board
+    // than the one we're connected to. Skip the send and surface a one-time
+    // snackbar per climb change so the user understands why frames aren't
+    // lighting up.
+    const itemConfig = currentClimbQueueItem.boardConfig ?? null;
+    const mismatchedBoardOrLayout =
+      itemConfig != null &&
+      (itemConfig.boardName !== boardDetails.board_name ||
+        itemConfig.layoutId !== boardDetails.layout_id);
+    const holdRangeCheck = canAddClimbToBoard(currentClimbQueueItem.climb, boardDetails);
+    const holdsOutOfRange = holdRangeCheck.ok === false && holdRangeCheck.reason === 'holds_out_of_range';
+
+    if (mismatchedBoardOrLayout || holdsOutOfRange) {
+      if (warnedItemRef.current !== currentClimbQueueItem.uuid) {
+        warnedItemRef.current = currentClimbQueueItem.uuid;
+        const msg = mismatchedBoardOrLayout
+          ? 'Not sent — this climb is on another board.'
+          : 'Not sent — some holds aren\u2019t on your connected board.';
+        showMessage(msg, 'info');
+      }
+      return () => {
+        controller.abort();
+      };
+    }
+    // Clear the warned marker when the current climb becomes compatible again
+    // so a future mismatch gets a fresh snackbar.
+    if (warnedItemRef.current === currentClimbQueueItem.uuid) {
+      warnedItemRef.current = null;
+    }
 
     const sendClimb = async () => {
       try {
@@ -85,7 +123,7 @@ function BluetoothAutoSender({
     return () => {
       controller.abort();
     };
-  }, [currentClimbQueueItem, sendFramesToBoard, layoutName]);
+  }, [currentClimbQueueItem, sendFramesToBoard, layoutName, boardDetails, showMessage]);
 
   return null;
 }
@@ -162,7 +200,11 @@ export function BluetoothProvider({
   return (
     <BluetoothContext.Provider value={value}>
       {isConnected && (
-        <BluetoothAutoSender sendFramesToBoard={sendFramesToBoard} layoutName={boardDetails.layout_name ?? ''} />
+        <BluetoothAutoSender
+          sendFramesToBoard={sendFramesToBoard}
+          layoutName={boardDetails.layout_name ?? ''}
+          boardDetails={boardDetails}
+        />
       )}
       {children}
     </BluetoothContext.Provider>

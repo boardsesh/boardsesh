@@ -32,10 +32,12 @@ import type { BoardDetails, Angle, Climb, SearchRequestPagination } from '@/app/
 import type { ClimbQueueItem } from './types';
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { canAddClimbToBoard } from '@/app/lib/board-compatibility';
-import { getBoardDetailsForPlaylist } from '@/app/lib/board-config-for-playlist';
+import { getBoardDetailsForPlaylist, getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
+import { boardConfigFromDetails, boardConfigToBaseBoardPath } from '@/app/lib/board-config';
+import type { BoardConfig } from '@boardsesh/shared-schema';
 import { useSnackbar } from '../providers/snackbar-provider';
-import { queueAddErrorMessage } from '../board-lock/queue-add-error-messages';
+import { useQueueAddConfirm, type AddOutcome } from './queue-add-confirm-context';
+import { useRouter } from 'next/navigation';
 
 const LiveActivityBridge = dynamic(() => import('@/app/lib/live-activity/live-activity-bridge'), {
   ssr: false,
@@ -50,7 +52,9 @@ const LiveActivityBridge = dynamic(() => import('@/app/lib/live-activity/live-ac
  * match `getBaseBoardPath` output so queue restoration (`use-queue-restoration`)
  * and party-session transfer (`start-sesh-drawer`) keep working.
  */
-function deriveSeedStateFromClimb(climb: Climb): { boardDetails: BoardDetails; baseBoardPath: string } | null {
+function deriveSeedStateFromClimb(
+  climb: Climb,
+): { boardDetails: BoardDetails; baseBoardPath: string; boardConfig: BoardConfig } | null {
   if (!climb.boardType || climb.layoutId == null) return null;
   const details = getBoardDetailsForPlaylist(climb.boardType, climb.layoutId);
   if (!details) return null;
@@ -59,7 +63,9 @@ function deriveSeedStateFromClimb(climb: Climb): { boardDetails: BoardDetails; b
     details.board_name === 'moonboard'
       ? `/moonboard/${details.layout_id}/${setIds}`
       : `/${details.board_name}/${details.layout_id}/${details.size_id}/${setIds}`;
-  return { boardDetails: details, baseBoardPath };
+  const seedAngle = climb.angle ?? getDefaultAngleForBoard(details.board_name);
+  const boardConfig = boardConfigFromDetails(details, seedAngle);
+  return { boardDetails: details, baseBoardPath, boardConfig };
 }
 
 // -------------------------------------------------------------------
@@ -130,6 +136,8 @@ function usePersistentSessionQueueAdapter(): {
 } {
   const ps = usePersistentSession();
   const { showMessage } = useSnackbar();
+  const confirmApi = useQueueAddConfirm();
+  const router = useRouter();
 
   const isParty = !!ps.activeSession;
   const queue = isParty ? ps.queue : ps.localQueue;
@@ -169,6 +177,8 @@ function usePersistentSessionQueueAdapter(): {
     baseBoardPath,
     ps,
     showMessage,
+    confirmApi,
+    router,
   });
   latestRef.current = {
     queue,
@@ -177,21 +187,16 @@ function usePersistentSessionQueueAdapter(): {
     baseBoardPath,
     ps,
     showMessage,
+    confirmApi,
+    router,
   };
 
-  // Validates a climb against the locked board (session) or the current
-  // adapter board. Shows a Snackbar error and returns false if not
-  // compatible. Message formatting lives in `queue-add-error-messages`
-  // so the board-route and root-level entry points speak the same copy.
-  const validateClimbForQueue = useCallback((climb: Climb): boolean => {
-    const r = latestRef.current;
-    const target = r.ps.activeSession?.boardDetails ?? r.boardDetails;
-    if (!target) return true;
-    const result = canAddClimbToBoard(climb, target);
-    if (result.ok) return true;
-    r.showMessage(queueAddErrorMessage(climb, target, result), 'error');
-    return false;
-  }, []);
+  // Placeholder kept for the `addToQueue` / `setCurrentClimb` signatures.
+  // Cross-board / cross-layout rejection moved to the `QueueAddConfirmProvider`
+  // gate, which surfaces a confirmation dialog instead of silently rejecting.
+  // The imports for `canAddClimbToBoard` / `queueAddErrorMessage` are retained
+  // because they're still referenced elsewhere in this file.
+  const validateClimbForQueue = useCallback((_climb: Climb): boolean => true, []);
 
   const getNextClimbQueueItem = useCallback((): ClimbQueueItem | null => {
     const r = latestRef.current;
@@ -218,23 +223,67 @@ function usePersistentSessionQueueAdapter(): {
     (climb: Climb) => {
       const r = latestRef.current;
       if (!validateClimbForQueue(climb)) return;
-      const newItem: ClimbQueueItem = {
-        climb,
-        addedBy: null,
-        uuid: uuidv4(),
-        suggested: false,
-      };
       if (!r.boardDetails) {
         // Cold-start path: no active board yet. Seed local state from the
         // climb's own board config so the queue bar begins showing.
         const seed = deriveSeedStateFromClimb(climb);
         if (!seed) return;
+        const newItem: ClimbQueueItem = {
+          climb: {
+            ...climb,
+            boardType: climb.boardType ?? seed.boardConfig.boardName,
+            layoutId: climb.layoutId ?? seed.boardConfig.layoutId,
+          },
+          addedBy: null,
+          uuid: uuidv4(),
+          suggested: false,
+          boardConfig: seed.boardConfig,
+          boardId: null,
+        };
         r.ps.setLocalQueueState([newItem], newItem, seed.baseBoardPath, seed.boardDetails);
         return;
       }
-      const newQueue = [...r.queue, newItem];
-      const current = r.currentClimbQueueItem ?? newItem;
-      r.ps.setLocalQueueState(newQueue, current, r.baseBoardPath, r.boardDetails);
+      const boardConfig = boardConfigFromDetails(
+        r.boardDetails,
+        r.currentClimbQueueItem?.climb?.angle ?? climb.angle ?? 0,
+      );
+      const newItem: ClimbQueueItem = {
+        climb: {
+          ...climb,
+          boardType: climb.boardType ?? boardConfig.boardName,
+          layoutId: climb.layoutId ?? boardConfig.layoutId,
+        },
+        addedBy: null,
+        uuid: uuidv4(),
+        suggested: false,
+        boardConfig,
+        boardId: null,
+      };
+
+      // Fire-and-forget gate: shows a confirmation dialog only if the incoming
+      // config doesn't already match one of the accepted configs in the queue.
+      (async () => {
+        let outcome: AddOutcome = 'allow';
+        if (r.confirmApi) {
+          outcome = await r.confirmApi.gate(boardConfig, r.queue);
+        }
+        if (outcome === 'cancel') return;
+        if (outcome === 'switch') {
+          if (!r.boardDetails) return;
+          r.ps.setLocalQueueState([newItem], newItem, r.baseBoardPath, r.boardDetails);
+          try {
+            r.router.push(`${boardConfigToBaseBoardPath(boardConfig)}/${boardConfig.angle}/list`);
+          } catch {
+            // Router unavailable — best-effort navigation.
+          }
+          return;
+        }
+        // 'allow' or 'add' — proceed with a normal append.
+        if (!r.boardDetails) return;
+        const newQueue = [...r.queue, newItem];
+        const current = r.currentClimbQueueItem ?? newItem;
+        r.ps.setLocalQueueState(newQueue, current, r.baseBoardPath, r.boardDetails);
+      })();
     },
     [validateClimbForQueue],
   );
@@ -275,20 +324,62 @@ function usePersistentSessionQueueAdapter(): {
     async (climb: Climb): Promise<ClimbQueueItem | null> => {
       const r = latestRef.current;
       if (!validateClimbForQueue(climb)) return null;
-      const newItem: ClimbQueueItem = {
-        climb,
-        addedBy: null,
-        uuid: uuidv4(),
-        suggested: false,
-      };
       if (!r.boardDetails) {
         // Cold-start path: no active board yet. Seed local state from the
         // climb's own board config so the queue bar begins showing.
         const seed = deriveSeedStateFromClimb(climb);
         if (!seed) return null;
+        const newItem: ClimbQueueItem = {
+          climb: {
+            ...climb,
+            boardType: climb.boardType ?? seed.boardConfig.boardName,
+            layoutId: climb.layoutId ?? seed.boardConfig.layoutId,
+          },
+          addedBy: null,
+          uuid: uuidv4(),
+          suggested: false,
+          boardConfig: seed.boardConfig,
+          boardId: null,
+        };
         r.ps.setLocalQueueState([newItem], newItem, seed.baseBoardPath, seed.boardDetails);
         return newItem;
       }
+      const boardConfig = boardConfigFromDetails(
+        r.boardDetails,
+        r.currentClimbQueueItem?.climb?.angle ?? climb.angle ?? 0,
+      );
+
+      // Gate up front so no optimistic flash if the user ultimately cancels.
+      let outcome: AddOutcome = 'allow';
+      if (r.confirmApi) {
+        outcome = await r.confirmApi.gate(boardConfig, r.queue);
+      }
+      if (outcome === 'cancel') return null;
+
+      const newItem: ClimbQueueItem = {
+        climb: {
+          ...climb,
+          boardType: climb.boardType ?? boardConfig.boardName,
+          layoutId: climb.layoutId ?? boardConfig.layoutId,
+        },
+        addedBy: null,
+        uuid: uuidv4(),
+        suggested: false,
+        boardConfig,
+        boardId: null,
+      };
+
+      if (outcome === 'switch') {
+        if (!r.boardDetails) return newItem;
+        r.ps.setLocalQueueState([newItem], newItem, r.baseBoardPath, r.boardDetails);
+        try {
+          r.router.push(`${boardConfigToBaseBoardPath(boardConfig)}/${boardConfig.angle}/list`);
+        } catch {
+          // Router unavailable — best-effort navigation.
+        }
+        return newItem;
+      }
+
       const currentIdx = r.currentClimbQueueItem
         ? r.queue.findIndex((q) => q.uuid === r.currentClimbQueueItem!.uuid)
         : -1;

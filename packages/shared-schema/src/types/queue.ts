@@ -16,6 +16,21 @@ export type QueueItemUserInput = {
   avatarUrl?: string | null;
 };
 
+/**
+ * Full board configuration a queue item is meant to render + send against.
+ * Denormalized onto the queue item so multi-board queues don't need a
+ * per-render DB lookup to resolve a saved `UserBoard`.
+ */
+export type BoardConfig = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+  angle: number;
+};
+
+export type BoardConfigInput = BoardConfig;
+
 export type ClimbQueueItem = {
   uuid: string;
   climb: Climb;
@@ -23,6 +38,8 @@ export type ClimbQueueItem = {
   addedByUser?: QueueItemUser;
   tickedBy?: UserId[];
   suggested?: boolean;
+  boardConfig?: BoardConfig | null;
+  boardId?: string | null;
 };
 
 // Input type for ClimbQueueItem (matches GraphQL ClimbQueueItemInput)
@@ -33,6 +50,8 @@ export type ClimbQueueItemInput = {
   addedByUser?: QueueItemUserInput | null;
   tickedBy?: string[] | null;
   suggested?: boolean | null;
+  boardConfig?: BoardConfigInput | null;
+  boardId?: string | null;
 };
 
 export type QueueState = {

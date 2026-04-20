@@ -61,6 +61,10 @@ export type ClimbInput = {
   published_at?: string | null;
   userAscents?: number | null;
   userAttempts?: number | null;
+  // Round-trip board identity through the queue so multi-board queue items
+  // can be displayed without a separate climb lookup.
+  boardType?: string | null;
+  layoutId?: number | null;
 };
 
 export type ClimbSearchInput = {

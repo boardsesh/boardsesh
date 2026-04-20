@@ -81,4 +81,10 @@ export type GraphQLQueueContextProps = {
   // uses this path instead of computing from pathname, reads session ID
   // from persistent session instead of URL, and skips URL manipulation.
   baseBoardPath?: string;
+  /**
+   * Optional UUID of a named `UserBoard` that owns this route (e.g. `/b/{slug}/...`).
+   * Queue items added while this is set carry `boardId` so the UI can resolve
+   * the named-board display label without a follow-up lookup.
+   */
+  boardId?: string | null;
 };

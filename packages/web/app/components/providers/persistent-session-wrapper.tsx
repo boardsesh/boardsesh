@@ -33,6 +33,7 @@ const SeshSettingsDrawer = dynamic(() => import('../sesh-settings/sesh-settings-
   ssr: false,
 });
 import { BoardSwitchConfirmProvider } from '../board-lock/board-switch-confirm-provider';
+import { QueueAddConfirmProvider } from '../queue-control/queue-add-confirm-context';
 
 interface PersistentSessionWrapperProps {
   children: React.ReactNode;
@@ -51,6 +52,7 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
     <PartyProfileProvider>
       <PersistentSessionProvider>
         <QueueBridgeProvider>
+          <QueueAddConfirmProvider>
           <BoardSwitchConfirmProvider>
             <SearchDrawerBridgeProvider>
               <StatsFilterBridgeProvider>
@@ -64,6 +66,7 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
               </StatsFilterBridgeProvider>
             </SearchDrawerBridgeProvider>
           </BoardSwitchConfirmProvider>
+          </QueueAddConfirmProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>
     </PartyProfileProvider>
