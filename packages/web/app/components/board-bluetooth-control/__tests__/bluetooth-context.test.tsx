@@ -24,9 +24,25 @@ vi.mock('../use-board-bluetooth', () => ({
   useBoardBluetooth: () => mockBluetoothState,
 }));
 
-let mockCurrentClimbQueueItem: {
-  climb: { uuid: string; frames: string; mirrored: boolean };
-} | null = null;
+type TestBoardConfig = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: number[];
+  angle: number;
+};
+type TestQueueItem = {
+  uuid?: string;
+  boardConfig?: TestBoardConfig | null;
+  climb: {
+    uuid: string;
+    frames: string;
+    mirrored: boolean;
+    boardType?: string;
+    layoutId?: number | null;
+  };
+};
+let mockCurrentClimbQueueItem: TestQueueItem | null = null;
 
 vi.mock('../../graphql-queue', () => ({
   useQueueContext: () => ({
@@ -39,6 +55,11 @@ vi.mock('../../graphql-queue', () => ({
     currentClimbQueueItem: mockCurrentClimbQueueItem,
     currentClimb: mockCurrentClimbQueueItem?.climb ?? null,
   }),
+}));
+
+const mockShowMessage = vi.fn();
+vi.mock('../../providers/snackbar-provider', () => ({
+  useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-context';
@@ -76,6 +97,7 @@ function createWrapper(boardDetails?: BoardDetails) {
 describe('BluetoothProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockShowMessage.mockClear();
     mockCurrentClimbQueueItem = null;
     mockBluetoothState = {
       isConnected: false,
@@ -397,6 +419,195 @@ describe('BluetoothProvider', () => {
       expect(result.current.connect).toBe(mockConnect);
       expect(result.current.disconnect).toBe(mockDisconnect);
       expect(result.current.sendFramesToBoard).toBe(mockSendFramesToBoard);
+    });
+  });
+
+  // --------------------------------------------------------------------
+  // BluetoothAutoSender — multi-board send gate
+  //
+  // The sender must skip `sendFramesToBoard` (and surface a one-shot
+  // snackbar) when the current queue item either:
+  //   (a) carries a boardConfig that doesn't match the connected board, or
+  //   (b) references hold IDs that aren't on the connected board.
+  // It must also avoid re-firing the snackbar on re-renders of the same
+  // item — only once per item.uuid change.
+  // --------------------------------------------------------------------
+  describe('multi-board send gate', () => {
+    // BoardDetails with a known hold set so canAddClimbToBoard runs the
+    // per-hold containment check (returning holds_out_of_range when a
+    // frame references an ID not in the set).
+    const boardWithHolds: BoardDetails = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 10,
+      set_ids: '1,2',
+      images_to_holds: {},
+      holdsData: [
+        // Minimum useful fields — canAddClimbToBoard only reads .id
+        { id: 12 },
+        { id: 13 },
+      ] as unknown as BoardDetails['holdsData'],
+      edge_left: 0,
+      edge_right: 100,
+      edge_bottom: 0,
+      edge_top: 100,
+      boardHeight: 100,
+      boardWidth: 100,
+      layout_name: 'Original',
+      size_name: '12x12',
+      size_description: 'Full Size',
+      set_names: ['Standard', 'Extended'],
+    } as unknown as BoardDetails;
+
+    it('sends frames when the current climb matches the connected board', async () => {
+      mockCurrentClimbQueueItem = {
+        uuid: 'qi-1',
+        boardConfig: {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: [1, 2],
+          angle: 40,
+        },
+        climb: {
+          uuid: 'c-1',
+          frames: 'p12r12p13r13', // all hold IDs present on boardWithHolds
+          mirrored: false,
+          boardType: 'kilter',
+          layoutId: 1,
+        },
+      };
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(boardWithHolds),
+      });
+
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1);
+        });
+      });
+      expect(mockShowMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT send and emits a snackbar when current climb boardConfig is on a different board', async () => {
+      mockCurrentClimbQueueItem = {
+        uuid: 'qi-mismatch',
+        boardConfig: {
+          boardName: 'tension', // mismatch with boardWithHolds.board_name = 'kilter'
+          layoutId: 2,
+          sizeId: 10,
+          setIds: [1, 2],
+          angle: 40,
+        },
+        climb: {
+          uuid: 'c-2',
+          frames: 'p12r12',
+          mirrored: false,
+          boardType: 'tension',
+          layoutId: 2,
+        },
+      };
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(boardWithHolds),
+      });
+
+      // Give the effect a chance to run
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowMessage).toHaveBeenCalledWith(
+        'Not sent — this climb is on another board.',
+        'info',
+      );
+    });
+
+    it('does NOT send and emits a snackbar when a climb\'s hold is out of range for the connected board', async () => {
+      mockCurrentClimbQueueItem = {
+        uuid: 'qi-oor',
+        // boardConfig matches — trigger hits the holds-out-of-range branch.
+        boardConfig: {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: [1, 2],
+          angle: 40,
+        },
+        climb: {
+          uuid: 'c-3',
+          // Hold ID 999 is NOT in boardWithHolds (only 12, 13)
+          frames: 'p12r12p999r15',
+          mirrored: false,
+          boardType: 'kilter',
+          layoutId: 1,
+        },
+      };
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(boardWithHolds),
+      });
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+      const [msg, severity] = mockShowMessage.mock.calls[0];
+      expect(msg).toMatch(/Not sent/);
+      expect(msg).toMatch(/holds/);
+      expect(severity).toBe('info');
+    });
+
+    it('does not re-emit the snackbar on re-renders of the same queue item', async () => {
+      mockCurrentClimbQueueItem = {
+        uuid: 'qi-dup',
+        boardConfig: {
+          boardName: 'tension', // mismatch
+          layoutId: 2,
+          sizeId: 10,
+          setIds: [1, 2],
+          angle: 40,
+        },
+        climb: {
+          uuid: 'c-dup',
+          frames: 'p12r12',
+          mirrored: false,
+          boardType: 'tension',
+          layoutId: 2,
+        },
+      };
+      mockBluetoothState.isConnected = true;
+
+      const { rerender } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(boardWithHolds),
+      });
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // Force a re-render — same underlying queue item (same UUID)
+      rerender();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+      rerender();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      // Snackbar should still have been fired just once
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+      expect(mockSendFramesToBoard).not.toHaveBeenCalled();
     });
   });
 });

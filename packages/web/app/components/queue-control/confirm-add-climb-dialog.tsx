@@ -23,8 +23,7 @@ interface ConfirmAddClimbDialogProps {
 
 function formatBoardLabel(config: BoardConfig | null): string {
   if (!config) return '';
-  const name = config.boardName.charAt(0).toUpperCase() + config.boardName.slice(1);
-  return `${name}`;
+  return config.boardName.charAt(0).toUpperCase() + config.boardName.slice(1);
 }
 
 export default function ConfirmAddClimbDialog({

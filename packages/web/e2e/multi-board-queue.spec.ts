@@ -8,6 +8,11 @@ import { test, expect, Page } from '@playwright/test';
  * when adding a climb whose board config isn't already accepted.
  */
 
+// These paths pull from the seeded test DB in packages/db/docker. If the
+// seed is re-shaped (new slug/layout/size/set ids), update both routes
+// together — `bun run db:up` rebuilds from the shared ghcr image.
+// See `packages/web/e2e/layout-screenshots.spec.ts` for the canonical list
+// of seeded routes.
 const kilterListUrl = '/kilter/original/12x12-square/screw_bolt/40/list';
 const tensionListUrl = '/tension/9/1/8,9,10,11/40/list';
 

@@ -51,6 +51,7 @@ vi.mock('../../graphql-queue/QueueContext', () => {
 let mockPathname = '/kilter/1/10/1,2/40/list';
 vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
 }));
 
 vi.mock('@/app/lib/url-utils', () => ({

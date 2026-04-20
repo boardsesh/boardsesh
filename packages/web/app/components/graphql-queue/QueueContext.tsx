@@ -25,9 +25,9 @@ import { usePendingUpdateCleanup } from './hooks/use-pending-update-cleanup';
 import { useMutationGuard } from './hooks/use-mutation-guard';
 import { useOfflineQueueBuffer } from './hooks/use-offline-queue-buffer';
 import { useOfflineReconciliation } from './hooks/use-offline-reconciliation';
-import { useQueueAddValidator } from '../board-lock/use-queue-add-validator';
 import { useQueueAddConfirm, type AddOutcome } from '../queue-control/queue-add-confirm-context';
-import { boardConfigToBaseBoardPath } from '@/app/lib/board-config';
+import { boardConfigToBaseBoardPath, boardConfigEquals } from '@/app/lib/board-config';
+import { getBoardDetailsForPlaylist, getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { useRouter } from 'next/navigation';
 import type { BoardConfig } from '@boardsesh/shared-schema';
 import type {
@@ -74,6 +74,32 @@ const createClimbQueueItem = (
   boardConfig: boardConfig ?? null,
   boardId: boardConfig ? (boardId ?? null) : null,
 });
+
+/**
+ * Derive the `BoardConfig` an incoming climb should be queued against.
+ *
+ * When the climb's own `boardType`/`layoutId` match the active route, we keep
+ * the route config so the user's size/sets/angle choices are preserved.
+ * Otherwise, the climb belongs to a different board entirely (typical on
+ * multi-board surfaces like playlists and the home feed) — we resolve that
+ * board's default details and derive a config from it. Falls back to the
+ * route config if the climb is missing identity info.
+ */
+function deriveIncomingBoardConfig(climb: Climb, routeConfig: BoardConfig): BoardConfig {
+  if (!climb.boardType || climb.layoutId == null) return routeConfig;
+  if (climb.boardType === routeConfig.boardName && climb.layoutId === routeConfig.layoutId) {
+    return routeConfig;
+  }
+  const details = getBoardDetailsForPlaylist(climb.boardType, climb.layoutId);
+  if (!details) return routeConfig;
+  return {
+    boardName: details.board_name,
+    layoutId: details.layout_id,
+    sizeId: details.size_id,
+    setIds: details.set_ids,
+    angle: climb.angle ?? getDefaultAngleForBoard(details.board_name),
+  };
+}
 
 // Split contexts: actions (stable) vs data (changes frequently)
 export const QueueActionsContext = createContext<GraphQLQueueActionsType | undefined>(undefined);
@@ -302,9 +328,6 @@ export const GraphQLQueueProvider = ({
     state.hasDoneFirstFetch,
   ]);
 
-  // --- Queue-add compatibility validator ---
-  const validateQueueAdd = useQueueAddValidator();
-
   // --- Confirmation gate for cross-board / cross-size adds ---
   const confirmApi = useQueueAddConfirm();
   const router = useRouter();
@@ -332,7 +355,6 @@ export const GraphQLQueueProvider = ({
     endSession,
     dismissSessionSummary,
     fetchMoreClimbs,
-    validateQueueAdd,
     confirmApi,
     router,
     currentBoardConfig: routeBoardConfig,
@@ -361,7 +383,6 @@ export const GraphQLQueueProvider = ({
     endSession,
     dismissSessionSummary,
     fetchMoreClimbs,
-    validateQueueAdd,
     confirmApi,
     router,
     currentBoardConfig: routeBoardConfig,
@@ -370,64 +391,91 @@ export const GraphQLQueueProvider = ({
 
   // --- Stable action callbacks (read from latestRef, never recreated) ---
   const addToQueue = useCallback((climb: Climb) => {
-    const startTime = performance.now();
     const r = latestRef.current;
     if (r.guardMutation()) return;
-    if (!r.validateQueueAdd(climb)) return;
     const mode: QueueOperationMode = !r.isPersistentSessionActive
       ? 'local'
       : r.isDisconnected
         ? 'party-offline'
         : 'party';
+
+    // Derive the config from the climb's own board identity so multi-board
+    // surfaces (playlists, home feed) don't mis-stamp items with the active
+    // route's board. Falls back to the route config when the climb lacks
+    // boardType/layoutId.
+    const incomingConfig = deriveIncomingBoardConfig(climb, r.currentBoardConfig);
+    const useRouteBoardId = boardConfigEquals(incomingConfig, r.currentBoardConfig);
     const newItem = createClimbQueueItem(
       climb,
       r.clientId,
       r.currentUserInfo,
       false,
-      r.currentBoardConfig,
-      r.boardId,
+      incomingConfig,
+      useRouteBoardId ? r.boardId : null,
     );
 
     // Fire-and-forget async gate: may show a confirmation dialog for
     // cross-board / larger-size adds. No dialog when the queue is empty
-    // or the incoming config is already accepted.
+    // or the incoming config is already accepted. Capture the commit
+    // startTime *after* the gate so dialog think-time doesn't inflate the
+    // telemetry histogram.
     const commitAdd = () => {
+      const commitStart = performance.now();
       r.dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item: newItem } });
       if (r.isDisconnected && r.isPersistentSessionActive) {
         r.offlineBuffer.bufferAddition(newItem);
-        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
+        trackQueueOperation('addToQueue', performance.now() - commitStart, mode);
       } else if (r.hasConnected && r.isPersistentSessionActive) {
         r.persistentSession
           .addQueueItem(newItem)
-          .then(() => trackQueueOperation('addToQueue', performance.now() - startTime, mode))
+          .then(() => trackQueueOperation('addToQueue', performance.now() - commitStart, mode))
           .catch((error: unknown) => {
             console.error('Failed to add queue item:', error);
             trackQueueOperationError('addToQueue', mode);
           });
       } else {
-        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
+        trackQueueOperation('addToQueue', performance.now() - commitStart, mode);
       }
     };
 
     (async () => {
       let outcome: AddOutcome = 'allow';
       if (r.confirmApi) {
-        outcome = await r.confirmApi.gate(r.currentBoardConfig, r.state.queue);
+        outcome = await r.confirmApi.gate(incomingConfig, r.state.queue);
       }
       if (outcome === 'cancel') return;
       if (outcome === 'switch') {
-        // Replace the queue with just this item and navigate to the target board's route.
+        // Navigate FIRST, clear queue only if the push succeeds. Otherwise
+        // the user would be left on the old route with an empty queue.
+        const target = `${boardConfigToBaseBoardPath(incomingConfig)}/${incomingConfig.angle}/list`;
+        const existingItems = r.state.queue.slice();
+        try {
+          r.router.push(target);
+        } catch (error) {
+          console.error('Failed to navigate on switch:', error);
+          return;
+        }
         r.dispatch({
           type: 'UPDATE_QUEUE',
           payload: { queue: [newItem], currentClimbQueueItem: newItem },
         });
-        trackQueueOperation('addToQueue', performance.now() - startTime, mode);
-        try {
-          r.router.push(
-            `${boardConfigToBaseBoardPath(r.currentBoardConfig)}/${r.currentBoardConfig.angle}/list`,
-          );
-        } catch {
-          // Router not available (e.g. in tests) — navigation is best-effort.
+
+        // In party mode, mirror the replacement to the server so peers see
+        // it. Remove each existing item, then add the new one. Local-only
+        // mode is already handled by the UPDATE_QUEUE dispatch above.
+        if (r.hasConnected && r.isPersistentSessionActive) {
+          (async () => {
+            try {
+              await Promise.all(existingItems.map((item) => r.persistentSession.removeQueueItem(item.uuid)));
+              await r.persistentSession.addQueueItem(newItem);
+            } catch (error: unknown) {
+              console.error('Failed to propagate switch to party session:', error);
+              trackQueueOperationError('addToQueue', mode);
+            }
+          })();
+        } else if (r.isDisconnected && r.isPersistentSessionActive) {
+          // Offline: buffer the new item; next reconcile will rebuild state.
+          r.offlineBuffer.bufferAddition(newItem);
         }
         return;
       }
@@ -463,47 +511,74 @@ export const GraphQLQueueProvider = ({
   // subsequent edits. Resolves to null when validation fails or the mutation
   // is guarded.
   const setCurrentClimb = useCallback(async (climb: Climb): Promise<ClimbQueueItem | null> => {
-    const startTime = performance.now();
     const r = latestRef.current;
     if (r.guardMutation()) return null;
-    if (!r.validateQueueAdd(climb)) return null;
     const mode: QueueOperationMode = !r.isPersistentSessionActive
       ? 'local'
       : r.isDisconnected
         ? 'party-offline'
         : 'party';
 
+    // Derive the config from the climb itself so multi-board surfaces
+    // (playlists, home feed) don't stamp the active route's config on a
+    // climb that belongs to a different board.
+    const incomingConfig = deriveIncomingBoardConfig(climb, r.currentBoardConfig);
+    const useRouteBoardId = boardConfigEquals(incomingConfig, r.currentBoardConfig);
+
     // Gate on cross-board / larger-size before dispatching anything so the
     // optimistic update doesn't flash when the user will ultimately cancel.
     let outcome: AddOutcome = 'allow';
     if (r.confirmApi) {
-      outcome = await r.confirmApi.gate(r.currentBoardConfig, r.state.queue);
+      outcome = await r.confirmApi.gate(incomingConfig, r.state.queue);
     }
     if (outcome === 'cancel') return null;
 
+    // Capture startTime after the gate so dialog think-time doesn't inflate
+    // the telemetry histogram.
+    const startTime = performance.now();
     const newItem = createClimbQueueItem(
       climb,
       r.clientId,
       r.currentUserInfo,
       false,
-      r.currentBoardConfig,
-      r.boardId,
+      incomingConfig,
+      useRouteBoardId ? r.boardId : null,
     );
     const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
 
     if (outcome === 'switch') {
+      // Navigate FIRST, clear queue only if the push succeeds.
+      const target = `${boardConfigToBaseBoardPath(incomingConfig)}/${incomingConfig.angle}/list`;
+      const existingItems = r.state.queue.slice();
+      try {
+        r.router.push(target);
+      } catch (error) {
+        console.error('Failed to navigate on switch:', error);
+        return null;
+      }
       r.dispatch({
         type: 'UPDATE_QUEUE',
         payload: { queue: [newItem], currentClimbQueueItem: newItem },
       });
-      trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
-      try {
-        r.router.push(
-          `${boardConfigToBaseBoardPath(r.currentBoardConfig)}/${r.currentBoardConfig.angle}/list`,
-        );
-      } catch {
-        // Router not available — best-effort navigation.
+
+      // Party mode: mirror to the server so peers see the replacement.
+      if (r.hasConnected && r.isPersistentSessionActive) {
+        (async () => {
+          try {
+            await Promise.all(existingItems.map((item) => r.persistentSession.removeQueueItem(item.uuid)));
+            await r.persistentSession.addQueueItem(newItem);
+            await r.persistentSession.setCurrentClimb(newItem, false, correlationId);
+          } catch (error: unknown) {
+            console.error('Failed to propagate switch to party session:', error);
+            if (correlationId) r.dispatch({ type: 'CLEANUP_PENDING_UPDATE', payload: { correlationId } });
+            trackQueueOperationError('setCurrentClimb', mode);
+          }
+        })();
+      } else if (r.isDisconnected && r.isPersistentSessionActive) {
+        r.offlineBuffer.bufferAddition(newItem);
       }
+
+      trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
       return newItem;
     }
 
@@ -542,7 +617,6 @@ export const GraphQLQueueProvider = ({
     const startTime = performance.now();
     const r = latestRef.current;
     if (r.guardMutation()) return;
-    if (!r.validateQueueAdd(climb)) return;
     const existing = r.state.queue.find((qItem) => qItem.uuid === queueItemUuid);
     const mode: QueueOperationMode = !r.isPersistentSessionActive
       ? 'local'

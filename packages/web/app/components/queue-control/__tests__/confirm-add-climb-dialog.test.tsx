@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ConfirmAddClimbDialog from '../confirm-add-climb-dialog';
 import type { BoardConfig } from '@boardsesh/shared-schema';
+import type { ConfirmAddChoice } from '../confirm-add-climb-dialog';
 
 function makeConfig(overrides: Partial<BoardConfig> = {}): BoardConfig {
   return {
@@ -16,10 +17,10 @@ function makeConfig(overrides: Partial<BoardConfig> = {}): BoardConfig {
 }
 
 describe('ConfirmAddClimbDialog', () => {
-  let onChoose: ReturnType<typeof vi.fn>;
+  let onChoose: Mock<(choice: ConfirmAddChoice) => void>;
 
   beforeEach(() => {
-    onChoose = vi.fn();
+    onChoose = vi.fn<(choice: ConfirmAddChoice) => void>();
   });
 
   it('renders the new_config headline and body when open', () => {

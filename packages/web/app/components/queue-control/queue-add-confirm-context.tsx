@@ -65,8 +65,16 @@ export function QueueAddConfirmProvider({ children }: { children: React.ReactNod
   const pendingQueueRef = useRef<PendingRequest[]>([]);
   const [activeRequest, setActiveRequest] = useState<PendingRequest | null>(null);
 
+  // `activeRequest` is read in the same tick by back-to-back requestConfirm
+  // calls before React commits the first setActiveRequest. Closure state
+  // would make both calls see `null` and race to become the primary request.
+  // A ref gives us synchronous, up-to-the-instant truth about whether a
+  // dialog is already being shown.
+  const hasActiveRef = useRef(false);
+
   const advance = useCallback(() => {
     const next = pendingQueueRef.current.shift() ?? null;
+    hasActiveRef.current = next !== null;
     setActiveRequest(next);
   }, []);
 
@@ -74,14 +82,15 @@ export function QueueAddConfirmProvider({ children }: { children: React.ReactNod
     (reason: ConfirmAddReason, incoming: BoardConfig): Promise<ConfirmAddChoice> => {
       return new Promise<ConfirmAddChoice>((resolve) => {
         const request: PendingRequest = { reason, incoming, resolve };
-        if (activeRequest) {
+        if (hasActiveRef.current) {
           pendingQueueRef.current.push(request);
         } else {
+          hasActiveRef.current = true;
           setActiveRequest(request);
         }
       });
     },
-    [activeRequest],
+    [],
   );
 
   const handleChoice = useCallback(

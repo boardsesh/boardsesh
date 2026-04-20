@@ -51,9 +51,9 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
   return (
     <PartyProfileProvider>
       <PersistentSessionProvider>
-        <QueueBridgeProvider>
-          <QueueAddConfirmProvider>
-          <BoardSwitchConfirmProvider>
+        <QueueAddConfirmProvider>
+          <QueueBridgeProvider>
+            <BoardSwitchConfirmProvider>
             <SearchDrawerBridgeProvider>
               <StatsFilterBridgeProvider>
                 <ProfileHeaderShareProvider>
@@ -65,9 +65,9 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
                 </ProfileHeaderShareProvider>
               </StatsFilterBridgeProvider>
             </SearchDrawerBridgeProvider>
-          </BoardSwitchConfirmProvider>
-          </QueueAddConfirmProvider>
-        </QueueBridgeProvider>
+            </BoardSwitchConfirmProvider>
+          </QueueBridgeProvider>
+        </QueueAddConfirmProvider>
       </PersistentSessionProvider>
     </PartyProfileProvider>
   );

@@ -121,7 +121,8 @@ export default function PlaylistDetailContent({
   // Auto-select the matching board once boards finish loading, but only when the
   // route explicitly provides a board context. Without a route-provided board,
   // default to "All Boards" so multi-board playlists show all their climbs.
-  // Incompatible climbs are blocked at add-time by useQueueAddValidator.
+  // Cross-board adds now prompt via the `QueueAddConfirmProvider` gate
+  // instead of being silently blocked.
   useEffect(() => {
     if (defaultBoardAppliedRef.current || boardsLoading || myBoards.length === 0) return;
     if (!(boardSlug || boardConfig)) {
