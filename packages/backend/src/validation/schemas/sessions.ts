@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BoardPathSchema, SessionIdSchema, SessionNameSchema, LatitudeSchema, LongitudeSchema } from './primitives';
+import { BoardConfigInputSchema } from './climbs';
 
 /**
  * Create session input validation schema
@@ -17,6 +18,9 @@ export const CreateSessionInputSchema = z.object({
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color')
     .optional(),
+  // Extra board configs to attach to the session beyond the primary board
+  // encoded in boardPath. Capped to keep payload size bounded.
+  boards: z.array(BoardConfigInputSchema).max(20).optional(),
 });
 
 /**

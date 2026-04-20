@@ -7,6 +7,7 @@ import type {
   SessionLiveStats,
   SessionSummary,
   QueueState,
+  BoardConfig,
 } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
 import type { BoardDetails, ParsedBoardRouteParameters } from '@/app/lib/types';
@@ -28,6 +29,8 @@ export interface Session {
   endedAt?: string | null;
   isPermanent?: boolean;
   color?: string | null;
+  /** Multi-board roster — primary first. Empty for back-compat single-board sessions. */
+  boards?: BoardConfig[];
 }
 
 // Active session info stored at root level
@@ -41,6 +44,11 @@ export interface ActiveSessionInfo {
   namedBoardName?: string;
   /** UUID of the named board (UserBoard) */
   namedBoardUuid?: string;
+  /**
+   * Multi-board roster for this session. Derived from the queue when absent.
+   * The first entry is the primary board and drives `boardDetails`.
+   */
+  boards?: BoardConfig[];
 }
 
 // Stable action functions — identity rarely changes
@@ -113,6 +121,17 @@ export interface PersistentSessionStateType {
   localCurrentClimbQueueItem: LocalClimbQueueItem | null;
   localBoardPath: string | null;
   localBoardDetails: BoardDetails | null;
+  /**
+   * Deduped list of every board represented in `localQueue` (by `boardConfig`).
+   * Derived — do not set directly. The first entry is the "primary" board
+   * and mirrors `localBoardDetails` when resolvable.
+   */
+  localBoards: BoardConfig[];
+  /**
+   * Deduped list of every board represented in the active party session's
+   * queue. Empty when no session is active. Derived — do not set directly.
+   */
+  sessionBoards: BoardConfig[];
   isLocalQueueLoaded: boolean;
 
   // Ref for offline queue buffer (used by QueueContext to populate, read by event processor during FullSync)

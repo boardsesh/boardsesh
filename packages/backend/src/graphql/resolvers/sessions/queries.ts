@@ -5,6 +5,7 @@ import { validateInput, requireSessionMember, requireAuthenticated } from '../sh
 import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } from '../../../validation/schemas';
 import { generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
+import { computeSessionBoards } from '../shared/types';
 
 export const sessionQueries = {
   /**
@@ -20,6 +21,8 @@ export const sessionQueries = {
 
     const queueState = await roomManager.getQueueState(sessionId);
     const sessionInfo = await roomManager.getSessionById(sessionId);
+    const persistedBoards = await roomManager.getSessionBoards(sessionId);
+    const boards = computeSessionBoards(queueState.queue, persistedBoards);
 
     return {
       id: sessionId,
@@ -35,6 +38,7 @@ export const sessionQueries = {
       endedAt: sessionInfo?.endedAt?.toISOString() || null,
       isPermanent: sessionInfo?.isPermanent ?? false,
       color: sessionInfo?.color || null,
+      boards,
     };
   },
 

@@ -78,6 +78,19 @@ export const QueueItemUserSchema = z.object({
 });
 
 /**
+ * BoardConfig validation schema. Matches the GraphQL `BoardConfigInput`
+ * shape — denormalized onto queue items so multi-board queues can render
+ * without a per-item DB lookup.
+ */
+export const BoardConfigInputSchema = z.object({
+  boardName: z.string().min(1).max(50),
+  layoutId: z.number().int().positive(),
+  sizeId: z.number().int().positive(),
+  setIds: z.array(z.number().int().positive()).max(20),
+  angle: z.number().int().min(0).max(90),
+});
+
+/**
  * ClimbQueueItem validation schema
  */
 export const ClimbQueueItemSchema = z.object({
@@ -87,6 +100,8 @@ export const ClimbQueueItemSchema = z.object({
   addedByUser: QueueItemUserSchema.nullish(),
   tickedBy: z.array(z.string()).max(100).nullish(),
   suggested: z.boolean().nullish(),
+  boardConfig: BoardConfigInputSchema.nullish(),
+  boardId: z.string().max(100).nullish(),
 });
 
 /**

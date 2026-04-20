@@ -1,5 +1,5 @@
 import type Redis from 'ioredis';
-import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, SessionUser, BoardConfig } from '@boardsesh/shared-schema';
 
 /**
  * Safely parse JSON with fallback for empty strings and malformed data.
@@ -237,8 +237,32 @@ export class RedisSessionStore {
     const multi = this.redis.multi();
     multi.expire(`boardsesh:session:${sessionId}`, this.TTL);
     multi.expire(`boardsesh:session:${sessionId}:users`, this.TTL);
+    multi.expire(`boardsesh:session:${sessionId}:boards`, this.TTL);
     multi.zadd('boardsesh:session:recent', Date.now(), sessionId);
     await multi.exec();
+  }
+
+  /**
+   * Save the explicit board roster for a session. Derived data (which boards
+   * appear in queue items) is NOT stored here — it's recomputed on read so
+   * multi-board state stays in sync with queue mutations automatically.
+   */
+  async saveBoards(sessionId: string, boards: BoardConfig[]): Promise<void> {
+    const key = `boardsesh:session:${sessionId}:boards`;
+    const multi = this.redis.multi();
+    multi.set(key, JSON.stringify(boards));
+    multi.expire(key, this.TTL);
+    await multi.exec();
+  }
+
+  /**
+   * Load the explicit board roster for a session. Returns `[]` when no
+   * boards were persisted (e.g. pre-multi-board sessions).
+   */
+  async getBoards(sessionId: string): Promise<BoardConfig[]> {
+    const key = `boardsesh:session:${sessionId}:boards`;
+    const raw = await this.redis.get(key);
+    return safeJSONParse<BoardConfig[]>(raw, []);
   }
 
   /**
@@ -248,6 +272,7 @@ export class RedisSessionStore {
     const multi = this.redis.multi();
     multi.del(`boardsesh:session:${sessionId}`);
     multi.del(`boardsesh:session:${sessionId}:users`);
+    multi.del(`boardsesh:session:${sessionId}:boards`);
     multi.srem('boardsesh:session:active', sessionId);
     multi.zrem('boardsesh:session:recent', sessionId);
     await multi.exec();

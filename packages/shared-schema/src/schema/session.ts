@@ -45,6 +45,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     isPermanent: Boolean!
     "Hex color for multi-session display"
     color: String
+    "Boards attached to this session. First entry is the primary board (matches boardPath). Derived from the queue when no explicit boards were sent on create."
+    boards: [BoardConfig!]!
   }
 
   """
@@ -103,6 +105,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     boardIds: [Int!]
     "Hex color for multi-session display"
     color: String
+    "Extra board configs to attach beyond the primary board encoded in boardPath. Omit for single-board sessions."
+    boards: [BoardConfigInput!]
   }
 
   # ============================================

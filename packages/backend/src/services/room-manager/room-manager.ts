@@ -1,5 +1,5 @@
 import type Redis from 'ioredis';
-import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, SessionUser, BoardConfig } from '@boardsesh/shared-schema';
 import { RedisSessionStore } from '../redis-session-store';
 import type { Session } from '../../db/schema';
 import {
@@ -288,6 +288,28 @@ class RoomManager {
 
   async getQueueState(sessionId: string): Promise<QueueState> {
     return getQueueStateFn(sessionId, this.redisStore);
+  }
+
+  /**
+   * Persist the explicit board roster for a session. Derived queue-board
+   * entries are recomputed on read, so this only needs to be called when a
+   * session is created with explicit `boards` input.
+   */
+  async saveSessionBoards(sessionId: string, boards: BoardConfig[]): Promise<void> {
+    if (this.redisStore) {
+      await this.redisStore.saveBoards(sessionId, boards);
+    }
+  }
+
+  /**
+   * Load the explicit board roster for a session. Returns `[]` when none
+   * were persisted.
+   */
+  async getSessionBoards(sessionId: string): Promise<BoardConfig[]> {
+    if (this.redisStore) {
+      return this.redisStore.getBoards(sessionId);
+    }
+    return [];
   }
 
   async getSessionById(sessionId: string): Promise<Session | null> {

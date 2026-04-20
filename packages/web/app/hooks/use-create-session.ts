@@ -10,6 +10,7 @@ import {
 } from '@/app/lib/graphql/operations/create-session';
 import type { SessionCreationFormData } from '@/app/components/session-creation/session-creation-form';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
+import type { BoardConfig } from '@boardsesh/shared-schema';
 
 function getGeolocation(): Promise<{ latitude: number; longitude: number }> {
   // Use Capacitor Geolocation plugin on native
@@ -51,7 +52,16 @@ export function useCreateSession() {
   const [isCreating, setIsCreating] = useState(false);
 
   const createSession = useCallback(
-    async (formData: SessionCreationFormData, boardPath: string): Promise<string> => {
+    async (
+      formData: SessionCreationFormData,
+      boardPath: string,
+      /**
+       * Additional board configs to attach to the session (beyond the
+       * primary board encoded in `boardPath`). Back-compat: omit or pass an
+       * empty array for single-board sessions.
+       */
+      extraBoards: BoardConfig[] = [],
+    ): Promise<string> => {
       setIsCreating(true);
       try {
         // Get geolocation when discoverable
@@ -66,6 +76,7 @@ export function useCreateSession() {
           goal: formData.goal,
           color: formData.color,
           isPermanent: formData.isPermanent,
+          boards: extraBoards.length > 0 ? extraBoards : undefined,
         };
 
         const client = createGraphQLHttpClient(token);

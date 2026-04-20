@@ -52,6 +52,13 @@ export const JOIN_SESSION = `
       endedAt
       isPermanent
       color
+      boards {
+        boardName
+        layoutId
+        sizeId
+        setIds
+        angle
+      }
       users {
         id
         username
@@ -182,6 +189,13 @@ export const CREATE_SESSION = `
       endedAt
       isPermanent
       color
+      boards {
+        boardName
+        layoutId
+        sizeId
+        setIds
+        angle
+      }
       users {
         id
         username

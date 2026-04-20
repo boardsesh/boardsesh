@@ -134,6 +134,30 @@ export function normalizeQueueItem(
 }
 
 /**
+ * Dedupe the `boardConfig` entries present in a queue. Preserves first-seen
+ * order so the first item becomes the primary board when no better signal
+ * exists.
+ *
+ * Dedupe key intentionally excludes `angle` — angle is a per-climb choice,
+ * not a distinct physical board. Two items on the same hold layout at 40deg
+ * and 45deg should count as one board.
+ */
+export function deriveBoardsFromQueue(items: readonly ClimbQueueItem[]): BoardConfig[] {
+  const seen = new Set<string>();
+  const boards: BoardConfig[] = [];
+  for (const item of items) {
+    const cfg = item.boardConfig;
+    if (!cfg) continue;
+    const setIds = [...cfg.setIds].sort((a, b) => a - b).join(',');
+    const key = `${cfg.boardName}|${cfg.layoutId}|${cfg.sizeId}|${setIds}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    boards.push(cfg);
+  }
+  return boards;
+}
+
+/**
  * Reconstruct the accepted-configs + accepted-sizes pair from a queue. Used
  * on reducer bootstrap (INITIAL_QUEUE_DATA / UPDATE_QUEUE) and as the source
  * of truth for the bridge context.

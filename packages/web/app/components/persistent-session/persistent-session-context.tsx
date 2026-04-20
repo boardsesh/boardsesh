@@ -7,6 +7,7 @@ import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/typ
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '../party-manager/party-profile-context';
 import { isBoardRoutePath } from '@/app/lib/board-route-paths';
+import { deriveBoardsFromQueue } from '@/app/lib/board-config';
 
 import type {
   PersistentSessionContextType,
@@ -189,10 +190,30 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     ],
   );
 
+  // Derive the multi-board roster from the live queues. Kept in useMemo so
+  // downstream context consumers don't re-render when the underlying board
+  // configs are unchanged but the queue array identity shifts.
+  const localBoards = useMemo(
+    () => deriveBoardsFromQueue(queueStorage.localQueue),
+    [queueStorage.localQueue],
+  );
+  const sessionBoards = useMemo(
+    () => deriveBoardsFromQueue(eventProcessor.queue),
+    [eventProcessor.queue],
+  );
+
+  // Mirror the derived list back onto `activeSession.boards` for convenience.
+  // Consumers that want "the boards in this session" can read it directly off
+  // activeSession rather than threading `sessionBoards` through.
+  const activeSessionWithBoards = useMemo<ActiveSessionInfo | null>(() => {
+    if (!lifecycle.activeSession) return null;
+    return { ...lifecycle.activeSession, boards: sessionBoards };
+  }, [lifecycle.activeSession, sessionBoards]);
+
   // --- State context value (changes when session/queue state changes) ---
   const stateValue = useMemo<PersistentSessionStateType>(
     () => ({
-      activeSession: lifecycle.activeSession,
+      activeSession: activeSessionWithBoards,
       session: lifecycle.session,
       isConnecting: lifecycle.isConnecting,
       hasConnected: lifecycle.hasConnected,
@@ -206,6 +227,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       localCurrentClimbQueueItem: queueStorage.localCurrentClimbQueueItem,
       localBoardPath: queueStorage.localBoardPath,
       localBoardDetails: queueStorage.localBoardDetails,
+      localBoards,
+      sessionBoards,
       isLocalQueueLoaded: queueStorage.isLocalQueueLoaded,
       offlineBufferRef,
       lastReceivedSequenceRef,
@@ -215,7 +238,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       sessionSummaryHealthKitWorkoutId: lifecycle.sessionSummaryHealthKitWorkoutId ?? null,
     }),
     [
-      lifecycle.activeSession,
+      activeSessionWithBoards,
       lifecycle.session,
       lifecycle.isConnecting,
       lifecycle.hasConnected,
@@ -231,6 +254,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       queueStorage.localBoardPath,
       queueStorage.localBoardDetails,
       queueStorage.isLocalQueueLoaded,
+      localBoards,
+      sessionBoards,
     ],
   );
 

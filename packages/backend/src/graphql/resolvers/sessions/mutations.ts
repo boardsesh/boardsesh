@@ -15,7 +15,7 @@ import {
   QueueArraySchema,
 } from '../../../validation/schemas';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import type { CreateSessionInput } from '../shared/types';
+import { computeSessionBoards, type CreateSessionInput } from '../shared/types';
 import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
 import { sessionBoards, sessions } from '../../../db/schema';
@@ -136,6 +136,13 @@ export const sessionMutations = {
     // Fetch session data for new fields
     const sessionData = await roomManager.getSessionById(sessionId);
 
+    // Session board roster: start from any explicit boards persisted at
+    // create-time, then union with whatever boardConfigs are present in the
+    // queue. Back-compat: older sessions have no explicit boards, so the
+    // queue is the only source until a multi-board session is created.
+    const persistedBoards = await roomManager.getSessionBoards(sessionId);
+    const boards = computeSessionBoards(result.queue, persistedBoards);
+
     return {
       id: sessionId,
       name: result.sessionName || null,
@@ -155,6 +162,7 @@ export const sessionMutations = {
       endedAt: sessionData?.endedAt?.toISOString() || null,
       isPermanent: sessionData?.isPermanent ?? false,
       color: sessionData?.color || null,
+      boards,
     };
   },
 
@@ -224,6 +232,13 @@ export const sessionMutations = {
     // The creator will join via WebSocket when they navigate to the board page.
     const isHttpRequest = ctx.connectionId.startsWith('http-');
 
+    // Persist the explicit board roster (if any) before anyone joins. The
+    // WebSocket join path derives boards from queue + stored roster, so this
+    // needs to happen before `joinSession`.
+    if (input.boards && input.boards.length > 0) {
+      await roomManager.saveSessionBoards(sessionId, input.boards);
+    }
+
     if (!isHttpRequest) {
       // WebSocket path: join the session as the creator.
       // For non-discoverable sessions, this also creates the board_sessions row
@@ -252,6 +267,8 @@ export const sessionMutations = {
         });
       }
 
+      const boards = computeSessionBoards(result.queue, input.boards);
+
       return {
         id: sessionId,
         name: input.name || null,
@@ -271,6 +288,7 @@ export const sessionMutations = {
         endedAt: null,
         isPermanent: input.isPermanent || false,
         color: input.color || null,
+        boards,
       };
     }
 
@@ -294,6 +312,7 @@ export const sessionMutations = {
       endedAt: null,
       isPermanent: input.isPermanent || false,
       color: input.color || null,
+      boards: input.boards ?? [],
     };
   },
 

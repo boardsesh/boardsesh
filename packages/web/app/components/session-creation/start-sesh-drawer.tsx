@@ -19,6 +19,7 @@ import type { SessionCreationFormData } from './session-creation-form';
 import BoardSelectorDrawer from '@/app/components/board-selector-drawer/board-selector-drawer';
 import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
 import BoardScrollCard from '@/app/components/board-scroll/board-scroll-card';
+import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
 import { useCreateSession } from '@/app/hooks/use-create-session';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useSession } from 'next-auth/react';
@@ -41,6 +42,7 @@ import { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { BoardName } from '@/app/lib/types';
+import { boardConfigFromUserBoard, deriveBoardsFromQueue } from '@/app/lib/board-config';
 
 interface StartSeshDrawerProps {
   open: boolean;
@@ -69,7 +71,12 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
   const { currentClimbQueueItem: bridgeCurrentClimbQueueItem } = useCurrentClimb();
   const { boards, error: boardsError } = useMyBoards(open);
 
-  const [selectedBoard, setSelectedBoard] = useState<(typeof boards)[number] | null>(null);
+  // Multi-select: first entry is the primary board (drives URL/navigation).
+  // `null` clears the selection entirely (matches the "All" chip in
+  // BoardFilterStrip). Additional boards attached to the session are sent to
+  // the backend as `boards` on CreateSessionInput.
+  const [selectedBoards, setSelectedBoards] = useState<UserBoard[]>([]);
+  const selectedBoard = selectedBoards[0] ?? null;
   const [selectedCustomPath, setSelectedCustomPath] = useState<string | null>(null);
   const [selectedCustomConfig, setSelectedCustomConfig] = useState<StoredBoardConfig | null>(null);
   const { openAuthModal } = useAuthModal();
@@ -125,7 +132,7 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
 
     hasAutoSelectedRef.current = true;
     if (match) {
-      setSelectedBoard(match);
+      setSelectedBoards([match]);
     }
   }, [open, boards, localBoardPath, localBoardDetails, pathname]);
 
@@ -133,15 +140,18 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
 
   const handleClose = useCallback(() => {
     onClose();
-    setSelectedBoard(null);
+    setSelectedBoards([]);
     setSelectedCustomPath(null);
     setSelectedCustomConfig(null);
     setBoardSelectorExpanded(false);
     setFormKey((k) => k + 1);
   }, [onClose]);
 
+  // Single-select from the discovery card (tapping a card replaces the primary
+  // board and collapses the drawer). Additional boards are added via the
+  // multi-select filter strip rendered below.
   const handleBoardSelect = useCallback((board: UserBoard) => {
-    setSelectedBoard(board);
+    setSelectedBoards([board]);
     setSelectedCustomPath(null);
     setSelectedCustomConfig(null);
     setBoardSelectorExpanded(false);
@@ -153,6 +163,28 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     },
     [handleBoardSelect],
   );
+
+  // Toggle semantics for the multi-select strip. `null` clears everything;
+  // otherwise add or remove the board from `selectedBoards`. The first entry
+  // stays primary (URL driver) so toggling the primary off promotes the next
+  // one in the list.
+  const handleBoardToggle = useCallback((board: UserBoard | null) => {
+    if (board === null) {
+      setSelectedBoards([]);
+      return;
+    }
+    setSelectedBoards((prev) => {
+      const idx = prev.findIndex((b) => b.uuid === board.uuid);
+      if (idx >= 0) {
+        const next = [...prev];
+        next.splice(idx, 1);
+        return next;
+      }
+      return [...prev, board];
+    });
+    setSelectedCustomPath(null);
+    setSelectedCustomConfig(null);
+  }, []);
 
   const handleConfigClick = useCallback((config: PopularBoardConfig) => {
     // For popular configs in the session drawer, navigate to that board config
@@ -184,14 +216,14 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
       angle,
       createdAt: new Date().toISOString(),
     });
-    setSelectedBoard(null);
+    setSelectedBoards([]);
     setBoardSelectorExpanded(false);
   }, []);
 
   const handleCustomSelect = (url: string, config?: StoredBoardConfig) => {
     setSelectedCustomPath(url);
     setSelectedCustomConfig(config ?? null);
-    setSelectedBoard(null);
+    setSelectedBoards([]);
     setShowBoardDrawer(false);
     setBoardSelectorExpanded(false);
   };
@@ -216,8 +248,16 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
       return;
     }
 
+    // Multi-board payload for the backend. The primary board is always first;
+    // additional `selectedBoards` entries come after. If the user picked a
+    // custom path or relied on the pathname, we still send the primary config
+    // so back-compat queues get a boards list too.
+    const extraBoardConfigs = selectedBoards
+      .slice(1)
+      .map((b) => boardConfigFromUserBoard(b, getDefaultAngleForBoard(b.boardType)));
+
     try {
-      const sessionId = await createSession(formData, boardPath);
+      const sessionId = await createSession(formData, boardPath, extraBoardConfigs);
 
       // Effective values: prefer local state, fall back to bridge context.
       // Local state may be empty when the QueueBridgeInjector is active on a
@@ -282,6 +322,15 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
   const hasSelection = selectedBoard || selectedCustomConfig;
   const selectedName = selectedBoard?.name ?? selectedCustomConfig?.name;
 
+  // How many distinct boards are represented in the current queue. Used to
+  // warn the user when starting a session with climbs from more than one
+  // board — the session's primary board will drive the view, but queue items
+  // from other boards still travel with them.
+  const queueBoardCount = (() => {
+    const effectiveQueue = localQueue.length > 0 ? localQueue : bridgeQueue;
+    return deriveBoardsFromQueue(effectiveQueue).length;
+  })();
+
   const boardSelector = (
     <Box>
       {hasSelection && !boardSelectorExpanded ? (
@@ -321,6 +370,23 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
               <EditOutlined sx={{ color: '#fff', fontSize: 28 }} />
             </Box>
           </Box>
+          {boards.length > 1 && (
+            <Box sx={{ mt: 1.5 }}>
+              <Typography
+                variant="caption"
+                sx={{ display: 'block', mb: 0.5, color: 'var(--neutral-600)' }}
+              >
+                Add more boards
+              </Typography>
+              <BoardFilterStrip
+                multiSelect
+                boards={boards}
+                loading={false}
+                selectedBoards={selectedBoards}
+                onBoardToggle={handleBoardToggle}
+              />
+            </Box>
+          )}
         </Box>
       ) : (
         <BoardDiscoveryScroll
@@ -334,6 +400,14 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
       {boardsError && (
         <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
           {boardsError}
+        </Typography>
+      )}
+      {queueBoardCount > 1 && (
+        <Typography
+          variant="body2"
+          sx={{ mt: 1, color: 'var(--neutral-600)' }}
+        >
+          Your queue has climbs from {queueBoardCount} boards. They come with you.
         </Typography>
       )}
     </Box>

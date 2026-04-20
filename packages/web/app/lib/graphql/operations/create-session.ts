@@ -1,4 +1,5 @@
 import { gql } from 'graphql-request';
+import type { BoardConfigInput } from '@boardsesh/shared-schema';
 
 // ============================================
 // Mutations
@@ -33,6 +34,11 @@ export interface CreateSessionInput {
   isPermanent?: boolean;
   boardIds?: number[];
   color?: string;
+  /**
+   * Extra board configs to attach beyond the primary board encoded in
+   * `boardPath`. Back-compat: omit for single-board sessions.
+   */
+  boards?: BoardConfigInput[];
 }
 
 export interface CreateSessionResponse {
