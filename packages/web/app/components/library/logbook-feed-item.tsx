@@ -30,6 +30,7 @@ import { track } from '@vercel/analytics';
 import type { AscentFeedItem } from '@/app/lib/graphql/operations/ticks';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { useOptionalQueueActions } from '@/app/components/graphql-queue';
+import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { dispatchOpenPlayDrawer } from '@/app/components/queue-control/play-drawer-event';
 import { AscentStatusIcon } from '@/app/components/ascent-status/ascent-status-icon';
 import { ClimbActions } from '@/app/components/climb-actions';
@@ -315,6 +316,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     const [betaLinkDialogOpen, setBetaLinkDialogOpen] = useState(false);
 
     const queueActions = useOptionalQueueActions();
+    const { showMessage } = useSnackbar();
 
     // --- Edit state ---
     const { mutateAsync: updateTickAsync, isPending: isSaving } = useUpdateTick();
@@ -444,8 +446,9 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
         track('Logbook Row Clicked', { climbUuid: climb.uuid });
       } catch (err) {
         console.error('Failed to set active climb from logbook row', err);
+        showMessage('Could not load climb — try again', 'error');
       }
-    }, [isEditing, queueActions, climb]);
+    }, [isEditing, queueActions, climb, showMessage]);
 
     const handleRowKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -468,9 +471,10 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
           track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid });
         } catch (err) {
           console.error('Failed to set active climb from logbook thumbnail', err);
+          showMessage('Could not load climb — try again', 'error');
         }
       },
-      [isEditing, queueActions, climb],
+      [isEditing, queueActions, climb, showMessage],
     );
 
     // Build BoardDetails for ClimbActions (same pattern as AscentThumbnail)

@@ -16,6 +16,7 @@ type SwipeOptions = {
 let capturedSwipeOptions: SwipeOptions | null = null;
 const updateTickAsyncMock = vi.fn();
 const setCurrentClimbMock = vi.fn();
+const showMessageMock = vi.fn();
 const dispatchOpenPlayDrawerMock = vi.fn();
 // Holder so tests can swap queue-actions availability without remounting.
 const queueActionsState: { value: { setCurrentClimb: typeof setCurrentClimbMock } | null } = {
@@ -115,6 +116,10 @@ vi.mock('@/app/components/graphql-queue', () => ({
   useOptionalQueueActions: () => queueActionsState.value,
 }));
 
+vi.mock('@/app/components/providers/snackbar-provider', () => ({
+  useSnackbar: () => ({ showMessage: showMessageMock }),
+}));
+
 vi.mock('@/app/components/queue-control/play-drawer-event', () => ({
   dispatchOpenPlayDrawer: () => dispatchOpenPlayDrawerMock(),
 }));
@@ -197,6 +202,7 @@ beforeEach(() => {
   capturedSwipeOptions = null;
   updateTickAsyncMock.mockReset();
   setCurrentClimbMock.mockReset();
+  showMessageMock.mockReset();
   dispatchOpenPlayDrawerMock.mockReset();
   queueActionsState.value = { setCurrentClimb: setCurrentClimbMock };
   updateTickState.isPending = false;
@@ -335,12 +341,12 @@ describe('LogbookFeedItem', () => {
   it('reflects updateTick.isPending via the getter mock without remount', () => {
     updateTickState.isPending = true;
     const { rerender } = render(<LogbookFeedItem item={makeItem()} isEditing />);
-    const saveBtn = screen.getByLabelText('Save') as HTMLButtonElement;
+    const saveBtn = screen.getByLabelText('Save');
     expect(saveBtn.disabled).toBe(true);
 
     updateTickState.isPending = false;
     rerender(<LogbookFeedItem item={makeItem()} isEditing />);
-    const saveBtn2 = screen.getByLabelText('Save') as HTMLButtonElement;
+    const saveBtn2 = screen.getByLabelText('Save');
     expect(saveBtn2.disabled).toBe(false);
   });
 
@@ -366,6 +372,7 @@ describe('LogbookFeedItem', () => {
     const row = container.querySelector('.swipeableContent') as HTMLElement;
     fireEvent.click(row);
     expect(setCurrentClimbMock).not.toHaveBeenCalled();
+    expect(showMessageMock).not.toHaveBeenCalled();
   });
 
   it('row is keyboard-accessible with role/tabIndex/aria-label', () => {
@@ -432,6 +439,25 @@ describe('LogbookFeedItem', () => {
     render(<LogbookFeedItem item={makeItem()} />);
     fireEvent.click(screen.getByLabelText('More actions'));
     expect(setCurrentClimbMock).not.toHaveBeenCalled();
+  });
+
+  it('shows an error snackbar when row click rejects', async () => {
+    setCurrentClimbMock.mockRejectedValueOnce(new Error('network'));
+    const { container } = render(<LogbookFeedItem item={makeItem()} />);
+    const row = container.querySelector('.swipeableContent') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(row);
+    });
+    expect(showMessageMock).toHaveBeenCalledWith('Could not load climb — try again', 'error');
+  });
+
+  it('shows an error snackbar when thumbnail click rejects', async () => {
+    setCurrentClimbMock.mockRejectedValueOnce(new Error('network'));
+    render(<LogbookFeedItem item={makeItem()} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('ascent-thumbnail'));
+    });
+    expect(showMessageMock).toHaveBeenCalledWith('Could not load climb — try again', 'error');
   });
 
   it('keeps the comment row container mounted in both modes (U8)', () => {
