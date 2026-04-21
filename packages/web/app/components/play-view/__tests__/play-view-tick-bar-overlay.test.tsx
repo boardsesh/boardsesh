@@ -276,3 +276,52 @@ describe('PlayViewTickBar expanded state persistence', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+describe('PlayViewTickBar overlay dismiss', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPreference.mockResolvedValue(null);
+    mockSetPreference.mockResolvedValue(undefined);
+  });
+
+  it('calls onClose when the backdrop overlay is clicked', () => {
+    const onClose = vi.fn();
+    // Mirrors PlayViewDrawer: overlay sibling rendered at the parent level
+    function Wrapper() {
+      return (
+        <div style={{ position: 'relative' }}>
+          <div data-testid="tick-bar-overlay" onClick={onClose} aria-hidden="true" />
+          <PlayViewTickBar {...defaultProps} isTickBarActive={true} onClose={onClose} />
+        </div>
+      );
+    }
+    render(<Wrapper />);
+
+    fireEvent.click(screen.getByTestId('tick-bar-overlay'));
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('resets expanded state when dismissed via backdrop (no stale state on re-open)', async () => {
+    mockGetPreference.mockResolvedValue(null);
+    const { rerender } = render(
+      <PlayViewTickBar {...defaultProps} isTickBarActive={true} />,
+    );
+    await waitFor(() => {});
+
+    // Expand the tick bar
+    fireEvent.click(screen.getByLabelText('Expand tick bar'));
+    await waitFor(() => expect(screen.getByText('Collapse')).toBeTruthy());
+
+    // Backdrop dismiss: parent sets isTickBarActive=false, bypassing handleClose
+    rerender(<PlayViewTickBar {...defaultProps} isTickBarActive={false} />);
+
+    // Re-open
+    rerender(<PlayViewTickBar {...defaultProps} isTickBarActive={true} />);
+    await waitFor(() => {});
+
+    // Should start collapsed — no stale expanded state from prior session
+    expect(screen.queryByText('Collapse')).toBeNull();
+    expect(screen.getByText('Expand')).toBeTruthy();
+  });
+});

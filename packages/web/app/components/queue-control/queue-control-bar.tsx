@@ -482,11 +482,12 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
 
   // Restore persisted tick bar expanded state when tick mode opens
   useEffect(() => {
-    if (tickBarActive) {
-      getPreference<boolean>('tickBarExpanded').then((persisted) => {
-        if (persisted === true) setTickBarExpanded(true);
-      });
-    }
+    if (!tickBarActive) return;
+    let cancelled = false;
+    getPreference<boolean>('tickBarExpanded').then((persisted) => {
+      if (!cancelled && persisted === true) setTickBarExpanded(true);
+    });
+    return () => { cancelled = true; };
   }, [tickBarActive]);
 
   // Persist expanded state on user-initiated toggle (not on automatic resets)
@@ -550,12 +551,15 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       if (target?.closest('[data-scrollable-picker]')) return;
       if (tickBarExpanded) {
         if (Math.abs(eventData.deltaY) >= 120 || eventData.velocity > 0.5) {
+          // Full dismiss — skip handleTickBarExpandedChange; preserve the user's
+          // last intentional preference for next open (not an automatic reset).
           setActiveDrawer('none');
         } else if (Math.abs(eventData.deltaY) >= 50) {
           handleTickBarExpandedChange(false);
         }
       } else {
         if (Math.abs(eventData.deltaY) >= 80) {
+          // Full dismiss — same rationale as above.
           setActiveDrawer('none');
         }
       }

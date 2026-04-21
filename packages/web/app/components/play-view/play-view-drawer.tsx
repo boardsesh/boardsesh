@@ -194,10 +194,24 @@ export const PlayViewTickBar = React.memo<PlayViewTickBarProps>(function PlayVie
 
   // Restore persisted tick bar expanded state when tick bar opens
   useEffect(() => {
-    if (isTickBarActive) {
-      getPreference<boolean>('tickBarExpanded').then((persisted) => {
-        if (persisted === true) setTickBarExpanded(true);
-      });
+    if (!isTickBarActive) return;
+    let cancelled = false;
+    getPreference<boolean>('tickBarExpanded').then((persisted) => {
+      if (!cancelled && persisted === true) setTickBarExpanded(true);
+    });
+    return () => { cancelled = true; };
+  }, [isTickBarActive]);
+
+  // Reset local state on any dismiss (close button OR backdrop overlay).
+  // The close button calls handleClose which resets explicitly then sets isTickBarActive→false,
+  // making this a no-op for that path. For the backdrop path (parent sets isTickBarActive→false
+  // directly), this is the only reset that runs.
+  useEffect(() => {
+    if (!isTickBarActive) {
+      setTickComment('');
+      setCommentFocused(false);
+      setIsFlash(false);
+      setTickBarExpanded(false);
     }
   }, [isTickBarActive]);
 
