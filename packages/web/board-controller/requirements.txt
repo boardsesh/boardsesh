@@ -22,7 +22,7 @@ pydantic==2.10.3
 aiofiles==24.1.0
 
 # Environment variables
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # Bluetooth dependencies (already installed for controller.py)
 # adafruit-circuitpython-neopixel-spi
