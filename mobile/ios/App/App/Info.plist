@@ -59,7 +59,6 @@
 	<array>
 		<string>boardsesh.com</string>
 		<string>www.boardsesh.com</string>
-		<string>tailedd9d5.ts.net</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Boardsesh reads your Apple Health data to avoid duplicate workout entries when saving climbing sessions.</string>
