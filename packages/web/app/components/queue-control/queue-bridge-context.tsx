@@ -468,8 +468,8 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
   // Separate version counters: actionsVersion only bumps when the injected
   // actions object identity changes (rare — GraphQLQueueProvider uses latestRef
   // pattern). dataVersion bumps on every data change (expected).
-  const [, setActionsVersion] = useState(0);
-  const [, setDataVersion] = useState(0);
+  const [actionsVersion, setActionsVersion] = useState(0);
+  const [dataVersion, setDataVersion] = useState(0);
 
   const adapter = usePersistentSessionQueueAdapter();
 
@@ -483,18 +483,18 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
   // never see queue updates that arrive after the board route mounts.
   const effectiveContext = useMemo(
     () => (isInjected && injectedContextRef.current ? injectedContextRef.current : adapter.context),
-    [isInjected, adapter.context, _dataVersion, _actionsVersion],
+    [isInjected, adapter.context, dataVersion, actionsVersion],
   );
 
   const effectiveActions: GraphQLQueueActionsType = useMemo(() => {
     if (!isInjected) return adapter.actionsValue;
     return injectedActionsRef.current!;
-  }, [isInjected, adapter.actionsValue, _actionsVersion]);
+  }, [isInjected, adapter.actionsValue, actionsVersion]);
 
   const effectiveData: GraphQLQueueDataType = useMemo(() => {
     if (!isInjected) return adapter.dataValue;
     return injectedDataRef.current!;
-  }, [isInjected, adapter.dataValue, _dataVersion]);
+  }, [isInjected, adapter.dataValue, dataVersion]);
 
   const effectiveBoardDetails = isInjected ? injectedBoardDetails : adapter.boardDetails;
   const effectiveAngle = isInjected ? injectedAngle : adapter.angle;
