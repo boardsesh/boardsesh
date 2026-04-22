@@ -25,6 +25,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import InstagramIcon from '@mui/icons-material/Instagram';
 import LinkOutlined from '@mui/icons-material/LinkOutlined';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { formatTickRelativeTime } from '@/app/lib/format-tick-time';
 import { track } from '@/app/lib/analytics';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations/ticks';
@@ -42,6 +43,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { constructClimbViewUrl } from '@/app/lib/url-utils';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { getGradesForBoard } from '@/app/lib/board-data';
 import AscentThumbnail from '@/app/components/activity-feed/ascent-thumbnail';
@@ -319,6 +321,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     const [betaLinkDialogOpen, setBetaLinkDialogOpen] = useState(false);
 
     const queueActions = useOptionalQueueActions();
+    const router = useRouter();
 
     // --- Edit state ---
     const { mutateAsync: updateTickAsync, isPending: isSaving } = useUpdateTick();
@@ -441,31 +444,68 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     // Map ascent to Climb for ClimbActions + set-active handlers
     const climb = useMemo(() => ascentFeedItemToClimb(item), [item]);
 
+    // URL used when there's no queue session (e.g., /you/logbook). Navigates to
+    // the climb's board view, where the QueueProvider mounts and loads it as current.
+    const fallbackViewUrl = useMemo(() => {
+      const boardName = item.boardType as BoardName;
+      if (!item.layoutId) return null;
+      const config = getDefaultBoardConfig(boardName, item.layoutId);
+      if (!config) return null;
+      return constructClimbViewUrl(
+        {
+          board_name: boardName,
+          layout_id: item.layoutId,
+          size_id: config.sizeId,
+          set_ids: config.setIds,
+          angle: item.angle,
+        },
+        item.climbUuid,
+        item.climbName,
+      );
+    }, [item.boardType, item.layoutId, item.angle, item.climbUuid, item.climbName]);
+
+    const isRowInteractive = !isEditing && (queueActions != null || fallbackViewUrl != null);
+
     const handleRowClick = useCallback(() => {
-      if (isEditing || !queueActions) return;
-      queueActions.previewClimbFromBrowse(climb);
-      track('Logbook Row Clicked', { climbUuid: climb.uuid });
-    }, [isEditing, queueActions, climb]);
+      if (isEditing) return;
+      if (queueActions) {
+        queueActions.previewClimbFromBrowse(climb);
+        track('Logbook Row Clicked', { climbUuid: climb.uuid });
+        return;
+      }
+      if (fallbackViewUrl) {
+        track('Logbook Row Clicked', { climbUuid: climb.uuid, navigated: true });
+        router.push(fallbackViewUrl);
+      }
+    }, [isEditing, queueActions, climb, fallbackViewUrl, router]);
 
     const handleRowKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
-        if (isEditing || !queueActions) return;
+        if (!isRowInteractive) return;
         if (e.key !== 'Enter' && e.key !== ' ') return;
         if (e.target !== e.currentTarget) return;
         e.preventDefault();
         handleRowClick();
       },
-      [isEditing, queueActions, handleRowClick],
+      [isRowInteractive, handleRowClick],
     );
 
     const handleThumbnailClick = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isEditing || !queueActions) return;
-        queueActions.previewClimbFromBrowse(climb);
-        track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid });
+        if (isEditing) return;
+        if (queueActions) {
+          queueActions.previewClimbFromBrowse(climb);
+          dispatchOpenPlayDrawer();
+          track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid });
+          return;
+        }
+        if (fallbackViewUrl) {
+          track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid, navigated: true });
+          router.push(fallbackViewUrl);
+        }
       },
-      [isEditing, queueActions, climb],
+      [isEditing, queueActions, climb, fallbackViewUrl, router],
     );
 
     // Build BoardDetails for ClimbActions (same pattern as AscentThumbnail)
@@ -621,9 +661,9 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
             ref={contentCombinedRef}
             className={styles.swipeableContent}
             data-swipe-content=""
-            role={!isEditing && queueActions ? 'button' : undefined}
-            tabIndex={!isEditing && queueActions ? 0 : undefined}
-            aria-label={!isEditing && queueActions ? `Set ${item.climbName} as active climb` : undefined}
+            role={isRowInteractive ? 'button' : undefined}
+            tabIndex={isRowInteractive ? 0 : undefined}
+            aria-label={isRowInteractive ? `Set ${item.climbName} as active climb` : undefined}
             onClick={handleRowClick}
             onKeyDown={handleRowKeyDown}
           >
@@ -639,7 +679,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                     climbName={item.climbName}
                     frames={item.frames}
                     isMirror={item.isMirror}
-                    onClick={queueActions && !isEditing ? handleThumbnailClick : undefined}
+                    onClick={isRowInteractive ? handleThumbnailClick : undefined}
                   />
                 )}
                 {isEditing ? (

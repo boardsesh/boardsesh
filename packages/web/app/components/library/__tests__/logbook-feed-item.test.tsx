@@ -28,6 +28,7 @@ const updateTickAsyncMock = vi.fn();
 const setCurrentClimbMock = vi.fn();
 const previewClimbFromBrowseMock = vi.fn();
 const dispatchOpenPlayDrawerMock = vi.fn();
+const routerPushMock = vi.fn();
 const boardDataMocks = vi.hoisted(() => ({
   getGradesForBoard: vi.fn((boardName: string) =>
     boardName === 'moonboard'
@@ -104,7 +105,7 @@ vi.mock('@/app/hooks/use-grade-format', () => ({
 }));
 
 vi.mock('@/app/lib/default-board-configs', () => ({
-  getDefaultBoardConfig: () => ({ sizeId: 10, setIds: '1,26' }),
+  getDefaultBoardConfig: () => ({ sizeId: 10, setIds: [1, 26] }),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({
@@ -181,6 +182,17 @@ vi.mock('next/dynamic', () => ({
   default: () => () => null,
 }));
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: routerPushMock,
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}));
+
 // --- Import component after mocks ---
 
 // --- Helpers ---
@@ -219,6 +231,7 @@ beforeEach(() => {
   previewClimbFromBrowseMock.mockReset();
   dispatchOpenPlayDrawerMock.mockReset();
   boardDataMocks.getGradesForBoard.mockClear();
+  routerPushMock.mockReset();
   queueActionsState.value = {
     setCurrentClimb: setCurrentClimbMock,
     previewClimbFromBrowse: previewClimbFromBrowseMock,
@@ -406,12 +419,17 @@ describe('LogbookFeedItem', () => {
     expect(previewClimbFromBrowseMock).not.toHaveBeenCalled();
   });
 
-  it('row tap is a no-op when queue actions are unavailable', () => {
+  it('row tap navigates to the climb view when queue actions are unavailable', () => {
     queueActionsState.value = null;
     const { container } = render(<LogbookFeedItem item={makeItem()} />);
     const row = container.querySelector('.swipeableContent') as HTMLElement;
     fireEvent.click(row);
     expect(previewClimbFromBrowseMock).not.toHaveBeenCalled();
+    expect(setCurrentClimbMock).not.toHaveBeenCalled();
+    expect(routerPushMock).toHaveBeenCalledTimes(1);
+    const url = routerPushMock.mock.calls[0][0] as string;
+    expect(url.startsWith('/kilter/1/10/1,26/40/view/')).toBe(true);
+    expect(url.endsWith('-climb-1')).toBe(true);
   });
 
   it('row is keyboard-accessible with role/tabIndex/aria-label', () => {
