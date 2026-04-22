@@ -99,12 +99,6 @@ const defaultProps = {
   commentSlot: null,
 };
 
-/**
- * Simulate a horizontal swipe on the bar root.
- * react-swipeable uses touch events internally, so we dispatch native touch
- * events with TouchEvent-shaped fields that the library reads.
- */
-
 describe('QuickTickBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();

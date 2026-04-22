@@ -275,7 +275,7 @@ export const controllerMutations = {
    * ESP32 controller heartbeat to update lastSeenAt
    * Uses API key authentication via connectionParams
    */
-  controllerHeartbeat: async (_: unknown, _2: { sessionId: string }, ctx: ConnectionContext): Promise<boolean> => {
+  controllerHeartbeat: async (_: unknown, {}: { sessionId: string }, ctx: ConnectionContext): Promise<boolean> => {
     await applyRateLimit(ctx, 120); // Allow frequent heartbeats
 
     // Validate API key authentication via context
