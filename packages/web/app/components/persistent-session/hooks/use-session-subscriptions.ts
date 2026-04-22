@@ -11,7 +11,6 @@ interface UseSessionSubscriptionsArgs {
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
   lastReceivedStateHash: string | null;
-  liveSessionStats: { sessionId: string } | null;
   setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
   setLiveSessionStats: Dispatch<SetStateAction<SessionLiveStats | null>>;
   refs: Pick<

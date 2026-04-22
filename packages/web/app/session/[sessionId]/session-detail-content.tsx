@@ -271,6 +271,9 @@ export default function SessionDetailContent({
   fallbackBoardDetails = null,
   afterParticipants,
   inviteContent,
+  currentAngle,
+  onAngleChange,
+  namedBoardName,
 }: SessionDetailContentProps) {
   const { data: authSession } = useSession();
   const router = useRouter();
@@ -749,6 +752,10 @@ export default function SessionDetailContent({
             goal={goal}
             afterParticipants={!embedded ? afterParticipants : undefined}
             compact={embedded}
+            boardDetails={effectiveBoardDetails}
+            currentAngle={currentAngle}
+            onAngleChange={onAngleChange}
+            namedBoardName={namedBoardName}
           />
         )}
 

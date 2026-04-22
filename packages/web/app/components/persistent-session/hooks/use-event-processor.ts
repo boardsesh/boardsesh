@@ -10,8 +10,6 @@ interface UseEventProcessorArgs {
     SharedRefs,
     | 'lastReceivedSequenceRef'
     | 'triggerResyncRef'
-    | 'lastCorruptionResyncRef'
-    | 'isFilteringCorruptedItemsRef'
     | 'queueEventSubscribersRef'
     | 'sessionEventSubscribersRef'
     | 'offlineBufferRef'

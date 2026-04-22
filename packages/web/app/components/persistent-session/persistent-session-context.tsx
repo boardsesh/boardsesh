@@ -143,7 +143,6 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     queue: eventProcessor.queue,
     currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
     lastReceivedStateHash: eventProcessor.lastReceivedStateHash,
-    liveSessionStats: eventProcessor.liveSessionStats,
     setQueueState: eventProcessor.setQueueState,
     setLiveSessionStats: eventProcessor.setLiveSessionStats,
     refs,
