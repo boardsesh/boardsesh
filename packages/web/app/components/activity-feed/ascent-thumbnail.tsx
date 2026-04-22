@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import { usePathname } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
@@ -34,6 +35,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   onClick,
 }) => {
   const canvasReady = useCanvasRendererReady();
+  const pathname = usePathname();
   // Memoize board details to avoid recomputing on every render
   const boardDetails = useMemo<BoardDetails | null>(() => {
     if (!layoutId) return null;
@@ -86,8 +88,16 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     );
   }, [boardDetails, boardType, layoutId, angle, climbUuid, climbName]);
 
+  const climbViewHref = useMemo(() => {
+    if (!climbViewPath) return null;
+    if (pathname && pathname.startsWith('/')) {
+      return `${climbViewPath}${climbViewPath.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(pathname)}`;
+    }
+    return climbViewPath;
+  }, [climbViewPath, pathname]);
+
   // If we can't render the thumbnail, don't show anything
-  if (!boardDetails || (!onClick && !climbViewPath)) {
+  if (!boardDetails || (!onClick && !climbViewHref)) {
     return null;
   }
 
@@ -138,7 +148,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   }
 
   return (
-    <LocaleLink href={climbViewPath!} className={styles.thumbnailLink} title={`View ${climbName}`}>
+    <LocaleLink href={climbViewHref!} className={styles.thumbnailLink} title={`View ${climbName}`}>
       <div className={styles.thumbnailContainer}>{thumbnailContent}</div>
     </LocaleLink>
   );

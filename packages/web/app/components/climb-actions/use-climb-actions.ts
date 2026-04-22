@@ -59,7 +59,11 @@ export function useClimbActions({
   // URLs
   const viewDetailsUrl = useMemo(() => {
     if (!climb) return '';
-    return getContextAwareClimbViewUrl(pathname, boardDetails, angle, climb.uuid, climb.name);
+    const base = getContextAwareClimbViewUrl(pathname, boardDetails, angle, climb.uuid, climb.name);
+    if (pathname && pathname.startsWith('/')) {
+      return `${base}${base.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(pathname)}`;
+    }
+    return base;
   }, [climb, pathname, boardDetails, angle]);
 
   const forkUrl = useMemo(() => {

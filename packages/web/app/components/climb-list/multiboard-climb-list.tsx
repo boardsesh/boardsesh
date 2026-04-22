@@ -137,14 +137,19 @@ export default function MultiboardClimbList({
   // to the climb's view page so the user is never stranded.
   const navigateToClimb = useCallback(
     async (climb: Climb) => {
+      // Capture the current path before the async fetch so back-button returnUrl is correct.
+      const returnUrl = typeof window !== 'undefined' ? window.location.pathname : null;
       try {
         const bt = climb.boardType || selectedBoard?.boardType;
         if (!bt) return;
         const params = new URLSearchParams({ boardType: bt, climbUuid: climb.uuid });
         const res = await fetch(`/api/internal/climb-redirect?${params}`);
         if (!res.ok) return;
-        const { url } = await res.json();
-        if (url) window.location.href = url;
+        const { url } = (await res.json()) as { url?: string };
+        if (url) {
+          const sep = url.includes('?') ? '&' : '?';
+          window.location.href = returnUrl ? `${url}${sep}returnUrl=${encodeURIComponent(returnUrl)}` : url;
+        }
       } catch (error) {
         console.error('Failed to navigate to climb:', error);
       }

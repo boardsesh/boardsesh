@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import styles from './climb-view-actions.module.css';
 import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
@@ -17,9 +17,17 @@ type ClimbViewActionsProps = {
 
 const ClimbViewActions = ({ climb, boardDetails, auroraAppUrl, angle }: ClimbViewActionsProps) => {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const getBackToListUrl = () => {
     const { board_name, layout_name, size_name, size_description, set_names } = boardDetails;
+
+    // If a returnUrl was embedded in the URL when navigating here, use it.
+    // Validate it is a relative same-origin path to prevent open-redirect.
+    const returnUrl = searchParams.get('returnUrl');
+    if (returnUrl && returnUrl.startsWith('/')) {
+      return returnUrl;
+    }
 
     // Use slug-based URL construction if slug names are available
     if (layout_name && size_name && set_names) {

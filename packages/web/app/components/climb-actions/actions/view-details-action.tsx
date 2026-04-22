@@ -27,7 +27,11 @@ export function ViewDetailsAction({
 }: ClimbActionProps): ClimbActionResult {
   const { iconSize, shouldShowLabel } = computeActionDisplay(viewMode, size, showLabel);
 
-  const url = getContextAwareClimbViewUrl(currentPathname ?? '', boardDetails, angle, climb.uuid, climb.name);
+  const baseUrl = getContextAwareClimbViewUrl(currentPathname ?? '', boardDetails, angle, climb.uuid, climb.name);
+  const url =
+    currentPathname && currentPathname.startsWith('/')
+      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(currentPathname)}`
+      : baseUrl;
 
   const handleClick = () => {
     track('Climb Info Viewed', {
