@@ -26,8 +26,9 @@
 --     made via updateTick. The updateTick mutation bumps updated_at but
 --     leaves aurora_synced_at unchanged, so any user edit causes
 --     updated_at > aurora_synced_at — no tolerance window needed.
---   - Only touches quality IN (2, 7, 8), so running this migration twice is
---     a no-op the second time.
+--   - Idempotent by design: the WHERE clause filters on quality IN (2, 7, 8),
+--     and the corrected output values are 1 and 5 — neither of which appears
+--     in that set. A second run therefore matches zero rows and changes nothing.
 --   - Deliberately leaves rows with quality = 1 / 4 alone: those values are
 --     not producible by the old formula from an integer Aurora input and are
 --     most likely user-originated.

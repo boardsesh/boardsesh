@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { convertQuality } from '@boardsesh/shared-schema';
+import { convertQuality } from './utils.ts';
 
 describe('convertQuality', () => {
   it('returns null for null or undefined input', () => {

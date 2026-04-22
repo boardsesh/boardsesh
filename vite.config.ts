@@ -12,6 +12,7 @@ export default defineConfig({
       './packages/backend/vite.config.ts',
       './packages/moonboard-ocr/vite.config.ts',
       './packages/board-constants/vite.config.ts',
+      './packages/shared-schema/vite.config.ts',
     ],
   },
   staged: {
