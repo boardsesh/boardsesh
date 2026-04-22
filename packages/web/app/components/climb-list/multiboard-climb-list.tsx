@@ -15,6 +15,7 @@ import ClimbsList from '@/app/components/board-page/climbs-list';
 import { FavoritesProvider } from '@/app/components/climb-actions/favorites-batch-context';
 import { PlaylistsProvider } from '@/app/components/climb-actions/playlists-batch-context';
 import { getDefaultAngleForBoard, type SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
+import { appendReturnUrl } from '@/app/lib/url-utils';
 import { useOptionalQueueActions } from '@/app/components/graphql-queue';
 import { usePersistentSessionState } from '@/app/components/persistent-session/persistent-session-context';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -147,8 +148,7 @@ export default function MultiboardClimbList({
         if (!res.ok) return;
         const { url } = (await res.json()) as { url?: string };
         if (url) {
-          const sep = url.includes('?') ? '&' : '?';
-          window.location.href = returnUrl ? `${url}${sep}returnUrl=${encodeURIComponent(returnUrl)}` : url;
+          window.location.href = appendReturnUrl(url, returnUrl);
         }
       } catch (error) {
         console.error('Failed to navigate to climb:', error);

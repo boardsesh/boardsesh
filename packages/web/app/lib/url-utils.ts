@@ -1006,3 +1006,25 @@ export const getPlaylistsBasePath = (pathname: string): string => {
  */
 export const getContextAwarePlaylistUrl = (pathname: string, playlistUuid: string): string =>
   `${getPlaylistsBasePath(pathname)}/${playlistUuid}`;
+
+/**
+ * Validate a returnUrl value before using it as a navigation destination.
+ * Accepts only relative same-origin paths (starts with "/" but not "//") to
+ * prevent open-redirect attacks via protocol-relative URLs like //evil.com.
+ */
+export const sanitizeReturnUrl = (returnUrl: string | null): string | null => {
+  if (!returnUrl) return null;
+  if (returnUrl.startsWith('/') && !returnUrl.startsWith('//')) return returnUrl;
+  return null;
+};
+
+/**
+ * Append a `returnUrl` query parameter to a climb-view URL so the back button
+ * can return to the page the user came from.
+ * Only appends when `fromPathname` is a valid relative path.
+ */
+export const appendReturnUrl = (url: string, fromPathname: string | null | undefined): string => {
+  if (!fromPathname || !fromPathname.startsWith('/') || fromPathname.startsWith('//')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}returnUrl=${encodeURIComponent(fromPathname)}`;
+};

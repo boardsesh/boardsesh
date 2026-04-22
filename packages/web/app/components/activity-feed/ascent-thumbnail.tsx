@@ -9,7 +9,7 @@ import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-re
 import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
-import { constructClimbViewUrlWithSlugs, constructClimbViewUrl } from '@/app/lib/url-utils';
+import { constructClimbViewUrlWithSlugs, constructClimbViewUrl, appendReturnUrl } from '@/app/lib/url-utils';
 import styles from './ascents-feed.module.css';
 
 type AscentThumbnailProps = {
@@ -90,10 +90,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
 
   const climbViewHref = useMemo(() => {
     if (!climbViewPath) return null;
-    if (pathname && pathname.startsWith('/')) {
-      return `${climbViewPath}${climbViewPath.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(pathname)}`;
-    }
-    return climbViewPath;
+    return appendReturnUrl(climbViewPath, pathname);
   }, [climbViewPath, pathname]);
 
   // If we can't render the thumbnail, don't show anything

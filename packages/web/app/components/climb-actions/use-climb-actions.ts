@@ -7,7 +7,12 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { track } from '@/app/lib/analytics';
 import { useQueueActions } from '../graphql-queue';
 import { useFavorite } from './use-favorite';
-import { constructCreateClimbUrl, constructClimbInfoUrl, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
+import {
+  constructCreateClimbUrl,
+  constructClimbInfoUrl,
+  getContextAwareClimbViewUrl,
+  appendReturnUrl,
+} from '@/app/lib/url-utils';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import type { UseClimbActionsReturn } from './types';
 import { openExternalUrl } from '@/app/lib/open-external-url';
@@ -60,10 +65,7 @@ export function useClimbActions({
   const viewDetailsUrl = useMemo(() => {
     if (!climb) return '';
     const base = getContextAwareClimbViewUrl(pathname, boardDetails, angle, climb.uuid, climb.name);
-    if (pathname && pathname.startsWith('/')) {
-      return `${base}${base.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(pathname)}`;
-    }
-    return base;
+    return appendReturnUrl(base, pathname);
   }, [climb, pathname, boardDetails, angle]);
 
   const forkUrl = useMemo(() => {

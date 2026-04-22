@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import ClimbViewActions from '@/app/components/climb-view/climb-view-actions';
 import ClimbDetailInfoShellClient from '@/app/components/climb-detail/climb-detail-info-shell.client';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
@@ -29,7 +29,9 @@ export default function ClimbDetailPageServer({
   return (
     <div className={styles.pageContainer}>
       <div className={styles.actionsSection}>
-        <ClimbViewActions climb={climb} boardDetails={boardDetails} auroraAppUrl={auroraAppUrl} angle={angle} />
+        <Suspense>
+          <ClimbViewActions climb={climb} boardDetails={boardDetails} auroraAppUrl={auroraAppUrl} angle={angle} />
+        </Suspense>
       </div>
 
       <div className={styles.contentWrapper}>

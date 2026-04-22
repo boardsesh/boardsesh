@@ -30,6 +30,8 @@ import {
   tryConstructSlugListUrl,
   DEFAULT_SEARCH_PARAMS,
   constructCreateClimbUrl,
+  sanitizeReturnUrl,
+  appendReturnUrl,
 } from '../url-utils';
 import type { SearchRequestPagination, BoardDetails } from '../types';
 
@@ -1596,5 +1598,66 @@ describe('constructCreateClimbUrl', () => {
       name: 'Fork',
     });
     expect(url).not.toContain('editClimbUuid');
+  });
+});
+
+describe('sanitizeReturnUrl', () => {
+  it('accepts a normal relative path', () => {
+    expect(sanitizeReturnUrl('/profile/123/climbs')).toBe('/profile/123/climbs');
+  });
+
+  it('accepts the root path', () => {
+    expect(sanitizeReturnUrl('/')).toBe('/');
+  });
+
+  it('rejects null', () => {
+    expect(sanitizeReturnUrl(null)).toBeNull();
+  });
+
+  it('rejects empty string', () => {
+    expect(sanitizeReturnUrl('')).toBeNull();
+  });
+
+  it('rejects absolute URLs', () => {
+    expect(sanitizeReturnUrl('https://evil.com')).toBeNull();
+  });
+
+  it('rejects protocol-relative URLs (open-redirect vector)', () => {
+    expect(sanitizeReturnUrl('//evil.com')).toBeNull();
+    expect(sanitizeReturnUrl('//evil.com/path')).toBeNull();
+  });
+
+  it('rejects paths without leading slash', () => {
+    expect(sanitizeReturnUrl('profile/123')).toBeNull();
+  });
+});
+
+describe('appendReturnUrl', () => {
+  it('appends returnUrl as first query param when URL has none', () => {
+    expect(appendReturnUrl('/kilter/s/12/1/40/view/abc', '/profile/123')).toBe(
+      '/kilter/s/12/1/40/view/abc?returnUrl=%2Fprofile%2F123',
+    );
+  });
+
+  it('appends returnUrl with & when URL already has query params', () => {
+    expect(appendReturnUrl('/view/abc?proposalUuid=xyz', '/profile/123')).toBe(
+      '/view/abc?proposalUuid=xyz&returnUrl=%2Fprofile%2F123',
+    );
+  });
+
+  it('returns the original URL unchanged when fromPathname is null', () => {
+    expect(appendReturnUrl('/view/abc', null)).toBe('/view/abc');
+  });
+
+  it('returns the original URL unchanged when fromPathname is empty', () => {
+    expect(appendReturnUrl('/view/abc', '')).toBe('/view/abc');
+  });
+
+  it('does not append when fromPathname is a protocol-relative URL', () => {
+    expect(appendReturnUrl('/view/abc', '//evil.com')).toBe('/view/abc');
+  });
+
+  it('does not append when fromPathname lacks a leading slash', () => {
+    expect(appendReturnUrl('/view/abc', 'profile/123')).toBe('/view/abc');
   });
 });

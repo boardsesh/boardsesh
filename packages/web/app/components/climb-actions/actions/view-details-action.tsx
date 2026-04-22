@@ -7,7 +7,7 @@ import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
-import { getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
+import { getContextAwareClimbViewUrl, appendReturnUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import { buildActionResult, computeActionDisplay } from '../action-view-renderer';
 
@@ -28,10 +28,7 @@ export function ViewDetailsAction({
   const { iconSize, shouldShowLabel } = computeActionDisplay(viewMode, size, showLabel);
 
   const baseUrl = getContextAwareClimbViewUrl(currentPathname ?? '', boardDetails, angle, climb.uuid, climb.name);
-  const url =
-    currentPathname && currentPathname.startsWith('/')
-      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}returnUrl=${encodeURIComponent(currentPathname)}`
-      : baseUrl;
+  const url = appendReturnUrl(baseUrl, currentPathname);
 
   const handleClick = () => {
     track('Climb Info Viewed', {
