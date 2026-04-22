@@ -24,3 +24,11 @@ harness = false
 [profile.release]
 opt-level = 3 # Optimize for speed (rendering perf > binary size)
 lto = true
+
+# wasm-opt mangled the externref table exports on the fill_opacity binary
+# (shipping an __wbindgen_externrefs export pointing at the funcref table,
+# which has a fixed size — Table.grow(4) in __wbindgen_init_externref_table
+# then blows up at module init). Skip wasm-opt so the committed pkg/ matches
+# what rustc + wasm-bindgen produce directly and the binary is correct.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

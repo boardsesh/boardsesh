@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import sharp from 'sharp';
+import initWasm, { render_overlay as wasmRenderOverlay } from '@boardsesh/board-renderer-wasm';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { HOLD_STATE_MAP, THUMBNAIL_WIDTH } from '@/app/components/board-renderer/types';
 import type { BoardName } from '@/app/lib/types';
@@ -29,8 +30,12 @@ const DEFAULT_PNG_OPTIONS: sharp.PngOptions = {
 const OG_BOARD_PADDING_X = 48;
 const OG_BOARD_PADDING_Y = 48;
 
-// Lazily initialized WASM module with promise lock to prevent thundering herd
-let renderOverlay: ((configJson: string) => Uint8Array) | null = null;
+// Lazily initialized WASM module with promise lock to prevent thundering herd.
+// Uses the async default export (__wbg_init) and clears the promise on
+// failure — the previous initSync + permanent promise pattern turned any
+// single init error into a worker-lifetime outage where every subsequent
+// request re-awaited the same rejected promise.
+let renderOverlay: typeof wasmRenderOverlay | null = null;
 let wasmInitPromise: Promise<void> | null = null;
 
 function findWasmPath(): string {
@@ -57,12 +62,16 @@ async function ensureWasmInitialized() {
   if (renderOverlay) return;
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
-      const wasmModule = await import('@boardsesh/board-renderer-wasm');
       const wasmPath = findWasmPath();
       const wasmBytes = await readFile(wasmPath);
-      wasmModule.initSync({ module: wasmBytes });
-      renderOverlay = wasmModule.render_overlay;
-    })();
+      await initWasm({ module_or_path: wasmBytes });
+      renderOverlay = wasmRenderOverlay;
+    })().catch((err) => {
+      // Don't keep a rejected promise cached — a transient init failure
+      // would otherwise poison every subsequent request for the worker's life.
+      wasmInitPromise = null;
+      throw err;
+    });
   }
   await wasmInitPromise;
 }
@@ -407,8 +416,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Board render error:', error);
     const message = error instanceof Error ? error.message : String(error);
+    const stage = renderOverlay ? 'render' : 'wasm-init';
+    console.error(`Board render error (stage=${stage}):`, error);
     return NextResponse.json({ error: `Render failed: ${message}` }, { status: 500 });
   }
 }

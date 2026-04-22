@@ -22,7 +22,6 @@ const mockRenderOverlay = vi.fn((_config: string) => {
 });
 vi.mock('@boardsesh/board-renderer-wasm', () => ({
   default: vi.fn(),
-  initSync: vi.fn(),
   render_overlay: (config: string) => mockRenderOverlay(config),
 }));
 
