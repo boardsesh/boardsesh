@@ -17,6 +17,14 @@ import type { Climb } from '@/app/lib/types';
 import { VoteSummaryProvider } from '@/app/components/social/vote-summary-context';
 import { LogbookEntryCard } from './logbook-entry-card';
 
+// Matches BulkVoteSummaryInputSchema.entityIds.max(100) on the backend. A
+// request with more than 100 IDs is rejected outright, so we slice before
+// handing the list to VoteSummaryProvider. Entries beyond this cap still
+// render their social footer, but the current-user vote state on those
+// rows won't be hydrated (VoteButton falls back to a 0 display, not an
+// error).
+const VOTE_SUMMARY_BATCH_LIMIT = 100;
+
 interface CrewLogbookViewProps {
   currentClimb: Climb;
   boardType: string;
@@ -48,7 +56,7 @@ export const CrewLogbookView: React.FC<CrewLogbookViewProps> = ({ currentClimb, 
   });
 
   const items = useMemo(() => data?.items ?? [], [data]);
-  const tickUuids = useMemo(() => items.map((item) => item.uuid), [items]);
+  const tickUuids = useMemo(() => items.map((item) => item.uuid).slice(0, VOTE_SUMMARY_BATCH_LIMIT), [items]);
 
   if (authLoading || (enabled && isLoading)) {
     return (

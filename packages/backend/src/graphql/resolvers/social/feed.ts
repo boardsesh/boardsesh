@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -7,7 +7,6 @@ import {
   difficultyNameWithFallbackExpr,
   consensusGradeTable,
   consensusGradeJoinCondition,
-  tickCommentCountExpr,
 } from '../shared/sql-expressions';
 import { FollowingAscentsFeedInputSchema, FollowingClimbAscentsInputSchema } from '../../../validation/schemas';
 
@@ -262,7 +261,6 @@ export const socialFeedQueries = {
           userAvatarUrl: dbSchema.userProfiles.avatarUrl,
           upvotes: dbSchema.voteCounts.upvotes,
           downvotes: dbSchema.voteCounts.downvotes,
-          commentCount: tickCommentCountExpr,
         })
         .from(dbSchema.boardseshTicks)
         .innerJoin(
@@ -290,28 +288,50 @@ export const socialFeedQueries = {
         .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
         .limit(MAX_ITEMS);
 
-      const items = results.map(
-        ({ tick, userName, userImage, userDisplayName, userAvatarUrl, upvotes, downvotes, commentCount }) => ({
-          uuid: tick.uuid,
-          userId: tick.userId,
-          userDisplayName: userDisplayName || userName || undefined,
-          userAvatarUrl: userAvatarUrl || userImage || undefined,
-          climbUuid: tick.climbUuid,
-          boardType: tick.boardType,
-          angle: tick.angle,
-          isMirror: tick.isMirror ?? false,
-          status: tick.status,
-          attemptCount: tick.attemptCount,
-          quality: tick.quality,
-          difficulty: tick.difficulty,
-          isBenchmark: tick.isBenchmark ?? false,
-          comment: tick.comment || '',
-          climbedAt: tick.climbedAt,
-          upvotes: Number(upvotes ?? 0),
-          downvotes: Number(downvotes ?? 0),
-          commentCount: Number(commentCount ?? 0),
-        }),
-      );
+      // Batch-fetch comment counts in a single GROUP BY query instead of a
+      // correlated subquery per row. MAX_ITEMS is bounded but the pattern is
+      // consistent with ticks/queries.ts and avoids N extra round-trips.
+      const tickUuids = results.map((r) => r.tick.uuid);
+      const commentRows =
+        tickUuids.length > 0
+          ? await db
+              .select({
+                entityId: dbSchema.comments.entityId,
+                commentCount: sql<number>`COUNT(*)::int`.as('comment_count'),
+              })
+              .from(dbSchema.comments)
+              .where(
+                and(
+                  eq(dbSchema.comments.entityType, 'tick'),
+                  inArray(dbSchema.comments.entityId, tickUuids),
+                  isNull(dbSchema.comments.deletedAt),
+                ),
+              )
+              .groupBy(dbSchema.comments.entityId)
+          : [];
+
+      const commentMap = new Map(commentRows.map((c) => [c.entityId, Number(c.commentCount)]));
+
+      const items = results.map(({ tick, userName, userImage, userDisplayName, userAvatarUrl, upvotes, downvotes }) => ({
+        uuid: tick.uuid,
+        userId: tick.userId,
+        userDisplayName: userDisplayName || userName || undefined,
+        userAvatarUrl: userAvatarUrl || userImage || undefined,
+        climbUuid: tick.climbUuid,
+        boardType: tick.boardType,
+        angle: tick.angle,
+        isMirror: tick.isMirror ?? false,
+        status: tick.status,
+        attemptCount: tick.attemptCount,
+        quality: tick.quality,
+        difficulty: tick.difficulty,
+        isBenchmark: tick.isBenchmark ?? false,
+        comment: tick.comment || '',
+        climbedAt: tick.climbedAt,
+        upvotes: Number(upvotes ?? 0),
+        downvotes: Number(downvotes ?? 0),
+        commentCount: commentMap.get(tick.uuid) ?? 0,
+      }));
 
       return { items };
     } catch (err) {
