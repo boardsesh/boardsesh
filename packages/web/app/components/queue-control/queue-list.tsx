@@ -134,10 +134,10 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(({ boardDetails, i
     handleCloseActions();
   }, [handleCloseActions]);
 
-  // Suggested climbs: clicking the thumbnail promotes the climb to current
-  // (which also adds it to the queue) and opens the play drawer, matching
-  // the behavior of queue items and board list items.
-  const handleSuggestionThumbnailClick = useCallback((climb: Climb) => {
+  // Suggested climbs: clicking anywhere on the row promotes the climb to
+  // current (which also adds it to the queue) and opens the play drawer,
+  // matching the behavior of queue items and board list items.
+  const handleSuggestionSelect = useCallback((climb: Climb) => {
     setCurrentClimb(climb);
     dispatchOpenPlayDrawer();
   }, [setCurrentClimb]);
@@ -420,7 +420,8 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(({ boardDetails, i
                   pathname={pathname}
                   isDark={isDark}
                   titleProps={suggestedTitleProps}
-                  onThumbnailClick={() => handleSuggestionThumbnailClick(row.climb)}
+                  onSelect={() => handleSuggestionSelect(row.climb)}
+                  onThumbnailClick={() => handleSuggestionSelect(row.climb)}
                   onOpenActions={handleOpenActions}
                   onOpenPlaylistSelector={handleOpenPlaylistSelector}
                   addToQueue={addToQueue}
