@@ -66,21 +66,7 @@ vi.mock('../db/queries/util/hold-state', () => ({
   convertLitUpHoldsStringToMap: vi.fn().mockReturnValue([{}]),
 }));
 
-import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
-
-function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
-  return {
-    connectionId: 'conn-1',
-    isAuthenticated: false,
-    userId: null,
-    sessionId: null,
-    boardPath: null,
-    controllerId: null,
-    controllerApiKey: null,
-    ...overrides,
-  } as ConnectionContext;
-}
 
 /**
  * Creates a mock Drizzle query chain that tracks method calls.
@@ -148,8 +134,6 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should return playlists without boardType or layoutId filter', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain, calls: countCalls } = createMockChain([{ count: 2 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -164,7 +148,7 @@ describe('discoverPlaylists resolver', () => {
     ]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: {} }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: {} });
 
     expect(result.totalCount).toBe(2);
     expect(result.playlists).toHaveLength(2);
@@ -180,8 +164,6 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should filter by boardType when provided', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain, calls: countCalls } = createMockChain([{ count: 1 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -190,7 +172,7 @@ describe('discoverPlaylists resolver', () => {
     ]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { boardType: 'kilter' } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { boardType: 'kilter' } });
 
     expect(result.totalCount).toBe(1);
     expect(result.playlists).toHaveLength(1);
@@ -206,8 +188,6 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should filter by boardType and layoutId when both provided', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain, calls: countCalls } = createMockChain([{ count: 1 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -216,7 +196,7 @@ describe('discoverPlaylists resolver', () => {
     ]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { boardType: 'kilter', layoutId: 8 } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { boardType: 'kilter', layoutId: 8 } });
 
     expect(result.totalCount).toBe(1);
     expect(result.playlists).toHaveLength(1);
@@ -228,8 +208,6 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should paginate correctly with hasMore', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain } = createMockChain([{ count: 25 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -239,7 +217,7 @@ describe('discoverPlaylists resolver', () => {
     const { chain: resultsChain, calls: resultsCalls } = createMockChain(rows);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { pageSize: 10, page: 0 } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { pageSize: 10, page: 0 } });
 
     expect(result.hasMore).toBe(true);
     expect(result.playlists).toHaveLength(10);
@@ -255,19 +233,13 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should return empty results when no playlists match', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain } = createMockChain([{ count: 0 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
     const { chain: resultsChain } = createMockChain([]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(
-      null,
-      { input: { boardType: 'tension', layoutId: 99 } },
-      ctx,
-    );
+    const result = await playlistQueries.discoverPlaylists(null, { input: { boardType: 'tension', layoutId: 99 } });
 
     expect(result.totalCount).toBe(0);
     expect(result.playlists).toHaveLength(0);
@@ -275,37 +247,31 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should support name filter', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain } = createMockChain([{ count: 1 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
     const { chain: resultsChain } = createMockChain([makePlaylistRow({ uuid: 'pl-1', name: 'Hard Boulders' })]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { name: 'boulders' } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { name: 'boulders' } });
 
     expect(result.playlists).toHaveLength(1);
     expect(result.playlists[0]).toMatchObject({ name: 'Hard Boulders' });
   });
 
   it('should not require authentication', async () => {
-    const ctx = makeCtx({ isAuthenticated: false, userId: null });
-
     const { chain: countChain } = createMockChain([{ count: 1 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
     const { chain: resultsChain } = createMockChain([makePlaylistRow()]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: {} }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: {} });
 
     expect(result.playlists).toHaveLength(1);
   });
 
   it('should support sortBy popular', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain } = createMockChain([{ count: 2 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -315,7 +281,7 @@ describe('discoverPlaylists resolver', () => {
     ]);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { sortBy: 'popular' } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { sortBy: 'popular' } });
 
     expect(result.playlists).toHaveLength(2);
     expect(result.playlists[0]).toMatchObject({ uuid: 'pl-popular' });
@@ -325,8 +291,6 @@ describe('discoverPlaylists resolver', () => {
   });
 
   it('should use correct page offset for page > 0', async () => {
-    const ctx = makeCtx();
-
     const { chain: countChain } = createMockChain([{ count: 50 }]);
     mockDb.select.mockReturnValueOnce(countChain);
 
@@ -334,7 +298,7 @@ describe('discoverPlaylists resolver', () => {
     const { chain: resultsChain, calls: resultsCalls } = createMockChain(rows);
     mockDb.select.mockReturnValueOnce(resultsChain);
 
-    const result = await playlistQueries.discoverPlaylists(null, { input: { page: 2, pageSize: 5 } }, ctx);
+    const result = await playlistQueries.discoverPlaylists(null, { input: { page: 2, pageSize: 5 } });
 
     expect(result.playlists).toHaveLength(5);
     expect(result.hasMore).toBe(false);

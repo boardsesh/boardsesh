@@ -110,7 +110,6 @@ export const setterFollowQueries = {
         offset?: number;
       };
     },
-    _ctx: ConnectionContext,
   ) => {
     const validatedInput = validateInput(SetterClimbsInputSchema, input, 'input');
     const { username, boardType, layoutId, sortBy, limit, offset } = validatedInput;
@@ -210,7 +209,6 @@ export const setterFollowQueries = {
         offset?: number;
       };
     },
-    _ctx: ConnectionContext,
   ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
     const validatedInput = validateInput(SetterClimbsFullInputSchema, input, 'input');
     const { username, boardType, sortBy, limit, offset } = validatedInput;
@@ -416,7 +414,6 @@ export const setterFollowQueries = {
   userClimbs: async (
     _: unknown,
     { input }: { input: { userId: string; sortBy?: string; limit?: number; offset?: number } },
-    _ctx: ConnectionContext,
   ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> => {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;

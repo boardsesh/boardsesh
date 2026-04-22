@@ -324,11 +324,11 @@ function usePersistentSessionQueueAdapter(): {
   // No-op functions for fields not used by the bottom bar
   const noop = useCallback(() => {}, []);
   const noopStartSession = useCallback(
-    async (_options?: { discoverable?: boolean; name?: string; sessionId?: string }) => '',
+    async (_?: { discoverable?: boolean; name?: string; sessionId?: string }) => '',
     [],
   );
-  const noopJoinSession = useCallback(async (_sessionId: string) => {}, []);
-  const noopSetClimbSearchParams = useCallback((_params: SearchRequestPagination) => {}, []);
+  const noopJoinSession = useCallback(async (_: string) => {}, []);
+  const noopSetClimbSearchParams = useCallback((_: SearchRequestPagination) => {}, []);
   // Wrap deactivateSession via ref so actionsValue deps are fully stable
   const stableDeactivateSession = useCallback(() => {
     latestRef.current.ps.deactivateSession();
@@ -468,8 +468,8 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
   // Separate version counters: actionsVersion only bumps when the injected
   // actions object identity changes (rare — GraphQLQueueProvider uses latestRef
   // pattern). dataVersion bumps on every data change (expected).
-  const [_actionsVersion, setActionsVersion] = useState(0);
-  const [_dataVersion, setDataVersion] = useState(0);
+  const [, setActionsVersion] = useState(0);
+  const [, setDataVersion] = useState(0);
 
   const adapter = usePersistentSessionQueueAdapter();
 

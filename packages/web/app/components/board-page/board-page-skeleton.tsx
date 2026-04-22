@@ -14,10 +14,6 @@ import AddCircleOutlined from '@mui/icons-material/AddCircleOutlined';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './board-page-skeleton.module.css';
 
-type BoardPageSkeletonProps = {
-  aspectRatio?: number; // width/height ratio from boardDetails
-};
-
 /**
  * Skeleton that mimics the ClimbCard title structure (horizontal layout with V grade)
  */
@@ -111,7 +107,7 @@ const ClimbListItemSkeleton = () => (
  * Defaults to list mode skeletons since SSR default is 'list'.
  * Includes a sidebar placeholder on desktop (min-width: 768px) to prevent layout shift.
  */
-const BoardPageSkeleton = (_props: BoardPageSkeletonProps) => {
+const BoardPageSkeleton = () => {
   return (
     <>
       {/* Main content - always visible, defaults to list mode (SSR default) */}

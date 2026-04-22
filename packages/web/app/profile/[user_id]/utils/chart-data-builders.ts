@@ -527,9 +527,7 @@ export function buildStatisticsSummary(
     sortedByRemainder[i].percentage += 1;
   }
 
-  const layoutPercentages = layoutsWithExactPercentages.map(
-    ({ exactPercentage: _exactPercentage, remainder: _remainder, ...rest }) => rest,
-  );
+  const layoutPercentages = layoutsWithExactPercentages.map(({ exactPercentage, remainder, ...rest }) => rest);
 
   return { totalAscents, layoutPercentages };
 }

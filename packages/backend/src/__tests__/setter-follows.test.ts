@@ -113,7 +113,7 @@ function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
 
   for (const method of methods) {
-    chain[method] = vi.fn((..._args: unknown[]) => chain);
+    chain[method] = vi.fn((..._: unknown[]) => chain);
   }
 
   return chain;
@@ -267,13 +267,10 @@ describe('userClimbs query', () => {
   });
 
   it('should reject empty userId', async () => {
-    const ctx = makeCtx();
-    await expect(setterFollowQueries.userClimbs(null, { input: { userId: '' } }, ctx)).rejects.toThrow();
+    await expect(setterFollowQueries.userClimbs(null, { input: { userId: '' } })).rejects.toThrow();
   });
 
   it('should return climbs for user with no linked usernames', async () => {
-    const ctx = makeCtx();
-
     // 1. userBoardMappings lookup → no mappings
     const mappingsChain = createMockChain([]);
     mockDb.select.mockReturnValueOnce(mappingsChain);
@@ -303,7 +300,7 @@ describe('userClimbs query', () => {
       ],
     });
 
-    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } }, ctx);
+    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } });
 
     expect(result.totalCount).toBe(1);
     expect(result.hasMore).toBe(false);
@@ -313,8 +310,6 @@ describe('userClimbs query', () => {
   });
 
   it('should include Aurora-linked climbs via board mappings', async () => {
-    const ctx = makeCtx();
-
     // 1. userBoardMappings → linked username
     const mappingsChain = createMockChain([{ boardUsername: 'aurora-setter' }]);
     mockDb.select.mockReturnValueOnce(mappingsChain);
@@ -359,7 +354,7 @@ describe('userClimbs query', () => {
       ],
     });
 
-    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } }, ctx);
+    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } });
 
     expect(result.totalCount).toBe(2);
     expect(result.climbs).toHaveLength(2);
@@ -367,8 +362,6 @@ describe('userClimbs query', () => {
   });
 
   it('should handle pagination with hasMore', async () => {
-    const ctx = makeCtx();
-
     // 1. Mappings → none
     const mappingsChain = createMockChain([]);
     mockDb.select.mockReturnValueOnce(mappingsChain);
@@ -428,7 +421,7 @@ describe('userClimbs query', () => {
       ],
     });
 
-    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123', limit: 2 } }, ctx);
+    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123', limit: 2 } });
 
     expect(result.hasMore).toBe(true);
     expect(result.climbs).toHaveLength(2);
@@ -436,8 +429,6 @@ describe('userClimbs query', () => {
   });
 
   it('should return empty climbs for user with no climbs', async () => {
-    const ctx = makeCtx();
-
     // 1. Mappings → none
     const mappingsChain = createMockChain([]);
     mockDb.select.mockReturnValueOnce(mappingsChain);
@@ -449,7 +440,7 @@ describe('userClimbs query', () => {
     // 3. Climbs via db.execute() → empty
     mockDb.execute.mockResolvedValueOnce({ rows: [] });
 
-    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } }, ctx);
+    const result = await setterFollowQueries.userClimbs(null, { input: { userId: 'user-123' } });
 
     expect(result.totalCount).toBe(0);
     expect(result.hasMore).toBe(false);

@@ -1,5 +1,4 @@
 import { eq, and, or, isNull, inArray, desc, sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
@@ -81,7 +80,6 @@ export const discoverPlaylists = async (
       pageSize?: number;
     };
   },
-  _ctx: ConnectionContext,
 ): Promise<{ playlists: unknown[]; totalCount: number; hasMore: boolean }> => {
   validateInput(DiscoverPlaylistsInputSchema, input, 'input');
 
@@ -145,7 +143,6 @@ export const playlistCreators = async (
       searchQuery?: string;
     };
   },
-  _ctx: ConnectionContext,
 ): Promise<unknown[]> => {
   validateInput(GetPlaylistCreatorsInputSchema, input, 'input');
 

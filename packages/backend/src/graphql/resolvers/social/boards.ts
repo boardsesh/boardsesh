@@ -826,7 +826,7 @@ export const socialBoardQueries = {
   /**
    * Get popular board configurations ranked by climb count
    */
-  popularBoardConfigs: async (_: unknown, { input }: { input?: unknown }, _ctx: ConnectionContext) => {
+  popularBoardConfigs: async (_: unknown, { input }: { input?: unknown }) => {
     const validatedInput = validateInput(PopularBoardConfigsInputSchema, input || {}, 'input');
     const { boardType, limit, offset } = validatedInput;
 
@@ -848,7 +848,7 @@ export const socialBoardQueries = {
   /**
    * Get leaderboard for a board
    */
-  boardLeaderboard: async (_: unknown, { input }: { input: unknown }, _ctx: ConnectionContext) => {
+  boardLeaderboard: async (_: unknown, { input }: { input: unknown }) => {
     const validatedInput = validateInput(BoardLeaderboardInputSchema, input, 'input');
     const { boardUuid, period } = validatedInput;
     const limit = validatedInput.limit ?? 20;

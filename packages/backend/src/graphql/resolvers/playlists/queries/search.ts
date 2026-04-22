@@ -1,5 +1,4 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import { SearchPlaylistsInputSchema } from '../../../../validation/schemas';
@@ -13,7 +12,6 @@ import { PUBLIC_PLAYLIST_GROUP_BY, publicPlaylistBaseQuery, publicPlaylistCountQ
 export const searchPlaylists = async (
   _: unknown,
   { input }: { input: unknown },
-  _ctx: ConnectionContext,
 ): Promise<{ playlists: unknown[]; totalCount: number; hasMore: boolean }> => {
   const validatedInput = validateInput(SearchPlaylistsInputSchema, input, 'input');
 

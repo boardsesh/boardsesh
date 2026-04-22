@@ -67,7 +67,7 @@ function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
 
   for (const method of methods) {
-    chain[method] = vi.fn((..._args: unknown[]) => chain);
+    chain[method] = vi.fn((..._: unknown[]) => chain);
   }
 
   return chain;

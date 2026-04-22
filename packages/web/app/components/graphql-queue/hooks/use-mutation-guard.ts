@@ -22,7 +22,6 @@ export function useMutationGuard({
   backendUrl,
   hasConnected,
   connectionState,
-  isSessionActive: _isSessionActive,
   isSessionReady,
 }: UseMutationGuardParams) {
   const { showMessage } = useSnackbar();

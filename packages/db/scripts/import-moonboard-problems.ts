@@ -1,6 +1,5 @@
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import { sql } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, boardClimbHolds } from '../src/schema/boards/unified.js';
 import {
@@ -12,8 +11,6 @@ import {
   type MoonBoardMove,
 } from './moonboard-helpers.js';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // =============================================================================
 // Data Source

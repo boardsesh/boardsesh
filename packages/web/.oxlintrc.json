@@ -2,7 +2,17 @@
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
   "plugins": ["typescript", "react", "react-hooks", "nextjs"],
   "rules": {
-    "@typescript-eslint/no-explicit-any": "deny"
+    "@typescript-eslint/no-explicit-any": "deny",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_$",
+        "varsIgnorePattern": "^_$",
+        "destructuredArrayIgnorePattern": "^_$",
+        "caughtErrorsIgnorePattern": "^_$",
+        "ignoreRestSiblings": true
+      }
+    ]
   },
   "ignorePatterns": [".next/**", "out/**", "build/**", "next-env.d.ts", "node_modules/**", "**/board-controller/**"]
 }

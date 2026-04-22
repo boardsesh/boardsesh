@@ -59,7 +59,7 @@ vi.mock('../../graphql-queue', () => ({
  */
 const mockBuildActionResult = vi.fn();
 vi.mock('../action-view-renderer', () => ({
-  computeActionDisplay: (_viewMode: string, size = 'default', _showLabel?: boolean) => ({
+  computeActionDisplay: (_: string, size = 'default') => ({
     shouldShowLabel: true,
     iconSize: size === 'small' ? 14 : size === 'large' ? 20 : 16,
   }),

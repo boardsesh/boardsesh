@@ -17,7 +17,7 @@ type SharedDrawerHandle = {
 const SharedDrawers = forwardRef<
   SharedDrawerHandle,
   { boardDetails: BoardDetails; resolveBoardDetails: (climb: Climb) => BoardDetails }
->(({ boardDetails: _boardDetails, resolveBoardDetails: _resolveBoardDetails }, ref) => {
+>((_, ref) => {
   const [activeDrawerClimb, setActiveDrawerClimb] = useState<Climb | null>(null);
   const [drawerMode, setDrawerMode] = useState<'actions' | 'playlist' | null>(null);
 
@@ -103,7 +103,7 @@ function makeClimb(overrides: Partial<Climb> = {}): Climb {
   };
 }
 
-const identityResolve = (_climb: Climb) => boardDetails;
+const identityResolve = (_: Climb) => boardDetails;
 
 // --- Tests ---
 

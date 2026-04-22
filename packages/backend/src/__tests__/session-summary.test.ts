@@ -14,7 +14,7 @@ const { createChainableMock } = vi.hoisted(() => ({
   createChainableMock: (resolveData: unknown) => {
     const chain: Record<string, unknown> = {};
     for (const method of ['select', 'from', 'where', 'leftJoin', 'groupBy', 'orderBy', 'limit']) {
-      chain[method] = (..._args: unknown[]) => chain;
+      chain[method] = (..._: unknown[]) => chain;
     }
     chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(resolveData).then(resolve, reject);
@@ -29,14 +29,14 @@ vi.mock('../db/client', () => ({
     {
       get(_, prop) {
         if (prop === 'select') {
-          return (..._args: unknown[]) => {
+          return (..._: unknown[]) => {
             const index = mockState.selectCallIndex++;
             const dataByIndex = [mockState.sessionRows, mockState.gradeDistRows, mockState.hardestRows];
             return createChainableMock(dataByIndex[index] ?? []);
           };
         }
         if (prop === 'execute') {
-          return (..._args: unknown[]) => Promise.resolve(mockState.participantRows);
+          return (..._: unknown[]) => Promise.resolve(mockState.participantRows);
         }
       },
     },
@@ -53,13 +53,13 @@ vi.mock('@boardsesh/db/schema', () => ({
 
 // Mock drizzle-orm functions to prevent errors from passing mock schema objects
 vi.mock('drizzle-orm', () => ({
-  eq: (..._args: unknown[]) => ({}),
-  and: (..._args: unknown[]) => ({}),
-  inArray: (..._args: unknown[]) => ({}),
-  sql: (_strings: TemplateStringsArray, ..._values: unknown[]) => ({}),
-  count: (..._args: unknown[]) => ({}),
-  desc: (..._args: unknown[]) => ({}),
-  isNotNull: (..._args: unknown[]) => ({}),
+  eq: (..._: unknown[]) => ({}),
+  and: (..._: unknown[]) => ({}),
+  inArray: (..._: unknown[]) => ({}),
+  sql: (..._: unknown[]) => ({}),
+  count: (..._: unknown[]) => ({}),
+  desc: (..._: unknown[]) => ({}),
+  isNotNull: (..._: unknown[]) => ({}),
 }));
 
 import { generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';

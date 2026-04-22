@@ -169,9 +169,7 @@ vi.mock('@/app/components/board-provider/board-provider-context', () => ({
 }));
 
 vi.mock('@/app/components/logbook/quick-tick-bar', () => ({
-  QuickTickBar: React.forwardRef((_props: unknown, _ref: unknown) =>
-    React.createElement('div', { 'data-testid': 'quick-tick-bar' }),
-  ),
+  QuickTickBar: React.forwardRef(() => React.createElement('div', { 'data-testid': 'quick-tick-bar' })),
 }));
 
 vi.mock('@/app/hooks/use-tick-save', () => ({

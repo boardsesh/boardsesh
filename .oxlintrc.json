@@ -7,7 +7,16 @@
   },
   "rules": {
     "@typescript-eslint/no-explicit-any": "deny",
-    "no-unused-vars": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_$",
+        "varsIgnorePattern": "^_$",
+        "destructuredArrayIgnorePattern": "^_$",
+        "caughtErrorsIgnorePattern": "^_$",
+        "ignoreRestSiblings": true
+      }
+    ],
     "import/no-cycle": "error",
     "prefer-const": "error",
     "no-template-curly-in-string": "error",

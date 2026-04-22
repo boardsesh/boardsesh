@@ -13,15 +13,7 @@ type BoardPageClimbsListProps = ParsedBoardRouteParameters & {
   initialClimbs: Climb[];
 };
 
-const BoardPageClimbsList = ({
-  boardDetails,
-  initialClimbs,
-  board_name,
-  layout_id: _layout_id,
-  size_id: _size_id,
-  set_ids: _set_ids,
-  angle,
-}: BoardPageClimbsListProps) => {
+const BoardPageClimbsList = ({ boardDetails, initialClimbs, board_name, angle }: BoardPageClimbsListProps) => {
   const { currentClimb } = useCurrentClimb();
   const { climbSearchResults, hasMoreResults, hasDoneFirstFetch, isFetchingClimbs } = useSearchData();
   const { setCurrentClimb, addToQueue, fetchMoreClimbs } = useQueueActions();

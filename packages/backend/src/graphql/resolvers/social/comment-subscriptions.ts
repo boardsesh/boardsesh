@@ -1,4 +1,4 @@
-import type { ConnectionContext, CommentEvent } from '@boardsesh/shared-schema';
+import type { CommentEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
 
@@ -11,11 +11,7 @@ const MAX_ENTITY_ID_LENGTH = 256;
 
 export const socialCommentSubscriptions = {
   commentUpdates: {
-    subscribe: async function* (
-      _: unknown,
-      { entityType, entityId }: { entityType: string; entityId: string },
-      _ctx: ConnectionContext,
-    ) {
+    subscribe: async function* (_: unknown, { entityType, entityId }: { entityType: string; entityId: string }) {
       // Validate inputs to prevent channel injection
       if (!VALID_ENTITY_TYPES.has(entityType)) {
         throw new Error(`Invalid entity type: ${entityType}`);

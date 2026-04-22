@@ -385,7 +385,7 @@ export const socialGymQueries = {
     };
   },
 
-  gymMembers: async (_: unknown, { input }: { input: unknown }, _ctx: ConnectionContext) => {
+  gymMembers: async (_: unknown, { input }: { input: unknown }) => {
     const validatedInput = validateInput(GymMembersInputSchema, input, 'input');
     const { gymUuid } = validatedInput;
     const limit = validatedInput.limit ?? 20;

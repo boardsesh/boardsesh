@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 
 // Mock WASM module - returns raw RGBA with 8-byte dimension header
-const mockRenderOverlay = vi.fn((_config: string) => {
+const mockRenderOverlay = vi.fn((_: string) => {
   // 2x2 pixel image: 8 bytes header + 16 bytes RGBA data
   const buf = new Uint8Array(8 + 16);
   const view = new DataView(buf.buffer);
@@ -58,9 +58,9 @@ const mockSharpInstance = () => {
   };
   return instance;
 };
-const mockSharpDefault = vi.fn((_input?: unknown, _options?: unknown) => mockSharpInstance());
+const mockSharpDefault = vi.fn(() => mockSharpInstance());
 vi.mock('sharp', () => ({
-  default: (input?: unknown, options?: unknown) => mockSharpDefault(input, options),
+  default: () => mockSharpDefault(),
 }));
 
 vi.mock('@/app/lib/board-utils', () => ({

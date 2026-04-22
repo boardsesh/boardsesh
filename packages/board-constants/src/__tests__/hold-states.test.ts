@@ -15,7 +15,7 @@ describe('HOLD_STATE_MAP', () => {
   it('every entry has a valid name and color', () => {
     const validStates = new Set(['OFF', 'STARTING', 'FINISH', 'HAND', 'FOOT', 'ANY', 'NOT', 'AUX']);
     for (const board of boards) {
-      for (const [_code, info] of Object.entries(HOLD_STATE_MAP[board])) {
+      for (const [, info] of Object.entries(HOLD_STATE_MAP[board])) {
         expect(validStates).toContain(info.name);
         expect(info.color).toMatch(/^#[0-9A-Fa-f]{6}$/);
         if (info.displayColor) {

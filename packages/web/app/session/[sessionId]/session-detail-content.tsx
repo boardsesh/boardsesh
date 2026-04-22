@@ -271,9 +271,6 @@ export default function SessionDetailContent({
   fallbackBoardDetails = null,
   afterParticipants,
   inviteContent,
-  currentAngle: _currentAngle,
-  onAngleChange: _onAngleChange,
-  namedBoardName: _namedBoardName,
 }: SessionDetailContentProps) {
   const { data: authSession } = useSession();
   const router = useRouter();

@@ -98,7 +98,7 @@ async function enrichRoleAssignment(role: typeof dbSchema.communityRoles.$inferS
 }
 
 export const socialRoleQueries = {
-  communityRoles: async (_: unknown, { boardType }: { boardType?: string }, _ctx: ConnectionContext) => {
+  communityRoles: async (_: unknown, { boardType }: { boardType?: string }) => {
     const conditions = boardType ? [eq(dbSchema.communityRoles.boardType, boardType)] : [];
 
     const roles =

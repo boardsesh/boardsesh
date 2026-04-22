@@ -37,7 +37,7 @@ const initDB = async (): Promise<IDBPDatabase | null> => {
 
 export function getFilterKey(filters: Partial<SearchRequestPagination>): string {
   // Exclude page/pageSize from comparison since they're not meaningful for deduplication
-  const { page: _page, pageSize: _pageSize, ...rest } = filters as SearchRequestPagination;
+  const { page, pageSize, ...rest } = filters as SearchRequestPagination;
   return JSON.stringify(rest, Object.keys(rest).sort());
 }
 

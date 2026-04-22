@@ -37,7 +37,7 @@ export function useQueueRestoration({
   // Guard to prevent syncing empty initial state before restoration completes.
   // Uses useState (not useRef) so the sync effect only sees hasRestored=true
   // in the render where state.queue already contains the restored data.
-  const [_hasRestored, setHasRestored] = useState(false);
+  const [, setHasRestored] = useState(false);
 
   // Initialize queue state from persistent session when remounting
   useEffect(() => {

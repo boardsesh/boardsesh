@@ -5,7 +5,7 @@ import { useZoomPan } from '../use-zoom-pan';
 // Mock @use-gesture/react since jsdom doesn't support pointer/touch events well
 const mockBind = vi.fn();
 vi.mock('@use-gesture/react', () => ({
-  useGesture: (handlers: Record<string, Function>, _config: unknown) => {
+  useGesture: (handlers: Record<string, Function>) => {
     // Store handlers so tests can invoke them
     mockBind.mockImplementation(() => handlers);
     return mockBind;

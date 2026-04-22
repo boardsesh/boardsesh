@@ -19,15 +19,7 @@ type ClimbThumbnailProps = {
 };
 
 const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
-  ({
-    boardDetails,
-    currentClimb,
-    pathname: _pathname,
-    onClick,
-    maxHeight,
-    preferImageLayers = false,
-    fetchPriority,
-  }) => {
+  ({ boardDetails, currentClimb, onClick, maxHeight, preferImageLayers = false, fetchPriority }) => {
     const canvasReady = useCanvasRendererReady();
 
     const boardStyle = useMemo<React.CSSProperties>(

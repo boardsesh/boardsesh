@@ -60,7 +60,7 @@ program
   .action(async (userId: string, options) => {
     const runner = new SyncRunner({
       onLog: options.verbose ? console.info : () => {},
-      onError: (error, _context) => {
+      onError: (error) => {
         console.error(`Error:`, error.message);
       },
     });

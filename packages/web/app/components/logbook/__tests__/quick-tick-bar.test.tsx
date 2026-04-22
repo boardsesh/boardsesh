@@ -104,25 +104,6 @@ const defaultProps = {
  * react-swipeable uses touch events internally, so we dispatch native touch
  * events with TouchEvent-shaped fields that the library reads.
  */
-function _simulateSwipe(el: HTMLElement, deltaX: number) {
-  const startX = 200;
-  const startY = 100;
-  const endX = startX + deltaX;
-
-  fireEvent.touchStart(el, {
-    touches: [{ clientX: startX, clientY: startY }],
-  });
-  // A couple of intermediate points so react-swipeable recognises a swipe.
-  fireEvent.touchMove(el, {
-    touches: [{ clientX: startX + deltaX / 2, clientY: startY }],
-  });
-  fireEvent.touchMove(el, {
-    touches: [{ clientX: endX, clientY: startY }],
-  });
-  fireEvent.touchEnd(el, {
-    changedTouches: [{ clientX: endX, clientY: startY }],
-  });
-}
 
 describe('QuickTickBar', () => {
   beforeEach(() => {

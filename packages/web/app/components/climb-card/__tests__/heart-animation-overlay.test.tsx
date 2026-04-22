@@ -6,7 +6,7 @@ let capturedOnAnimationEnd: (() => void) | undefined;
 
 vi.mock('@mui/icons-material/Favorite', () => ({
   default: ({
-    sx: _sx,
+    sx,
     onAnimationEnd,
     ...rest
   }: { sx?: unknown; onAnimationEnd?: () => void } & Record<string, unknown>) => {
