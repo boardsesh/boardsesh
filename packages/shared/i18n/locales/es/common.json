@@ -303,5 +303,11 @@
     "speedNormal": "1×",
     "speedCustom": "{{value}}×",
     "speedCustomLabel": "Velocidad personalizada"
+  },
+  "logbook": {
+    "session": {
+      "added": "Se anadio {{climbName}} a tu sesion",
+      "addError": "No se pudo anadir a tu sesion"
+    }
   }
 }

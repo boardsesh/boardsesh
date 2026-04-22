@@ -29,6 +29,9 @@ const setCurrentClimbMock = vi.fn();
 const previewClimbFromBrowseMock = vi.fn();
 const dispatchOpenPlayDrawerMock = vi.fn();
 const routerPushMock = vi.fn();
+const psAddQueueItemMock = vi.fn();
+const psSetCurrentClimbMock = vi.fn();
+const showMessageMock = vi.fn();
 const boardDataMocks = vi.hoisted(() => ({
   getGradesForBoard: vi.fn((boardName: string) =>
     boardName === 'moonboard'
@@ -36,6 +39,20 @@ const boardDataMocks = vi.hoisted(() => ({
       : [{ difficulty_id: 20, difficulty_name: '7a/V6', v_grade: 'V6' }],
   ),
 }));
+
+// Holder so tests can swap the persistent-session state without remounting.
+const persistentSessionState: {
+  activeSession: {
+    boardDetails: { board_name: string; layout_id: number };
+    parsedParams: { angle: number };
+  } | null;
+  session: object | null;
+  clientId: string | null;
+} = {
+  activeSession: null,
+  session: null,
+  clientId: null,
+};
 // Holder so tests can swap queue-actions availability without remounting.
 const queueActionsState: {
   value: {
@@ -135,6 +152,26 @@ vi.mock('@/app/components/graphql-queue', () => ({
   useOptionalQueueActions: () => queueActionsState.value,
 }));
 
+vi.mock('@/app/components/persistent-session', () => ({
+  usePersistentSession: () => persistentSessionState,
+  usePersistentSessionActions: () => ({
+    addQueueItem: psAddQueueItemMock,
+    setCurrentClimb: psSetCurrentClimbMock,
+  }),
+}));
+
+vi.mock('@/app/components/party-manager/party-profile-context', () => ({
+  usePartyProfile: () => ({ profile: { id: 'user-1' }, username: 'tester', avatarUrl: null }),
+}));
+
+vi.mock('@/app/components/providers/snackbar-provider', () => ({
+  useSnackbar: () => ({ showMessage: showMessageMock }),
+}));
+
+vi.mock('uuid', () => ({
+  v4: () => 'mock-queue-item-uuid',
+}));
+
 vi.mock('@/app/components/queue-control/play-drawer-event', () => ({
   dispatchOpenPlayDrawer: () => dispatchOpenPlayDrawerMock(),
 }));
@@ -232,6 +269,14 @@ beforeEach(() => {
   dispatchOpenPlayDrawerMock.mockReset();
   boardDataMocks.getGradesForBoard.mockClear();
   routerPushMock.mockReset();
+  psAddQueueItemMock.mockReset();
+  psAddQueueItemMock.mockResolvedValue(undefined);
+  psSetCurrentClimbMock.mockReset();
+  psSetCurrentClimbMock.mockResolvedValue(undefined);
+  showMessageMock.mockReset();
+  persistentSessionState.activeSession = null;
+  persistentSessionState.session = null;
+  persistentSessionState.clientId = null;
   queueActionsState.value = {
     setCurrentClimb: setCurrentClimbMock,
     previewClimbFromBrowse: previewClimbFromBrowseMock,
@@ -419,17 +464,64 @@ describe('LogbookFeedItem', () => {
     expect(previewClimbFromBrowseMock).not.toHaveBeenCalled();
   });
 
-  it('row tap navigates to the climb view when queue actions are unavailable', () => {
+  it('row tap navigates to the climb view when queue actions are unavailable and no session matches', () => {
     queueActionsState.value = null;
     const { container } = render(<LogbookFeedItem item={makeItem()} />);
     const row = container.querySelector('.swipeableContent') as HTMLElement;
     fireEvent.click(row);
     expect(previewClimbFromBrowseMock).not.toHaveBeenCalled();
     expect(setCurrentClimbMock).not.toHaveBeenCalled();
+    expect(psAddQueueItemMock).not.toHaveBeenCalled();
     expect(routerPushMock).toHaveBeenCalledTimes(1);
     const url = routerPushMock.mock.calls[0][0] as string;
     expect(url.startsWith('/kilter/1/10/1,26/40/view/')).toBe(true);
     expect(url.endsWith('-climb-1')).toBe(true);
+  });
+
+  it('row tap adds to the active party session instead of navigating when board+layout+angle match', async () => {
+    queueActionsState.value = null;
+    persistentSessionState.activeSession = {
+      boardDetails: { board_name: 'kilter', layout_id: 1 },
+      parsedParams: { angle: 40 },
+    };
+    persistentSessionState.session = {};
+    persistentSessionState.clientId = 'client-1';
+
+    const { container } = render(<LogbookFeedItem item={makeItem()} />);
+    const row = container.querySelector('.swipeableContent') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(row);
+    });
+
+    expect(psAddQueueItemMock).toHaveBeenCalledTimes(1);
+    expect(psAddQueueItemMock.mock.calls[0][0]).toMatchObject({
+      uuid: 'mock-queue-item-uuid',
+      climb: expect.objectContaining({ uuid: 'climb-1' }),
+      addedBy: 'client-1',
+    });
+    expect(psSetCurrentClimbMock).toHaveBeenCalledTimes(1);
+    expect(psSetCurrentClimbMock.mock.calls[0][0]).toMatchObject({ uuid: 'mock-queue-item-uuid' });
+    expect(psSetCurrentClimbMock.mock.calls[0][1]).toBe(false);
+    expect(showMessageMock).toHaveBeenCalledWith(expect.stringContaining('Test Climb'), 'success');
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('row tap falls back to navigation when the active session is for a different board', () => {
+    queueActionsState.value = null;
+    persistentSessionState.activeSession = {
+      boardDetails: { board_name: 'tension', layout_id: 9 },
+      parsedParams: { angle: 40 },
+    };
+    persistentSessionState.session = {};
+    persistentSessionState.clientId = 'client-1';
+
+    const { container } = render(<LogbookFeedItem item={makeItem()} />);
+    const row = container.querySelector('.swipeableContent') as HTMLElement;
+    fireEvent.click(row);
+
+    expect(psAddQueueItemMock).not.toHaveBeenCalled();
+    expect(psSetCurrentClimbMock).not.toHaveBeenCalled();
+    expect(routerPushMock).toHaveBeenCalledTimes(1);
   });
 
   it('row is keyboard-accessible with role/tabIndex/aria-label', () => {

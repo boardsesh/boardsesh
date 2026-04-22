@@ -26,11 +26,16 @@ import InstagramIcon from '@mui/icons-material/Instagram';
 import LinkOutlined from '@mui/icons-material/LinkOutlined';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
+import { v4 as uuidv4 } from 'uuid';
 import { formatTickRelativeTime } from '@/app/lib/format-tick-time';
 import { track } from '@/app/lib/analytics';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations/ticks';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { useOptionalQueueActions } from '@/app/components/graphql-queue';
+import { usePersistentSession, usePersistentSessionActions } from '@/app/components/persistent-session';
+import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
+import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import type { ClimbQueueItem } from '@/app/components/queue-control/types';
 import { AscentStatusIcon } from '@/app/components/ascent-status/ascent-status-icon';
 import { ClimbActions } from '@/app/components/climb-actions';
 import DrawerClimbHeader from '@/app/components/climb-card/drawer-climb-header';
@@ -322,6 +327,10 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
 
     const queueActions = useOptionalQueueActions();
     const router = useRouter();
+    const { activeSession, session, clientId } = usePersistentSession();
+    const { addQueueItem: psAddQueueItem, setCurrentClimb: psSetCurrentClimb } = usePersistentSessionActions();
+    const { profile, username, avatarUrl } = usePartyProfile();
+    const { showMessage } = useSnackbar();
 
     // --- Edit state ---
     const { mutateAsync: updateTickAsync, isPending: isSaving } = useUpdateTick();
@@ -464,7 +473,56 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
       );
     }, [item.boardType, item.layoutId, item.angle, item.climbUuid, item.climbName]);
 
-    const isRowInteractive = !isEditing && (queueActions != null || fallbackViewUrl != null);
+    // True when the user has a live party session whose board/angle/layout
+    // matches this logbook entry — so we can push the climb into it without
+    // leaving the page.
+    const activeSessionMatches =
+      !!activeSession &&
+      !!session &&
+      !!clientId &&
+      activeSession.boardDetails.board_name === item.boardType &&
+      activeSession.boardDetails.layout_id === item.layoutId &&
+      activeSession.parsedParams.angle === item.angle;
+
+    const addedByUser = useMemo(
+      () => (profile?.id ? { id: profile.id, username: username ?? '', avatarUrl } : undefined),
+      [profile?.id, username, avatarUrl],
+    );
+
+    // Push the clicked climb into the already-connected party session's queue
+    // and mark it current, without navigating. Callers gate on
+    // `activeSessionMatches` before invoking, so the guard here is a safety net.
+    const addToActiveSession = useCallback(async (): Promise<void> => {
+      if (!activeSessionMatches || !clientId) return;
+      const newItem: ClimbQueueItem = {
+        uuid: uuidv4(),
+        climb,
+        addedBy: clientId,
+        addedByUser,
+        suggested: false,
+      };
+      try {
+        await psAddQueueItem(newItem);
+        await psSetCurrentClimb(newItem, false);
+        showMessage(t('logbook.session.added', { climbName: item.climbName }), 'success');
+        track('Logbook Row Clicked', { climbUuid: climb.uuid, addedToSession: true });
+      } catch (err) {
+        console.error('Failed to add logbook climb to active session', err);
+        showMessage(t('logbook.session.addError'), 'error');
+      }
+    }, [
+      activeSessionMatches,
+      clientId,
+      addedByUser,
+      climb,
+      psAddQueueItem,
+      psSetCurrentClimb,
+      showMessage,
+      item.climbName,
+      t,
+    ]);
+
+    const isRowInteractive = !isEditing && (queueActions != null || activeSessionMatches || fallbackViewUrl != null);
 
     const handleRowClick = useCallback(() => {
       if (isEditing) return;
@@ -473,11 +531,17 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
         track('Logbook Row Clicked', { climbUuid: climb.uuid });
         return;
       }
+      // A live session for this exact board/angle takes the climb directly
+      // (async mutation); otherwise navigate synchronously to the board view.
+      if (activeSessionMatches) {
+        void addToActiveSession();
+        return;
+      }
       if (fallbackViewUrl) {
         track('Logbook Row Clicked', { climbUuid: climb.uuid, navigated: true });
         router.push(fallbackViewUrl);
       }
-    }, [isEditing, queueActions, climb, fallbackViewUrl, router]);
+    }, [isEditing, queueActions, climb, activeSessionMatches, addToActiveSession, fallbackViewUrl, router]);
 
     const handleRowKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -496,8 +560,12 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
         if (isEditing) return;
         if (queueActions) {
           queueActions.previewClimbFromBrowse(climb);
-          dispatchOpenPlayDrawer();
           track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid });
+          return;
+        }
+        if (activeSessionMatches) {
+          track('Logbook Thumbnail Clicked', { climbUuid: climb.uuid, addedToSession: true });
+          void addToActiveSession();
           return;
         }
         if (fallbackViewUrl) {
@@ -505,7 +573,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
           router.push(fallbackViewUrl);
         }
       },
-      [isEditing, queueActions, climb, fallbackViewUrl, router],
+      [isEditing, queueActions, climb, activeSessionMatches, addToActiveSession, fallbackViewUrl, router],
     );
 
     // Build BoardDetails for ClimbActions (same pattern as AscentThumbnail)

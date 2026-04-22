@@ -303,5 +303,11 @@
     "speedNormal": "1×",
     "speedCustom": "{{value}}×",
     "speedCustomLabel": "Vitesse personnalisée"
+  },
+  "logbook": {
+    "session": {
+      "added": "{{climbName}} ajoute a ta session",
+      "addError": "Impossible d'ajouter a ta session"
+    }
   }
 }
