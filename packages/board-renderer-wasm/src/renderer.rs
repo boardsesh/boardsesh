@@ -77,10 +77,14 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
                     None => continue,
                 };
 
-                // Thumbnail: filled circle with 0.3 opacity + stroke
-                // Full size: stroke only, no fill
-                if config.thumbnail {
-                    paint.set_color(SkiaColor::from_rgba8(color.r, color.g, color.b, 77)); // 0.3 * 255 ≈ 77
+                // Default fill: 0.3 opacity for thumbnails, none for full size.
+                // fill_opacity overrides both (used by the OG variant to match thumbnail fill).
+                let fill_opacity = config
+                    .fill_opacity
+                    .unwrap_or(if config.thumbnail { 0.3 } else { 0.0 });
+                if fill_opacity > 0.0 {
+                    let alpha = (fill_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    paint.set_color(SkiaColor::from_rgba8(color.r, color.g, color.b, alpha));
                     pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
                 }
 
@@ -127,6 +131,7 @@ mod tests {
             frames: "p1r42p2r43p3r44".into(),
             mirrored: false,
             thumbnail: false,
+            fill_opacity: None,
             holds: vec![
                 HoldData { id: 1, mirrored_hold_id: None, cx: 200.0, cy: 300.0, r: 20.0 },
                 HoldData { id: 2, mirrored_hold_id: None, cx: 500.0, cy: 600.0, r: 20.0 },
@@ -168,6 +173,39 @@ mod tests {
         let mut config = test_config();
         config.output_width = 0;
         assert!(render_overlay(&config).is_err());
+    }
+
+    #[test]
+    fn test_fill_opacity_override_produces_filled_circles_at_full_size() {
+        // Full-size renders (thumbnail=false) normally have stroke-only holds.
+        // With fill_opacity overridden (used by the OG variant), the interior
+        // should be filled at the specified alpha.
+        let mut config = test_config();
+        config.fill_opacity = Some(0.3);
+        let (data, width, _) = render_overlay(&config).unwrap();
+
+        // The first hold sits at (200, 300) in board coords — with scale 300/1080,
+        // that maps roughly to (55, 83) in pixel coords. Sample the center pixel.
+        let px = (200.0_f32 * 300.0 / 1080.0) as usize;
+        let py = (300.0_f32 * 300.0 / 1080.0) as usize;
+        let idx = (py * width as usize + px) * 4;
+        let alpha = data[idx + 3];
+
+        // Expect roughly 0.3 * 255 ≈ 77; allow some wiggle for anti-aliasing.
+        assert!(
+            alpha > 40 && alpha < 120,
+            "Center pixel should have partial fill, got alpha={alpha}"
+        );
+
+        // Sanity: without the override, the same pixel should be fully transparent
+        // (stroke-only, and 200,300 is well inside the 20-radius circle).
+        let mut baseline = test_config();
+        baseline.fill_opacity = None;
+        let (baseline_data, _, _) = render_overlay(&baseline).unwrap();
+        assert_eq!(
+            baseline_data[idx + 3], 0,
+            "Without fill_opacity, circle interior should be transparent"
+        );
     }
 
     #[test]

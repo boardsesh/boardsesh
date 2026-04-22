@@ -240,6 +240,9 @@ export async function GET(request: NextRequest) {
       frames,
       mirrored: false,
       thumbnail,
+      // OG link previews shrink the board a lot, so fill circles at the same
+      // 30% alpha thumbnails use — outline-only reads as blank at preview size.
+      ...(isOgVariant ? { fill_opacity: 0.3 } : {}),
       holds: boardDetails.holdsData.map((h) => ({
         id: h.id,
         mirroredHoldId: h.mirroredHoldId,

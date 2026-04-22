@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum HoldRenderStyle {
     #[default]
@@ -17,6 +17,8 @@ pub struct RenderConfig {
     pub frames: String,
     pub mirrored: bool,
     pub thumbnail: bool,
+    #[serde(default)]
+    pub fill_opacity: Option<f32>,
     pub holds: Vec<HoldData>,
     pub hold_state_map: HashMap<u32, HoldStateInfo>,
 }
