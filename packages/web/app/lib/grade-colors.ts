@@ -279,3 +279,13 @@ export function getGradeTintColor(
   }
   return `hsl(${hue}, 30%, 88%)`;
 }
+
+export function getActiveClimbTint(
+  difficulty: string | null | undefined,
+  darkMode: boolean,
+  fallback: 'selected' | 'selected-light' = 'selected',
+): string {
+  const fallbackVar =
+    fallback === 'selected-light' ? 'var(--semantic-selected-light)' : 'var(--semantic-selected)';
+  return getGradeTintColor(difficulty, 'light', darkMode) ?? fallbackVar;
+}

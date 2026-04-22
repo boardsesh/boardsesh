@@ -69,10 +69,11 @@
   transition: transform 120ms ease-out;
 }
 
-/* Swipeable wrapper — covers entire item so swipe gesture works everywhere */
+/* --active-climb-bg is set inline only when the row's climb is the current
+   active climb, tinted by the climb's grade (see getActiveClimbTint). */
 .swipeableContent {
   position: relative;
-  background-color: var(--semantic-surface, #fff);
+  background-color: var(--active-climb-bg, var(--semantic-surface, #fff));
   user-select: none;
 }
 

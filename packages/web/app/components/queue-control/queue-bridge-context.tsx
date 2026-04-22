@@ -29,13 +29,14 @@ import { usePersistentSession } from '../persistent-session';
 import { getBaseBoardPath } from '@/app/lib/url-utils';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import type { BoardDetails, Angle, Climb, SearchRequestPagination } from '@/app/lib/types';
-import type { ClimbQueueItem } from './types';
+import type { ClimbQueueItem, QueueItemUser } from './types';
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { canAddClimbToBoard } from '@/app/lib/board-compatibility';
 import { getBoardDetailsForPlaylist } from '@/app/lib/board-config-for-playlist';
 import { useSnackbar } from '../providers/snackbar-provider';
 import { queueAddErrorMessage } from '../board-lock/queue-add-error-messages';
+import { usePartyProfile } from '../party-manager/party-profile-context';
 
 const LiveActivityBridge = dynamic(() => import('@/app/lib/live-activity/live-activity-bridge'), {
   ssr: false,
@@ -130,6 +131,12 @@ function usePersistentSessionQueueAdapter(): {
 } {
   const ps = usePersistentSession();
   const { showMessage } = useSnackbar();
+  const { profile, username, avatarUrl } = usePartyProfile();
+
+  const currentUserInfo: QueueItemUser | undefined = useMemo(() => {
+    if (!profile?.id || !username) return undefined;
+    return { id: profile.id, username, avatarUrl };
+  }, [profile?.id, username, avatarUrl]);
 
   const isParty = !!ps.activeSession;
   const queue = isParty ? ps.queue : ps.localQueue;
@@ -169,6 +176,7 @@ function usePersistentSessionQueueAdapter(): {
     baseBoardPath,
     ps,
     showMessage,
+    currentUserInfo,
   });
   latestRef.current = {
     queue,
@@ -177,6 +185,7 @@ function usePersistentSessionQueueAdapter(): {
     baseBoardPath,
     ps,
     showMessage,
+    currentUserInfo,
   };
 
   // Validates a climb against the locked board (session) or the current
@@ -220,10 +229,19 @@ function usePersistentSessionQueueAdapter(): {
       if (!validateClimbForQueue(climb)) return;
       const newItem: ClimbQueueItem = {
         climb,
-        addedBy: null,
+        addedBy: r.ps.clientId ?? null,
+        addedByUser: r.currentUserInfo,
         uuid: uuidv4(),
         suggested: false,
       };
+      // setLocalQueueState no-ops while a party session is active, so the
+      // adapter has to talk to ps directly instead.
+      if (r.ps.activeSession) {
+        r.ps.addQueueItem(newItem).catch((error: unknown) => {
+          console.error('Failed to add queue item from bridge adapter:', error);
+        });
+        return;
+      }
       if (!r.boardDetails) {
         // Cold-start path: no active board yet. Seed local state from the
         // climb's own board config so the queue bar begins showing.
@@ -277,10 +295,37 @@ function usePersistentSessionQueueAdapter(): {
       if (!validateClimbForQueue(climb)) return null;
       const newItem: ClimbQueueItem = {
         climb,
-        addedBy: null,
+        addedBy: r.ps.clientId ?? null,
+        addedByUser: r.currentUserInfo,
         uuid: uuidv4(),
         suggested: false,
       };
+      // setLocalQueueState no-ops while a party session is active, so the
+      // adapter has to talk to ps directly instead.
+      if (r.ps.activeSession) {
+        const currentIdx = r.currentClimbQueueItem
+          ? r.queue.findIndex((q) => q.uuid === r.currentClimbQueueItem!.uuid)
+          : -1;
+        const position = currentIdx === -1 ? undefined : currentIdx + 1;
+        try {
+          await r.ps.addQueueItem(newItem, position);
+        } catch (error) {
+          console.error('Failed to add queue item from bridge adapter:', error);
+          return null;
+        }
+        try {
+          await r.ps.setCurrentClimb(newItem, false);
+        } catch (error) {
+          console.error('Failed to set current climb from bridge adapter:', error);
+          // The item landed in the queue but we couldn't promote it to current —
+          // roll it back so the user doesn't see a ghost entry they never chose.
+          r.ps.removeQueueItem(newItem.uuid).catch((rollbackError: unknown) => {
+            console.error('Failed to roll back orphaned queue item:', rollbackError);
+          });
+          return null;
+        }
+        return newItem;
+      }
       if (!r.boardDetails) {
         // Cold-start path: no active board yet. Seed local state from the
         // climb's own board config so the queue bar begins showing.

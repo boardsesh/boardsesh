@@ -107,6 +107,7 @@ vi.mock('@/app/lib/grade-colors', () => ({
   getSoftVGradeColor: () => '#888',
   getSoftGradeColorByFormat: () => '#888',
   getGradeTintColor: () => null,
+  getActiveClimbTint: () => 'var(--semantic-selected)',
   getGradeColorWithOpacity: () => '#888',
   getGradeTextColor: () => '#000',
   isLightColor: () => false,

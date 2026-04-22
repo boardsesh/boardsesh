@@ -20,7 +20,7 @@ import { ClimbQueueItem } from './types';
 import ClimbListItem, { type SwipeActionOverride } from '../climb-card/climb-list-item';
 import { dispatchOpenPlayDrawer } from './play-drawer-event';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getGradeTintColor } from '@/app/lib/grade-colors';
+import { getActiveClimbTint } from '@/app/lib/grade-colors';
 
 type QueueClimbListItemProps = {
   item: ClimbQueueItem;
@@ -81,9 +81,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
 
   // Background color based on current/history state
   const backgroundColor = useMemo(() => {
-    if (isCurrent) {
-      return getGradeTintColor(item.climb.difficulty, 'light', isDark) ?? 'var(--semantic-selected)';
-    }
+    if (isCurrent) return getActiveClimbTint(item.climb.difficulty, isDark);
     if (isHistory) return 'var(--neutral-100)';
     return 'transparent';
   }, [isCurrent, isHistory, item.climb.difficulty, isDark]);

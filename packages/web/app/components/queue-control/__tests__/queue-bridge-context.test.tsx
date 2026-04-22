@@ -16,11 +16,20 @@ const mockDeactivateSession = vi.fn();
 const mockClearLocalQueue = vi.fn();
 
 let mockPersistentSession: Record<string, unknown> = {};
+let mockPartyProfile: {
+  profile: { id: string } | null;
+  username: string | undefined;
+  avatarUrl: string | undefined;
+} = { profile: null, username: undefined, avatarUrl: undefined };
 
 vi.mock('../../persistent-session', () => ({
   usePersistentSession: () => mockPersistentSession,
   usePersistentSessionState: () => mockPersistentSession,
   usePersistentSessionActions: () => mockPersistentSession,
+}));
+
+vi.mock('../../party-manager/party-profile-context', () => ({
+  usePartyProfile: () => mockPartyProfile,
 }));
 
 vi.mock('../../graphql-queue/QueueContext', () => {
@@ -357,6 +366,7 @@ describe('queue-bridge-context', () => {
     vi.clearAllMocks();
     mockUuidCounter = 0;
     mockPersistentSession = createDefaultPersistentSession();
+    mockPartyProfile = { profile: null, username: undefined, avatarUrl: undefined };
   });
 
   // -----------------------------------------------------------------------
@@ -481,6 +491,24 @@ describe('queue-bridge-context', () => {
         expect(newQueue[0].climb.uuid).toBe('c1');
         // When current is null, new item becomes current
         expect(newCurrent.climb.uuid).toBe('c1');
+      });
+
+      it('addToQueue also attaches addedByUser metadata in local mode', () => {
+        mockPartyProfile = {
+          profile: { id: 'user-42' },
+          username: 'alex',
+          avatarUrl: 'https://example.com/alex.png',
+        };
+        const { result } = renderWithLocalQueue([], null);
+        act(() => {
+          result.current!.addToQueue(climb1);
+        });
+        const [newQueue] = mockSetLocalQueueState.mock.calls[0];
+        expect(newQueue[0].addedByUser).toEqual({
+          id: 'user-42',
+          username: 'alex',
+          avatarUrl: 'https://example.com/alex.png',
+        });
       });
 
       it('removeFromQueue filters item and updates state', () => {
@@ -673,6 +701,228 @@ describe('queue-bridge-context', () => {
           result.current!.setCurrentClimb(climb);
         });
         expect(mockSetLocalQueueState).not.toHaveBeenCalled();
+      });
+    });
+
+    // -------------------------------------------------------------------
+    // Party-mode dispatch: with an active session, setLocalQueueState no-ops
+    // inside the persistent session, so the adapter must route through
+    // ps.addQueueItem / ps.setCurrentClimb instead.
+    // -------------------------------------------------------------------
+    describe('adapter party-mode dispatch', () => {
+      const bd = createTestBoardDetails();
+      const climbA = createTestClimb({ uuid: 'c-a', name: 'A' });
+      const climbB = createTestClimb({ uuid: 'c-b', name: 'B' });
+
+      function renderPartyBridge({
+        queue = [],
+        current = null,
+        addQueueItem = vi.fn().mockResolvedValue(undefined),
+        setCurrentClimb = vi.fn().mockResolvedValue(undefined),
+        removeQueueItem = vi.fn().mockResolvedValue(undefined),
+      }: {
+        queue?: ClimbQueueItem[];
+        current?: ClimbQueueItem | null;
+        addQueueItem?: ReturnType<typeof vi.fn>;
+        setCurrentClimb?: ReturnType<typeof vi.fn>;
+        removeQueueItem?: ReturnType<typeof vi.fn>;
+      } = {}) {
+        mockPersistentSession = createDefaultPersistentSession({
+          activeSession: {
+            sessionId: 'party-42',
+            boardPath: '/kilter/1/10/1,2/40',
+            boardDetails: bd,
+            parsedParams: { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 2], angle: 40 },
+          },
+          queue,
+          currentClimbQueueItem: current,
+          clientId: 'client-xyz',
+          hasConnected: true,
+          addQueueItem,
+          setCurrentClimb,
+          removeQueueItem,
+          isLocalQueueLoaded: true,
+        });
+        const wrapper = ({ children }: { children: React.ReactNode }) => (
+          <QueueBridgeProvider>{children}</QueueBridgeProvider>
+        );
+        return {
+          ...renderHook(() => useTestQueueContext(), { wrapper }),
+          addQueueItem,
+          setCurrentClimb,
+          removeQueueItem,
+        };
+      }
+
+      it('addToQueue dispatches through ps.addQueueItem instead of setLocalQueueState', () => {
+        const { result, addQueueItem } = renderPartyBridge();
+        act(() => {
+          result.current!.addToQueue(climbA);
+        });
+        expect(addQueueItem).toHaveBeenCalledTimes(1);
+        const [newItem] = addQueueItem.mock.calls[0];
+        expect(newItem.climb.uuid).toBe('c-a');
+        expect(newItem.addedBy).toBe('client-xyz');
+        expect(mockSetLocalQueueState).not.toHaveBeenCalled();
+      });
+
+      it('addToQueue attaches addedByUser metadata when a party profile exists', () => {
+        mockPartyProfile = {
+          profile: { id: 'user-77' },
+          username: 'marco',
+          avatarUrl: 'https://example.com/marco.png',
+        };
+        const { result, addQueueItem } = renderPartyBridge();
+        act(() => {
+          result.current!.addToQueue(climbA);
+        });
+        const [newItem] = addQueueItem.mock.calls[0];
+        expect(newItem.addedByUser).toEqual({
+          id: 'user-77',
+          username: 'marco',
+          avatarUrl: 'https://example.com/marco.png',
+        });
+      });
+
+      it('addToQueue leaves addedByUser undefined when no profile is available', () => {
+        mockPartyProfile = { profile: null, username: undefined, avatarUrl: undefined };
+        const { result, addQueueItem } = renderPartyBridge();
+        act(() => {
+          result.current!.addToQueue(climbA);
+        });
+        const [newItem] = addQueueItem.mock.calls[0];
+        expect(newItem.addedByUser).toBeUndefined();
+      });
+
+      it('addToQueue leaves addedByUser undefined when the profile has no username', () => {
+        // A signed-in user without a chosen display name — we'd rather peers
+        // fall back to the Bluetooth placeholder than show a blank name.
+        mockPartyProfile = {
+          profile: { id: 'user-99' },
+          username: undefined,
+          avatarUrl: undefined,
+        };
+        const { result, addQueueItem } = renderPartyBridge();
+        act(() => {
+          result.current!.addToQueue(climbA);
+        });
+        const [newItem] = addQueueItem.mock.calls[0];
+        expect(newItem.addedByUser).toBeUndefined();
+      });
+
+      it('addToQueue swallows ps.addQueueItem rejections without throwing', async () => {
+        const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const addQueueItem = vi.fn().mockRejectedValue(new Error('ws down'));
+        const { result } = renderPartyBridge({ addQueueItem });
+        act(() => {
+          result.current!.addToQueue(climbA);
+        });
+        await Promise.resolve();
+        expect(addQueueItem).toHaveBeenCalled();
+        expect(consoleErr).toHaveBeenCalled();
+        consoleErr.mockRestore();
+      });
+
+      it('setCurrentClimb sends addQueueItem(position) then setCurrentClimb to the session', async () => {
+        const existing = createTestQueueItem(createTestClimb({ uuid: 'c-a' }), 'u-a');
+        const { result, addQueueItem, setCurrentClimb } = renderPartyBridge({
+          queue: [existing],
+          current: existing,
+        });
+        let returned: ClimbQueueItem | null = null;
+        await act(async () => {
+          returned = await result.current!.setCurrentClimb(climbB);
+        });
+        expect(returned).not.toBeNull();
+        expect(returned!.climb.uuid).toBe('c-b');
+        expect(addQueueItem).toHaveBeenCalledTimes(1);
+        expect(addQueueItem.mock.calls[0][1]).toBe(1);
+        expect(setCurrentClimb).toHaveBeenCalledTimes(1);
+        expect(setCurrentClimb.mock.calls[0][0].climb.uuid).toBe('c-b');
+        expect(setCurrentClimb.mock.calls[0][1]).toBe(false);
+        expect(mockSetLocalQueueState).not.toHaveBeenCalled();
+      });
+
+      it('setCurrentClimb uses undefined position when there is no current climb', async () => {
+        const { result, addQueueItem } = renderPartyBridge({ queue: [], current: null });
+        await act(async () => {
+          await result.current!.setCurrentClimb(climbA);
+        });
+        expect(addQueueItem.mock.calls[0][1]).toBeUndefined();
+      });
+
+      it('setCurrentClimb returns null and does not call removeQueueItem when ps.addQueueItem rejects', async () => {
+        const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const addQueueItem = vi.fn().mockRejectedValue(new Error('ws down'));
+        const setCurrentClimb = vi.fn().mockResolvedValue(undefined);
+        const removeQueueItem = vi.fn().mockResolvedValue(undefined);
+        const { result } = renderPartyBridge({ addQueueItem, setCurrentClimb, removeQueueItem });
+        let returned: ClimbQueueItem | null = null;
+        await act(async () => {
+          returned = await result.current!.setCurrentClimb(climbA);
+        });
+        expect(returned).toBeNull();
+        expect(setCurrentClimb).not.toHaveBeenCalled();
+        // Nothing made it into the queue — nothing to roll back.
+        expect(removeQueueItem).not.toHaveBeenCalled();
+        expect(consoleErr).toHaveBeenCalled();
+        consoleErr.mockRestore();
+      });
+
+      it('setCurrentClimb returns null and rolls back the queue add when ps.setCurrentClimb rejects', async () => {
+        const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const addQueueItem = vi.fn().mockResolvedValue(undefined);
+        const setCurrentClimb = vi.fn().mockRejectedValue(new Error('no session'));
+        const removeQueueItem = vi.fn().mockResolvedValue(undefined);
+        const { result } = renderPartyBridge({ addQueueItem, setCurrentClimb, removeQueueItem });
+        let returned: ClimbQueueItem | null = null;
+        await act(async () => {
+          returned = await result.current!.setCurrentClimb(climbA);
+        });
+        expect(returned).toBeNull();
+        expect(addQueueItem).toHaveBeenCalled();
+        // Item landed in the queue but couldn't be promoted — roll it back.
+        expect(removeQueueItem).toHaveBeenCalledTimes(1);
+        const addedItem = addQueueItem.mock.calls[0][0];
+        expect(removeQueueItem.mock.calls[0][0]).toBe(addedItem.uuid);
+        expect(consoleErr).toHaveBeenCalled();
+        consoleErr.mockRestore();
+      });
+
+      it('setCurrentClimb logs when the rollback removeQueueItem also rejects', async () => {
+        const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const addQueueItem = vi.fn().mockResolvedValue(undefined);
+        const setCurrentClimb = vi.fn().mockRejectedValue(new Error('no session'));
+        const removeQueueItem = vi.fn().mockRejectedValue(new Error('rollback failed'));
+        const { result } = renderPartyBridge({ addQueueItem, setCurrentClimb, removeQueueItem });
+        await act(async () => {
+          await result.current!.setCurrentClimb(climbA);
+        });
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(removeQueueItem).toHaveBeenCalled();
+        const messages = consoleErr.mock.calls.map((call) => String(call[0]));
+        expect(messages.some((m) => m.includes('Failed to roll back'))).toBe(true);
+        consoleErr.mockRestore();
+      });
+
+      it('setCurrentClimb attaches addedByUser metadata to the queued item', async () => {
+        mockPartyProfile = {
+          profile: { id: 'user-77' },
+          username: 'marco',
+          avatarUrl: undefined,
+        };
+        const { result, addQueueItem } = renderPartyBridge();
+        await act(async () => {
+          await result.current!.setCurrentClimb(climbA);
+        });
+        const [newItem] = addQueueItem.mock.calls[0];
+        expect(newItem.addedByUser).toEqual({
+          id: 'user-77',
+          username: 'marco',
+          avatarUrl: undefined,
+        });
       });
     });
   });

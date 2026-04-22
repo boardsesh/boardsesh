@@ -21,7 +21,7 @@ import { useSwipeActions } from '@/app/hooks/use-swipe-actions';
 import { useDrawerDragResize } from '@/app/hooks/use-drawer-drag-resize';
 import { useDoubleTap } from '@/app/lib/hooks/use-double-tap';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getGradeTintColor } from '@/app/lib/grade-colors';
+import { getActiveClimbTint } from '@/app/lib/grade-colors';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { useIsClimbSelected } from '../board-page/selected-climb-store';
 import { InlineListTickBar } from '../logbook/inline-list-tick-bar';
@@ -501,9 +501,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       [rightActionRevealWidth, swipeRightAction?.color],
     );
 
-    const resolvedBg =
-      backgroundColor ??
-      (selected ? (getGradeTintColor(climb.difficulty, 'light', isDark) ?? 'var(--semantic-selected)') : 'transparent');
+    const resolvedBg = backgroundColor ?? (selected ? getActiveClimbTint(climb.difficulty, isDark) : 'transparent');
 
     const swipeableContentStyle = useMemo(
       () => ({

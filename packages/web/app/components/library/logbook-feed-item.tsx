@@ -29,8 +29,9 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { track } from '@vercel/analytics';
 import type { AscentFeedItem } from '@/app/lib/graphql/operations/ticks';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
-import { useOptionalQueueActions } from '@/app/components/graphql-queue';
+import { useOptionalQueueActions, useOptionalCurrentClimb } from '@/app/components/graphql-queue';
 import { dispatchOpenPlayDrawer } from '@/app/components/queue-control/play-drawer-event';
+import { getActiveClimbTint } from '@/app/lib/grade-colors';
 import { AscentStatusIcon } from '@/app/components/ascent-status/ascent-status-icon';
 import { ClimbActions } from '@/app/components/climb-actions';
 import DrawerClimbHeader from '@/app/components/climb-card/drawer-climb-header';
@@ -141,6 +142,7 @@ function LogbookGradeRow({
   difficultyName,
   quality,
   attemptCount,
+  isDark,
   isEditing,
   editQuality,
   editDifficulty,
@@ -155,6 +157,7 @@ function LogbookGradeRow({
   difficultyName: string | null;
   quality: number | null;
   attemptCount: number;
+  isDark: boolean;
   isEditing?: boolean;
   editQuality?: number | null;
   editDifficulty?: number | undefined;
@@ -164,7 +167,6 @@ function LogbookGradeRow({
   gradeButtonRef?: React.RefObject<HTMLButtonElement | null>;
   triesButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
-  const isDark = useIsDarkMode();
   const { formatGrade, getGradeColor } = useGradeFormat();
 
   const consensusFormatted = consensusDifficultyName ? formatGrade(consensusDifficultyName) : null;
@@ -314,6 +316,17 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     const [betaLinkDialogOpen, setBetaLinkDialogOpen] = useState(false);
 
     const queueActions = useOptionalQueueActions();
+    const currentClimbData = useOptionalCurrentClimb();
+    const isActiveClimb =
+      !!currentClimbData?.currentClimb && currentClimbData.currentClimb.uuid === item.climbUuid;
+    const isDark = useIsDarkMode();
+    const activeBackground = useMemo(
+      () =>
+        isActiveClimb
+          ? getActiveClimbTint(item.consensusDifficultyName ?? item.difficultyName, isDark)
+          : undefined,
+      [isActiveClimb, item.consensusDifficultyName, item.difficultyName, isDark],
+    );
 
     // --- Edit state ---
     const { mutateAsync: updateTickAsync, isPending: isSaving } = useUpdateTick();
@@ -623,7 +636,9 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
             {...swipeHandlers}
             ref={contentCombinedRef}
             className={styles.swipeableContent}
+            style={activeBackground ? ({ '--active-climb-bg': activeBackground } as React.CSSProperties) : undefined}
             data-swipe-content=""
+            data-active-climb={isActiveClimb ? '' : undefined}
             role={!isEditing && queueActions ? 'button' : undefined}
             tabIndex={!isEditing && queueActions ? 0 : undefined}
             aria-label={!isEditing && queueActions ? `Set ${item.climbName} as active climb` : undefined}
@@ -704,6 +719,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                   difficultyName={item.difficultyName}
                   quality={item.quality}
                   attemptCount={item.attemptCount}
+                  isDark={isDark}
                   isEditing={isEditing}
                   editQuality={editQuality}
                   editDifficulty={editDifficulty}

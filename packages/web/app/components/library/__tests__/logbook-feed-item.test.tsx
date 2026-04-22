@@ -21,6 +21,11 @@ const dispatchOpenPlayDrawerMock = vi.fn();
 const queueActionsState: { value: { setCurrentClimb: typeof setCurrentClimbMock } | null } = {
   value: { setCurrentClimb: setCurrentClimbMock },
 };
+// Holder for the currently-active climb data so tests can exercise the
+// "this row is the active climb" branch.
+const currentClimbState: {
+  value: { currentClimb: { uuid: string } | null; currentClimbQueueItem: null } | null;
+} = { value: null };
 // Holder object so tests can mutate isPending and the mock reads the
 // current value on every render (avoids the stale-by-value closure
 // that would result from binding a plain `let` into the mock factory).
@@ -102,6 +107,10 @@ vi.mock('@/app/lib/board-data', () => ({
     { difficulty_id: 20, difficulty_name: '7a/V6', v_grade: 'V6' },
     { difficulty_id: 21, difficulty_name: '7a+/V7', v_grade: 'V7' },
   ],
+  // grade-colors.ts reads BOULDER_GRADES at module eval time to build its
+  // "V-grades with multiple Font-grade mappings" set. The data only needs to
+  // satisfy the `{ v_grade }` shape the loop reads.
+  BOULDER_GRADES: [{ v_grade: 'V6' }, { v_grade: 'V7' }],
   getGradesForBoard: () => [{ difficulty_id: 20, difficulty_name: '7a/V6', v_grade: 'V6' }],
 }));
 
@@ -113,6 +122,7 @@ vi.mock('@/app/components/activity-feed/ascent-thumbnail', () => ({
 
 vi.mock('@/app/components/graphql-queue', () => ({
   useOptionalQueueActions: () => queueActionsState.value,
+  useOptionalCurrentClimb: () => currentClimbState.value,
 }));
 
 vi.mock('@/app/components/queue-control/play-drawer-event', () => ({
@@ -199,6 +209,7 @@ beforeEach(() => {
   setCurrentClimbMock.mockReset();
   dispatchOpenPlayDrawerMock.mockReset();
   queueActionsState.value = { setCurrentClimb: setCurrentClimbMock };
+  currentClimbState.value = null;
   updateTickState.isPending = false;
 });
 
@@ -442,5 +453,50 @@ describe('LogbookFeedItem', () => {
     rerender(<LogbookFeedItem item={makeItem({ comment: '' })} isEditing />);
     const editRow = container.querySelector('.commentRow');
     expect(editRow).not.toBeNull();
+  });
+
+  describe('active climb tint', () => {
+    it('marks the row data-active-climb when the item matches the current climb', () => {
+      currentClimbState.value = {
+        currentClimb: { uuid: 'climb-1' },
+        currentClimbQueueItem: null,
+      };
+      const { container } = render(<LogbookFeedItem item={makeItem()} />);
+      const row = container.querySelector('.swipeableContent') as HTMLElement;
+      expect(row.hasAttribute('data-active-climb')).toBe(true);
+      // CSS variable is set inline so the module stylesheet can paint the tint.
+      expect(row.style.getPropertyValue('--active-climb-bg')).not.toBe('');
+    });
+
+    it('does not set the active CSS variable when no climb is current', () => {
+      currentClimbState.value = null;
+      const { container } = render(<LogbookFeedItem item={makeItem()} />);
+      const row = container.querySelector('.swipeableContent') as HTMLElement;
+      expect(row.hasAttribute('data-active-climb')).toBe(false);
+      expect(row.style.getPropertyValue('--active-climb-bg')).toBe('');
+    });
+
+    it('does not mark the row active when a different climb is current', () => {
+      currentClimbState.value = {
+        currentClimb: { uuid: 'some-other-climb' },
+        currentClimbQueueItem: null,
+      };
+      const { container } = render(<LogbookFeedItem item={makeItem()} />);
+      const row = container.querySelector('.swipeableContent') as HTMLElement;
+      expect(row.hasAttribute('data-active-climb')).toBe(false);
+      expect(row.style.getPropertyValue('--active-climb-bg')).toBe('');
+    });
+
+    it('falls back to the user difficulty name when no consensus grade exists', () => {
+      currentClimbState.value = {
+        currentClimb: { uuid: 'climb-1' },
+        currentClimbQueueItem: null,
+      };
+      const { container } = render(
+        <LogbookFeedItem item={makeItem({ consensusDifficultyName: null, difficultyName: '7a/V6' })} />,
+      );
+      const row = container.querySelector('.swipeableContent') as HTMLElement;
+      expect(row.style.getPropertyValue('--active-climb-bg')).not.toBe('');
+    });
   });
 });

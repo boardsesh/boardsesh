@@ -14,7 +14,7 @@ import { Climb, BoardDetails } from '@/app/lib/types';
 import { ClimbActions } from '../climb-actions';
 import { useDoubleTapFavorite } from '../climb-actions/use-double-tap-favorite';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getGradeTintColor } from '@/app/lib/grade-colors';
+import { getActiveClimbTint } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { useIsClimbSelected } from '../board-page/selected-climb-store';
@@ -107,9 +107,7 @@ function ClimbCardWithActions({
         <CardContent
           sx={{
             padding: `${themeTokens.spacing[1] + 2}px`,
-            backgroundColor: selected
-              ? (getGradeTintColor(climb.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)')
-              : undefined,
+            backgroundColor: selected ? getActiveClimbTint(climb.difficulty, isDark, 'selected-light') : undefined,
           }}
         >
           <div style={{ position: 'relative' }}>
@@ -178,9 +176,7 @@ const ClimbCardStatic = React.memo(
           <CardContent
             sx={{
               padding: `${themeTokens.spacing[1] + 2}px`,
-              backgroundColor: selected
-                ? (getGradeTintColor(climb?.difficulty, 'light', isDark) ?? 'var(--semantic-selected-light)')
-                : undefined,
+              backgroundColor: selected ? getActiveClimbTint(climb?.difficulty, isDark, 'selected-light') : undefined,
             }}
           >
             <div style={{ position: 'relative' }}>
