@@ -93,29 +93,33 @@ test.describe('Queue Persistence - Local Mode', () => {
     // 15 s. 30 s gives room for one round-trip retry.
     const NAV_TIMEOUT = 30_000;
 
-    // Note: an earlier version of this test also navigated via the user
-    // drawer → /settings (then /help) to exercise the non-tab-bar path.
-    // Both targets fought with CI: /settings requires auth (3c4c5271),
-    // and /help's tab-bar `Discover` click reliably failed to advance the
-    // URL across several shard-5 runs for reasons the snapshot couldn't
-    // pin down. Coverage of the drawer → Link pathway lives in the
-    // bottom-tab-bar spec's queue-integration tests; this test focuses on
-    // the tab-bar persistence path specifically.
+    // Navigation order: Discover → Feed → Home → Climb.
+    //
+    // Earlier versions went Home first, then Discover. That sequence
+    // reliably failed on shard 5: clicking Discover after a prior
+    // router.push('/')  races against that transition's still-in-flight
+    // RSC fetch. Next.js 15 can silently drop a second push while the
+    // first is pending, so the URL never advanced. Going Discover first
+    // (from the fully-committed board page) avoids the race entirely.
+    //
+    // /settings requires auth (3c4c5271); /help's Discover click suffered
+    // the same race. Coverage of the drawer → Link pathway lives in the
+    // bottom-tab-bar spec's queue-integration tests.
 
-    // 1. Navigate to Home via bottom tab bar
-    await bottomTabButton(page, 'Home').click();
-    await expect(page).toHaveURL('/', { timeout: NAV_TIMEOUT });
-    await verifyQueueShowsClimb(page, climbName);
-
-    // 2. Navigate to Discover via bottom tab bar
+    // 1. Navigate to Discover via bottom tab bar (from the board page —
+    //    no prior router.push in flight, so the navigation is reliable).
     await bottomTabButton(page, 'Discover').click();
     await expect(page).toHaveURL(/\/playlists/, { timeout: NAV_TIMEOUT });
     await verifyQueueShowsClimb(page, climbName);
 
-    // 3. Navigate to Feed via bottom tab bar (Notifications tab was removed;
-    //    Feed is a second public route that exercises the persistence path).
+    // 2. Navigate to Feed via bottom tab bar.
     await bottomTabButton(page, 'Feed').click();
     await expect(page).toHaveURL(/\/feed/, { timeout: NAV_TIMEOUT });
+    await verifyQueueShowsClimb(page, climbName);
+
+    // 3. Navigate to Home via bottom tab bar.
+    await bottomTabButton(page, 'Home').click();
+    await expect(page).toHaveURL('/', { timeout: NAV_TIMEOUT });
     await verifyQueueShowsClimb(page, climbName);
 
     // 4. Navigate back to climb list via bottom tab bar.
