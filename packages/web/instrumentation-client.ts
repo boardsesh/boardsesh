@@ -20,6 +20,22 @@ Sentry.init({
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
 
+  // Capture more breadcrumbs leading up to an error. Defaults to 50, which is
+  // not enough to see the chain of fetches preceding a stack overflow on the
+  // home page (multiple SWR/GraphQL queries fire in parallel on mount).
+  maxBreadcrumbs: 100,
+
+  integrations: [
+    // Records fetch/XHR/navigation breadcrumbs without sampling traces. We
+    // explicitly opt out of performance traces (tracesSampleRate is unset) —
+    // the integration is here purely for the breadcrumb side effects, which
+    // are what tell us "what was happening before the error".
+    Sentry.browserTracingIntegration(),
+    // Forward console.error to Sentry as breadcrumbs so async errors swallowed
+    // by .catch(console.error) still leave a trail.
+    Sentry.captureConsoleIntegration({ levels: ['error'] }),
+  ],
+
   // Filter out errors from browser extensions and third-party scripts
   beforeSend(event, hint) {
     const error = hint.originalException;

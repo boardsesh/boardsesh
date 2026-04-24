@@ -7,6 +7,11 @@ const withVercelToolbar = createWithVercelToolbar();
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Required for Sentry to symbolicate stack traces from production iOS/Android
+  // browsers — without this, client bundles ship without `.map` files and
+  // window.onerror reports degrade to single minified frames like
+  // "Unknown function in undefined [Line 38]".
+  productionBrowserSourceMaps: true,
   typescript: {
     // ignoreBuildErrors: true,
   },

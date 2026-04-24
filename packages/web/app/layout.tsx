@@ -8,6 +8,7 @@ import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
 import PersistentSessionWrapper from './components/providers/persistent-session-wrapper';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
+import { GlobalErrorTrap } from './components/providers/global-error-trap';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
 import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import I18nProvider from './components/providers/i18n-provider';
@@ -97,6 +98,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 >
                   <SnackbarProvider>
                     <NativeDeepLinkListener />
+                    <GlobalErrorTrap />
                     <AuthModalProvider>
                       <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
                         <PersistentSessionWrapper boardConfigs={boardConfigs}>
