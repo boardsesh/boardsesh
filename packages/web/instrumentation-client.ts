@@ -23,7 +23,16 @@ Sentry.init({
   // Filter out errors from browser extensions and third-party scripts
   beforeSend(event, hint) {
     const error = hint.originalException;
+    const errorName = error instanceof Error ? error.name : '';
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Ignore AbortError — expected during rapid BLE swipes, fetch cancellation
+    // on navigation, and graphql-ws teardown on iOS WKWebView. See also the
+    // "Load failed" filter below and the dispose() wrapper in
+    // components/graphql-queue/graphql-client.ts.
+    if (errorName === 'AbortError') {
+      return null;
+    }
 
     // Ignore browser extension errors (runtime.sendMessage, etc.)
     if (
