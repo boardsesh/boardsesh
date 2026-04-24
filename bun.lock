@@ -182,7 +182,7 @@
         "@emoji-mart/react": "^1.1.1",
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.1",
-        "@flags-sdk/vercel": "^1.2.1",
+        "@flags-sdk/vercel": "^1.3.0",
         "@mui/icons-material": "^7.3.8",
         "@mui/material": "^7.3.8",
         "@mui/material-nextjs": "^7.3.8",
@@ -588,7 +588,7 @@
 
     "@fastify/otel": ["@fastify/otel@0.16.0", "", { "dependencies": { "@opentelemetry/core": "^2.0.0", "@opentelemetry/instrumentation": "^0.208.0", "@opentelemetry/semantic-conventions": "^1.28.0", "minimatch": "^10.0.3" }, "peerDependencies": { "@opentelemetry/api": "^1.9.0" } }, "sha512-2304BdM5Q/kUvQC9qJO1KZq3Zn1WWsw+WWkVmFEaj1UE2hEIiuFqrPeglQOwEtw/ftngisqfQ3v70TWMmwhhHA=="],
 
-    "@flags-sdk/vercel": ["@flags-sdk/vercel@1.2.1", "", { "dependencies": { "@vercel/flags-core": "1.3.1" }, "peerDependencies": { "flags": "*" } }, "sha512-k/0inU3Ly9PD5BIPICGZNv7kXH0fHs3tIiLB6MISK+PC/s1Y/z9m4ED3ROZiNNJqlSj4mNpwbNRkxWba2Qhisw=="],
+    "@flags-sdk/vercel": ["@flags-sdk/vercel@1.3.0", "", { "dependencies": { "@vercel/flags-core": "1.4.0" }, "peerDependencies": { "flags": "*" } }, "sha512-IGwC8ye94+CnOYDxIdic1f2wZLbJQ67zXacD3J1/UWErcPdjtfp44RG23Qb9WujJ2VJbB8bzLdZ6R89nALtDeg=="],
 
     "@graphql-tools/executor": ["@graphql-tools/executor@1.5.0", "", { "dependencies": { "@graphql-tools/utils": "^10.11.0", "@graphql-typed-document-node/core": "^3.2.0", "@repeaterjs/repeater": "^3.0.4", "@whatwg-node/disposablestack": "^0.0.6", "@whatwg-node/promise-helpers": "^1.0.0", "tslib": "^2.4.0" }, "peerDependencies": { "graphql": "^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0" } }, "sha512-3HzAxfexmynEWwRB56t/BT+xYKEYLGPvJudR1jfs+XZX8bpfqujEhqVFoxmkpEE8BbFcKuBNoQyGkTi1eFJ+hA=="],
 
@@ -1592,7 +1592,7 @@
 
     "@vercel/analytics": ["@vercel/analytics@2.0.1", "", { "peerDependencies": { "@remix-run/react": "^2", "@sveltejs/kit": "^1 || ^2", "next": ">= 13", "nuxt": ">= 3", "react": "^18 || ^19 || ^19.0.0-rc", "svelte": ">= 4", "vue": "^3", "vue-router": "^4" }, "optionalPeers": ["@remix-run/react", "@sveltejs/kit", "next", "nuxt", "react", "svelte", "vue", "vue-router"] }, "sha512-MTQG6V9qQrt1tsDeF+2Uoo5aPjqbVPys1xvnIftXSJYG2SrwXRHnqEvVoYID7BTruDz4lCd2Z7rM1BdkUehk2g=="],
 
-    "@vercel/flags-core": ["@vercel/flags-core@1.3.1", "", { "dependencies": { "@vercel/functions": "^3.4.3", "jose": "5.2.1", "js-xxhash": "4.0.0" }, "peerDependencies": { "@openfeature/server-sdk": "1.18.0", "next": "*" }, "optionalPeers": ["@openfeature/server-sdk", "next"] }, "sha512-tLFn7O0o5Tq90anusBA2ShR/KSMTcj5rW6lfaYnEB3NArUeVaIb4eZRGVkqFtCi97J4G7hIGNmVtBLKCeWoqDw=="],
+    "@vercel/flags-core": ["@vercel/flags-core@1.4.0", "", { "dependencies": { "@vercel/functions": "^3.4.3", "jose": "5.2.1", "js-xxhash": "4.0.0" }, "peerDependencies": { "@openfeature/server-sdk": "1.18.0", "next": "*" }, "optionalPeers": ["@openfeature/server-sdk", "next"] }, "sha512-VeWaNAMZoBmOC5B0POjYXkuP+Llt9MtMDg0DFJObBRLKQ/zTtc9lY4hVVcOIx1JjJmO3JKMZDv43WtX/1jDbmg=="],
 
     "@vercel/functions": ["@vercel/functions@3.4.3", "", { "dependencies": { "@vercel/oidc": "3.2.0" }, "peerDependencies": { "@aws-sdk/credential-provider-web-identity": "*" }, "optionalPeers": ["@aws-sdk/credential-provider-web-identity"] }, "sha512-kA14KIUVgAY6VXbhZ5jjY+s0883cV3cZqIU3WhrSRxuJ9KvxatMjtmzl0K23HK59oOUjYl7HaE/eYMmhmqpZzw=="],
 
