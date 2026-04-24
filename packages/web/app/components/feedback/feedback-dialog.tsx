@@ -41,7 +41,7 @@ const FeedbackDialogBody: React.FC<Omit<FeedbackDialogProps, 'open'>> = ({
   mode = 'rating',
   onSubmitted,
 }) => {
-  const { mutate } = useSubmitAppFeedback();
+  const { mutateAsync } = useSubmitAppFeedback();
   const { showMessage } = useSnackbar();
   const isBug = mode === 'bug';
   const resolvedTitle = title ?? (isBug ? 'Report a bug' : 'Rate Boardsesh');
@@ -63,24 +63,30 @@ const FeedbackDialogBody: React.FC<Omit<FeedbackDialogProps, 'open'>> = ({
       void setFeedbackStatus('submitted');
     }
 
-    mutate(
-      {
-        rating: isBug ? null : values.rating,
-        comment: values.comment,
-        source,
-      },
-      {
-        onSuccess: () => {
-          showMessage(isBug ? 'Bug logged — thanks.' : 'Thanks — logged.', 'success');
-          // Fire chained follow-ups (e.g. "also leave a store review?") only
-          // on successful submission. Otherwise we'd be prompting the user to
-          // publicly review the app right after telling them their feedback
-          // didn't save.
-          onSubmitted?.(values);
-        },
-        onError: () => showMessage("Couldn't send — we'll keep your feedback.", 'warning'),
-      },
-    );
+    // Use mutateAsync + promise chain, not mutate() with per-call callbacks.
+    // The dialog body unmounts synchronously when we call onClose() below,
+    // which tears down React Query's MutationObserver and cancels any
+    // callbacks attached via mutate()'s options — so `onSubmitted` never
+    // fires and the chained StoreReviewPromptDialog never opens. The
+    // mutation promise itself survives the unmount (the mutation isn't
+    // cancelled, only the observer is removed), so a raw .then/.catch
+    // chain still runs the post-submit hooks reliably.
+    mutateAsync({
+      rating: isBug ? null : values.rating,
+      comment: values.comment,
+      source,
+    })
+      .then(() => {
+        showMessage(isBug ? 'Bug logged — thanks.' : 'Thanks — logged.', 'success');
+        // Fire chained follow-ups (e.g. "also leave a store review?") only
+        // on successful submission. Otherwise we'd be prompting the user to
+        // publicly review the app right after telling them their feedback
+        // didn't save.
+        onSubmitted?.(values);
+      })
+      .catch(() => {
+        showMessage("Couldn't send — we'll keep your feedback.", 'warning');
+      });
     onClose();
   };
 

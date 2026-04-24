@@ -19,8 +19,7 @@ import { FeedbackDialog } from '../feedback-dialog';
 import { useSubmitAppFeedback } from '@/app/hooks/use-submit-app-feedback';
 import { setFeedbackStatus } from '@/app/lib/feedback-prompt-db';
 
-type MutationOptions = { onSuccess?: () => void; onError?: (err: Error) => void };
-type Mutate = (payload: unknown, options?: MutationOptions) => void;
+type MutateAsync = (payload: unknown) => Promise<boolean>;
 
 const mockedUseSubmitAppFeedback = vi.mocked(useSubmitAppFeedback);
 const mockedSetFeedbackStatus = vi.mocked(setFeedbackStatus);
@@ -30,12 +29,24 @@ function pickStars(n: number) {
 }
 
 function setupMutate(behavior: 'success' | 'error' | 'noop') {
-  const mutate: Mutate = vi.fn((_payload, options) => {
-    if (behavior === 'success') options?.onSuccess?.();
-    if (behavior === 'error') options?.onError?.(new Error('simulated failure'));
+  const mutateAsync: MutateAsync = vi.fn(() => {
+    if (behavior === 'success') return Promise.resolve(true);
+    if (behavior === 'error') return Promise.reject(new Error('simulated failure'));
+    return new Promise<boolean>(() => undefined); // hangs forever — for cancel/close tests
   });
-  mockedUseSubmitAppFeedback.mockReturnValue({ mutate } as never);
-  return mutate;
+  mockedUseSubmitAppFeedback.mockReturnValue({ mutateAsync } as never);
+  return mutateAsync;
+}
+
+// After firing the mutation we need to flush the microtask queue so the
+// `.then` / `.catch` chain runs before assertions. Two resolves covers the
+// one await inside the handler plus any trailing microtasks scheduled by
+// React Query.
+async function flushSubmission() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 describe('FeedbackDialog — onSubmitted chaining', () => {
@@ -52,6 +63,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
+    await flushSubmission();
     expect(onSubmitted).toHaveBeenCalledTimes(1);
     expect(onSubmitted).toHaveBeenCalledWith({ rating: 5, comment: null });
   });
@@ -64,6 +76,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
+    await flushSubmission();
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -74,6 +87,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
+    await flushSubmission();
     expect(mockedSetFeedbackStatus).toHaveBeenCalledWith('submitted');
   });
 
@@ -86,6 +100,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /send bug report/i }));
     });
+    await flushSubmission();
     expect(mockedSetFeedbackStatus).not.toHaveBeenCalled();
   });
 
@@ -103,6 +118,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     });
+    await flushSubmission();
     // The user sees the "Couldn't send" snackbar — asking them to publicly
     // review the app on top of that failure would be user-hostile.
     expect(onSubmitted).not.toHaveBeenCalled();
@@ -133,7 +149,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
   });
 
   it('fires onSubmitted with rating=null for a successful bug submission', async () => {
-    const mutate = setupMutate('success');
+    const mutateAsync = setupMutate('success');
     const onSubmitted = vi.fn();
     render(<FeedbackDialog open onClose={vi.fn()} source="drawer-bug" mode="bug" onSubmitted={onSubmitted} />);
     fireEvent.change(screen.getByPlaceholderText(/what were you doing/i), {
@@ -142,7 +158,8 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /send bug report/i }));
     });
-    expect(mutate).toHaveBeenCalledTimes(1);
+    await flushSubmission();
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
     expect(onSubmitted).toHaveBeenCalledWith({ rating: null, comment: 'crashed when submitting' });
   });
 });
