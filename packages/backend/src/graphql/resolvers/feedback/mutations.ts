@@ -7,6 +7,7 @@ import { postFeedbackToDiscord } from '../../../services/discord';
 
 export const feedbackMutations = {
   submitAppFeedback: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
+    // 10 submissions per 60-second window (see applyRateLimit default window).
     await applyRateLimit(ctx, 10, 'submitAppFeedback');
 
     const validated = validateInput(SubmitAppFeedbackInputSchema, input, 'input');

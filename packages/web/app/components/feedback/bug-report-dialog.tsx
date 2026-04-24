@@ -7,8 +7,8 @@ import { FeedbackDialog, type FeedbackDialogSecondaryAction } from './feedback-d
 type BugReportDialogProps = {
   open: boolean;
   onClose: () => void;
-  /** 'shake-bug' for the motion trigger, 'drawer-bug' for the drawer button. */
-  source: Extract<AppFeedbackSource, 'shake-bug' | 'drawer-bug'>;
+  /** 'shake_bug' for the motion trigger, 'drawer_bug' for the drawer button. */
+  source: Extract<AppFeedbackSource, 'shake_bug' | 'drawer_bug'>;
   /** Muted action shown below the form — shake variant uses this for "Don't show this again". */
   secondaryAction?: FeedbackDialogSecondaryAction;
 };

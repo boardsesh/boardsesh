@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const RATING_SOURCES = ['prompt', 'drawer-feedback'] as const;
-const BUG_SOURCES = ['shake-bug', 'drawer-bug'] as const;
+const RATING_SOURCES = ['prompt', 'drawer_feedback'] as const;
+const BUG_SOURCES = ['shake_bug', 'drawer_bug'] as const;
 
 export const SubmitAppFeedbackInputSchema = z
   .object({

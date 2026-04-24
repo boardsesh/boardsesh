@@ -539,7 +539,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
       <FeedbackDialog
         open={showRating}
         onClose={() => setShowRating(false)}
-        source="drawer-feedback"
+        source="drawer_feedback"
         onSubmitted={({ rating }) => {
           // Defensive: the dialog body always calls onClose in its submit
           // path, but closing explicitly here too guarantees no stacking if
@@ -554,7 +554,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
           }
         }}
       />
-      <BugReportDialog open={showBugReport} onClose={() => setShowBugReport(false)} source="drawer-bug" />
+      <BugReportDialog open={showBugReport} onClose={() => setShowBugReport(false)} source="drawer_bug" />
       <StoreReviewPromptDialog open={showStoreReviewPrompt} onClose={() => setShowStoreReviewPrompt(false)} />
     </>
   );

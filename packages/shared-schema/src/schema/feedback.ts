@@ -1,4 +1,17 @@
 export const feedbackTypeDefs = /* GraphQL */ `
+  enum AppFeedbackPlatform {
+    ios
+    android
+    web
+  }
+
+  enum AppFeedbackSource {
+    prompt
+    drawer_feedback
+    shake_bug
+    drawer_bug
+  }
+
   """
   Input for submitAppFeedback mutation.
   """
@@ -14,20 +27,13 @@ export const feedbackTypeDefs = /* GraphQL */ `
     """
     comment: String
 
-    """
-    'ios' | 'android' | 'web'.
-    """
-    platform: String!
+    platform: AppFeedbackPlatform!
 
     """
     App build version (native) or deployed web version. Optional.
     """
     appVersion: String
 
-    """
-    Where the feedback originated: 'prompt' | 'drawer-feedback' (rating flows)
-    or 'shake-bug' | 'drawer-bug' (bug reports).
-    """
-    source: String!
+    source: AppFeedbackSource!
   }
 `;

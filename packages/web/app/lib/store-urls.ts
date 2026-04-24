@@ -18,6 +18,15 @@ export function storeHttpsUrlForPlatform(platform: Platform): string {
 
 /** URL that opens the native store app directly on device. Use inside a native app. */
 export function storeSchemeUrlForPlatform(platform: Platform): string {
-  if (platform === 'android') return ANDROID_PLAY_STORE_SCHEME_URL;
-  return IOS_APP_STORE_SCHEME_URL;
+  switch (platform) {
+    case 'android':
+      return ANDROID_PLAY_STORE_SCHEME_URL;
+    case 'ios':
+      return IOS_APP_STORE_SCHEME_URL;
+    case 'web':
+      // Scheme URLs are only meaningful on native platforms; callers should
+      // not invoke this with 'web'. Fall back to the https URL so we don't
+      // open an itms-apps:// URL in a browser context.
+      return IOS_APP_STORE_URL;
+  }
 }

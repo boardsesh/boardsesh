@@ -11,7 +11,7 @@
 
 import type { AppFeedbackPlatform, AppFeedbackSource } from '@boardsesh/shared-schema';
 
-const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
+const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake_bug', 'drawer_bug']);
 
 const COLOR_GREEN = 0x57f287;
 const COLOR_YELLOW = 0xfee75c;

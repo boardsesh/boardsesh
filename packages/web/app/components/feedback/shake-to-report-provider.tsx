@@ -60,7 +60,7 @@ export const ShakeToReportProvider: React.FC = () => {
     <BugReportDialog
       open={open}
       onClose={handleClose}
-      source="shake-bug"
+      source="shake_bug"
       secondaryAction={{ label: "Don't show this again", onClick: handleDontShowAgain }}
     />
   );

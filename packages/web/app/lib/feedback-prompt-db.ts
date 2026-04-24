@@ -74,9 +74,6 @@ export async function setFeedbackStatus(status: FeedbackStatus): Promise<void> {
 // Auto-prompt only surfaces inside the native app, where a 5-star rating
 // actually translates to a store review. On web we rely on the manual
 // "Send feedback" entry in the user drawer.
-// Auto-prompt only surfaces inside the native app, where a 5-star rating
-// actually translates to a store review. On web we rely on the manual
-// "Send feedback" entry in the user drawer.
 export async function shouldShowPrompt(): Promise<boolean> {
   if (!isNativeApp()) return false;
   const status = await getFeedbackStatus();

@@ -46,7 +46,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
   it('fires onSubmitted with the submitted values AFTER the mutation succeeds', async () => {
     setupMutate('success');
     const onSubmitted = vi.fn();
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-feedback" onSubmitted={onSubmitted} />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_feedback" onSubmitted={onSubmitted} />);
     pickStars(5);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
@@ -58,7 +58,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
   it('calls onClose on successful submission — guarantees no stacking when a caller chains another dialog in onSubmitted', async () => {
     setupMutate('success');
     const onClose = vi.fn();
-    render(<FeedbackDialog open onClose={onClose} source="drawer-feedback" onSubmitted={vi.fn()} />);
+    render(<FeedbackDialog open onClose={onClose} source="drawer_feedback" onSubmitted={vi.fn()} />);
     pickStars(5);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
@@ -68,7 +68,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
 
   it('marks the auto-banner status as "submitted" when the user rates via the drawer', async () => {
     setupMutate('success');
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-feedback" onSubmitted={vi.fn()} />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_feedback" onSubmitted={vi.fn()} />);
     pickStars(4);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
@@ -78,7 +78,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
 
   it("does NOT mark the auto-banner status on a bug submission — bugs aren't a rating", async () => {
     setupMutate('success');
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-bug" mode="bug" onSubmitted={vi.fn()} />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_bug" mode="bug" onSubmitted={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText(/what were you doing/i), {
       target: { value: 'crashed when submitting' },
     });
@@ -90,14 +90,14 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
 
   it('uses "Rate Boardsesh" as the default title when no title is passed', () => {
     setupMutate('noop');
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-feedback" />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_feedback" />);
     expect(screen.getByText('Rate Boardsesh')).toBeTruthy();
   });
 
   it('does NOT fire onSubmitted when the mutation errors', async () => {
     setupMutate('error');
     const onSubmitted = vi.fn();
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-feedback" onSubmitted={onSubmitted} />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_feedback" onSubmitted={onSubmitted} />);
     pickStars(5);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
@@ -111,7 +111,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     setupMutate('noop');
     const onSubmitted = vi.fn();
     const onClose = vi.fn();
-    render(<FeedbackDialog open onClose={onClose} source="drawer-feedback" onSubmitted={onSubmitted} />);
+    render(<FeedbackDialog open onClose={onClose} source="drawer_feedback" onSubmitted={onSubmitted} />);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     });
@@ -123,7 +123,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
     setupMutate('noop');
     const onSubmitted = vi.fn();
     const onClose = vi.fn();
-    render(<FeedbackDialog open onClose={onClose} source="drawer-feedback" onSubmitted={onSubmitted} />);
+    render(<FeedbackDialog open onClose={onClose} source="drawer_feedback" onSubmitted={onSubmitted} />);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /close/i }));
     });
@@ -134,7 +134,7 @@ describe('FeedbackDialog — onSubmitted chaining', () => {
   it('fires onSubmitted with rating=null for a successful bug submission', async () => {
     const mutate = setupMutate('success');
     const onSubmitted = vi.fn();
-    render(<FeedbackDialog open onClose={vi.fn()} source="drawer-bug" mode="bug" onSubmitted={onSubmitted} />);
+    render(<FeedbackDialog open onClose={vi.fn()} source="drawer_bug" mode="bug" onSubmitted={onSubmitted} />);
     fireEvent.change(screen.getByPlaceholderText(/what were you doing/i), {
       target: { value: 'crashed when submitting' },
     });
