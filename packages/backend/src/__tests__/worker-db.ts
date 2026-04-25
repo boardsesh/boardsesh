@@ -33,16 +33,19 @@ function buildWorkerDatabaseUrl(): string {
   return raw.replace(/\/[^/]+$/, `/${name}`);
 }
 
-// Module-load side effect: redirect DATABASE_URL to the worker's dedicated DB
-// BEFORE any ESM import can materialise `db/client`'s cached connection against
-// the template DB. Import worker-db.ts first in setupFiles.
+// Resolve once at module init using the original DATABASE_URL, then redirect
+// DATABASE_URL to it BEFORE any ESM import can materialise `db/client`'s
+// cached connection against the template DB. Import worker-db.ts first in
+// setupFiles.
+const WORKER_DATABASE_URL = buildWorkerDatabaseUrl();
+
 if (!process.env.__BOARDSESH_WORKER_DB_INITIALIZED__) {
-  process.env.DATABASE_URL = buildWorkerDatabaseUrl();
+  process.env.DATABASE_URL = WORKER_DATABASE_URL;
   process.env.__BOARDSESH_WORKER_DB_INITIALIZED__ = '1';
 }
 
 export function getWorkerDatabaseUrl(): string {
-  return buildWorkerDatabaseUrl();
+  return WORKER_DATABASE_URL;
 }
 
 let setupPromise: Promise<void> | null = null;

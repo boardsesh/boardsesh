@@ -61,19 +61,29 @@ jobs:
         with:
           fetch-depth: 50
 
-      # Flag (don't block) when shared Drizzle schema changes land without a
-      # parallel edit to the hand-maintained test DDL in schema-sql.ts. Keeps
-      # the two from silently drifting apart.
+      # Block when shared Drizzle schema changes land without a parallel edit
+      # to the hand-maintained test DDL in schema-sql.ts. Runs on PRs and on
+      # direct pushes to main so drift can't sneak in either way. If a schema
+      # change genuinely doesn't affect the backend test DDL, touch
+      # schema-sql.ts (e.g. update the header comment) to record the decision.
       - name: Check for test schema drift
-        if: github.event_name == 'pull_request'
         run: |
-          BASE=${{ github.event.pull_request.base.sha }}
-          HEAD=${{ github.event.pull_request.head.sha }}
-          git fetch --no-tags --depth=50 origin "$BASE" || true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+            HEAD=${{ github.event.pull_request.head.sha }}
+            git fetch --no-tags --depth=50 origin "$BASE" || true
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+            fi
+          fi
           changed=$(git diff --name-only "$BASE" "$HEAD" || true)
           if echo "$changed" | grep -qE '^packages/db/src/schema/'; then
             if ! echo "$changed" | grep -qE '^packages/backend/src/__tests__/schema-sql\.ts$'; then
-              echo "::warning title=Test schema may be stale::packages/db/src/schema/ changed but packages/backend/src/__tests__/schema-sql.ts was not. If your change added/removed columns the backend tests care about, mirror it there too."
+              echo "::error title=Test schema is stale::packages/db/src/schema/ changed but packages/backend/src/__tests__/schema-sql.ts was not. Mirror the change there, or touch schema-sql.ts to record that this schema change does not affect backend tests."
+              exit 1
             fi
           fi
 

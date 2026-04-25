@@ -2,9 +2,35 @@
  * Shared test utilities for validating parser results.
  */
 
-import { expect } from 'vite-plus/test';
+import { expect, beforeAll, afterAll } from 'vite-plus/test';
+import { createScheduler, createWorker } from 'tesseract.js';
 import type { ParseResult } from '../../types';
 import type { ExpectedClimbResult } from '../fixtures/expected-results';
+
+type Scheduler = Awaited<ReturnType<typeof createScheduler>>;
+
+/**
+ * Register beforeAll/afterAll hooks that spin up a tesseract scheduler with
+ * `workerCount` workers and tear it down after the surrounding describe.
+ * Returns an accessor; the scheduler isn't constructed until beforeAll runs.
+ */
+export function useTesseractScheduler(workerCount = 4): { current: () => Scheduler } {
+  let scheduler: Scheduler | undefined;
+  beforeAll(async () => {
+    scheduler = createScheduler();
+    const workers = await Promise.all(Array.from({ length: workerCount }, () => createWorker('eng')));
+    for (const w of workers) scheduler.addWorker(w);
+  }, 60_000);
+  afterAll(async () => {
+    if (scheduler) await scheduler.terminate();
+  });
+  return {
+    current: () => {
+      if (!scheduler) throw new Error('useTesseractScheduler: accessed before beforeAll ran');
+      return scheduler;
+    },
+  };
+}
 
 export type ValidationOptions = {
   /** Whether to validate OCR fields (name, setter, grades) */

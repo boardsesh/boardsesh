@@ -85,5 +85,15 @@ async function dropStaleWorkerDatabases(): Promise<void> {
 export default async function globalSetup() {
   await ensureInfra();
   if (process.env.SKIP_TEST_INFRA === '1') return;
-  await dropStaleWorkerDatabases();
+  try {
+    await dropStaleWorkerDatabases();
+  } catch (error) {
+    const masked = baseConnectionString.replace(/\/\/[^@]+@/, '//***@');
+    console.error(
+      `[test-infra] Failed to clean up stale worker databases via ${masked}. ` +
+        `Check that DATABASE_URL points to a reachable postgres admin DB with valid credentials.\n` +
+        `Original error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    throw error;
+  }
 }
