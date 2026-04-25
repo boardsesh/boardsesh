@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 
-// Mock db + dependencies before importing resolver
+// vi.mock + vi.hoisted run before any import at runtime, regardless of source order.
 const { mockDb } = vi.hoisted(() => {
   const mockDb = {
     execute: vi.fn(),
@@ -28,8 +29,6 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 vi.mock('../events/index', () => ({
   publishSocialEvent: vi.fn().mockResolvedValue(undefined),
 }));
-
-import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 
 // Minimal DB row matching the userBoards schema shape
 function makeDbBoard(overrides: Record<string, unknown> = {}) {
@@ -111,7 +110,12 @@ describe('boardsBySerialNumbers privacy', () => {
 
   describe('unauthenticated callers', () => {
     it('strips name, description, and locationName from non-public boards', async () => {
-      const privateBoard = makeDbBoard({ isPublic: false, name: 'Secret Wall', description: 'Hidden', locationName: 'Home' });
+      const privateBoard = makeDbBoard({
+        isPublic: false,
+        name: 'Secret Wall',
+        description: 'Hidden',
+        locationName: 'Home',
+      });
       setupDbSelect([privateBoard]);
 
       const results = await socialBoardQueries.boardsBySerialNumbers(
@@ -262,11 +266,7 @@ describe('boardsBySerialNumbers privacy', () => {
     it('does not call enrichBoards (no owner/stats queries)', async () => {
       setupDbSelect([makeDbBoard()]);
 
-      await socialBoardQueries.boardsBySerialNumbers(
-        null,
-        { serialNumbers: ['SERIAL001'] },
-        makeUnauthCtx(),
-      );
+      await socialBoardQueries.boardsBySerialNumbers(null, { serialNumbers: ['SERIAL001'] }, makeUnauthCtx());
 
       // Only one select call: the board lookup itself.
       // enrichBoards would trigger 6+ additional select calls.
@@ -287,13 +287,13 @@ describe('boardsBySerialNumbers privacy', () => {
 
       // First call: board lookup; remaining calls: enrichBoards queries
       setupDbSelectSequence([
-        [board],             // board lookup
+        [board], // board lookup
         [{ userId: 'owner-123', name: 'Owner', image: null, displayName: 'The Owner', avatarUrl: null }], // owner
         [{ boardId: 1, totalAscents: 42, uniqueClimbers: 10 }], // ticks
-        [{ boardUuid: 'board-uuid-1', count: 5 }],   // followers
-        [{ entityId: 'board-uuid-1', count: 3 }],     // comments
-        [{ boardUuid: 'board-uuid-1' }],               // follow status
-        [],                                             // gyms
+        [{ boardUuid: 'board-uuid-1', count: 5 }], // followers
+        [{ entityId: 'board-uuid-1', count: 3 }], // comments
+        [{ boardUuid: 'board-uuid-1' }], // follow status
+        [], // gyms
       ]);
 
       const results = await socialBoardQueries.boardsBySerialNumbers(

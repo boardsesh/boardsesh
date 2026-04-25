@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { BoardDetails, SearchRequestPagination } from '@/app/lib/types';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
+import AccordionSearchForm from '../accordion-search-form';
 
 const mockUpdateFilters = vi.fn();
 let mockUISearchParams: SearchRequestPagination = { ...DEFAULT_SEARCH_PARAMS };
@@ -40,8 +41,6 @@ vi.mock('../search-summary-utils', () => ({
   getUserPanelSummary: () => '',
   getHoldsPanelSummary: () => '',
 }));
-
-import AccordionSearchForm from '../accordion-search-form';
 
 const boardDetails = {
   board_name: 'kilter',
