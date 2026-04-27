@@ -61,7 +61,8 @@
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
-    "db:seed-locations": "tsx scripts/seed-board-locations.ts"
+    "db:seed-locations": "tsx scripts/seed-board-locations.ts",
+    "db:backfill-beta-thumbnails": "tsx scripts/backfill-beta-link-thumbnail-urls.ts"
   },
   "dependencies": {
     "@boardsesh/shared-schema": "*",
