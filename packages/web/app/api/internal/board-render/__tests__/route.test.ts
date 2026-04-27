@@ -289,6 +289,45 @@ describe('board-render API route', () => {
     expect(body.error).toContain('render exploded');
   });
 
+  describe('concurrency limiter', () => {
+    it('releases the render slot when the WASM render throws', async () => {
+      // Fill all 4 slots with throwing renders
+      for (let i = 0; i < 4; i++) {
+        mockRenderOverlay.mockImplementationOnce(() => {
+          throw new Error('slot-leak test');
+        });
+      }
+      const errorResponses = await Promise.all(
+        Array.from({ length: 4 }, () => GET(makeRequest(validParams))),
+      );
+      expect(errorResponses.every((r) => r.status === 500)).toBe(true);
+
+      // If slots leaked activeRenders would be stuck at 4 and this would deadlock.
+      const response = await GET(makeRequest(validParams));
+      expect(response.status).toBe(200);
+    });
+
+    it('queues a 5th concurrent request and completes it after a slot is freed', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      // Launch 5 requests simultaneously. With MAX_CONCURRENT_RENDERS=4, request 5
+      // must wait behind a queued promise until one of the first 4 releases its slot.
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => GET(makeRequest(validParams))),
+      );
+
+      expect(responses.every((r) => r.status === 200)).toBe(true);
+
+      // At least one log line should show queue=1, confirming the 5th request was
+      // queued rather than running immediately.
+      const logLines = logSpy.mock.calls.map((args) => String(args[0]));
+      const queuedLines = logLines.filter((line) => line.includes('queue=1'));
+      expect(queuedLines.length).toBeGreaterThanOrEqual(1);
+
+      logSpy.mockRestore();
+    });
+  });
+
   it('calls composite with background when include_background=1', async () => {
     const response = await GET(makeRequest({ ...validParams, thumbnail: '1', include_background: '1' }));
     expect(response.status).toBe(200);

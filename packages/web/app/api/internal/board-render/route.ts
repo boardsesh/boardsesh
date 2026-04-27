@@ -39,7 +39,8 @@ let wasmInitPromise: Promise<void> | null = null;
 // Concurrency limiter — at most this many renders run simultaneously.
 // Excess requests queue behind a promise chain instead of all executing at once,
 // preventing CPU spikes when the CDN cache clears (e.g. after a deploy).
-const MAX_CONCURRENT_RENDERS = 4;
+// Override with BOARD_RENDER_CONCURRENCY env var to tune without a redeploy.
+const MAX_CONCURRENT_RENDERS = Number(process.env.BOARD_RENDER_CONCURRENCY) || 4;
 let activeRenders = 0;
 let renderQueue: Array<() => void> = [];
 
@@ -292,12 +293,16 @@ export async function GET(request: NextRequest) {
 
     await acquireRenderSlot();
     let wasmMs = 0;
+    let queueDepth = 0;
     let rawBytes: Uint8Array;
     try {
       const wasmT0 = performance.now();
       rawBytes = renderOverlay(JSON.stringify(config));
       wasmMs = performance.now() - wasmT0;
     } finally {
+      // Capture queue length before releasing — after release a waiter is dequeued,
+      // making the post-release value always one lower than the actual depth seen.
+      queueDepth = renderQueue.length;
       releaseRenderSlot();
     }
 
@@ -437,7 +442,7 @@ export async function GET(request: NextRequest) {
     console.log(
       `[BoardRender] board=${boardName} variant=${isOgVariant ? 'og' : 'default'} thumb=${thumbnail} ` +
         `wasm=${wasmMs.toFixed(0)}ms sharp=${sharpMs.toFixed(0)}ms total=${totalMs.toFixed(0)}ms ` +
-        `size=${outputBuffer.byteLength}B queue=${renderQueue.length}`,
+        `size=${outputBuffer.byteLength}B queue=${queueDepth}`,
     );
 
     return new NextResponse(new Uint8Array(outputBuffer), {
