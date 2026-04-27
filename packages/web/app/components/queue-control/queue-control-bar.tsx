@@ -14,7 +14,7 @@ import SyncOutlined from '@mui/icons-material/SyncOutlined';
 import CloudOffOutlined from '@mui/icons-material/CloudOffOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import OpenInFullOutlined from '@mui/icons-material/OpenInFullOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
 import NextClimbButton from './next-climb-button';
 import { usePathname, useParams, useSearchParams, useRouter } from 'next/navigation';

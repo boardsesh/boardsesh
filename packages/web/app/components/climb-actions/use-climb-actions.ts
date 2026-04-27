@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQueueActions } from '../graphql-queue';
 import { useFavorite } from './use-favorite';
 import { constructCreateClimbUrl, constructClimbInfoUrl, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';

@@ -9,7 +9,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQuery } from '@tanstack/react-query';
 import { ANGLES } from '@/app/lib/board-data';
 import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';

@@ -6,7 +6,7 @@ import type { BoardDetails } from '@/app/lib/types';
 
 // Mock dependencies before importing the module
 const mockTrack = vi.fn();
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: (...args: unknown[]) => mockTrack(...args),
 }));
 

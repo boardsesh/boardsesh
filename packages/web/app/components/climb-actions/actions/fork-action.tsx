@@ -6,7 +6,7 @@ import { ActionTooltip } from '../action-tooltip';
 import CallSplitOutlined from '@mui/icons-material/CallSplitOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import Link from 'next/link';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useSession } from 'next-auth/react';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { constructCreateClimbUrl } from '@/app/lib/url-utils';

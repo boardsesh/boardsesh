@@ -16,7 +16,7 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import DynamicFeedOutlined from '@mui/icons-material/DynamicFeedOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import { usePathname, useRouter } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import {
   constructClimbListWithSlugs,

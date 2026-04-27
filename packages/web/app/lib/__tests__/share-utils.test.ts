@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { shareWithFallback } from '../share-utils';
 
-// Mock @vercel/analytics
-vi.mock('@vercel/analytics', () => ({
+// Mock @/app/lib/analytics
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 
@@ -169,7 +169,7 @@ describe('shareWithFallback', () => {
 
   describe('analytics tracking', () => {
     it('tracks native share method', async () => {
-      const { track } = await import('@vercel/analytics');
+      const { track } = await import('@/app/lib/analytics');
       const share = vi.fn().mockResolvedValue(undefined);
       const canShare = vi.fn().mockReturnValue(true);
       mockNavigator({ share, canShare } as unknown as Partial<Navigator>);
@@ -183,7 +183,7 @@ describe('shareWithFallback', () => {
     });
 
     it('tracks clipboard method on error-path fallback', async () => {
-      const { track } = await import('@vercel/analytics');
+      const { track } = await import('@/app/lib/analytics');
       const share = vi.fn().mockRejectedValue(new Error('Share failed'));
       const canShare = vi.fn().mockReturnValue(true);
       const writeText = vi.fn().mockResolvedValue(undefined);
@@ -202,7 +202,7 @@ describe('shareWithFallback', () => {
     });
 
     it('tracks clipboard method', async () => {
-      const { track } = await import('@vercel/analytics');
+      const { track } = await import('@/app/lib/analytics');
       const writeText = vi.fn().mockResolvedValue(undefined);
       mockNavigator({
         share: undefined,

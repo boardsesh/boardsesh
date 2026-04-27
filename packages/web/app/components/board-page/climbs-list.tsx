@@ -8,7 +8,7 @@ import AlertTitle from '@mui/material/AlertTitle';
 import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import { usePathname } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import dynamic from 'next/dynamic';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { useDrawerDragResize } from '@/app/hooks/use-drawer-drag-resize';

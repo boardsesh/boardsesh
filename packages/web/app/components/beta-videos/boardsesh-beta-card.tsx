@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Instagram from '@mui/icons-material/Instagram';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import { isInstagramUrl, isTikTokUrl } from '@/app/lib/beta-video-url';
 import TikTokIcon from './tiktok-icon';

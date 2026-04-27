@@ -1,4 +1,4 @@
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 
 export type QueueOperation =
   | 'setCurrentClimbQueueItem'

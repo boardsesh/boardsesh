@@ -5,7 +5,7 @@ import MuiButton from '@mui/material/Button';
 import { ActionTooltip } from '../action-tooltip';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import Link from 'next/link';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';

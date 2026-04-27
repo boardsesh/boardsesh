@@ -32,7 +32,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import HoldIndicator from './hold-indicator';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useSession } from 'next-auth/react';
 import BoardRenderer from '../board-renderer/board-renderer';
 import MoonBoardRenderer from '../moonboard-renderer/moonboard-renderer';

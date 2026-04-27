@@ -5,7 +5,7 @@ import type { ClimbActionProps } from '../../types';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
 // Mock dependencies before importing the module
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

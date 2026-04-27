@@ -20,7 +20,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   ),
 }));
 
-// Mock rendering-metrics so analytics calls don't hit @vercel/analytics during tests
+// Mock rendering-metrics so analytics calls don't hit @/app/lib/analytics during tests
 vi.mock('@/app/lib/rendering-metrics', () => ({
   trackWorkerRenderingDisabled: vi.fn(),
   trackRenderError: vi.fn(),

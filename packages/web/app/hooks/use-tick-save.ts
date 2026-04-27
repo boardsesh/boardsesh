@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { Climb, BoardDetails, Angle } from '@/app/lib/types';
 import { useBoardProvider } from '../components/board-provider/board-provider-context';
 import type { LogbookEntry, TickStatus } from '@/app/hooks/use-logbook';

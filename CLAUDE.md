@@ -186,6 +186,8 @@ We are using next.js app router, it's important we try to use server side compon
 3. **Redis**: Pub/sub for multi-instance backend scaling
 4. **IndexedDB**: Offline storage for auth and queue state
 5. **Aurora API**: External API integration for user data sync
+6. **PostHog (analytics + Web Vitals)**: All `track()` calls go through `app/lib/analytics.ts` (client) and `app/lib/analytics.server.ts` (server). The wrapper is a no-op unless `window.location.hostname.includes('boardsesh.com')` (client) or `VERCEL_ENV === 'production'` (server) AND `NEXT_PUBLIC_POSTHOG_KEY` is set, so dev and preview deploys don't pollute the production project. Web Vitals (LCP, CLS, INP, FCP, TTFB) and `$pageview` events fire from `app/components/analytics-client.tsx`. Replaces `@vercel/analytics` and `@vercel/speed-insights` to escape per-event Vercel pricing and avoid lock-in when ejecting from Vercel hosting.
+7. **Sentry (errors only)**: Client/server/edge error tracking via `@sentry/nextjs`. Performance monitoring is **off** — Sentry's free tier caps at 10k transactions/mo, far below our Web Vitals volume, so vitals go to PostHog instead.
 
 ### Type System
 
@@ -358,6 +360,16 @@ Bad examples:
 - All IndexedDB access must be guarded with `typeof window === 'undefined'` checks for SSR compatibility.
 - When migrating a value from `localStorage` to IndexedDB, include one-time migration logic that reads the old key, writes to IndexedDB, and deletes the localStorage key. See `user-preferences-db.ts` (`getPreference` fallback), `recent-searches-storage.ts`, and `party-profile-db.ts` for examples.
 - The only acceptable `localStorage` references are in one-time migration code that reads old data and deletes it.
+
+### Analytics
+
+**All event tracking must go through the wrapper at `packages/web/app/lib/analytics.ts` (client) or `analytics.server.ts` (server)** — never import directly from `posthog-js-lite` or `posthog-node`. The wrapper is a no-op when not on the production domain, so calling `track()` is always safe.
+
+- Client signature: `track(event: string, properties?: Record<string, string | number | boolean | null>)`. Mirrors the old `@vercel/analytics` API so existing call sites work unchanged.
+- Server signature: `await track(event, properties, { headers? })`. The `headers` arg is accepted for source compatibility with `@vercel/analytics/server` but currently unused.
+- Web Vitals (LCP / CLS / INP / FCP / TTFB) and `$pageview` events are emitted from `packages/web/app/components/analytics-client.tsx`. Don't add a second copy of the `web-vitals` registration anywhere else.
+- Tests mock the wrapper directly: `vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }))`.
+- Set `NEXT_PUBLIC_POSTHOG_KEY` and (optionally) `NEXT_PUBLIC_POSTHOG_HOST` in your env to enable. Defaults to `https://us.i.posthog.com`.
 
 ### State Management
 

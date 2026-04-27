@@ -11,7 +11,7 @@ import Chip from '@mui/material/Chip';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import CancelOutlined from '@mui/icons-material/CancelOutlined';
 import BoardHeatmap from '../board-renderer/board-heatmap';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from './search-form.module.css';
 

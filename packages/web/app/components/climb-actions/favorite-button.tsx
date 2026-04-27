@@ -5,7 +5,7 @@ import FavoriteBorderOutlined from '@mui/icons-material/FavoriteBorderOutlined';
 import Favorite from '@mui/icons-material/Favorite';
 import Tooltip from '@mui/material/Tooltip';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useFavorite } from './use-favorite';
 import type { BoardName } from '@/app/lib/types';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';

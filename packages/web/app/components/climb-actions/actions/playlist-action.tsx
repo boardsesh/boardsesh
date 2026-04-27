@@ -15,7 +15,7 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { usePlaylists } from '../use-playlists';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';

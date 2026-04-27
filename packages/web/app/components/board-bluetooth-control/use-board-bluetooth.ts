@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import * as Sentry from '@sentry/nextjs';
 import type { BoardDetails } from '@/app/lib/types';
 import { getAuroraBluetoothPacket, parseApiLevel } from './bluetooth-aurora';

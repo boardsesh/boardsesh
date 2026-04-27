@@ -30,7 +30,7 @@ import { constructBoardSlugListUrl, constructClimbListWithSlugs, tryConstructSlu
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { setClimbSessionCookie } from '@/app/lib/climb-session-cookie';
 import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
 import { TOUR_OPEN_START_SESH_EVENT } from '@/app/components/onboarding/onboarding-tour-events';

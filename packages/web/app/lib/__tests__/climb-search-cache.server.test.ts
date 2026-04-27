@@ -11,7 +11,7 @@ vi.mock('next/cache', () => ({
 }));
 
 const mockTrack = vi.fn();
-vi.mock('@vercel/analytics/server', () => ({
+vi.mock('@/app/lib/analytics.server', () => ({
   track: (...args: Parameters<typeof mockTrack>) => mockTrack(...args),
 }));
 

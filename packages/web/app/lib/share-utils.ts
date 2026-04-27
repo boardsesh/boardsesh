@@ -1,4 +1,4 @@
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 
 type ShareOptions = {
   /** The full URL to share */

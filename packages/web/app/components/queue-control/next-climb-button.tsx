@@ -7,7 +7,7 @@ import { constructPlayUrlWithSlugs, getContextAwareClimbViewUrl } from '@/app/li
 import type { BoardDetails } from '@/app/lib/types';
 import { useResolvedBoardDetails } from '@/app/hooks/use-resolved-board-details';
 import FastForwardOutlined from '@mui/icons-material/FastForwardOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import IconButton, { type IconButtonProps } from '@mui/material/IconButton';
 
 type NextClimbButtonProps = {

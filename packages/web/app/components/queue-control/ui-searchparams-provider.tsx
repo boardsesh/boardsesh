@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState } from 'react';
 import type { SearchRequestPagination } from '@/lib/types';
 import { useDebouncedCallback } from 'use-debounce';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQueueActions, useSearchData } from '../graphql-queue';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import { incrementSearches, maybeFireFeedbackPromptEvent } from '@/app/lib/feedback-prompt-db';

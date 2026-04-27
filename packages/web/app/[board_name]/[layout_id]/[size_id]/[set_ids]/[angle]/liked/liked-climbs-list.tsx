@@ -7,7 +7,7 @@ import { FormatListBulletedOutlined, AppsOutlined } from '@mui/icons-material';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { executeGraphQL } from '@/app/lib/graphql/client';
 import {

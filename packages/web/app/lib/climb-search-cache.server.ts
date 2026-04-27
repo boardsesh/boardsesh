@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { track } from '@vercel/analytics/server';
+import { track } from '@/app/lib/analytics.server';
 import { revalidateTag } from 'next/cache';
 import type { BoardName } from '@/app/lib/types';
 import { getBoardClimbSearchTag } from '@/app/lib/climb-search-cache';

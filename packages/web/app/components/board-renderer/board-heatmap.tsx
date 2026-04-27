@@ -12,7 +12,7 @@ import MenuItem from '@mui/material/MenuItem';
 import MuiSwitch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import MuiButton from '@mui/material/Button';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import BoardRenderer from './board-renderer';
 
 const LEGEND_HEIGHT = 96; // Increased from 80

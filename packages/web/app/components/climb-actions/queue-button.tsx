@@ -4,7 +4,7 @@ import React, { useState, useCallback } from 'react';
 import AddCircleOutlined from '@mui/icons-material/AddCircleOutlined';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import MuiTooltip from '@mui/material/Tooltip';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQueueActions, useQueueList } from '../graphql-queue';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { themeTokens } from '@/app/theme/theme-config';

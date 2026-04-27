@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useBoardBluetooth } from './use-board-bluetooth';
 import { useCurrentClimb } from '../graphql-queue';
 import type { BoardDetails } from '@/app/lib/types';

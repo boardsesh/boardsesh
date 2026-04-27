@@ -57,7 +57,7 @@ vi.mock('next-auth/react', () => ({
   useSession: () => mockUseSession(),
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

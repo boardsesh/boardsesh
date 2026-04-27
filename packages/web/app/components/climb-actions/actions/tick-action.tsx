@@ -15,7 +15,7 @@ import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useOptionalBoardProvider, BoardProvider } from '../../board-provider/board-provider-context';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { LogAscentForm } from '../../logbook/logascent-form';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { themeTokens } from '@/app/theme/theme-config';

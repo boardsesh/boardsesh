@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import MuiButton from '@mui/material/Button';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { Climb, BoardDetails, Angle } from '@/app/lib/types';
 import { useQueueActions, useCurrentClimb, useQueueList } from '@/app/components/graphql-queue';
 import SwipeBoardCarousel from '@/app/components/board-renderer/swipe-board-carousel';

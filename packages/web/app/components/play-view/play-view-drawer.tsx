@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useDeferredValue } from 'react';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import MuiBadge from '@mui/material/Badge';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
