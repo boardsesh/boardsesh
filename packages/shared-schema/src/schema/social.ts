@@ -281,6 +281,8 @@ export const socialTypeDefs = /* GraphQL */ `
     parentCommentUuid: String
     "Comment body text (null if deleted)"
     body: String
+    "Whether this comment was explicitly posted as public by a private user"
+    isPublic: Boolean!
     "Whether this comment has been deleted"
     isDeleted: Boolean!
     "Number of replies to this comment"
@@ -375,6 +377,8 @@ export const socialTypeDefs = /* GraphQL */ `
     parentCommentUuid: String
     "Comment body text"
     body: String!
+    "Whether to post this comment publicly (visible to everyone even if the author has a private account)"
+    isPublic: Boolean
   }
 
   """

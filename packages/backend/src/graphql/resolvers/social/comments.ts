@@ -13,6 +13,7 @@ import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-curs
 import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
+import { filterVisibleUserIds } from './helpers';
 import crypto from 'crypto';
 
 interface CommentRow {
@@ -23,6 +24,7 @@ interface CommentRow {
   entityId: string;
   parentCommentId: number | null;
   body: string;
+  isPublic: boolean;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -48,6 +50,7 @@ function mapCommentRow(row: CommentRow) {
     entityId: row.entityId,
     parentCommentUuid: row.parentUuid || null,
     body: isDeleted ? null : row.body,
+    isPublic: row.isPublic ?? false,
     isDeleted,
     replyCount: Number(row.replyCount || 0),
     upvotes: Number(row.upvotes || 0),
@@ -163,6 +166,7 @@ export const socialCommentQueries = {
         c."entity_id" as "entityId",
         c."parent_comment_id" as "parentCommentId",
         c."body",
+        c."is_public" as "isPublic",
         c."created_at" as "createdAt",
         c."updated_at" as "updatedAt",
         c."deleted_at" as "deletedAt",
@@ -204,12 +208,19 @@ export const socialCommentQueries = {
 
     // db.execute() returns QueryResult (neon-serverless) with .rows property
     const rawRows = (rawResult as unknown as { rows: CommentRow[] }).rows;
-    const comments = rawRows.map(mapCommentRow);
+
+    const viewerId = authenticatedUserId ?? undefined;
+    const commenterIds = [...new Set(rawRows.map((r) => r.userId))];
+    const visibleAuthors = await filterVisibleUserIds(commenterIds, viewerId);
+    const visibleRows = rawRows.filter(
+      (r) => visibleAuthors.has(r.userId) || r.isPublic,
+    );
+    const comments = visibleRows.map(mapCommentRow);
 
     return {
       comments,
-      totalCount,
-      hasMore: offset + comments.length < totalCount,
+      totalCount: comments.length,
+      hasMore: offset + rawRows.length < totalCount,
     };
   },
 
@@ -285,6 +296,7 @@ export const socialCommentQueries = {
         c."entity_id" as "entityId",
         c."parent_comment_id" as "parentCommentId",
         c."body",
+        c."is_public" as "isPublic",
         c."created_at" as "createdAt",
         c."updated_at" as "updatedAt",
         c."deleted_at" as "deletedAt",
@@ -326,15 +338,23 @@ export const socialCommentQueries = {
     `);
 
     const rawRows = (rawResult as unknown as { rows: CommentRow[] }).rows;
-    const hasMore = rawRows.length > limit;
-    const resultRows = hasMore ? rawRows.slice(0, limit) : rawRows;
+
+    const globalViewerId = authenticatedUserId ?? undefined;
+    const globalCommenterIds = [...new Set(rawRows.map((r) => r.userId))];
+    const globalVisibleAuthors = await filterVisibleUserIds(globalCommenterIds, globalViewerId);
+    const filteredRawRows = rawRows.filter(
+      (r) => globalVisibleAuthors.has(r.userId) || r.isPublic,
+    );
+
+    const hasMore = filteredRawRows.length > limit;
+    const resultRows = hasMore ? filteredRawRows.slice(0, limit) : filteredRawRows;
     const comments = resultRows.map(mapCommentRow);
 
     const nextCursor = hasMore ? encodeOffsetCursor(offset + limit) : null;
 
     return {
       comments,
-      totalCount: 0, // Not computing totalCount for performance (infinite scroll doesn't need it)
+      totalCount: 0,
       hasMore,
       cursor: nextCursor,
     };
@@ -351,7 +371,7 @@ export const socialCommentMutations = {
     await applyRateLimit(ctx, 10, 'comment');
 
     const validated = validateInput(AddCommentInputSchema, input, 'input');
-    const { entityType, entityId, parentCommentUuid, body } = validated;
+    const { entityType, entityId, parentCommentUuid, body, isPublic } = validated;
     const userId = ctx.userId!;
 
     await validateEntityExists(entityType, entityId);
@@ -392,6 +412,7 @@ export const socialCommentMutations = {
         entityId,
         parentCommentId,
         body,
+        isPublic: isPublic ?? false,
       })
       .returning();
 
@@ -417,6 +438,7 @@ export const socialCommentMutations = {
       entityId: inserted.entityId,
       parentCommentUuid: parentCommentUuid || null,
       body: inserted.body,
+      isPublic: inserted.isPublic,
       isDeleted: false,
       replyCount: 0,
       upvotes: 0,
@@ -546,6 +568,7 @@ export const socialCommentMutations = {
       entityId: updated.entityId,
       parentCommentUuid,
       body: updated.body,
+      isPublic: updated.isPublic,
       isDeleted: false,
       replyCount,
       upvotes,

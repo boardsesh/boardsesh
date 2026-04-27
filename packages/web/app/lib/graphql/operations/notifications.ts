@@ -140,6 +140,7 @@ export const COMMENT_UPDATES_SUBSCRIPTION = `
           entityId
           parentCommentUuid
           body
+          isPublic
           isDeleted
           replyCount
           upvotes
@@ -160,6 +161,7 @@ export const COMMENT_UPDATES_SUBSCRIPTION = `
           entityId
           parentCommentUuid
           body
+          isPublic
           isDeleted
           replyCount
           upvotes

@@ -25,10 +25,12 @@ interface CommentSectionProps {
   entityType: SocialEntityType;
   entityId: string;
   title?: string;
+  isPrivateUser?: boolean;
 }
 
-export default function CommentSection({ entityType, entityId, title = 'Discussion' }: CommentSectionProps) {
+export default function CommentSection({ entityType, entityId, title = 'Discussion', isPrivateUser = false }: CommentSectionProps) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isPublic, setIsPublic] = useState(false);
   const { data: session } = useSession();
   const { token, isAuthenticated } = useWsAuthToken();
   const currentUserId = session?.user?.id ?? null;
@@ -79,15 +81,16 @@ export default function CommentSection({ entityType, entityId, title = 'Discussi
         const client = createGraphQLHttpClient(token);
         await client.request<AddCommentMutationResponse, AddCommentMutationVariables>(
           ADD_COMMENT,
-          { input: { entityType, entityId, body } },
+          { input: { entityType, entityId, body, isPublic } },
         );
         setRefreshKey((prev) => prev + 1);
+        setIsPublic(false);
       } catch {
         showMessage('Failed to post comment', 'error');
         throw new Error('Failed to post comment');
       }
     },
-    [token, entityType, entityId, showMessage],
+    [token, entityType, entityId, isPublic, showMessage],
   );
 
   return (
@@ -98,7 +101,13 @@ export default function CommentSection({ entityType, entityId, title = 'Discussi
 
       {isAuthenticated ? (
         <Box sx={{ mb: 2 }}>
-          <CommentForm onSubmit={handleAddComment} placeholder="Share your thoughts..." />
+          <CommentForm
+            onSubmit={handleAddComment}
+            placeholder="Share your thoughts..."
+            isPrivateUser={isPrivateUser}
+            isPublic={isPublic}
+            onIsPublicChange={setIsPublic}
+          />
         </Box>
       ) : (
         <MuiTypography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

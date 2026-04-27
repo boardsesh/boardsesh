@@ -5,6 +5,9 @@ import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 import MuiButton from '@mui/material/Button';
 import MuiTypography from '@mui/material/Typography';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import FormHelperText from '@mui/material/FormHelperText';
 import { themeTokens } from '@/app/theme/theme-config';
 
 const MAX_BODY_LENGTH = 2000;
@@ -17,6 +20,9 @@ interface CommentFormProps {
   placeholder?: string;
   autoFocus?: boolean;
   submitLabel?: string;
+  isPrivateUser?: boolean;
+  isPublic?: boolean;
+  onIsPublicChange?: (value: boolean) => void;
 }
 
 export default function CommentForm({
@@ -26,6 +32,9 @@ export default function CommentForm({
   placeholder = 'Add a comment...',
   autoFocus = false,
   submitLabel = 'Post',
+  isPrivateUser = false,
+  isPublic = false,
+  onIsPublicChange,
 }: CommentFormProps) {
   const [body, setBody] = useState(initialBody);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,6 +82,25 @@ export default function CommentForm({
         size="small"
         fullWidth
       />
+      {isPrivateUser && (
+        <Box>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={isPublic}
+                onChange={(e) => onIsPublicChange?.(e.target.checked)}
+                disabled={isSubmitting}
+              />
+            }
+            label="Post publicly"
+            slotProps={{ typography: { variant: 'body2' } }}
+          />
+          <FormHelperText sx={{ mt: -0.5, ml: 4 }}>
+            Lets climbers who don&apos;t follow you see this comment.
+          </FormHelperText>
+        </Box>
+      )}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           {showCounter && (

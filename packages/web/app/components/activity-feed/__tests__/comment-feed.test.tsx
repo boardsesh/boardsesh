@@ -49,6 +49,7 @@ function makeComment(uuid: string, entityType = 'session'): CommentType {
     entityId: 'entity-1',
     parentCommentUuid: null,
     body: 'Great session!',
+    isPublic: false,
     isDeleted: false,
     replyCount: 0,
     upvotes: 1,

@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgTable,
   bigserial,
   bigint,
@@ -36,6 +37,7 @@ export const comments = pgTable(
     entityId: text('entity_id').notNull(),
     parentCommentId: bigint('parent_comment_id', { mode: 'number' }),
     body: text('body').notNull(),
+    isPublic: boolean('is_public').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),

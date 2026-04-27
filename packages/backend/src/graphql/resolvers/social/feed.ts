@@ -4,6 +4,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { FollowingAscentsFeedInputSchema } from '../../../validation/schemas';
+import { filterVisibleUserIds } from './helpers';
 
 export const socialFeedQueries = {
   /**
@@ -30,7 +31,11 @@ export const socialFeedQueries = {
 
     const followedUserIds = followedUsers.map((f) => f.followingId);
 
-    if (followedUserIds.length === 0) {
+    // Filter out private users who don't follow back the viewer
+    const visibleIds = await filterVisibleUserIds(followedUserIds, myUserId);
+    const filteredFollowedUserIds = followedUserIds.filter(id => visibleIds.has(id));
+
+    if (filteredFollowedUserIds.length === 0) {
       return {
         items: [],
         totalCount: 0,
@@ -69,7 +74,7 @@ export const socialFeedQueries = {
           eq(dbSchema.boardseshTicks.boardType, dbSchema.boardDifficultyGrades.boardType)
         )
       )
-      .where(inArray(dbSchema.boardseshTicks.userId, followedUserIds))
+      .where(inArray(dbSchema.boardseshTicks.userId, filteredFollowedUserIds))
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
       .limit(limit + 1)
       .offset(offset);
@@ -114,6 +119,7 @@ export const socialFeedQueries = {
   globalAscentsFeed: async (
     _: unknown,
     { input }: { input?: { limit?: number; offset?: number } },
+    ctx: ConnectionContext,
   ) => {
     const validatedInput = validateInput(FollowingAscentsFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -154,8 +160,14 @@ export const socialFeedQueries = {
       .limit(limit + 1)
       .offset(offset);
 
-    const hasMore = results.length > limit;
-    const resultRows = hasMore ? results.slice(0, limit) : results;
+    // Post-fetch privacy filtering
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+    const tickUserIds = [...new Set(results.map((r) => r.tick.userId))];
+    const visibleAuthors = await filterVisibleUserIds(tickUserIds, viewerId);
+    const filteredResults = results.filter((r) => visibleAuthors.has(r.tick.userId));
+
+    const hasMore = filteredResults.length > limit;
+    const resultRows = hasMore ? filteredResults.slice(0, limit) : filteredResults;
 
     const items = resultRows.map(({ tick, userName, userImage, userDisplayName, userAvatarUrl, climbName, setterUsername, layoutId, frames, difficultyName }) => ({
       uuid: tick.uuid,

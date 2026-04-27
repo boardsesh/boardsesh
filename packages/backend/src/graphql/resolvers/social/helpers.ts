@@ -1,6 +1,88 @@
-import { eq, and, inArray, count } from 'drizzle-orm';
+import { eq, and, inArray, count, isNull, or } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+
+/**
+ * Check if a viewer can see a target user's content.
+ * Access rule: viewer V can see user P iff P is not private, V === P, or P follows V.
+ */
+export async function canViewUser(
+  viewerId: string | undefined,
+  targetUserId: string,
+): Promise<boolean> {
+  if (viewerId === targetUserId) return true;
+
+  const [profile] = await db
+    .select({ isPrivate: dbSchema.userProfiles.isPrivate })
+    .from(dbSchema.userProfiles)
+    .where(eq(dbSchema.userProfiles.userId, targetUserId))
+    .limit(1);
+
+  if (!profile || !profile.isPrivate) return true;
+
+  if (!viewerId) return false;
+
+  const [follow] = await db
+    .select({ followerId: dbSchema.userFollows.followerId })
+    .from(dbSchema.userFollows)
+    .where(
+      and(
+        eq(dbSchema.userFollows.followerId, targetUserId),
+        eq(dbSchema.userFollows.followingId, viewerId),
+      ),
+    )
+    .limit(1);
+
+  return !!follow;
+}
+
+/**
+ * Batch filter: returns the subset of userIds the viewer is allowed to see.
+ * Uses 2 queries max: one for isPrivate flags, one for follow checks.
+ */
+export async function filterVisibleUserIds(
+  userIds: string[],
+  viewerId: string | undefined,
+): Promise<Set<string>> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return new Set();
+
+  const profileRows = await db
+    .select({
+      userId: dbSchema.userProfiles.userId,
+      isPrivate: dbSchema.userProfiles.isPrivate,
+    })
+    .from(dbSchema.userProfiles)
+    .where(inArray(dbSchema.userProfiles.userId, unique));
+
+  const privateSet = new Set(
+    profileRows.filter((r) => r.isPrivate).map((r) => r.userId),
+  );
+
+  const visible = new Set(unique.filter((id) => !privateSet.has(id)));
+
+  if (viewerId) {
+    visible.add(viewerId);
+  }
+
+  const privateIds = [...privateSet].filter((id) => id !== viewerId);
+  if (privateIds.length > 0 && viewerId) {
+    const followRows = await db
+      .select({ followerId: dbSchema.userFollows.followerId })
+      .from(dbSchema.userFollows)
+      .where(
+        and(
+          inArray(dbSchema.userFollows.followerId, privateIds),
+          eq(dbSchema.userFollows.followingId, viewerId),
+        ),
+      );
+    for (const row of followRows) {
+      visible.add(row.followerId);
+    }
+  }
+
+  return visible;
+}
 
 export interface UserProfileEnrichment {
   followerCount: number;

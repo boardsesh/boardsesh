@@ -34,6 +34,7 @@ export function useProfileData(userId: string) {
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [isPrivateAccount, setIsPrivateAccount] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [selectedBoard, setSelectedBoard] = useState<string>('kilter');
   const [logbook, setLogbook] = useState<LogbookEntry[]>([]);
@@ -59,6 +60,10 @@ export function useProfileData(userId: string) {
       const response = await fetch(`/api/internal/profile/${userId}`);
       if (response.status === 404) {
         setNotFound(true);
+        return;
+      }
+      if (response.status === 403) {
+        setIsPrivateAccount(true);
         return;
       }
       if (!response.ok) throw new Error('Failed to fetch profile');
@@ -190,6 +195,7 @@ export function useProfileData(userId: string) {
     // Profile state
     loading,
     notFound,
+    isPrivateAccount,
     profile,
     setProfile,
     isOwnProfile,

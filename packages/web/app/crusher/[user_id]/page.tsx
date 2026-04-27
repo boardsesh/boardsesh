@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   try {
     const rows = await sql`
-      SELECT u.name, p.display_name, p.avatar_url
+      SELECT u.name, p.display_name, p.avatar_url, p.is_private
       FROM users u
       LEFT JOIN user_profiles p ON p.user_id = u.id
       WHERE u.id = ${user_id}
@@ -27,6 +27,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
 
     const row = rows[0];
+
+    if (row.is_private) {
+      return {
+        title: 'Private profile | Boardsesh',
+        robots: { index: false, follow: false },
+      };
+    }
+
     const displayName = (row.display_name as string) || (row.name as string) || 'Crusher';
     const description = `${displayName}'s climbing profile on Boardsesh`;
 

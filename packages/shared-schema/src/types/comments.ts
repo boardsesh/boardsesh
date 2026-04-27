@@ -23,6 +23,7 @@ export type Comment = {
   entityId: string;
   parentCommentUuid?: string | null;
   body: string | null;
+  isPublic: boolean;
   isDeleted: boolean;
   replyCount: number;
   upvotes: number;
@@ -54,6 +55,7 @@ export type AddCommentInput = {
   entityId: string;
   parentCommentUuid?: string;
   body: string;
+  isPublic?: boolean;
 };
 
 export type UpdateCommentInput = {

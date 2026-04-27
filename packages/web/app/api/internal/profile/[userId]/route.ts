@@ -39,6 +39,26 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const user = users[0];
     const profile = profiles.length > 0 ? profiles[0] : null;
 
+    // Privacy check: private users are only visible to those they follow
+    if (!isOwnProfile && profile?.isPrivate) {
+      const viewerId = session?.user?.id;
+      if (!viewerId) {
+        return NextResponse.json({ error: "private" }, { status: 403 });
+      }
+      const [followCheck] = await db
+        .select({ count: count() })
+        .from(schema.userFollows)
+        .where(
+          and(
+            eq(schema.userFollows.followerId, userId),
+            eq(schema.userFollows.followingId, viewerId)
+          )
+        );
+      if (Number(followCheck?.count || 0) === 0) {
+        return NextResponse.json({ error: "private" }, { status: 403 });
+      }
+    }
+
     // Get board mappings for this user
     const mappings = await getUserBoardMappings(userId);
 

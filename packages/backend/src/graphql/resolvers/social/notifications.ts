@@ -6,6 +6,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { GroupedNotificationsInputSchema } from '../../../validation/schemas';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { filterVisibleUserIds } from './helpers';
 import type { NotificationEvent } from '@boardsesh/shared-schema';
 
 interface NotificationRow {
@@ -89,15 +90,48 @@ export const socialNotificationQueries = {
     `);
 
     const rows = (rawResult as unknown as { rows: (NotificationRow & { totalCount: string; unreadCount: string })[] }).rows;
-    const notifications = rows.map(mapNotificationRow);
-    const totalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
-    const unreadCount = rows.length > 0 ? Number(rows[0].unreadCount) : 0;
+
+    const actorIds = [...new Set(rows.filter((r) => r.actorId).map((r) => r.actorId!))];
+    const visibleActors = await filterVisibleUserIds(actorIds, userId);
+
+    const commentNotifTypes = new Set(['comment_reply', 'comment_on_tick', 'comment_on_climb', 'vote_on_comment']);
+    const commentIdsToCheck = new Set<number>();
+    for (const row of rows) {
+      if (row.actorId && !visibleActors.has(row.actorId) && commentNotifTypes.has(row.type) && row.commentId) {
+        commentIdsToCheck.add(row.commentId);
+      }
+    }
+
+    let publicCommentIds = new Set<number>();
+    if (commentIdsToCheck.size > 0) {
+      const publicComments = await db
+        .select({ id: dbSchema.comments.id })
+        .from(dbSchema.comments)
+        .where(
+          and(
+            inArray(dbSchema.comments.id, [...commentIdsToCheck]),
+            eq(dbSchema.comments.isPublic, true),
+          ),
+        );
+      publicCommentIds = new Set(publicComments.map((c) => c.id));
+    }
+
+    const filteredRows = rows.filter((row) => {
+      if (!row.actorId) return true;
+      if (visibleActors.has(row.actorId)) return true;
+      if (commentNotifTypes.has(row.type) && row.commentId && publicCommentIds.has(row.commentId)) return true;
+      return false;
+    });
+
+    const notifications = filteredRows.map(mapNotificationRow);
+    const rawTotalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
+    const rawUnreadCount = rows.length > 0 ? Number(rows[0].unreadCount) : 0;
 
     return {
       notifications,
-      totalCount,
-      unreadCount,
-      hasMore: offset + notifications.length < totalCount,
+      totalCount: rawTotalCount,
+      unreadCount: rawUnreadCount,
+      hasMore: offset + rows.length < rawTotalCount,
     };
   },
 

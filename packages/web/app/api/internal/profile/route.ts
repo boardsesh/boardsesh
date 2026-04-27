@@ -10,6 +10,7 @@ const updateProfileSchema = z.object({
   displayName: z.string().max(100, "Display name must be less than 100 characters").optional().nullable(),
   avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
   instagramUrl: z.string().url("Invalid Instagram URL").optional().nullable(),
+  isPrivate: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -59,6 +60,7 @@ export async function GET() {
       image: user.image,
       hasPassword: credentials.length > 0,
       linkedProviders: linkedAccounts.map((a) => a.provider),
+      isPrivate: profile?.isPrivate ?? false,
       profile: profile
         ? {
             displayName: profile.displayName,
@@ -92,7 +94,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { displayName, avatarUrl, instagramUrl } = validationResult.data;
+    const { displayName, avatarUrl, instagramUrl, isPrivate } = validationResult.data;
     const db = getDb();
 
     // Check if profile exists
@@ -106,14 +108,18 @@ export async function PUT(request: NextRequest) {
 
     if (existingProfile.length > 0) {
       // Update existing profile
+      const updateFields: Record<string, unknown> = {
+        displayName: displayName ?? null,
+        avatarUrl: avatarUrl ?? null,
+        instagramUrl: instagramUrl ?? null,
+        updatedAt: now,
+      };
+      if (isPrivate !== undefined) {
+        updateFields.isPrivate = isPrivate;
+      }
       await db
         .update(schema.userProfiles)
-        .set({
-          displayName: displayName ?? null,
-          avatarUrl: avatarUrl ?? null,
-          instagramUrl: instagramUrl ?? null,
-          updatedAt: now,
-        })
+        .set(updateFields)
         .where(eq(schema.userProfiles.userId, session.user.id));
     } else {
       // Create new profile
@@ -122,6 +128,7 @@ export async function PUT(request: NextRequest) {
         displayName: displayName ?? null,
         avatarUrl: avatarUrl ?? null,
         instagramUrl: instagramUrl ?? null,
+        isPrivate: isPrivate ?? false,
       });
     }
 

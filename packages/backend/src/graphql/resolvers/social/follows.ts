@@ -4,7 +4,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { FollowInputSchema, FollowListInputSchema } from '../../../validation/schemas';
-import { batchEnrichUserProfiles } from './helpers';
+import { batchEnrichUserProfiles, filterVisibleUserIds } from './helpers';
 import { publishSocialEvent } from '../../../events/index';
 
 export const socialFollowQueries = {
@@ -65,10 +65,18 @@ export const socialFollowQueries = {
       };
     });
 
+    // Filter out private users the viewer cannot see
+    const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : undefined;
+    const visibleIds = await filterVisibleUserIds(
+      users.map(u => u.id),
+      authenticatedUserId,
+    );
+    const filteredUsers = users.filter(u => visibleIds.has(u.id));
+
     return {
-      users,
+      users: filteredUsers,
       totalCount,
-      hasMore: offset + users.length < totalCount,
+      hasMore: offset + filteredUsers.length < totalCount,
     };
   },
 
@@ -129,10 +137,18 @@ export const socialFollowQueries = {
       };
     });
 
+    // Filter out private users the viewer cannot see
+    const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : undefined;
+    const visibleIds = await filterVisibleUserIds(
+      users.map(u => u.id),
+      authenticatedUserId,
+    );
+    const filteredUsers = users.filter(u => visibleIds.has(u.id));
+
     return {
-      users,
+      users: filteredUsers,
       totalCount,
-      hasMore: offset + users.length < totalCount,
+      hasMore: offset + filteredUsers.length < totalCount,
     };
   },
 

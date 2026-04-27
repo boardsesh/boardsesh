@@ -32,6 +32,7 @@ export const AddCommentInputSchema = z.object({
   entityId: z.string().min(1, 'Entity ID cannot be empty').max(200, 'Entity ID too long'),
   parentCommentUuid: z.string().uuid('Invalid UUID format').optional(),
   body: z.string().min(1, 'Comment body cannot be empty').max(2000, 'Comment body too long'),
+  isPublic: z.boolean().optional(),
 });
 
 /**

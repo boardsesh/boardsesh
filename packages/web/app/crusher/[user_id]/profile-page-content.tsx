@@ -9,7 +9,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import MuiButton from '@mui/material/Button';
-import { HistoryOutlined } from '@mui/icons-material';
+import { LockOutlined, HistoryOutlined } from '@mui/icons-material';
 import Link from 'next/link';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import Logo from '@/app/components/brand/logo';
@@ -25,6 +25,7 @@ export default function ProfilePageContent({ userId }: { userId: string }) {
   const {
     loading,
     notFound,
+    isPrivateAccount,
     profile,
     setProfile,
     isOwnProfile,
@@ -79,6 +80,26 @@ export default function ProfilePageContent({ userId }: { userId: string }) {
         </Box>
         <Box component="main" className={styles.content}>
           <EmptyState description="User not found" />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (isPrivateAccount) {
+    return (
+      <Box className={styles.layout}>
+        <Box component="header" className={styles.header}>
+          <BackButton fallbackUrl="/" />
+          <Logo size="sm" showText={false} />
+          <Typography variant="h6" component="h4" className={styles.headerTitle}>
+            Profile
+          </Typography>
+        </Box>
+        <Box component="main" className={styles.content}>
+          <EmptyState
+            icon={<LockOutlined sx={{ fontSize: 48 }} />}
+            description="This account is private"
+          />
         </Box>
       </Box>
     );

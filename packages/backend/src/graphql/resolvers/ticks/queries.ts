@@ -4,6 +4,7 @@ import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { canViewUser } from '../social/helpers';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
 
 export const tickQueries = {
@@ -76,8 +77,12 @@ export const tickQueries = {
    */
   userTicks: async (
     _: unknown,
-    { userId, boardType }: { userId: string; boardType: string }
+    { userId, boardType }: { userId: string; boardType: string },
+    ctx: ConnectionContext
   ): Promise<unknown[]> => {
+    const canView = await canViewUser(ctx.isAuthenticated ? ctx.userId : undefined, userId);
+    if (!canView) return [];
+
     validateInput(BoardNameSchema, boardType, 'boardType');
 
     const conditions = [
@@ -158,12 +163,16 @@ export const tickQueries = {
         fromDate?: string;
         toDate?: string;
       };
-    }
+    },
+    ctx: ConnectionContext
   ): Promise<{
     items: unknown[];
     totalCount: number;
     hasMore: boolean;
   }> => {
+    const canView = await canViewUser(ctx.isAuthenticated ? ctx.userId : undefined, userId);
+    if (!canView) return { items: [], totalCount: 0, hasMore: false };
+
     // Validate and set defaults
     const validatedInput = validateInput(AscentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -392,12 +401,16 @@ export const tickQueries = {
    */
   userGroupedAscentsFeed: async (
     _: unknown,
-    { userId, input }: { userId: string; input?: { limit?: number; offset?: number } }
+    { userId, input }: { userId: string; input?: { limit?: number; offset?: number } },
+    ctx: ConnectionContext
   ): Promise<{
     groups: unknown[];
     totalCount: number;
     hasMore: boolean;
   }> => {
+    const canView = await canViewUser(ctx.isAuthenticated ? ctx.userId : undefined, userId);
+    if (!canView) return { groups: [], totalCount: 0, hasMore: false };
+
     // Validate and set defaults
     const validatedInput = validateInput(AscentFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -627,7 +640,8 @@ export const tickQueries = {
    */
   userProfileStats: async (
     _: unknown,
-    { userId }: { userId: string }
+    { userId }: { userId: string },
+    ctx: ConnectionContext
   ): Promise<{
     totalDistinctClimbs: number;
     layoutStats: Array<{
@@ -638,6 +652,9 @@ export const tickQueries = {
       gradeCounts: Array<{ grade: string; count: number }>;
     }>;
   }> => {
+    const canView = await canViewUser(ctx.isAuthenticated ? ctx.userId : undefined, userId);
+    if (!canView) return { totalDistinctClimbs: 0, layoutStats: [] };
+
     // Validate userId
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       return { totalDistinctClimbs: 0, layoutStats: [] };

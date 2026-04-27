@@ -31,12 +31,22 @@ export const socialSearchQueries = {
       ilike(dbSchema.users.name, searchPattern),
     );
 
+    // Privacy filter: hide private users unless viewer is the user or the user follows the viewer
+    const viewerId = ctx.isAuthenticated ? ctx.userId : null;
+    const privacyCondition = sql`(
+      ${dbSchema.userProfiles.isPrivate} = false
+      OR ${dbSchema.userProfiles.isPrivate} IS NULL
+      OR ${dbSchema.users.id} = ${viewerId}
+      OR EXISTS (SELECT 1 FROM user_follows WHERE follower_id = ${dbSchema.users.id} AND following_id = ${viewerId})
+    )`;
+    const combinedConditions = and(searchConditions!, privacyCondition);
+
     // Count total matches
     let countQuery = db
       .select({ count: count() })
       .from(dbSchema.users)
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(searchConditions!);
+      .where(combinedConditions);
 
     if (boardType) {
       countQuery = db
@@ -50,7 +60,7 @@ export const socialSearchQueries = {
             eq(dbSchema.userBoardMappings.boardType, boardType)
           )
         )
-        .where(searchConditions!);
+        .where(combinedConditions);
     }
 
     const countResult = await countQuery;
@@ -96,7 +106,7 @@ export const socialSearchQueries = {
             eq(dbSchema.userBoardMappings.boardType, boardType)
           )
         )
-        .where(searchConditions!)
+        .where(combinedConditions)
         .orderBy(...orderByExpressions)
         .limit(limit)
         .offset(offset);
@@ -105,7 +115,7 @@ export const socialSearchQueries = {
         .select(selectFields)
         .from(dbSchema.users)
         .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-        .where(searchConditions!)
+        .where(combinedConditions)
         .orderBy(...orderByExpressions)
         .limit(limit)
         .offset(offset);

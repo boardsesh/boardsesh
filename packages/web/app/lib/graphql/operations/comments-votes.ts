@@ -24,6 +24,7 @@ export const GET_GLOBAL_COMMENT_FEED = gql`
         entityId
         parentCommentUuid
         body
+        isPublic
         isDeleted
         replyCount
         upvotes
@@ -52,6 +53,7 @@ export const GET_COMMENTS = gql`
         entityId
         parentCommentUuid
         body
+        isPublic
         isDeleted
         replyCount
         upvotes
@@ -112,6 +114,7 @@ export const ADD_COMMENT = gql`
       entityId
       parentCommentUuid
       body
+      isPublic
       isDeleted
       replyCount
       upvotes
@@ -135,6 +138,7 @@ export const UPDATE_COMMENT = gql`
       entityId
       parentCommentUuid
       body
+      isPublic
       isDeleted
       replyCount
       upvotes
@@ -224,6 +228,7 @@ export interface AddCommentMutationVariables {
     entityId: string;
     parentCommentUuid?: string;
     body: string;
+    isPublic?: boolean;
   };
 }
 

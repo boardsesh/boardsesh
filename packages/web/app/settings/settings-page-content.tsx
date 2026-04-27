@@ -12,6 +12,7 @@ import CardContent from '@mui/material/CardContent';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import CircularProgress from '@mui/material/CircularProgress';
+import Switch from '@mui/material/Switch';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import UploadOutlined from '@mui/icons-material/UploadOutlined';
 import Instagram from '@mui/icons-material/Instagram';
@@ -40,6 +41,7 @@ interface UserProfile {
   name: string | null;
   image: string | null;
   hasPassword: boolean;
+  isPrivate: boolean;
   linkedProviders: string[];
   profile: {
     displayName: string | null;
@@ -52,6 +54,7 @@ export default function SettingsPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [formValues, setFormValues] = useState({ displayName: '', instagramUrl: '' });
+  const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -98,6 +101,7 @@ export default function SettingsPageContent() {
         displayName: data.profile?.displayName || data.name || '',
         instagramUrl: data.profile?.instagramUrl || '',
       });
+      setIsPrivate(data.isPrivate ?? false);
       setPreviewUrl(data.profile?.avatarUrl || data.image || undefined);
     } catch (error) {
       console.error('Failed to fetch profile:', error);
@@ -233,6 +237,27 @@ export default function SettingsPageContent() {
     }
   };
 
+  const handlePrivateToggle = async (checked: boolean) => {
+    const previous = isPrivate;
+    setIsPrivate(checked);
+    try {
+      const response = await fetch('/api/internal/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPrivate: checked }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update privacy setting');
+      }
+      showMessage(checked ? 'Account set to private' : 'Account set to public', 'success');
+    } catch (error) {
+      setIsPrivate(previous);
+      console.error('Failed to update privacy setting:', error);
+      showMessage(error instanceof Error ? error.message : 'Failed to update privacy setting', 'error');
+    }
+  };
+
   const isSaving = saving || uploading;
 
   if (status === 'loading' || loading) {
@@ -357,6 +382,19 @@ export default function SettingsPageContent() {
                       ),
                     },
                   }}
+                />
+              </Box>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>Private account</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+                    Your sends are only visible to climbers you follow.
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={isPrivate}
+                  onChange={(e) => handlePrivateToggle(e.target.checked)}
                 />
               </Box>
 

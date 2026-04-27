@@ -519,6 +519,13 @@
       "when": 1775703536348,
       "tag": "0073_denormalize_climb_sets_sizes",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1777329148970,
+      "tag": "0074_wakeful_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

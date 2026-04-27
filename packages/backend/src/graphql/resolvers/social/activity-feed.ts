@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
+import { filterVisibleUserIds } from './helpers';
 
 function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect) {
   const meta = (row.metadata || {}) as Record<string, unknown>;
@@ -130,7 +131,12 @@ export const activityFeedQueries = {
 
     const hasMore = rows.length > limit;
     const resultRows = hasMore ? rows.slice(0, limit) : rows;
-    const items = resultRows.map(mapFeedItemToGraphQL);
+
+    // Privacy filtering: hide items from private users who don't follow the viewer
+    const actorIds = [...new Set(resultRows.filter(r => r.actorId).map(r => r.actorId!))];
+    const visibleActors = await filterVisibleUserIds(actorIds, myUserId);
+    const filteredRows = resultRows.filter(r => !r.actorId || visibleActors.has(r.actorId));
+    const items = filteredRows.map(mapFeedItemToGraphQL);
 
     let nextCursor: string | null = null;
     if (hasMore && resultRows.length > 0) {
@@ -149,6 +155,7 @@ export const activityFeedQueries = {
   trendingFeed: async (
     _: unknown,
     { input }: { input?: Record<string, unknown> },
+    ctx: ConnectionContext,
   ) => {
     const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
@@ -228,11 +235,17 @@ export const activityFeedQueries = {
 
     const hasMore = results.length > limit;
     const resultRows = hasMore ? results.slice(0, limit) : results;
-    const items = resultRows.map(mapTickRowToFeedItem);
+
+    // Privacy filtering: hide ticks from private users who don't follow the viewer
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+    const trendingUserIds = [...new Set(resultRows.map((r) => r.tick.userId))];
+    const visibleTrendingAuthors = await filterVisibleUserIds(trendingUserIds, viewerId);
+    const filteredResultRows = resultRows.filter((r) => visibleTrendingAuthors.has(r.tick.userId));
+    const items = filteredResultRows.map(mapTickRowToFeedItem);
 
     let nextCursor: string | null = null;
-    if (hasMore && resultRows.length > 0) {
-      const lastResult = resultRows[resultRows.length - 1];
+    if (hasMore && filteredResultRows.length > 0) {
+      const lastResult = filteredResultRows[filteredResultRows.length - 1];
       nextCursor = encodeCursor(lastResult.tick.climbedAt, Number(lastResult.tick.id));
     }
 
