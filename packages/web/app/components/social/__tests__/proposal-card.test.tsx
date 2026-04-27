@@ -115,7 +115,7 @@ vi.mock('@/app/theme/theme-config', () => ({
       success: '#6B9080',
       error: '#B8524C',
       amber: '#FBBF24',
-      purple: '#7C3AED',
+      purple: '#9C27B0',
     },
   },
 }));

@@ -17,12 +17,20 @@ export const themeTokens = {
     errorBg: '#F9EFEE',
     errorMuted: 'rgba(184, 82, 76, 0.18)', // Translucent error for non-destructive action buttons
     errorMutedHover: 'rgba(184, 82, 76, 0.28)',
-    purple: '#7C3AED', // For mirror button
-    purpleHover: '#6D28D9',
+    purple: '#9C27B0', // V11 brand purple — Mirror button + chart palette accent
+    purpleHover: '#7B1FA2', // V12 — Mirror button hover
     amber: '#FBBF24', // For flash/benchmark badges
     pink: '#EC4899', // For finish holds in climb creation
-    logoGreen: '#5fb27a', // Route mark green
-    logoRose: '#d65a4f', // Brand coral
+    logoGreen: '#5fb27a', // Palette accent — used in OG/playlist/chart palettes (legacy name kept; not the route mark)
+    logoRose: '#d65a4f', // Palette accent — used in OG/playlist/chart palettes (legacy name kept; not the brand coral)
+  },
+
+  // Warm text colours scoped to brand surfaces (landing hero, splash,
+  // OG/social, App Store screenshots, marketing emails). Standard product
+  // UI keeps the cool neutral scale — do not blanket-replace neutrals.
+  text: {
+    brandPrimary: '#f4f1ea',
+    brandMuted: '#8a8780',
   },
 
   // Neutral palette

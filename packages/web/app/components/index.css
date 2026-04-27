@@ -120,6 +120,12 @@
 
   /* Tap highlight (Android/mobile browsers) */
   --tap-highlight: transparent;
+
+  /* Warm text tokens for brand surfaces (landing hero, splash, OG, App Store,
+     marketing). Scoped intentionally — standard product UI keeps the
+     existing neutral scale. */
+  --bs-text-brand-primary: #f4f1ea;
+  --bs-text-brand-muted: #8a8780;
 }
 
 /* Dark mode overrides */

@@ -340,15 +340,15 @@ export default function HomePageContent({ boardConfigs, initialPopularConfigs }:
             py: 1,
           }}
         >
-          <Image src="/brand/lockup-stacked.svg" width={280} height={308} alt="Boardsesh" priority />
+          <Image src="/brand/icon-transparent.svg" width={130} height={130} alt="Boardsesh" priority />
           <Typography
             variant="h5"
             fontWeight={themeTokens.typography.fontWeight.bold}
-            sx={{ color: 'var(--neutral-900)' }}
+            sx={{ color: 'var(--bs-text-brand-primary)' }}
           >
             Get on the board!
           </Typography>
-          <Typography variant="body1" sx={{ color: 'var(--neutral-500)', maxWidth: 320 }}>
+          <Typography variant="body1" sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 320 }}>
             Track your sends across Kilter, Tension, and MoonBoard.
           </Typography>
           <Button
