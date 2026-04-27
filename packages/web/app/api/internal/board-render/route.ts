@@ -21,17 +21,46 @@ const DEFAULT_WEBP_OPTIONS: sharp.WebpOptions = {
   quality: 80,
 };
 
+// Level 6 is ~4x faster than level 9 with <3% size difference. All renders are
+// served immutable/1-year cached, so compression speed beats marginal size gains.
 const DEFAULT_PNG_OPTIONS: sharp.PngOptions = {
-  compressionLevel: 9,
-  adaptiveFiltering: true,
+  compressionLevel: 6,
+  adaptiveFiltering: false,
 };
 
 const OG_BOARD_PADDING_X = 48;
 const OG_BOARD_PADDING_Y = 48;
 
-// Lazily initialized WASM module with promise lock to prevent thundering herd
+// WASM module initialized once per process. Promise lock prevents thundering herd
+// when multiple requests arrive before init completes.
 let renderOverlay: ((configJson: string) => Uint8Array) | null = null;
 let wasmInitPromise: Promise<void> | null = null;
+
+// Concurrency limiter — at most this many renders run simultaneously.
+// Excess requests queue behind a promise chain instead of all executing at once,
+// preventing CPU spikes when the CDN cache clears (e.g. after a deploy).
+const MAX_CONCURRENT_RENDERS = 4;
+let activeRenders = 0;
+let renderQueue: Array<() => void> = [];
+
+function acquireRenderSlot(): Promise<void> {
+  if (activeRenders < MAX_CONCURRENT_RENDERS) {
+    activeRenders++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    renderQueue.push(resolve);
+  });
+}
+
+function releaseRenderSlot(): void {
+  const next = renderQueue.shift();
+  if (next) {
+    next();
+  } else {
+    activeRenders--;
+  }
+}
 
 function findWasmPath(): string {
   const wasmFilename = 'board_renderer_wasm_bg.wasm';
@@ -68,6 +97,12 @@ async function ensureWasmInitialized() {
 }
 
 const VALID_BOARD_NAMES = new Set(['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper']);
+
+// Kick off WASM initialization at module load so it's warm before the first
+// request arrives. The promise lock in ensureWasmInitialized prevents duplicate work.
+ensureWasmInitialized().catch((err) => {
+  console.error('[BoardRender] Eager WASM init failed:', err);
+});
 
 // THUMBNAIL_WIDTH imported from @/app/components/board-renderer/types
 // Full: native board resolution for crisp rendering in climb drawer/card cover
@@ -254,9 +289,17 @@ export async function GET(request: NextRequest) {
     if (!renderOverlay) {
       return NextResponse.json({ error: 'WASM renderer failed to initialize' }, { status: 500 });
     }
-    const wasmT0 = performance.now();
-    const rawBytes = renderOverlay(JSON.stringify(config));
-    const wasmMs = performance.now() - wasmT0;
+
+    await acquireRenderSlot();
+    let wasmMs = 0;
+    let rawBytes: Uint8Array;
+    try {
+      const wasmT0 = performance.now();
+      rawBytes = renderOverlay(JSON.stringify(config));
+      wasmMs = performance.now() - wasmT0;
+    } finally {
+      releaseRenderSlot();
+    }
 
     // Parse dimension header: first 8 bytes are width + height as u32 LE
     const view = new DataView(rawBytes.buffer, rawBytes.byteOffset, rawBytes.byteLength);
@@ -381,6 +424,7 @@ export async function GET(request: NextRequest) {
 
     const encodeMs = performance.now() - encodeT0;
     const sharpMs = performance.now() - sharpT0;
+    const totalMs = wasmMs + sharpMs;
 
     const timingParts = [
       `wasm;dur=${wasmMs.toFixed(1)}`,
@@ -389,6 +433,12 @@ export async function GET(request: NextRequest) {
       `encode;dur=${encodeMs.toFixed(1)}`,
     ];
     if (bgMs > 0) timingParts.push(`bg;dur=${bgMs.toFixed(1)}`);
+
+    console.log(
+      `[BoardRender] board=${boardName} variant=${isOgVariant ? 'og' : 'default'} thumb=${thumbnail} ` +
+        `wasm=${wasmMs.toFixed(0)}ms sharp=${sharpMs.toFixed(0)}ms total=${totalMs.toFixed(0)}ms ` +
+        `size=${outputBuffer.byteLength}B queue=${renderQueue.length}`,
+    );
 
     return new NextResponse(new Uint8Array(outputBuffer), {
       headers: {
