@@ -2,9 +2,11 @@
 
 ## Executive Summary
 
-This document outlines the implementation plan for distributing Boardsesh as native Android and iOS apps using **Capacitor**. Rather than rebuilding the UI in React Native, Capacitor wraps the existing Next.js web app in a native WebView and provides native plugin access for features like Bluetooth Low Energy (BLE). This approach maximizes code reuse — the existing web app runs as-is inside the native shell, with the hosted URL pointing at `boardsesh.com`.
+This document describes how Boardsesh ships as native iOS and Android apps using **Capacitor**, and the parallel migration of the web stack off Next.js + Vercel + Neon. v5.0 launched the Capacitor shell pointing at the hosted Next.js app at `https://boardsesh.com`. v6.0 keeps the Capacitor shell strategy intact and adds a coordinated platform migration: the in-WebView web app moves to **TanStack Start** (Vite + TanStack Router + TanStack Query) with two build outputs from one codebase — an SSR build that serves `boardsesh.com` for SEO and OG, and a pure SPA build that ships bundled inside the Capacitor app for sub-second cold start and full offline capability. Hosting consolidates onto **Railway** for Postgres, backend, and the SSR web app. The remaining Next.js REST API surface migrates to **GraphQL** in `packages/backend`, with explicit HTTP carve-outs for auth, OG image generation, and webhooks. Analytics moves to PostHog; Sentry continues to handle errors.
 
-**Key advantage over React Native:** Zero UI rewrite. The web app is the app. Native plugins bridge the gap for hardware features (BLE) that WebView doesn't support.
+**Why now:** the iOS native shell already drives BLE, LiveActivity, and (in flight, PR #1509) a native tab bar with per-tab WKWebViews — the precursor for swapping the WebView contents from a hosted URL to a bundled SPA. Cold start, hosting cost, offline capability, and a single rendering path drive the change. Each migration phase is independently shippable; there is no big-bang cutover.
+
+**Key advantages preserved:** zero UI rewrite vs. React Native — the same component tree runs in browsers (SSR + hydrated) and in Capacitor (SPA bundle). Native plugins continue to bridge BLE, push, haptics.
 
 ---
 
@@ -12,17 +14,21 @@ This document outlines the implementation plan for distributing Boardsesh as nat
 
 1. [Architecture Overview](#architecture-overview)
 2. [Why Capacitor Over React Native](#why-capacitor-over-react-native)
-3. [Why Not Local/Bundled Mode](#why-not-localbundled-mode)
-4. [Package Structure](#package-structure)
-5. [Capacitor Bridge Injection Strategy](#capacitor-bridge-injection-strategy)
-6. [Web App Adaptations](#web-app-adaptations)
-7. [Authentication in WebView](#authentication-in-webview)
-8. [Implementation Milestones](#implementation-milestones)
-9. [Bluetooth Strategy](#bluetooth-strategy)
-10. [Development Workflow](#development-workflow)
-11. [App Store Distribution](#app-store-distribution)
-12. [Risk Assessment](#risk-assessment)
-13. [Success Criteria](#success-criteria)
+3. [Architectural Pivot to TanStack Start (Vite SSR + SPA)](#architectural-pivot-to-tanstack-start-vite-ssr--spa)
+4. [Why Not Bundling Next.js](#why-not-bundling-nextjs)
+5. [Hosting Migration: Vercel + Neon → Railway](#hosting-migration-vercel--neon--railway)
+6. [REST → GraphQL Completion](#rest--graphql-completion)
+7. [Analytics & Observability](#analytics--observability)
+8. [Package Structure](#package-structure)
+9. [Capacitor Bridge Injection Strategy](#capacitor-bridge-injection-strategy)
+10. [Web App Adaptations](#web-app-adaptations)
+11. [Authentication in WebView](#authentication-in-webview)
+12. [Implementation Milestones](#implementation-milestones)
+13. [Bluetooth Strategy](#bluetooth-strategy)
+14. [Development Workflow](#development-workflow)
+15. [App Store Distribution](#app-store-distribution)
+16. [Risk Assessment](#risk-assessment)
+17. [Success Criteria](#success-criteria)
 
 ---
 
@@ -90,17 +96,168 @@ The app operates in **hosted mode**: the Capacitor WebView loads the production 
 
 ---
 
-## Why Not Fully Local Mode
+## Architectural Pivot to TanStack Start (Vite SSR + SPA)
 
-An alternative to hosted mode would be bundling the **entire** Next.js app locally inside the Capacitor shell (Capacitor's default "local" mode with `output: 'export'`). This was evaluated and rejected because the Boardsesh app is **deeply server-dependent**:
+**v6.0 change.** The web stack moves off Next.js. The replacement is one Vite-based application built with **TanStack Start** (Vite + TanStack Router + TanStack Query, file-based routing, mature SSR + server functions). One codebase, one router, one component tree — two build outputs:
 
-- **33 API routes** under `packages/web/app/api/` — auth, climb search, favorites, logbook, Aurora API proxying, data sync, WebSocket auth
-- **Server components with direct database queries** — e.g., `list/page.tsx` uses `cachedSearchClimbs()` which imports `'server-only'` and uses `unstable_cache` from Next.js
-- **GraphQL server-cached client** — uses `import 'server-only'`, `unstable_cache`, and `GraphQLClient` to query the backend from the server
-- **Middleware** (`middleware.ts`) for route validation
-- **Aurora API proxy routes** — proxies requests server-side to avoid CORS and protect credentials
+- **SSR build** → deployed to Railway, serves `boardsesh.com`. Streams HTML for SEO surfaces (homepage, profile, climb detail, playlist, legal/help). Generates OG images via server functions. Hydrates into a normal SPA after first paint for in-app routes.
+- **SPA build** (`vite build --mode spa`) → static bundle shipped inside the Capacitor app. No server dependency at runtime, sub-second cold start, full offline once SQLite refdata is loaded.
 
-Switching to fully local mode would require rewriting the entire data and auth layer (**3-6 month effort**). However, we **can** embed the read-only climb database locally for offline search — see the next section.
+There is no separate marketing site, no second router config to keep in sync. Every screen is portable; routes opt into SSR / prerender / CSR per their needs.
+
+### Why TanStack Start
+
+- **Mature SSR on Vite (2026).** Server-rendered HTML for crawlers, just like Next.js does today.
+- **File-based routing** identical in spirit to Next.js's app router — low cognitive cost during migration.
+- **TanStack Query is already in the codebase** (per the rendering audit). Native integration with Start's loader/cache primitives.
+- **Server functions** cover the small set of HTTP endpoints that don't belong in the GraphQL backend (OG images, sitemap/robots).
+- **Per-route opt-in** to SSR / prerender / CSR. SEO routes stream HTML; board canvas, queue, and settings stay client-only with no SSR overhead.
+- **First-class SPA build mode** for Capacitor — not a hack on top of an SSR-only framework.
+
+Alternatives considered and rejected: Astro + a separate Vite SPA (two route trees, drift risk), Vike (more flexible but bring-your-own router puts more on us), Remix / React Router v7 framework mode (viable, but Start integrates TanStack Query natively and the team is already using it).
+
+### Mobile shell trajectory
+
+1. **Today:** single WKWebView at `https://boardsesh.com`, with native BLE / LiveActivity / tab-bar overlays.
+2. **After PR #1509 lands:** native `NativeTabBarView` drives a single WKWebView via JS events.
+3. **Phase F (this plan):** native tab bar drives **N independent WKWebViews**, each pre-loading the bundled SPA build at a tab-specific entry route. All tabs share one `WKWebViewConfiguration.websiteDataStore` so the Auth.js session cookie flows across tabs. Tab switching becomes instant — no route navigation, just `setActiveTab` on the native side.
+
+### Single rendering path, two builds
+
+```
+                    ┌──────────────────────────────────┐
+                    │       packages/web-app           │
+                    │   (TanStack Start: file routes,  │
+                    │   shared component tree,         │
+                    │   TanStack Query data layer)     │
+                    └──────────┬───────────────────────┘
+                               │
+                  ┌────────────┴─────────────┐
+                  │                          │
+          vite build (SSR)          vite build --mode spa
+                  │                          │
+                  ▼                          ▼
+       ┌────────────────────┐     ┌──────────────────────┐
+       │  Railway (Node)    │     │  Static SPA bundle   │
+       │  boardsesh.com     │     │  shipped inside the  │
+       │  SSR + server fns  │     │  Capacitor app       │
+       │  (SEO, OG images)  │     │  (per-tab WebView)   │
+       └────────────────────┘     └──────────────────────┘
+```
+
+---
+
+## Why Not Bundling Next.js
+
+The v5.0 doc analysed bundling Next.js itself (via `output: 'export'`) into Capacitor and rejected it because the Boardsesh app is deeply server-dependent: 33+ API routes, server components with direct DB access, NextAuth, Aurora API proxies, middleware. That analysis still holds — bundling Next.js as-is would require rewriting auth and the data layer.
+
+**v6.0 reframes the conclusion.** Those server dependencies are the reason we are moving the dependent code out of `packages/web` into `packages/backend`:
+
+- Auth → Auth.js core mounted in Hono in `packages/backend`.
+- API surface → GraphQL in `packages/backend`, with a small Hono carve-out for OG images, webhooks, and Aurora-cookie-handling proxies.
+- Server-rendered metadata → TanStack Start route `meta` exports.
+- OG images → `satori` + `@resvg/resvg-js` in either a Start server function or backend Hono — same URL shape preserved.
+- Middleware → TanStack Router route loaders for validation; `Cache-Control` from route handlers (Vercel-specific CDN config goes away).
+
+Once those pieces live in the backend, the in-app surface (`packages/web-app`) has no server dependency at runtime. **TanStack Start's SPA build is a first-class output, not a hack** — bundling it inside Capacitor is straightforward. The risks v5.0 raised about a bundled-mode app (auth break, lost SEO, OG image regressions) are addressed by the SSR build path serving the same component tree to crawlers.
+
+---
+
+## Hosting Migration: Vercel + Neon → Railway
+
+The web app and database move off Vercel and Neon onto **Railway** for the v6.0 cycle.
+
+### Target topology
+
+| Component | Today | After migration |
+|-----------|-------|------------------|
+| Postgres | Neon (serverless WebSocket pool) | Railway Postgres (long-lived) |
+| Backend (`packages/backend` — graphql-ws + Hono + Redis pub/sub) | Self-hosted / mixed | Railway |
+| Web app SSR (`packages/web-app`) | n/a (today: Next.js on Vercel) | Railway, co-located with backend + DB |
+| Capacitor SPA bundle | n/a (today: hosted URL) | Static assets shipped inside the app |
+| CDN / edge cache | Vercel | Cloudflare in front of Railway origin (cache headers from route handlers) |
+
+Single vendor, single region, lowest DB latency. SSR routes need backend GraphQL data anyway, so edge SSR wouldn't gain much.
+
+### Cutover sequence
+
+The migration runs as **Phase B0** at the front of the v6.0 work (see [Implementation Milestones](#implementation-milestones)). Order matters:
+
+1. **Database first.** Stand up Railway Postgres + PostGIS. Apply Drizzle migrations. Bulk-copy from Neon (logical replication or `pg_dump | pg_restore` during a brief maintenance window). Verify PostGIS-dependent queries (heatmap, climb stats spatial filters) return identical results.
+2. **Switch the DB client.** `packages/db/src/client/` switches the production path from `drizzle-orm/neon-serverless` to `drizzle-orm/postgres-js`. Local dev already uses `postgres-js`, so the schema is proven against that driver. **No schema changes.**
+3. **Backend onto Railway.** Redeploy `packages/backend` (graphql-ws + Redis) onto Railway. Update env vars. Verify subscriptions reconnect cleanly.
+4. **Existing Next.js stays on Vercel** during this phase, but its `DATABASE_URL` and `BACKEND_URL` point at Railway. No user-visible change.
+5. **Web app SSR onto Railway** comes later, in Phase F. By that point the Next.js `packages/web` is being phased out.
+6. **DNS cutover** (Phase G): `boardsesh.com` flips from Vercel → Cloudflare → Railway origin. Vercel project shut down.
+
+### Risks specific to this move
+
+- **Connection pool sizing.** Neon's serverless pool auto-scales; Railway is a fixed-size Postgres instance. Validate pool max under load (especially during sync jobs and party-session bursts).
+- **PostGIS feature parity.** Confirm the Railway PostgreSQL image includes PostGIS. Run `\dx` and the heatmap/spatial test suite against it before flipping production traffic.
+- **Cron / scheduled jobs.** Aurora sync currently runs on a schedule somewhere — confirm the runner location (likely already in `packages/aurora-sync`) and re-point its `DATABASE_URL`. Vercel Cron (if used) needs replacing with Railway-native scheduling or a GitHub Action.
+- **Edge cache behavior.** Vercel's automatic asset caching disappears. Set explicit `Cache-Control` on web-app routes and front the origin with Cloudflare.
+
+---
+
+## REST → GraphQL Completion
+
+Per `CLAUDE.md`: *"We are slowly moving away from running rest-apis and backend operations in the next.js service, instead `packages/backend` should implement all backends, ideally using graphql."* v6.0 finishes that migration.
+
+### Inventory and destinations
+
+The current Next.js app exposes ~42 API routes under `packages/web/app/api/`. Default destination for v6.0:
+
+| Group | Count (approx) | Destination |
+|-------|---------------:|-------------|
+| `/api/internal/*` (data ops, search, sync, ws-auth) | 18 | **GraphQL queries/mutations** in `packages/backend`. Tiny exceptions (e.g. `ws-auth` returning a token) stay as Hono routes. |
+| `/api/v1/[board]/*` (public data, grades, slugs, heatmap, climb stats) | 14 | **GraphQL** with the same shape exposed via the GraphQL schema. Preserve URL shape only if external consumers depend on it. |
+| `/api/v1/[board]/proxy/*` (login, saveAscent, saveClimb, getLogbook, user-sync) | 4 | **GraphQL mutations** that wrap Aurora calls server-side. Aurora credentials move from Next.js env to backend env. |
+| `/api/auth/[...nextauth]`, `register`, `verify-email`, `resend-verification`, `providers-config`, `native/callback` | 6 | **Hono in backend** — OAuth callbacks and email-verification clicks are inherently URL-based. Auth.js core mounted under `/api/auth/*`. |
+| `/api/og/*` (4 dynamic image routes) | 4 | **Hono in backend** or Start server function. `satori` + `@resvg/resvg-js`. **Same URL shape preserved** so existing share cards on Discord/Twitter don't invalidate. |
+| Webhooks (any external POST receivers) | TBD | **Hono in backend.** |
+
+### Migration discipline
+
+- **GraphQL is the default destination.** A new HTTP route is justified only when GraphQL genuinely can't express the operation: redirect responses (OAuth), binary responses (OG images), incoming webhooks, or browser endpoints that need to be hit before JS loads.
+- **Shim during overlap.** Until `packages/web` is decommissioned in Phase G, Next.js keeps thin proxy shims at the old URLs that forward to the backend. This avoids breaking anything that hard-coded an internal route.
+- **Sitemap and robots.txt** — re-implement as TanStack Start routes serving the same XML/text. Public-page enumeration logic ports verbatim from `packages/web/app/sitemap.ts`.
+
+---
+
+## Analytics & Observability
+
+v6.0 consolidates analytics on **PostHog** and keeps **Sentry** for errors.
+
+### PostHog
+
+Replaces any current `vercel/analytics` or `gtag` usage.
+
+- **Client side** (`posthog-js`) initialized in the web-app shell — runs in both SSR-hydrated browsers and inside the Capacitor WebView (works in WKWebView and Android WebView). Autocapture for page views, button clicks, form submits.
+- **Server side** (`posthog-node`) initialized in `packages/backend` for events that originate server-side (logins, sync runs, error rates, GraphQL operation timings).
+- **Identification:** user identify on auth success (both client and server), with anonymous → identified merge. Match the existing user identifier (`user.id` from Auth.js).
+- **SSR build-time guard:** stub PostHog during prerender so build-time route generation doesn't fire events.
+- **Native shell:** the iOS / Android Capacitor processes can post a thin `app_open` event with platform / shell version via the PostHog Capacitor plugin (or directly via the JS SDK once the WebView is up — whichever is simpler).
+
+### Sentry
+
+Already in JS today; v6.0 keeps and extends it.
+
+- **TanStack Start Sentry integration** — covers SSR errors, server-function errors, and client-side React errors. Same DSN as today.
+- **GraphQL backend** — Sentry instrumentation for unhandled errors in resolvers and ws lifecycle.
+- **Native iOS / Android Sentry SDKs** — already scheduled in M2 for crashes outside the WebView (BLE plugin crashes, native code crashes, WebView process kills). Same DSN with `platform: ios | android` tag.
+- **Source maps** uploaded on every deploy (web-app SSR + SPA bundle + native dSYMs / ProGuard).
+
+### What gets tracked where
+
+| Signal | PostHog | Sentry |
+|--------|---------|--------|
+| Page views, screen transitions, feature usage | ✓ | — |
+| Auth events (login, logout, signup) | ✓ | — |
+| BLE connect / send / disconnect | ✓ (event with platform tag) | ✓ on errors |
+| Party session join / leave | ✓ | ✓ on errors |
+| GraphQL operation latency | ✓ (sample) | ✓ on errors only |
+| Unhandled JS errors | — | ✓ |
+| WebView process kills, native crashes | — | ✓ (native SDK) |
 
 ---
 
@@ -423,15 +580,20 @@ With the embedded database, the offline story becomes much stronger:
 
 ## Package Structure
 
+> **v6.0 note:** `packages/web` (Next.js) is kept until Phase G decommissions it. **`packages/web-app`** (TanStack Start) is added in Phase A and ships both the SSR web build and the Capacitor SPA bundle. `packages/backend` grows a Hono HTTP layer for auth + OG + webhooks alongside the existing graphql-ws server.
+
 ```
 boardsesh/
 ├── packages/
-│   ├── web/                    # Existing (minor adaptations)
-│   ├── backend/                # Existing (unchanged)
-│   ├── shared-schema/          # Existing (unchanged)
-│   ├── db/                     # Existing (unchanged)
+│   ├── web/                    # Existing Next.js (decommissioned in Phase G)
+│   ├── web-app/                # NEW (Phase A): TanStack Start
+│   │                           #   - SSR build → Railway, serves boardsesh.com
+│   │                           #   - SPA build → bundled into Capacitor (Phase F)
+│   ├── backend/                # Existing graphql-ws + new Hono HTTP layer
+│   ├── shared-schema/          # Existing (surface area grows as REST → GraphQL)
+│   ├── db/                     # Existing (Phase B0: neon-serverless → postgres-js)
 │   │
-│   └── mobile/                 # NEW: Capacitor native shell
+│   └── mobile/                 # Capacitor native shell
 │       ├── android/            # Android project (generated by Capacitor)
 │       │   ├── app/
 │       │   │   ├── src/main/
@@ -547,6 +709,15 @@ Install Capacitor plugin packages as **devDependencies** in the web package for 
 ```
 
 This gives TypeScript type checking without adding anything to the production bundle.
+
+### v6.0: Bundled SPA mode (Phase F onward)
+
+The bridge injection rules above apply to **hosted mode** (the WebView loads `https://boardsesh.com`). After Phase F, the Capacitor app ships the SPA bundle as static assets and loads it from `capacitor://localhost`. In that mode:
+
+- **The plugin JS bridge is still injected by the native shell** — the `window.Capacitor` global and `window.Capacitor.Plugins` are available before any JS runs, regardless of hosted vs bundled.
+- **The SPA bundle CAN import Capacitor packages directly** from `node_modules` (e.g. `import { BleClient } from '@capacitor-community/bluetooth-le'`) because the bundle ships with the app and there's no bandwidth cost. The `isCapacitor()` guard pattern still applies — the same SPA build also runs in browsers (during dev), where Capacitor packages need to no-op.
+- **Per-tab WKWebView**: each tab's WebView gets the same bridge injection. PR #1509's `NativeTabBarView` is responsible for preloading each tab's WebView with its entry route.
+- **Migration:** during Phase F, swap the BLE adapter from "access via `window.Capacitor.Plugins.BluetoothLe`" to "import directly from `@capacitor-community/bluetooth-le`." The interface in `packages/web/app/lib/ble/types.ts` (now `packages/web-app/...`) is unchanged.
 
 ---
 
@@ -690,6 +861,16 @@ The backend CORS handler (`packages/backend/src/handlers/cors.ts`) whitelists sp
 - The backend currently allows connections without an origin header (for native app support), which helps but should be combined with auth token validation for defense in depth
 
 **Action:** Verify Android WebView origin behavior in Milestone 0.
+
+### v6.0: Auth migration to Auth.js in `packages/backend` (Phase C)
+
+NextAuth in `packages/web` migrates to **Auth.js core** mounted in Hono in `packages/backend`. The framework-agnostic Auth.js library is the substrate that NextAuth wraps; mounting it directly in Hono gives the same providers, sessions, and JWT cookie shape without a Next.js dependency.
+
+- **Cookie shape preserved.** `__Secure-next-auth.session-token` (or its Auth.js core equivalent) keeps the same name, JWT contents, and `Set-Cookie` attributes (`HttpOnly`, `Secure`, `SameSite=Lax`). Existing sessions survive the migration.
+- **Native OAuth flow unchanged at the user level.** `/auth/native-start` and the `native-oauth` credentials provider move to the backend wholesale. The `com.boardsesh.app://` deep link is unchanged. The Capacitor Browser plugin still opens the external browser; the only difference is which host issues the transfer token.
+- **Email sending travels with auth.** Verify-email and password-reset mails currently go through the Next.js auth flow. Confirm the provider during Phase C (Resend / SES / etc.) and re-wire from the backend.
+- **Per-tab cookie sharing.** When Phase F splits the app into N WKWebViews, all tabs share one `WKWebViewConfiguration.websiteDataStore`. Validated experimentally before F. `__Secure-` prefix requires HTTPS — works in production (Railway), and local dev gets the same treatment via `cleartext: true` + a relaxed cookie name in dev.
+- **WebSocket auth chain** is unchanged: web-app calls a small backend endpoint that reads the cookie via Auth.js's `getServerSession()` equivalent and returns a token to pass to graphql-ws.
 
 ---
 
@@ -880,6 +1061,38 @@ The backend CORS handler (`packages/backend/src/handlers/cors.ts`) whitelists sp
 - Tapping notification opens correct screen
 - Foreground notifications show as in-app banners
 - User can control notification preferences
+
+---
+
+### v6.0 Web Migration Phases (parallel to / after M0–M4)
+
+The phases below run alongside the Capacitor work above. **M0–M4 still apply to the native shell.** What changes is what runs *inside* the WebView. Each phase below is independently shippable.
+
+| Phase | Duration | Goal |
+|-------|----------|------|
+| **B0: Infra cutover** | 2-3w | Postgres lifted from Neon to Railway. `packages/db` client switched from `neon-serverless` → `postgres-js`. Backend redeployed to Railway. Vercel `packages/web` keeps running, pointing at Railway DB. No user-visible change; validates the new infra. |
+| **A: web-app scaffold** | 4-6w | `packages/web-app` (TanStack Start) exists. SSR build deploys to Railway behind a staging hostname. SPA build produces a static bundle. One end-to-end route (`/you`) at feature parity with the Next.js version. |
+| **B: API → GraphQL + backend HTTP** | 4-6w | Remaining Next.js API routes move out of `packages/web`. Default destination: GraphQL in `packages/backend`. Hono carve-outs: Auth.js, Aurora proxy where credentials need cookie handling, OG image generation, WebSocket auth token. Next.js keeps thin shims at old URLs. |
+| **C: Auth migration** | 2-3w | NextAuth → Auth.js core mounted in Hono in `packages/backend`. Same JWT cookie shape preserved. Native OAuth deep-link target updated. Email sending (verify, reset) re-wired from backend. |
+| **D: Route migration** | 8-10w | Migrate Next.js app routes to web-app in tab order from PR #1509: Boards → Climbs → Queue → You → Feed/Notifications. Each route opts into SSR, prerender, or CSR. Middleware board validation moves to TanStack Router route loaders. |
+| **E: SEO + public surfaces** | 2-3w | Homepage, profile, climb detail, playlist pages migrated to web-app SSR routes. Sitemap and `robots.txt` re-implemented as web-app routes. OG image URLs preserved. PostHog wired in (client + server). |
+| **F: Capacitor bundle switch** | 2w | Mobile shell ships the bundled SPA build instead of loading `https://boardsesh.com`. Per-tab WKWebView extending PR #1509. Cold start < 1s, airplane-mode flow works end-to-end. |
+| **G: Decommission Next.js** | 1-2w | Delete `packages/web`. DNS: `boardsesh.com` → web-app SSR on Railway. Vercel project shut down. |
+| **H: Analytics + observability** *(rolling)* | — | PostHog client + server SDKs in place. Sentry SSR + native SDK integration. Runs alongside B–G, not gated. |
+
+**Total v6.0 web-migration scope: ~6 months of focused work**, but each phase is independently shippable with no big-bang cutover. M0–M4 (the native shell) run in parallel and don't block any of these phases.
+
+#### Phase exit criteria
+
+- **B0:** Existing Next.js + backend run against Railway DB without errors. Playwright e2e suite green against staging. PostGIS queries (heatmap, climb stats) verified. Connection-pool sizing confirmed under load (sync runs + party-session bursts).
+- **A:** SSR build deploys to Railway staging. SPA build produces a static bundle. `/you` route renders identical in SSR and CSR. Playwright e2e for `/you` passes against both.
+- **B:** GraphQL surface covers former REST endpoints. Backend Hono carve-outs reachable via `curl`. Existing tests pass against new GraphQL queries. No regressions in `vp test`.
+- **C:** Log in → log out → log in cycle works on web-app (SSR + CSR), Next.js (during overlap), and Capacitor. Cookie persists across app restart. Native OAuth deep link round-trips. Verify-email + password-reset emails arrive.
+- **D:** Each tab's web-app route reaches Playwright e2e parity with its Next.js predecessor before traffic flips.
+- **E:** SSR HTML for homepage / profile / climb pages contains meaningful content (no spinner-only first render). `lighthouse` SEO score ≥ Next.js baseline. `sitemap.xml` valid. Canonical and OG metadata present. OG image URLs unchanged so existing share cards keep rendering.
+- **F:** Capacitor build with bundled assets. Airplane-mode end-to-end (search → queue → BLE send → tick). Deep link → correct tab. LiveActivity still receives queue updates. Cold start < 1s on a mid-tier device.
+- **G:** Vercel `packages/web` project deleted. Cost dashboard shows reduction. DNS cutover verified. Old internal URLs return 301 to new locations where applicable.
+- **H (rolling):** PostHog dashboards receive client + server events. Sentry continues to receive errors with no DSN drops; native SDKs report crashes outside the WebView.
 
 ---
 
@@ -1186,13 +1399,27 @@ jobs:
 | Push notification backend scope creep      | Medium     | Medium | Defer to v1.1 post-launch. Ship MVP without push.                                        |
 | Safe area / CSS issues on specific devices | Low        | Low    | Test on notched and non-notched devices.                                                 |
 
+### v6.0 Migration Risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------:|-------:|------------|
+| Route parity gaps between Next.js and TanStack Start | **High** | Medium | Phase D migrates routes one tab at a time with Playwright e2e parity checks before each traffic flip. Old route stays live until the new one is verified. |
+| SEO regression during Phase D / E cutover | Medium | High | Phase E enforces SSR-first-render content (no spinner-only HTML), validates Lighthouse SEO score ≥ Next.js baseline, and preserves OG image URL shape. Sitemap diffed before/after. |
+| Auth cookie sharing across per-tab WKWebViews | **High** | High | Validate experimentally **before** Phase F. Single shared `WKWebViewConfiguration.websiteDataStore`. Fall back to JWT-in-`@capacitor/preferences` if data store sharing has edge cases. |
+| Neon → Railway connection-pool sizing | Medium | High | Phase B0 includes load testing during sync runs and party-session bursts. Pool max tunable in Drizzle's `postgres-js` config. |
+| GraphQL surface-area growth strains backend | Medium | Medium | Migrate REST → GraphQL endpoint-by-endpoint with tests, not in a big-bang push. Reuse existing GraphQL patterns in `packages/backend/src/`. |
+| OG image URL shape drift breaks Discord/Twitter caches | Low | Medium | Phase B preserves URL shape for `/api/og/*`. New endpoints proxy through the same paths. Diff OG renders between Next.js and replacement before cutting traffic. |
+| Aurora API credentials leak during proxy migration | Low | High | Move credentials to backend env in Phase B; remove from Next.js env on the same PR. Run a secret scan against the codebase before Phase G. |
+| TanStack Start SSR runtime issues on Railway | Medium | Medium | Phase A deploys SSR build to a staging hostname on Railway early; soak-test before Phase D traffic ramp. |
+| PostHog autocapture pollutes telemetry | Low | Low | Configure capture allowlist; review event volume after Phase E ships. |
+
 ---
 
 ## Success Criteria
 
-### MVP Definition
+### Native shell MVP (M0–M3, unchanged from v5.0)
 
-The MVP includes Milestones 0-2.5 (~8.5 weeks):
+The native MVP ships independently of the v6.0 web migration:
 
 - Native app shell loading the web app with validated auth persistence
 - BLE working on iOS (primary motivation) and Android via abstraction layer
@@ -1201,21 +1428,45 @@ The MVP includes Milestones 0-2.5 (~8.5 weeks):
 - Deep linking for party sessions (scoped paths, not entire domain)
 - Offline fallback with local climb search + BLE board control
 
-Milestone 3 (App Store submission, ~2 weeks) completes the v1.0 release.
+Milestone 3 (App Store submission, ~2 weeks) completes the v1.0 native release.
 Push notifications (Milestone 4) ship as a v1.1 update post-launch.
 
-**Realistic total timeline: 12-15 weeks** (including app store review cycles, device-specific debugging, and SQLite integration).
+**Native shell timeline: 12-15 weeks** (including app store review cycles, device-specific debugging, and SQLite integration).
+
+### v6.0 web migration success (Phases B0–G + H)
+
+Independent of the native MVP, the v6.0 web migration is successful when:
+
+- `packages/web-app` (TanStack Start) is the only web frontend; `packages/web` is deleted (Phase G).
+- All API surface lives in `packages/backend`: GraphQL by default, with explicit Hono carve-outs for auth / OG / webhooks.
+- Postgres + backend + web-app SSR all run on Railway. Vercel project shut down.
+- Capacitor app ships the bundled SPA and cold-starts under 1 second on a mid-tier device (Phase F).
+- SEO surfaces (homepage, profile, climb detail) match or beat the Next.js Lighthouse baseline.
+- PostHog receives client + server events; Sentry receives JS + native crashes.
+
+**v6.0 timeline: ~6 months** (B0–G run sequentially with overlap; H is rolling).
 
 ### Milestone Summary
 
-| Milestone             | Duration  | Key Deliverable                                       |
-| --------------------- | --------- | ----------------------------------------------------- |
+| Milestone | Duration | Key Deliverable |
+|-----------|----------|------------------|
+| **Native shell (v5.0 carryover)** | | |
 | 0: PoC + Auth         | 2 weeks   | WebView loads, auth works, bridge injection validated |
 | 1: BLE Integration    | 2-3 weeks | Native BLE with abstraction layer, no double-chunking |
 | 1.5: Embedded DB      | 2 weeks   | SQLite climb database, offline search, delta sync     |
 | 2: Native Polish      | 1.5 weeks | Safe areas, deep links, haptics, offline UI           |
 | 3: App Store          | 2 weeks   | Store submission, beta testing, review cycles         |
 | 4: Push (post-launch) | 2-3 weeks | FCM + APNs, device token backend, notification types  |
+| **v6.0 web migration (new)** | | |
+| B0: Infra cutover     | 2-3 weeks | Postgres on Railway, `postgres-js` client, backend redeployed |
+| A: web-app scaffold   | 4-6 weeks | TanStack Start app, SSR + SPA builds, `/you` parity |
+| B: API → GraphQL      | 4-6 weeks | REST surface migrated, Hono carve-outs in place |
+| C: Auth migration     | 2-3 weeks | Auth.js in backend, native OAuth deep-link unchanged |
+| D: Route migration    | 8-10 weeks | Boards → Climbs → Queue → You → Feed migrated |
+| E: SEO + public       | 2-3 weeks | SSR for homepage / profile / climb / playlist; PostHog wired |
+| F: Capacitor bundle   | 2 weeks   | Per-tab WKWebViews, bundled SPA, < 1s cold start |
+| G: Decommission       | 1-2 weeks | `packages/web` deleted, DNS flipped, Vercel shut down |
+| H: Analytics + obs    | rolling   | PostHog + Sentry, runs alongside B–G |
 
 ### Performance Targets
 
@@ -1302,21 +1553,53 @@ Push notifications (Milestone 4) ship as a v1.1 update post-launch.
 
 ### Capacitor vs Web Feature Matrix
 
-| Feature              | Web (Chrome)         | Web (Safari iOS) | Capacitor iOS    | Capacitor Android |
-| -------------------- | -------------------- | ---------------- | ---------------- | ----------------- |
-| BLE                  | Web Bluetooth        | Not supported    | Native plugin    | Native plugin     |
-| Offline Climb Search | Not available        | Not available    | SQLite (bundled) | SQLite (bundled)  |
-| Push Notifications   | Web Push             | Limited          | APNs             | FCM               |
-| Haptics              | Not available        | Not available    | Native           | Native            |
-| Deep Links           | N/A                  | N/A              | Universal links  | App links         |
-| Wake Lock            | Screen Wake Lock API | Not supported    | KeepAwake plugin | KeepAwake plugin  |
-| App Store Presence   | N/A                  | N/A              | App Store        | Play Store        |
+| Feature                   | Web (Chrome)         | Web (Safari iOS) | Capacitor iOS (hosted, today)  | Capacitor iOS (bundled, Phase F) | Capacitor Android |
+| ------------------------- | -------------------- | ---------------- | ------------------------------ | -------------------------------- | ----------------- |
+| BLE                       | Web Bluetooth        | Not supported    | Native plugin                  | Native plugin                    | Native plugin     |
+| Offline Climb Search      | Not available        | Not available    | SQLite (bundled)               | SQLite (bundled)                 | SQLite (bundled)  |
+| Push Notifications        | Web Push             | Limited          | APNs                           | APNs                             | FCM               |
+| Haptics                   | Not available        | Not available    | Native                         | Native                           | Native            |
+| Deep Links                | N/A                  | N/A              | Universal links                | Universal links                  | App links         |
+| Wake Lock                 | Screen Wake Lock API | Not supported    | KeepAwake plugin               | KeepAwake plugin                 | KeepAwake plugin  |
+| App Store Presence        | N/A                  | N/A              | App Store                      | App Store                        | Play Store        |
+| **Cold start to interactive** | < 2s (cached)    | < 2s (cached)    | 2-4s (network)                 | **< 1s (bundled SPA)**           | **< 1s (bundled SPA)** |
+| **Per-tab WebView**       | N/A                  | N/A              | Single WebView (PR #1509 base) | **N independent WKWebViews**     | Single WebView (Android limitation) |
+| **Offline app shell**     | Service worker (TBD) | Service worker (TBD) | Requires network             | **Always available**             | **Always available** |
 
 ---
 
-_Document version: 5.0_
-_Last updated: March 2026_
-_Replaces: v4.0 (March 2026) — added embedded SQLite database strategy_
+_Document version: 6.0_
+_Last updated: April 2026_
+_Replaces: v5.0 (March 2026) — added the TanStack Start migration, Railway hosting move, REST → GraphQL completion plan, and PostHog analytics direction. v5.0's M0–M4 native shell sections remain authoritative for Capacitor work._
+
+### Changelog (v5.0 → v6.0)
+
+**Major additions:**
+
+- New section **"Architectural Pivot to TanStack Start (Vite SSR + SPA)"** — single Vite codebase with two build outputs (SSR for web SEO, SPA bundle for Capacitor), replacing both the Next.js stack and the previously considered Astro + SPA split.
+- New section **"Hosting Migration: Vercel + Neon → Railway"** — DB and backend cutover sequence, PostGIS verification, connection-pool sizing, cron / scheduled job migration. Single vendor, single region.
+- New section **"REST → GraphQL Completion"** — inventory of remaining ~42 Next.js API routes and their default destinations (GraphQL by default, Hono in backend for auth / OG / webhooks).
+- New section **"Analytics & Observability"** — PostHog (client + server) replaces Vercel Analytics; Sentry expanded with native iOS / Android SDKs from M2.
+- New web-migration phases **B0, A, B, C, D, E, F, G, H** appended to Implementation Milestones. Each independently shippable.
+- New v6.0 migration risk table covering route parity, SEO regression, per-tab WebView auth sharing, Neon → Railway pool sizing, GraphQL surface growth, OG URL drift.
+
+**Revisions:**
+
+- "Why Not Fully Local Mode" reframed as **"Why Not Bundling Next.js"** — v5.0's analysis still holds, but the conclusion changes: we move the server-dependent code to `packages/backend` and ship a TanStack Start SPA that has no server dependency at runtime.
+- Executive Summary rewritten to cover both the native shell and the web migration.
+- TOC updated.
+- **Package Structure** updated: adds `packages/web-app`, marks `packages/web` for decommission.
+- **Capacitor Bridge Injection Strategy** extended with a **bundled SPA mode** subsection covering Phase F: SPA bundle can import Capacitor packages directly from `node_modules`; per-tab WebViews each get bridge injection.
+- **Authentication in WebView** extended with a **Phase C / Auth.js in backend** subsection: cookie shape preserved, native OAuth flow unchanged at the user level, email sending re-wired, per-tab `WKWebsiteDataStore` sharing strategy.
+- **Capacitor vs Web Feature Matrix** expanded with `Capacitor iOS (bundled, Phase F)` column, plus rows for cold-start time, per-tab WebView, and offline app-shell availability.
+- **Success Criteria** split into "native shell MVP" (unchanged from v5.0) and "v6.0 web migration success" sections, each with their own milestone summary.
+
+**Carries over from v5.0 (no change):**
+
+- Embedded SQLite climb database section, build pipeline, On-Demand Resources / Play Asset Delivery delivery model.
+- Native shell Milestones 0–4 (PoC + Auth, BLE Integration, Embedded DB, Native Polish, App Store, Push Notifications).
+- Bluetooth Strategy, BluetoothAdapter interface, MTU negotiation, double-chunking fix.
+- Development Workflow, device testing matrix, App Store review considerations.
 
 ### Changelog (v4.0 → v5.0)
 
