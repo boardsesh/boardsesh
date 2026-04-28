@@ -240,7 +240,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const [showInviteQr, setShowInviteQr] = useState(false);
 
   const sessionShareUrl = activeSession?.sessionId
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${activeSession.sessionId}`
+    ? `https://www.boardsesh.com/join/${activeSession.sessionId}`
     : '';
 
   const handleInviteShare = useCallback(async () => {

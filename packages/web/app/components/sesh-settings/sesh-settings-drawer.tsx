@@ -34,7 +34,7 @@ import SessionDetailContent from '@/app/session/[sessionId]/session-detail-conte
 const getShareUrl = (sessionId: string | null) => {
   try {
     if (!sessionId) return '';
-    return `${window.location.origin}/join/${sessionId}`;
+    return `https://www.boardsesh.com/join/${sessionId}`;
   } catch {
     return '';
   }
