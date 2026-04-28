@@ -161,6 +161,20 @@ The v5.0 doc analysed bundling Next.js itself (via `output: 'export'`) into Capa
 
 Once those pieces live in the backend, the in-app surface (`packages/web-app`) has no server dependency at runtime. **TanStack Start's SPA build is a first-class output, not a hack** — bundling it inside Capacitor is straightforward. The risks v5.0 raised about a bundled-mode app (auth break, lost SEO, OG image regressions) are addressed by the SSR build path serving the same component tree to crawlers.
 
+### Why not stay on Next.js with `output: 'export'` post-migration?
+
+Once the API surface migrates to GraphQL, auth migrates to Auth.js in backend, and middleware logic moves to route loaders, **Next.js static export does become viable** for the Capacitor surface — that's a fair pushback on the v5.0 framing. A "two builds from one Next.js codebase" path exists: `next build` standalone on Railway for SEO surfaces, `next build` with `output: 'export'` for the Capacitor SPA bundle.
+
+That path was considered and rejected for v6.0:
+
+- **Static export caveats around dynamic routes.** App Router `output: 'export'` requires `generateStaticParams` for dynamic segments. The Boardsesh app has tens of thousands of climbs, profiles, and playlists — pre-rendering them all at build time isn't practical, and the SPA-fallback pattern needed to handle unknown IDs at runtime is rougher in App Router static export than in TanStack Start, where everything is automatically client-routed.
+- **`next/image` and middleware** need workarounds in the export build (custom loader; route-loader replacement). TanStack Start sidesteps both.
+- **Build velocity.** Vite's dev server and incremental builds are meaningfully faster than Next.js's, which compounds across a 6-month migration.
+- **Capacitor bundle size.** The Next.js static export ships the Next runtime; TanStack Start's SPA build is smaller, which matters for cold-start parity.
+- **Vercel gravity.** Next.js features land Vercel-first; running it long-term on Railway means living with caveats around ISR, image optimization, and edge primitives. TanStack Start has no first-party host.
+
+The trade-off: choosing TanStack Start adds **route-file rewrites** on top of the data-layer changes — `next/link` → TanStack `Link`, `next/navigation` → `useNavigate`, `generateMetadata` → route `meta` exports. That work is folded into Phase D and is the main reason Phase D budgets 8-10 weeks. Path B (Next.js dual-build) would shrink Phase D to a few weeks but inherits the static-export caveats above. The team is choosing the cleaner long-term landing over the smaller short-term migration.
+
 ---
 
 ## Hosting Migration: Vercel + Neon → Railway
