@@ -12,6 +12,56 @@ namespace {
 
 constexpr size_t kMaxBodyBytes = 1024 * 1024;  // 1MB; covers ~480px PNGs with the homewall background composited in.
 constexpr uint32_t kHttpTimeoutMs = 10000;
+constexpr int kMaxFetchAttempts = 2;
+
+bool isTransientHttpError(int code) {
+    // From HTTPClient.h. -11 (READ_TIMEOUT) is the common one we hit when the
+    // TLS session from a previous request is half-closed by Cloudflare.
+    return code == HTTPC_ERROR_READ_TIMEOUT
+        || code == HTTPC_ERROR_CONNECTION_LOST
+        || code == HTTPC_ERROR_CONNECTION_REFUSED;
+}
+
+struct PsramSink : public Stream {
+    uint8_t* buf = nullptr;
+    size_t cap = 0;
+    size_t total = 0;
+    bool overflowed = false;
+    bool growFailed = false;
+
+    bool grow(size_t need) {
+        if (need <= cap) return true;
+        size_t newCap = cap == 0 ? 4096 : cap * 2;
+        while (newCap < need) newCap *= 2;
+        if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
+        if (newCap < need) { overflowed = true; return false; }
+        uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
+        if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
+        if (!newBuf) { growFailed = true; return false; }
+        buf = newBuf;
+        cap = newCap;
+        return true;
+    }
+    size_t write(uint8_t b) override {
+        if (!grow(total + 1)) return 0;
+        buf[total++] = b;
+        return 1;
+    }
+    size_t write(const uint8_t* data, size_t len) override {
+        if (!grow(total + len)) {
+            size_t headroom = cap > total ? cap - total : 0;
+            if (headroom > 0) { memcpy(buf + total, data, headroom); total += headroom; }
+            return headroom;
+        }
+        memcpy(buf + total, data, len);
+        total += len;
+        return len;
+    }
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+};
 
 String urlEncode(const String& s) {
     String out;
@@ -71,137 +121,110 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
 
     Logger.logln("[render] GET %s", _lastUrl.c_str());
 
-    WiFiClientSecure client;
-    client.setInsecure();  // dev-rig; the office network is the only TLS surface.
-    client.setTimeout(kHttpTimeoutMs / 1000);
-
-    HTTPClient http;
-    http.setTimeout(kHttpTimeoutMs);
-    http.setReuse(false);
-    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-
-    if (!http.begin(client, _lastUrl)) {
-        _lastError = "http begin failed";
-        return result;
-    }
-    http.addHeader("Accept", "image/png");
-    // ESP32 HTTPClient has no built-in decompression; force identity so a
-    // helpful CDN doesn't hand us a gzipped body we can't decode.
-    http.addHeader("Accept-Encoding", "identity");
-    http.addHeader("User-Agent", "Boardsesh-DebugFirmware/0.1");
-
+    uint8_t* buf = nullptr;
+    size_t total = 0;
+    int contentLength = 0;
+    bool fetchedOk = false;
     const uint32_t fetchStart = millis();
-    const int code = http.GET();
-    result.httpCode = code;
-    if (code != 200) {
-        result.status = code <= 0 ? RenderStatus::NETWORK_ERROR : RenderStatus::HTTP_ERROR;
-        _lastError = String("http ") + code;
-        Logger.logln("[render] http error %d", code);
+
+    for (int attempt = 1; attempt <= kMaxFetchAttempts; attempt++) {
+        if (buf) { free(buf); buf = nullptr; }
+        total = 0;
+
+        WiFiClientSecure client;
+        client.setInsecure();  // dev-rig; the office network is the only TLS surface.
+        client.setTimeout(kHttpTimeoutMs / 1000);
+
+        HTTPClient http;
+        http.setTimeout(kHttpTimeoutMs);
+        http.setReuse(false);
+        http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+
+        if (!http.begin(client, _lastUrl)) {
+            _lastError = "http begin failed";
+            return result;
+        }
+        http.addHeader("Accept", "image/png");
+        http.addHeader("Accept-Encoding", "identity");
+        http.addHeader("User-Agent", "Boardsesh-DebugFirmware/0.1");
+
+        const int code = http.GET();
+        result.httpCode = code;
+        if (code != 200) {
+            _lastError = String("http ") + code;
+            Logger.logln("[render] http err %d (attempt %d/%d)", code, attempt, kMaxFetchAttempts);
+            http.end();
+            if (attempt < kMaxFetchAttempts && code <= 0 && isTransientHttpError(code)) {
+                delay(250);
+                continue;
+            }
+            result.status = code <= 0 ? RenderStatus::NETWORK_ERROR : RenderStatus::HTTP_ERROR;
+            return result;
+        }
+
+        contentLength = http.getSize();
+        if (contentLength > 0 && static_cast<size_t>(contentLength) > kMaxBodyBytes) {
+            result.status = RenderStatus::BODY_TOO_LARGE;
+            result.bytes = contentLength;
+            _lastError = "body too large";
+            Logger.logln("[render] body too large: %d", contentLength);
+            http.end();
+            return result;
+        }
+
+        // Cloudflare uses chunked Transfer-Encoding with no Content-Length, so
+        // raw reads would inhale the hex chunk-size markers. HTTPClient's
+        // writeToStream() decodes the framing — PsramSink just collects bytes.
+        const size_t reserveSize = contentLength > 0 ? static_cast<size_t>(contentLength) : 256 * 1024;
+        buf = static_cast<uint8_t*>(heap_caps_malloc(reserveSize, MALLOC_CAP_SPIRAM));
+        if (!buf) buf = static_cast<uint8_t*>(malloc(reserveSize));
+        if (!buf) {
+            _lastError = "alloc failed";
+            Logger.logln("[render] alloc %u failed", static_cast<unsigned>(reserveSize));
+            http.end();
+            return result;
+        }
+
+        PsramSink sink;
+        sink.buf = buf;
+        sink.cap = reserveSize;
+        const int written = http.writeToStream(&sink);
+        buf = sink.buf;  // sink may have realloc'd
+        total = sink.total;
         http.end();
+
+        if (sink.overflowed) {
+            free(buf); buf = nullptr;
+            result.status = RenderStatus::BODY_TOO_LARGE;
+            _lastError = "body too large";
+            return result;
+        }
+        if (sink.growFailed) {
+            free(buf); buf = nullptr;
+            _lastError = "realloc failed";
+            return result;
+        }
+        if (written < 0) {
+            Logger.logln("[render] writeToStream err %d (attempt %d/%d)", written,
+                         attempt, kMaxFetchAttempts);
+            _lastError = String("writeToStream err ") + written;
+            if (attempt < kMaxFetchAttempts && isTransientHttpError(written)) {
+                delay(250);
+                continue;  // buf will be free'd at the top of the next iteration
+            }
+            free(buf); buf = nullptr;
+            return result;
+        }
+        fetchedOk = true;
+        break;
+    }
+    if (!fetchedOk) {
+        if (buf) free(buf);
         return result;
     }
 
-    const int contentLength = http.getSize();
-    if (contentLength > 0 && static_cast<size_t>(contentLength) > kMaxBodyBytes) {
-        result.status = RenderStatus::BODY_TOO_LARGE;
-        result.bytes = contentLength;
-        _lastError = "body too large";
-        Logger.logln("[render] body too large: %d", contentLength);
-        http.end();
-        return result;
-    }
-
-    // Cloudflare returns the body with `Transfer-Encoding: chunked` (no
-    // Content-Length), so we can't read raw from the stream — the bytes
-    // would still have hex chunk-size markers embedded. HTTPClient's
-    // writeToStream() handles the chunk framing for us; we just need a Stream
-    // subclass that buffers into PSRAM.
-    const size_t reserveSize = contentLength > 0 ? static_cast<size_t>(contentLength) : 256 * 1024;
-    uint8_t* buf = static_cast<uint8_t*>(heap_caps_malloc(reserveSize, MALLOC_CAP_SPIRAM));
-    if (!buf) buf = static_cast<uint8_t*>(malloc(reserveSize));
-    if (!buf) {
-        _lastError = "alloc failed";
-        Logger.logln("[render] alloc %u failed", static_cast<unsigned>(reserveSize));
-        http.end();
-        return result;
-    }
-
-    struct PsramSink : public Stream {
-        uint8_t* buf = nullptr;
-        size_t cap = 0;
-        size_t total = 0;
-        bool overflowed = false;
-        bool growFailed = false;
-
-        bool grow(size_t need) {
-            if (need <= cap) return true;
-            size_t newCap = cap == 0 ? 4096 : cap * 2;
-            while (newCap < need) newCap *= 2;
-            if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
-            if (newCap < need) {
-                overflowed = true;
-                return false;
-            }
-            uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
-            if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
-            if (!newBuf) {
-                growFailed = true;
-                return false;
-            }
-            buf = newBuf;
-            cap = newCap;
-            return true;
-        }
-
-        size_t write(uint8_t b) override {
-            if (!grow(total + 1)) return 0;
-            buf[total++] = b;
-            return 1;
-        }
-        size_t write(const uint8_t* data, size_t len) override {
-            if (!grow(total + len)) {
-                size_t headroom = cap > total ? cap - total : 0;
-                if (headroom > 0) {
-                    memcpy(buf + total, data, headroom);
-                    total += headroom;
-                }
-                return headroom;
-            }
-            memcpy(buf + total, data, len);
-            total += len;
-            return len;
-        }
-        int available() override { return 0; }
-        int read() override { return -1; }
-        int peek() override { return -1; }
-        void flush() override {}
-    } sink;
-    sink.buf = buf;
-    sink.cap = reserveSize;
-
-    const int written = http.writeToStream(&sink);
-    buf = sink.buf;  // sink may have realloc'd
-    size_t total = sink.total;
     result.bytes = total;
     result.fetchMs = millis() - fetchStart;
-    http.end();
-
-    if (sink.overflowed) {
-        free(buf);
-        result.status = RenderStatus::BODY_TOO_LARGE;
-        _lastError = "body too large";
-        return result;
-    }
-    if (sink.growFailed) {
-        free(buf);
-        _lastError = "realloc failed";
-        return result;
-    }
-    if (written < 0) {
-        free(buf);
-        _lastError = String("writeToStream err ") + written;
-        return result;
-    }
 
     if (total == 0) {
         free(buf);

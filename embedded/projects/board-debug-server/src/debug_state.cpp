@@ -81,7 +81,7 @@ void loadConfig() {
     String boardStr = Config.getString(kKeyBoard, "kilter");
     gConfig.board = parseBoardName(boardStr.c_str());
     gConfig.layoutId = static_cast<uint16_t>(Config.getInt(kKeyLayout, 1));
-    gConfig.sizeId = static_cast<uint16_t>(Config.getInt(kKeySize, 7));
+    gConfig.sizeId = static_cast<uint16_t>(Config.getInt(kKeySize, 10));
     gConfig.setIdsCsv = Config.getString(kKeySets, "1,20");
     gConfig.angle = static_cast<int16_t>(Config.getInt(kKeyAngle, 40));
     gConfig.deviceName = Config.getString(kKeyDeviceName, "Kilter A1");

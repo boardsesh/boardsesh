@@ -11,7 +11,7 @@ namespace board_debug {
 struct DeviceConfig {
     BoardName board = BoardName::KILTER;
     uint16_t layoutId = 1;
-    uint16_t sizeId = 7;
+    uint16_t sizeId = 10;  // "12 x 12 with kickboard" — most common Kilter Original
     String setIdsCsv = "1,20";
     int16_t angle = 40;
     String deviceName = "Kilter A1";
