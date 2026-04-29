@@ -10,7 +10,7 @@ namespace board_debug {
 
 namespace {
 
-constexpr size_t kMaxBodyBytes = 384 * 1024;  // 384KB; thumbnail PNG comes in well under this.
+constexpr size_t kMaxBodyBytes = 1024 * 1024;  // 1MB; covers ~480px PNGs with the homewall background composited in.
 constexpr uint32_t kHttpTimeoutMs = 10000;
 
 String urlEncode(const String& s) {
@@ -57,7 +57,10 @@ String RenderFetcher::buildUrl(const RenderRequest& request) const {
     }
     url += "&frames=";
     url += urlEncode(request.frames);
-    url += "&thumbnail=1&include_background=1&format=png";
+    // width=480 hits the panel's image-area width once the backend supports
+    // the param. thumbnail=1 is sent alongside as a graceful fallback for any
+    // backend version that doesn't (it'll just use the 200px thumbnail).
+    url += "&width=480&thumbnail=1&include_background=1&format=png";
     return url;
 }
 
@@ -82,6 +85,9 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
         return result;
     }
     http.addHeader("Accept", "image/png");
+    // ESP32 HTTPClient has no built-in decompression; force identity so a
+    // helpful CDN doesn't hand us a gzipped body we can't decode.
+    http.addHeader("Accept-Encoding", "identity");
     http.addHeader("User-Agent", "Boardsesh-DebugFirmware/0.1");
 
     const uint32_t fetchStart = millis();
@@ -121,41 +127,61 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
     size_t cap = reserveSize;
     size_t total = 0;
     WiFiClient* stream = http.getStreamPtr();
-    while (http.connected()) {
-        const size_t avail = stream->available();
-        if (avail == 0) {
-            if (contentLength > 0 && total >= static_cast<size_t>(contentLength)) break;
-            delay(2);
-            continue;
+    stream->setTimeout(kHttpTimeoutMs / 1000);
+
+    auto growBuffer = [&](size_t need) -> bool {
+        if (need <= cap) return true;
+        size_t newCap = cap == 0 ? 4096 : cap * 2;
+        while (newCap < need) newCap *= 2;
+        if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
+        uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
+        if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
+        if (!newBuf) return false;
+        buf = newBuf;
+        cap = newCap;
+        return true;
+    };
+
+    if (contentLength > 0) {
+        // Known length: drive the loop by remaining bytes. readBytes blocks up
+        // to the stream timeout for each chunk, so we don't depend on
+        // http.connected() (which can flip false the moment the server flushes
+        // its last packet, even if there's still buffered data to read).
+        size_t remaining = static_cast<size_t>(contentLength);
+        while (remaining > 0) {
+            const size_t want = remaining < 4096 ? remaining : 4096;
+            const int chunk = stream->readBytes(buf + total, want);
+            if (chunk <= 0) break;
+            total += chunk;
+            remaining -= chunk;
         }
-        if (total + avail > kMaxBodyBytes) {
-            free(buf);
-            buf = nullptr;
-            result.status = RenderStatus::BODY_TOO_LARGE;
-            result.bytes = total + avail;
-            _lastError = "body too large";
-            http.end();
-            return result;
-        }
-        if (total + avail > cap) {
-            size_t newCap = cap * 2;
-            while (newCap < total + avail) newCap *= 2;
-            if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
-            uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
-            if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
-            if (!newBuf) {
+    } else {
+        // Unknown length (chunked or close-delimited).
+        while (http.connected() || stream->available() > 0) {
+            const size_t avail = stream->available();
+            if (avail == 0) {
+                delay(2);
+                continue;
+            }
+            if (total + avail > kMaxBodyBytes) {
+                free(buf);
+                buf = nullptr;
+                result.status = RenderStatus::BODY_TOO_LARGE;
+                result.bytes = total + avail;
+                _lastError = "body too large";
+                http.end();
+                return result;
+            }
+            if (!growBuffer(total + avail)) {
                 free(buf);
                 _lastError = "realloc failed";
                 http.end();
                 return result;
             }
-            buf = newBuf;
-            cap = newCap;
+            const int chunk = stream->readBytes(buf + total, avail);
+            if (chunk <= 0) break;
+            total += chunk;
         }
-        const int read = stream->readBytes(buf + total, avail);
-        if (read <= 0) break;
-        total += read;
-        if (contentLength > 0 && total >= static_cast<size_t>(contentLength)) break;
     }
     result.bytes = total;
     result.fetchMs = millis() - fetchStart;
@@ -164,6 +190,27 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
     if (total == 0) {
         free(buf);
         _lastError = "empty body";
+        return result;
+    }
+
+    // Diagnostic: log magic + size mismatch so a "decode failed" later isn't
+    // ambiguous. PNG signature is 89 50 4E 47 0D 0A 1A 0A.
+    Logger.logln("[render] body %u bytes (expected %d), magic %02X %02X %02X %02X %02X %02X %02X %02X",
+                 static_cast<unsigned>(total), contentLength,
+                 buf[0], total > 1 ? buf[1] : 0, total > 2 ? buf[2] : 0,
+                 total > 3 ? buf[3] : 0, total > 4 ? buf[4] : 0,
+                 total > 5 ? buf[5] : 0, total > 6 ? buf[6] : 0,
+                 total > 7 ? buf[7] : 0);
+    if (contentLength > 0 && total != static_cast<size_t>(contentLength)) {
+        free(buf);
+        result.status = RenderStatus::DECODE_ERROR;
+        _lastError = String("short read: ") + total + "/" + contentLength;
+        return result;
+    }
+    if (total < 8 || buf[0] != 0x89 || buf[1] != 0x50 || buf[2] != 0x4E || buf[3] != 0x47) {
+        free(buf);
+        result.status = RenderStatus::DECODE_ERROR;
+        _lastError = "not a PNG (bad signature)";
         return result;
     }
 

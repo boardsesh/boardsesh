@@ -182,6 +182,14 @@ export async function GET(request: NextRequest) {
     const includeBackground = searchParams.get('include_background') === '1';
     const isOgVariant = searchParams.get('variant') === 'og';
     const format = searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp');
+    // Optional explicit output width. Used by the embedded debug rig firmware,
+    // which can't fit a full-res 2MB+ PNG in PSRAM but needs more than the
+    // 200px thumbnail. Capped to a sane window.
+    const widthParam = searchParams.get('width');
+    const customWidth = widthParam ? Number(widthParam) : null;
+    if (customWidth !== null && (!Number.isFinite(customWidth) || customWidth < 64 || customWidth > 1600)) {
+      return NextResponse.json({ error: 'Invalid width (expected 64-1600)' }, { status: 400 });
+    }
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
     if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
@@ -216,9 +224,11 @@ export async function GET(request: NextRequest) {
       : null;
     const outputWidth = isOgVariant
       ? Math.max(1, Math.round(boardDetails.boardWidth * (ogScale || 1)))
-      : thumbnail
-        ? THUMBNAIL_WIDTH
-        : boardDetails.boardWidth;
+      : customWidth !== null
+        ? Math.round(customWidth)
+        : thumbnail
+          ? THUMBNAIL_WIDTH
+          : boardDetails.boardWidth;
 
     // Build hold state map for this board
     const holdStateMap: Record<number, { color: string; renderStyle?: string }> = {};
