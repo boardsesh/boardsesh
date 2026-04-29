@@ -1,0 +1,3 @@
+# Local-only WiFi defaults baked into the firmware build at compile time.
+.env
+.env.local

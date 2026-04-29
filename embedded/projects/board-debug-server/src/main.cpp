@@ -213,7 +213,16 @@ void setup() {
     WiFiMgr.begin();
     WiFiMgr.setStateCallback(onWifiState);
     if (!WiFiMgr.connectSaved()) {
+#if defined(DEFAULT_WIFI_SSID) && defined(DEFAULT_WIFI_PASSWORD)
+        // Compile-time fallback baked from .env (gitignored); used when NVS is
+        // empty. WiFiMgr.connect persists creds, so this only runs on first boot.
+        Logger.logln("[wifi] no saved creds; trying compiled-in default SSID");
+        if (!WiFiMgr.connect(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD, true)) {
+            WiFiMgr.startAP();
+        }
+#else
         WiFiMgr.startAP();
+#endif
     }
 
     startBle();
