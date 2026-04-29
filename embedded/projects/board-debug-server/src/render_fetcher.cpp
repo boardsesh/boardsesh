@@ -111,12 +111,14 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
         return result;
     }
 
-    // Pull the whole body into a PSRAM buffer; LovyanGFX wants contiguous bytes.
-    const size_t reserveSize = contentLength > 0 ? static_cast<size_t>(contentLength) : 64 * 1024;
+    // Cloudflare returns the body with `Transfer-Encoding: chunked` (no
+    // Content-Length), so we can't read raw from the stream — the bytes
+    // would still have hex chunk-size markers embedded. HTTPClient's
+    // writeToStream() handles the chunk framing for us; we just need a Stream
+    // subclass that buffers into PSRAM.
+    const size_t reserveSize = contentLength > 0 ? static_cast<size_t>(contentLength) : 256 * 1024;
     uint8_t* buf = static_cast<uint8_t*>(heap_caps_malloc(reserveSize, MALLOC_CAP_SPIRAM));
-    if (!buf) {
-        buf = static_cast<uint8_t*>(malloc(reserveSize));
-    }
+    if (!buf) buf = static_cast<uint8_t*>(malloc(reserveSize));
     if (!buf) {
         _lastError = "alloc failed";
         Logger.logln("[render] alloc %u failed", static_cast<unsigned>(reserveSize));
@@ -124,68 +126,82 @@ RenderResult RenderFetcher::fetchAndDisplay(const RenderRequest& request) {
         return result;
     }
 
-    size_t cap = reserveSize;
-    size_t total = 0;
-    WiFiClient* stream = http.getStreamPtr();
-    stream->setTimeout(kHttpTimeoutMs / 1000);
+    struct PsramSink : public Stream {
+        uint8_t* buf = nullptr;
+        size_t cap = 0;
+        size_t total = 0;
+        bool overflowed = false;
+        bool growFailed = false;
 
-    auto growBuffer = [&](size_t need) -> bool {
-        if (need <= cap) return true;
-        size_t newCap = cap == 0 ? 4096 : cap * 2;
-        while (newCap < need) newCap *= 2;
-        if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
-        uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
-        if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
-        if (!newBuf) return false;
-        buf = newBuf;
-        cap = newCap;
-        return true;
-    };
+        bool grow(size_t need) {
+            if (need <= cap) return true;
+            size_t newCap = cap == 0 ? 4096 : cap * 2;
+            while (newCap < need) newCap *= 2;
+            if (newCap > kMaxBodyBytes) newCap = kMaxBodyBytes;
+            if (newCap < need) {
+                overflowed = true;
+                return false;
+            }
+            uint8_t* newBuf = static_cast<uint8_t*>(heap_caps_realloc(buf, newCap, MALLOC_CAP_SPIRAM));
+            if (!newBuf) newBuf = static_cast<uint8_t*>(realloc(buf, newCap));
+            if (!newBuf) {
+                growFailed = true;
+                return false;
+            }
+            buf = newBuf;
+            cap = newCap;
+            return true;
+        }
 
-    if (contentLength > 0) {
-        // Known length: drive the loop by remaining bytes. readBytes blocks up
-        // to the stream timeout for each chunk, so we don't depend on
-        // http.connected() (which can flip false the moment the server flushes
-        // its last packet, even if there's still buffered data to read).
-        size_t remaining = static_cast<size_t>(contentLength);
-        while (remaining > 0) {
-            const size_t want = remaining < 4096 ? remaining : 4096;
-            const int chunk = stream->readBytes(buf + total, want);
-            if (chunk <= 0) break;
-            total += chunk;
-            remaining -= chunk;
+        size_t write(uint8_t b) override {
+            if (!grow(total + 1)) return 0;
+            buf[total++] = b;
+            return 1;
         }
-    } else {
-        // Unknown length (chunked or close-delimited).
-        while (http.connected() || stream->available() > 0) {
-            const size_t avail = stream->available();
-            if (avail == 0) {
-                delay(2);
-                continue;
+        size_t write(const uint8_t* data, size_t len) override {
+            if (!grow(total + len)) {
+                size_t headroom = cap > total ? cap - total : 0;
+                if (headroom > 0) {
+                    memcpy(buf + total, data, headroom);
+                    total += headroom;
+                }
+                return headroom;
             }
-            if (total + avail > kMaxBodyBytes) {
-                free(buf);
-                buf = nullptr;
-                result.status = RenderStatus::BODY_TOO_LARGE;
-                result.bytes = total + avail;
-                _lastError = "body too large";
-                http.end();
-                return result;
-            }
-            if (!growBuffer(total + avail)) {
-                free(buf);
-                _lastError = "realloc failed";
-                http.end();
-                return result;
-            }
-            const int chunk = stream->readBytes(buf + total, avail);
-            if (chunk <= 0) break;
-            total += chunk;
+            memcpy(buf + total, data, len);
+            total += len;
+            return len;
         }
-    }
+        int available() override { return 0; }
+        int read() override { return -1; }
+        int peek() override { return -1; }
+        void flush() override {}
+    } sink;
+    sink.buf = buf;
+    sink.cap = reserveSize;
+
+    const int written = http.writeToStream(&sink);
+    buf = sink.buf;  // sink may have realloc'd
+    size_t total = sink.total;
     result.bytes = total;
     result.fetchMs = millis() - fetchStart;
     http.end();
+
+    if (sink.overflowed) {
+        free(buf);
+        result.status = RenderStatus::BODY_TOO_LARGE;
+        _lastError = "body too large";
+        return result;
+    }
+    if (sink.growFailed) {
+        free(buf);
+        _lastError = "realloc failed";
+        return result;
+    }
+    if (written < 0) {
+        free(buf);
+        _lastError = String("writeToStream err ") + written;
+        return result;
+    }
 
     if (total == 0) {
         free(buf);
