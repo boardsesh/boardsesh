@@ -1,5 +1,6 @@
 package com.boardsesh.app;
 
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -11,6 +12,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
 import android.text.TextUtils;
+import android.view.ViewGroup;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -19,8 +21,11 @@ import android.webkit.WebView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.boardsesh.app.plugins.DevUrlPlugin;
+import com.boardsesh.app.plugins.NativeTabBarPlugin;
+import com.boardsesh.app.tabs.TabContainerController;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
@@ -30,9 +35,13 @@ public class MainActivity extends BridgeActivity {
     private static final String DEV_RESET_SCHEME = "boardsesh-dev";
     private final OfflineFallbackStateMachine fallbackState = new OfflineFallbackStateMachine();
 
+    @Nullable
+    private TabContainerController tabContainerController;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DevUrlPlugin.class);
+        registerPlugin(NativeTabBarPlugin.class);
 
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
@@ -50,11 +59,56 @@ public class MainActivity extends BridgeActivity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         webView.setWebViewClient(new OfflineAwareBridgeWebViewClient(bridge));
 
+        ViewGroup tabContainer = findViewById(R.id.tab_container);
+        ViewGroup tabBarHost = findViewById(R.id.native_tab_bar_host);
+        if (tabContainer != null && tabBarHost != null) {
+            tabContainerController = new TabContainerController(
+                this,
+                tabContainer,
+                tabBarHost,
+                webView,
+                resolveServerUrl()
+            );
+        }
+
         // Cold-start deep link: Capacitor's default load() points the WebView at
         // server.url and discards the launch intent's path, so /join/{id} (and
         // any other App Link) never lands. Mirror SceneDelegate.swift on iOS by
         // forwarding the intent URL into the WebView ourselves.
         loadDeepLinkIfPresent(getIntent(), webView);
+    }
+
+    @Nullable
+    public TabContainerController getTabContainerController() {
+        return tabContainerController;
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (tabContainerController == null) return;
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            tabContainerController.handleMemoryWarning();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (tabContainerController != null) {
+            tabContainerController.destroy();
+            tabContainerController = null;
+        }
+        super.onDestroy();
+    }
+
+    private String resolveServerUrl() {
+        if (bridge != null && bridge.getConfig() != null) {
+            String configured = bridge.getConfig().getServerUrl();
+            if (configured != null && !configured.isEmpty()) {
+                return configured;
+            }
+        }
+        return DevUrlPlugin.DEFAULT_URL;
     }
 
     @Override
@@ -95,7 +149,16 @@ public class MainActivity extends BridgeActivity {
         if (BuildConfig.DEBUG && DevUrlPrefs.getOverrideUrl(this) != null) {
             return;
         }
-        webView.loadUrl(data.toString());
+        if (tabContainerController != null) {
+            // Route the deep link to whichever tab owns the path so /feed/x lands in
+            // the feed tab, /you/x in the you tab, etc. — mirrors SceneDelegate.swift.
+            String path = data.getPath();
+            String tab = TabContainerController.tabForPath(path);
+            String targetTab = "create".equals(tab) ? "climbs" : tab;
+            tabContainerController.navigateToTab(targetTab, data.toString());
+        } else {
+            webView.loadUrl(data.toString());
+        }
     }
 
     @Override

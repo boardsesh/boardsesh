@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides @capacitor/android's default bridge_layout_main.xml.
+
+  Capacitor's BridgeActivity calls setContentView(R.layout.bridge_layout_main),
+  which resolves to whichever copy is most-specific. Because this file lives in
+  the app module's res/layout, it shadows the library copy.
+
+  We wrap the CapacitorWebView in tab_container so TabContainerController can
+  attach four satellite WebViews as siblings, and we add native_tab_bar_host
+  for the NativeTabBarView. The Capacitor WebView KEEPS its id ("@+id/webview")
+  and class (CapacitorWebView) so the bridge wires up unchanged.
+-->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <FrameLayout
+        android:id="@+id/tab_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.getcapacitor.CapacitorWebView
+            android:id="@+id/webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/native_tab_bar_host"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom" />
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
