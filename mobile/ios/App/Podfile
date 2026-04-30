@@ -23,13 +23,6 @@ end
 target 'App' do
   capacitor_pods
   # Add your Pods here
-
-  target 'AppTests' do
-    # Tests use @testable import App, which transitively pulls in Capacitor.
-    # Inheriting :search_paths gives the test target access to the Capacitor
-    # framework headers without re-installing the pods into a separate copy.
-    inherit! :search_paths
-  end
 end
 
 post_install do |installer|

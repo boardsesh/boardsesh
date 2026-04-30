@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useContext, useEffect } from 'react';
+import React, { useState, useCallback, useContext } from 'react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import MuiButton from '@mui/material/Button';
 import Box from '@mui/material/Box';
@@ -16,7 +16,6 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import DynamicFeedOutlined from '@mui/icons-material/DynamicFeedOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import { usePathname, useRouter } from 'next/navigation';
-import { useTabRouter } from '@/app/hooks/use-tab-router';
 import { track } from '@vercel/analytics';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import {
@@ -47,16 +46,8 @@ import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import { isValidHexColor } from '@/app/lib/color-utils';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
-import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
-import {
-  getNativeTabBarPlugin,
-  addNativeOverlay,
-  removeNativeOverlay,
-} from '@/app/lib/native-tab-bar/native-tab-bar-plugin';
-import { useUnreadNotificationCount } from '@/app/hooks/use-unread-notification-count';
-import { getActiveTab } from '@/app/lib/tab-routing';
-import type { Tab } from '@/app/lib/tab-routing';
 
+type Tab = 'home' | 'climbs' | 'library' | 'feed' | 'create' | 'you';
 type PendingCreateAction = 'climb' | 'playlist' | null;
 
 type BottomTabBarProps = {
@@ -69,6 +60,15 @@ type SelectedBoardContext = {
   boardName: string;
   layoutId: number;
   angle: number;
+};
+
+const getActiveTab = (pathname: string): Tab => {
+  if (pathname === '/') return 'home';
+  if (pathname.endsWith('/create')) return 'create';
+  if (pathname.startsWith('/feed')) return 'feed';
+  if (pathname.startsWith('/you')) return 'you';
+  if (pathname.startsWith('/playlists') || pathname.includes('/playlists')) return 'library';
+  return 'climbs';
 };
 
 const INITIAL_PLAYLIST_FORM = { name: '', description: '', color: '' };
@@ -128,15 +128,10 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   }, []);
 
   const pathname = usePathname();
-  const router = useTabRouter();
-  // Raw Next.js router for native-initiated navigation (event handlers that
-  // should NOT go through useTabRouter's cross-tab interception since the
-  // native side has already handled the tab switch).
-  const nextRouter = useRouter();
+  const router = useRouter();
   const guardBoardSwitch = useBoardSwitchGuard();
 
   const { data: session } = useSession();
-  const notificationUnreadCount = useUnreadNotificationCount();
 
   // Playlist context may be absent at root-level routes; use a local fallback for create flow.
   const playlistsContext = useContext(PlaylistsContext);
@@ -347,95 +342,28 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
     }
   };
 
-  const handleTabChange = useCallback(
-    (_event: React.SyntheticEvent, newValue: Tab) => {
-      switch (newValue) {
-        case 'home':
-          handleHomeTab();
-          break;
-        case 'climbs':
-          void handleClimbsTab();
-          break;
-        case 'library':
-          handleLibraryTab();
-          break;
-        case 'feed':
-          handleFeedTab();
-          break;
-        case 'create':
-          handleCreateTab();
-          break;
-        case 'you':
-          handleYouTab();
-          break;
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [handleHomeTab, handleClimbsTab, handleLibraryTab, handleFeedTab, handleCreateTab, handleYouTab],
-  );
-
-  // Sync active tab to native on path change
-  useEffect(() => {
-    if (!isNativeApp()) return;
-    getNativeTabBarPlugin()?.setActiveTab({ tab: getActiveTab(pathname) });
-  }, [pathname]);
-
-  // Handle native tab-tapped events (same-tab re-tap or "create" action).
-  // In multi-webview mode, the native side has already switched tabs;
-  // this event is only dispatched to the target webview for same-tab behaviors.
-  useEffect(() => {
-    if (!isNativeApp()) return;
-    const handler = (e: Event) => {
-      const { tab } = (e as CustomEvent<{ tab: string }>).detail;
-      handleTabChange({} as React.SyntheticEvent, tab as Tab);
-    };
-    window.addEventListener('boardsesh:native-tab-tapped', handler);
-    return () => window.removeEventListener('boardsesh:native-tab-tapped', handler);
-  }, [handleTabChange]);
-
-  // Handle cross-tab navigation dispatched by the native side.
-  // When MultiWebViewController.navigateToTab() calls evaluateJavaScript to
-  // dispatch this event, the web app performs client-side navigation to
-  // preserve React state. Uses the raw Next.js router (not useTabRouter)
-  // since the native side has already handled the tab switch — intercepting
-  // again would cause an infinite loop.
-  useEffect(() => {
-    if (!isNativeApp()) return;
-    const handler = (e: Event) => {
-      const { url } = (e as CustomEvent<{ url: string }>).detail;
-      if (url) {
-        nextRouter.push(url);
-      }
-    };
-    window.addEventListener('boardsesh:navigate', handler);
-    return () => window.removeEventListener('boardsesh:navigate', handler);
-  }, [nextRouter]);
-
-  // Notify native when internal drawers open/close — each drawer manages its own overlay
-  // so the tab bar stays hidden until the last overlay closes (ref-counted).
-  useEffect(() => {
-    if (!isNativeApp() || !isBoardSelectorOpen) return;
-    addNativeOverlay();
-    return () => removeNativeOverlay();
-  }, [isBoardSelectorOpen]);
-
-  useEffect(() => {
-    if (!isNativeApp() || !isCreatePlaylistOpen) return;
-    addNativeOverlay();
-    return () => removeNativeOverlay();
-  }, [isCreatePlaylistOpen]);
-
-  useEffect(() => {
-    if (!isNativeApp() || !isCustomBoardOpen) return;
-    addNativeOverlay();
-    return () => removeNativeOverlay();
-  }, [isCustomBoardOpen]);
-
-  // Sync notification badge count to native
-  useEffect(() => {
-    if (!isNativeApp()) return;
-    getNativeTabBarPlugin()?.setNotificationBadge({ count: notificationUnreadCount ?? 0 });
-  }, [notificationUnreadCount]);
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: Tab) => {
+    switch (newValue) {
+      case 'home':
+        handleHomeTab();
+        break;
+      case 'climbs':
+        void handleClimbsTab();
+        break;
+      case 'library':
+        handleLibraryTab();
+        break;
+      case 'feed':
+        handleFeedTab();
+        break;
+      case 'create':
+        handleCreateTab();
+        break;
+      case 'you':
+        handleYouTab();
+        break;
+    }
+  };
 
   const handleBoardSelected = useCallback(
     (url: string, config?: StoredBoardConfig) => {
@@ -600,8 +528,58 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
     showMessage,
   ]);
 
-  const drawers = (
+  return (
     <>
+      <BottomNavigation
+        data-testid="bottom-tab-bar"
+        value={activeTab}
+        onChange={handleTabChange}
+        showLabels
+        sx={{
+          background: isDark ? 'rgba(26, 26, 26, 0.7)' : 'rgba(255, 255, 255, 0.3)',
+          WebkitBackdropFilter: isDark ? 'blur(20px)' : 'blur(5px)',
+          backdropFilter: isDark ? 'blur(20px)' : 'blur(5px)',
+          borderRadius: `var(--tab-bar-top-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-top-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-bottom-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-bottom-radius, ${themeTokens.borderRadius.xl}px)`,
+          pt: `${themeTokens.spacing[2]}px`,
+          pb: `calc(${themeTokens.spacing[2]}px + var(--tab-bar-safe-area-padding, 0px))`,
+          mb: 'var(--tab-bar-bottom-extension, 0px)',
+          height: 'auto',
+          '@media (min-width: 768px)': {
+            maxWidth: 480,
+            mx: 'auto',
+            boxShadow: themeTokens.shadows.lg,
+            border: `1px solid var(--neutral-200)`,
+          },
+        }}
+      >
+        <BottomNavigationAction label="Home" icon={<HomeOutlined sx={{ fontSize: 20 }} />} value="home" sx={actionSx} />
+        <BottomNavigationAction
+          label="Climb"
+          icon={<FormatListBulletedOutlined sx={{ fontSize: 20 }} />}
+          value="climbs"
+          sx={actionSx}
+        />
+        <BottomNavigationAction
+          label="Discover"
+          icon={<LocalOfferOutlined sx={{ fontSize: 20 }} />}
+          value="library"
+          sx={actionSx}
+        />
+        <BottomNavigationAction
+          label="Feed"
+          icon={<DynamicFeedOutlined sx={{ fontSize: 20 }} />}
+          value="feed"
+          sx={actionSx}
+        />
+        <BottomNavigationAction
+          label="Create"
+          icon={<AddOutlined sx={{ fontSize: 20 }} />}
+          value="create"
+          sx={actionSx}
+        />
+        <BottomNavigationAction label="You" icon={<PersonOutlined sx={{ fontSize: 20 }} />} value="you" sx={actionSx} />
+      </BottomNavigation>
+
       {/* Create Playlist Drawer */}
       {isCreatePlaylistRendered && (
         <SwipeableDrawer
@@ -717,73 +695,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           }}
         />
       )}
-    </>
-  );
-
-  // On native iOS with the native tab bar plugin available, render only the
-  // drawers — the visual tab bar is drawn natively and dispatches tab taps
-  // back to React via the boardsesh:native-tab-tapped event.
-  // BACKWARDS-COMPAT: older iOS app builds do not have NativeTabBarPlugin,
-  // so we must keep rendering the web BottomNavigation for them. Otherwise
-  // existing TestFlight/App Store users would lose all bottom navigation on
-  // their next page load.
-  if (isNativeApp() && getNativeTabBarPlugin() !== null) {
-    return drawers;
-  }
-
-  return (
-    <>
-      <BottomNavigation
-        data-testid="bottom-tab-bar"
-        value={activeTab}
-        onChange={handleTabChange}
-        showLabels
-        sx={{
-          background: isDark ? 'rgba(26, 26, 26, 0.7)' : 'rgba(255, 255, 255, 0.3)',
-          WebkitBackdropFilter: isDark ? 'blur(20px)' : 'blur(5px)',
-          backdropFilter: isDark ? 'blur(20px)' : 'blur(5px)',
-          borderRadius: `var(--tab-bar-top-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-top-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-bottom-radius, ${themeTokens.borderRadius.xl}px) var(--tab-bar-bottom-radius, ${themeTokens.borderRadius.xl}px)`,
-          pt: `${themeTokens.spacing[2]}px`,
-          pb: `calc(${themeTokens.spacing[2]}px + var(--tab-bar-safe-area-padding, 0px))`,
-          mb: 'var(--tab-bar-bottom-extension, 0px)',
-          height: 'auto',
-          '@media (min-width: 768px)': {
-            maxWidth: 480,
-            mx: 'auto',
-            boxShadow: themeTokens.shadows.lg,
-            border: `1px solid var(--neutral-200)`,
-          },
-        }}
-      >
-        <BottomNavigationAction label="Home" icon={<HomeOutlined sx={{ fontSize: 20 }} />} value="home" sx={actionSx} />
-        <BottomNavigationAction
-          label="Climb"
-          icon={<FormatListBulletedOutlined sx={{ fontSize: 20 }} />}
-          value="climbs"
-          sx={actionSx}
-        />
-        <BottomNavigationAction
-          label="Discover"
-          icon={<LocalOfferOutlined sx={{ fontSize: 20 }} />}
-          value="library"
-          sx={actionSx}
-        />
-        <BottomNavigationAction
-          label="Feed"
-          icon={<DynamicFeedOutlined sx={{ fontSize: 20 }} />}
-          value="feed"
-          sx={actionSx}
-        />
-        <BottomNavigationAction
-          label="Create"
-          icon={<AddOutlined sx={{ fontSize: 20 }} />}
-          value="create"
-          sx={actionSx}
-        />
-        <BottomNavigationAction label="You" icon={<PersonOutlined sx={{ fontSize: 20 }} />} value="you" sx={actionSx} />
-      </BottomNavigation>
-
-      {drawers}
     </>
   );
 }

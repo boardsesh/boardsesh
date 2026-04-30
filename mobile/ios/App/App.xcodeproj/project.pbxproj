@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1A9382ACAF81C6F66D7CB87A /* Pods_AppTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83CC393398C8D22D1A3A0310 /* Pods_AppTests.framework */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -18,6 +17,7 @@
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 		B1A2C3D4E5F60718 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60717 /* SceneDelegate.swift */; };
 		C1A2B3D4E5F60720 /* BoardseshViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60719 /* BoardseshViewController.swift */; };
+
 		LA100001 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200001 /* SharedConstants.swift */; };
 		LA100002 /* ClimbSessionAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200002 /* ClimbSessionAttributes.swift */; };
 		LA100003 /* ThumbnailFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200003 /* ThumbnailFetcher.swift */; };
@@ -27,6 +27,8 @@
 		LA100007 /* LiveActivityPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200007 /* LiveActivityPlugin.m */; };
 		LA100008 /* HealthKitPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200008 /* HealthKitPlugin.swift */; };
 		LA100009 /* HealthKitPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200009 /* HealthKitPlugin.m */; };
+		LA100050 /* DevUrlPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200050 /* DevUrlPlugin.swift */; };
+		LA100051 /* DevUrlPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200051 /* DevUrlPlugin.m */; };
 		LA100010 /* BoardseshWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200010 /* BoardseshWidgetsBundle.swift */; };
 		LA100011 /* ClimbSessionLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200011 /* ClimbSessionLiveActivity.swift */; };
 		LA100012 /* NextClimbIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200012 /* NextClimbIntent.swift */; };
@@ -38,17 +40,7 @@
 		LA100032 /* LiveActivityManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200032 /* LiveActivityManagerTests.swift */; };
 		LA100033 /* AppIntentNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200033 /* AppIntentNavigationTests.swift */; };
 		LA100034 /* VGradeFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200034 /* VGradeFormatterTests.swift */; };
-		LA100036 /* NativeTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200036 /* NativeTabBarView.swift */; };
-		LA100037 /* NativeTabBarPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200037 /* NativeTabBarPlugin.swift */; };
-		LA100038 /* NativeTabBarPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200038 /* NativeTabBarPlugin.m */; };
-		LA100039 /* NativeTabBarViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200039 /* NativeTabBarViewTests.swift */; };
 		LA100040 /* BoardseshWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = LA300001 /* BoardseshWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		LA100041 /* NativeTabBarPluginTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200041 /* NativeTabBarPluginTests.swift */; };
-		LA100050 /* DevUrlPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA200050 /* DevUrlPlugin.swift */; };
-		LA100051 /* DevUrlPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = LA200051 /* DevUrlPlugin.m */; };
-		MW100001 /* MultiWebViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = MW200001 /* MultiWebViewController.swift */; };
-		MW100002 /* SatelliteBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = MW200002 /* SatelliteBridge.swift */; };
-		MW100003 /* WebSocketBroadcaster.swift in Sources */ = {isa = PBXBuildFile; fileRef = MW200003 /* WebSocketBroadcaster.swift */; };
 		PI100001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PI200001 /* PrivacyInfo.xcprivacy */; };
 		PI100002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PI200002 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -86,7 +78,6 @@
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
-		395F79CA87F9B64BC2A3EA8D /* Pods-AppTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AppTests.release.xcconfig"; path = "Pods/Target Support Files/Pods-AppTests/Pods-AppTests.release.xcconfig"; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -95,13 +86,11 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
-		83CC393398C8D22D1A3A0310 /* Pods_AppTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_AppTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B1A2C3D4E5F60717 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		C1A2B3D4E5F60719 /* BoardseshViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardseshViewController.swift; sourceTree = "<group>"; };
 		E1A2B3C401000001 /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F602157DB6F1F2FC2725D1FE /* Pods-AppTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AppTests.debug.xcconfig"; path = "Pods/Target Support Files/Pods-AppTests/Pods-AppTests.debug.xcconfig"; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 		LA200001 /* SharedConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
 		LA200002 /* ClimbSessionAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClimbSessionAttributes.swift; sourceTree = "<group>"; };
@@ -112,6 +101,8 @@
 		LA200007 /* LiveActivityPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = LiveActivityPlugin.m; sourceTree = "<group>"; };
 		LA200008 /* HealthKitPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitPlugin.swift; sourceTree = "<group>"; };
 		LA200009 /* HealthKitPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HealthKitPlugin.m; sourceTree = "<group>"; };
+		LA200050 /* DevUrlPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevUrlPlugin.swift; sourceTree = "<group>"; };
+		LA200051 /* DevUrlPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DevUrlPlugin.m; sourceTree = "<group>"; };
 		LA200010 /* BoardseshWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardseshWidgetsBundle.swift; sourceTree = "<group>"; };
 		LA200011 /* ClimbSessionLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClimbSessionLiveActivity.swift; sourceTree = "<group>"; };
 		LA200012 /* NextClimbIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextClimbIntent.swift; sourceTree = "<group>"; };
@@ -123,17 +114,7 @@
 		LA200032 /* LiveActivityManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManagerTests.swift; sourceTree = "<group>"; };
 		LA200033 /* AppIntentNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentNavigationTests.swift; sourceTree = "<group>"; };
 		LA200034 /* VGradeFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VGradeFormatterTests.swift; sourceTree = "<group>"; };
-		LA200036 /* NativeTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBarView.swift; sourceTree = "<group>"; };
-		LA200037 /* NativeTabBarPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBarPlugin.swift; sourceTree = "<group>"; };
-		LA200038 /* NativeTabBarPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NativeTabBarPlugin.m; sourceTree = "<group>"; };
-		LA200039 /* NativeTabBarViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBarViewTests.swift; sourceTree = "<group>"; };
-		LA200041 /* NativeTabBarPluginTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabBarPluginTests.swift; sourceTree = "<group>"; };
-		LA200050 /* DevUrlPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevUrlPlugin.swift; sourceTree = "<group>"; };
-		LA200051 /* DevUrlPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DevUrlPlugin.m; sourceTree = "<group>"; };
 		LA300001 /* BoardseshWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BoardseshWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		MW200001 /* MultiWebViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiWebViewController.swift; sourceTree = "<group>"; };
-		MW200002 /* SatelliteBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SatelliteBridge.swift; sourceTree = "<group>"; };
-		MW200003 /* WebSocketBroadcaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketBroadcaster.swift; sourceTree = "<group>"; };
 		PI200001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		PI200002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -151,7 +132,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A9382ACAF81C6F66D7CB87A /* Pods_AppTests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -169,7 +149,6 @@
 			isa = PBXGroup;
 			children = (
 				AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */,
-				83CC393398C8D22D1A3A0310 /* Pods_AppTests.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -214,12 +193,6 @@
 				LA200009 /* HealthKitPlugin.m */,
 				LA200050 /* DevUrlPlugin.swift */,
 				LA200051 /* DevUrlPlugin.m */,
-				LA200036 /* NativeTabBarView.swift */,
-				LA200037 /* NativeTabBarPlugin.swift */,
-				LA200038 /* NativeTabBarPlugin.m */,
-				MW200001 /* MultiWebViewController.swift */,
-				MW200002 /* SatelliteBridge.swift */,
-				MW200003 /* WebSocketBroadcaster.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -236,8 +209,6 @@
 			children = (
 				FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */,
 				AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */,
-				F602157DB6F1F2FC2725D1FE /* Pods-AppTests.debug.xcconfig */,
-				395F79CA87F9B64BC2A3EA8D /* Pods-AppTests.release.xcconfig */,
 			);
 			name = Pods;
 			sourceTree = "<group>";
@@ -250,8 +221,6 @@
 				LA200032 /* LiveActivityManagerTests.swift */,
 				LA200033 /* AppIntentNavigationTests.swift */,
 				LA200034 /* VGradeFormatterTests.swift */,
-				LA200039 /* NativeTabBarViewTests.swift */,
-				LA200041 /* NativeTabBarPluginTests.swift */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -299,7 +268,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E1A2B3C40100000D /* Build configuration list for PBXNativeTarget "AppTests" */;
 			buildPhases = (
-				C8F2B59F22E46817CF291473 /* [CP] Check Pods Manifest.lock */,
 				E1A2B3C401000005 /* Sources */,
 				E1A2B3C401000006 /* Frameworks */,
 				E1A2B3C401000007 /* Resources */,
@@ -365,6 +333,8 @@
 				Base,
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
+			packageReferences = (
+			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -456,28 +426,6 @@
 			shellPath = /bin/sh;
 			shellScript = "# Allow arbitrary HTTP loads in Debug builds only (e.g. Tailscale dev URLs).\n# Release builds strip dev-only ts.net ATS exceptions and WKAppBoundDomains entries.\nif [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  /usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\" 2>/dev/null || true\n  /usr/libexec/PlistBuddy -c \"Add :NSAppTransportSecurity dict\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  /usr/libexec/PlistBuddy -c \"Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  echo \"[ATS] Debug build: NSAllowsArbitraryLoads enabled\"\nelse\n  PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  /usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity\" \"$PLIST\" 2>/dev/null || true\n  python3 -c 'import plistlib,os; path=os.environ[\"TARGET_BUILD_DIR\"]+\"/\"+os.environ[\"INFOPLIST_PATH\"]; p=plistlib.load(open(path,\"rb\")); p[\"WKAppBoundDomains\"]=[d for d in p.get(\"WKAppBoundDomains\",[]) if \"ts.net\" not in d]; plistlib.dump(p,open(path,\"wb\"))'\n  echo \"[ATS] Release build: removed ts.net dev-only entries\"\nfi\n";
 		};
-		C8F2B59F22E46817CF291473 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-AppTests-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -499,12 +447,6 @@
 				LA100009 /* HealthKitPlugin.m in Sources */,
 				LA100050 /* DevUrlPlugin.swift in Sources */,
 				LA100051 /* DevUrlPlugin.m in Sources */,
-				LA100036 /* NativeTabBarView.swift in Sources */,
-				LA100037 /* NativeTabBarPlugin.swift in Sources */,
-				LA100038 /* NativeTabBarPlugin.m in Sources */,
-				MW100001 /* MultiWebViewController.swift in Sources */,
-				MW100002 /* SatelliteBridge.swift in Sources */,
-				MW100003 /* WebSocketBroadcaster.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -517,8 +459,6 @@
 				LA100032 /* LiveActivityManagerTests.swift in Sources */,
 				LA100033 /* AppIntentNavigationTests.swift in Sources */,
 				LA100034 /* VGradeFormatterTests.swift in Sources */,
-				LA100039 /* NativeTabBarViewTests.swift in Sources */,
-				LA100041 /* NativeTabBarPluginTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -724,7 +664,6 @@
 		};
 		E1A2B3C40100000B /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = F602157DB6F1F2FC2725D1FE /* Pods-AppTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -743,7 +682,6 @@
 		};
 		E1A2B3C40100000C /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 395F79CA87F9B64BC2A3EA8D /* Pods-AppTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;

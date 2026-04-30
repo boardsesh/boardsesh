@@ -184,16 +184,6 @@ enum QueueMessageParser {
     }
 }
 
-// MARK: - Raw Message Delegate
-
-/// Receives raw WS frames and connection-state notifications without parsing.
-/// Used by `WebSocketBroadcaster` to fan messages out to satellite webviews
-/// in the multi-webview iOS architecture.
-protocol WebSocketMessageDelegate: AnyObject {
-    func didReceiveRawMessage(_ text: String)
-    func connectionStateDidChange(connected: Bool, reconnectAttempt: Int)
-}
-
 // MARK: - Session WebSocket Manager
 
 final class SessionWebSocketManager {
@@ -209,17 +199,6 @@ final class SessionWebSocketManager {
     var onQueueStateChanged: ((_ items: [SharedQueueItem], _ currentIndex: Int) -> Void)? {
         get { stateQueue.sync { _onQueueStateChanged } }
         set { stateQueue.sync { _onQueueStateChanged = newValue } }
-    }
-
-    /// Optional delegate that receives every raw WS text frame and connection-
-    /// state change. Set this from `MultiWebViewController` to drive the
-    /// satellite webview broadcaster. Reads/writes are stateQueue-synchronized
-    /// so multiple delegate sets don't race with in-flight `handleMessage`.
-    private weak var _rawMessageDelegate: (any WebSocketMessageDelegate)?
-
-    var rawMessageDelegate: (any WebSocketMessageDelegate)? {
-        get { stateQueue.sync { _rawMessageDelegate } }
-        set { stateQueue.sync { _rawMessageDelegate = newValue } }
     }
 
     // MARK: - Configuration
@@ -302,7 +281,6 @@ final class SessionWebSocketManager {
             self.webSocketTask = nil
             self.isConnected = false
         }
-        rawMessageDelegate?.connectionStateDidChange(connected: false, reconnectAttempt: 0)
     }
 
     // MARK: - Connection Lifecycle
@@ -559,12 +537,6 @@ final class SessionWebSocketManager {
             guard let self = self else { return }
             self.lastMessageReceived = Date()
         }
-
-        // Fan the raw frame out to any registered delegate (broadcaster) before
-        // we parse it. Satellite webviews consume frames opaquely as JSON, so
-        // they don't care whether we recognize the type.
-        rawMessageDelegate?.didReceiveRawMessage(text)
-
         guard let msg = GQLMessage.parse(text) else { return }
 
         switch msg.type {
@@ -577,9 +549,6 @@ final class SessionWebSocketManager {
                 self.sendSubscription()
             }
             startPingTimeoutTimer()
-            // Connection went up — notify satellites so they can re-subscribe
-            // or refresh state-dependent UI.
-            rawMessageDelegate?.connectionStateDidChange(connected: true, reconnectAttempt: 0)
 
         case .ping:
             sendPong()
@@ -724,12 +693,6 @@ final class SessionWebSocketManager {
             self.webSocketTask = nil
             self.pingTimeoutTimer?.cancel()
             self.pingTimeoutTimer = nil
-
-            // Notify the delegate of the connection drop. We do this on the
-            // stateQueue so the read of `_rawMessageDelegate` is consistent
-            // with concurrent setter calls; the delegate's own implementation
-            // hops to its preferred queue if needed.
-            self._rawMessageDelegate?.connectionStateDidChange(connected: false, reconnectAttempt: self.reconnectAttempt)
 
             guard !self.intentionalDisconnect else { return }
 

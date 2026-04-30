@@ -28,7 +28,6 @@ import { ProfileHeaderShareProvider } from '../profile-header-bridge/profile-hea
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
 import dynamic from 'next/dynamic';
 import { SESH_SETTINGS_DRAWER_EVENT } from '../sesh-settings/sesh-settings-drawer-event';
-import { getNativeTabBarPlugin } from '@/app/lib/native-tab-bar/native-tab-bar-plugin';
 import { BoardSwitchConfirmProvider } from '../board-lock/board-switch-confirm-provider';
 import { FeedbackPromptBanner } from '../feedback/feedback-prompt-banner';
 
@@ -130,56 +129,15 @@ export function RootBottomBar({ boardConfigs }: { boardConfigs: BoardConfigData 
   const { boardDetails, angle, hasActiveQueue } = useQueueBridgeBoardInfo();
   const pathname = usePathname();
   const isNative = isNativeApp();
-  // Older iOS builds are native (Capacitor) but don't have NativeTabBarPlugin.
-  // For those clients we must keep rendering the legacy web bottom-bar wrapper —
-  // the native fixed-position layout depends on `--native-tab-bar-height` being
-  // injected by the new MultiWebViewController, which old binaries don't ship.
-  const useNativeChrome = isNative && getNativeTabBarPlugin() !== null;
 
   const hideTabBar = HIDE_TAB_BAR_PAGES.some((prefix) => pathname.startsWith(prefix)) && !hasActiveQueue;
   const shouldShowQueueShell = isBoardRoutePath(pathname) && !hasActiveQueue && !boardDetails;
 
-  // Hide native tab bar on pages where the web tab bar would also be hidden
-  useEffect(() => {
-    if (!useNativeChrome || !hideTabBar) return;
-    getNativeTabBarPlugin()?.setBarsHidden({ hidden: true });
-    return () => {
-      getNativeTabBarPlugin()?.setBarsHidden({ hidden: false });
-    };
-  }, [useNativeChrome, hideTabBar]);
-
-  if (useNativeChrome) {
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 'var(--native-tab-bar-height, 83px)',
-          left: 0,
-          right: 0,
-          zIndex: 10,
-        }}
-      >
-        {hasActiveQueue && boardDetails && (
-          <ErrorBoundary>
-            <BoardProvider boardName={boardDetails.board_name}>
-              <ConnectionSettingsProvider>
-                <WebSocketConnectionProvider>
-                  <BluetoothProvider boardDetails={boardDetails}>
-                    <RootQueueControlBarWithProviders boardDetails={boardDetails} angle={angle} />
-                  </BluetoothProvider>
-                </WebSocketConnectionProvider>
-              </ConnectionSettingsProvider>
-            </BoardProvider>
-          </ErrorBoundary>
-        )}
-        {shouldShowQueueShell && <QueueControlBarShell />}
-        <BottomTabBar boardDetails={boardDetails} angle={angle} boardConfigs={boardConfigs} />
-      </div>
-    );
-  }
-
   return (
-    <div className={`${bottomBarStyles.bottomBarWrapper}`} data-testid="bottom-bar-wrapper">
+    <div
+      className={`${bottomBarStyles.bottomBarWrapper} ${isNative ? bottomBarStyles.nativeApp : ''}`}
+      data-testid="bottom-bar-wrapper"
+    >
       <FeedbackPromptBanner />
       {hasActiveQueue && boardDetails && (
         <ErrorBoundary>

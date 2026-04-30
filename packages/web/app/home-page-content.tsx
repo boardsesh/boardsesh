@@ -22,7 +22,7 @@ import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL, ANDROID_SIDELOAD_URL } from '@/app/lib/store-urls';
 import { useCountdown } from '@/app/lib/hooks/use-countdown';
 import { useSession } from 'next-auth/react';
-import { useTabRouter } from '@/app/hooks/use-tab-router';
+import { useRouter } from 'next/navigation';
 import { themeTokens } from '@/app/theme/theme-config';
 import { usePersistentSession } from '@/app/components/persistent-session';
 import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
@@ -249,7 +249,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
 
 export default function HomePageContent({ boardConfigs, initialPopularConfigs }: HomePageContentProps) {
   const { status } = useSession();
-  const router = useTabRouter();
+  const router = useRouter();
   const { activeSession } = usePersistentSession();
   const onboardingTour = useOnboardingTourOptional();
   const [seshDrawerOpen, setSeshDrawerOpen] = useState(false);
