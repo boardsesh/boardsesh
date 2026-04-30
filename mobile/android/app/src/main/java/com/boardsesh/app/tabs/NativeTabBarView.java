@@ -1,14 +1,12 @@
 package com.boardsesh.app.tabs;
 
-import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewPropertyAnimator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -17,6 +15,7 @@ import android.widget.TextView;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.widget.ImageViewCompat;
 
 import com.boardsesh.app.R;
 
@@ -99,11 +98,22 @@ public class NativeTabBarView extends FrameLayout {
         if (hidden == lastHiddenState) return;
         lastHiddenState = hidden;
 
+        // Defer if we haven't been measured yet — otherwise getHeight() returns
+        // 0, the translation is a no-op, and the idempotency guard would block
+        // a future re-attempt at the same state.
+        if (hidden && getHeight() == 0) {
+            post(() -> {
+                lastHiddenState = !hidden;
+                setBarsHidden(hidden, animated);
+            });
+            return;
+        }
+
         float targetTranslationY = hidden ? getHeight() : 0f;
-        ViewPropertyAnimator animator = animate()
+        animate()
             .translationY(targetTranslationY)
-            .setDuration(animated ? HIDE_ANIMATION_DURATION_MS : 0L);
-        animator.start();
+            .setDuration(animated ? HIDE_ANIMATION_DURATION_MS : 0L)
+            .start();
     }
 
     public void setNotificationBadge(int count) {
@@ -164,7 +174,7 @@ public class NativeTabBarView extends FrameLayout {
 
         ImageView icon = new ImageView(getContext());
         icon.setImageResource(tab.iconRes);
-        icon.setColorFilter(INACTIVE_COLOR, PorterDuff.Mode.SRC_IN);
+        ImageViewCompat.setImageTintList(icon, ColorStateList.valueOf(INACTIVE_COLOR));
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(
             dp(22),
             dp(22)
@@ -230,7 +240,7 @@ public class NativeTabBarView extends FrameLayout {
             int color = isActive ? ACTIVE_COLOR : INACTIVE_COLOR;
             ImageView icon = tabIcons.get(tab.tabKey);
             TextView label = tabLabels.get(tab.tabKey);
-            if (icon != null) icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            if (icon != null) ImageViewCompat.setImageTintList(icon, ColorStateList.valueOf(color));
             if (label != null) label.setTextColor(color);
         }
     }

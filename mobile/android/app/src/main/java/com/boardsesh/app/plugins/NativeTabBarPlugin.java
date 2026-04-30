@@ -24,6 +24,8 @@ public class NativeTabBarPlugin extends Plugin {
 
     private static final String TAG = "NativeTabBarPlugin";
 
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     @PluginMethod
     public void setActiveTab(PluginCall call) {
         String tab = call.getString("tab", "home");
@@ -86,6 +88,6 @@ public class NativeTabBarPlugin extends Plugin {
     }
 
     private void runOnUi(Runnable runnable) {
-        new Handler(Looper.getMainLooper()).post(runnable);
+        mainHandler.post(runnable);
     }
 }

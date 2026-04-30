@@ -393,8 +393,6 @@ public final class SatelliteBridge {
                 case '\n': out.append("\\n"); break;
                 case '\r': out.append("\\r"); break;
                 case '\t': out.append("\\t"); break;
-                case ' ': out.append("\\u2028"); break;
-                case ' ': out.append("\\u2029"); break;
                 case '\0': out.append("\\0"); break;
                 default: out.append(c);
             }

@@ -242,6 +242,15 @@ public final class TabContainerController {
     public void destroy() {
         for (Map.Entry<String, SatelliteBridge> entry : satelliteBridges.entrySet()) {
             entry.getValue().detach();
+            // Satellites are app-owned WebViews; release native resources
+            // explicitly. The Capacitor (climbs) WebView is framework-owned, so
+            // we leave it alone.
+            WebView wv = tabWebViews.remove(entry.getKey());
+            if (wv != null) {
+                ViewGroup parent = (ViewGroup) wv.getParent();
+                if (parent != null) parent.removeView(wv);
+                wv.destroy();
+            }
         }
         satelliteBridges.clear();
     }
@@ -424,6 +433,7 @@ public final class TabContainerController {
 
     // -- Satellite plugin call routing --------------------------------------
 
+    @MainThread
     private void handleSatelliteTabBarAction(
         @NonNull String tabKey,
         @NonNull String methodName,
