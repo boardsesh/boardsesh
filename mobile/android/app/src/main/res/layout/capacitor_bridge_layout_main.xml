@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Overrides @capacitor/android's default bridge_layout_main.xml.
+  Overrides @capacitor/android's default capacitor_bridge_layout_main.xml.
 
-  Capacitor's BridgeActivity calls setContentView(R.layout.bridge_layout_main),
+  Capacitor's BridgeActivity calls setContentView(R.layout.capacitor_bridge_layout_main),
   which resolves to whichever copy is most-specific. Because this file lives in
   the app module's res/layout, it shadows the library copy.
 
