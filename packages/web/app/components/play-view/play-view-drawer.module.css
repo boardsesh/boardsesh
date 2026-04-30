@@ -10,6 +10,13 @@
   border-bottom: 1px solid var(--neutral-100);
 }
 
+.onBoardPillRow {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 0;
+}
+
 .boardSectionWrapper {
   flex: 1;
   min-height: 0;

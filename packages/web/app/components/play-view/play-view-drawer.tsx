@@ -13,6 +13,7 @@ import SkipPreviousOutlined from '@mui/icons-material/SkipPreviousOutlined';
 import SkipNextOutlined from '@mui/icons-material/SkipNextOutlined';
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
+import LightbulbOutlined from '@mui/icons-material/LightbulbOutlined';
 import KeyboardArrowUpOutlined from '@mui/icons-material/KeyboardArrowUpOutlined';
 import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutlined';
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
@@ -39,6 +40,9 @@ import { QuickTickBar, type QuickTickBarHandle } from '../logbook/quick-tick-bar
 import { hasPriorHistoryForClimb } from '@/app/hooks/use-tick-save';
 import type { ActiveDrawer } from '../queue-control/queue-control-bar';
 import { PLAY_DRAWER_EVENT } from '../queue-control/play-drawer-event';
+import { usePreviewClimb } from '../queue-control/preview-climb-context';
+import MuiButton from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import {
   TOUR_CLOSE_PLAY_QUEUE_EVENT,
   TOUR_OPEN_PLAY_QUEUE_EVENT,
@@ -102,6 +106,11 @@ type PlayViewActionBarProps = {
   onOpenActions: () => void;
   onOpenQueue: () => void;
   angleSelector?: React.ReactNode;
+  /** When true, renders the preview variant: hides prev/next/queue and shows
+   *  a primary "Send to board" CTA. */
+  isPreview?: boolean;
+  onSendToBoard?: () => void;
+  sendDisabled?: boolean;
 };
 
 export const PlayViewActionBar = React.memo(function PlayViewActionBar({
@@ -118,12 +127,17 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   onOpenActions,
   onOpenQueue,
   angleSelector,
+  isPreview = false,
+  onSendToBoard,
+  sendDisabled,
 }: PlayViewActionBarProps) {
   return (
     <div className={styles.actionBar}>
-      <IconButton disabled={!canSwipePrevious} onClick={onPrevClick}>
-        <SkipPreviousOutlined />
-      </IconButton>
+      {!isPreview && (
+        <IconButton disabled={!canSwipePrevious} onClick={onPrevClick}>
+          <SkipPreviousOutlined />
+        </IconButton>
+      )}
       {supportsMirroring && (
         <IconButton
           color={isMirrored ? 'primary' : 'default'}
@@ -150,23 +164,43 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
       <IconButton onClick={onOpenActions} aria-label="Climb actions">
         <MoreHorizOutlined />
       </IconButton>
-      <MuiBadge
-        badgeContent={remainingQueueCount}
-        max={99}
-        sx={{
-          '& .MuiBadge-badge': {
+      {isPreview ? (
+        <MuiButton
+          variant="contained"
+          startIcon={<LightbulbOutlined />}
+          onClick={onSendToBoard}
+          disabled={sendDisabled || !onSendToBoard}
+          sx={{
+            flex: 1,
             backgroundColor: themeTokens.colors.primary,
             color: 'common.white',
-          },
-        }}
-      >
-        <IconButton onClick={onOpenQueue} aria-label="Open queue">
-          <FormatListBulletedOutlined />
-        </IconButton>
-      </MuiBadge>
-      <IconButton disabled={!canSwipeNext} onClick={onNextClick}>
-        <SkipNextOutlined />
-      </IconButton>
+            textTransform: 'none',
+            '&:hover': { backgroundColor: themeTokens.colors.primaryHover },
+          }}
+        >
+          Send to board
+        </MuiButton>
+      ) : (
+        <>
+          <MuiBadge
+            badgeContent={remainingQueueCount}
+            max={99}
+            sx={{
+              '& .MuiBadge-badge': {
+                backgroundColor: themeTokens.colors.primary,
+                color: 'common.white',
+              },
+            }}
+          >
+            <IconButton onClick={onOpenQueue} aria-label="Open queue">
+              <FormatListBulletedOutlined />
+            </IconButton>
+          </MuiBadge>
+          <IconButton disabled={!canSwipeNext} onClick={onNextClick}>
+            <SkipNextOutlined />
+          </IconButton>
+        </>
+      )}
     </div>
   );
 });
@@ -465,10 +499,17 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   const { currentClimb, currentClimbQueueItem } = isOpen ? currentClimbData : deferredCurrentClimb;
   const { queue } = isOpen ? queueListData : deferredQueue;
   const { viewOnlyMode } = isOpen ? sessionData : deferredSession;
-  const { mirrorClimb, getNextClimbQueueItem, getPreviousClimbQueueItem, setCurrentClimbQueueItem } = useQueueActions();
+  const { mirrorClimb, getNextClimbQueueItem, getPreviousClimbQueueItem, setCurrentClimbQueueItem, setCurrentClimb } =
+    useQueueActions();
+
+  const { previewClimb, setPreviewClimb } = usePreviewClimb();
+  const isPreviewMode = previewClimb !== null;
+  const displayedClimb = previewClimb ?? currentClimb;
+  const showOnBoardPill =
+    isPreviewMode && currentClimbQueueItem?.climb && currentClimbQueueItem.climb.uuid !== previewClimb?.uuid;
 
   const { handleDoubleTap, showHeart, dismissHeart, isFavorited, toggleFavorite } = useDoubleTapFavorite({
-    climbUuid: currentClimb?.uuid ?? '',
+    climbUuid: displayedClimb?.uuid ?? '',
   });
 
   const currentQueueIndex = currentClimbQueueItem
@@ -501,17 +542,41 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     if (isActionsOpen || isQueueOpen || isPlaylistSelectorOpen) return;
     setDrawerOpen(false);
     setActiveDrawer('none');
+    setPreviewClimb(null);
     if (window.location.hash === '#playing') {
       window.history.back();
     }
-  }, [setActiveDrawer, isActionsOpen, isQueueOpen, isPlaylistSelectorOpen]);
+  }, [setActiveDrawer, isActionsOpen, isQueueOpen, isPlaylistSelectorOpen, setPreviewClimb]);
+
+  // Promote the previewed climb onto the board: reuse an existing queue item
+  // when the climb is already queued, otherwise create one. setCurrentClimb
+  // both inserts the item and makes it current, which the BluetoothAutoSender
+  // picks up to light the wall.
+  const handleSendPreviewToBoard = useCallback(async () => {
+    if (!previewClimb || viewOnlyMode) return;
+    const existing = queue.find((item) => item.climb.uuid === previewClimb.uuid);
+    if (existing) {
+      setCurrentClimbQueueItem(existing);
+    } else {
+      await setCurrentClimb(previewClimb);
+    }
+    setPreviewClimb(null);
+    track('Climb Sent From Preview', { climbUuid: previewClimb.uuid });
+  }, [previewClimb, viewOnlyMode, queue, setCurrentClimbQueueItem, setCurrentClimb, setPreviewClimb]);
+
+  // "On board: <name>" pill — flips the drawer back to on-board mode by
+  // clearing the preview state. The drawer re-renders against
+  // currentClimbQueueItem without closing/reopening.
+  const handleJumpToOnBoard = useCallback(() => {
+    setPreviewClimb(null);
+  }, [setPreviewClimb]);
 
   // Compute ascent info for tick FAB badge
   const currentAngle = typeof angle === 'string' ? parseInt(angle, 10) : angle;
   const filteredLogbook = useMemo(() => {
-    if (!logbook || !currentClimb) return [];
-    return logbook.filter((asc) => asc.climb_uuid === currentClimb.uuid && Number(asc.angle) === currentAngle);
-  }, [logbook, currentClimb, currentAngle]);
+    if (!logbook || !displayedClimb) return [];
+    return logbook.filter((asc) => asc.climb_uuid === displayedClimb.uuid && Number(asc.angle) === currentAngle);
+  }, [logbook, displayedClimb, currentAngle]);
 
   const hasSuccessfulAscent = filteredLogbook.some((asc) => asc.is_ascent);
   const ascentCount = filteredLogbook.length;
@@ -547,10 +612,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     setIsTickBarActive(false);
   }, []);
 
-  // Reset tick bar when the climb changes so it doesn't stay open for the wrong climb
+  // Reset tick bar when the displayed climb changes so it doesn't stay open for the wrong climb
   useEffect(() => {
     setIsTickBarActive(false);
-  }, [currentClimb?.uuid]);
+  }, [displayedClimb?.uuid]);
 
   const handleTickBarError = useCallback(() => {
     showMessage("Couldn't save your tick — it's saved as a draft", 'error');
@@ -580,7 +645,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     setIsQueueOpen(true);
   }, []);
 
-  const isMirrored = !!currentClimb?.mirrored;
+  const isMirrored = !!displayedClimb?.mirrored;
 
   // Go to queue from actions drawer
   const handleGoToQueueFromActions = useCallback(() => {
@@ -659,8 +724,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
       setIsQueueOpen(false);
       setIsActionsOpen(false);
       setIsTickBarActive(false);
+      setPreviewClimb(null);
     }
-  }, [isOpen]);
+  }, [isOpen, setPreviewClimb]);
 
   useEffect(() => {
     if (isOpen) {
@@ -686,20 +752,20 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     if (open) setSectionsEverEnabled(true);
   }, []);
 
-  const currentFrames = currentClimb?.frames;
-  const currentMirrored = currentClimb?.mirrored;
+  const displayedFrames = displayedClimb?.frames;
+  const displayedMirrored = displayedClimb?.mirrored;
   useEffect(() => {
-    if (currentClimb) {
+    if (displayedClimb) {
       renderBoard({
         boardDetails,
-        frames: currentClimb.frames,
-        mirrored: !!currentClimb.mirrored,
+        frames: displayedClimb.frames,
+        mirrored: !!displayedClimb.mirrored,
       }).catch((e: unknown) => {
         if (process.env.NODE_ENV === 'development') console.info('Pre-warm render failed:', e);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
-  }, [currentFrames, currentMirrored, boardDetails]);
+  }, [displayedFrames, displayedMirrored, boardDetails]);
 
   const handleBoardPullClose = useCallback(() => {
     setDrawerOpen(false);
@@ -745,36 +811,71 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   }, [boardPull]);
 
   const aboveFold = useMemo(() => {
-    if (!currentClimb) return null;
+    if (!displayedClimb) return null;
     return (
       <>
-        {/* Header: Grade | Name */}
+        {/* Preview-mode "On board: <name>" pill — single tap returns to the
+            on-board climb without closing the drawer. */}
+        {showOnBoardPill && currentClimbQueueItem?.climb && (
+          <div className={styles.onBoardPillRow}>
+            <Chip
+              icon={<LightbulbOutlined sx={{ fontSize: 16 }} />}
+              label={`On board: ${currentClimbQueueItem.climb.name}`}
+              onClick={handleJumpToOnBoard}
+              size="small"
+              sx={{
+                maxWidth: '100%',
+                backgroundColor: themeTokens.colors.primary,
+                color: 'common.white',
+                '& .MuiChip-icon': { color: 'common.white' },
+                '& .MuiChip-label': {
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                },
+              }}
+            />
+          </div>
+        )}
+
+        {/* Header: Grade | Name (with optional "Preview" eyebrow) */}
         <div className={styles.headerSection}>
-          <ClimbDetailHeader climb={currentClimb} />
+          {isPreviewMode && (
+            <div
+              style={{
+                fontSize: themeTokens.typography.fontSize.xs,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--neutral-500)',
+                marginBottom: themeTokens.spacing[1],
+              }}
+            >
+              Preview
+            </div>
+          )}
+          <ClimbDetailHeader climb={displayedClimb} />
         </div>
 
         {/* Board renderer with card-swipe and floating Tick FAB */}
         <div className={styles.boardSectionWrapper}>
-          {currentClimb && (
-            <SwipeBoardCarousel
-              boardDetails={boardDetails}
-              currentClimb={currentClimb}
-              nextClimb={nextItem?.climb}
-              previousClimb={prevItem?.climb}
-              onSwipeNext={handleSwipeNext}
-              onSwipePrevious={handleSwipePrevious}
-              canSwipeNext={canSwipeNext}
-              canSwipePrevious={canSwipePrevious}
-              className={styles.boardSection}
-              boardContainerClassName={styles.swipeCardContainer}
-              fillContainer
-              onDoubleTap={handleDoubleTap}
-              showZoomHint
-              isDrawerOpen={isOpen}
-              onZoomChange={setIsBoardZoomed}
-              overlay={<HeartAnimationOverlay visible={showHeart} onAnimationEnd={dismissHeart} />}
-            />
-          )}
+          <SwipeBoardCarousel
+            boardDetails={boardDetails}
+            currentClimb={displayedClimb}
+            nextClimb={isPreviewMode ? undefined : nextItem?.climb}
+            previousClimb={isPreviewMode ? undefined : prevItem?.climb}
+            onSwipeNext={handleSwipeNext}
+            onSwipePrevious={handleSwipePrevious}
+            canSwipeNext={!isPreviewMode && canSwipeNext}
+            canSwipePrevious={!isPreviewMode && canSwipePrevious}
+            className={styles.boardSection}
+            boardContainerClassName={styles.swipeCardContainer}
+            fillContainer
+            onDoubleTap={handleDoubleTap}
+            showZoomHint
+            isDrawerOpen={isOpen}
+            onZoomChange={setIsBoardZoomed}
+            overlay={<HeartAnimationOverlay visible={showHeart} onAnimationEnd={dismissHeart} />}
+          />
 
           {/* Floating Tick FAB - hides when tick bar is active */}
           {isOpen && (
@@ -801,10 +902,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           )}
 
           {/* Floating tick bar — overlays bottom of board section, no reflow */}
-          {isOpen && currentClimb && (
+          {isOpen && (
             <PlayViewTickBar
               isTickBarActive={isTickBarActive}
-              currentClimb={currentClimb}
+              currentClimb={displayedClimb}
               angle={angle}
               boardDetails={boardDetails}
               onClose={handleTickBarClose}
@@ -813,11 +914,13 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           )}
         </div>
 
-        {/* Action bar */}
+        {/* Action bar — preview mode swaps prev/next + queue badge for a
+            primary "Send to board" button. Mirror, favorite, share, and
+            angle controls stay so the user can prep before sending. */}
         {isOpen && (
           <PlayViewActionBar
-            canSwipePrevious={canSwipePrevious}
-            canSwipeNext={canSwipeNext}
+            canSwipePrevious={!isPreviewMode && canSwipePrevious}
+            canSwipeNext={!isPreviewMode && canSwipeNext}
             isMirrored={isMirrored}
             supportsMirroring={!!boardDetails.supportsMirroring}
             isFavorited={isFavorited}
@@ -828,12 +931,15 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
             onToggleFavorite={toggleFavorite}
             onOpenActions={handleOpenActionsMenu}
             onOpenQueue={handleOpenQueueDrawer}
+            isPreview={isPreviewMode}
+            onSendToBoard={handleSendPreviewToBoard}
+            sendDisabled={viewOnlyMode}
             angleSelector={
               <AngleSelector
                 boardName={boardDetails.board_name}
                 boardDetails={boardDetails}
                 currentAngle={currentAngle}
-                currentClimb={currentClimb}
+                currentClimb={displayedClimb}
                 isAngleAdjustable
               />
             }
@@ -842,7 +948,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
       </>
     );
   }, [
-    currentClimb,
+    displayedClimb,
     boardDetails,
     currentAngle,
     nextItem,
@@ -871,6 +977,12 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     angle,
     handleTickBarClose,
     handleTickBarError,
+    isPreviewMode,
+    showOnBoardPill,
+    currentClimbQueueItem?.climb,
+    handleJumpToOnBoard,
+    handleSendPreviewToBoard,
+    viewOnlyMode,
   ]);
 
   return (
@@ -914,9 +1026,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
             onTouchMove={handleBoardTouchMove}
             onTouchEnd={handleBoardTouchEnd}
           >
-            {currentClimb ? (
+            {displayedClimb ? (
               <PlayDrawerContent
-                climb={currentClimb}
+                climb={displayedClimb}
                 boardType={boardDetails.board_name}
                 angle={currentAngle}
                 sectionsEnabled={sectionsEverEnabled && isOpen}
@@ -928,15 +1040,13 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           </div>
 
           {/* Climb actions drawer */}
-          {isOpen && currentClimb && isActionsOpen && (
+          {isOpen && displayedClimb && isActionsOpen && (
             <SwipeableDrawer
               placement="bottom"
               title={
-                currentClimb ? (
-                  <div data-swipe-blocked="" {...actionsDragHandlers} className={drawerCss.dragHeaderWrapper}>
-                    <DrawerClimbHeader climb={currentClimb} boardDetails={boardDetails} />
-                  </div>
-                ) : undefined
+                <div data-swipe-blocked="" {...actionsDragHandlers} className={drawerCss.dragHeaderWrapper}>
+                  <DrawerClimbHeader climb={displayedClimb} boardDetails={boardDetails} />
+                </div>
               }
               height="60%"
               paperRef={actionsPaperRef}
@@ -953,7 +1063,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
               }}
             >
               <ClimbActions
-                climb={currentClimb}
+                climb={displayedClimb}
                 boardDetails={boardDetails}
                 angle={currentAngle}
                 currentPathname={pathname}
@@ -969,9 +1079,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           )}
 
           {/* Playlist selector drawer */}
-          {isOpen && currentClimb && isPlaylistSelectorOpen && (
+          {isOpen && displayedClimb && isPlaylistSelectorOpen && (
             <SwipeableDrawer
-              title={<DrawerClimbHeader climb={currentClimb} boardDetails={boardDetails} />}
+              title={<DrawerClimbHeader climb={displayedClimb} boardDetails={boardDetails} />}
               placement="bottom"
               open={isPlaylistSelectorOpen}
               onClose={handleClosePlaylist}
@@ -988,7 +1098,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
               }}
             >
               <PlaylistSelectionContent
-                climbUuid={currentClimb.uuid}
+                climbUuid={displayedClimb.uuid}
                 boardDetails={boardDetails}
                 angle={currentAngle}
                 onDone={handleClosePlaylist}

@@ -7,8 +7,11 @@ import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
+import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import { track } from '@vercel/analytics';
 import type { Climb, BoardDetails } from '@/app/lib/types';
+import { usePreviewClimb } from '../queue-control/preview-climb-context';
+import { dispatchOpenPlayDrawer } from '../queue-control/play-drawer-event';
 import ClimbThumbnail from './climb-thumbnail';
 import ClimbTitle, { type ClimbTitleProps } from './climb-title';
 import DrawerClimbHeader from './drawer-climb-header';
@@ -66,16 +69,17 @@ const rightSwipeActionLayerBaseStyle: React.CSSProperties = {
   willChange: 'opacity',
 };
 
-// Static initial styles for action layers — opacity updated via direct DOM manipulation during swipe
+// Static initial styles for action layers — opacity updated via direct DOM manipulation during swipe.
+// Short → swipe = preview (slate info color); long → swipe = add to playlist (primary).
 const shortSwipeLayerInitialStyle: React.CSSProperties = {
   ...swipeActionLayerBaseStyle,
-  backgroundColor: themeTokens.colors.primary,
+  backgroundColor: themeTokens.colors.info,
   opacity: 0,
 };
 
 const longSwipeLayerInitialStyle: React.CSSProperties = {
   ...swipeActionLayerBaseStyle,
-  backgroundColor: themeTokens.neutral[600],
+  backgroundColor: themeTokens.colors.primary,
   opacity: 0,
 };
 
@@ -257,6 +261,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
     // When `selectedOverride` or `disableSelection` is provided, ignore the store value.
     const storeSelected = useIsClimbSelected(climb.uuid);
     const selected = selectedOverride ?? (disableSelection ? false : storeSelected);
+    const { setPreviewClimb } = usePreviewClimb();
     // Check if we're inside a BoardProvider — needed for inline tick bar
     const boardProvider = useOptionalBoardProvider();
     // When parent provides both drawer callbacks or a custom menuSlot, skip local drawers entirely.
@@ -293,8 +298,18 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       track('Add to Queue', { source: 'swipe' });
     }, [climb]);
 
-    // Swipe right short (left action): open playlist selector
+    // Swipe right short (left action): preview the climb in the play drawer
+    // without sending it to the board. The play drawer reads `previewClimb`
+    // from PreviewClimbContext and renders preview-mode UI.
     const handleDefaultSwipeRight = useCallback(() => {
+      setPreviewClimb(climb);
+      dispatchOpenPlayDrawer();
+      track('Climb Preview Opened', { source: 'swipe' });
+    }, [climb, setPreviewClimb]);
+
+    // Swipe right long (left action): open the playlist selector (the
+    // ellipsis actions menu is still reachable via the ⋯ button).
+    const handleDefaultSwipeRightLong = useCallback(() => {
       if (onOpenPlaylistSelector) {
         onOpenPlaylistSelector(climb);
       } else {
@@ -302,16 +317,6 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
         setIsPlaylistSelectorOpen(true);
       }
     }, [onOpenPlaylistSelector, climb]);
-
-    // Swipe right long (left action): open actions menu
-    const handleDefaultSwipeRightLong = useCallback(() => {
-      if (onOpenActions) {
-        onOpenActions(climb);
-      } else {
-        setIsPlaylistSelectorOpen(false);
-        setIsActionsOpen(true);
-      }
-    }, [onOpenActions, climb]);
 
     // Override handler for right swipe action (e.g., tick in queue)
     const handleOverrideSwipeLeft = useCallback(() => {
@@ -548,13 +553,13 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
         <div style={containerStyle}>
           {!disableSwipe && (
             <>
-              {/* Left action (revealed on swipe right) */}
+              {/* Left action (revealed on swipe right): short = preview, long = add to playlist */}
               <div ref={leftActionCombinedRef} style={defaultLeftActionStyle}>
                 <div ref={shortSwipeLayerRef} style={shortSwipeLayerInitialStyle}>
-                  <LocalOfferOutlined style={iconStyle} />
+                  <VisibilityOutlined style={iconStyle} />
                 </div>
                 <div ref={longSwipeLayerRef} style={longSwipeLayerInitialStyle}>
-                  <MoreHorizOutlined style={iconStyle} />
+                  <LocalOfferOutlined style={iconStyle} />
                 </div>
               </div>
 

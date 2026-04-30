@@ -162,13 +162,24 @@ vi.mock('@/app/hooks/use-drawer-drag-resize', () => ({
 vi.mock('@/app/theme/theme-config', () => ({
   themeTokens: {
     spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 16: 64 },
-    colors: { error: '#B8524C', primary: '#8C4A52', success: '#6B9080' },
+    colors: { error: '#B8524C', primary: '#8C4A52', success: '#6B9080', info: '#4A6F8A' },
     neutral: { 200: '#E5E7EB', 400: '#9CA3AF', 500: '#6B7280', 600: '#4B5563' },
     typography: {
       fontSize: { xs: 12, sm: 14, xl: 20, '2xl': 24 },
       fontWeight: { normal: 400, semibold: 600, bold: 700 },
     },
   },
+}));
+
+const mockSetPreviewClimb = vi.fn();
+vi.mock('../../queue-control/preview-climb-context', () => ({
+  usePreviewClimb: () => ({ previewClimb: null, setPreviewClimb: mockSetPreviewClimb }),
+}));
+
+const mockDispatchOpenPlayDrawer = vi.fn();
+vi.mock('../../queue-control/play-drawer-event', () => ({
+  dispatchOpenPlayDrawer: () => mockDispatchOpenPlayDrawer(),
+  PLAY_DRAWER_EVENT: 'boardsesh:open-play-drawer',
 }));
 
 // Default props that every ClimbListItem render needs
@@ -224,6 +235,8 @@ describe('ClimbListItem', () => {
     mockDoubleTapFavorite.dismissHeart = vi.fn();
     mockDoubleTapFavorite.isFavorited = false;
     mockDoubleTapFavorite.toggleFavorite = vi.fn();
+    mockSetPreviewClimb.mockReset();
+    mockDispatchOpenPlayDrawer.mockReset();
   });
 
   describe('basic rendering', () => {
@@ -697,7 +710,24 @@ describe('ClimbListItem', () => {
       expect(addToQueue).toHaveBeenCalledWith(climb);
     });
 
-    it('calls onOpenPlaylistSelector on swipe-right', () => {
+    it('opens preview drawer on short swipe-right', () => {
+      const climb = makeClimb();
+      render(
+        <ClimbListItem
+          pathname={defaultPathname}
+          isDark={defaultIsDark}
+          climb={climb}
+          boardDetails={makeBoardDetails()}
+        />,
+      );
+
+      const swipeRightHandler = capturedSwipeOptions?.onSwipeRight as () => void;
+      swipeRightHandler();
+      expect(mockSetPreviewClimb).toHaveBeenCalledWith(climb);
+      expect(mockDispatchOpenPlayDrawer).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls onOpenPlaylistSelector on long swipe-right', () => {
       const onOpenPlaylistSelector = vi.fn();
       const climb = makeClimb();
       render(
@@ -710,27 +740,9 @@ describe('ClimbListItem', () => {
         />,
       );
 
-      const swipeRightHandler = capturedSwipeOptions?.onSwipeRight as () => void;
-      swipeRightHandler();
-      expect(onOpenPlaylistSelector).toHaveBeenCalledWith(climb);
-    });
-
-    it('calls onOpenActions on long swipe-right', () => {
-      const onOpenActions = vi.fn();
-      const climb = makeClimb();
-      render(
-        <ClimbListItem
-          pathname={defaultPathname}
-          isDark={defaultIsDark}
-          climb={climb}
-          boardDetails={makeBoardDetails()}
-          onOpenActions={onOpenActions}
-        />,
-      );
-
       const swipeRightLongHandler = capturedSwipeOptions?.onSwipeRightLong as () => void;
       swipeRightLongHandler();
-      expect(onOpenActions).toHaveBeenCalledWith(climb);
+      expect(onOpenPlaylistSelector).toHaveBeenCalledWith(climb);
     });
   });
 });

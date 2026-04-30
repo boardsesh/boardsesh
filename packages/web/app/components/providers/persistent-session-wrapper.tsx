@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { PartyProfileProvider } from '../party-manager/party-profile-context';
 import { PersistentSessionProvider, usePersistentSession } from '../persistent-session';
 import { QueueBridgeProvider, useQueueBridgeBoardInfo } from '../queue-control/queue-bridge-context';
+import { PreviewClimbProvider } from '../queue-control/preview-climb-context';
 import { useCurrentClimb, useQueueList } from '../graphql-queue';
 import QueueControlBar from '../queue-control/queue-control-bar';
 import QueueControlBarShell from '../queue-control/queue-control-bar-shell';
@@ -52,19 +53,21 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
     <PartyProfileProvider>
       <PersistentSessionProvider>
         <QueueBridgeProvider>
-          <BoardSwitchConfirmProvider>
-            <SearchDrawerBridgeProvider>
-              <StatsFilterBridgeProvider>
-                <ProfileHeaderShareProvider>
-                  <GlobalHeader boardConfigs={boardConfigs} />
-                  {children}
-                  <RootBottomBar boardConfigs={boardConfigs} />
-                  <RootSessionSummaryDialog />
-                  <RootSeshSettingsDrawer />
-                </ProfileHeaderShareProvider>
-              </StatsFilterBridgeProvider>
-            </SearchDrawerBridgeProvider>
-          </BoardSwitchConfirmProvider>
+          <PreviewClimbProvider>
+            <BoardSwitchConfirmProvider>
+              <SearchDrawerBridgeProvider>
+                <StatsFilterBridgeProvider>
+                  <ProfileHeaderShareProvider>
+                    <GlobalHeader boardConfigs={boardConfigs} />
+                    {children}
+                    <RootBottomBar boardConfigs={boardConfigs} />
+                    <RootSessionSummaryDialog />
+                    <RootSeshSettingsDrawer />
+                  </ProfileHeaderShareProvider>
+                </StatsFilterBridgeProvider>
+              </SearchDrawerBridgeProvider>
+            </BoardSwitchConfirmProvider>
+          </PreviewClimbProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>
     </PartyProfileProvider>
