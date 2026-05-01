@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
-import { DEFAULT_LOCALE, LOCALE_HEADER } from './app/lib/i18n/config';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER, isSupportedLocale } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
 
 const SPECIAL_ROUTES = ['angles', 'grades']; // routes that don't need board validation
@@ -62,6 +62,19 @@ export function middleware(request: NextRequest) {
   const { locale, strippedPath, needsRewrite } = isApi
     ? { locale: DEFAULT_LOCALE, strippedPath: pathname, needsRewrite: false }
     : detectLocale(pathname);
+
+  // If the URL has no locale prefix but the user previously chose a non-default
+  // locale (cookie set by the language switcher), redirect to the prefixed URL.
+  // This makes locale stick across plain `<Link href="/foo">` / `router.push`
+  // calls throughout the app without retrofitting every call site.
+  if (!isApi && !needsRewrite) {
+    const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
+    if (isSupportedLocale(cookieLocale) && cookieLocale !== DEFAULT_LOCALE) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = pathname === '/' ? `/${cookieLocale}` : `/${cookieLocale}${pathname}`;
+      return NextResponse.redirect(redirectUrl, 307);
+    }
+  }
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(LOCALE_HEADER, locale);

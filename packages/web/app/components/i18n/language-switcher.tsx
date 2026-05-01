@@ -10,6 +10,8 @@ import {
   LOCALE_LABELS,
   SUPPORTED_LOCALES,
   DEFAULT_LOCALE,
+  LOCALE_COOKIE,
+  LOCALE_COOKIE_MAX_AGE,
   type Locale,
   isSupportedLocale,
 } from '@/app/lib/i18n/config';
@@ -29,6 +31,9 @@ function LanguageSwitcherInner() {
     if (!isSupportedLocale(next) || next === currentLocale) {
       return;
     }
+    // Persist the choice so subsequent navigation to plain (un-prefixed) paths
+    // gets redirected to the matching localised URL by middleware.
+    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; samesite=lax`;
     const basePath = stripLocalePrefix(pathname, currentLocale);
     const target = localeHref(basePath, next);
     const query = searchParams?.toString();

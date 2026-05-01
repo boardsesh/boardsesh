@@ -47,6 +47,7 @@ import { StoreReviewPromptDialog } from '../feedback/store-review-prompt-dialog'
 import BoardDiscoveryScroll from '../board-scroll/board-discovery-scroll';
 import BoardSelectorDrawer from '../board-selector-drawer/board-selector-drawer';
 import MyBoardsDrawer from '../my-boards-drawer/my-boards-drawer';
+import LanguageSwitcher from '../i18n/language-switcher';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
@@ -464,6 +465,10 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
 
             {/* Spacer to push toggle to bottom */}
             <div className={styles.bottomSpacer} />
+
+            <div className={styles.languageSwitcherContainer}>
+              <LanguageSwitcher />
+            </div>
 
             {/* Sun/Moon toggle */}
             <div className={styles.themeToggleContainer}>
