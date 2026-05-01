@@ -482,16 +482,14 @@ const config: CapacitorConfig = {
       style: 'dark',
       backgroundColor: '#121212',
     },
-    Keyboard: {
-      // Use 'native' so Android resizes the WebView itself (matching mobile
-      // Chrome's visualViewport behavior). 'body' injects inline styles on
-      // <body>, which fights with @capacitor-community/safe-area's inset
-      // handling. With 'native', existing 100dvh / 100% layouts (e.g. the
-      // climb-name filter drawer with placement="top" fullHeight) shrink to
-      // fit above the keyboard with no web-side changes.
-      resize: 'native',
-      resizeOnFullScreen: true,
-    },
+    // NOTE: Do not install @capacitor/keyboard or set a Keyboard plugin
+    // config here. @capacitor-community/safe-area handles soft-keyboard
+    // layout itself (it pads the WebView decorView by `imeInsets.bottom`
+    // when the IME is visible, for Chromium >= 140 with viewport-fit=cover)
+    // and the safe-area plugin source explicitly logs an error if
+    // `Keyboard.resizeOnFullScreen: true` is set. An attempt to add it
+    // anyway (PR #1796, reverted) made layout behavior worse on Android
+    // 15+/EdgeToEdge devices.
     SplashScreen: {
       launchAutoHide: true,
       androidScaleType: 'CENTER_CROP',

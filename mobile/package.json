@@ -19,7 +19,6 @@
     "@capacitor/core": "^8",
     "@capacitor/geolocation": "8.1.0",
     "@capacitor/ios": "^8",
-    "@capacitor/keyboard": "^8",
     "@capacitor/motion": "^8"
   },
   "devDependencies": {

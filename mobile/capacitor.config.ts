@@ -23,13 +23,6 @@ const config: CapacitorConfig = {
     SystemBars: {
       insetsHandling: 'disable',
     },
-    // Resize the Android WebView when the soft keyboard opens so 100dvh/100%
-    // layouts (e.g. the climb-name filter drawer) shrink to fit above it,
-    // matching how mobile Chrome behaves natively.
-    Keyboard: {
-      resize: 'native',
-      resizeOnFullScreen: true,
-    },
   },
 };
 
