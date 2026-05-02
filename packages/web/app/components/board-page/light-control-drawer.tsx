@@ -190,8 +190,15 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
       setPartyMode('off');
       return;
     }
-    const result = await clearBoard();
-    if (result === false) {
+    try {
+      const success = await clearBoard();
+      if (!success) {
+        showMessage(t('lightControl.clearFailed'), 'error');
+      }
+    } catch (error) {
+      // sendFramesToBoard normally catches BLE errors and returns false,
+      // but a disconnect mid-write can still surface a rejected promise.
+      console.error('Failed to clear board lights:', error);
       showMessage(t('lightControl.clearFailed'), 'error');
     }
   };
