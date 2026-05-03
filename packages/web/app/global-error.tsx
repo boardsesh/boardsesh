@@ -2,14 +2,17 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useEffect, useState } from 'react';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/app/lib/i18n/config';
 
 // This is a Next.js root error boundary that renders when the root layout itself
 // fails. It lives outside the normal provider tree, so we can't rely on
 // I18nProvider here. Instead we read the locale prefix off the URL on the
 // client and look up copy from this small inline map. The same strings are
 // mirrored in `errors.json#globalError.*` for nested error boundaries that DO
-// have access to i18n — keep them in sync.
-const COPY = {
+// have access to i18n — keep them in sync. The `Record<Locale, ...>` type
+// guarantees a TS error when a new locale is added to SUPPORTED_LOCALES
+// without a matching entry here.
+const COPY: Record<Locale, { htmlLang: string; title: string; subtitle: string; reload: string }> = {
   'en-US': {
     htmlLang: 'en',
     title: 'Something went wrong',
@@ -22,15 +25,23 @@ const COPY = {
     subtitle: 'Recarga para volver a la pared',
     reload: 'Recargar',
   },
-} as const;
-
-type Locale = keyof typeof COPY;
+  fr: {
+    htmlLang: 'fr',
+    title: "Quelque chose s'est mal passé",
+    subtitle: 'Essayez de recharger pour repartir du bon pied',
+    reload: "Recharger l'app",
+  },
+};
 
 function detectLocale(): Locale {
-  if (typeof window === 'undefined') return 'en-US';
+  if (typeof window === 'undefined') return DEFAULT_LOCALE;
   const { pathname } = window.location;
-  if (pathname === '/es' || pathname.startsWith('/es/')) return 'es';
-  return 'en-US';
+  for (const locale of SUPPORTED_LOCALES) {
+    if (locale === DEFAULT_LOCALE) continue;
+    const prefix = `/${locale}`;
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return locale;
+  }
+  return DEFAULT_LOCALE;
 }
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {

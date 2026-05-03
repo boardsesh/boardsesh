@@ -49,10 +49,28 @@ describe('GlobalError detectLocale', () => {
     expect(container.textContent).toContain('Algo salió mal');
   });
 
+  it('renders French copy on /fr', () => {
+    const { container } = renderAt('/fr');
+    expect(container.textContent).toContain("Quelque chose s'est mal passé");
+    expect(container.textContent).toContain('Essayez de recharger pour repartir du bon pied');
+    expect(container.textContent).toContain("Recharger l'app");
+  });
+
+  it('renders French copy on /fr/<path>', () => {
+    const { container } = renderAt('/fr/help/foo');
+    expect(container.textContent).toContain("Quelque chose s'est mal passé");
+  });
+
   it('does not match paths that merely start with the locale string (/espoo)', () => {
     const { container } = renderAt('/espoo');
     expect(container.textContent).toContain('Something went wrong');
     expect(container.textContent).not.toContain('Algo salió mal');
+  });
+
+  it('does not match paths that merely start with /fr (/fragile)', () => {
+    const { container } = renderAt('/fragile');
+    expect(container.textContent).toContain('Something went wrong');
+    expect(container.textContent).not.toContain("Quelque chose s'est mal passé");
   });
 
   it('reports the error to Sentry on mount', () => {
