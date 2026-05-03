@@ -117,7 +117,7 @@ describe('useLongPress', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
-  it('cancels when the pointer drags past the movement threshold', () => {
+  it('does not cancel when movement is exactly at the threshold (boundary)', () => {
     const callback = vi.fn();
     const { result } = renderHook(() => useLongPress(callback, { thresholdMs: 500, moveThresholdPx: 10 }));
 
@@ -130,14 +130,15 @@ describe('useLongPress', () => {
       element.dispatchEvent(createPointerEvent('pointerdown', { clientX: 100, clientY: 100 }));
     });
     act(() => {
-      // hypot(8, 6) === 10 — at the threshold but not past it
+      // hypot(8, 6) === 10 — the hook uses strict `>`, so exactly at the
+      // threshold should NOT cancel.
       element.dispatchEvent(createPointerEvent('pointermove', { clientX: 108, clientY: 106 }));
       vi.advanceTimersByTime(500);
     });
     expect(callback).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels when the pointer drags past the movement threshold (jitter past 10px)', () => {
+  it('cancels when the pointer drags past the movement threshold', () => {
     const callback = vi.fn();
     const { result } = renderHook(() => useLongPress(callback, { thresholdMs: 500, moveThresholdPx: 10 }));
 

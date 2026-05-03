@@ -225,6 +225,23 @@ describe('LightControlDrawer', () => {
       expect(showMessageMock).toHaveBeenCalledWith('lightControl.clearFailed', 'error');
     });
 
+    it('shows the failure snackbar when clearBoard returns undefined (early-bail)', async () => {
+      // sendFramesToBoard returns `undefined` (not `false`) when the BLE
+      // adapter or boardDetails is missing — handleClearAll must treat that
+      // as a failure too, otherwise the user gets no feedback.
+      mockPartyActive = false;
+      clearBoardMock.mockResolvedValueOnce(undefined);
+
+      render(<LightControlDrawer open={true} onClose={vi.fn()} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('lightControl.turnOffAll'));
+        await Promise.resolve();
+      });
+
+      expect(showMessageMock).toHaveBeenCalledWith('lightControl.clearFailed', 'error');
+    });
+
     it('catches thrown BLE errors and shows the failure snackbar', async () => {
       mockPartyActive = false;
       clearBoardMock.mockRejectedValueOnce(new Error('GATT disconnect'));

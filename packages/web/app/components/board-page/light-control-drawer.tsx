@@ -196,8 +196,9 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
         showMessage(t('lightControl.clearFailed'), 'error');
       }
     } catch (error) {
-      // sendFramesToBoard normally catches BLE errors and returns false,
-      // but a disconnect mid-write can still surface a rejected promise.
+      // clearBoard's underlying BLE write usually has its own try/catch and
+      // returns false on failure, but a disconnect mid-write can still
+      // surface here as a rejected promise.
       console.error('Failed to clear board lights:', error);
       showMessage(t('lightControl.clearFailed'), 'error');
     }
