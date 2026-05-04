@@ -31,9 +31,13 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@': resolve(__dirname, '.'),
-      '@/app': resolve(__dirname, './app'),
-    },
+    // Order matters: more-specific prefixes first so `@/lib/...` doesn't get
+    // captured by the bare `@` alias and resolved against the package root.
+    alias: [
+      { find: '@/app', replacement: resolve(__dirname, './app') },
+      { find: '@/lib', replacement: resolve(__dirname, './app/lib') },
+      { find: '@/c', replacement: resolve(__dirname, './app/components') },
+      { find: '@', replacement: resolve(__dirname, '.') },
+    ],
   },
 });

@@ -54,6 +54,8 @@ The `@boardsesh/aurora-sync` package provides a shared sync implementation that 
 
 ### Tables Synced
 
+#### Per-user sync (`@boardsesh/aurora-sync`, runs on each user's credentials)
+
 | Aurora Table | Local Table                        | Dual Write                 |
 | ------------ | ---------------------------------- | -------------------------- |
 | users        | kilter_users / tension_users       | -                          |
@@ -63,6 +65,43 @@ The `@boardsesh/aurora-sync` package provides a shared sync implementation that 
 | tags         | kilter_tags / tension_tags         | -                          |
 | circuits     | kilter_circuits / tension_circuits | playlists, playlist_climbs |
 | draft_climbs | kilter_climbs / tension_climbs     | -                          |
+
+#### Shared sync (Vercel cron, `/api/internal/shared-sync/[board_name]`)
+
+Driven by `packages/web/app/lib/data-sync/aurora/shared-sync.ts`. Hits Aurora's
+`/sync` endpoint on a per-board service token (no user credentials), upserts
+hardware and content tables that all users see.
+
+| Aurora Table                | Local Table (unified)          | Notes                                              |
+| --------------------------- | ------------------------------ | -------------------------------------------------- |
+| products                    | board_products                 | Parent of size/layout/role/hole tables             |
+| sets                        | board_sets                     | -                                                  |
+| product_sizes               | board_product_sizes            | FK → board_products                                |
+| holes                       | board_holes                    | FK → board_products                                |
+| layouts                     | board_layouts                  | FK → board_products                                |
+| placement_roles             | board_placement_roles          | FK → board_products                                |
+| leds                        | board_leds                     | FK → board_product_sizes, board_holes              |
+| product_sizes_layouts_sets  | board_product_sizes_layouts_sets | FK → board_product_sizes, board_layouts, board_sets |
+| climbs                      | board_climbs                   | -                                                  |
+| climb_stats                 | board_climb_stats              | -                                                  |
+| beta_links                  | board_beta_links               | -                                                  |
+| attempts                    | board_attempts                 | -                                                  |
+
+**Iteration order:** the Aurora API request still uses `SHARED_SYNC_TABLES`
+(matches the Android app's order to stay indistinguishable), but upserts run
+in `PROCESSING_ORDER` (FK-safe) so a fresh sync can populate parents before
+children. Drizzle multi-row `INSERT … ON CONFLICT (board_type, id) DO UPDATE
+SET … = excluded.…` is used in batches of 100.
+
+**Known gaps** (in `SHARED_SYNC_TABLES` but not processed today):
+
+- `placements` — `board_placements` schema exists but there is no `Placement`
+  Aurora API type, and Aurora's `SyncDataPUT` does not include placements.
+- `products_angles` — API type exists but no `board_products_angles` schema.
+- `kits` — neither type nor schema.
+
+If Aurora ever ships rows for one of these and we start seeing FK errors,
+add an upsert + schema alongside the others.
 
 ## CLI Usage
 

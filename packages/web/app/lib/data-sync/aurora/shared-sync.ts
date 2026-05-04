@@ -8,6 +8,14 @@ import type {
   BetaLink,
   Climb,
   ClimbStats,
+  Hole,
+  Layout,
+  Led,
+  PlacementRole,
+  Product,
+  ProductSize,
+  ProductSizesLayoutsSet,
+  Set as AuroraSet,
   SharedSync,
   SyncPutFields,
 } from '../../api-wrappers/sync-api-types';
@@ -43,8 +51,321 @@ export const SHARED_SYNC_TABLES: string[] = [
   'kits',
 ];
 
-// Tables we actually want to process and store
-const TABLES_TO_PROCESS = new Set(['climbs', 'climb_stats', 'beta_links', 'attempts', 'shared_syncs']);
+// Tables we actually want to process and store, in FK-safe upsert order.
+// SHARED_SYNC_TABLES matches the Android app's request order for indistinguishability,
+// but that order is not FK-safe — e.g. `product_sizes_layouts_sets` appears before
+// `sets` even though the former FKs to the latter. Iterate this list in the upsert
+// loop instead. The Aurora API request still uses SHARED_SYNC_TABLES.
+//
+// Out of scope here:
+// - `products_angles` and `kits`: no `board_*` schema to write to.
+// - `placements`: schema exists but `Placement` has no Aurora API type, and the API's
+//   SyncDataPUT does not include placements rows.
+export const PROCESSING_ORDER: string[] = [
+  'products',
+  'sets',
+  'product_sizes',
+  'holes',
+  'layouts',
+  'placement_roles',
+  'leds',
+  'product_sizes_layouts_sets',
+  'climbs',
+  'climb_stats',
+  'beta_links',
+  'attempts',
+];
+
+const TABLES_TO_PROCESS = new Set([...PROCESSING_ORDER, 'shared_syncs']);
+
+const SHARED_BATCH_SIZE = 100;
+
+async function processBatches<T>(
+  data: T[],
+  batchSize: number,
+  processor: (batch: T[]) => Promise<unknown>,
+): Promise<void> {
+  for (let i = 0; i < data.length; i += batchSize) {
+    await processor(data.slice(i, i + batchSize));
+  }
+}
+
+// First-row shape assertion — catches gross misuse (e.g. Aurora returning the wrong
+// shape under a known key, or a mistyped cast) before we hit the DB. Cheap, no Zod dep.
+export function expectArrayShape(data: readonly unknown[], requiredKeys: readonly string[], tableName: string): void {
+  if (data.length === 0) return;
+  const first = data[0] as Record<string, unknown>;
+  const missing = requiredKeys.filter((key) => !(key in first));
+  if (missing.length > 0) {
+    throw new Error(
+      `shared-sync: ${tableName} payload missing required key(s) [${missing.join(', ')}]; got keys [${Object.keys(first).join(', ')}]`,
+    );
+  }
+}
+
+async function upsertProducts(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: Product[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.products;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      name: item.name,
+      isListed: Boolean(item.is_listed),
+      password: item.password,
+      minCountInFrame: Number(item.min_count_in_frame),
+      maxCountInFrame: Number(item.max_count_in_frame),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          name: sql`excluded.name`,
+          isListed: sql`excluded.is_listed`,
+          password: sql`excluded.password`,
+          minCountInFrame: sql`excluded.min_count_in_frame`,
+          maxCountInFrame: sql`excluded.max_count_in_frame`,
+        },
+      });
+  });
+}
+
+async function upsertSets(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: AuroraSet[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.sets;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      name: item.name,
+      hsm: Number(item.hsm),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          name: sql`excluded.name`,
+          hsm: sql`excluded.hsm`,
+        },
+      });
+  });
+}
+
+async function upsertHoles(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: Hole[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.holes;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productId: Number(item.product_id),
+      name: item.name,
+      x: Number(item.x),
+      y: Number(item.y),
+      mirroredHoleId: item.mirrored_hole_id != null ? Number(item.mirrored_hole_id) : null,
+      mirrorGroup: Number(item.mirror_group),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productId: sql`excluded.product_id`,
+          name: sql`excluded.name`,
+          x: sql`excluded.x`,
+          y: sql`excluded.y`,
+          mirroredHoleId: sql`excluded.mirrored_hole_id`,
+          mirrorGroup: sql`excluded.mirror_group`,
+        },
+      });
+  });
+}
+
+async function upsertLayouts(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: Layout[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.layouts;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productId: Number(item.product_id),
+      name: item.name,
+      instagramCaption: item.instagram_caption,
+      isMirrored: Boolean(item.is_mirrored),
+      isListed: Boolean(item.is_listed),
+      password: item.password,
+      createdAt: item.created_at,
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productId: sql`excluded.product_id`,
+          name: sql`excluded.name`,
+          instagramCaption: sql`excluded.instagram_caption`,
+          isMirrored: sql`excluded.is_mirrored`,
+          isListed: sql`excluded.is_listed`,
+          password: sql`excluded.password`,
+          createdAt: sql`excluded.created_at`,
+        },
+      });
+  });
+}
+
+async function upsertPlacementRoles(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: PlacementRole[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.placementRoles;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productId: Number(item.product_id),
+      position: Number(item.position),
+      name: item.name,
+      fullName: item.full_name,
+      ledColor: item.led_color,
+      screenColor: item.screen_color,
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productId: sql`excluded.product_id`,
+          position: sql`excluded.position`,
+          name: sql`excluded.name`,
+          fullName: sql`excluded.full_name`,
+          ledColor: sql`excluded.led_color`,
+          screenColor: sql`excluded.screen_color`,
+        },
+      });
+  });
+}
+
+async function upsertLeds(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: Led[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.leds;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productSizeId: Number(item.product_size_id),
+      holeId: Number(item.hole_id),
+      position: Number(item.position),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productSizeId: sql`excluded.product_size_id`,
+          holeId: sql`excluded.hole_id`,
+          position: sql`excluded.position`,
+        },
+      });
+  });
+}
+
+async function upsertProductSizesLayoutsSets(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: ProductSizesLayoutsSet[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.productSizesLayoutsSets;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productSizeId: Number(item.product_size_id),
+      layoutId: Number(item.layout_id),
+      setId: Number(item.set_id),
+      imageFilename: item.image_filename,
+      isListed: Boolean(item.is_listed),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productSizeId: sql`excluded.product_size_id`,
+          layoutId: sql`excluded.layout_id`,
+          setId: sql`excluded.set_id`,
+          imageFilename: sql`excluded.image_filename`,
+          isListed: sql`excluded.is_listed`,
+        },
+      });
+  });
+}
+
+async function upsertProductSizes(
+  db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
+  board: AuroraBoardName,
+  data: ProductSize[],
+): Promise<void> {
+  const schema = UNIFIED_TABLES.productSizes;
+  await processBatches(data, SHARED_BATCH_SIZE, async (batch) => {
+    const rows = batch.map((item) => ({
+      boardType: board,
+      id: Number(item.id),
+      productId: Number(item.product_id),
+      edgeLeft: Number(item.edge_left),
+      edgeRight: Number(item.edge_right),
+      edgeBottom: Number(item.edge_bottom),
+      edgeTop: Number(item.edge_top),
+      name: item.name,
+      description: item.description,
+      imageFilename: item.image_filename,
+      position: Number(item.position),
+      isListed: Boolean(item.is_listed),
+    }));
+    await db
+      .insert(schema)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [schema.boardType, schema.id],
+        set: {
+          productId: sql`excluded.product_id`,
+          edgeLeft: sql`excluded.edge_left`,
+          edgeRight: sql`excluded.edge_right`,
+          edgeBottom: sql`excluded.edge_bottom`,
+          edgeTop: sql`excluded.edge_top`,
+          name: sql`excluded.name`,
+          description: sql`excluded.description`,
+          imageFilename: sql`excluded.image_filename`,
+          position: sql`excluded.position`,
+          isListed: sql`excluded.is_listed`,
+        },
+      });
+  });
+}
 
 const upsertAttempts = (
   db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
@@ -268,7 +589,7 @@ async function upsertClimbs(
     }));
 }
 
-async function upsertSharedTableData(
+export async function upsertSharedTableData(
   db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
   boardName: AuroraBoardName,
   tableName: string,
@@ -277,6 +598,50 @@ async function upsertSharedTableData(
   switch (tableName) {
     case 'attempts':
       await upsertAttempts(db, boardName, data as Attempt[]);
+      return [];
+    case 'products':
+      expectArrayShape(data, ['id', 'name', 'is_listed', 'min_count_in_frame', 'max_count_in_frame'], 'products');
+      await upsertProducts(db, boardName, data as Product[]);
+      return [];
+    case 'sets':
+      expectArrayShape(data, ['id', 'name', 'hsm'], 'sets');
+      await upsertSets(db, boardName, data as AuroraSet[]);
+      return [];
+    case 'product_sizes':
+      expectArrayShape(
+        data,
+        ['id', 'product_id', 'edge_left', 'edge_right', 'edge_bottom', 'edge_top', 'name', 'is_listed'],
+        'product_sizes',
+      );
+      await upsertProductSizes(db, boardName, data as ProductSize[]);
+      return [];
+    case 'holes':
+      expectArrayShape(data, ['id', 'product_id', 'name', 'x', 'y', 'mirror_group'], 'holes');
+      await upsertHoles(db, boardName, data as Hole[]);
+      return [];
+    case 'layouts':
+      expectArrayShape(data, ['id', 'product_id', 'name', 'is_mirrored', 'is_listed'], 'layouts');
+      await upsertLayouts(db, boardName, data as Layout[]);
+      return [];
+    case 'placement_roles':
+      expectArrayShape(
+        data,
+        ['id', 'product_id', 'position', 'name', 'full_name', 'led_color', 'screen_color'],
+        'placement_roles',
+      );
+      await upsertPlacementRoles(db, boardName, data as PlacementRole[]);
+      return [];
+    case 'leds':
+      expectArrayShape(data, ['id', 'product_size_id', 'hole_id', 'position'], 'leds');
+      await upsertLeds(db, boardName, data as Led[]);
+      return [];
+    case 'product_sizes_layouts_sets':
+      expectArrayShape(
+        data,
+        ['id', 'product_size_id', 'layout_id', 'set_id', 'is_listed'],
+        'product_sizes_layouts_sets',
+      );
+      await upsertProductSizesLayoutsSets(db, boardName, data as ProductSizesLayoutsSet[]);
       return [];
     case 'climb_stats':
       await upsertClimbStats(db, boardName, data as ClimbStats[]);
@@ -370,30 +735,33 @@ export async function syncSharedData(
     // Process this batch in a transaction
     const db = getDb();
     await db.transaction(async (tx) => {
-      // Process each table - data is directly under table names
+      // Upsert in FK-safe PROCESSING_ORDER, not SHARED_SYNC_TABLES (request) order.
+      for (const tableName of PROCESSING_ORDER) {
+        const data = syncResults[tableName];
+        if (!Array.isArray(data)) continue;
+        console.info(`Syncing ${tableName}: ${data.length} records`);
+        const newClimbs = await upsertSharedTableData(tx, board, tableName, data);
+        allNewClimbs.push(...newClimbs);
+        if (!totalResults[tableName]) {
+          totalResults[tableName] = { synced: 0, complete: false };
+        }
+        totalResults[tableName].synced += data.length;
+      }
+
+      // Track every table the API responded with — including ones we don't process —
+      // so totalResults stays comparable across runs and skipped tables are visible.
       for (const tableName of SHARED_SYNC_TABLES) {
-        if (syncResults[tableName] && Array.isArray(syncResults[tableName])) {
-          const data = syncResults[tableName];
-
-          // Only process tables we actually care about
-          if (TABLES_TO_PROCESS.has(tableName)) {
-            console.info(`Syncing ${tableName}: ${data.length} records`);
-            const newClimbs = await upsertSharedTableData(tx, board, tableName, data);
-            allNewClimbs.push(...newClimbs);
-
-            // Accumulate results
-            if (!totalResults[tableName]) {
-              totalResults[tableName] = { synced: 0, complete: false };
-            }
-            totalResults[tableName].synced += data.length;
-          } else {
-            console.info(`Skipping ${tableName}: ${data.length} records (not processed)`);
-            // Still track in results but don't sync
-            if (!totalResults[tableName]) {
-              totalResults[tableName] = { synced: 0, complete: false };
-            }
+        const data = syncResults[tableName];
+        if (TABLES_TO_PROCESS.has(tableName)) {
+          if (!totalResults[tableName]) {
+            totalResults[tableName] = { synced: 0, complete: false };
           }
-        } else if (!totalResults[tableName]) {
+          continue;
+        }
+        if (Array.isArray(data)) {
+          console.info(`Skipping ${tableName}: ${data.length} records (not processed)`);
+        }
+        if (!totalResults[tableName]) {
           totalResults[tableName] = { synced: 0, complete: false };
         }
       }
