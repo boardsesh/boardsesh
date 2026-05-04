@@ -102,6 +102,24 @@ jobs:
           echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode \
             > ~/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
 
+      - name: Set marketing version from latest App Store release
+        working-directory: mobile/ios/App
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_APP_ID: ${{ vars.APP_STORE_APP_ID }}
+          PBXPROJ_PATH: ${{ github.workspace }}/mobile/ios/App/App.xcodeproj/project.pbxproj
+        run: |
+          if [ -z "$APP_STORE_APP_ID" ]; then
+            echo "APP_STORE_APP_ID repo variable is not set; skipping marketing version bump."
+            echo "Set it under repo Settings -> Secrets and variables -> Actions -> Variables."
+            exit 0
+          fi
+          export APP_STORE_CONNECT_API_KEY_PATH="$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          MARKETING_VERSION_NEXT=$(node "$GITHUB_WORKSPACE/mobile/scripts/next-ios-marketing-version.mjs")
+          agvtool new-marketing-version "$MARKETING_VERSION_NEXT"
+          echo "Marketing version set to $MARKETING_VERSION_NEXT"
+
       - name: Archive
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}

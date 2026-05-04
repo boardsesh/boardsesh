@@ -63,11 +63,21 @@ jobs:
         working-directory: mobile
         run: bunx cap sync android
 
-      - name: Set version code
+      - name: Set version code and version name
         working-directory: mobile/android
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          BUILD_GRADLE_PATH: ${{ github.workspace }}/mobile/android/app/build.gradle
         run: |
           sed -Ei "s/^([[:space:]]*)versionCode[[:space:]]*=.*$/\\1versionCode = ${{ github.run_number }}/" app/build.gradle
           echo "Version code set to ${{ github.run_number }}"
+          if [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            VERSION_NAME_NEXT=$(node "$GITHUB_WORKSPACE/mobile/scripts/next-android-version-name.mjs")
+            sed -Ei "s/^([[:space:]]*)versionName[[:space:]]*=.*$/\\1versionName = \"$VERSION_NAME_NEXT\"/" app/build.gradle
+            echo "Version name set to $VERSION_NAME_NEXT"
+          else
+            echo "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not set; leaving versionName unchanged."
+          fi
 
       - name: Build debug APK
         working-directory: mobile/android
