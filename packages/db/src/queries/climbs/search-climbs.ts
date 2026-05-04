@@ -68,21 +68,18 @@ export const searchClimbs = async (
   const sortOrder = searchParams.sortOrder === 'asc' ? 'asc' : 'desc';
   const isDraftsQuery = !!searchParams.onlyDrafts;
 
-  // For the default hot path (ascents DESC with stats filters active), drive from
-  // board_climb_stats so PostgreSQL reads the covering index in sorted order and
-  // stops after pageSize+1 qualifying rows — avoids scanning all 15K+ matching
-  // climbs just to sort and take 21.
+  // For ascents DESC (the default landing page sort), drive FROM board_climb_stats
+  // so PostgreSQL reads board_climb_stats_ascents_covering_idx in sorted order and
+  // stops after pageSize+1 qualifying rows. The LEFT JOIN alternative materializes
+  // the full join result and sorts it, which under concurrent load exhausts
+  // /dev/shm via parallel hash join + sort workers (each allocates a 16MB shared
+  // memory segment) and produces "could not resize shared memory segment" errors.
   //
-  // Only safe when stats filters are active (e.g., minAscents >= 1) because the
-  // INNER JOIN excludes climbs without stats rows. When stats filters are active,
-  // those climbs would be excluded by the WHERE clause anyway (NULL fails >= 1),
-  // making LEFT JOIN and INNER JOIN equivalent.
-  // When no stats filters are active, fall through to the LEFT JOIN path.
-  const hasStatsFilters = filters.getClimbStatsConditions().length > 0;
-  // projectsOnly includes climbs with NO stats row (ascents NULL), so the INNER-JOIN
-  // stats-driven path would drop exactly the climbs we want. Force the LEFT-JOIN path.
-  const useStatsDriven =
-    sortBy === 'ascents' && sortOrder === 'desc' && !isDraftsQuery && hasStatsFilters && !searchParams.projectsOnly;
+  // Climbs without a board_climb_stats row would only appear after every climb
+  // with any ascent (NULLS LAST), i.e. far past the first paginated page. Trading
+  // that long-tail visibility for an index-only plan is the right call for the
+  // hot path. Other sort orders, drafts, and projectsOnly still use the LEFT JOIN.
+  const useStatsDriven = sortBy === 'ascents' && sortOrder === 'desc' && !isDraftsQuery && !searchParams.projectsOnly;
 
   if (useStatsDriven) {
     return statsDrivenSearch(db, params, filters, page, pageSize);
@@ -93,12 +90,14 @@ export const searchClimbs = async (
 
 /**
  * Stats-driven search: FROM board_climb_stats INNER JOIN board_climbs.
- * PostgreSQL reads the stats covering index in ascensionist_count DESC order
- * and stops after pageSize+1 qualifying rows.
+ * PostgreSQL reads board_climb_stats_ascents_covering_idx in ascensionist_count
+ * DESC order and stops after pageSize+1 qualifying rows.
  *
- * Only used when stats filters are active (checked by caller), so the INNER JOIN
- * is equivalent to LEFT JOIN — climbs without stats would be excluded by stats
- * filters (e.g., minAscents >= 1) in the WHERE clause anyway.
+ * Trade-off vs LEFT JOIN: climbs that have no board_climb_stats row for the
+ * given (board_type, angle) are dropped. They would only appear after every
+ * climb that has any ascent (NULLS LAST) and so are unreachable through normal
+ * pagination anyway. The benefit is no Sort/Gather node, no /dev/shm pressure
+ * under concurrent load.
  *
  * All climb filters (including personal progress like hideCompleted) are in
  * the WHERE clause — not the JOIN ON — so they apply correctly to the result set.
