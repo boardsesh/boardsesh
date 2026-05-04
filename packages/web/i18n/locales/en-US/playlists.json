@@ -23,7 +23,10 @@
     },
     "empty": {
       "title": "No playlists yet",
-      "description": "Create your first playlist by adding climbs from the climb list."
+      "description": "Tap the + button to line up your first set of climbs."
+    },
+    "createFab": {
+      "ariaLabel": "Create playlist"
     },
     "errors": {
       "loadTitle": "Unable to Load Library",

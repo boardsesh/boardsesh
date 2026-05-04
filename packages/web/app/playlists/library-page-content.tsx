@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import MuiButton from '@mui/material/Button';
+import Fab from '@mui/material/Fab';
 import Typography from '@mui/material/Typography';
-import { LabelOutlined, LoginOutlined, SentimentDissatisfiedOutlined } from '@mui/icons-material';
+import { AddOutlined, LabelOutlined, LoginOutlined, SentimentDissatisfiedOutlined } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
@@ -24,13 +25,24 @@ import { useQueueBridgeBoardInfo } from '@/app/components/queue-control/queue-br
 import { constructBoardSlugPlaylistsUrl } from '@/app/lib/url-utils';
 import { findMatchingBoard } from '@/app/lib/find-matching-board';
 import { deriveIsAuthenticated } from '@/app/lib/derive-auth-status';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
+import { themeTokens } from '@/app/theme/theme-config';
+import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import PlaylistCardGrid from '@/app/components/library/playlist-card-grid';
 import PlaylistScrollSection from '@/app/components/library/playlist-scroll-section';
 import PlaylistCard from '@/app/components/library/playlist-card';
 import BoardFilterStrip from '@/app/components/board-scroll/board-filter-strip';
+import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
+import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
+import CreatePlaylistDrawer from '@/app/components/library/create-playlist-drawer';
 import styles from '@/app/components/library/library.module.css';
+
+type CreateBoardContext = {
+  boardName: string;
+  layoutId: number;
+  angle: number;
+};
 
 type LibraryPageContentProps = {
   /** When set, the page was rendered from a board route and this board is pre-selected. */
@@ -252,6 +264,62 @@ export default function LibraryPageContent({
     [boardSlug, playlistsBasePath, router],
   );
 
+  // Create-playlist FAB flow
+  const [createBoardContext, setCreateBoardContext] = useState<CreateBoardContext | null>(null);
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [isBoardPickerOpen, setIsBoardPickerOpen] = useState(false);
+  const [isBoardPickerRendered, setIsBoardPickerRendered] = useState(false);
+
+  const handleCreatePlaylistClick = useCallback(() => {
+    if (selectedBoard) {
+      setCreateBoardContext({
+        boardName: selectedBoard.boardType,
+        layoutId: selectedBoard.layoutId,
+        angle: selectedBoard.angle,
+      });
+      setIsCreateDrawerOpen(true);
+      return;
+    }
+    setIsBoardPickerRendered(true);
+    setIsBoardPickerOpen(true);
+  }, [selectedBoard]);
+
+  const handlePickerBoardClick = useCallback((board: UserBoard) => {
+    setCreateBoardContext({
+      boardName: board.boardType,
+      layoutId: board.layoutId,
+      angle: board.angle,
+    });
+    setIsBoardPickerOpen(false);
+    setIsCreateDrawerOpen(true);
+  }, []);
+
+  const handlePickerConfigClick = useCallback((config: PopularBoardConfig) => {
+    setCreateBoardContext({
+      boardName: config.boardType,
+      layoutId: config.layoutId,
+      angle: getDefaultAngleForBoard(config.boardType),
+    });
+    setIsBoardPickerOpen(false);
+    setIsCreateDrawerOpen(true);
+  }, []);
+
+  const handlePickerCustomClick = useCallback(() => {
+    // The custom-board flow lives elsewhere (board selector drawer); close the picker.
+    setIsBoardPickerOpen(false);
+  }, []);
+
+  const handlePickerTransitionEnd = useCallback((open: boolean) => {
+    if (!open) setIsBoardPickerRendered(false);
+  }, []);
+
+  const handlePlaylistCreated = useCallback(
+    (playlist: Playlist) => {
+      router.push(getPlaylistUrl(playlist.uuid));
+    },
+    [router, getPlaylistUrl],
+  );
+
   // Error state (only for authenticated users with fetch errors)
   if (isAuthenticated && error) {
     return (
@@ -375,6 +443,53 @@ export default function LibraryPageContent({
             />
           ))}
         </PlaylistScrollSection>
+      )}
+
+      {/* Create Playlist FAB (authenticated users only) */}
+      {isAuthenticated && (
+        <Fab
+          color="primary"
+          aria-label={t('library.createFab.ariaLabel')}
+          onClick={handleCreatePlaylistClick}
+          sx={{
+            position: 'fixed',
+            right: themeTokens.spacing[4],
+            bottom: `calc(var(--tab-bar-safe-area-padding, 0px) + 88px)`,
+            zIndex: 1000,
+          }}
+        >
+          <AddOutlined />
+        </Fab>
+      )}
+
+      {/* Board picker drawer (only when no board is filter-selected) */}
+      {isBoardPickerRendered && (
+        <SwipeableDrawer
+          title={t('common:boardSelector.title')}
+          placement="bottom"
+          open={isBoardPickerOpen}
+          onClose={() => setIsBoardPickerOpen(false)}
+          onTransitionEnd={handlePickerTransitionEnd}
+        >
+          <BoardDiscoveryScroll
+            onBoardClick={handlePickerBoardClick}
+            onConfigClick={handlePickerConfigClick}
+            onCustomClick={handlePickerCustomClick}
+          />
+        </SwipeableDrawer>
+      )}
+
+      {/* Create Playlist Drawer */}
+      {createBoardContext && (
+        <CreatePlaylistDrawer
+          open={isCreateDrawerOpen}
+          onClose={() => setIsCreateDrawerOpen(false)}
+          boardName={createBoardContext.boardName}
+          layoutId={createBoardContext.layoutId}
+          angle={createBoardContext.angle}
+          source="discover-fab"
+          onCreated={handlePlaylistCreated}
+        />
       )}
     </>
   );
