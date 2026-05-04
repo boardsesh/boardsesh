@@ -60,7 +60,7 @@
     "d3-scale": "^4.0.2",
     "dayjs": "^1.11.19",
     "dotenv": "^17.3.1",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "^0.45.2",
     "emoji-mart": "^5.6.0",
     "flags": "^4.0.5",
     "formik": "^2.4.9",
