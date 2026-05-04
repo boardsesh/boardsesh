@@ -1,16 +1,7 @@
-[build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile.backend"
-watchPaths = [
-  "packages/backend/**",
-  "packages/shared-schema/**",
-  "packages/crypto/**",
-  "packages/db/**",
-  "packages/aurora-sync/**",
-  "package.json",
-  "bun.lock",
-  "Dockerfile.backend",
-]
+# The backend image is built and published by .github/workflows/backend-deploy.yml
+# to ghcr.io/boardsesh/boardsesh-daemon:production. Configure the Railway service
+# to pull that image (Service Settings → Source → Docker Image). Don't add a
+# [build] section here — it would put Railway back in charge of building.
 
 [deploy]
 healthcheckPath = "/health"
