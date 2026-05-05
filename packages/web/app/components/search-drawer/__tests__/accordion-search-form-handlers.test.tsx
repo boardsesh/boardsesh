@@ -39,7 +39,7 @@ vi.mock('../setter-name-select', () => ({
   default: () => null,
 }));
 
-vi.mock('../climb-hold-search-form', () => ({
+vi.mock('../climb-board-search-form', () => ({
   default: () => null,
 }));
 
@@ -47,8 +47,7 @@ vi.mock('../search-summary-utils', () => ({
   getQualityPanelSummary: () => '',
   getStatusPanelSummary: () => '',
   getUserPanelSummary: () => '',
-  getHoldsPanelSummary: () => '',
-  getZonePanelSummary: () => '',
+  getBoardFiltersPanelSummary: () => '',
 }));
 
 import AccordionSearchForm from '../accordion-search-form';

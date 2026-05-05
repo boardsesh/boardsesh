@@ -139,6 +139,8 @@
       "holds": "Holds",
       "holdsTitle": "Search by Hold",
       "zone": "Zone",
+      "boardFilters": "Board",
+      "boardFiltersTitle": "Filter by Hold and Zone",
       "anyDefault": "Any",
       "allClimbs": "All climbs"
     },

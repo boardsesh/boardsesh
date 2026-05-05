@@ -19,8 +19,7 @@ import { useUISearchParams } from '@/app/components/queue-control/ui-searchparam
 import { useBoardProvider } from '@/app/components/board-provider/board-provider-context';
 import SearchClimbNameInput from './search-climb-name-input';
 import SetterNameSelect from './setter-name-select';
-import ClimbHoldSearchForm from './climb-hold-search-form';
-import ClimbZoneSearchForm from './climb-zone-search-form';
+import ClimbBoardSearchForm from './climb-board-search-form';
 import type { BoardDetails } from '@/app/lib/types';
 import { buildGradeRangeUpdate } from './grade-range-utils';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
@@ -28,8 +27,7 @@ import {
   getQualityPanelSummary,
   getStatusPanelSummary,
   getUserPanelSummary,
-  getHoldsPanelSummary,
-  getZonePanelSummary,
+  getBoardFiltersPanelSummary,
 } from './search-summary-utils';
 import CollapsibleSection, {
   type CollapsibleSectionConfig,
@@ -484,28 +482,15 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
       ),
     },
     {
-      key: 'holds',
-      label: 'Holds',
-      title: 'Search by Hold',
-      defaultSummary: 'Any',
-      getSummary: () => getHoldsPanelSummary(uiSearchParams),
-      lazy: true,
-      content: (
-        <div className={styles.holdSearchContainer}>
-          <ClimbHoldSearchForm boardDetails={boardDetails} />
-        </div>
-      ),
-    },
-    {
-      key: 'zone',
-      label: t('search.panels.zone'),
-      title: t('search.panels.zone'),
+      key: 'board',
+      label: t('search.panels.boardFilters'),
+      title: t('search.panels.boardFiltersTitle'),
       defaultSummary: t('search.panels.anyDefault'),
-      getSummary: () => getZonePanelSummary(uiSearchParams, t('search.panels.zone')),
+      getSummary: () => getBoardFiltersPanelSummary(uiSearchParams, t('search.panels.zone')),
       lazy: true,
       content: (
         <div className={styles.holdSearchContainer}>
-          <ClimbZoneSearchForm boardDetails={boardDetails} />
+          <ClimbBoardSearchForm boardDetails={boardDetails} />
         </div>
       ),
     },

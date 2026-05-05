@@ -132,18 +132,31 @@
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  /* The BoardRenderer is the underlay; SearchHoldFilterOverlay and the
-     heatmap overlay are positioned absolutely on top, so we need this
+  /* aspect-ratio is set inline from the board's intrinsic dimensions so the
+     ZoomableBoard wrapper has a real height to fill. The BoardRenderer is
+     the underlay; SearchHoldFilterOverlay, the heatmap overlay, and the
+     zone overlay are positioned absolutely on top, so we need this
      container to be the positioning ancestor. */
   position: relative;
 }
 
-.zoneSvg {
+.zoomFill {
+  position: relative;
   width: 100%;
-  height: auto;
-  max-height: 55vh;
-  /* Disable browser pan/zoom so pointer drag works smoothly on touch */
-  touch-action: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zoneOverlaySvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Children opt back in to pointer events; the svg itself is click-through
+     so unconstrained taps reach the BoardRenderer hold targets underneath. */
+  pointer-events: none;
 }
 
 /* Search Results Footer Styles */

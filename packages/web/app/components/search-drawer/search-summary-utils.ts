@@ -118,6 +118,10 @@ export function getZonePanelSummary(params: SearchRequestPagination, label: stri
   return params.zoneBox ? [label] : [];
 }
 
+export function getBoardFiltersPanelSummary(params: SearchRequestPagination, zoneLabel: string): string[] {
+  return [...getHoldsPanelSummary(params), ...getZonePanelSummary(params, zoneLabel)];
+}
+
 /**
  * Pre-translated labels used by the search-pill summary helpers.
  * Pass these in from the React layer where i18n is available.

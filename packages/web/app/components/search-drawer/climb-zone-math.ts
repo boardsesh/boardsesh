@@ -56,13 +56,7 @@ export function clampZoneBox(box: ZoneBox, edges: BoardEdges): ZoneBox {
  * grid-axis pairs as follows: visually-upper-Y = larger `edgeTop`,
  * visually-lower-Y = smaller `edgeBottom`.
  */
-export function applyDrag(
-  startBox: ZoneBox,
-  mode: DragMode,
-  dx: number,
-  dy: number,
-  edges: BoardEdges,
-): ZoneBox {
+export function applyDrag(startBox: ZoneBox, mode: DragMode, dx: number, dy: number, edges: BoardEdges): ZoneBox {
   if (mode === 'move') {
     const widthGrid = startBox.edgeRight - startBox.edgeLeft;
     const heightGrid = startBox.edgeTop - startBox.edgeBottom;
