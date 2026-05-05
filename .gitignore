@@ -14,6 +14,10 @@ packages/web/e2e/screenshots/
 
 # next.js
 .next/
+# Per-port distDir created by dev-orchestrator when running multiple
+# `vp run dev` instances side-by-side (each gets its own build cache and
+# next-dev lock).
+.next-*/
 out/
 
 # production

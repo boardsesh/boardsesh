@@ -7,6 +7,10 @@ const withVercelToolbar = createWithVercelToolbar();
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Honour NEXT_DIST_DIR so the dev orchestrator can give each parallel
+  // `vp run dev` instance its own build cache + next-dev lock; falls back to
+  // the canonical `.next` when the env var is unset (every other context).
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   typescript: {
     // ignoreBuildErrors: true,
   },

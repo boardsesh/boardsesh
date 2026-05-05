@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { createConnection, createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
@@ -60,6 +60,40 @@ const processes: { backend: ProcessRef; web: ProcessRef } = {
 };
 
 let backendHealthy = false;
+
+// When we run a non-default distDir, Next.js writes the new path into
+// packages/web/tsconfig.json's `include` array on first compile. That file
+// is checked in, so the side effect would dirty the working tree on every
+// parallel-dev start. Snapshot the original bytes here and restore on
+// shutdown so the pollution stays scoped to the running process.
+type TsconfigSnapshot = { path: string; content: string };
+let tsconfigSnapshot: TsconfigSnapshot | null = null;
+
+function snapshotTsconfig(): void {
+  const path = join(ROOT_DIR, 'packages/web/tsconfig.json');
+  try {
+    tsconfigSnapshot = { path, content: readFileSync(path, 'utf8') };
+  } catch (error) {
+    console.warn(
+      '[dev] Could not snapshot packages/web/tsconfig.json — Next.js may leave per-port paths behind:',
+      error,
+    );
+  }
+}
+
+function restoreTsconfig(): void {
+  if (!tsconfigSnapshot) return;
+  const { path, content } = tsconfigSnapshot;
+  try {
+    const current = readFileSync(path, 'utf8');
+    if (current !== content) {
+      writeFileSync(path, content);
+      console.info('[dev] Reverted packages/web/tsconfig.json (Next.js had auto-added per-port type paths)');
+    }
+  } catch (error) {
+    console.warn('[dev] Could not restore packages/web/tsconfig.json:', error);
+  }
+}
 
 function parseCliOptions(args: string[]): CliOptions {
   let qaNotesFilePath: string | null = null;
@@ -475,6 +509,16 @@ function startWeb(
 ): ReturnType<typeof spawn> {
   console.info(`[dev] Starting web on port ${port}...`);
 
+  // Each parallel dev instance needs its own distDir; otherwise `next dev`
+  // refuses to start with "Unable to acquire lock at .next/dev/lock". The
+  // canonical `.next` is reserved for the default-port instance so existing
+  // tooling (vercel deploys, debuggers attached to .next/...) keeps working;
+  // any auto-incremented or explicit non-default port gets `.next-<port>`.
+  const distDir = port === DEFAULT_WEB_PORT ? undefined : `.next-${port}`;
+  if (distDir) {
+    console.info(`[dev] Using distDir ${distDir} (per-port to avoid next-dev lock collision)`);
+  }
+
   const webProcess = spawn('bun', ['run', 'dev'], {
     cwd: join(ROOT_DIR, 'packages/web'),
     stdio: ['inherit', 'inherit', 'inherit'],
@@ -486,6 +530,7 @@ function startWeb(
       ...(devBuildMetadata.branchName ? { BOARDSESH_DEV_BRANCH_NAME: devBuildMetadata.branchName } : {}),
       ...(devBuildMetadata.qaNotes ? { BOARDSESH_DEV_QA_NOTES: devBuildMetadata.qaNotes } : {}),
       ...(devBuildMetadata.qaNotesFilePath ? { BOARDSESH_DEV_QA_NOTES_FILE: devBuildMetadata.qaNotesFilePath } : {}),
+      ...(distDir ? { NEXT_DIST_DIR: distDir } : {}),
       ...(tls
         ? {
             DEV_HTTPS_CERT_FILE: tls.certFile,
@@ -539,6 +584,11 @@ async function shutdown() {
   if (processes.web.process && !processes.web.process.killed) {
     processes.web.process.kill('SIGKILL');
   }
+
+  // Best-effort revert of any tsconfig.json edits Next.js made for our
+  // per-port distDir. Skipped if the orchestrator is SIGKILL'd; users can
+  // recover with `git checkout -- packages/web/tsconfig.json`.
+  restoreTsconfig();
 
   process.exit(0);
 }
@@ -596,6 +646,13 @@ async function main(): Promise<void> {
     console.info(`[dev] QA notes: ${devBuildMetadata.qaNotesFilePath}`);
   }
   console.info();
+
+  // Only snapshot tsconfig if we're going to use a per-port distDir; the
+  // canonical-port instance lets Next manage `.next/types` in tsconfig as
+  // it always has.
+  if (webPort !== DEFAULT_WEB_PORT) {
+    snapshotTsconfig();
+  }
 
   processes.backend.process = startBackend(backendPort, tls, devDbEnv);
 
