@@ -12,7 +12,7 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import DynamicFeedOutlined from '@mui/icons-material/DynamicFeedOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import {
   constructClimbListWithSlugs,

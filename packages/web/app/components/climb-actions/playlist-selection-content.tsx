@@ -11,7 +11,7 @@ import ListItem from '@mui/material/ListItem';
 import Stack from '@mui/material/Stack';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { usePlaylists } from './use-playlists';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import type { Playlist } from './playlists-batch-context';

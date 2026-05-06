@@ -7,7 +7,7 @@ import Badge from '@mui/material/Badge';
 import MuiButton from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import { DeleteOutlined } from '@mui/icons-material';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useTranslation } from 'react-i18next';
 import type { BoardDetails } from '@/app/lib/types';
 import dynamic from 'next/dynamic';

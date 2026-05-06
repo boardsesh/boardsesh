@@ -2,7 +2,7 @@
 
 import React, { useCallback } from 'react';
 import AppsOutlined from '@mui/icons-material/AppsOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
 import { buildActionResult, buildUnavailableResult, computeActionDisplay } from '../action-view-renderer';

@@ -32,7 +32,7 @@ vi.mock('@/app/components/providers/auth-modal-provider', () => ({
   useAuthModal: () => ({ openAuthModal: mockOpenAuthModal }),
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

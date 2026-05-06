@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import MuiButton from '@mui/material/Button';
 import { useSearchParams } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import type { Climb, BoardDetails, Angle } from '@/app/lib/types';

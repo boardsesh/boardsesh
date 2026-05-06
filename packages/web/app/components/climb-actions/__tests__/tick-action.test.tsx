@@ -116,7 +116,7 @@ vi.mock('@/app/hooks/use-always-tick-in-app', () => ({
 }));
 
 const mockTrack = vi.fn();
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: (...args: unknown[]) => mockTrack(...args),
 }));
 

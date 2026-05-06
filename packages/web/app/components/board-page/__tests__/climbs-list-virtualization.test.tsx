@@ -16,7 +16,7 @@ vi.mock('@/app/hooks/use-is-dark-mode', () => ({
   useIsDarkMode: () => false,
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

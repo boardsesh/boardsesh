@@ -34,7 +34,7 @@ vi.mock('../../board-provider/board-provider-context', () => ({
   }),
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

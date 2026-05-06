@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useQueueActions } from '../graphql-queue';
 import { useFavorite } from './use-favorite';
 import { constructCreateClimbUrl, constructClimbInfoUrl, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';

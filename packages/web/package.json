@@ -77,6 +77,7 @@
     "next-auth": "^4.24.13",
     "nodemailer": "^8.0.1",
     "pg": "^8.19.0",
+    "posthog-js-lite": "^4.0.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -89,6 +90,7 @@
     "undici": "^7.22.0",
     "use-debounce": "^10.1.0",
     "uuid": "^13.0.0",
+    "web-vitals": "^4.2.4",
     "ws": "^8.19.0",
     "yup": "^1.7.1",
     "zod": "^4.3.6"

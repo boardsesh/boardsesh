@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const mockTrack = vi.fn();
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: (...args: unknown[]) => mockTrack(...args),
 }));
 

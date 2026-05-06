@@ -40,7 +40,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

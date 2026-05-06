@@ -13,7 +13,7 @@ import Stack from '@mui/material/Stack';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import LoginOutlined from '@mui/icons-material/LoginOutlined';
 import AppsOutlined from '@mui/icons-material/AppsOutlined';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { LogAscentDrawer } from './log-ascent-drawer';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';

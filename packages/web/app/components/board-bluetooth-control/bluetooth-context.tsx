@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'next/navigation';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useBoardBluetooth } from './use-board-bluetooth';
 import { useCurrentClimb } from '../graphql-queue';

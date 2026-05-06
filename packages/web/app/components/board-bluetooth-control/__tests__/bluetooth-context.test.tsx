@@ -15,7 +15,7 @@ vi.mock('react-i18next', () => ({
 
 // Mock dependencies before importing the module
 const mockTrack = vi.fn();
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: (...args: unknown[]) => mockTrack(...args),
 }));
 

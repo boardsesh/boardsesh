@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import MuiButton from '@mui/material/Button';
 import MuiTypography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';

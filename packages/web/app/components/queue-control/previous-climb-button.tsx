@@ -8,7 +8,7 @@ import { useQueueActions, useSessionData } from '../graphql-queue';
 import { constructPlayUrlWithSlugs, getContextAwareClimbViewUrl } from '@/app/lib/url-utils';
 import type { BoardDetails } from '@/app/lib/types';
 import { useResolvedBoardDetails } from '@/app/hooks/use-resolved-board-details';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import FastRewindOutlined from '@mui/icons-material/FastRewindOutlined';
 import IconButton, { type IconButtonProps } from '@mui/material/IconButton';
 

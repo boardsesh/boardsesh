@@ -35,7 +35,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/kilter/1/1/1/40/list',
 }));
 
-vi.mock('@vercel/analytics', () => ({
+vi.mock('@/app/lib/analytics', () => ({
   track: vi.fn(),
 }));
 

@@ -3,7 +3,7 @@
 import React, { useCallback } from 'react';
 import FavoriteBorderOutlined from '@mui/icons-material/FavoriteBorderOutlined';
 import Favorite from '@mui/icons-material/Favorite';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { useTranslation } from 'react-i18next';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useFavorite } from '../use-favorite';

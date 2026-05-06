@@ -26,7 +26,7 @@ import InstagramIcon from '@mui/icons-material/Instagram';
 import LinkOutlined from '@mui/icons-material/LinkOutlined';
 import dynamic from 'next/dynamic';
 import { formatTickRelativeTime } from '@/app/lib/format-tick-time';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { AscentFeedItem } from '@/app/lib/graphql/operations/ticks';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { useOptionalQueueActions } from '@/app/components/graphql-queue';

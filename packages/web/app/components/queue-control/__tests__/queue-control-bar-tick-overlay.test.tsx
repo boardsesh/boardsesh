@@ -73,7 +73,7 @@ vi.mock('next/link', () => ({
     React.createElement('a', props, children),
 }));
 
-vi.mock('@vercel/analytics', () => ({ track: vi.fn() }));
+vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
 
 vi.mock('@/app/hooks/use-card-swipe-navigation', () => ({
   useCardSwipeNavigation: () => ({

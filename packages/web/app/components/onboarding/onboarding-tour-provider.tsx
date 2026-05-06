@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import { clearTourProgress, getTourProgress, saveOnboardingStatus, saveTourProgress } from '@/app/lib/onboarding-db';
 import { PLAY_DRAWER_EVENT } from '@/app/components/queue-control/play-drawer-event';
 import { dispatchClimbListSwipeHintReplay } from '@/app/components/board-page/swipe-hint-orchestrator';

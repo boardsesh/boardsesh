@@ -9,7 +9,7 @@ import MenuItem from '@mui/material/MenuItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import { FavoriteOutlined, SentimentDissatisfiedOutlined, MoreVertOutlined, AddOutlined } from '@mui/icons-material';
-import { track } from '@vercel/analytics';
+import { track } from '@/app/lib/analytics';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import { executeGraphQL } from '@/app/lib/graphql/client';
 import {
