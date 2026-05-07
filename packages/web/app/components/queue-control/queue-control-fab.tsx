@@ -271,7 +271,13 @@ const QueueControlFab: React.FC<QueueControlFabProps> = ({
           on the wrapper because the snackbar is opaque — no backdrop-filter
           children for the transformed-ancestor containing-block to break. */}
       {snackbarMounted && (
-        <div className={styles.peekSnackbarAnchor}>
+        // `style` is used (rather than sx) purely to bridge SMALL_FAB_SIZE
+        // into the stylesheet as --small-fab-size, so the anchor's bottom
+        // calc stays in sync with the JS constant instead of hardcoding it.
+        <div
+          className={styles.peekSnackbarAnchor}
+          style={{ ['--small-fab-size' as string]: `${SMALL_FAB_SIZE}px` } as React.CSSProperties}
+        >
           <Box
             role="status"
             aria-live="polite"

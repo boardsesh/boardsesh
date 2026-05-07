@@ -158,13 +158,15 @@
   right: 0;
   /* Anchored above the small-FAB row + gap. Same expanded-state bottom as
      the FAB cluster (--bottom-tab-bar-height + safe-area + --spacing-2),
-     stacked with the small-FAB row (46px = SMALL_FAB_SIZE in
-     queue-control-fab.tsx) and a --spacing-3 visual gap above it.
-     Collapse follows via --fab-collapse-offset (translateY) — compositor-
-     only, and safe here because the snackbar is opaque (no backdrop-filter
-     children to break). */
+     stacked with the small-FAB row (--small-fab-size, set inline from
+     SMALL_FAB_SIZE in queue-control-fab.tsx so this stays in sync) and a
+     --spacing-3 visual gap above it. Collapse follows via
+     --fab-collapse-offset (translateY) — compositor-only, and safe here
+     because the snackbar is opaque (no backdrop-filter children to
+     break). */
   bottom: calc(
-    var(--bottom-tab-bar-height) + env(safe-area-inset-bottom, 0px) + var(--spacing-2) + 46px + var(--spacing-3)
+    var(--bottom-tab-bar-height) + env(safe-area-inset-bottom, 0px) + var(--spacing-2) + var(--small-fab-size, 46px) +
+      var(--spacing-3)
   );
   z-index: 8;
   display: flex;
@@ -255,6 +257,9 @@
   .peekSnackbarAnchor {
     transform: none;
     transition: none;
+    /* Without `will-change: auto` we'd keep the GPU layer promoted for
+       users who explicitly opted out of motion — pointless cost. */
+    will-change: auto;
   }
 
   .peekSnackbar {

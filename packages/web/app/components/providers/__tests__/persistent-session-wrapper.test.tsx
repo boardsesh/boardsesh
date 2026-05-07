@@ -12,6 +12,15 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
+// Capacitor utils are mocked so each test can dial the runtime platform
+// without poking window.Capacitor.
+let mockIsNativeApp = false;
+let mockPlatform: 'ios' | 'android' | 'web' = 'web';
+vi.mock('@/app/lib/ble/capacitor-utils', () => ({
+  isNativeApp: () => mockIsNativeApp,
+  getPlatform: () => mockPlatform,
+}));
+
 let mockPathname = '/';
 let mockQueueBridgeBoardInfo = {
   boardDetails: null as Record<string, unknown> | null,
@@ -132,6 +141,8 @@ describe('RootBottomBar', () => {
       queue: [],
       currentClimb: null,
     };
+    mockIsNativeApp = false;
+    mockPlatform = 'web';
   });
 
   it('renders the empty queue shell on board routes before queue bridge hydration completes', () => {
@@ -210,6 +221,43 @@ describe('RootBottomBar', () => {
     expect(screen.queryByTestId('queue-control-bar')).toBeNull();
     expect(screen.queryByTestId('queue-control-bar-shell')).toBeNull();
     expect(screen.getByTestId('bottom-tab-bar')).toBeTruthy();
+  });
+
+  // Platform-specific safe-area class. iOS gets `iosNativeApp` so the pill
+  // drops flush with the bottom of the screen and nests into the iPhone's
+  // curved corners; Android keeps the `nativeApp` lift only because gesture-
+  // nav clearance varies more.
+  it('applies the iosNativeApp class only on iOS native', () => {
+    mockIsNativeApp = true;
+    mockPlatform = 'ios';
+
+    render(<RootBottomBar boardConfigs={mockBoardConfigs} />);
+
+    const wrapper = screen.getByTestId('bottom-bar-wrapper');
+    expect(wrapper.className).toMatch(/nativeApp/);
+    expect(wrapper.className).toMatch(/iosNativeApp/);
+  });
+
+  it('does not apply the iosNativeApp class on Android native', () => {
+    mockIsNativeApp = true;
+    mockPlatform = 'android';
+
+    render(<RootBottomBar boardConfigs={mockBoardConfigs} />);
+
+    const wrapper = screen.getByTestId('bottom-bar-wrapper');
+    expect(wrapper.className).toMatch(/nativeApp/);
+    expect(wrapper.className).not.toMatch(/iosNativeApp/);
+  });
+
+  it('does not apply native or iosNativeApp classes on web', () => {
+    mockIsNativeApp = false;
+    mockPlatform = 'web';
+
+    render(<RootBottomBar boardConfigs={mockBoardConfigs} />);
+
+    const wrapper = screen.getByTestId('bottom-bar-wrapper');
+    expect(wrapper.className).not.toMatch(/nativeApp/);
+    expect(wrapper.className).not.toMatch(/iosNativeApp/);
   });
 });
 
