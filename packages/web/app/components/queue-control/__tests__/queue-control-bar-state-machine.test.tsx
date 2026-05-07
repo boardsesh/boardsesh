@@ -36,6 +36,7 @@ vi.mock('@/app/components/graphql-queue', () => ({
     currentClimb: mockQueueContext.currentClimb,
   }),
   useCurrentClimbUuid: () => (mockQueueContext.currentClimb as { uuid?: string } | undefined)?.uuid ?? null,
+  useRemoteClimbChangeCount: () => (mockQueueContext.remoteClimbChangeCount as number | undefined) ?? 0,
   useQueueList: () => ({
     queue: mockQueueContext.queue,
     suggestedClimbs: [],
@@ -477,24 +478,27 @@ describe('QueueControlBar layout state machine', () => {
     expect(getFabCluster()?.getAttribute('aria-hidden')).toBe('false');
   });
 
-  it('peeks the snackbar when the current climb uuid changes while minimised', async () => {
+  it('peeks the snackbar when a remote climb change arrives while minimised', async () => {
     vi.useFakeTimers();
     try {
       const { rerender } = render(<QueueControlBar {...defaultProps} />);
       await act(async () => {});
 
-      // No snackbar at first mount — initialUuidRef is set on first run.
+      // No snackbar at first mount — lastPeekedCountRef is captured on
+      // first run so the initial counter doesn't trigger a peek.
       expect(document.querySelector('[class*="peekSnackbar"]')).toBeNull();
 
-      // Swap the current climb to trigger the peek path. The bar is
-      // wrapped in React.memo, so we have to rotate the prop reference
-      // to force a re-render with the new mocked climb.
+      // Bump the remote-change counter (simulates a remote
+      // DELTA_UPDATE_CURRENT_CLIMB applying through the reducer). The
+      // bar is wrapped in React.memo, so rotate the prop reference to
+      // force a re-render that picks up the new context value.
       const nextClimb = { ...mockClimb, uuid: 'climb-2', name: 'Different Climb' };
       mockQueueContext = {
         ...baseQueueContext,
         queue: [{ uuid: 'item-2', climb: nextClimb, addedBy: 'user-1', suggested: false }],
         currentClimbQueueItem: { uuid: 'item-2', climb: nextClimb, addedBy: 'user-1', suggested: false },
         currentClimb: nextClimb,
+        remoteClimbChangeCount: 1,
       };
       await act(async () => {
         rerender(<QueueControlBar {...propsWithFreshRef(defaultProps)} />);
@@ -505,13 +509,22 @@ describe('QueueControlBar layout state machine', () => {
       expect(snackbar).toBeTruthy();
       expect(snackbar?.textContent).toMatch(/Different Climb/);
 
-      // After the 3s peek window the bar returns to minimised. That
-      // triggers the snackbar's separate 200ms exit timer (registered
-      // in a fresh effect after the layoutState change), so we need
-      // a second advance to let that fire too.
+      // The peek is now sticky — no auto-dismiss timer. Advance way
+      // past the old 3s window and confirm it's still up.
       await act(async () => {
-        vi.advanceTimersByTime(3100);
+        vi.advanceTimersByTime(10_000);
       });
+      expect(document.querySelector('[class*="peekSnackbar"]')).toBeTruthy();
+
+      // After the 300ms grace window, a user interaction dismisses it.
+      await act(async () => {
+        vi.advanceTimersByTime(350);
+      });
+      await act(async () => {
+        document.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      });
+      // Snackbar exit animation is gated by an additional ~200ms unmount
+      // delay in the FAB component — give it time to finish.
       await act(async () => {
         vi.advanceTimersByTime(300);
       });
@@ -521,7 +534,28 @@ describe('QueueControlBar layout state machine', () => {
     }
   });
 
-  it('queues a peek when the climb changes while expanded and fires it on collapse', async () => {
+  it('does not peek for local-only climb changes (counter unchanged)', async () => {
+    const { rerender } = render(<QueueControlBar {...defaultProps} />);
+    await act(async () => {});
+
+    // Swap the current climb without bumping remoteClimbChangeCount —
+    // simulates a local user-initiated change. The peek must NOT fire.
+    const nextClimb = { ...mockClimb, uuid: 'climb-local', name: 'Local Climb' };
+    mockQueueContext = {
+      ...baseQueueContext,
+      queue: [{ uuid: 'item-local', climb: nextClimb, addedBy: 'user-1', suggested: false }],
+      currentClimbQueueItem: { uuid: 'item-local', climb: nextClimb, addedBy: 'user-1', suggested: false },
+      currentClimb: nextClimb,
+      // remoteClimbChangeCount unchanged (still 0)
+    };
+    await act(async () => {
+      rerender(<QueueControlBar {...propsWithFreshRef(defaultProps)} />);
+    });
+
+    expect(document.querySelector('[class*="peekSnackbar"]')).toBeNull();
+  });
+
+  it('queues a peek when a remote change arrives while expanded and fires it on collapse', async () => {
     // Party-mode scenario: user has the tick drawer open (bar expanded)
     // when another participant advances the queue. The peek must be
     // deferred until the drawer closes — otherwise the climb-change
@@ -538,15 +572,16 @@ describe('QueueControlBar layout state machine', () => {
       expect(screen.getByTestId('quick-tick-bar')).toBeTruthy();
       expect(getFabCluster()?.getAttribute('aria-hidden')).toBe('true');
 
-      // Climb changes while drawer is open. Snackbar must NOT appear
-      // yet — the peek effect early-returns because layoutState is
-      // 'expanded'.
+      // Remote change arrives while drawer is open. Snackbar must NOT
+      // appear yet — the trigger effect early-returns because
+      // layoutState is 'expanded'.
       const nextClimb = { ...mockClimb, uuid: 'climb-99', name: 'Party Climb' };
       mockQueueContext = {
         ...baseQueueContext,
         queue: [{ uuid: 'item-99', climb: nextClimb, addedBy: 'user-1', suggested: false }],
         currentClimbQueueItem: { uuid: 'item-99', climb: nextClimb, addedBy: 'user-1', suggested: false },
         currentClimb: nextClimb,
+        remoteClimbChangeCount: 1,
       };
       await act(async () => {
         rerender(<QueueControlBar {...propsWithFreshRef(defaultProps)} />);
@@ -554,8 +589,8 @@ describe('QueueControlBar layout state machine', () => {
       expect(document.querySelector('[class*="peekSnackbar"]')).toBeNull();
 
       // Close the drawer via the tick overlay (production close path).
-      // Bar collapses to minimised → peek effect re-runs because
-      // layoutState changed → fires the queued peek for the latest uuid.
+      // Bar collapses to minimised → trigger effect re-runs because
+      // layoutState changed → fires the queued peek for the latest climb.
       const overlay = document.querySelector('[data-testid="tick-backdrop-overlay"]') as HTMLElement | null;
       expect(overlay).toBeTruthy();
       await act(async () => {

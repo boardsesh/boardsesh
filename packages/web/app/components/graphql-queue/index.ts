@@ -18,6 +18,7 @@ export {
   useCurrentClimb,
   useOptionalCurrentClimb,
   useCurrentClimbUuid,
+  useRemoteClimbChangeCount,
   useQueueList,
   useSearchData,
   useSessionData,
@@ -25,6 +26,7 @@ export {
   // Fine-grained context objects
   CurrentClimbContext,
   CurrentClimbUuidContext,
+  RemoteClimbChangeCountContext,
   QueueListContext,
   SearchContext,
   SessionContext,

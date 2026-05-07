@@ -63,6 +63,7 @@ const initialState: QueueState = {
   lastReceivedSequence: null,
   lastReceivedStateHash: null,
   needsResync: false,
+  remoteClimbChangeCount: 0,
 };
 
 describe('queueReducer', () => {
@@ -1226,6 +1227,135 @@ describe('queueReducer', () => {
 
       expect(state4.currentClimbQueueItem).toEqual(itemC);
       expect(state4.pendingCurrentClimbUpdates).toHaveLength(0);
+    });
+  });
+
+  describe('DELTA_UPDATE_CURRENT_CLIMB - remoteClimbChangeCount', () => {
+    it('starts at 0', () => {
+      expect(initialState.remoteClimbChangeCount).toBe(0);
+    });
+
+    it('does not increment for local dispatch (no isServerEvent)', () => {
+      const action: QueueAction = {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: mockClimbQueueItem, shouldAddToQueue: false },
+      };
+      const result = queueReducer(initialState, action);
+      expect(result.remoteClimbChangeCount).toBe(0);
+    });
+
+    it('increments for non-echo remote dispatch with non-null item', () => {
+      const action: QueueAction = {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: mockClimbQueueItem,
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          eventClientId: 'other-client',
+          myClientId: 'me',
+        },
+      };
+      const result = queueReducer(initialState, action);
+      expect(result.remoteClimbChangeCount).toBe(1);
+    });
+
+    it('does not increment for an echoed remote (correlation match)', () => {
+      const stateWithPending: QueueState = {
+        ...initialState,
+        pendingCurrentClimbUpdates: ['corr-1'],
+      };
+      const action: QueueAction = {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: mockClimbQueueItem,
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          serverCorrelationId: 'corr-1',
+        },
+      };
+      const result = queueReducer(stateWithPending, action);
+      expect(result.remoteClimbChangeCount).toBe(0);
+    });
+
+    it('does not increment for an echoed remote (own clientId)', () => {
+      const action: QueueAction = {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: mockClimbQueueItem,
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          eventClientId: 'me',
+          myClientId: 'me',
+        },
+      };
+      const result = queueReducer(initialState, action);
+      expect(result.remoteClimbChangeCount).toBe(0);
+    });
+
+    it('does not increment for a remote clear (item: null)', () => {
+      const stateWithPriorRemote: QueueState = {
+        ...initialState,
+        currentClimbQueueItem: mockClimbQueueItem,
+        remoteClimbChangeCount: 5,
+      };
+      const action: QueueAction = {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: null,
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          eventClientId: 'other-client',
+          myClientId: 'me',
+        },
+      };
+      const result = queueReducer(stateWithPriorRemote, action);
+      // Counter unchanged — no climb to surface in a peek
+      expect(result.remoteClimbChangeCount).toBe(5);
+      expect(result.currentClimbQueueItem).toBeNull();
+    });
+
+    it('preserves the counter across local actions that write currentClimbQueueItem', () => {
+      // Bump the counter via a remote event first.
+      const afterRemote = queueReducer(initialState, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: mockClimbQueueItem,
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          eventClientId: 'other-client',
+          myClientId: 'me',
+        },
+      });
+      expect(afterRemote.remoteClimbChangeCount).toBe(1);
+
+      // SET_CURRENT_CLIMB (local) should leave the counter alone — the peek
+      // effect keys on the counter, not the climb item, so this is the
+      // critical guarantee.
+      const afterLocalSet = queueReducer(afterRemote, {
+        type: 'SET_CURRENT_CLIMB',
+        payload: { ...mockClimbQueueItem, uuid: 'different-uuid' },
+      });
+      expect(afterLocalSet.remoteClimbChangeCount).toBe(1);
+
+      // SET_CURRENT_CLIMB_QUEUE_ITEM (local) — same.
+      const afterLocalSetQueueItem = queueReducer(afterLocalSet, {
+        type: 'SET_CURRENT_CLIMB_QUEUE_ITEM',
+        payload: { ...mockClimbQueueItem, uuid: 'another-uuid' },
+      });
+      expect(afterLocalSetQueueItem.remoteClimbChangeCount).toBe(1);
+
+      // A subsequent non-echo remote bumps to 2.
+      const afterSecondRemote = queueReducer(afterLocalSetQueueItem, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item: { ...mockClimbQueueItem, uuid: 'remote-2' },
+          shouldAddToQueue: false,
+          isServerEvent: true,
+          eventClientId: 'other-client',
+          myClientId: 'me',
+        },
+      });
+      expect(afterSecondRemote.remoteClimbChangeCount).toBe(2);
     });
   });
 });

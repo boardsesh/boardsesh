@@ -73,6 +73,12 @@ export const CurrentClimbContext = createContext<CurrentClimbDataType | undefine
 // Components that only need to know *which* climb is current (not the full object)
 // can subscribe here and avoid re-renders when unrelated fields change.
 export const CurrentClimbUuidContext = createContext<string | null>(null);
+// Ultra-narrow context: monotonic counter of non-echo remote climb changes.
+// The peek snackbar in the queue-control bar subscribes here so it only
+// surfaces remote (party-mode partner) climb changes, not the local
+// user's own. Splitting from CurrentClimbContext keeps consumers of
+// either signal from re-rendering when only the other one changes.
+export const RemoteClimbChangeCountContext = createContext<number>(0);
 export const QueueListContext = createContext<QueueListDataType | undefined>(undefined);
 export const SearchContext = createContext<SearchDataType | undefined>(undefined);
 export const SessionContext = createContext<SessionDataType | undefined>(undefined);
@@ -703,6 +709,7 @@ export const GraphQLQueueProvider = ({
 
   // --- Fine-grained context values (each only changes when its specific fields change) ---
   const currentClimbUuid = state.currentClimbQueueItem?.uuid ?? null;
+  const remoteClimbChangeCount = state.remoteClimbChangeCount;
 
   const currentClimbValue: CurrentClimbDataType = useMemo(
     () => ({
@@ -785,16 +792,18 @@ export const GraphQLQueueProvider = ({
         <QueueContext.Provider value={contextValue}>
           <CurrentClimbContext.Provider value={currentClimbValue}>
             <CurrentClimbUuidContext.Provider value={currentClimbUuid}>
-              <QueueListContext.Provider value={queueListValue}>
-                <SearchContext.Provider value={searchValue}>
-                  <SessionContext.Provider value={sessionValue}>
-                    <FavoritesProvider {...favoritesProviderProps}>
-                      <PlaylistsProvider {...playlistsProviderProps}>{children}</PlaylistsProvider>
-                    </FavoritesProvider>
-                    <SessionSummaryDialog summary={sessionSummary} onDismiss={stableDismissSessionSummary} />
-                  </SessionContext.Provider>
-                </SearchContext.Provider>
-              </QueueListContext.Provider>
+              <RemoteClimbChangeCountContext.Provider value={remoteClimbChangeCount}>
+                <QueueListContext.Provider value={queueListValue}>
+                  <SearchContext.Provider value={searchValue}>
+                    <SessionContext.Provider value={sessionValue}>
+                      <FavoritesProvider {...favoritesProviderProps}>
+                        <PlaylistsProvider {...playlistsProviderProps}>{children}</PlaylistsProvider>
+                      </FavoritesProvider>
+                      <SessionSummaryDialog summary={sessionSummary} onDismiss={stableDismissSessionSummary} />
+                    </SessionContext.Provider>
+                  </SearchContext.Provider>
+                </QueueListContext.Provider>
+              </RemoteClimbChangeCountContext.Provider>
             </CurrentClimbUuidContext.Provider>
           </CurrentClimbContext.Provider>
         </QueueContext.Provider>
@@ -865,6 +874,16 @@ export const useOptionalCurrentClimb = (): CurrentClimbDataType | null => {
  *  without subscribing to the full CurrentClimbContext object. */
 export const useCurrentClimbUuid = (): string | null => {
   return useContext(CurrentClimbUuidContext);
+};
+
+/** Ultra-narrow hook: returns a counter that increments only when the
+ *  reducer applies a non-echo remote DELTA_UPDATE_CURRENT_CLIMB with a
+ *  non-null item — i.e. when *another* party-mode participant changes
+ *  the current climb. Subscribers re-render only on that signal, not
+ *  on every currentClimb update. Used by the peek snackbar so it
+ *  surfaces only remote-originated changes, not the local user's own. */
+export const useRemoteClimbChangeCount = (): number => {
+  return useContext(RemoteClimbChangeCountContext);
 };
 
 export const useQueueList = (): QueueListDataType => {

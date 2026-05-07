@@ -15,7 +15,13 @@ import CloudOffOutlined from '@mui/icons-material/CloudOffOutlined';
 import OpenInFullOutlined from '@mui/icons-material/OpenInFullOutlined';
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import { track } from '@vercel/analytics';
-import { useQueueActions, useCurrentClimb, useCurrentClimbUuid, useQueueList, useSessionData } from '../graphql-queue';
+import {
+  useQueueActions,
+  useCurrentClimb,
+  useQueueList,
+  useRemoteClimbChangeCount,
+  useSessionData,
+} from '../graphql-queue';
 import { useScrollDirection } from '@/app/hooks/use-scroll-direction';
 import QueueControlFab from './queue-control-fab';
 import NextClimbButton from './next-climb-button';
@@ -81,7 +87,12 @@ export type ActiveDrawer = 'none' | 'play' | 'queue' | 'tick';
 type LayoutState = 'minimised' | 'expanded' | 'peeking';
 type OpenReason = 'userOpen' | 'tickOpen' | 'queueOpen' | 'playOpen' | 'scrollOpen' | 'default';
 
-const PEEK_DURATION_MS = 3000;
+/** Delay after entering 'peeking' before the dismiss listeners are armed.
+ *  Filters out the gesture that *caused* the peek (e.g. a tap on a FAB
+ *  that closed the drawer and let the trigger fire) and any in-flight
+ *  scroll momentum, so the peek doesn't dismiss before the user has
+ *  even had a chance to see it. */
+const PEEK_DISMISS_GRACE_MS = 300;
 
 // Re-export the window event so existing imports from this file keep working.
 // The actual definition lives in ./play-drawer-event to keep the import graph
@@ -149,27 +160,26 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // Computed synchronously in useState so /list doesn't flash from minimised → expanded.
   const [layoutState, setLayoutState] = useState<LayoutState>(() => (isClimbListPage ? 'expanded' : 'minimised'));
   const [openReason, setOpenReason] = useState<OpenReason>('default');
-  const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track the climb uuid we observed on first mount so the initial value
-  // doesn't trigger a peek (the bar mounts with a current climb already set).
-  const initialUuidRef = useRef<string | null | undefined>(undefined);
+  // Tracks the remote-climb-change counter we last fired a peek for. `null`
+  // means "not yet armed" — the next render captures the current count as
+  // baseline (so initial hydration doesn't peek). Bumped to the latest
+  // count whenever a peek fires *or* gets dismissed, so a counter advance
+  // that arrived during an active peek (which only updated snackbar text
+  // in place) doesn't re-trigger the same content right after dismiss.
+  const lastPeekedCountRef = useRef<number | null>(null);
 
   // Reset activeDrawer + layout state on navigation. Also re-arm the peek
-  // gate so the next climb-uuid change is treated as a *first observation*
-  // on the new route — without this, navigating to a climb that differs
-  // from the one we were viewing fires a peek that announces the climb
-  // we just navigated to (a duplicate cue, since the user just clicked).
+  // gate (lastPeekedCountRef → null) so the next render captures the
+  // current counter as baseline — without this, a remote counter that
+  // advanced just before navigation could fire a peek that announces the
+  // climb the user just navigated to (a duplicate cue).
   // isClimbListPage is omitted from deps because it's derived synchronously
   // from pathname — listing both is harmless but adds noise.
   useEffect(() => {
     setActiveDrawer('none');
     setLayoutState(isClimbListPage ? 'expanded' : 'minimised');
     setOpenReason('default');
-    initialUuidRef.current = undefined;
-    if (peekTimerRef.current) {
-      clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
+    lastPeekedCountRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- isClimbListPage derives from pathname
   }, [pathname]);
 
@@ -200,67 +210,84 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   }, []);
 
   // While any drawer is open, the bar must stay expanded — drawers can't
-  // render meaningfully over a FAB. Cancel any in-flight peek timer too,
-  // otherwise it would fire setLayoutState('minimised') under the open
-  // drawer (and immediately get force-expanded again on the next render).
+  // render meaningfully over a FAB.
   useEffect(() => {
-    if (activeDrawer !== 'none') {
-      if (peekTimerRef.current) {
-        clearTimeout(peekTimerRef.current);
-        peekTimerRef.current = null;
-      }
-      if (layoutState !== 'expanded') {
-        setLayoutState('expanded');
-      }
+    if (activeDrawer !== 'none' && layoutState !== 'expanded') {
+      setLayoutState('expanded');
     }
   }, [activeDrawer, layoutState]);
 
-  // Peek-on-climb-change: when the current climb uuid changes (locally or
-  // from a party-mode WebSocket event), briefly surface the new climb's
-  // name in a snackbar above the FAB cluster.
+  // Peek-on-remote-climb-change. Two effects, separated by responsibility
+  // so neither does double duty:
   //
-  // The ref tracks the last uuid we *actually peeked for* — not the
-  // latest seen — and we only peek while layoutState === 'minimised'.
-  // The effect is keyed on both currentClimbUuid AND layoutState, so a
-  // climb change that happens while the bar is expanded is queued: the
-  // ref stays put, and when the bar later returns to minimised the
-  // effect re-fires (layoutState dep changed) and peeks for the latest
-  // uuid. If multiple climb changes happen while expanded, only the
-  // most recent one is announced on collapse — by design, so a long
-  // queue session doesn't bombard the user with stale peeks when they
-  // close a drawer.
-  const currentClimbUuid = useCurrentClimbUuid();
+  //   A) Trigger: fire setLayoutState('peeking') when the remote-change
+  //      counter advances past the last-peeked count *and* the bar is
+  //      currently minimised. Self-initiated changes never increment the
+  //      counter (that's the reducer's job — see DELTA_UPDATE_CURRENT_CLIMB),
+  //      so this effect cannot fire for the local user's own navigation.
+  //   B) Dismiss: while the snackbar is up, listen for any user
+  //      interaction (pointerdown / keydown / scroll) and dismiss on the
+  //      first one. No auto-dismiss timer — climbers' hands are on the
+  //      wall, not the phone, and a 3s auto-fade was too short.
+  //
+  // If the counter advances while the bar is in a drawer ('expanded') the
+  // peek is *queued*: the ref stays put, and the next return to
+  // 'minimised' re-evaluates and peeks for whichever climb is current
+  // then. Only the latest climb is announced on collapse — by design, so
+  // a long drawer session doesn't bombard the user with stale peeks.
+  //
+  // If the counter advances *during* a peek, the snackbar's text reads
+  // currentClimb from useCurrentClimb (already subscribed below) so it
+  // updates in place — no re-mount, no re-entrance animation. The peek
+  // stays continuous; only the content refreshes. lastPeekedCountRef is
+  // caught up to the latest count by the dismiss handler so the user
+  // doesn't get a redundant peek for the same climb after dismissing.
+  const remoteClimbChangeCount = useRemoteClimbChangeCount();
   useEffect(() => {
-    if (initialUuidRef.current === undefined) {
-      // First mount: record the current climb so the initial value doesn't
-      // immediately trigger a peek.
-      initialUuidRef.current = currentClimbUuid;
+    if (lastPeekedCountRef.current === null) {
+      // Re-arm: capture the current counter as baseline so initial
+      // hydration (or post-navigation re-render) doesn't trigger a peek.
+      lastPeekedCountRef.current = remoteClimbChangeCount;
       return;
     }
-    if (!currentClimbUuid) return;
-    if (currentClimbUuid === initialUuidRef.current) return;
-    // Bar isn't free to peek right now — leave the ref untouched so the
-    // next layoutState change re-evaluates against the latest uuid.
+    if (remoteClimbChangeCount === lastPeekedCountRef.current) return;
+    // Drawer is open or already peeking — leave the ref untouched so the
+    // next layoutState change re-evaluates against the latest counter.
     if (layoutState !== 'minimised') return;
-    initialUuidRef.current = currentClimbUuid;
-    if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+    lastPeekedCountRef.current = remoteClimbChangeCount;
     setLayoutState('peeking');
-    peekTimerRef.current = setTimeout(() => {
-      setLayoutState('minimised');
-      peekTimerRef.current = null;
-    }, PEEK_DURATION_MS);
-  }, [currentClimbUuid, layoutState]);
+  }, [remoteClimbChangeCount, layoutState]);
 
-  // Cleanup peek timer on unmount
-  useEffect(
-    () => () => {
-      if (peekTimerRef.current) {
-        clearTimeout(peekTimerRef.current);
-        peekTimerRef.current = null;
-      }
-    },
-    [],
-  );
+  // Dismiss-on-interaction. Listens at document/window level (capture
+  // phase for pointer/keyboard so we register dismiss before any child
+  // swallows the event — e.g. tapping a FAB still dismisses the peek as
+  // it opens the drawer). The snackbar itself has pointer-events: none
+  // so taps over it pass through to the page; this means tap-anywhere
+  // dismisses naturally.
+  useEffect(() => {
+    if (layoutState !== 'peeking') return;
+
+    const dismiss = () => {
+      // Catch the ref up to the latest count — otherwise a counter advance
+      // that happened during this peek (and only updated snackbar text in
+      // place) would re-fire trigger Effect A immediately on dismiss.
+      lastPeekedCountRef.current = remoteClimbChangeCount;
+      setLayoutState('minimised');
+    };
+
+    const armTimer = setTimeout(() => {
+      document.addEventListener('pointerdown', dismiss, { capture: true });
+      document.addEventListener('keydown', dismiss, { capture: true });
+      window.addEventListener('scroll', dismiss, { passive: true });
+    }, PEEK_DISMISS_GRACE_MS);
+
+    return () => {
+      clearTimeout(armTimer);
+      document.removeEventListener('pointerdown', dismiss, { capture: true });
+      document.removeEventListener('keydown', dismiss, { capture: true });
+      window.removeEventListener('scroll', dismiss);
+    };
+  }, [layoutState, remoteClimbChangeCount]);
 
   // Window scroll drives auto-collapse/expand:
   //  - climb list page: scroll down → collapse, scroll up → expand
@@ -286,39 +313,23 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   });
 
   const handleFabExpand = useCallback(() => {
-    if (peekTimerRef.current) {
-      clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
     setLayoutState('expanded');
     setOpenReason('userOpen');
   }, []);
 
   const handleFabTickExpand = useCallback(() => {
-    if (peekTimerRef.current) {
-      clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
     setLayoutState('expanded');
     setOpenReason('tickOpen');
     setActiveDrawer('tick');
   }, []);
 
   const handleFabQueueExpand = useCallback(() => {
-    if (peekTimerRef.current) {
-      clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
     setLayoutState('expanded');
     setOpenReason('queueOpen');
     setActiveDrawer('queue');
   }, []);
 
   const handleFabPlayOpen = useCallback(() => {
-    if (peekTimerRef.current) {
-      clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
     setLayoutState('expanded');
     setOpenReason('playOpen');
     setActiveDrawer('play');

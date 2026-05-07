@@ -13,6 +13,7 @@ const initialState = (initialSearchParams: SearchRequestPagination): QueueState 
   lastReceivedSequence: null,
   lastReceivedStateHash: null,
   needsResync: false,
+  remoteClimbChangeCount: 0,
 });
 
 export function queueReducer(state: QueueState, action: QueueAction): QueueState {
@@ -252,6 +253,12 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
         queue: newQueue,
         currentClimbQueueItem: item,
         pendingCurrentClimbUpdates: pendingUpdates,
+        // Bump only for non-echo remote events with a non-null item. A
+        // remote "clear" (item: null) doesn't peek — no climb to surface.
+        // Local events (no isServerEvent) leave the counter unchanged
+        // so the peek effect ignores them. Echoes returned earlier and
+        // never reach this branch, so they preserve the counter via state.
+        remoteClimbChangeCount: isServerEvent && item ? state.remoteClimbChangeCount + 1 : state.remoteClimbChangeCount,
       };
     }
 

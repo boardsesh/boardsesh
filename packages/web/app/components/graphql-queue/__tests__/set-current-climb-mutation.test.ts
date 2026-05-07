@@ -63,6 +63,7 @@ const initialState: QueueState = {
   lastReceivedSequence: null,
   lastReceivedStateHash: null,
   needsResync: false,
+  remoteClimbChangeCount: 0,
 };
 
 describe('SET_CURRENT_CLIMB mutation optimization', () => {

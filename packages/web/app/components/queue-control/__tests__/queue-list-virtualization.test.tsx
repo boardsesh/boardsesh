@@ -79,6 +79,7 @@ let mockCurrentClimbUuid: string | null = null;
 
 vi.mock('../../graphql-queue', () => ({
   useCurrentClimbUuid: () => mockCurrentClimbUuid,
+  useRemoteClimbChangeCount: () => 0,
   useQueueList: () => ({
     queue: mockQueueItems,
     suggestedClimbs,

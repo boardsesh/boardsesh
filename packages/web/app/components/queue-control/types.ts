@@ -36,6 +36,13 @@ export type QueueState = {
   lastReceivedStateHash: string | null;
   // Flag to indicate corrupted data was filtered and a resync is needed
   needsResync: boolean;
+  /** Monotonic counter that increments only when the reducer applies a
+   *  non-echo remote DELTA_UPDATE_CURRENT_CLIMB with a non-null item.
+   *  The peek snackbar in the queue-control bar keys on this so it
+   *  surfaces only changes made by other party-mode participants —
+   *  not the local user's own navigation. Local actions and initial
+   *  hydration leave this untouched. */
+  remoteClimbChangeCount: number;
 };
 
 export type QueueAction =
