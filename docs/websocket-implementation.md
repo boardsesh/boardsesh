@@ -2,6 +2,8 @@
 
 This document describes the WebSocket implementation used for real-time party session synchronization in Boardsesh. Party mode allows multiple climbers to collaborate on a shared queue of climbs, with real-time synchronization across all connected clients.
 
+For a PM/design-friendly explanation of the current group-session product model, see [Group Sessions: Current Product Model](./group-sessions-current-state.md).
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
