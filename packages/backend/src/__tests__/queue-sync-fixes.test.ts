@@ -7,7 +7,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import { db } from '../db/client';
 import { queueMutations } from '../graphql/resolvers/queue/mutations';
+import { sessionQueries } from '../graphql/resolvers/sessions/queries';
 import { pubsub } from '../pubsub/index';
 import { createMockRedis, type MockRedis } from './helpers/mock-redis';
 
@@ -320,7 +322,10 @@ describe('addQueueItem - Event publishing fix', () => {
       sessionId,
       expect.objectContaining({
         __typename: 'QueueItemAdded',
-        item: climb,
+        item: expect.objectContaining({
+          ...climb,
+          addedBy: 'client-1',
+        }),
       }),
     );
   });
@@ -461,6 +466,235 @@ describe('addQueueItem - Event publishing fix', () => {
         position: 1, // Appended at end
       }),
     );
+  });
+});
+
+describe('collaborative picks - turn handoff mutations', () => {
+  let mockRedis: MockRedis;
+  let publishSpy: ReturnType<typeof vi.spyOn>;
+  let boardSendId: number;
+
+  const createContext = (connectionId: string, sessionId: string, userId: string) => ({
+    connectionId,
+    sessionId,
+    userId,
+    rateLimitTokens: 60,
+    rateLimitLastReset: Date.now(),
+  });
+
+  const mockBoardSendInsert = () =>
+    vi.spyOn(db, 'insert').mockImplementation((() => ({
+      values: (values: Record<string, unknown>) => ({
+        returning: async () => [
+          {
+            id: ++boardSendId,
+            ...values,
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ],
+      }),
+    })) as never);
+
+  beforeEach(async () => {
+    mockRedis = createMockRedis();
+    boardSendId = 0;
+    roomManager.reset();
+    await roomManager.initialize(mockRedis);
+    publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('stores a non-active user pick without changing the board', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/kilter/1/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+
+    const item = createTestClimb();
+    const ctx = createContext('client-1', sessionId, 'user-1');
+    const insertSpy = mockBoardSendInsert();
+
+    const result = await queueMutations.setMyPick({}, { item, correlationId: 'pick-1' }, ctx);
+    const state = await roomManager.getQueueState(sessionId);
+
+    expect(result.userId).toBe('user-1');
+    expect(result.item.uuid).toBe(item.uuid);
+    expect(state.picks).toHaveLength(1);
+    expect(state.picks[0]?.item.uuid).toBe(item.uuid);
+    expect(state.currentClimbQueueItem).toBeNull();
+    expect(state.activeClimberUserId).toBeNull();
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(publishSpy).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({
+        __typename: 'PickChanged',
+        userId: 'user-1',
+        pick: item,
+        correlationId: 'pick-1',
+      }),
+    );
+  });
+
+  it('claimTurn makes the caller active, mirrors their pick, and appends a board send', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/kilter/1/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+
+    const item = createTestClimb();
+    const ctx = createContext('client-1', sessionId, 'user-1');
+    mockBoardSendInsert();
+    await queueMutations.setMyPick({}, { item, correlationId: 'pick-1' }, ctx);
+    publishSpy.mockClear();
+
+    const result = await queueMutations.claimTurn({}, { correlationId: 'claim-1' }, ctx);
+    const state = await roomManager.getQueueState(sessionId);
+
+    expect(result.uuid).toBe(item.uuid);
+    expect(state.activeClimberUserId).toBe('user-1');
+    expect(state.currentClimbQueueItem?.uuid).toBe(item.uuid);
+    expect(publishSpy.mock.calls.map((call: [string, { __typename: string }]) => call[1].__typename)).toEqual([
+      'ActiveClimberChanged',
+      'CurrentClimbChanged',
+      'BoardSendAdded',
+    ]);
+    expect(publishSpy).toHaveBeenLastCalledWith(
+      sessionId,
+      expect.objectContaining({
+        __typename: 'BoardSendAdded',
+        boardSend: expect.objectContaining({
+          item,
+          sentByUserId: 'user-1',
+          activeClimberUserId: 'user-1',
+          correlationId: 'claim-1',
+        }),
+      }),
+    );
+  });
+
+  it('setMyPick mirrors to the board when the caller is already active', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/kilter/1/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+
+    const firstItem = createTestClimb();
+    const nextItem = createTestClimb();
+    const ctx = createContext('client-1', sessionId, 'user-1');
+    mockBoardSendInsert();
+    await queueMutations.setMyPick({}, { item: firstItem }, ctx);
+    await queueMutations.claimTurn({}, { correlationId: 'claim-1' }, ctx);
+    publishSpy.mockClear();
+
+    await queueMutations.setMyPick({}, { item: nextItem, correlationId: 'active-swipe-1' }, ctx);
+    const state = await roomManager.getQueueState(sessionId);
+
+    expect(state.activeClimberUserId).toBe('user-1');
+    expect(state.currentClimbQueueItem?.uuid).toBe(nextItem.uuid);
+    expect(state.picks.find((pick) => pick.userId === 'user-1')?.item.uuid).toBe(nextItem.uuid);
+    expect(publishSpy.mock.calls.map((call: [string, { __typename: string }]) => call[1].__typename)).toEqual([
+      'PickChanged',
+      'CurrentClimbChanged',
+      'BoardSendAdded',
+    ]);
+  });
+
+  it('yieldTurn hands the board to a peer pick and attributes the send to the caller', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/kilter/1/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+    await registerAndJoinSession('client-2', sessionId, boardPath, 'User2');
+
+    const userOneItem = createTestClimb();
+    const userTwoItem = createTestClimb();
+    const userOneCtx = createContext('client-1', sessionId, 'user-1');
+    const userTwoCtx = createContext('client-2', sessionId, 'user-2');
+    mockBoardSendInsert();
+    await queueMutations.setMyPick({}, { item: userOneItem }, userOneCtx);
+    await queueMutations.setMyPick({}, { item: userTwoItem }, userTwoCtx);
+    publishSpy.mockClear();
+
+    const result = await queueMutations.yieldTurn({}, { toUserId: 'user-2', correlationId: 'yield-1' }, userOneCtx);
+    const state = await roomManager.getQueueState(sessionId);
+
+    expect(result.uuid).toBe(userTwoItem.uuid);
+    expect(state.activeClimberUserId).toBe('user-2');
+    expect(state.currentClimbQueueItem?.uuid).toBe(userTwoItem.uuid);
+    expect(publishSpy).toHaveBeenLastCalledWith(
+      sessionId,
+      expect.objectContaining({
+        __typename: 'BoardSendAdded',
+        boardSend: expect.objectContaining({
+          item: userTwoItem,
+          sentByUserId: 'user-1',
+          activeClimberUserId: 'user-2',
+          correlationId: 'yield-1',
+        }),
+      }),
+    );
+  });
+
+  it('boardSends returns latest-first unique climbs when deduplicating', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/kilter/1/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+
+    const oldItem = createTestClimb();
+    const newestItem = createTestClimb();
+    const duplicateNewest = { ...oldItem, uuid: `${oldItem.uuid}-duplicate-send` };
+    const rows = [
+      {
+        id: 3,
+        sessionId,
+        item: duplicateNewest,
+        climbUuid: oldItem.climb.uuid,
+        sentByUserId: 'user-1',
+        activeClimberUserId: 'user-1',
+        correlationId: 'latest-duplicate',
+        sequence: 3,
+        createdAt: new Date('2026-01-01T00:00:03.000Z'),
+      },
+      {
+        id: 2,
+        sessionId,
+        item: newestItem,
+        climbUuid: newestItem.climb.uuid,
+        sentByUserId: 'user-2',
+        activeClimberUserId: 'user-2',
+        correlationId: 'newest',
+        sequence: 2,
+        createdAt: new Date('2026-01-01T00:00:02.000Z'),
+      },
+      {
+        id: 1,
+        sessionId,
+        item: oldItem,
+        climbUuid: oldItem.climb.uuid,
+        sentByUserId: 'user-1',
+        activeClimberUserId: 'user-1',
+        correlationId: 'old',
+        sequence: 1,
+        createdAt: new Date('2026-01-01T00:00:01.000Z'),
+      },
+    ];
+    vi.spyOn(db, 'select').mockImplementation((() => ({
+      from: () => ({
+        where: () => ({
+          orderBy: async () => rows,
+        }),
+      }),
+    })) as never);
+
+    const result = await sessionQueries.boardSends(
+      {},
+      { sessionId, deduplicate: true },
+      createContext('client-1', sessionId, 'user-1'),
+    );
+
+    expect(result.map((send) => send.id)).toEqual(['3', '2']);
+    expect(result[0]?.item.uuid).toBe(duplicateNewest.uuid);
+    expect(result[1]?.item.uuid).toBe(newestItem.uuid);
   });
 });
 

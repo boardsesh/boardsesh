@@ -266,6 +266,49 @@
   text-align: center;
 }
 
+.participantPickList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.participantPickRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  background: var(--semantic-surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.participantPickRow:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.participantPickRowActive {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.participantPickText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.participantPickName {
+  font-weight: 700;
+}
+
 .swipeWrapper {
   position: relative;
   overflow: hidden;
@@ -287,6 +330,18 @@
 .boardPreviewContainer {
   width: 44px;
   flex-shrink: 0;
+  position: relative;
+}
+
+.activeAvatarOverlay {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 10px !important;
+  border: 2px solid var(--semantic-surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
 }
 
 .shellThumbnail {

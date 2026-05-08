@@ -82,7 +82,7 @@ The party session system uses a GraphQL-over-WebSocket architecture with the fol
 
 Both `PersistentSessionContext` and `QueueContext` are split into separate **Actions** and **Data** contexts to prevent unnecessary re-renders:
 
-- **ActionsContext** — stable callback functions (`addToQueue`, `setCurrentClimb`, etc.). Uses a `latestRef` pattern so callbacks have empty `[]` dependency arrays and never change identity. Components that only call actions (e.g., list item "add to queue" buttons) subscribe here and avoid re-rendering when queue data changes.
+- **ActionsContext** — stable callback functions (`addToQueue`, `setMyPick`, `claimTurn`, etc.). Uses a `latestRef` pattern so callbacks have empty `[]` dependency arrays and never change identity. Components that only call actions (e.g., list item "add to queue" buttons) subscribe here and avoid re-rendering when queue data changes.
 - **DataContext** — frequently-changing state (`queue`, `currentClimb`, `connectionState`, etc.). Only components that display this data subscribe here.
 - **Combined Context** — merges both via `useMemo(() => ({ ...dataValue, ...actionsValue }))` for backward compatibility. Existing consumers using `useQueueContext()` or `usePersistentSession()` continue working unchanged.
 
@@ -95,9 +95,10 @@ Targeted hooks: `useQueueActions()`, `useQueueData()`, `usePersistentSessionActi
 - **Injected mode** — when a board route mounts `GraphQLQueueProvider`, it injects its full context (with the GraphQL data fetcher and reducer) into the bridge. Consumers transparently see the board route's queue context.
 - **Adapter mode** — off board routes, `usePersistentSessionQueueAdapter` fronts the persistent session directly. Mutations now branch on `ps.activeSession`:
   - **Solo / no party**: mutations go through `setLocalQueueState` (in-memory, no persistence beyond the session restore on reload).
-  - **Active party session**: mutations delegate to `ps.addQueueItem`, `ps.setCurrentClimb`, `ps.removeQueueItem`, `ps.setQueue`, `ps.mirrorCurrentClimb`, `ps.replaceQueueItem` — the same WebSocket-backed mutators `GraphQLQueueProvider` uses on board routes. `setLocalQueueState` is a no-op when `activeSession` is set, so without this delegation off-board taps would silently disappear.
-  - `setCurrentClimb` checks for an existing queue entry by `climb.uuid` first; if found it reuses that queue item via `ps.setCurrentClimb` without adding a duplicate.
+  - **Active party session**: queue planning mutations still delegate to `ps.addQueueItem`, `ps.removeQueueItem`, `ps.setQueue`, `ps.mirrorCurrentClimb`, and `ps.replaceQueueItem`. Climb browsing delegates to `ps.setMyPick`, while wall ownership delegates to `ps.claimTurn` / `ps.yieldTurn`. `setLocalQueueState` is a no-op when `activeSession` is set, so without this delegation off-board taps would silently disappear.
+  - `setCurrentClimb` checks for an existing queue entry by `climb.uuid` first; if found it reuses that queue item, but in an active party session the result is written as the caller's pick rather than directly changing `currentClimbQueueItem`.
   - Items created by the adapter populate `addedBy` / `addedByUser` from `usePartyProfile` so peers see consistent attribution regardless of which surface added the climb.
+  - Optimistic pick state is keyed by the session connection id (`SessionUser.id` / `clientId`) first, because the backend publishes pick and active-climber events with that live participant id.
 
 ## Technology Stack
 
@@ -509,27 +510,80 @@ sequenceDiagram
 
 ### Event Types
 
-| Event                 | Description             | Fields                                          |
-| --------------------- | ----------------------- | ----------------------------------------------- |
-| `FullSync`            | Complete state snapshot | `sequence`, `state` (queue + currentClimb)      |
-| `QueueItemAdded`      | Item added to queue     | `sequence`, `item`, `position`                  |
-| `QueueItemRemoved`    | Item removed from queue | `sequence`, `uuid`                              |
-| `QueueReordered`      | Item moved in queue     | `sequence`, `uuid`, `oldIndex`, `newIndex`      |
-| `CurrentClimbChanged` | Active climb changed    | `sequence`, `item`, `clientId`, `correlationId` |
-| `ClimbMirrored`       | Mirror state toggled    | `sequence`, `mirrored`                          |
+| Event                  | Description                                   | Fields                                                            |
+| ---------------------- | --------------------------------------------- | ----------------------------------------------------------------- |
+| `FullSync`             | Complete state snapshot                       | `sequence`, `state` (queue, current climb, picks, active climber) |
+| `QueueItemAdded`       | Item added to queue                           | `sequence`, `item`, `position`                                    |
+| `QueueItemRemoved`     | Item removed from queue                       | `sequence`, `uuid`                                                |
+| `QueueReordered`       | Item moved in queue                           | `sequence`, `uuid`, `oldIndex`, `newIndex`                        |
+| `CurrentClimbChanged`  | Board climb changed                           | `sequence`, `item`, `clientId`, `correlationId`                   |
+| `ClimbMirrored`        | Mirror state toggled                          | `sequence`, `mirrored`                                            |
+| `PickChanged`          | A participant's personal pick changed         | `sequence`, `userId`, `pick`, `correlationId`                     |
+| `ActiveClimberChanged` | The participant controlling the board changed | `sequence`, `userId`, `correlationId`                             |
+| `BoardSendAdded`       | A climb was appended to board history         | `sequence`, `boardSend`                                           |
 
 ### Queue Mutations
 
-| Mutation                   | Event emitted                            | Notes                                                                                                                                                                                                                                                                                                                           |
-| -------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addQueueItem`             | `QueueItemAdded`                         | Appends to queue or inserts at `position`. Idempotent on `item.uuid` — duplicate adds are collapsed server-side during offline reconciliation.                                                                                                                                                                                  |
-| `removeQueueItem`          | `QueueItemRemoved`                       | Removes by queue-item uuid.                                                                                                                                                                                                                                                                                                     |
-| `reorderQueue`             | `QueueReordered`                         | Moves a queue item to a new index.                                                                                                                                                                                                                                                                                              |
-| `setCurrentClimbQueueItem` | `CurrentClimbChanged`                    | Activates an existing queue item by uuid.                                                                                                                                                                                                                                                                                       |
-| `setCurrentClimb`          | `CurrentClimbChanged` + `QueueItemAdded` | Adds the climb to the queue (if not already present) and activates it.                                                                                                                                                                                                                                                          |
-| `replaceQueueItem`         | `FullSync`                               | Replaces the climb inside an existing queue slot in place, preserving position and the queue-item uuid. Used by the create-climb form to push saves of the currently-authored climb to peers without reshuffling the queue. Emits `FullSync` rather than a narrow delta because replace is infrequent and simpler to reconcile. |
-| `mirrorCurrentClimb`       | `ClimbMirrored`                          | Flips the mirror flag on the current climb.                                                                                                                                                                                                                                                                                     |
-| `setQueue`                 | `FullSync`                               | Bulk replaces queue + current climb. Used for offline → online reconciliation.                                                                                                                                                                                                                                                  |
+| Mutation                   | Event emitted                                                     | Notes                                                                                                                                                                                                                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addQueueItem`             | `QueueItemAdded`                                                  | Appends to queue or inserts at `position`. Idempotent on `item.uuid` — duplicate adds are collapsed server-side during offline reconciliation.                                                                                                                                                                                  |
+| `removeQueueItem`          | `QueueItemRemoved`                                                | Removes by queue-item uuid. The server should reject attempts to remove another participant's plan-ahead item unless a future host/owner policy explicitly allows it.                                                                                                                                                           |
+| `reorderQueue`             | `QueueReordered`                                                  | Moves a queue item to a new index. The server should apply the same ownership check as remove.                                                                                                                                                                                                                                  |
+| `setCurrentClimbQueueItem` | `CurrentClimbChanged`                                             | Legacy/programmatic board activation by queue-item uuid. The web party-session UI should route browsing through `setMyPick` instead.                                                                                                                                                                                            |
+| `setCurrentClimb`          | `CurrentClimbChanged` + `QueueItemAdded`                          | Legacy/solo/programmatic board activation. In party-session UI flows, this is wrapped as `setMyPick` so non-active climbers can browse without changing the board.                                                                                                                                                              |
+| `setMyPick`                | `PickChanged`, plus board-send events when caller is active       | Updates the caller's personal pick. If the caller is active, the server also mirrors the pick to `currentClimbQueueItem` and emits `CurrentClimbChanged` + `BoardSendAdded`.                                                                                                                                                    |
+| `claimTurn`                | `ActiveClimberChanged` + `CurrentClimbChanged` + `BoardSendAdded` | Makes the caller's existing pick active on the board. Requires the caller to already have a pick. Idempotent when already active; it re-sends the same climb to the board for LED recovery.                                                                                                                                     |
+| `yieldTurn`                | `ActiveClimberChanged` + `CurrentClimbChanged` + `BoardSendAdded` | Hands the board to another participant's existing pick. `toUserId` is the live session participant id, not the stable auth user id.                                                                                                                                                                                             |
+| `clearMyPick`              | `PickChanged`, and sometimes `ActiveClimberChanged`               | Clears the caller's pick. If the caller was active, active climber becomes `null`.                                                                                                                                                                                                                                              |
+| `replaceQueueItem`         | `FullSync`                                                        | Replaces the climb inside an existing queue slot in place, preserving position and the queue-item uuid. Used by the create-climb form to push saves of the currently-authored climb to peers without reshuffling the queue. Emits `FullSync` rather than a narrow delta because replace is infrequent and simpler to reconcile. |
+| `mirrorCurrentClimb`       | `ClimbMirrored`                                                   | Flips the mirror flag on the current board climb.                                                                                                                                                                                                                                                                               |
+| `setQueue`                 | `FullSync`                                                        | Bulk replaces queue + current climb. Used for offline to online reconciliation.                                                                                                                                                                                                                                                 |
+
+### Collaborative Picks and Active Climber
+
+Party sessions now separate "what I am browsing" from "what is on the board":
+
+- `QueueState.currentClimbQueueItem` is the climb currently on the LEDs. The queue control bar and controller subscriptions should keep using this field.
+- `QueueState.picks` is the per-participant browsing state. Climb lists, play-view edit mode, and the avatar drawer should show the current user's pick from this list.
+- `QueueState.activeClimberUserId` identifies which participant's pick is mirrored to `currentClimbQueueItem`. If the active climber swipes, `setMyPick` changes both their pick and the board climb. If a non-active climber swipes, only their pick changes.
+
+Pick and active-climber identity uses the live WebSocket session participant id (`SessionUser.id`, also returned from `joinSession` as `clientId`). `SessionUser.userId` is the stable authenticated profile id and is useful for attribution/profile display, but it is not the key used by `PickChanged.userId`, `ActiveClimberChanged.userId`, `claimTurn`, or `yieldTurn`.
+
+Because `PickChanged.userId` is `ID!` and `ActiveClimberChanged.userId` is nullable `ID`, GraphQL validation rejects selecting both under the same response name in one union operation. Client operations must alias the active climber field in both `queueUpdates` and `eventsReplay`:
+
+```graphql
+subscription QueueUpdates($sessionId: ID!) {
+  queueUpdates(sessionId: $sessionId) {
+    __typename
+    ... on PickChanged {
+      sequence
+      userId
+      pick {
+        uuid
+      }
+      correlationId
+    }
+    ... on ActiveClimberChanged {
+      sequence
+      activeClimberUserId: userId
+      correlationId
+    }
+    ... on BoardSendAdded {
+      sequence
+      boardSend {
+        id
+        climbUuid
+        sentByUserId
+        activeClimberUserId
+      }
+    }
+  }
+}
+```
+
+The same aliasing rule applies to `eventsReplay(sessionId:, sinceSequence:)`, so replayed events can flow through the same client-side event processor as live subscription events.
+
+The sent-to-board history is queried with `boardSends(sessionId:, deduplicate:)`. The default `deduplicate: true` view returns one row per climb UUID, latest first, so the history drawer shows climbs that actually reached the board without duplicate sends or upcoming queue items.
 
 ### Tick Mode and Queue Bar Freeze
 
@@ -551,17 +605,21 @@ sequenceDiagram
     participant PS as PersistentSession
     participant S as Server
 
-    C->>R: setCurrentClimbQueueItem(climb)
+    C->>R: setMyPick(item)
     R->>R: Generate correlationId
-    R->>R: Add to pendingCurrentClimbUpdates
-    R->>R: Apply optimistic update
-    R-->>C: UI updated immediately
+    R->>R: Apply optimistic pick for clientId
+    R-->>C: My pick UI updated immediately
 
-    PS->>S: setCurrentClimb(climb, correlationId)
+    PS->>S: setMyPick(item, correlationId)
     S->>S: Update state
-    S->>PS: CurrentClimbChanged event
+    alt Caller is active climber
+        S->>S: Mirror pick to currentClimbQueueItem
+        S->>PS: PickChanged + CurrentClimbChanged + BoardSendAdded
+    else Caller is not active climber
+        S->>PS: PickChanged
+    end
 
-    PS->>R: DELTA_UPDATE_CURRENT_CLIMB
+    PS->>R: DELTA_PICK_CHANGED
 
     alt correlationId matches pending
         R->>R: Remove from pending
@@ -741,9 +799,11 @@ sequenceDiagram
 
 While disconnected (`isDisconnected` state in `useMutationGuard`), the client can continue operating on its local queue. The mutation guard allows local mutations once the session has been connected at least once:
 
-- **All mutations** apply to local state immediately via the reducer
-- **Additions** (addToQueue, setCurrentClimb) are buffered in a 500-item offline buffer (`useOfflineQueueBuffer`) for reconciliation on reconnect
-- **Other mutations** (removeFromQueue, setQueue, setCurrentClimbQueueItem, mirrorClimb) apply locally only — they are not buffered because reconciling removals/reorders across multiple users is conflict-prone
+- **Offline-allowed mutations** apply to local state immediately via the reducer
+- **Additions** (`addToQueue`, legacy `setCurrentClimb` queue additions) are buffered in a 500-item offline buffer (`useOfflineQueueBuffer`) for reconciliation on reconnect
+- **Pick browsing** (`setMyPick`, `setCurrentClimbQueueItem` while in a party session) applies optimistically to the local user's pick, keyed by `clientId`; it is not buffered for replay, so the next server `FullSync` remains authoritative after reconnect
+- **Turn hand-off mutations** (`claimTurn`, `yieldTurn`, `clearMyPick`) require an active connection because they change shared board ownership
+- **Other mutations** (`removeFromQueue`, `setQueue`, `mirrorClimb`) apply locally only — they are not buffered because reconciling removals/reorders across multiple users is conflict-prone
 - **IndexedDB persistence** is enabled during offline party mode so the queue survives app restarts
 
 On reconnect, the reconciliation hook (`useOfflineReconciliation`) waits for the FullSync event and then chooses a strategy:
@@ -1461,7 +1521,7 @@ The native client implements the same `graphql-ws` protocol as the web client:
 2. **ConnectionAck** — Server confirms
 3. **JoinSession** — Mutation to join the session, which sets `ctx.sessionId` on the server so subsequent mutations are authorized
 4. **Subscribe** — `queueUpdates(sessionId:)` subscription for queue delta events
-5. **Next** — Queue delta events (FullSync, CurrentClimbChanged, QueueItemAdded, etc.)
+5. **Next** — Queue delta events (FullSync, CurrentClimbChanged, QueueItemAdded, etc.). The native Live Activity client only needs board-visible state, so pick-only events may be ignored unless the native client adds explicit `PickChanged` / `ActiveClimberChanged` fragments.
 6. **Ping/Pong** — Server sends pings every 30s, client responds with pong
 
 ### Reconnection
@@ -1500,11 +1560,13 @@ LiveActivityPlugin (main app process, Capacitor plugin)
   │ also emits JS event (fallback for foregrounded app)
   ▼
 SessionWebSocketManager
-  │ sends setCurrentClimb mutation via native WS
+  │ sends setCurrentClimb mutation via native WS (legacy/programmatic board path)
   ▼
 Backend publishes CurrentClimbChanged
   │ all clients (web + native) receive update
 ```
+
+For collaborative pick-aware navigation, a native client should use the same flow as the web UI: `setMyPick` for browsing and `claimTurn` / `yieldTurn` for changing the active climber. Direct `setCurrentClimb` remains available for solo, controller, and other programmatic board-control paths.
 
 ### App Group Shared State
 

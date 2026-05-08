@@ -8,7 +8,7 @@ export type UserName = PeerId;
 export type QueueItemUser = {
   id: string;
   username: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
 };
 
 export type ClimbQueueItem = {
@@ -22,9 +22,30 @@ export type ClimbQueueItem = {
 
 export type ClimbQueue = ClimbQueueItem[];
 
+export type UserPick = {
+  userId: string;
+  item: ClimbQueueItem;
+  updatedAt: string;
+};
+
+export type BoardSend = {
+  id: string;
+  sessionId: string;
+  item: ClimbQueueItem;
+  climbUuid: string;
+  sentByUserId: string;
+  activeClimberUserId: string;
+  correlationId?: string | null;
+  sequence: number;
+  createdAt: string;
+};
+
 export type QueueState = {
   queue: ClimbQueue;
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks: Record<string, UserPick>;
+  activeClimberUserId: string | null;
+  boardSends: BoardSend[];
   climbSearchParams: SearchRequestPagination;
   hasDoneFirstFetch: boolean;
   initialQueueDataReceivedFromPeers: boolean;
@@ -46,11 +67,21 @@ export type QueueAction =
   | { type: 'SET_CLIMB_SEARCH_PARAMS'; payload: SearchRequestPagination }
   | {
       type: 'UPDATE_QUEUE';
-      payload: { queue: ClimbQueue; currentClimbQueueItem?: ClimbQueueItem | null };
+      payload: {
+        queue: ClimbQueue;
+        currentClimbQueueItem?: ClimbQueueItem | null;
+        picks?: UserPick[];
+        activeClimberUserId?: string | null;
+      };
     }
   | {
       type: 'INITIAL_QUEUE_DATA';
-      payload: { queue: ClimbQueue; currentClimbQueueItem?: ClimbQueueItem | null };
+      payload: {
+        queue: ClimbQueue;
+        currentClimbQueueItem?: ClimbQueueItem | null;
+        picks?: UserPick[];
+        activeClimberUserId?: string | null;
+      };
     }
   | { type: 'SET_FIRST_FETCH'; payload: boolean }
   | { type: 'MIRROR_CLIMB' }
@@ -75,6 +106,14 @@ export type QueueAction =
       };
     }
   | { type: 'DELTA_MIRROR_CURRENT_CLIMB'; payload: { mirrored: boolean } }
+  | { type: 'SET_MY_PICK'; payload: { userId: string; item: ClimbQueueItem; correlationId?: string } }
+  | {
+      type: 'DELTA_PICK_CHANGED';
+      payload: { userId: string; pick: ClimbQueueItem | null; updatedAt?: string };
+    }
+  | { type: 'DELTA_ACTIVE_CLIMBER_CHANGED'; payload: { userId: string | null } }
+  | { type: 'DELTA_BOARD_SEND_ADDED'; payload: { boardSend: BoardSend } }
+  | { type: 'SET_BOARD_SENDS'; payload: { boardSends: BoardSend[] } }
   | { type: 'DELTA_REPLACE_QUEUE_ITEM'; payload: { uuid: string; item: ClimbQueueItem } }
   | { type: 'CLEANUP_PENDING_UPDATE'; payload: { correlationId: string } }
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
@@ -89,6 +128,11 @@ export type QueueActionsType = {
    *  to later replace the item in place on subsequent saves). Resolves to
    *  null when validation fails or the mutation is guarded. */
   setCurrentClimb: (climb: Climb) => Promise<ClimbQueueItem | null>;
+  setMyPick: (climb: Climb) => Promise<ClimbQueueItem | null>;
+  setMyPickQueueItem: (item: ClimbQueueItem) => Promise<void>;
+  claimTurn: () => Promise<void>;
+  yieldTurn: (toUserId: string) => Promise<void>;
+  clearMyPick: () => Promise<void>;
   setCurrentClimbQueueItem: (item: ClimbQueueItem) => void;
   /** Replace an existing queue item (by its queue-item uuid) with a new climb,
    *  preserving addedBy attribution. Used by the create form to keep the
@@ -101,6 +145,7 @@ export type QueueActionsType = {
   getNextClimbQueueItem: () => ClimbQueueItem | null;
   getPreviousClimbQueueItem: () => ClimbQueueItem | null;
   setQueue: (queue: ClimbQueueItem[]) => void;
+  reorderQueueItem?: (uuid: string, oldIndex: number, newIndex: number) => void;
   disconnect?: () => void;
   /** Dispatch an optimistic current-climb update from a native widget navigation.
    *  The native WebSocket already sent the server mutation, so this only updates
@@ -113,6 +158,9 @@ export type QueueDataType = {
   queue: ClimbQueue;
   currentClimbQueueItem: ClimbQueueItem | null;
   currentClimb: Climb | null;
+  picks: Record<string, UserPick>;
+  activeClimberUserId: string | null;
+  boardSends: BoardSend[];
   climbSearchParams: SearchRequestPagination;
   climbSearchResults: Climb[] | null;
   suggestedClimbs: Climb[];

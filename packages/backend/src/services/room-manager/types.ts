@@ -1,4 +1,4 @@
-import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, UserPick } from '@boardsesh/shared-schema';
 
 // Custom error for version conflicts
 export class VersionConflictError extends Error {
@@ -40,6 +40,8 @@ export type DiscoverableSession = {
 export type QueueState = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
   version: number;
   sequence: number;
   stateHash: string;
@@ -48,6 +50,8 @@ export type QueueState = {
 export type PendingWrite = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
   version: number;
   sequence: number;
 };

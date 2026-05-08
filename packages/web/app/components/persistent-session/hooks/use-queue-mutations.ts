@@ -7,6 +7,11 @@ import {
   MIRROR_CURRENT_CLIMB,
   SET_QUEUE,
   REPLACE_QUEUE_ITEM,
+  REORDER_QUEUE_ITEM,
+  SET_MY_PICK,
+  CLAIM_TURN,
+  YIELD_TURN,
+  CLEAR_MY_PICK,
 } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { type Session, toClimbQueueItemInput } from '../types';
@@ -27,6 +32,11 @@ export type QueueMutationsActions = {
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   setQueue: (queue: LocalClimbQueueItem[], currentClimbQueueItem?: LocalClimbQueueItem | null) => Promise<void>;
   replaceQueueItem: (uuid: string, item: LocalClimbQueueItem) => Promise<void>;
+  reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
+  setMyPick: (item: LocalClimbQueueItem, correlationId?: string) => Promise<void>;
+  claimTurn: (correlationId?: string) => Promise<void>;
+  yieldTurn: (toUserId: string, correlationId?: string) => Promise<void>;
+  clearMyPick: () => Promise<void>;
 };
 
 /**
@@ -87,6 +97,10 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
       correlationId?: string;
     }>
   >({ inFlight: false, pending: null });
+  const setMyPickRefs = useRef<LatestWinsRefs<{ item: LocalClimbQueueItem; correlationId?: string }>>({
+    inFlight: false,
+    pending: null,
+  });
 
   const addQueueItem = useCallback(async (item: LocalClimbQueueItem, position?: number) => {
     if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
@@ -166,6 +180,49 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
     });
   }, []);
 
+  const reorderQueueItem = useCallback(async (uuid: string, oldIndex: number, newIndex: number) => {
+    if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+    await execute(clientRef.current, {
+      query: REORDER_QUEUE_ITEM,
+      variables: { uuid, oldIndex, newIndex },
+    });
+  }, []);
+
+  const setMyPick = useCallback(async (item: LocalClimbQueueItem, correlationId?: string) => {
+    if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+    await executeWithLatestWins(setMyPickRefs.current, { item, correlationId }, async (args) => {
+      if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+      await execute(clientRef.current, {
+        query: SET_MY_PICK,
+        variables: { item: toClimbQueueItemInput(args.item), correlationId: args.correlationId },
+      });
+    });
+  }, []);
+
+  const claimTurn = useCallback(async (correlationId?: string) => {
+    if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+    await execute(clientRef.current, {
+      query: CLAIM_TURN,
+      variables: { correlationId },
+    });
+  }, []);
+
+  const yieldTurn = useCallback(async (toUserId: string, correlationId?: string) => {
+    if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+    await execute(clientRef.current, {
+      query: YIELD_TURN,
+      variables: { toUserId, correlationId },
+    });
+  }, []);
+
+  const clearMyPick = useCallback(async () => {
+    if (!clientRef.current || !sessionRef.current) throw new Error('Not connected to session');
+    await execute(clientRef.current, {
+      query: CLEAR_MY_PICK,
+      variables: {},
+    });
+  }, []);
+
   return {
     addQueueItem,
     removeQueueItem,
@@ -173,5 +230,10 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
     mirrorCurrentClimb,
     setQueue,
     replaceQueueItem,
+    reorderQueueItem,
+    setMyPick,
+    claimTurn,
+    yieldTurn,
+    clearMyPick,
   };
 }

@@ -39,6 +39,42 @@ export const queueTypeDefs = /* GraphQL */ `
   }
 
   """
+  A participant's current personal pick in a collaborative session.
+  """
+  type UserPick {
+    "Stable user identifier, falling back to connection ID for anonymous users"
+    userId: ID!
+    "The climb currently selected by this participant"
+    item: ClimbQueueItem!
+    "ISO timestamp when this pick last changed"
+    updatedAt: String!
+  }
+
+  """
+  A durable record of a climb sent to the physical board.
+  """
+  type BoardSend {
+    "Unique identifier for this board-send event"
+    id: ID!
+    "Session this board-send belongs to"
+    sessionId: ID!
+    "Queue item/climb that was sent to the board"
+    item: ClimbQueueItem!
+    "Climb UUID for history deduplication"
+    climbUuid: ID!
+    "User who performed the send/hand-off action"
+    sentByUserId: ID!
+    "User whose pick became active on the board"
+    activeClimberUserId: ID!
+    "Correlation ID for request tracking"
+    correlationId: ID
+    "Queue-event sequence associated with this send"
+    sequence: Int!
+    "ISO timestamp for history ordering"
+    createdAt: String!
+  }
+
+  """
   Input type for adding items to the queue.
   """
   input ClimbQueueItemInput {
@@ -63,6 +99,10 @@ export const queueTypeDefs = /* GraphQL */ `
     queue: [ClimbQueueItem!]!
     "The climb currently being attempted"
     currentClimbQueueItem: ClimbQueueItem
+    "Per-participant current picks"
+    picks: [UserPick!]!
+    "User whose pick is currently mirrored to the board"
+    activeClimberUserId: ID
   }
 
   """

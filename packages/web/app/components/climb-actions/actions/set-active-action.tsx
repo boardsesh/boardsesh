@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback } from 'react';
-import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
+import PlaylistAddCheckOutlined from '@mui/icons-material/PlaylistAddCheckOutlined';
 import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useOptionalQueueActions, useOptionalQueueData } from '../../graphql-queue';
@@ -22,30 +22,31 @@ export function SetActiveAction({
   const queueData = useOptionalQueueData();
   const { iconSize } = computeActionDisplay(viewMode, size, showLabel);
 
-  const isCurrentClimb = queueData?.currentClimb?.uuid === climb.uuid;
+  const myUserId = queueData?.clientId ?? null;
+  const isMyPick = !!myUserId && queueData?.picks[myUserId]?.item.climb.uuid === climb.uuid;
 
   const handleClick = useCallback(
     (e?: React.MouseEvent) => {
       e?.stopPropagation();
       e?.preventDefault();
 
-      if (!queueActions || isCurrentClimb) return;
+      if (!queueActions || isMyPick) return;
 
-      void queueActions.setCurrentClimb(climb);
+      void queueActions.setMyPick(climb);
 
-      track('Set Active Climb', {
+      track('Set Pick Climb', {
         boardLayout: boardDetails.layout_name || '',
         climbUuid: climb.uuid,
       });
 
       onComplete?.();
     },
-    [queueActions, isCurrentClimb, climb, boardDetails.layout_name, onComplete],
+    [queueActions, isMyPick, climb, boardDetails.layout_name, onComplete],
   );
 
-  const label = isCurrentClimb ? 'Active' : 'Set Active';
-  const iconStyle = isCurrentClimb ? { color: themeTokens.colors.primary, fontSize: iconSize } : { fontSize: iconSize };
-  const icon = <PlayCircleOutlineOutlined sx={iconStyle} />;
+  const label = isMyPick ? 'Picked' : 'Pick this climb';
+  const iconStyle = isMyPick ? { color: themeTokens.colors.primary, fontSize: iconSize } : { fontSize: iconSize };
+  const icon = <PlaylistAddCheckOutlined sx={iconStyle} />;
 
   return buildActionResult({
     key: 'setActive',
@@ -55,16 +56,16 @@ export function SetActiveAction({
     viewMode,
     size,
     showLabel,
-    disabled: disabled || isCurrentClimb,
+    disabled: disabled || isMyPick,
     className,
     available: !!queueActions,
     iconElementOverride: (
       <ActionIconElement
-        tooltip={isCurrentClimb ? 'Currently active' : 'Set as active climb'}
+        tooltip={isMyPick ? 'Your current pick' : 'Pick this climb'}
         onClick={handleClick}
         className={className}
       >
-        <span style={{ cursor: isCurrentClimb ? 'default' : 'pointer' }}>{icon}</span>
+        <span style={{ cursor: isMyPick ? 'default' : 'pointer' }}>{icon}</span>
       </ActionIconElement>
     ),
     menuItem: {
@@ -72,7 +73,7 @@ export function SetActiveAction({
       label,
       icon,
       onClick: () => handleClick(),
-      disabled: isCurrentClimb,
+      disabled: isMyPick,
     },
   });
 }

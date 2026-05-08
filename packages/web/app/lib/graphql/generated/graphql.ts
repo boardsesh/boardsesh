@@ -18,6 +18,17 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown };
 };
 
+/** Event when the participant controlling the board changes. */
+export type ActiveClimberChanged = {
+  __typename?: 'ActiveClimberChanged';
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
+  /** Current active climber, or null when none */
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
 /** Input for activity feed queries. */
 export type ActivityFeedInput = {
   /** Filter by board UUID */
@@ -369,6 +380,38 @@ export type BoardLeaderboardInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Time period (week, month, year, all) */
   period?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** A durable record of a climb sent to the physical board. */
+export type BoardSend = {
+  __typename?: 'BoardSend';
+  /** User whose pick became active on the board */
+  activeClimberUserId: Scalars['ID']['output'];
+  /** Climb UUID for history deduplication */
+  climbUuid: Scalars['ID']['output'];
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** ISO timestamp for history ordering */
+  createdAt: Scalars['String']['output'];
+  /** Unique identifier for this board-send event */
+  id: Scalars['ID']['output'];
+  /** Queue item/climb that was sent to the board */
+  item: ClimbQueueItem;
+  /** User who performed the send/hand-off action */
+  sentByUserId: Scalars['ID']['output'];
+  /** Queue-event sequence associated with this send */
+  sequence: Scalars['Int']['output'];
+  /** Session this board-send belongs to */
+  sessionId: Scalars['ID']['output'];
+};
+
+/** Event when a climb is appended to the sent-to-board history. */
+export type BoardSendAdded = {
+  __typename?: 'BoardSendAdded';
+  /** New board-send history row */
+  boardSend: BoardSend;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
 };
 
 /**
@@ -1758,6 +1801,10 @@ export type Mutation = {
    */
   attachBetaLink: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
+  /** Make the caller's existing pick the active board climb. Re-sends LEDs when already active. */
+  claimTurn: ClimbQueueItem;
+  /** Clear the caller's personal pick. */
+  clearMyPick: Scalars['Boolean']['output'];
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
@@ -1885,6 +1932,8 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setInferredSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /** Update the caller's personal pick. If the caller is active, the board follows this pick. */
+  setMyPick: UserPick;
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
@@ -1954,6 +2003,8 @@ export type Mutation = {
   vote: VoteSummary;
   /** Vote on an open proposal. */
   voteOnProposal: Proposal;
+  /** Hand the active board state to another participant's existing pick. */
+  yieldTurn: ClimbQueueItem;
 };
 
 /** Root mutation type for all write operations. */
@@ -1991,6 +2042,11 @@ export type MutationAttachBetaLinkArgs = {
 export type MutationAuthorizeControllerForSessionArgs = {
   controllerId: Scalars['ID']['input'];
   sessionId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationClaimTurnArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -2259,6 +2315,12 @@ export type MutationSetInferredSessionHealthKitWorkoutIdArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationSetMyPickArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
+  item: ClimbQueueItemInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
   queue: Array<ClimbQueueItemInput>;
@@ -2379,6 +2441,12 @@ export type MutationVoteArgs = {
 /** Root mutation type for all write operations. */
 export type MutationVoteOnProposalArgs = {
   input: VoteOnProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationYieldTurnArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
+  toUserId: Scalars['ID']['input'];
 };
 
 /** Input for listing user's boards. */
@@ -2522,6 +2590,19 @@ export type OutlierAnalysis = {
   isOutlier: Scalars['Boolean']['output'];
   neighborAverage: Scalars['Float']['output'];
   neighborCount: Scalars['Int']['output'];
+};
+
+/** Event when a participant updates their current pick. */
+export type PickChanged = {
+  __typename?: 'PickChanged';
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** New pick, or null when cleared */
+  pick?: Maybe<ClimbQueueItem>;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
+  /** User whose pick changed */
+  userId: Scalars['ID']['output'];
 };
 
 /** Input for pinning/unpinning a playlist. */
@@ -2780,6 +2861,11 @@ export type Query = {
   boardBySlug?: Maybe<UserBoard>;
   /** Get leaderboard for a board. */
   boardLeaderboard: BoardLeaderboard;
+  /**
+   * Get the history of climbs sent to the physical board.
+   * Deduplicates by climb UUID by default, keeping the latest send.
+   */
+  boardSends: Array<BoardSend>;
   /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
@@ -3099,6 +3185,12 @@ export type QueryBoardBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardSendsArgs = {
+  deduplicate?: InputMaybe<Scalars['Boolean']['input']>;
+  sessionId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -3462,9 +3554,12 @@ export type QueryVoteSummaryArgs = {
 
 /** Union of possible queue events. */
 export type QueueEvent =
+  | ActiveClimberChanged
+  | BoardSendAdded
   | ClimbMirrored
   | CurrentClimbChanged
   | FullSync
+  | PickChanged
   | QueueItemAdded
   | QueueItemRemoved
   | QueueReordered;
@@ -3545,8 +3640,12 @@ export type QueueReordered = {
  */
 export type QueueState = {
   __typename?: 'QueueState';
+  /** User whose pick is currently mirrored to the board */
+  activeClimberUserId?: Maybe<Scalars['ID']['output']>;
   /** The climb currently being attempted */
   currentClimbQueueItem?: Maybe<ClimbQueueItem>;
+  /** Per-participant current picks */
+  picks: Array<UserPick>;
   /** List of climbs in the queue */
   queue: Array<ClimbQueueItem>;
   /** Monotonically increasing sequence number for ordering events */
@@ -4657,6 +4756,17 @@ export type UserJoined = {
 export type UserLeft = {
   __typename?: 'UserLeft';
   /** ID of the user who left */
+  userId: Scalars['ID']['output'];
+};
+
+/** A participant's current personal pick in a collaborative session. */
+export type UserPick = {
+  __typename?: 'UserPick';
+  /** The climb currently selected by this participant */
+  item: ClimbQueueItem;
+  /** ISO timestamp when this pick last changed */
+  updatedAt: Scalars['String']['output'];
+  /** Stable user identifier, falling back to connection ID for anonymous users */
   userId: Scalars['ID']['output'];
 };
 

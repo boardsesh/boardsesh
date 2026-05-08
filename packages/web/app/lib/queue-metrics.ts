@@ -7,7 +7,10 @@ export type QueueOperation =
   | 'removeFromQueue'
   | 'mirrorClimb'
   | 'setQueue'
-  | 'replaceQueueItem';
+  | 'replaceQueueItem'
+  | 'setMyPick'
+  | 'claimTurn'
+  | 'yieldTurn';
 
 export type QueueOperationMode = 'local' | 'party' | 'party-offline';
 

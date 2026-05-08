@@ -73,6 +73,9 @@ const mockQueueItems: ClimbQueueItem[] = [
 // Mock graphql-queue hooks
 vi.mock('../../graphql-queue', () => ({
   useCurrentClimbUuid: () => null,
+  useQueueData: () => ({
+    picks: {},
+  }),
   useQueueList: () => ({
     queue: mockQueueItems,
     suggestedClimbs: mockSuggestedClimbs,
@@ -84,11 +87,14 @@ vi.mock('../../graphql-queue', () => ({
   }),
   useSessionData: () => ({
     viewOnlyMode: false,
+    users: [],
+    clientId: null,
   }),
   useQueueActions: () => ({
     fetchMoreClimbs: vi.fn(),
     setCurrentClimb: mockSetCurrentClimb,
     setCurrentClimbQueueItem: vi.fn(),
+    setMyPickQueueItem: vi.fn(),
     setQueue: vi.fn(),
     addToQueue: vi.fn(),
   }),

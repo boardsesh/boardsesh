@@ -28,6 +28,8 @@ export function fnv1aHash(str: string): string {
 export function computeQueueStateHash(
   queue: Array<{ uuid: string } | null | undefined>,
   currentItemUuid: string | null,
+  picks: Array<{ userId: string; item: { uuid: string } } | null | undefined> = [],
+  activeClimberUserId: string | null = null,
 ): string {
   // Sort queue UUIDs for deterministic ordering
   // Defensive filter for null/undefined items that may have been introduced by state corruption
@@ -37,9 +39,18 @@ export function computeQueueStateHash(
     .sort()
     .join(',');
   const currentUuid = currentItemUuid || 'null';
+  const pickUuids = picks
+    .filter(
+      (pick): pick is { userId: string; item: { uuid: string } } =>
+        pick != null && typeof pick === 'object' && pick.item != null && pick.item.uuid != null,
+    )
+    .map((pick) => `${pick.userId}:${pick.item.uuid}`)
+    .sort()
+    .join(',');
+  const active = activeClimberUserId || 'null';
 
   // Create canonical string representation
-  const canonical = `${queueUuids}|${currentUuid}`;
+  const canonical = `${queueUuids}|${currentUuid}|${pickUuids}|${active}`;
 
   return fnv1aHash(canonical);
 }

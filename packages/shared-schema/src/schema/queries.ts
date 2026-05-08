@@ -16,6 +16,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     eventsReplay(sessionId: ID!, sinceSequence: Int!): EventsReplayResponse!
 
     """
+    Get the history of climbs sent to the physical board.
+    Deduplicates by climb UUID by default, keeping the latest send.
+    """
+    boardSends(sessionId: ID!, deduplicate: Boolean = true): [BoardSend!]!
+
+    """
     Find discoverable sessions near a GPS location.
     Default radius is 1000 meters.
     """

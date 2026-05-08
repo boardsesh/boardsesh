@@ -1,6 +1,6 @@
 import { type Dispatch, useEffect } from 'react';
 import type { SubscriptionQueueEvent } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem, QueueAction } from '../../queue-control/types';
+import type { BoardSend, ClimbQueueItem, QueueAction, UserPick } from '../../queue-control/types';
 
 type UseQueueEventSubscriptionParams = {
   isPersistentSessionActive: boolean;
@@ -36,6 +36,8 @@ export function useQueueEventSubscription({
             payload: {
               queue: event.state.queue as ClimbQueueItem[],
               currentClimbQueueItem: event.state.currentClimbQueueItem as ClimbQueueItem | null,
+              picks: event.state.picks as UserPick[],
+              activeClimberUserId: event.state.activeClimberUserId,
             },
           });
           break;
@@ -81,6 +83,27 @@ export function useQueueEventSubscription({
           dispatch({
             type: 'DELTA_MIRROR_CURRENT_CLIMB',
             payload: { mirrored: event.mirrored },
+          });
+          break;
+        case 'PickChanged':
+          dispatch({
+            type: 'DELTA_PICK_CHANGED',
+            payload: {
+              userId: event.userId,
+              pick: event.pick as ClimbQueueItem | null,
+            },
+          });
+          break;
+        case 'ActiveClimberChanged':
+          dispatch({
+            type: 'DELTA_ACTIVE_CLIMBER_CHANGED',
+            payload: { userId: event.activeClimberUserId },
+          });
+          break;
+        case 'BoardSendAdded':
+          dispatch({
+            type: 'DELTA_BOARD_SEND_ADDED',
+            payload: { boardSend: event.boardSend as BoardSend },
           });
           break;
       }

@@ -55,6 +55,10 @@ const createClimbQueueItem = (
   suggested: !!suggested,
 });
 
+const resolveMyUserId = (clientId: string | null, currentUserInfo?: QueueItemUser): string | null => {
+  return clientId ?? currentUserInfo?.id ?? null;
+};
+
 const resolveQueueOperationMode = (isPersistentSessionActive: boolean, isDisconnected: boolean): QueueOperationMode => {
   if (!isPersistentSessionActive) return 'local';
   if (isDisconnected) return 'party-offline';
@@ -385,21 +389,20 @@ export const GraphQLQueueProvider = ({
     const mode: QueueOperationMode = resolveQueueOperationMode(r.isPersistentSessionActive, r.isDisconnected);
     const newItem = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
     const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
-    r.dispatch({
-      type: 'DELTA_UPDATE_CURRENT_CLIMB',
-      payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true, correlationId },
-    });
+    const myUserId = resolveMyUserId(r.clientId, r.currentUserInfo);
+    if (r.isPersistentSessionActive && myUserId) {
+      r.dispatch({ type: 'SET_MY_PICK', payload: { userId: myUserId, item: newItem, correlationId } });
+    } else {
+      r.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true, correlationId },
+      });
+    }
     if (r.isDisconnected && r.isPersistentSessionActive) {
-      r.offlineBuffer.bufferAddition(newItem);
       trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
     } else if (r.hasConnected && r.isPersistentSessionActive) {
-      const currentIndex = r.state.currentClimbQueueItem
-        ? r.state.queue.findIndex((queueItem) => queueItem.uuid === r.state.currentClimbQueueItem?.uuid)
-        : -1;
-      const position = currentIndex === -1 ? undefined : currentIndex + 1;
       try {
-        await r.persistentSession.addQueueItem(newItem, position);
-        await r.persistentSession.setCurrentClimb(newItem, false, correlationId);
+        await r.persistentSession.setMyPick(newItem, correlationId);
         trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
       } catch (error: unknown) {
         console.error('Failed to set current climb:', error);
@@ -410,6 +413,80 @@ export const GraphQLQueueProvider = ({
       trackQueueOperation('setCurrentClimb', performance.now() - startTime, mode);
     }
     return newItem;
+  }, []);
+
+  const setMyPickQueueItem = useCallback(async (item: ClimbQueueItem): Promise<void> => {
+    const startTime = performance.now();
+    const r = latestRef.current;
+    if (r.guardMutation()) return;
+    const myUserId = resolveMyUserId(r.clientId, r.currentUserInfo);
+    if (!myUserId) return;
+    const mode: QueueOperationMode = resolveQueueOperationMode(r.isPersistentSessionActive, r.isDisconnected);
+    const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
+    r.dispatch({ type: 'SET_MY_PICK', payload: { userId: myUserId, item, correlationId } });
+    if (!r.isDisconnected && r.hasConnected && r.isPersistentSessionActive) {
+      try {
+        await r.persistentSession.setMyPick(item, correlationId);
+        trackQueueOperation('setMyPick', performance.now() - startTime, mode);
+      } catch (error: unknown) {
+        console.error('Failed to set my pick:', error);
+        trackQueueOperationError('setMyPick', mode);
+      }
+    } else {
+      trackQueueOperation('setMyPick', performance.now() - startTime, mode);
+    }
+  }, []);
+
+  const setMyPick = useCallback(
+    async (climb: Climb): Promise<ClimbQueueItem | null> => {
+      const r = latestRef.current;
+      if (r.guardMutation()) return null;
+      if (!r.validateQueueAdd(climb)) return null;
+      const item = createClimbQueueItem(climb, r.clientId, r.currentUserInfo);
+      await setMyPickQueueItem(item);
+      return item;
+    },
+    [setMyPickQueueItem],
+  );
+
+  const claimTurn = useCallback(async (): Promise<void> => {
+    const startTime = performance.now();
+    const r = latestRef.current;
+    if (r.guardMutation() || !r.hasConnected || !r.isPersistentSessionActive || r.isDisconnected) return;
+    const mode: QueueOperationMode = resolveQueueOperationMode(r.isPersistentSessionActive, r.isDisconnected);
+    const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
+    try {
+      await r.persistentSession.claimTurn(correlationId);
+      trackQueueOperation('claimTurn', performance.now() - startTime, mode);
+    } catch (error: unknown) {
+      console.error('Failed to claim turn:', error);
+      trackQueueOperationError('claimTurn', mode);
+    }
+  }, []);
+
+  const yieldTurn = useCallback(async (toUserId: string): Promise<void> => {
+    const startTime = performance.now();
+    const r = latestRef.current;
+    if (r.guardMutation() || !r.hasConnected || !r.isPersistentSessionActive || r.isDisconnected) return;
+    const mode: QueueOperationMode = resolveQueueOperationMode(r.isPersistentSessionActive, r.isDisconnected);
+    const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
+    try {
+      await r.persistentSession.yieldTurn(toUserId, correlationId);
+      trackQueueOperation('yieldTurn', performance.now() - startTime, mode);
+    } catch (error: unknown) {
+      console.error('Failed to yield turn:', error);
+      trackQueueOperationError('yieldTurn', mode);
+    }
+  }, []);
+
+  const clearMyPick = useCallback(async (): Promise<void> => {
+    const r = latestRef.current;
+    if (r.guardMutation() || !r.hasConnected || !r.isPersistentSessionActive || r.isDisconnected) return;
+    try {
+      await r.persistentSession.clearMyPick();
+    } catch (error: unknown) {
+      console.error('Failed to clear my pick:', error);
+    }
   }, []);
 
   // Replace an existing queue item in place with a new climb, preserving the
@@ -470,19 +547,35 @@ export const GraphQLQueueProvider = ({
     }
   }, []);
 
+  const reorderQueueItem = useCallback((uuid: string, oldIndex: number, newIndex: number) => {
+    const r = latestRef.current;
+    if (r.guardMutation()) return;
+    r.dispatch({ type: 'DELTA_REORDER_QUEUE_ITEM', payload: { uuid, oldIndex, newIndex } });
+    if (!r.isDisconnected && r.hasConnected && r.isPersistentSessionActive) {
+      r.persistentSession.reorderQueueItem(uuid, oldIndex, newIndex).catch((error: unknown) => {
+        console.error('Failed to reorder queue item:', error);
+      });
+    }
+  }, []);
+
   const setCurrentClimbQueueItem = useCallback((item: ClimbQueueItem) => {
     const startTime = performance.now();
     const r = latestRef.current;
     if (r.guardMutation()) return;
     const mode: QueueOperationMode = resolveQueueOperationMode(r.isPersistentSessionActive, r.isDisconnected);
     const correlationId = r.clientId ? `${r.clientId}-${++r.correlationCounterRef.current}` : undefined;
-    r.dispatch({
-      type: 'DELTA_UPDATE_CURRENT_CLIMB',
-      payload: { item, shouldAddToQueue: item.suggested, correlationId },
-    });
+    const myUserId = resolveMyUserId(r.clientId, r.currentUserInfo);
+    if (r.isPersistentSessionActive && myUserId) {
+      r.dispatch({ type: 'SET_MY_PICK', payload: { userId: myUserId, item, correlationId } });
+    } else {
+      r.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item, shouldAddToQueue: item.suggested, correlationId },
+      });
+    }
     if (!r.isDisconnected && r.hasConnected && r.isPersistentSessionActive) {
       r.persistentSession
-        .setCurrentClimb(item, item.suggested, correlationId)
+        .setMyPick(item, correlationId)
         .then(() => trackQueueOperation('setCurrentClimbQueueItem', performance.now() - startTime, mode))
         .catch((error: unknown) => {
           console.error('Failed to set current climb:', error);
@@ -597,7 +690,13 @@ export const GraphQLQueueProvider = ({
       addToQueue,
       removeFromQueue,
       setCurrentClimb,
+      setMyPick,
+      setMyPickQueueItem,
+      claimTurn,
+      yieldTurn,
+      clearMyPick,
       setQueue,
+      reorderQueueItem,
       setCurrentClimbQueueItem,
       replaceQueueItem,
       setClimbSearchParams,
@@ -617,7 +716,13 @@ export const GraphQLQueueProvider = ({
       addToQueue,
       removeFromQueue,
       setCurrentClimb,
+      setMyPick,
+      setMyPickQueueItem,
+      claimTurn,
+      yieldTurn,
+      clearMyPick,
       setQueue,
+      reorderQueueItem,
       setCurrentClimbQueueItem,
       replaceQueueItem,
       setClimbSearchParams,
@@ -641,6 +746,9 @@ export const GraphQLQueueProvider = ({
       queue: state.queue,
       currentClimbQueueItem: state.currentClimbQueueItem,
       currentClimb: state.currentClimbQueueItem?.climb || null,
+      picks: state.picks,
+      activeClimberUserId: state.activeClimberUserId,
+      boardSends: state.boardSends,
       climbSearchParams: state.climbSearchParams,
       climbSearchResults,
       suggestedClimbs,
@@ -668,6 +776,9 @@ export const GraphQLQueueProvider = ({
     [
       state.queue,
       state.currentClimbQueueItem,
+      state.picks,
+      state.activeClimberUserId,
+      state.boardSends,
       state.climbSearchParams,
       state.hasDoneFirstFetch,
       climbSearchResults,

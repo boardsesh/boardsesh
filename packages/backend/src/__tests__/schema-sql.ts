@@ -4,6 +4,7 @@
  */
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS "board_session_sends" CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "board_session_clients" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
@@ -70,9 +71,23 @@ export const schemaSQL = `
     "session_id" text PRIMARY KEY NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
     "queue" jsonb DEFAULT '[]'::jsonb NOT NULL,
     "current_climb_queue_item" jsonb DEFAULT 'null'::jsonb,
+    "picks" jsonb DEFAULT '[]'::jsonb NOT NULL,
+    "active_climber_user_id" text,
     "version" integer DEFAULT 1 NOT NULL,
     "sequence" integer DEFAULT 0 NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_session_sends" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "session_id" text NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
+    "item" jsonb NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "sent_by_user_id" text NOT NULL,
+    "active_climber_user_id" text NOT NULL,
+    "correlation_id" text,
+    "sequence" integer NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS "board_sessions_location_idx" ON "board_sessions" ("latitude", "longitude");
@@ -83,6 +98,8 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "board_sessions_discovery_idx" ON "board_sessions" ("discoverable", "status", "last_activity");
   CREATE INDEX IF NOT EXISTS "board_session_participants_session_idx" ON "board_session_participants" ("session_id");
   CREATE INDEX IF NOT EXISTS "board_session_participants_user_idx" ON "board_session_participants" ("user_id");
+  CREATE INDEX IF NOT EXISTS "board_session_sends_session_created_idx" ON "board_session_sends" ("session_id", "created_at");
+  CREATE INDEX IF NOT EXISTS "board_session_sends_session_climb_idx" ON "board_session_sends" ("session_id", "climb_uuid");
 
   DROP TABLE IF EXISTS "esp32_controllers" CASCADE;
   CREATE TABLE IF NOT EXISTS "esp32_controllers" (

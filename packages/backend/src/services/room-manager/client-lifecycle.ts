@@ -1,4 +1,4 @@
-import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, SessionUser, UserPick } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
 import type { RedisSessionStore } from '../redis-session-store';
@@ -60,6 +60,8 @@ export async function joinSession(
   getQueueStateFn: (sessionId: string) => Promise<{
     queue: ClimbQueueItem[];
     currentClimbQueueItem: ClimbQueueItem | null;
+    picks: UserPick[];
+    activeClimberUserId: string | null;
     version: number;
     sequence: number;
     stateHash: string;
@@ -84,6 +86,8 @@ export async function joinSession(
   users: SessionUser[];
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
   sequence: number;
   stateHash: string;
   isLeader: boolean;
@@ -200,6 +204,8 @@ export async function joinSession(
     users,
     queue: queueState.queue,
     currentClimbQueueItem: queueState.currentClimbQueueItem,
+    picks: queueState.picks,
+    activeClimberUserId: queueState.activeClimberUserId,
     sequence: queueState.sequence,
     stateHash: queueState.stateHash,
     isLeader,

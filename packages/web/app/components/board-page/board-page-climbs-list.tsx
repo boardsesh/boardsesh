@@ -1,7 +1,8 @@
 'use client';
 import React, { useMemo, useRef } from 'react';
 import type { Climb, ParsedBoardRouteParameters, BoardDetails } from '@/app/lib/types';
-import { useQueueActions, useCurrentClimb, useSearchData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueData, useSearchData, useSessionData } from '../graphql-queue';
+import { usePartyProfile } from '../party-manager/party-profile-context';
 import ClimbsList from './climbs-list';
 import { stabilizeClimbArrayRef } from './climb-list-utils';
 import RecentSearchPills from '../search-drawer/recent-search-pills';
@@ -22,8 +23,11 @@ const BoardPageClimbsList = ({
   angle,
 }: BoardPageClimbsListProps) => {
   const { currentClimb } = useCurrentClimb();
+  const { picks } = useQueueData();
   const { climbSearchResults, hasMoreResults, hasDoneFirstFetch, isFetchingClimbs } = useSearchData();
+  const { isSessionActive, users, clientId } = useSessionData();
   const { setCurrentClimb, addToQueue, fetchMoreClimbs } = useQueueActions();
+  const { profile } = usePartyProfile();
 
   // Queue Context provider uses React Query infinite to fetch results, which can only happen clientside.
   // That data equals null at the start, so when its null we use the initialClimbs array which we
@@ -63,12 +67,29 @@ const BoardPageClimbsList = ({
     [board_name, boardDetails, angle, currentClimb],
   );
 
+  const selectedClimbUuid = useMemo(() => {
+    if (!isSessionActive) return currentClimb?.uuid ?? null;
+
+    const ids = new Set<string>();
+    if (clientId) ids.add(clientId);
+    if (profile?.id) ids.add(profile.id);
+    const me = users.find((user) => user.id === clientId || (!!profile?.id && user.userId === profile.id));
+    if (me?.userId) ids.add(me.userId);
+
+    for (const id of ids) {
+      const pickUuid = picks[id]?.item.climb.uuid;
+      if (pickUuid) return pickUuid;
+    }
+
+    return currentClimb?.uuid ?? null;
+  }, [clientId, currentClimb?.uuid, isSessionActive, picks, profile?.id, users]);
+
   return (
     <ClimbsList
       boardDetails={boardDetails}
       initialImageCount={initialClimbs.length}
       climbs={climbs}
-      selectedClimbUuid={currentClimb?.uuid}
+      selectedClimbUuid={selectedClimbUuid}
       isFetching={isFetchingClimbs}
       hasMore={hasMoreResults}
       onClimbSelect={setCurrentClimb}

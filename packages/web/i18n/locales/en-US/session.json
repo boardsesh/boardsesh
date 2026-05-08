@@ -208,7 +208,8 @@
     "browseClimbs": "Browse Climbs",
     "actionBar": {
       "climbActionsAria": "Climb actions",
-      "openQueueAria": "Open queue"
+      "openQueueAria": "Open queue",
+      "switchToMyPickAria": "Switch to my pick"
     },
     "tickFab": {
       "logAscentAria": "Log ascent"

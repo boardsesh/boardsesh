@@ -21,6 +21,17 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown };
 };
 
+/** Event when the participant controlling the board changes. */
+export type ActiveClimberChanged = {
+  __typename?: 'ActiveClimberChanged';
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
+  /** Current active climber, or null when none */
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
 /** Input for activity feed queries. */
 export type ActivityFeedInput = {
   /** Filter by board UUID */
@@ -372,6 +383,38 @@ export type BoardLeaderboardInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Time period (week, month, year, all) */
   period?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** A durable record of a climb sent to the physical board. */
+export type BoardSend = {
+  __typename?: 'BoardSend';
+  /** User whose pick became active on the board */
+  activeClimberUserId: Scalars['ID']['output'];
+  /** Climb UUID for history deduplication */
+  climbUuid: Scalars['ID']['output'];
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** ISO timestamp for history ordering */
+  createdAt: Scalars['String']['output'];
+  /** Unique identifier for this board-send event */
+  id: Scalars['ID']['output'];
+  /** Queue item/climb that was sent to the board */
+  item: ClimbQueueItem;
+  /** User who performed the send/hand-off action */
+  sentByUserId: Scalars['ID']['output'];
+  /** Queue-event sequence associated with this send */
+  sequence: Scalars['Int']['output'];
+  /** Session this board-send belongs to */
+  sessionId: Scalars['ID']['output'];
+};
+
+/** Event when a climb is appended to the sent-to-board history. */
+export type BoardSendAdded = {
+  __typename?: 'BoardSendAdded';
+  /** New board-send history row */
+  boardSend: BoardSend;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
 };
 
 /**
@@ -1761,6 +1804,10 @@ export type Mutation = {
    */
   attachBetaLink: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
+  /** Make the caller's existing pick the active board climb. Re-sends LEDs when already active. */
+  claimTurn: ClimbQueueItem;
+  /** Clear the caller's personal pick. */
+  clearMyPick: Scalars['Boolean']['output'];
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
@@ -1888,6 +1935,8 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setInferredSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /** Update the caller's personal pick. If the caller is active, the board follows this pick. */
+  setMyPick: UserPick;
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
@@ -1957,6 +2006,8 @@ export type Mutation = {
   vote: VoteSummary;
   /** Vote on an open proposal. */
   voteOnProposal: Proposal;
+  /** Hand the active board state to another participant's existing pick. */
+  yieldTurn: ClimbQueueItem;
 };
 
 /** Root mutation type for all write operations. */
@@ -1994,6 +2045,11 @@ export type MutationAttachBetaLinkArgs = {
 export type MutationAuthorizeControllerForSessionArgs = {
   controllerId: Scalars['ID']['input'];
   sessionId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationClaimTurnArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -2262,6 +2318,12 @@ export type MutationSetInferredSessionHealthKitWorkoutIdArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationSetMyPickArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
+  item: ClimbQueueItemInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
   queue: Array<ClimbQueueItemInput>;
@@ -2382,6 +2444,12 @@ export type MutationVoteArgs = {
 /** Root mutation type for all write operations. */
 export type MutationVoteOnProposalArgs = {
   input: VoteOnProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationYieldTurnArgs = {
+  correlationId?: InputMaybe<Scalars['ID']['input']>;
+  toUserId: Scalars['ID']['input'];
 };
 
 /** Input for listing user's boards. */
@@ -2525,6 +2593,19 @@ export type OutlierAnalysis = {
   isOutlier: Scalars['Boolean']['output'];
   neighborAverage: Scalars['Float']['output'];
   neighborCount: Scalars['Int']['output'];
+};
+
+/** Event when a participant updates their current pick. */
+export type PickChanged = {
+  __typename?: 'PickChanged';
+  /** Correlation ID for request tracking */
+  correlationId?: Maybe<Scalars['ID']['output']>;
+  /** New pick, or null when cleared */
+  pick?: Maybe<ClimbQueueItem>;
+  /** Sequence number of this event */
+  sequence: Scalars['Int']['output'];
+  /** User whose pick changed */
+  userId: Scalars['ID']['output'];
 };
 
 /** Input for pinning/unpinning a playlist. */
@@ -2783,6 +2864,11 @@ export type Query = {
   boardBySlug?: Maybe<UserBoard>;
   /** Get leaderboard for a board. */
   boardLeaderboard: BoardLeaderboard;
+  /**
+   * Get the history of climbs sent to the physical board.
+   * Deduplicates by climb UUID by default, keeping the latest send.
+   */
+  boardSends: Array<BoardSend>;
   /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
@@ -3102,6 +3188,12 @@ export type QueryBoardBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardSendsArgs = {
+  deduplicate?: InputMaybe<Scalars['Boolean']['input']>;
+  sessionId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -3465,9 +3557,12 @@ export type QueryVoteSummaryArgs = {
 
 /** Union of possible queue events. */
 export type QueueEvent =
+  | ActiveClimberChanged
+  | BoardSendAdded
   | ClimbMirrored
   | CurrentClimbChanged
   | FullSync
+  | PickChanged
   | QueueItemAdded
   | QueueItemRemoved
   | QueueReordered;
@@ -3548,8 +3643,12 @@ export type QueueReordered = {
  */
 export type QueueState = {
   __typename?: 'QueueState';
+  /** User whose pick is currently mirrored to the board */
+  activeClimberUserId?: Maybe<Scalars['ID']['output']>;
   /** The climb currently being attempted */
   currentClimbQueueItem?: Maybe<ClimbQueueItem>;
+  /** Per-participant current picks */
+  picks: Array<UserPick>;
   /** List of climbs in the queue */
   queue: Array<ClimbQueueItem>;
   /** Monotonically increasing sequence number for ordering events */
@@ -4663,6 +4762,17 @@ export type UserLeft = {
   userId: Scalars['ID']['output'];
 };
 
+/** A participant's current personal pick in a collaborative session. */
+export type UserPick = {
+  __typename?: 'UserPick';
+  /** The climb currently selected by this participant */
+  item: ClimbQueueItem;
+  /** ISO timestamp when this pick last changed */
+  updatedAt: Scalars['String']['output'];
+  /** Stable user identifier, falling back to connection ID for anonymous users */
+  userId: Scalars['ID']['output'];
+};
+
 /** User profile information. */
 export type UserProfile = {
   __typename?: 'UserProfile';
@@ -4823,12 +4933,22 @@ export type DirectiveResolverFn<TResult = {}, TParent = {}, TContext = {}, TArgs
 export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = ResolversObject<{
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
-  QueueEvent: ClimbMirrored | CurrentClimbChanged | FullSync | QueueItemAdded | QueueItemRemoved | QueueReordered;
+  QueueEvent:
+    | ActiveClimberChanged
+    | BoardSendAdded
+    | ClimbMirrored
+    | CurrentClimbChanged
+    | FullSync
+    | PickChanged
+    | QueueItemAdded
+    | QueueItemRemoved
+    | QueueReordered;
   SessionEvent: LeaderChanged | SessionEnded | SessionStatsUpdated | UserJoined | UserLeft;
 }>;
 
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = ResolversObject<{
+  ActiveClimberChanged: ResolverTypeWrapper<ActiveClimberChanged>;
   ActivityFeedInput: ActivityFeedInput;
   ActivityFeedItem: ResolverTypeWrapper<ActivityFeedItem>;
   ActivityFeedItemType: ActivityFeedItemType;
@@ -4849,6 +4969,8 @@ export type ResolversTypes = ResolversObject<{
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
   BoardLeaderboardInput: BoardLeaderboardInput;
+  BoardSend: ResolverTypeWrapper<BoardSend>;
+  BoardSendAdded: ResolverTypeWrapper<BoardSendAdded>;
   BoardSerialConfig: ResolverTypeWrapper<BoardSerialConfig>;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   BrowseProposalsInput: BrowseProposalsInput;
@@ -4968,6 +5090,7 @@ export type ResolversTypes = ResolversObject<{
   NotificationEvent: ResolverTypeWrapper<NotificationEvent>;
   NotificationType: NotificationType;
   OutlierAnalysis: ResolverTypeWrapper<OutlierAnalysis>;
+  PickChanged: ResolverTypeWrapper<PickChanged>;
   PinPlaylistInput: PinPlaylistInput;
   Playlist: ResolverTypeWrapper<Playlist>;
   PlaylistClimb: ResolverTypeWrapper<PlaylistClimb>;
@@ -5066,6 +5189,7 @@ export type ResolversTypes = ResolversObject<{
   UserClimbsInput: UserClimbsInput;
   UserJoined: ResolverTypeWrapper<UserJoined>;
   UserLeft: ResolverTypeWrapper<UserLeft>;
+  UserPick: ResolverTypeWrapper<UserPick>;
   UserProfile: ResolverTypeWrapper<UserProfile>;
   UserSearchConnection: ResolverTypeWrapper<UserSearchConnection>;
   UserSearchResult: ResolverTypeWrapper<UserSearchResult>;
@@ -5077,6 +5201,7 @@ export type ResolversTypes = ResolversObject<{
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = ResolversObject<{
+  ActiveClimberChanged: ActiveClimberChanged;
   ActivityFeedInput: ActivityFeedInput;
   ActivityFeedItem: ActivityFeedItem;
   ActivityFeedResult: ActivityFeedResult;
@@ -5096,6 +5221,8 @@ export type ResolversParentTypes = ResolversObject<{
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
   BoardLeaderboardInput: BoardLeaderboardInput;
+  BoardSend: BoardSend;
+  BoardSendAdded: BoardSendAdded;
   BoardSerialConfig: BoardSerialConfig;
   Boolean: Scalars['Boolean']['output'];
   BrowseProposalsInput: BrowseProposalsInput;
@@ -5210,6 +5337,7 @@ export type ResolversParentTypes = ResolversObject<{
   NotificationConnection: NotificationConnection;
   NotificationEvent: NotificationEvent;
   OutlierAnalysis: OutlierAnalysis;
+  PickChanged: PickChanged;
   PinPlaylistInput: PinPlaylistInput;
   Playlist: Playlist;
   PlaylistClimb: PlaylistClimb;
@@ -5301,6 +5429,7 @@ export type ResolversParentTypes = ResolversObject<{
   UserClimbsInput: UserClimbsInput;
   UserJoined: UserJoined;
   UserLeft: UserLeft;
+  UserPick: UserPick;
   UserProfile: UserProfile;
   UserSearchConnection: UserSearchConnection;
   UserSearchResult: UserSearchResult;
@@ -5308,6 +5437,16 @@ export type ResolversParentTypes = ResolversObject<{
   VoteOnProposalInput: VoteOnProposalInput;
   VoteSummary: VoteSummary;
   ZoneBoxInput: ZoneBoxInput;
+}>;
+
+export type ActiveClimberChangedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ActiveClimberChanged'] = ResolversParentTypes['ActiveClimberChanged'],
+> = ResolversObject<{
+  correlationId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type ActivityFeedItemResolvers<
@@ -5474,6 +5613,31 @@ export type BoardLeaderboardEntryResolvers<
   userAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardSendResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardSend'] = ResolversParentTypes['BoardSend'],
+> = ResolversObject<{
+  activeClimberUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  correlationId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  item?: Resolver<ResolversTypes['ClimbQueueItem'], ParentType, ContextType>;
+  sentByUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardSendAddedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardSendAdded'] = ResolversParentTypes['BoardSendAdded'],
+> = ResolversObject<{
+  boardSend?: Resolver<ResolversTypes['BoardSend'], ParentType, ContextType>;
+  sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -6200,6 +6364,8 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationAuthorizeControllerForSessionArgs, 'controllerId' | 'sessionId'>
   >;
+  claimTurn?: Resolver<ResolversTypes['ClimbQueueItem'], ParentType, ContextType, Partial<MutationClaimTurnArgs>>;
+  clearMyPick?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   controllerHeartbeat?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -6486,6 +6652,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSetInferredSessionHealthKitWorkoutIdArgs, 'sessionId' | 'workoutId'>
   >;
+  setMyPick?: Resolver<
+    ResolversTypes['UserPick'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetMyPickArgs, 'item'>
+  >;
   setQueue?: Resolver<
     ResolversTypes['QueueState'],
     ParentType,
@@ -6620,6 +6792,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationVoteOnProposalArgs, 'input'>
   >;
+  yieldTurn?: Resolver<
+    ResolversTypes['ClimbQueueItem'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationYieldTurnArgs, 'toUserId'>
+  >;
 }>;
 
 export type NewClimbCreatedEventResolvers<
@@ -6718,6 +6896,17 @@ export type OutlierAnalysisResolvers<
   isOutlier?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   neighborAverage?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
   neighborCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PickChangedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PickChanged'] = ResolversParentTypes['PickChanged'],
+> = ResolversObject<{
+  correlationId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  pick?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
+  sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -6939,6 +7128,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryBoardLeaderboardArgs, 'input'>
+  >;
+  boardSends?: Resolver<
+    Array<ResolversTypes['BoardSend']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardSendsArgs, 'deduplicate' | 'sessionId'>
   >;
   boardsBySerialNumbers?: Resolver<
     Array<ResolversTypes['UserBoard']>,
@@ -7340,7 +7535,15 @@ export type QueueEventResolvers<
   ParentType extends ResolversParentTypes['QueueEvent'] = ResolversParentTypes['QueueEvent'],
 > = ResolversObject<{
   __resolveType: TypeResolveFn<
-    'ClimbMirrored' | 'CurrentClimbChanged' | 'FullSync' | 'QueueItemAdded' | 'QueueItemRemoved' | 'QueueReordered',
+    | 'ActiveClimberChanged'
+    | 'BoardSendAdded'
+    | 'ClimbMirrored'
+    | 'CurrentClimbChanged'
+    | 'FullSync'
+    | 'PickChanged'
+    | 'QueueItemAdded'
+    | 'QueueItemRemoved'
+    | 'QueueReordered',
     ParentType,
     ContextType
   >;
@@ -7411,7 +7614,9 @@ export type QueueStateResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['QueueState'] = ResolversParentTypes['QueueState'],
 > = ResolversObject<{
+  activeClimberUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   currentClimbQueueItem?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
+  picks?: Resolver<Array<ResolversTypes['UserPick']>, ParentType, ContextType>;
   queue?: Resolver<Array<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stateHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -7966,6 +8171,16 @@ export type UserLeftResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type UserPickResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserPick'] = ResolversParentTypes['UserPick'],
+> = ResolversObject<{
+  item?: Resolver<ResolversTypes['ClimbQueueItem'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserProfileResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UserProfile'] = ResolversParentTypes['UserProfile'],
@@ -8011,6 +8226,7 @@ export type VoteSummaryResolvers<
 }>;
 
 export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
+  ActiveClimberChanged?: ActiveClimberChangedResolvers<ContextType>;
   ActivityFeedItem?: ActivityFeedItemResolvers<ContextType>;
   ActivityFeedResult?: ActivityFeedResultResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
@@ -8022,6 +8238,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BetaLink?: BetaLinkResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;
+  BoardSend?: BoardSendResolvers<ContextType>;
+  BoardSendAdded?: BoardSendAddedResolvers<ContextType>;
   BoardSerialConfig?: BoardSerialConfigResolvers<ContextType>;
   Climb?: ClimbResolvers<ContextType>;
   ClimbClassicStatus?: ClimbClassicStatusResolvers<ContextType>;
@@ -8084,6 +8302,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   NotificationConnection?: NotificationConnectionResolvers<ContextType>;
   NotificationEvent?: NotificationEventResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
+  PickChanged?: PickChangedResolvers<ContextType>;
   Playlist?: PlaylistResolvers<ContextType>;
   PlaylistClimb?: PlaylistClimbResolvers<ContextType>;
   PlaylistClimbsResult?: PlaylistClimbsResultResolvers<ContextType>;
@@ -8140,6 +8359,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   UserClimbPercentile?: UserClimbPercentileResolvers<ContextType>;
   UserJoined?: UserJoinedResolvers<ContextType>;
   UserLeft?: UserLeftResolvers<ContextType>;
+  UserPick?: UserPickResolvers<ContextType>;
   UserProfile?: UserProfileResolvers<ContextType>;
   UserSearchConnection?: UserSearchConnectionResolvers<ContextType>;
   UserSearchResult?: UserSearchResultResolvers<ContextType>;

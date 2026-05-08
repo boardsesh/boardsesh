@@ -56,6 +56,9 @@ const mockSearchParams: SearchRequestPagination = {
 const initialState: QueueState = {
   queue: [],
   currentClimbQueueItem: null,
+  picks: {},
+  activeClimberUserId: null,
+  boardSends: [],
   climbSearchParams: mockSearchParams,
   hasDoneFirstFetch: false,
   initialQueueDataReceivedFromPeers: false,
@@ -1226,6 +1229,59 @@ describe('queueReducer', () => {
 
       expect(state4.currentClimbQueueItem).toEqual(itemC);
       expect(state4.pendingCurrentClimbUpdates).toHaveLength(0);
+    });
+  });
+
+  describe('collaborative picks', () => {
+    it('stores my pick without changing the board when another climber is active', () => {
+      const result = queueReducer(
+        { ...initialState, activeClimberUserId: 'user-b', currentClimbQueueItem: null },
+        {
+          type: 'SET_MY_PICK',
+          payload: { userId: 'user-a', item: mockClimbQueueItem, correlationId: 'corr-1' },
+        },
+      );
+
+      expect(result.picks['user-a']?.item).toEqual(mockClimbQueueItem);
+      expect(result.currentClimbQueueItem).toBeNull();
+    });
+
+    it('mirrors my pick to current climb when I am active', () => {
+      const result = queueReducer(
+        { ...initialState, activeClimberUserId: 'user-a', currentClimbQueueItem: null },
+        {
+          type: 'SET_MY_PICK',
+          payload: { userId: 'user-a', item: mockClimbQueueItem, correlationId: 'corr-1' },
+        },
+      );
+
+      expect(result.picks['user-a']?.item).toEqual(mockClimbQueueItem);
+      expect(result.currentClimbQueueItem).toEqual(mockClimbQueueItem);
+    });
+
+    it('deduplicates board-send history by row id while keeping latest first', () => {
+      const firstSend = {
+        id: 'send-1',
+        sessionId: 'session-1',
+        item: mockClimbQueueItem,
+        climbUuid: mockClimb.uuid,
+        sentByUserId: 'user-a',
+        activeClimberUserId: 'user-a',
+        sequence: 10,
+        createdAt: '2026-05-07T00:00:00.000Z',
+      };
+      const replacementSend = { ...firstSend, sequence: 11, createdAt: '2026-05-07T00:01:00.000Z' };
+
+      const withFirst = queueReducer(initialState, {
+        type: 'DELTA_BOARD_SEND_ADDED',
+        payload: { boardSend: firstSend },
+      });
+      const result = queueReducer(withFirst, {
+        type: 'DELTA_BOARD_SEND_ADDED',
+        payload: { boardSend: replacementSend },
+      });
+
+      expect(result.boardSends).toEqual([replacementSend]);
     });
   });
 });

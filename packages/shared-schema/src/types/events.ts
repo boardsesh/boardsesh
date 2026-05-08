@@ -9,19 +9,21 @@
  *    and for eventsReplay query responses.
  *
  * 2. `SubscriptionQueueEvent` - Client-side type using aliased fields (`addedItem`,
- *    `currentItem`). Required because GraphQL doesn't allow the same field name
- *    with different nullability in a union (QueueItemAdded.item is non-null,
- *    CurrentClimbChanged.item is nullable).
+ *    `currentItem`, `activeClimberUserId`). Required because GraphQL doesn't allow
+ *    the same field name with different nullability in a union (QueueItemAdded.item
+ *    is non-null, CurrentClimbChanged.item is nullable; PickChanged.userId is
+ *    non-null, ActiveClimberChanged.userId is nullable).
  */
 
-import type { ClimbQueueItem, QueueState } from './queue';
+import type { BoardSend, ClimbQueueItem, QueueState } from './queue';
 import type { SessionUser } from './session';
 import type { SessionFeedParticipant, SessionGradeDistributionItem, SessionDetailTick } from './activity-feed';
 
 // Response for delta sync event replay (Phase 2)
-// Uses QueueEvent since this is a query returning buffered events with standard field names
+// The replay operation uses the same aliases as subscriptions so replayed
+// events can flow through the same client-side event processor.
 export type EventsReplayResponse = {
-  events: QueueEvent[];
+  events: SubscriptionQueueEvent[];
   currentSequence: number;
 };
 
@@ -44,7 +46,21 @@ export type QueueEvent =
       clientId: string | null;
       correlationId: string | null;
     }
-  | { __typename: 'ClimbMirrored'; sequence: number; mirrored: boolean };
+  | { __typename: 'ClimbMirrored'; sequence: number; mirrored: boolean }
+  | {
+      __typename: 'PickChanged';
+      sequence: number;
+      userId: string;
+      pick: ClimbQueueItem | null;
+      correlationId: string | null;
+    }
+  | {
+      __typename: 'ActiveClimberChanged';
+      sequence: number;
+      userId: string | null;
+      correlationId: string | null;
+    }
+  | { __typename: 'BoardSendAdded'; sequence: number; boardSend: BoardSend };
 
 // Client-side subscription event type - uses aliased field names to avoid GraphQL union conflicts
 export type SubscriptionQueueEvent =
@@ -65,7 +81,21 @@ export type SubscriptionQueueEvent =
       clientId: string | null;
       correlationId: string | null;
     }
-  | { __typename: 'ClimbMirrored'; sequence: number; mirrored: boolean };
+  | { __typename: 'ClimbMirrored'; sequence: number; mirrored: boolean }
+  | {
+      __typename: 'PickChanged';
+      sequence: number;
+      userId: string;
+      pick: ClimbQueueItem | null;
+      correlationId: string | null;
+    }
+  | {
+      __typename: 'ActiveClimberChanged';
+      sequence: number;
+      activeClimberUserId: string | null;
+      correlationId: string | null;
+    }
+  | { __typename: 'BoardSendAdded'; sequence: number; boardSend: BoardSend };
 
 export type SessionEvent =
   | { __typename: 'UserJoined'; user: SessionUser }

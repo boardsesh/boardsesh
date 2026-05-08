@@ -56,6 +56,9 @@ const mockSearchParams: SearchRequestPagination = {
 const initialState: QueueState = {
   queue: [],
   currentClimbQueueItem: null,
+  picks: {},
+  activeClimberUserId: null,
+  boardSends: [],
   climbSearchParams: mockSearchParams,
   hasDoneFirstFetch: false,
   initialQueueDataReceivedFromPeers: false,

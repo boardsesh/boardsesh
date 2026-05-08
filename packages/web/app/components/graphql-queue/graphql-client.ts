@@ -12,6 +12,8 @@ let clientCounter = 0;
 // Cache for parsed operation names to avoid regex on every call
 const operationNameCache = new WeakMap<{ query: string }, string>();
 
+type NormalizedGraphQLError = Error & { transientTransportError?: boolean };
+
 function getOperationName(operation: { query: string }, type: 'mutation' | 'query' | 'subscription'): string {
   const cached = operationNameCache.get(operation);
   if (cached) return cached;
@@ -21,6 +23,71 @@ function getOperationName(operation: { query: string }, type: 'mutation' | 'quer
   const name = match ? match[1] : 'unknown';
   operationNameCache.set(operation, name);
   return name;
+}
+
+function getObjectMessage(value: Record<string, unknown>): string | null {
+  const message = value.message;
+  if (typeof message === 'string' && message.trim()) return message;
+
+  const reason = value.reason;
+  if (typeof reason === 'string' && reason.trim()) return reason;
+
+  return null;
+}
+
+function safeStringify(value: unknown): string | null {
+  const seen = new WeakSet<object>();
+  try {
+    return JSON.stringify(value, (key, nestedValue) => {
+      if (key === 'target' || key === 'currentTarget' || key === 'srcElement') {
+        return undefined;
+      }
+      if (typeof nestedValue === 'object' && nestedValue !== null) {
+        if (seen.has(nestedValue)) return '[Circular]';
+        seen.add(nestedValue);
+      }
+      if (typeof nestedValue === 'function') return `[Function ${nestedValue.name || 'anonymous'}]`;
+      return nestedValue;
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeGraphQLWsError(error: unknown, context: string): NormalizedGraphQLError {
+  if (error instanceof Error) return error;
+
+  if (Array.isArray(error)) {
+    const messages = error
+      .map((entry) => (entry && typeof entry === 'object' ? getObjectMessage(entry as Record<string, unknown>) : null))
+      .filter((message): message is string => !!message);
+    if (messages.length > 0) {
+      return new Error(`${context}: ${messages.join(', ')}`);
+    }
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const objectMessage = getObjectMessage(record);
+    if (objectMessage) {
+      return new Error(`${context}: ${objectMessage}`);
+    }
+
+    const eventType = typeof record.type === 'string' ? record.type : null;
+    const closeCode = typeof record.code === 'number' ? ` code=${record.code}` : '';
+    const wasClean = typeof record.wasClean === 'boolean' ? ` wasClean=${record.wasClean}` : '';
+    const constructorName =
+      error.constructor?.name && error.constructor.name !== 'Object' ? error.constructor.name : null;
+    const serialized = safeStringify(error);
+    const detail = serialized && serialized !== '{}' ? ` ${serialized}` : '';
+    const normalized = new Error(
+      `${context}: ${constructorName ?? 'WebSocket'}${eventType ? ` ${eventType}` : ''} event${closeCode}${wasClean}${detail}`,
+    ) as NormalizedGraphQLError;
+    normalized.transientTransportError = true;
+    return normalized;
+  }
+
+  return new Error(`${context}: ${String(error)}`);
 }
 
 export type ExtendedClient = {
@@ -196,7 +263,7 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
             // report "Event `Event` (type=error) captured as promise rejection" and
             // prevents catch blocks from seeing a useful message. Always reject with
             // a proper Error so callers receive a catchable, inspectable value.
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(normalizeGraphQLWsError(err, `GraphQL mutation '${opName}' failed`));
           }
         },
         complete: () => {
@@ -255,7 +322,7 @@ export function subscribe<TData = unknown, TVariables = Record<string, unknown>>
         // graphql-ws passes raw DOM Events (ErrorEvent/CloseEvent) when the WebSocket
         // connection fails. Always forward a proper Error so callers and Sentry never
         // receive "Event `Event` (type=error) captured as promise rejection".
-        sink.error?.(error instanceof Error ? error : new Error(String(error)));
+        sink.error?.(normalizeGraphQLWsError(error, `GraphQL subscription '${opName}' failed`));
       },
       complete: () => {
         if (DEBUG) console.info(`[GraphQL] subscribe COMPLETE: ${opName}`);

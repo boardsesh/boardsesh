@@ -29,7 +29,7 @@ import { usePersistentSession } from '../persistent-session';
 import { usePartyProfile } from '../party-manager/party-profile-context';
 import { getBaseBoardPath, DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import type { BoardDetails, Angle, Climb, SearchRequestPagination } from '@/app/lib/types';
-import type { ClimbQueueItem, QueueItemUser } from './types';
+import type { ClimbQueueItem, QueueItemUser, UserPick } from './types';
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { canAddClimbToBoard } from '@/app/lib/board-compatibility';
@@ -123,6 +123,15 @@ function usePersistentSessionQueueAdapter(): {
   const isParty = !!ps.activeSession;
   const queue = isParty ? ps.queue : ps.localQueue;
   const currentClimbQueueItem = isParty ? ps.currentClimbQueueItem : ps.localCurrentClimbQueueItem;
+  const [optimisticPicks, setOptimisticPicks] = useState<Record<string, UserPick>>({});
+  const serverPicks = useMemo(
+    () => Object.fromEntries((isParty ? ps.picks : []).map((pick) => [pick.userId, pick])),
+    [isParty, ps.picks],
+  );
+  const picks = useMemo(
+    () => (isParty ? { ...serverPicks, ...optimisticPicks } : {}),
+    [isParty, optimisticPicks, serverPicks],
+  );
   const boardDetails = isParty ? ps.activeSession!.boardDetails : ps.localBoardDetails;
   const angle: Angle = isParty
     ? ps.activeSession!.parsedParams.angle
@@ -189,6 +198,39 @@ function usePersistentSessionQueueAdapter(): {
     };
   }, []);
 
+  const applyOptimisticPick = useCallback((item: ClimbQueueItem) => {
+    const { ps, currentUserInfo: user } = latestRef.current;
+    const clientId = ps.clientId ?? null;
+    const sessionUser = ps.users?.find(
+      (candidate) => candidate.id === clientId || (!!user?.id && candidate.userId === user.id),
+    );
+    const userId = clientId ?? sessionUser?.userId ?? user?.id;
+    if (!userId) return;
+
+    setOptimisticPicks((prev) => ({
+      ...prev,
+      [userId]: {
+        userId,
+        item,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+  }, []);
+
+  useEffect(() => {
+    setOptimisticPicks((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const userId of Object.keys(prev)) {
+        if (serverPicks[userId]) {
+          delete next[userId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [serverPicks]);
+
   // Validates a climb against the locked board (session) or the current
   // adapter board. Shows a Snackbar error and returns false if not
   // compatible. Message formatting lives in `queue-add-error-messages`
@@ -215,24 +257,25 @@ function usePersistentSessionQueueAdapter(): {
     return idx > 0 ? queue[idx - 1] : null;
   }, []);
 
-  const setCurrentClimbQueueItem = useCallback((item: ClimbQueueItem) => {
-    const { queue, currentClimbQueueItem: current, ps, boardDetails, baseBoardPath } = latestRef.current;
-    const alreadyInQueue = queue.some((q) => q.uuid === item.uuid);
-    if (ps.activeSession) {
-      // Don't bail on the "already current" optimistic state in party mode —
-      // a peer may have moved the current climb away and our local view
-      // hasn't caught up yet. Always re-send so the server reconciles.
-      const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
-      ps.setCurrentClimb(item, item.suggested, correlationId).catch((err: unknown) => {
-        console.error('Failed to set current climb queue item:', err);
-      });
-      return;
-    }
-    if (alreadyInQueue && current?.uuid === item.uuid) return;
-    if (!boardDetails) return;
-    const newQueue = alreadyInQueue ? queue : [...queue, item];
-    ps.setLocalQueueState(newQueue, item, baseBoardPath, boardDetails);
-  }, []);
+  const setCurrentClimbQueueItem = useCallback(
+    (item: ClimbQueueItem) => {
+      const { queue, currentClimbQueueItem: current, ps, boardDetails, baseBoardPath } = latestRef.current;
+      const alreadyInQueue = queue.some((q) => q.uuid === item.uuid);
+      if (ps.activeSession) {
+        const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
+        applyOptimisticPick(item);
+        ps.setMyPick(item, correlationId).catch((err: unknown) => {
+          console.error('Failed to set my pick:', err);
+        });
+        return;
+      }
+      if (alreadyInQueue && current?.uuid === item.uuid) return;
+      if (!boardDetails) return;
+      const newQueue = alreadyInQueue ? queue : [...queue, item];
+      ps.setLocalQueueState(newQueue, item, baseBoardPath, boardDetails);
+    },
+    [applyOptimisticPick],
+  );
 
   const addToQueue = useCallback(
     (climb: Climb) => {
@@ -316,45 +359,14 @@ function usePersistentSessionQueueAdapter(): {
       if (!validateClimbForQueue(climb)) return null;
       if (ps.activeSession) {
         const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
-        // If the climb is already in the queue, reuse the existing item
-        // instead of adding a duplicate. This mirrors the natural behavior
-        // expected by users tapping a logbook/session-view climb that's
-        // already queued from another peer or earlier in the sesh.
         const existing = queue.find((q) => q.climb?.uuid === climb.uuid);
-        if (existing) {
-          try {
-            await ps.setCurrentClimb(existing, false, correlationId);
-            return existing;
-          } catch (err: unknown) {
-            console.error('Failed to set current climb:', err);
-            return null;
-          }
-        }
-        const newItem = buildQueueItem(climb);
-        const currentIdx = current ? queue.findIndex((q) => q.uuid === current.uuid) : -1;
-        const position = currentIdx === -1 ? undefined : currentIdx + 1;
-        // Split the awaits so a partial failure is observable: addQueueItem
-        // adds the item to the shared queue, then setCurrentClimb activates
-        // it. If addQueueItem fails, nothing landed on the server. If
-        // setCurrentClimb fails after addQueueItem succeeded, the item is
-        // queued but not active — return null so the caller (e.g.
-        // SessionDetailContent.navigateToClimb) doesn't navigate to a climb
-        // the board never actually got told to display.
+        const item = existing ?? buildQueueItem(climb);
+        applyOptimisticPick(item);
         try {
-          await ps.addQueueItem(newItem, position);
+          await ps.setMyPick(item, correlationId);
+          return item;
         } catch (err: unknown) {
-          console.error('Failed to add queue item before setting current:', err);
-          return null;
-        }
-        try {
-          // Sequential awaits over a single graphql-ws connection preserve
-          // FIFO ordering, so the server processes the add before the
-          // setCurrentClimb that references it. This mirrors
-          // GraphQLQueueProvider.setCurrentClimb.
-          await ps.setCurrentClimb(newItem, false, correlationId);
-          return newItem;
-        } catch (err: unknown) {
-          console.error('Failed to set current climb after queue add:', err);
+          console.error('Failed to set my pick:', err);
           return null;
         }
       }
@@ -377,8 +389,66 @@ function usePersistentSessionQueueAdapter(): {
       ps.setLocalQueueState(newQueue, newItem, baseBoardPath, boardDetails);
       return newItem;
     },
-    [validateClimbForQueue, buildQueueItem],
+    [applyOptimisticPick, validateClimbForQueue, buildQueueItem],
   );
+
+  const setMyPickQueueItem = useCallback(
+    async (item: ClimbQueueItem): Promise<void> => {
+      const { ps, boardDetails, baseBoardPath, queue } = latestRef.current;
+      if (ps.activeSession) {
+        const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
+        applyOptimisticPick(item);
+        await ps.setMyPick(item, correlationId);
+        return;
+      }
+      if (!boardDetails) return;
+      const alreadyInQueue = queue.some((q) => q.uuid === item.uuid);
+      ps.setLocalQueueState(alreadyInQueue ? queue : [...queue, item], item, baseBoardPath, boardDetails);
+    },
+    [applyOptimisticPick],
+  );
+
+  const setMyPick = useCallback(
+    async (climb: Climb): Promise<ClimbQueueItem | null> => {
+      if (!validateClimbForQueue(climb)) return null;
+      const { queue, ps } = latestRef.current;
+      const item = queue.find((q) => q.climb?.uuid === climb.uuid) ?? buildQueueItem(climb);
+      if (ps.activeSession) {
+        try {
+          const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
+          applyOptimisticPick(item);
+          await ps.setMyPick(item, correlationId);
+          return item;
+        } catch (err: unknown) {
+          console.error('Failed to set my pick:', err);
+          return null;
+        }
+      }
+      await setMyPickQueueItem(item);
+      return item;
+    },
+    [applyOptimisticPick, buildQueueItem, setMyPickQueueItem, validateClimbForQueue],
+  );
+
+  const claimTurn = useCallback(async (): Promise<void> => {
+    const { ps } = latestRef.current;
+    if (!ps.activeSession) return;
+    const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
+    await ps.claimTurn(correlationId);
+  }, []);
+
+  const yieldTurn = useCallback(async (toUserId: string): Promise<void> => {
+    const { ps } = latestRef.current;
+    if (!ps.activeSession) return;
+    const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
+    await ps.yieldTurn(toUserId, correlationId);
+  }, []);
+
+  const clearMyPick = useCallback(async (): Promise<void> => {
+    const { ps } = latestRef.current;
+    if (!ps.activeSession) return;
+    await ps.clearMyPick();
+  }, []);
 
   // Bridge-mode replace: in party mode, delegate to the persistent session's
   // WebSocket-backed replaceQueueItem; otherwise mirror the local-state update
@@ -414,12 +484,25 @@ function usePersistentSessionQueueAdapter(): {
     latestRef.current.ps.deactivateSession();
   }, []);
 
+  const reorderQueueItem = useCallback((uuid: string, oldIndex: number, newIndex: number) => {
+    const { ps } = latestRef.current;
+    if (!ps.activeSession) return;
+    ps.reorderQueueItem(uuid, oldIndex, newIndex).catch((err: unknown) => {
+      console.error('Failed to reorder queue item:', err);
+    });
+  }, []);
+
   // Actions value is now stable — all callbacks use latestRef with empty deps
   const actionsValue: GraphQLQueueActionsType = useMemo(
     () => ({
       addToQueue,
       removeFromQueue,
       setCurrentClimb,
+      setMyPick,
+      setMyPickQueueItem,
+      claimTurn,
+      yieldTurn,
+      clearMyPick,
       setCurrentClimbQueueItem,
       replaceQueueItem,
       setClimbSearchParams: noopSetClimbSearchParams,
@@ -429,6 +512,7 @@ function usePersistentSessionQueueAdapter(): {
       getNextClimbQueueItem,
       getPreviousClimbQueueItem,
       setQueue,
+      reorderQueueItem,
       startSession: noopStartSession,
       joinSession: noopJoinSession,
       endSession: stableDeactivateSession,
@@ -439,6 +523,11 @@ function usePersistentSessionQueueAdapter(): {
       addToQueue,
       removeFromQueue,
       setCurrentClimb,
+      setMyPick,
+      setMyPickQueueItem,
+      claimTurn,
+      yieldTurn,
+      clearMyPick,
       setCurrentClimbQueueItem,
       replaceQueueItem,
       noopSetClimbSearchParams,
@@ -447,6 +536,7 @@ function usePersistentSessionQueueAdapter(): {
       getNextClimbQueueItem,
       getPreviousClimbQueueItem,
       setQueue,
+      reorderQueueItem,
       stableDeactivateSession,
       noopStartSession,
       noopJoinSession,
@@ -458,6 +548,9 @@ function usePersistentSessionQueueAdapter(): {
       queue,
       currentClimbQueueItem,
       currentClimb: currentClimbQueueItem?.climb ?? null,
+      picks,
+      activeClimberUserId: isParty ? ps.activeClimberUserId : null,
+      boardSends: isParty ? ps.boardSends : [],
       climbSearchParams: DEFAULT_SEARCH_PARAMS,
       climbSearchResults: null,
       suggestedClimbs: [],
@@ -485,8 +578,11 @@ function usePersistentSessionQueueAdapter(): {
     [
       queue,
       currentClimbQueueItem,
+      picks,
       parsedParams,
       isParty,
+      ps.activeClimberUserId,
+      ps.boardSends,
       ps.hasConnected,
       ps.activeSession?.sessionId,
       ps.session?.goal,

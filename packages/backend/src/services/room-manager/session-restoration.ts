@@ -91,6 +91,8 @@ async function restoreFromPostgres(
       boardPath: pgSession.boardPath,
       queue: queueState.queue,
       currentClimbQueueItem: queueState.currentClimbQueueItem,
+      picks: queueState.picks,
+      activeClimberUserId: queueState.activeClimberUserId,
       version: queueState.version,
       sequence: queueState.sequence,
       stateHash: queueState.stateHash,

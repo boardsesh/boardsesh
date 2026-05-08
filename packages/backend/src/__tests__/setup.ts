@@ -19,6 +19,7 @@ let dbAvailable = false;
 // Tables the per-file beforeAll resets so each file starts on a clean slate.
 // Order doesn't matter — TRUNCATE ... CASCADE handles FK edges.
 const TABLES_TO_RESET = [
+  'board_session_sends',
   'board_session_queues',
   'board_session_clients',
   'board_session_participants',
@@ -75,6 +76,7 @@ beforeEach(async () => {
   // Only clear tables if the database is available
   if (dbAvailable && db) {
     // Clear all tables in correct order (respect foreign keys)
+    await db.execute(sql`TRUNCATE TABLE board_session_sends CASCADE`);
     await db.execute(sql`TRUNCATE TABLE board_session_queues CASCADE`);
     await db.execute(sql`TRUNCATE TABLE board_session_clients CASCADE`);
     await db.execute(sql`TRUNCATE TABLE board_session_participants CASCADE`);

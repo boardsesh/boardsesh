@@ -74,11 +74,17 @@ const mockQueueItems: ClimbQueueItem[] = [
 ];
 
 let mockCurrentClimbUuid: string | null = null;
+let mockPicks: Record<string, { userId: string; item: ClimbQueueItem; updatedAt: string }> = {};
+let mockSessionUsers: Array<{ id: string; username: string; isLeader: boolean; userId?: string | null }> = [];
+let mockClientId: string | null = null;
 
 // --- Mocks ---
 
 vi.mock('../../graphql-queue', () => ({
   useCurrentClimbUuid: () => mockCurrentClimbUuid,
+  useQueueData: () => ({
+    picks: mockPicks,
+  }),
   useQueueList: () => ({
     queue: mockQueueItems,
     suggestedClimbs,
@@ -90,10 +96,13 @@ vi.mock('../../graphql-queue', () => ({
   }),
   useSessionData: () => ({
     viewOnlyMode: false,
+    users: mockSessionUsers,
+    clientId: mockClientId,
   }),
   useQueueActions: () => ({
     fetchMoreClimbs: vi.fn(),
     setCurrentClimbQueueItem: vi.fn(),
+    setMyPickQueueItem: vi.fn(),
     setQueue: vi.fn(),
     addToQueue: vi.fn(),
   }),
@@ -271,6 +280,9 @@ describe('QueueList rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCurrentClimbUuid = null;
+    mockPicks = {};
+    mockSessionUsers = [];
+    mockClientId = null;
   });
 
   it('renders all suggested climbs when active', () => {
@@ -365,5 +377,27 @@ describe('QueueList rendering', () => {
     expect(screen.queryByText('Queue Climb 1')).toBeNull();
     expect(screen.getByText('Queue Climb 2')).toBeTruthy();
     expect(queueItems[0].getAttribute('data-current')).toBe('true');
+  });
+
+  it('renders every plan-ahead row and marks my pick instead of the active board climb', () => {
+    mockCurrentClimbUuid = 'climb-q2';
+    mockClientId = 'connection-1';
+    mockSessionUsers = [{ id: 'connection-1', username: 'Josh', isLeader: false, userId: 'user-1' }];
+    mockPicks = {
+      'user-1': {
+        userId: 'user-1',
+        item: mockQueueItems[0],
+        updatedAt: '2026-05-08T00:00:00.000Z',
+      },
+    };
+
+    render(<QueueList boardDetails={makeBoardDetails()} active={false} planMode />);
+
+    const queueItems = screen.getAllByTestId('queue-climb-list-item');
+    expect(queueItems).toHaveLength(2);
+    expect(queueItems[0].getAttribute('data-uuid')).toBe('queue-1');
+    expect(queueItems[0].getAttribute('data-current')).toBe('true');
+    expect(queueItems[1].getAttribute('data-uuid')).toBe('queue-2');
+    expect(queueItems[1].getAttribute('data-current')).toBe('false');
   });
 });

@@ -10,7 +10,9 @@ vi.mock('@/app/lib/analytics', () => ({
 }));
 
 const mockSetCurrentClimb = vi.fn();
+const mockSetMyPick = vi.fn();
 let mockCurrentClimb: { uuid: string } | null = null;
+let mockPicks: Record<string, { item: { climb: { uuid: string } } }> = {};
 
 vi.mock('@/app/components/graphql-queue', () => ({
   useQueueContext: () => ({
@@ -23,9 +25,13 @@ vi.mock('@/app/components/graphql-queue', () => ({
   }),
   useOptionalQueueActions: () => ({
     setCurrentClimb: mockSetCurrentClimb,
+    setMyPick: mockSetMyPick,
   }),
   useOptionalQueueData: () => ({
     currentClimb: mockCurrentClimb,
+    clientId: 'client-1',
+    users: [],
+    picks: mockPicks,
   }),
   useQueueData: () => ({
     currentClimb: mockCurrentClimb,
@@ -109,6 +115,7 @@ describe('SetActiveAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCurrentClimb = null;
+    mockPicks = {};
   });
 
   describe('availability', () => {
@@ -125,15 +132,16 @@ describe('SetActiveAction', () => {
     });
   });
 
-  describe('when climb IS current (uuid matches)', () => {
+  describe('when climb is my pick', () => {
     beforeEach(() => {
       mockCurrentClimb = { uuid: 'test-uuid-789' };
+      mockPicks = { 'client-1': { item: { climb: { uuid: 'test-uuid-789' } } } };
     });
 
-    it('menuItem label is Active', () => {
+    it('menuItem label is Picked', () => {
       const props = createTestProps();
       const { result } = renderHook(() => SetActiveAction(props));
-      expect(result.current.menuItem.label).toBe('Active');
+      expect(result.current.menuItem.label).toBe('Picked');
     });
 
     it('menuItem is disabled', () => {
@@ -143,15 +151,16 @@ describe('SetActiveAction', () => {
     });
   });
 
-  describe('when climb is NOT current (uuid differs)', () => {
+  describe('when climb is not my pick', () => {
     beforeEach(() => {
       mockCurrentClimb = { uuid: 'different-uuid' };
+      mockPicks = { 'client-1': { item: { climb: { uuid: 'different-uuid' } } } };
     });
 
-    it('menuItem label is Set Active', () => {
+    it('menuItem label is Pick this climb', () => {
       const props = createTestProps();
       const { result } = renderHook(() => SetActiveAction(props));
-      expect(result.current.menuItem.label).toBe('Set Active');
+      expect(result.current.menuItem.label).toBe('Pick this climb');
     });
 
     it('menuItem is not disabled', () => {
@@ -166,10 +175,10 @@ describe('SetActiveAction', () => {
       mockCurrentClimb = null;
     });
 
-    it('menuItem label is Set Active', () => {
+    it('menuItem label is Pick this climb', () => {
       const props = createTestProps();
       const { result } = renderHook(() => SetActiveAction(props));
-      expect(result.current.menuItem.label).toBe('Set Active');
+      expect(result.current.menuItem.label).toBe('Pick this climb');
     });
 
     it('menuItem is not disabled', () => {

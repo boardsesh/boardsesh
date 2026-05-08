@@ -224,6 +224,9 @@ const mockClimb = {
 
 const baseQueueContext = {
   queue: [{ uuid: 'item-1', climb: mockClimb, addedBy: 'user-1', suggested: false }],
+  boardSends: [],
+  picks: {},
+  activeClimberUserId: null,
   currentClimbQueueItem: { uuid: 'item-1', climb: mockClimb, addedBy: 'user-1', suggested: false },
   currentClimb: mockClimb,
   climbSearchResults: [],

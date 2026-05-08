@@ -624,6 +624,13 @@
       "when": 1778284800000,
       "tag": "0088_fix_moonboard_grade_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1778495760526,
+      "tag": "0089_futuristic_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useCallback, useMemo, useRef, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import type { SubscriptionQueueEvent, SessionEvent } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
+import type { BoardSend, ClimbQueueItem as LocalClimbQueueItem, UserPick } from '../queue-control/types';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '../party-manager/party-profile-context';
 import { isBoardRoutePath } from '@/app/lib/board-route-paths';
@@ -50,6 +50,9 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const activeSessionRef = useRef<ActiveSessionInfo | null>(null);
   const queueRef = useRef<LocalClimbQueueItem[]>([]);
   const currentClimbQueueItemRef = useRef<LocalClimbQueueItem | null>(null);
+  const picksRef = useRef<UserPick[]>([]);
+  const activeClimberUserIdRef = useRef<string | null>(null);
+  const boardSendsRef = useRef<BoardSend[]>([]);
   const mountedRef = useRef(false);
   const isConnectingRef = useRef(false);
   const isReconnectingRef = useRef(false);
@@ -88,6 +91,9 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     activeSessionRef,
     queueRef,
     currentClimbQueueItemRef,
+    picksRef,
+    activeClimberUserIdRef,
+    boardSendsRef,
     mountedRef,
     isConnectingRef,
     isReconnectingRef,
@@ -112,12 +118,22 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   useEffect(() => {
     currentClimbQueueItemRef.current = eventProcessor.currentClimbQueueItem;
   }, [eventProcessor.currentClimbQueueItem]);
+  useEffect(() => {
+    picksRef.current = eventProcessor.picks;
+  }, [eventProcessor.picks]);
+  useEffect(() => {
+    activeClimberUserIdRef.current = eventProcessor.activeClimberUserId;
+  }, [eventProcessor.activeClimberUserId]);
+  useEffect(() => {
+    boardSendsRef.current = eventProcessor.boardSends;
+  }, [eventProcessor.boardSends]);
 
   // 2. Session lifecycle: connect/disconnect, join/leave
   const lifecycle = useSessionLifecycle({
     isAuthLoading,
     handleQueueEvent: eventProcessor.handleQueueEvent,
     handleSessionEvent: eventProcessor.handleSessionEvent,
+    setBoardSends: eventProcessor.setBoardSends,
     setSession: noopSetSession, // Session is managed internally by lifecycle
     refs,
   });
@@ -141,6 +157,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     session: lifecycle.session,
     queue: eventProcessor.queue,
     currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
+    picks: eventProcessor.picks,
+    activeClimberUserId: eventProcessor.activeClimberUserId,
     lastReceivedStateHash: eventProcessor.lastReceivedStateHash,
     setQueueState: eventProcessor.setQueueState,
     refs,
@@ -158,6 +176,11 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       mirrorCurrentClimb: mutations.mirrorCurrentClimb,
       setQueue: mutations.setQueue,
       replaceQueueItem: mutations.replaceQueueItem,
+      reorderQueueItem: mutations.reorderQueueItem,
+      setMyPick: mutations.setMyPick,
+      claimTurn: mutations.claimTurn,
+      yieldTurn: mutations.yieldTurn,
+      clearMyPick: mutations.clearMyPick,
       setLocalQueueState: queueStorage.setLocalQueueState,
       clearLocalQueue: queueStorage.clearLocalQueue,
       subscribeToQueueEvents: subscriptions.subscribeToQueueEvents,
@@ -178,6 +201,11 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       mutations.mirrorCurrentClimb,
       mutations.setQueue,
       mutations.replaceQueueItem,
+      mutations.reorderQueueItem,
+      mutations.setMyPick,
+      mutations.claimTurn,
+      mutations.yieldTurn,
+      mutations.clearMyPick,
       queueStorage.setLocalQueueState,
       queueStorage.clearLocalQueue,
       subscriptions.subscribeToQueueEvents,
@@ -199,6 +227,9 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       users: lifecycle.session?.users ?? [],
       currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
       queue: eventProcessor.queue,
+      picks: eventProcessor.picks,
+      activeClimberUserId: eventProcessor.activeClimberUserId,
+      boardSends: eventProcessor.boardSends,
       localQueue: queueStorage.localQueue,
       localCurrentClimbQueueItem: queueStorage.localCurrentClimbQueueItem,
       localBoardPath: queueStorage.localBoardPath,
@@ -221,6 +252,9 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       lifecycle.sessionSummaryHealthKitWorkoutId,
       eventProcessor.currentClimbQueueItem,
       eventProcessor.queue,
+      eventProcessor.picks,
+      eventProcessor.activeClimberUserId,
+      eventProcessor.boardSends,
       queueStorage.localQueue,
       queueStorage.localCurrentClimbQueueItem,
       queueStorage.localBoardPath,

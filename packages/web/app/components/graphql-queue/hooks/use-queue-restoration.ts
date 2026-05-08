@@ -1,5 +1,5 @@
 import { type Dispatch, useState, useEffect } from 'react';
-import type { QueueAction, ClimbQueue, ClimbQueueItem } from '../../queue-control/types';
+import type { QueueAction, ClimbQueue, ClimbQueueItem, UserPick } from '../../queue-control/types';
 
 type UseQueueRestorationParams = {
   isPersistentSessionActive: boolean;
@@ -10,6 +10,8 @@ type UseQueueRestorationParams = {
     hasConnected: boolean;
     queue: { climb: unknown; uuid: string }[];
     currentClimbQueueItem: { climb: unknown; uuid: string } | null;
+    picks?: UserPick[];
+    activeClimberUserId?: string | null;
     isLocalQueueLoaded: boolean;
     localBoardPath: string | null;
     localQueue: { climb: unknown; uuid: string }[];
@@ -41,7 +43,11 @@ export function useQueueRestoration({
   // Initialize queue state from persistent session when remounting
   useEffect(() => {
     if (isPersistentSessionActive && persistentSession.hasConnected) {
-      if (persistentSession.queue.length > 0 || persistentSession.currentClimbQueueItem) {
+      if (
+        persistentSession.queue.length > 0 ||
+        persistentSession.currentClimbQueueItem ||
+        persistentSession.picks?.length
+      ) {
         dispatch({
           type: 'INITIAL_QUEUE_DATA',
           payload: {
@@ -59,6 +65,8 @@ export function useQueueRestoration({
                 ? C
                 : never
               : never,
+            picks: persistentSession.picks,
+            activeClimberUserId: persistentSession.activeClimberUserId,
           },
         });
       }

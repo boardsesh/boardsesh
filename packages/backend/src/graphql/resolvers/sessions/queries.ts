@@ -1,10 +1,27 @@
-import type { ConnectionContext, EventsReplayResponse } from '@boardsesh/shared-schema';
+import type { BoardSend, ConnectionContext, EventsReplayResponse } from '@boardsesh/shared-schema';
+import { db } from '../../../db/client';
+import { sessionSends } from '../../../db/schema';
+import { eq, desc } from 'drizzle-orm';
 import { roomManager, type DiscoverableSession } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { validateInput, requireSessionMember, requireAuthenticated } from '../shared/helpers';
 import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } from '../../../validation/schemas';
 import { generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
+
+function mapBoardSend(row: typeof sessionSends.$inferSelect): BoardSend {
+  return {
+    id: String(row.id),
+    sessionId: row.sessionId,
+    item: row.item,
+    climbUuid: row.climbUuid,
+    sentByUserId: row.sentByUserId,
+    activeClimberUserId: row.activeClimberUserId,
+    correlationId: row.correlationId,
+    sequence: row.sequence,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
 
 export const sessionQueries = {
   /**
@@ -59,10 +76,41 @@ export const sessionQueries = {
     // Get current sequence from queue state
     const queueState = await roomManager.getQueueState(sessionId);
 
+    // EventsReplayResponse.events is typed as SubscriptionQueueEvent[] (the
+    // client-side shape with aliased fields like `addedItem`/`currentItem`)
+    // because the `EventsReplay` operation aliases the union fields. The
+    // resolver works with the server-side QueueEvent[] and GraphQL does the
+    // aliasing during response serialization, so the cast is safe.
     return {
       events,
       currentSequence: queueState.sequence,
-    };
+    } as unknown as EventsReplayResponse;
+  },
+
+  boardSends: async (
+    _: unknown,
+    { sessionId, deduplicate = true }: { sessionId: string; deduplicate?: boolean },
+    ctx: ConnectionContext,
+  ): Promise<BoardSend[]> => {
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    await requireSessionMember(ctx, sessionId);
+
+    const rows = await db
+      .select()
+      .from(sessionSends)
+      .where(eq(sessionSends.sessionId, sessionId))
+      .orderBy(desc(sessionSends.createdAt), desc(sessionSends.id));
+
+    if (!deduplicate) return rows.map(mapBoardSend);
+
+    const seen = new Set<string>();
+    const deduped: typeof rows = [];
+    for (const row of rows) {
+      if (seen.has(row.climbUuid)) continue;
+      seen.add(row.climbUuid);
+      deduped.push(row);
+    }
+    return deduped.map(mapBoardSend);
   },
 
   /**

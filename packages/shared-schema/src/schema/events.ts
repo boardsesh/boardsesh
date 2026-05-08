@@ -71,7 +71,16 @@ export const eventsTypeDefs = /* GraphQL */ `
   """
   Union of possible queue events.
   """
-  union QueueEvent = FullSync | QueueItemAdded | QueueItemRemoved | QueueReordered | CurrentClimbChanged | ClimbMirrored
+  union QueueEvent =
+    | FullSync
+    | QueueItemAdded
+    | QueueItemRemoved
+    | QueueReordered
+    | CurrentClimbChanged
+    | ClimbMirrored
+    | PickChanged
+    | ActiveClimberChanged
+    | BoardSendAdded
 
   """
   Full queue state sync event.
@@ -142,5 +151,41 @@ export const eventsTypeDefs = /* GraphQL */ `
     sequence: Int!
     "New mirror state"
     mirrored: Boolean!
+  }
+
+  """
+  Event when a participant updates their current pick.
+  """
+  type PickChanged {
+    "Sequence number of this event"
+    sequence: Int!
+    "User whose pick changed"
+    userId: ID!
+    "New pick, or null when cleared"
+    pick: ClimbQueueItem
+    "Correlation ID for request tracking"
+    correlationId: ID
+  }
+
+  """
+  Event when the participant controlling the board changes.
+  """
+  type ActiveClimberChanged {
+    "Sequence number of this event"
+    sequence: Int!
+    "Current active climber, or null when none"
+    userId: ID
+    "Correlation ID for request tracking"
+    correlationId: ID
+  }
+
+  """
+  Event when a climb is appended to the sent-to-board history.
+  """
+  type BoardSendAdded {
+    "Sequence number of this event"
+    sequence: Int!
+    "New board-send history row"
+    boardSend: BoardSend!
   }
 `;

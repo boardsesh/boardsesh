@@ -47,6 +47,9 @@ vi.mock('@mui/icons-material/CloseOutlined', () => ({
 vi.mock('@mui/icons-material/FormatListBulletedOutlined', () => ({
   default: () => React.createElement('svg', { 'data-testid': 'icon-queue' }),
 }));
+vi.mock('@mui/icons-material/SwapHorizOutlined', () => ({
+  default: () => React.createElement('svg', { 'data-testid': 'icon-switch-to-edit' }),
+}));
 
 // Import after mocks
 
@@ -161,6 +164,13 @@ describe('PlayViewActionBar', () => {
     render(<PlayViewActionBar {...buildProps({ onOpenQueue })} />);
     fireEvent.click(screen.getByLabelText('Open queue'));
     expect(onOpenQueue).toHaveBeenCalledOnce();
+  });
+
+  it('calls onSwitchToEdit when the spectate transfer button is clicked', () => {
+    const onSwitchToEdit = vi.fn();
+    render(<PlayViewActionBar {...buildProps({ showSwitchToEdit: true, onSwitchToEdit })} />);
+    fireEvent.click(screen.getByLabelText('Switch to my pick'));
+    expect(onSwitchToEdit).toHaveBeenCalledOnce();
   });
 
   it('shows queue badge count', () => {

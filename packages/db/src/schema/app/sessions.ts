@@ -11,7 +11,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, UserPick } from '@boardsesh/shared-schema';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
 
@@ -82,11 +82,34 @@ export const boardSessionQueues = pgTable('board_session_queues', {
     .references(() => boardSessions.id, { onDelete: 'cascade' }),
   queue: jsonb('queue').$type<ClimbQueueItem[]>().default([]).notNull(),
   currentClimbQueueItem: jsonb('current_climb_queue_item').$type<ClimbQueueItem | null>().default(null),
+  picks: jsonb('picks').$type<UserPick[]>().default([]).notNull(),
+  activeClimberUserId: text('active_climber_user_id'),
   version: integer('version').default(1).notNull(),
   // Sequence number for event ordering (separate from version used for optimistic locking)
   sequence: integer('sequence').default(0).notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const boardSessionSends = pgTable(
+  'board_session_sends',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    sessionId: text('session_id')
+      .references(() => boardSessions.id, { onDelete: 'cascade' })
+      .notNull(),
+    item: jsonb('item').$type<ClimbQueueItem>().notNull(),
+    climbUuid: text('climb_uuid').notNull(),
+    sentByUserId: text('sent_by_user_id').notNull(),
+    activeClimberUserId: text('active_climber_user_id').notNull(),
+    correlationId: text('correlation_id'),
+    sequence: integer('sequence').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    sessionCreatedIdx: index('board_session_sends_session_created_idx').on(table.sessionId, table.createdAt),
+    sessionClimbIdx: index('board_session_sends_session_climb_idx').on(table.sessionId, table.climbUuid),
+  }),
+);
 
 // Junction table for multi-board sessions
 export const sessionBoards = pgTable(
@@ -115,5 +138,7 @@ export type BoardSessionClient = typeof boardSessionClients.$inferSelect;
 export type NewBoardSessionClient = typeof boardSessionClients.$inferInsert;
 export type BoardSessionQueue = typeof boardSessionQueues.$inferSelect;
 export type NewBoardSessionQueue = typeof boardSessionQueues.$inferInsert;
+export type BoardSessionSend = typeof boardSessionSends.$inferSelect;
+export type NewBoardSessionSend = typeof boardSessionSends.$inferInsert;
 export type SessionBoard = typeof sessionBoards.$inferSelect;
 export type NewSessionBoard = typeof sessionBoards.$inferInsert;

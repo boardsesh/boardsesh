@@ -12,13 +12,14 @@ import {
   QUEUE_UPDATES,
   SESSION_UPDATES,
   EVENTS_REPLAY,
+  BOARD_SENDS,
   type SubscriptionQueueEvent,
   type SessionEvent,
   type QueueEvent,
   type EventsReplayResponse,
   type SessionSummary,
 } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
+import type { BoardSend, ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { computeQueueStateHash } from '@/app/utils/hash';
 import { setPreference, removePreference } from '@/app/lib/user-preferences-db';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -36,12 +37,19 @@ import {
   DEBUG,
 } from '../types';
 
+function isTransientTransportError(err: unknown): boolean {
+  return (
+    !!err && typeof err === 'object' && (err as { transientTransportError?: boolean }).transientTransportError === true
+  );
+}
+
 /**
  * Transform QueueEvent (from eventsReplay) to SubscriptionQueueEvent format.
  */
-function transformToSubscriptionEvent(event: QueueEvent): SubscriptionQueueEvent {
+function transformToSubscriptionEvent(event: QueueEvent | SubscriptionQueueEvent): SubscriptionQueueEvent {
   switch (event.__typename) {
     case 'QueueItemAdded':
+      if ('addedItem' in event) return event;
       return {
         __typename: 'QueueItemAdded',
         sequence: event.sequence,
@@ -49,11 +57,20 @@ function transformToSubscriptionEvent(event: QueueEvent): SubscriptionQueueEvent
         position: event.position,
       };
     case 'CurrentClimbChanged':
+      if ('currentItem' in event) return event;
       return {
         __typename: 'CurrentClimbChanged',
         sequence: event.sequence,
         currentItem: event.item,
         clientId: event.clientId,
+        correlationId: event.correlationId,
+      };
+    case 'ActiveClimberChanged':
+      if ('activeClimberUserId' in event) return event;
+      return {
+        __typename: 'ActiveClimberChanged',
+        sequence: event.sequence,
+        activeClimberUserId: event.userId,
         correlationId: event.correlationId,
       };
     default:
@@ -65,6 +82,7 @@ type UseSessionLifecycleArgs = {
   isAuthLoading: boolean;
   handleQueueEvent: (event: SubscriptionQueueEvent) => void;
   handleSessionEvent: (event: SessionEvent) => void;
+  setBoardSends: Dispatch<SetStateAction<BoardSend[]>>;
   setSession: Dispatch<SetStateAction<Session | null>>;
   refs: Pick<
     SharedRefs,
@@ -75,6 +93,8 @@ type UseSessionLifecycleArgs = {
     | 'activeSessionRef'
     | 'queueRef'
     | 'currentClimbQueueItemRef'
+    | 'picksRef'
+    | 'activeClimberUserIdRef'
     | 'mountedRef'
     | 'isConnectingRef'
     | 'isReconnectingRef'
@@ -116,6 +136,7 @@ export function useSessionLifecycle({
   isAuthLoading,
   handleQueueEvent,
   handleSessionEvent,
+  setBoardSends,
   setSession: setSessionExternal,
   refs,
 }: UseSessionLifecycleArgs): SessionLifecycleState & SessionLifecycleActions {
@@ -313,6 +334,19 @@ export function useSessionLifecycle({
       }
     }
 
+    async function loadBoardSends(clientToUse: Client) {
+      try {
+        const response = await execute<{ boardSends: BoardSend[] }>(clientToUse, {
+          query: BOARD_SENDS,
+          variables: { sessionId, deduplicate: true },
+        });
+        if (!mountedRef.current || connectionGenerationRef.current !== connectionGeneration) return;
+        setBoardSends(response?.boardSends ?? []);
+      } catch (err) {
+        console.warn('[PersistentSession] Failed to load board sends:', err);
+      }
+    }
+
     async function handleReconnect() {
       if (!mountedRef.current || !graphqlClient) return;
       if (connectionGenerationRef.current !== connectionGeneration) return;
@@ -371,7 +405,12 @@ export function useSessionLifecycle({
           if (DEBUG) console.info('[PersistentSession] First connection, applying initial state');
           applyFullSync(sessionData);
         } else if (gap === 0) {
-          const localHash = computeQueueStateHash(queueRef.current, currentClimbQueueItemRef.current?.uuid || null);
+          const localHash = computeQueueStateHash(
+            queueRef.current,
+            currentClimbQueueItemRef.current?.uuid || null,
+            refs.picksRef.current,
+            refs.activeClimberUserIdRef.current,
+          );
           if (localHash !== sessionData.queueState.stateHash) {
             if (DEBUG) console.info('[PersistentSession] Hash mismatch on reconnect despite gap=0, applying full sync');
             applyFullSync(sessionData);
@@ -381,6 +420,7 @@ export function useSessionLifecycle({
         }
 
         setSession(sessionData);
+        await loadBoardSends(graphqlClient);
         if (DEBUG) console.info('[PersistentSession] Reconnection complete, clientId:', sessionData.clientId);
       } finally {
         isReconnectingRef.current = false;
@@ -457,6 +497,8 @@ export function useSessionLifecycle({
           });
         }
 
+        await loadBoardSends(graphqlClient);
+
         // Subscribe to queue updates
         queueUnsubscribeRef.current = subscribe<{ queueUpdates: SubscriptionQueueEvent }>(
           graphqlClient,
@@ -468,9 +510,14 @@ export function useSessionLifecycle({
               }
             },
             error: (err) => {
-              console.error('[PersistentSession] Queue subscription error:', err);
+              const transientTransportError = isTransientTransportError(err);
+              if (transientTransportError) {
+                console.warn('[PersistentSession] Queue subscription transport error:', err);
+              } else {
+                console.error('[PersistentSession] Queue subscription error:', err);
+              }
               queueUnsubscribeRef.current = null;
-              if (mountedRef.current) {
+              if (mountedRef.current && !transientTransportError) {
                 setError(err instanceof Error ? err : new Error(String(err)));
               }
             },
@@ -520,7 +567,11 @@ export function useSessionLifecycle({
               }
             },
             error: (err) => {
-              console.error('[PersistentSession] Session subscription error:', err);
+              if (isTransientTransportError(err)) {
+                console.warn('[PersistentSession] Session subscription transport error:', err);
+              } else {
+                console.error('[PersistentSession] Session subscription error:', err);
+              }
               sessionUnsubscribeRef.current = null;
             },
             complete: () => {

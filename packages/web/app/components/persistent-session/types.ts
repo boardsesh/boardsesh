@@ -7,7 +7,7 @@ import type {
   SessionSummary,
   QueueState,
 } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
+import type { BoardSend, ClimbQueueItem as LocalClimbQueueItem, UserPick } from '../queue-control/types';
 import type { BoardDetails, ParsedBoardRouteParameters } from '@/app/lib/types';
 // Re-export QueueState from shared-schema for convenience
 export type { QueueState } from '@boardsesh/shared-schema';
@@ -74,6 +74,11 @@ export type PersistentSessionActionsType = {
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   setQueue: (queue: LocalClimbQueueItem[], currentClimbQueueItem?: LocalClimbQueueItem | null) => Promise<void>;
   replaceQueueItem: (uuid: string, item: LocalClimbQueueItem) => Promise<void>;
+  reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
+  setMyPick: (item: LocalClimbQueueItem, correlationId?: string) => Promise<void>;
+  claimTurn: (correlationId?: string) => Promise<void>;
+  yieldTurn: (toUserId: string, correlationId?: string) => Promise<void>;
+  clearMyPick: () => Promise<void>;
 
   // Event subscription for board-level components
   subscribeToQueueEvents: (callback: (event: SubscriptionQueueEvent) => void) => () => void;
@@ -106,6 +111,9 @@ export type PersistentSessionStateType = {
   // Queue state synced from backend
   currentClimbQueueItem: LocalClimbQueueItem | null;
   queue: LocalClimbQueueItem[];
+  picks: UserPick[];
+  activeClimberUserId: string | null;
+  boardSends: BoardSend[];
 
   // Local queue state (persists without WebSocket session)
   localQueue: LocalClimbQueueItem[];
@@ -187,6 +195,9 @@ export type SharedRefs = {
   activeSessionRef: MutableRefObject<ActiveSessionInfo | null>;
   queueRef: MutableRefObject<LocalClimbQueueItem[]>;
   currentClimbQueueItemRef: MutableRefObject<LocalClimbQueueItem | null>;
+  picksRef: MutableRefObject<UserPick[]>;
+  activeClimberUserIdRef: MutableRefObject<string | null>;
+  boardSendsRef: MutableRefObject<BoardSend[]>;
   mountedRef: MutableRefObject<boolean>;
   isConnectingRef: MutableRefObject<boolean>;
   isReconnectingRef: MutableRefObject<boolean>;

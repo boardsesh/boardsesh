@@ -6,6 +6,9 @@ import { insertQueueItemIdempotent } from '../persistent-session/event-utils';
 const initialState = (initialSearchParams: SearchRequestPagination): QueueState => ({
   queue: [],
   currentClimbQueueItem: null,
+  picks: {},
+  activeClimberUserId: null,
+  boardSends: [],
   climbSearchParams: initialSearchParams,
   hasDoneFirstFetch: false,
   initialQueueDataReceivedFromPeers: false,
@@ -14,6 +17,18 @@ const initialState = (initialSearchParams: SearchRequestPagination): QueueState 
   lastReceivedStateHash: null,
   needsResync: false,
 });
+
+const normalizePicks = (
+  picks?: Array<{ userId: string; item: QueueState['currentClimbQueueItem']; updatedAt: string }>,
+) => {
+  const record: QueueState['picks'] = {};
+  for (const pick of picks ?? []) {
+    if (pick?.userId && pick.item) {
+      record[pick.userId] = { userId: pick.userId, item: pick.item, updatedAt: pick.updatedAt };
+    }
+  }
+  return record;
+};
 
 export function queueReducer(state: QueueState, action: QueueAction): QueueState {
   switch (action.type) {
@@ -62,6 +77,11 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
         ...state,
         queue: filteredQueue,
         currentClimbQueueItem: action.payload.currentClimbQueueItem ?? state.currentClimbQueueItem,
+        picks: action.payload.picks ? normalizePicks(action.payload.picks) : state.picks,
+        activeClimberUserId:
+          action.payload.activeClimberUserId !== undefined
+            ? action.payload.activeClimberUserId
+            : state.activeClimberUserId,
         initialQueueDataReceivedFromPeers: true,
         // Clear pending updates on full sync since we're getting complete server state
         pendingCurrentClimbUpdates: [],
@@ -85,6 +105,11 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
         ...state,
         queue: filteredQueue,
         currentClimbQueueItem: action.payload.currentClimbQueueItem ?? state.currentClimbQueueItem,
+        picks: action.payload.picks ? normalizePicks(action.payload.picks) : state.picks,
+        activeClimberUserId:
+          action.payload.activeClimberUserId !== undefined
+            ? action.payload.activeClimberUserId
+            : state.activeClimberUserId,
         // Request resync if we filtered out corrupted data
         needsResync: state.needsResync || hadCorruptedData,
       };
@@ -289,13 +314,69 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
       const updatedQueue = state.queue.map((item) =>
         item.uuid === state.currentClimbQueueItem?.uuid ? updatedCurrentItem : item,
       );
+      const updatedPicks = Object.fromEntries(
+        Object.entries(state.picks).map(([userId, pick]) => [
+          userId,
+          pick.item.uuid === state.currentClimbQueueItem?.uuid
+            ? { ...pick, item: updatedCurrentItem, updatedAt: new Date().toISOString() }
+            : pick,
+        ]),
+      );
 
       return {
         ...state,
         queue: updatedQueue,
         currentClimbQueueItem: updatedCurrentItem,
+        picks: updatedPicks,
       };
     }
+
+    case 'SET_MY_PICK': {
+      const { userId, item } = action.payload;
+      return {
+        ...state,
+        picks: {
+          ...state.picks,
+          [userId]: { userId, item, updatedAt: new Date().toISOString() },
+        },
+        currentClimbQueueItem: state.activeClimberUserId === userId ? item : state.currentClimbQueueItem,
+      };
+    }
+
+    case 'DELTA_PICK_CHANGED': {
+      const { userId, pick, updatedAt } = action.payload;
+      const nextPicks = { ...state.picks };
+      if (pick) {
+        nextPicks[userId] = { userId, item: pick, updatedAt: updatedAt ?? new Date().toISOString() };
+      } else {
+        delete nextPicks[userId];
+      }
+      return {
+        ...state,
+        picks: nextPicks,
+      };
+    }
+
+    case 'DELTA_ACTIVE_CLIMBER_CHANGED':
+      return {
+        ...state,
+        activeClimberUserId: action.payload.userId,
+      };
+
+    case 'DELTA_BOARD_SEND_ADDED':
+      return {
+        ...state,
+        boardSends: [
+          action.payload.boardSend,
+          ...state.boardSends.filter((send) => send.id !== action.payload.boardSend.id),
+        ],
+      };
+
+    case 'SET_BOARD_SENDS':
+      return {
+        ...state,
+        boardSends: action.payload.boardSends,
+      };
 
     case 'DELTA_REPLACE_QUEUE_ITEM': {
       const { uuid, item } = action.payload;
@@ -307,12 +388,19 @@ export function queueReducer(state: QueueState, action: QueueAction): QueueState
 
       const newQueue = [...state.queue];
       newQueue[itemIndex] = item;
+      const newPicks = Object.fromEntries(
+        Object.entries(state.picks).map(([userId, pick]) => [
+          userId,
+          pick.item.uuid === uuid ? { ...pick, item, updatedAt: new Date().toISOString() } : pick,
+        ]),
+      );
 
       return {
         ...state,
         queue: newQueue,
         // Update current climb if it was the replaced item
         currentClimbQueueItem: state.currentClimbQueueItem?.uuid === uuid ? item : state.currentClimbQueueItem,
+        picks: newPicks,
       };
     }
 

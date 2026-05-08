@@ -1,13 +1,15 @@
 import { useCallback, useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { SubscriptionQueueEvent, SessionEvent } from '@boardsesh/shared-schema';
 import { computeQueueStateHash } from '@/app/utils/hash';
-import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
+import type { ClimbQueueItem as LocalClimbQueueItem, UserPick } from '../../queue-control/types';
 import { type Session, type SharedRefs, CORRUPTION_RESYNC_COOLDOWN_MS, DEBUG } from '../types';
 
 type UseSessionSubscriptionsArgs = {
   session: Session | null;
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
   lastReceivedStateHash: string | null;
   setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
   refs: Pick<
@@ -30,6 +32,8 @@ export function useSessionSubscriptions({
   session,
   queue,
   currentClimbQueueItem,
+  picks,
+  activeClimberUserId,
   lastReceivedStateHash,
   setQueueState,
   refs,
@@ -94,7 +98,7 @@ export function useSessionSubscriptions({
     }
 
     const verifyInterval = setInterval(() => {
-      const localHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
+      const localHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null, picks, activeClimberUserId);
 
       if (localHash !== lastReceivedStateHash) {
         console.warn(
@@ -111,7 +115,7 @@ export function useSessionSubscriptions({
     }, 60000);
 
     return () => clearInterval(verifyInterval);
-  }, [session, lastReceivedStateHash, queue, currentClimbQueueItem, triggerResyncRef]);
+  }, [session, lastReceivedStateHash, queue, currentClimbQueueItem, picks, activeClimberUserId, triggerResyncRef]);
 
   // Defensive state consistency check
   useEffect(() => {

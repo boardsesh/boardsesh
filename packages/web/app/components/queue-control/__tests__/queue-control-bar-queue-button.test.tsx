@@ -259,6 +259,9 @@ const makeQueueItem = (uuid: string) => ({
 
 const baseQueueContext = {
   queue: [makeQueueItem('item-1')],
+  boardSends: [],
+  picks: {},
+  activeClimberUserId: null,
   currentClimbQueueItem: makeQueueItem('item-1'),
   currentClimb: mockClimb,
   climbSearchResults: [],

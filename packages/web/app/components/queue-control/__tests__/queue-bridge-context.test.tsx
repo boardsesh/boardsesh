@@ -206,6 +206,9 @@ function createDefaultPersistentSession(overrides?: Record<string, unknown>) {
     clientId: null,
     isLeader: false,
     users: [],
+    picks: [],
+    activeClimberUserId: null,
+    boardSends: [],
     currentClimbQueueItem: null,
     queue: [],
     localQueue: [],
@@ -225,6 +228,11 @@ function createDefaultPersistentSession(overrides?: Record<string, unknown>) {
     setQueue: vi.fn(() => Promise.resolve()),
     mirrorCurrentClimb: vi.fn(() => Promise.resolve()),
     replaceQueueItem: vi.fn(() => Promise.resolve()),
+    reorderQueueItem: vi.fn(() => Promise.resolve()),
+    setMyPick: vi.fn(() => Promise.resolve()),
+    claimTurn: vi.fn(() => Promise.resolve()),
+    yieldTurn: vi.fn(() => Promise.resolve()),
+    clearMyPick: vi.fn(() => Promise.resolve()),
     triggerResync: vi.fn(),
     ...overrides,
   };
@@ -236,6 +244,9 @@ function createFakeQueueContext(overrides?: Partial<GraphQLQueueContextType>): G
     queue: [],
     currentClimbQueueItem: null,
     currentClimb: null,
+    picks: {},
+    activeClimberUserId: null,
+    boardSends: [],
     climbSearchParams: {
       gradeAccuracy: 0,
       maxGrade: 0,
@@ -277,6 +288,11 @@ function createFakeQueueContext(overrides?: Partial<GraphQLQueueContextType>): G
     addToQueue: vi.fn(),
     removeFromQueue: vi.fn(),
     setCurrentClimb: vi.fn(),
+    setMyPick: vi.fn(),
+    setMyPickQueueItem: vi.fn(),
+    claimTurn: vi.fn(),
+    yieldTurn: vi.fn(),
+    clearMyPick: vi.fn(),
     setCurrentClimbQueueItem: vi.fn(),
     replaceQueueItem: vi.fn(),
     setClimbSearchParams: vi.fn(),
@@ -323,6 +339,11 @@ function extractActions(ctx: GraphQLQueueContextType): GraphQLQueueActionsType {
     addToQueue: ctx.addToQueue,
     removeFromQueue: ctx.removeFromQueue,
     setCurrentClimb: ctx.setCurrentClimb,
+    setMyPick: ctx.setMyPick,
+    setMyPickQueueItem: ctx.setMyPickQueueItem,
+    claimTurn: ctx.claimTurn,
+    yieldTurn: ctx.yieldTurn,
+    clearMyPick: ctx.clearMyPick,
     setCurrentClimbQueueItem: ctx.setCurrentClimbQueueItem,
     replaceQueueItem: ctx.replaceQueueItem,
     setClimbSearchParams: ctx.setClimbSearchParams,
@@ -346,6 +367,9 @@ function extractData(ctx: GraphQLQueueContextType): GraphQLQueueDataType {
     queue: ctx.queue,
     currentClimbQueueItem: ctx.currentClimbQueueItem,
     currentClimb: ctx.currentClimb,
+    picks: ctx.picks,
+    activeClimberUserId: ctx.activeClimberUserId,
+    boardSends: ctx.boardSends,
     climbSearchParams: ctx.climbSearchParams,
     climbSearchResults: ctx.climbSearchResults,
     suggestedClimbs: ctx.suggestedClimbs,
@@ -743,38 +767,34 @@ describe('queue-bridge-context', () => {
         return renderHook(() => useTestQueueContext(), { wrapper });
       }
 
-      it('setCurrentClimb delegates to ps.addQueueItem and ps.setCurrentClimb in party mode', async () => {
+      it('setCurrentClimb delegates to ps.setMyPick in party mode', async () => {
         const item1 = createTestQueueItem(climb1, 'u1');
         const { result } = renderWithPartySession([item1], item1);
         await act(async () => {
           await result.current!.setCurrentClimb(climb2);
         });
         expect(mockSetLocalQueueState).not.toHaveBeenCalled();
-        expect(mockPersistentSession.addQueueItem).toHaveBeenCalledTimes(1);
-        const addCall = (mockPersistentSession.addQueueItem as ReturnType<typeof vi.fn>).mock.calls[0];
-        expect(addCall[0].climb.uuid).toBe('c2');
-        // Position is currentIndex + 1 = 1 (current at index 0, insert after)
-        expect(addCall[1]).toBe(1);
-        expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
-        const setCurrentCall = (mockPersistentSession.setCurrentClimb as ReturnType<typeof vi.fn>).mock.calls[0];
-        expect(setCurrentCall[0].climb.uuid).toBe('c2');
-        // shouldAddToQueue is false (we already added)
-        expect(setCurrentCall[1]).toBe(false);
+        expect(mockPersistentSession.addQueueItem).not.toHaveBeenCalled();
+        expect(mockPersistentSession.setCurrentClimb).not.toHaveBeenCalled();
+        expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+        const setPickCall = (mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(setPickCall[0].climb.uuid).toBe('c2');
         // correlationId derived from clientId
-        expect(setCurrentCall[2]).toMatch(/^client-abc-/);
+        expect(setPickCall[1]).toMatch(/^client-abc-/);
       });
 
-      it('setCurrentClimb passes undefined position when no current is set', async () => {
+      it('setCurrentClimb creates a pick without queueing when no current is set', async () => {
         const { result } = renderWithPartySession([], null);
         await act(async () => {
           await result.current!.setCurrentClimb(climb1);
         });
-        expect(mockPersistentSession.addQueueItem).toHaveBeenCalledTimes(1);
-        const addCall = (mockPersistentSession.addQueueItem as ReturnType<typeof vi.fn>).mock.calls[0];
-        expect(addCall[1]).toBeUndefined();
+        expect(mockPersistentSession.addQueueItem).not.toHaveBeenCalled();
+        expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+        const setPickCall = (mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(setPickCall[0].climb.uuid).toBe('c1');
       });
 
-      it('setCurrentClimbQueueItem delegates to ps.setCurrentClimb in party mode', () => {
+      it('setCurrentClimbQueueItem delegates to ps.setMyPick in party mode', () => {
         const item1 = createTestQueueItem(climb1, 'u1');
         const item2 = createTestQueueItem(climb2, 'u2');
         const { result } = renderWithPartySession([item1, item2], item1);
@@ -782,11 +802,11 @@ describe('queue-bridge-context', () => {
           result.current!.setCurrentClimbQueueItem(item2);
         });
         expect(mockSetLocalQueueState).not.toHaveBeenCalled();
-        expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
-        const call = (mockPersistentSession.setCurrentClimb as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(mockPersistentSession.setCurrentClimb).not.toHaveBeenCalled();
+        expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+        const call = (mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0];
         expect(call[0].uuid).toBe('u2');
-        // shouldAddToQueue uses item.suggested
-        expect(call[1]).toBe(false);
+        expect(call[1]).toMatch(/^client-abc-/);
       });
 
       it('addToQueue delegates to ps.addQueueItem in party mode', () => {
@@ -858,12 +878,12 @@ describe('queue-bridge-context', () => {
         const { result } = renderWithPartySession([item1], item1);
         await act(async () => {
           // Click the same climb that's already in the queue at u1 — should
-          // NOT add a duplicate; should call setCurrentClimb on the existing item.
+          // NOT add a duplicate; should set my pick to the existing item.
           await result.current!.setCurrentClimb(climb1);
         });
         expect(mockPersistentSession.addQueueItem).not.toHaveBeenCalled();
-        expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
-        const call = (mockPersistentSession.setCurrentClimb as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+        const call = (mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0];
         expect(call[0].uuid).toBe('u1');
         expect(call[0].climb.uuid).toBe('c1');
       });
@@ -878,8 +898,8 @@ describe('queue-bridge-context', () => {
         await act(async () => {
           await result.current!.setCurrentClimb(climb1);
         });
-        const addCall = (mockPersistentSession.addQueueItem as ReturnType<typeof vi.fn>).mock.calls[0];
-        const newItem = addCall[0];
+        const setPickCall = (mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0];
+        const newItem = setPickCall[0];
         expect(newItem.addedBy).toBe('client-abc');
         expect(newItem.addedByUser).toEqual({
           id: 'user-42',
@@ -917,11 +937,11 @@ describe('queue-bridge-context', () => {
           result.current!.setCurrentClimbQueueItem(item1);
         });
         expect(mockSetLocalQueueState).not.toHaveBeenCalled();
-        expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
-        expect((mockPersistentSession.setCurrentClimb as ReturnType<typeof vi.fn>).mock.calls[0][0].uuid).toBe('u1');
+        expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+        expect((mockPersistentSession.setMyPick as ReturnType<typeof vi.fn>).mock.calls[0][0].uuid).toBe('u1');
       });
 
-      it('setCurrentClimb returns null and skips setCurrentClimb when ps.addQueueItem rejects', async () => {
+      it('setCurrentClimb returns null when ps.setMyPick rejects for a new item', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
           mockPersistentSession = createDefaultPersistentSession({
@@ -930,7 +950,7 @@ describe('queue-bridge-context', () => {
             currentClimbQueueItem: null,
             isLocalQueueLoaded: true,
             clientId: 'client-abc',
-            addQueueItem: vi.fn(() => Promise.reject(new Error('ws send failed'))),
+            setMyPick: vi.fn(() => Promise.reject(new Error('ws send failed'))),
           });
           const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueueBridgeProvider>{children}</QueueBridgeProvider>
@@ -940,25 +960,15 @@ describe('queue-bridge-context', () => {
           await act(async () => {
             returnValue = await result.current!.setCurrentClimb(climb1);
           });
-          // addQueueItem rejected, so nothing landed on the server. Return
-          // null so callers (e.g. navigateToClimb) skip downstream side
-          // effects like navigation.
           expect(returnValue).toBeNull();
-          expect(consoleErrorSpy).toHaveBeenCalledWith(
-            'Failed to add queue item before setting current:',
-            expect.any(Error),
-          );
+          expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to set my pick:', expect.any(Error));
           expect(mockPersistentSession.setCurrentClimb).not.toHaveBeenCalled();
         } finally {
           consoleErrorSpy.mockRestore();
         }
       });
 
-      it('setCurrentClimb returns null when ps.setCurrentClimb rejects after addQueueItem succeeds (partial failure)', async () => {
-        // Distinct from the addQueueItem-rejects case: here the item DID
-        // land in the shared queue, but activating it failed. The item is
-        // orphaned (queued but not current). Returning null lets callers
-        // skip navigation since the board never got the update.
+      it('setCurrentClimb returns null when ps.setMyPick rejects for a built item with a queue mutation override', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
           mockPersistentSession = createDefaultPersistentSession({
@@ -968,7 +978,7 @@ describe('queue-bridge-context', () => {
             isLocalQueueLoaded: true,
             clientId: 'client-abc',
             addQueueItem: vi.fn(() => Promise.resolve()),
-            setCurrentClimb: vi.fn(() => Promise.reject(new Error('set-current ws send failed'))),
+            setMyPick: vi.fn(() => Promise.reject(new Error('set-pick ws send failed'))),
           });
           const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueueBridgeProvider>{children}</QueueBridgeProvider>
@@ -979,18 +989,15 @@ describe('queue-bridge-context', () => {
             returnValue = await result.current!.setCurrentClimb(climb1);
           });
           expect(returnValue).toBeNull();
-          expect(mockPersistentSession.addQueueItem).toHaveBeenCalledTimes(1);
-          expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
-          expect(consoleErrorSpy).toHaveBeenCalledWith(
-            'Failed to set current climb after queue add:',
-            expect.any(Error),
-          );
+          expect(mockPersistentSession.addQueueItem).not.toHaveBeenCalled();
+          expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
+          expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to set my pick:', expect.any(Error));
         } finally {
           consoleErrorSpy.mockRestore();
         }
       });
 
-      it('setCurrentClimb returns null when reusing an existing queue item and ps.setCurrentClimb rejects', async () => {
+      it('setCurrentClimb returns null when reusing an existing queue item and ps.setMyPick rejects', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
           const item1 = createTestQueueItem(climb1, 'u1');
@@ -1000,7 +1007,7 @@ describe('queue-bridge-context', () => {
             currentClimbQueueItem: null,
             isLocalQueueLoaded: true,
             clientId: 'client-abc',
-            setCurrentClimb: vi.fn(() => Promise.reject(new Error('set-current rejected'))),
+            setMyPick: vi.fn(() => Promise.reject(new Error('set-pick rejected'))),
           });
           const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueueBridgeProvider>{children}</QueueBridgeProvider>
@@ -1009,12 +1016,12 @@ describe('queue-bridge-context', () => {
           let returnValue: ClimbQueueItem | null | undefined;
           await act(async () => {
             // climb1 already exists in the queue as item1, so the dedupe
-            // path is taken — setCurrentClimb on the existing item.
+            // path is taken — setMyPick on the existing item.
             returnValue = await result.current!.setCurrentClimb(climb1);
           });
           expect(returnValue).toBeNull();
           expect(mockPersistentSession.addQueueItem).not.toHaveBeenCalled();
-          expect(mockPersistentSession.setCurrentClimb).toHaveBeenCalledTimes(1);
+          expect(mockPersistentSession.setMyPick).toHaveBeenCalledTimes(1);
         } finally {
           consoleErrorSpy.mockRestore();
         }
@@ -1267,6 +1274,11 @@ describe('queue-bridge-context', () => {
         addToQueue: vi.fn(),
         removeFromQueue: vi.fn(),
         setCurrentClimb: vi.fn(),
+        setMyPick: vi.fn(),
+        setMyPickQueueItem: vi.fn(),
+        claimTurn: vi.fn(),
+        yieldTurn: vi.fn(),
+        clearMyPick: vi.fn(),
         setCurrentClimbQueueItem: vi.fn(),
         replaceQueueItem: vi.fn(),
         setClimbSearchParams: vi.fn(),

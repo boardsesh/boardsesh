@@ -1,4 +1,4 @@
-import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, UserPick } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessions, sessionQueues } from '../../db/schema';
 import { eq } from 'drizzle-orm';
@@ -59,6 +59,8 @@ export class WriteScheduler {
     sessionId: string,
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
+    picks: UserPick[],
+    activeClimberUserId: string | null,
     version: number,
     sequence: number,
     distributedState: DistributedStateManager | null,
@@ -71,7 +73,7 @@ export class WriteScheduler {
     }
 
     // Store latest state
-    this.pendingWrites.set(sessionId, { queue, currentClimbQueueItem, version, sequence });
+    this.pendingWrites.set(sessionId, { queue, currentClimbQueueItem, picks, activeClimberUserId, version, sequence });
 
     // Clear existing timer
     const existingTimer = this.postgresWriteTimers.get(sessionId);
@@ -117,7 +119,10 @@ export class WriteScheduler {
     state: {
       queue: ClimbQueueItem[];
       currentClimbQueueItem: ClimbQueueItem | null;
+      picks: UserPick[];
+      activeClimberUserId: string | null;
       version: number;
+      sequence: number;
     },
     lastError?: unknown,
   ): Promise<void> {
@@ -251,6 +256,8 @@ export async function writeQueueStateToPostgres(
         sessionId,
         queue: state.queue,
         currentClimbQueueItem: state.currentClimbQueueItem,
+        picks: state.picks,
+        activeClimberUserId: state.activeClimberUserId,
         version: state.version,
         sequence: state.sequence,
         updatedAt: now,
@@ -260,6 +267,8 @@ export async function writeQueueStateToPostgres(
         set: {
           queue: state.queue,
           currentClimbQueueItem: state.currentClimbQueueItem,
+          picks: state.picks,
+          activeClimberUserId: state.activeClimberUserId,
           version: state.version,
           sequence: state.sequence,
           updatedAt: now,

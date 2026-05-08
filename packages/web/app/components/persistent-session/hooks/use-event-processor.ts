@@ -1,7 +1,7 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SubscriptionQueueEvent, SessionEvent, SessionDetail } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
+import type { BoardSend, ClimbQueueItem as LocalClimbQueueItem, UserPick } from '../../queue-control/types';
 import { evaluateQueueEventSequence, insertQueueItemIdempotent } from '../event-utils';
 import { type SharedRefs, DEBUG } from '../types';
 import { SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
@@ -22,6 +22,9 @@ type UseEventProcessorArgs = {
 export type EventProcessorState = {
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
+  boardSends: BoardSend[];
   lastReceivedStateHash: string | null;
 };
 
@@ -30,6 +33,7 @@ export type EventProcessorActions = {
   handleSessionEvent: (event: SessionEvent) => void;
   setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
   setCurrentClimbQueueItem: Dispatch<SetStateAction<LocalClimbQueueItem | null>>;
+  setBoardSends: Dispatch<SetStateAction<BoardSend[]>>;
   notifyQueueSubscribers: (event: SubscriptionQueueEvent) => void;
   notifySessionSubscribers: (event: SessionEvent) => void;
 };
@@ -49,6 +53,9 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
 
   const [queue, setQueueState] = useState<LocalClimbQueueItem[]>([]);
   const [currentClimbQueueItem, setCurrentClimbQueueItem] = useState<LocalClimbQueueItem | null>(null);
+  const [picks, setPicks] = useState<UserPick[]>([]);
+  const [activeClimberUserId, setActiveClimberUserId] = useState<string | null>(null);
+  const [boardSends, setBoardSends] = useState<BoardSend[]>([]);
   const [lastReceivedStateHash, setLastReceivedStateHash] = useState<string | null>(null);
 
   // Notify queue event subscribers
@@ -121,6 +128,8 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
           }
           setQueueState(serverQueue);
           setCurrentClimbQueueItem(event.state.currentClimbQueueItem as LocalClimbQueueItem | null);
+          setPicks((event.state.picks ?? []) as UserPick[]);
+          setActiveClimberUserId(event.state.activeClimberUserId ?? null);
           updateLastReceivedSequence(event.sequence);
           setLastReceivedStateHash(event.state.stateHash);
           break;
@@ -164,6 +173,47 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
               },
             };
           });
+          setPicks((prev) =>
+            prev.map((pick) =>
+              pick.item.uuid === currentClimbQueueItem?.uuid
+                ? {
+                    ...pick,
+                    item: {
+                      ...pick.item,
+                      climb: { ...pick.item.climb, mirrored: event.mirrored },
+                    },
+                    updatedAt: new Date().toISOString(),
+                  }
+                : pick,
+            ),
+          );
+          updateLastReceivedSequence(event.sequence);
+          break;
+        case 'PickChanged':
+          setPicks((prev) => {
+            if (!event.pick) return prev.filter((pick) => pick.userId !== event.userId);
+            const nextPick: UserPick = {
+              userId: event.userId,
+              item: event.pick as LocalClimbQueueItem,
+              updatedAt: new Date().toISOString(),
+            };
+            const index = prev.findIndex((pick) => pick.userId === event.userId);
+            if (index === -1) return [...prev, nextPick];
+            const next = [...prev];
+            next[index] = nextPick;
+            return next;
+          });
+          updateLastReceivedSequence(event.sequence);
+          break;
+        case 'ActiveClimberChanged':
+          setActiveClimberUserId(event.activeClimberUserId);
+          updateLastReceivedSequence(event.sequence);
+          break;
+        case 'BoardSendAdded':
+          setBoardSends((prev) => [
+            event.boardSend as BoardSend,
+            ...prev.filter((send) => send.id !== event.boardSend.id),
+          ]);
           updateLastReceivedSequence(event.sequence);
           break;
       }
@@ -217,11 +267,15 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
   return {
     queue,
     currentClimbQueueItem,
+    picks,
+    activeClimberUserId,
+    boardSends,
     lastReceivedStateHash,
     handleQueueEvent,
     handleSessionEvent,
     setQueueState,
     setCurrentClimbQueueItem,
+    setBoardSends,
     notifyQueueSubscribers,
     notifySessionSubscribers,
   };

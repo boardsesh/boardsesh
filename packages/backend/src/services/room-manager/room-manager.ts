@@ -1,5 +1,5 @@
 import type Redis from 'ioredis';
-import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, SessionUser, UserPick } from '@boardsesh/shared-schema';
 import { RedisSessionStore } from '../redis-session-store';
 import type { Session } from '../../db/schema';
 import {
@@ -123,6 +123,8 @@ class RoomManager {
     users: SessionUser[];
     queue: ClimbQueueItem[];
     currentClimbQueueItem: ClimbQueueItem | null;
+    picks: UserPick[];
+    activeClimberUserId: string | null;
     sequence: number;
     stateHash: string;
     isLeader: boolean;
@@ -250,6 +252,7 @@ class RoomManager {
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
     expectedVersion?: number,
+    options?: { picks?: UserPick[]; activeClimberUserId?: string | null; sequenceIncrement?: number },
   ): Promise<{ version: number; sequence: number; stateHash: string }> {
     return updateQueueStateFn(
       sessionId,
@@ -259,6 +262,7 @@ class RoomManager {
       this.redisStore,
       this.writeScheduler,
       this.distributedState,
+      options,
     );
   }
 
@@ -267,8 +271,16 @@ class RoomManager {
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
     expectedVersion?: number,
+    options?: { picks?: UserPick[]; activeClimberUserId?: string | null; sequenceIncrement?: number },
   ): Promise<number> {
-    return updateQueueStateImmediateFn(sessionId, queue, currentClimbQueueItem, expectedVersion, this.redisStore);
+    return updateQueueStateImmediateFn(
+      sessionId,
+      queue,
+      currentClimbQueueItem,
+      expectedVersion,
+      this.redisStore,
+      options,
+    );
   }
 
   async updateQueueOnly(

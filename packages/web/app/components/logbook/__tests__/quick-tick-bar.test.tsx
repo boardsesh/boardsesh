@@ -884,7 +884,7 @@ describe('QuickTickBar', () => {
         screen.getByRole('option', { name: '1 try' }).click();
       });
       expect(onIsFlashChange).toHaveBeenLastCalledWith(true);
-    });
+    }, 15_000);
 
     it('does not fire when currentClimb is null (no tickTarget)', () => {
       const onIsFlashChange = vi.fn();

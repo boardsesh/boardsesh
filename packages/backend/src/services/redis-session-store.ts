@@ -1,5 +1,5 @@
 import type Redis from 'ioredis';
-import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
+import type { ClimbQueueItem, SessionUser, UserPick } from '@boardsesh/shared-schema';
 
 /**
  * Safely parse JSON with fallback for empty strings and malformed data.
@@ -21,6 +21,8 @@ export type RedisSessionData = {
   boardPath: string;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks: UserPick[];
+  activeClimberUserId: string | null;
   version: number;
   sequence: number;
   stateHash: string;
@@ -58,6 +60,8 @@ export class RedisSessionStore {
       boardPath: data.boardPath,
       queue: JSON.stringify(data.queue),
       currentClimbQueueItem: data.currentClimbQueueItem ? JSON.stringify(data.currentClimbQueueItem) : '',
+      picks: JSON.stringify(data.picks),
+      activeClimberUserId: data.activeClimberUserId || '',
       version: data.version.toString(),
       sequence: data.sequence.toString(),
       stateHash: data.stateHash,
@@ -86,6 +90,8 @@ export class RedisSessionStore {
     sessionId: string,
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
+    picks: UserPick[],
+    activeClimberUserId: string | null,
     version: number,
     sequence: number,
     stateHash: string,
@@ -97,6 +103,8 @@ export class RedisSessionStore {
       sessionId,
       queue: JSON.stringify(queue),
       currentClimbQueueItem: currentClimbQueueItem ? JSON.stringify(currentClimbQueueItem) : '',
+      picks: JSON.stringify(picks),
+      activeClimberUserId: activeClimberUserId || '',
       version: version.toString(),
       sequence: sequence.toString(),
       stateHash: stateHash,
@@ -125,6 +133,8 @@ export class RedisSessionStore {
       boardPath: data.boardPath,
       queue: safeJSONParse(data.queue, []),
       currentClimbQueueItem: safeJSONParse(data.currentClimbQueueItem, null),
+      picks: safeJSONParse(data.picks, []),
+      activeClimberUserId: data.activeClimberUserId || null,
       version: parseInt(data.version, 10) || 0,
       sequence: parseInt(data.sequence, 10) || 0,
       stateHash: data.stateHash || '',

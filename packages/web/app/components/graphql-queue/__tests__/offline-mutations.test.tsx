@@ -21,6 +21,7 @@ vi.mock('next/navigation', () => ({
 const mockAddQueueItem = vi.fn().mockResolvedValue(undefined);
 const mockRemoveQueueItem = vi.fn().mockResolvedValue(undefined);
 const mockSetCurrentClimb = vi.fn().mockResolvedValue(undefined);
+const mockSetMyPick = vi.fn().mockResolvedValue(undefined);
 const mockSetQueue = vi.fn().mockResolvedValue(undefined);
 const mockMirrorCurrentClimb = vi.fn().mockResolvedValue(undefined);
 
@@ -58,6 +59,7 @@ const mockPersistentSession = {
   addQueueItem: mockAddQueueItem,
   removeQueueItem: mockRemoveQueueItem,
   setCurrentClimb: mockSetCurrentClimb,
+  setMyPick: mockSetMyPick,
   mirrorCurrentClimb: mockMirrorCurrentClimb,
   setQueue: mockSetQueue,
   offlineBufferRef: { current: [] as unknown[] },
@@ -165,12 +167,6 @@ const mockClimb2: Climb = {
   name: 'Test Climb 2',
 };
 
-const mockClimb3: Climb = {
-  ...mockClimb,
-  uuid: 'climb-3',
-  name: 'Test Climb 3',
-};
-
 const defaultProps = {
   parsedParams: {
     board_name: 'kilter',
@@ -247,7 +243,7 @@ describe('QueueContext offline mutations', () => {
       expect(mockRemoveQueueItem).toHaveBeenCalledWith(queueItem.uuid);
     });
 
-    it('setCurrentClimb inserts via addQueueItem before setting current climb', async () => {
+    it('setCurrentClimbQueueItem sends my pick in party mode', async () => {
       const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
 
       act(() => {
@@ -261,30 +257,14 @@ describe('QueueContext offline mutations', () => {
         result.current.setCurrentClimbQueueItem(currentQueueItem);
       });
 
-      mockAddQueueItem.mockClear();
-      mockSetCurrentClimb.mockClear();
-
-      await act(async () => {
-        await result.current.setCurrentClimb(mockClimb3);
-      });
-
-      expect(mockAddQueueItem).toHaveBeenCalledTimes(1);
-      expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1);
-
-      const [addedItem, position] = mockAddQueueItem.mock.calls[0];
-      const [currentItem, shouldAddToQueue, correlationId] = mockSetCurrentClimb.mock.calls[0];
-
-      expect(addedItem.climb.uuid).toBe('climb-3');
-      expect(position).toBe(1);
-      expect(currentItem).toEqual(addedItem);
-      expect(shouldAddToQueue).toBe(false);
+      expect(mockSetMyPick).toHaveBeenCalledTimes(1);
+      const [item, correlationId] = mockSetMyPick.mock.calls[0];
+      expect(item).toEqual(currentQueueItem);
       expect(correlationId).toMatch(/^client-1-\d+$/);
-      expect(mockAddQueueItem.mock.invocationCallOrder[0]).toBeLessThan(
-        mockSetCurrentClimb.mock.invocationCallOrder[0],
-      );
+      expect(mockSetCurrentClimb).not.toHaveBeenCalled();
     });
 
-    it('setCurrentClimb appends when there is no current climb', async () => {
+    it('setCurrentClimb creates my pick without mutating the shared queue', async () => {
       const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
 
       act(() => {
@@ -293,21 +273,19 @@ describe('QueueContext offline mutations', () => {
 
       mockAddQueueItem.mockClear();
       mockSetCurrentClimb.mockClear();
+      mockSetMyPick.mockClear();
 
       await act(async () => {
         await result.current.setCurrentClimb(mockClimb2);
       });
 
-      expect(mockAddQueueItem).toHaveBeenCalledTimes(1);
-      expect(mockSetCurrentClimb).toHaveBeenCalledTimes(1);
+      expect(mockAddQueueItem).not.toHaveBeenCalled();
+      expect(mockSetCurrentClimb).not.toHaveBeenCalled();
+      expect(mockSetMyPick).toHaveBeenCalledTimes(1);
 
-      const [addedItem, position] = mockAddQueueItem.mock.calls[0];
-      const [currentItem, shouldAddToQueue, correlationId] = mockSetCurrentClimb.mock.calls[0];
+      const [pickedItem, correlationId] = mockSetMyPick.mock.calls[0];
 
-      expect(addedItem.climb.uuid).toBe('climb-2');
-      expect(position).toBeUndefined();
-      expect(currentItem).toEqual(addedItem);
-      expect(shouldAddToQueue).toBe(false);
+      expect(pickedItem.climb.uuid).toBe('climb-2');
       expect(correlationId).toMatch(/^client-1-\d+$/);
     });
 

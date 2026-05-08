@@ -10,7 +10,14 @@ import MuiDivider from '@mui/material/Divider';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import drawerCss from '../swipeable-drawer/swipeable-drawer.module.css';
 import LoginOutlined from '@mui/icons-material/LoginOutlined';
-import { useQueueActions, useCurrentClimbUuid, useQueueList, useSearchData, useSessionData } from '../graphql-queue';
+import {
+  useQueueActions,
+  useCurrentClimbUuid,
+  useQueueData,
+  useQueueList,
+  useSearchData,
+  useSessionData,
+} from '../graphql-queue';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
@@ -60,6 +67,15 @@ type QueueListProps = {
   /** When false, suggested climbs and infinite scroll are not rendered.
    *  Use this when QueueList is inside a closed keepMounted drawer. */
   active?: boolean;
+  scopedQueue?: ClimbQueueItem[];
+  planMode?: boolean;
+  canMutateItem?: (item: ClimbQueueItem) => boolean;
+  onReorderItems?: (
+    item: ClimbQueueItem,
+    scopedOldIndex: number,
+    scopedNewIndex: number,
+    scopedQueue: ClimbQueueItem[],
+  ) => void;
 };
 
 const QueueList = forwardRef<QueueListHandle, QueueListProps>(
@@ -72,15 +88,21 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
       onToggleSelect,
       scrollContainer,
       active = true,
+      scopedQueue,
+      planMode = false,
+      canMutateItem,
+      onReorderItems,
     },
     ref,
   ) => {
     const { t } = useTranslation(['climbs', 'session']);
     const currentClimbUuid = useCurrentClimbUuid();
+    const { picks } = useQueueData();
     const { queue, suggestedClimbs } = useQueueList();
     const { hasMoreResults, isFetchingClimbs, isFetchingNextPage } = useSearchData();
-    const { viewOnlyMode } = useSessionData();
-    const { setCurrentClimb, setCurrentClimbQueueItem, setQueue, addToQueue } = useQueueActions();
+    const { viewOnlyMode, users, clientId } = useSessionData();
+    const { setCurrentClimb, setCurrentClimbQueueItem, setMyPickQueueItem, setQueue, addToQueue } = useQueueActions();
+    const displayQueue = scopedQueue ?? queue;
     const pathname = usePathname();
     const router = useLocaleRouter();
     const routeParams = useParams<{ board_slug?: string; angle?: string }>();
@@ -90,6 +112,22 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
     // Gate the Edit affordance on ownership (by immutable userId), draft or
     // in-window status, and whether we're on a board-slug-shaped route.
     const currentUserId = authSession?.user?.id ?? null;
+    const myIdentityIds = useMemo(() => {
+      const ids = new Set<string>();
+      if (clientId) ids.add(clientId);
+      if (currentUserId) ids.add(currentUserId);
+      const me = users.find((user) => user.id === clientId || (!!currentUserId && user.userId === currentUserId));
+      if (me?.userId) ids.add(me.userId);
+      return ids;
+    }, [clientId, currentUserId, users]);
+    const myPickUuid = useMemo(() => {
+      if (!planMode) return null;
+      for (const id of myIdentityIds) {
+        const pickUuid = picks[id]?.item.uuid;
+        if (pickUuid) return pickUuid;
+      }
+      return null;
+    }, [myIdentityIds, picks, planMode]);
     const boardSlug = routeParams?.board_slug;
     const angleParam = routeParams?.angle;
     const hasBoardRoute = !!(boardSlug && angleParam);
@@ -182,6 +220,8 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
           const targetIndex = Number(target.data.index);
 
           if (isNaN(sourceIndex) || isNaN(targetIndex)) return;
+          const sourceItem = displayQueue[sourceIndex];
+          if (!sourceItem || (canMutateItem && !canMutateItem(sourceItem))) return;
 
           const edge = extractClosestEdge(target.data);
           let finalIndex = edge === 'bottom' ? targetIndex + 1 : targetIndex;
@@ -192,17 +232,32 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
           }
 
           const newQueue = reorder({
-            list: queue,
+            list: displayQueue,
             startIndex: sourceIndex,
             finishIndex: finalIndex,
           });
 
-          setQueue(newQueue);
+          if (onReorderItems) {
+            onReorderItems(sourceItem, sourceIndex, finalIndex, newQueue);
+          } else {
+            setQueue(newQueue);
+          }
         },
       });
 
       return cleanup;
-    }, [queue, setQueue, isEditMode]);
+    }, [displayQueue, setQueue, isEditMode, canMutateItem, onReorderItems]);
+
+    const handleQueueItemPick = useCallback(
+      (item: ClimbQueueItem) => {
+        if (planMode) {
+          void setMyPickQueueItem(item);
+          return;
+        }
+        setCurrentClimbQueueItem(item);
+      },
+      [planMode, setCurrentClimbQueueItem, setMyPickQueueItem],
+    );
 
     // Memoize suggested item title props — match queue item layout (grade on right)
     const suggestedTitleProps = useMemo(
@@ -219,11 +274,21 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
       const rows: FlatRow[] = [];
       let scrollTargetIdx = -1;
 
-      const currentIndex = queue.findIndex((item) => item.uuid === currentClimbUuid);
-      const historyItems = currentIndex > 0 ? queue.slice(0, currentIndex) : [];
-      const currentItem = currentIndex >= 0 ? queue[currentIndex] : null;
+      if (planMode) {
+        for (let i = 0; i < displayQueue.length; i++) {
+          const item = displayQueue[i];
+          const isMyPick = item.uuid === myPickUuid;
+          if (isMyPick) scrollTargetIdx = rows.length;
+          rows.push({ type: isMyPick ? 'current-item' : 'future-item', item, queueIndex: i });
+        }
+        return { flatRows: rows, scrollTargetFlatIndex: scrollTargetIdx };
+      }
+
+      const currentIndex = displayQueue.findIndex((item) => item.uuid === currentClimbUuid);
+      const historyItems = currentIndex > 0 ? displayQueue.slice(0, currentIndex) : [];
+      const currentItem = currentIndex >= 0 ? displayQueue[currentIndex] : null;
       // When no current climb (currentIndex === -1), show entire queue as future items
-      const futureItems = currentIndex >= 0 ? queue.slice(currentIndex + 1) : queue;
+      const futureItems = currentIndex >= 0 ? displayQueue.slice(currentIndex + 1) : displayQueue;
 
       // History items
       if (showHistory && historyItems.length > 0) {
@@ -255,7 +320,7 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
       }
 
       // Suggestions section (only when active and not viewOnlyMode)
-      if (active && !viewOnlyMode) {
+      if (active && !viewOnlyMode && !planMode) {
         rows.push({ type: 'suggestion-header' });
         for (let i = 0; i < suggestedClimbs.length; i++) {
           rows.push({ type: 'suggestion', climb: suggestedClimbs[i] });
@@ -272,12 +337,14 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
 
       return { flatRows: rows, scrollTargetFlatIndex: scrollTargetIdx };
     }, [
-      queue,
+      displayQueue,
       currentClimbUuid,
+      myPickUuid,
       showHistory,
       suggestedClimbs,
       active,
       viewOnlyMode,
+      planMode,
       hasMoreResults,
       isFetchingClimbs,
       isFetchingNextPage,
@@ -390,7 +457,7 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     boardDetails={boardDetails}
                     pathname={pathname}
                     isDark={isDark}
-                    setCurrentClimbQueueItem={setCurrentClimbQueueItem}
+                    setCurrentClimbQueueItem={handleQueueItemPick}
                     onTickClick={handleTickClick}
                     onOpenActions={handleOpenActions}
                     onOpenPlaylistSelector={handleOpenPlaylistSelector}
@@ -399,6 +466,8 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     onToggleSelect={onToggleSelect}
                     onEditClimb={handleEditClimb}
                     isEditable={canEditClimb(row.item.climb)}
+                    canDrag={!planMode && (canMutateItem?.(row.item) ?? true)}
+                    disableSwipe={!!canMutateItem && !canMutateItem(row.item)}
                   />
                 )}
                 {row.type === 'history-divider' && <MuiDivider className={styles.historyDivider} />}
@@ -411,7 +480,7 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     boardDetails={boardDetails}
                     pathname={pathname}
                     isDark={isDark}
-                    setCurrentClimbQueueItem={setCurrentClimbQueueItem}
+                    setCurrentClimbQueueItem={handleQueueItemPick}
                     onTickClick={handleTickClick}
                     onOpenActions={handleOpenActions}
                     onOpenPlaylistSelector={handleOpenPlaylistSelector}
@@ -420,6 +489,8 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     onToggleSelect={onToggleSelect}
                     onEditClimb={handleEditClimb}
                     isEditable={canEditClimb(row.item.climb)}
+                    canDrag={!planMode && (canMutateItem?.(row.item) ?? true)}
+                    disableSwipe={!!canMutateItem && !canMutateItem(row.item)}
                   />
                 )}
                 {row.type === 'future-item' && (
@@ -431,7 +502,7 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     boardDetails={boardDetails}
                     pathname={pathname}
                     isDark={isDark}
-                    setCurrentClimbQueueItem={setCurrentClimbQueueItem}
+                    setCurrentClimbQueueItem={handleQueueItemPick}
                     onTickClick={handleTickClick}
                     onOpenActions={handleOpenActions}
                     onOpenPlaylistSelector={handleOpenPlaylistSelector}
@@ -440,6 +511,9 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
                     onToggleSelect={onToggleSelect}
                     onEditClimb={handleEditClimb}
                     isEditable={canEditClimb(row.item.climb)}
+                    canDrag={canMutateItem?.(row.item) ?? true}
+                    disableSwipe={!!canMutateItem && !canMutateItem(row.item)}
+                    openPlayOnThumbnail={!planMode}
                   />
                 )}
                 {row.type === 'suggestion-header' && (

@@ -15,7 +15,7 @@ import CloudOffOutlined from '@mui/icons-material/CloudOffOutlined';
 import OpenInFullOutlined from '@mui/icons-material/OpenInFullOutlined';
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import { track } from '@/app/lib/analytics';
-import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueData, useQueueList, useSessionData } from '../graphql-queue';
 import NextClimbButton from './next-climb-button';
 import { usePathname, useParams, useSearchParams } from 'next/navigation';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
@@ -63,7 +63,9 @@ import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { usePersistentSessionState } from '../persistent-session/persistent-session-context';
+import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
+import Lightbulb from '@mui/icons-material/Lightbulb';
 import { dispatchOpenSeshSettingsDrawer } from '../sesh-settings/sesh-settings-drawer-event';
 import { generateSessionName } from '@/app/lib/session-utils';
 import StartSeshDrawer from '../session-creation/start-sesh-drawer';
@@ -175,7 +177,9 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const isViewPage = pathname.includes('/view/');
   const isPlayPage = pathname.includes('/play/');
   const { currentClimb } = useCurrentClimb();
+  const { activeClimberUserId, picks } = useQueueData();
   const { queue } = useQueueList();
+  const bluetooth = useBluetoothContext();
   const { viewOnlyMode, connectionState, sessionId, isDisconnected, users, clientId } = useSessionData();
   const { activeSession, session: persistentSession, users: sessionUsers } = usePersistentSessionState();
   const {
@@ -183,6 +187,8 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     getNextClimbQueueItem,
     getPreviousClimbQueueItem,
     setCurrentClimbQueueItem,
+    claimTurn,
+    yieldTurn,
     endSession,
     disconnect,
   } = useQueueActions();
@@ -444,25 +450,50 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     [displayedClimb?.difficulty, isDark],
   );
 
-  // Deduplicate session users by userId (stable DB UUID).
-  // When userId is absent (unauthenticated), fall back to connection id
-  // so distinct participants with the same display name aren't merged.
+  // Picks and active-climber state are keyed by session connection id.
+  // Keep one row per live connection so pick lookups and hand-offs use the
+  // same identifier the backend stores in queue events.
   const uniqueSessionUsers = useMemo(() => {
     const seen = new Set<string>();
     return sessionUsers.filter((user) => {
-      const key = user.userId ?? user.id;
+      const key = user.id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }, [sessionUsers]);
 
-  // Resolve the current user's stable userId from the session users list
+  const activeClimberUser = useMemo(() => {
+    if (!activeClimberUserId) return null;
+    return uniqueSessionUsers.find((user) => user.id === activeClimberUserId) ?? null;
+  }, [activeClimberUserId, uniqueSessionUsers]);
+
+  // Pick ownership is keyed by the session connection id.
   const myUserId = useMemo(() => {
-    if (!clientId) return null;
-    const me = sessionUsers.find((u) => u.id === clientId);
-    return me?.userId ?? clientId;
-  }, [sessionUsers, clientId]);
+    return clientId ?? null;
+  }, [clientId]);
+
+  const getParticipantUserId = useCallback((user: { id: string; userId?: string | null }) => user.id, []);
+
+  const handleParticipantTurnClick = useCallback(
+    (user: { id: string; userId?: string | null }) => {
+      const userId = getParticipantUserId(user);
+      const pick = picks[userId]?.item;
+      if (!pick) return;
+      void (async () => {
+        if (!bluetooth.isConnected) {
+          const connected = await bluetooth.connect(pick.climb.frames, !!pick.climb.mirrored);
+          if (!connected) return;
+        }
+        if (myUserId === userId) {
+          await claimTurn();
+          return;
+        }
+        await yieldTurn(userId);
+      })();
+    },
+    [bluetooth, claimTurn, getParticipantUserId, myUserId, picks, yieldTurn],
+  );
 
   // Track which participants have ticked the current climb.
   // Merges backend-provided tickedBy with locally tracked ticks.
@@ -1022,21 +1053,39 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                         )}
                       </Box>
                     ) : (
-                      <div className={styles.participantScroll}>
-                        {uniqueSessionUsers.map((user) => (
-                          <div key={user.id} className={styles.participantItem}>
-                            <TickBadgeAvatar
-                              user={user}
-                              hasTicked={
-                                tickedBySet.has(user.id) || (user.userId != null && tickedBySet.has(user.userId))
-                              }
-                              size={32}
-                            />
-                            <Typography variant="caption" className={styles.participantName} noWrap>
-                              {user.username}
-                            </Typography>
-                          </div>
-                        ))}
+                      <div className={styles.participantPickList}>
+                        {uniqueSessionUsers.map((user) => {
+                          const participantUserId = getParticipantUserId(user);
+                          const pick = picks[participantUserId]?.item ?? null;
+                          const isActiveParticipant = activeClimberUserId === participantUserId;
+                          const disabled = !pick;
+                          return (
+                            <button
+                              key={user.id}
+                              type="button"
+                              className={`${styles.participantPickRow} ${isActiveParticipant ? styles.participantPickRowActive : ''}`}
+                              disabled={disabled}
+                              onClick={() => handleParticipantTurnClick(user)}
+                            >
+                              <TickBadgeAvatar
+                                user={user}
+                                hasTicked={
+                                  tickedBySet.has(user.id) || (user.userId != null && tickedBySet.has(user.userId))
+                                }
+                                size={32}
+                              />
+                              <span className={styles.participantPickText}>
+                                <Typography variant="caption" className={styles.participantPickName} noWrap>
+                                  {user.username}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                  {pick ? `${pick.climb.name} · ${pick.climb.difficulty}` : 'No pick yet'}
+                                </Typography>
+                              </span>
+                              {isActiveParticipant && <Lightbulb sx={{ fontSize: 16 }} />}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1209,6 +1258,13 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                         pathname={pathname}
                         onClick={handleThumbnailClick}
                       />
+                      {activeClimberUser && (
+                        <Avatar
+                          alt={activeClimberUser.username}
+                          src={activeClimberUser.avatarUrl ?? undefined}
+                          className={styles.activeAvatarOverlay}
+                        />
+                      )}
                     </div>
 
                     {/* Text swipe clip — overflow hidden to contain sliding text */}

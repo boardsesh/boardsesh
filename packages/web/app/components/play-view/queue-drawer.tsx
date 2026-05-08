@@ -1,23 +1,23 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MuiButton from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
-import { useQueueActions, useQueueList, useSessionData } from '../graphql-queue';
+import Lightbulb from '@mui/icons-material/Lightbulb';
+import { useQueueActions, useQueueData, useQueueList, useSessionData } from '../graphql-queue';
 import QueueList, { type QueueListHandle } from '../queue-control/queue-list';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { usePullToClose } from '@/app/lib/hooks/pull-to-close';
 import { useDrawerDragResize } from '@/app/hooks/use-drawer-drag-resize';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails } from '@/app/lib/types';
+import type { ClimbQueueItem } from '../queue-control/types';
 import styles from './play-view-drawer.module.css';
 import drawerStyles from '../swipeable-drawer/swipeable-drawer.module.css';
 
@@ -28,6 +28,11 @@ const QUEUE_DRAWER_STYLES = {
   },
   body: { padding: 0, overflow: 'hidden' as const, touchAction: 'pan-y' as const },
 } as const;
+
+type QueueScope =
+  | { type: 'mine'; key: 'mine'; label: string }
+  | { type: 'all'; key: 'all'; label: string }
+  | { type: 'user'; key: string; label: string; userIds: string[] };
 
 export type QueueDrawerProps = {
   open: boolean;
@@ -42,17 +47,12 @@ export type QueueDrawerProps = {
   initialShowHistory?: boolean;
 };
 
-const QueueDrawer: React.FC<QueueDrawerProps> = ({
-  open,
-  onClose,
-  onTransitionEnd,
-  boardDetails,
-  initialShowHistory = false,
-}) => {
+const QueueDrawer: React.FC<QueueDrawerProps> = ({ open, onClose, onTransitionEnd, boardDetails }) => {
   const { t } = useTranslation('session');
   // Internal state
   const [isEditMode, setIsEditMode] = useState(false);
-  const [showHistory, setShowHistory] = useState(initialShowHistory);
+  const [showPlanAhead, setShowPlanAhead] = useState(false);
+  const [activeScopeKey, setActiveScopeKey] = useState<string>('mine');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   // Refs
@@ -67,8 +67,56 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
 
   // Context hooks
   const { queue } = useQueueList();
-  const { setQueue } = useQueueActions();
-  const { viewOnlyMode } = useSessionData();
+  const { boardSends } = useQueueData();
+  const { removeFromQueue, reorderQueueItem, setQueue } = useQueueActions();
+  const { viewOnlyMode, users, clientId } = useSessionData();
+
+  const myUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (clientId) ids.add(clientId);
+    const me = users.find((user) => user.id === clientId);
+    if (me?.userId) ids.add(me.userId);
+    return ids;
+  }, [clientId, users]);
+
+  const getOwnerIds = useCallback((item: ClimbQueueItem): string[] => {
+    return [item.addedBy ?? null, item.addedByUser?.id ?? null].filter((id): id is string => !!id);
+  }, []);
+
+  const isMine = useCallback(
+    (item: ClimbQueueItem): boolean => getOwnerIds(item).some((id) => myUserIds.has(id)),
+    [getOwnerIds, myUserIds],
+  );
+
+  const scopeOptions = useMemo<QueueScope[]>(() => {
+    const options: QueueScope[] = [
+      { type: 'mine', key: 'mine', label: 'My queue' },
+      { type: 'all', key: 'all', label: 'All' },
+    ];
+    users.forEach((user) => {
+      const userIds = [user.id, user.userId].filter((id): id is string => !!id);
+      if (userIds.some((id) => myUserIds.has(id))) return;
+      options.push({ type: 'user', key: `user:${userIds[0]}`, label: user.username, userIds });
+    });
+    return options;
+  }, [myUserIds, users]);
+
+  const activeScope = scopeOptions.find((scope) => scope.key === activeScopeKey) ?? scopeOptions[0];
+  const scopedQueue = useMemo(() => {
+    if (activeScope.type === 'all') return queue;
+    if (activeScope.type === 'mine') return queue.filter(isMine);
+    const ids = new Set(activeScope.userIds);
+    return queue.filter((item) => getOwnerIds(item).some((id) => ids.has(id)));
+  }, [activeScope, getOwnerIds, isMine, queue]);
+
+  const sentHistory = useMemo(() => {
+    const seen = new Set<string>();
+    return boardSends.filter((send) => {
+      if (seen.has(send.climbUuid)) return false;
+      seen.add(send.climbUuid);
+      return true;
+    });
+  }, [boardSends]);
 
   // Handlers
   const handleToggleSelect = useCallback((uuid: string) => {
@@ -89,17 +137,38 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
   }, []);
 
   const handleBulkRemove = useCallback(() => {
-    setQueue(queue.filter((item) => !selectedItems.has(item.uuid)));
+    scopedQueue.filter((item) => selectedItems.has(item.uuid) && isMine(item)).forEach((item) => removeFromQueue(item));
     setSelectedItems(new Set());
     setIsEditMode(false);
-  }, [queue, selectedItems, setQueue]);
+  }, [isMine, removeFromQueue, scopedQueue, selectedItems]);
 
   const closeDrawer = useCallback(() => {
     setIsEditMode(false);
     setSelectedItems(new Set());
-    setShowHistory(false);
+    setShowPlanAhead(false);
     onClose();
   }, [onClose]);
+
+  const handleReorderItems = useCallback(
+    (item: ClimbQueueItem, _scopedOldIndex: number, scopedNewIndex: number, nextScopedQueue: ClimbQueueItem[]) => {
+      const oldIndex = queue.findIndex((queueItem) => queueItem.uuid === item.uuid);
+      const destinationItem = nextScopedQueue[scopedNewIndex] ?? nextScopedQueue[nextScopedQueue.length - 1];
+      const newIndex = destinationItem ? queue.findIndex((queueItem) => queueItem.uuid === destinationItem.uuid) : -1;
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+      if (reorderQueueItem) {
+        reorderQueueItem(item.uuid, oldIndex, newIndex);
+        return;
+      }
+      const nextQueue = [...queue];
+      const [moved] = nextQueue.splice(oldIndex, 1);
+      nextQueue.splice(newIndex, 0, moved);
+      setQueue(nextQueue);
+    },
+    [queue, reorderQueueItem, setQueue],
+  );
+
+  const selectedOwnCount = scopedQueue.filter((item) => selectedItems.has(item.uuid) && isMine(item)).length;
+  const hasEditableRows = scopedQueue.some(isMine);
 
   const { paperRef: queuePaperRef, dragHandlers } = useDrawerDragResize({
     open,
@@ -194,31 +263,13 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
               !viewOnlyMode &&
               (isEditMode ? (
                 <Stack direction="row" spacing={1}>
-                  <MuiButton
-                    variant="text"
-                    startIcon={<DeleteOutlined />}
-                    sx={{ color: 'var(--neutral-400)' }}
-                    onClick={() => {
-                      setQueue([]);
-                      handleExitEditMode();
-                    }}
-                  >
-                    {t('queueDrawer.clear')}
-                  </MuiButton>
                   <IconButton onClick={handleExitEditMode}>
                     <CloseOutlined />
                   </IconButton>
                 </Stack>
               ) : (
                 <Stack direction="row" spacing={1}>
-                  <IconButton
-                    color="default"
-                    onClick={() => setShowHistory((prev) => !prev)}
-                    sx={showHistory ? { border: '1px solid', borderColor: 'divider' } : undefined}
-                  >
-                    <HistoryOutlined />
-                  </IconButton>
-                  <IconButton onClick={() => setIsEditMode(true)}>
+                  <IconButton disabled={!hasEditableRows} onClick={() => setIsEditMode(true)}>
                     <EditOutlined />
                   </IconButton>
                 </Stack>
@@ -235,20 +286,107 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
           onTouchMove={handleQueueSwipeMove}
           onTouchEnd={handleQueueSwipeEnd}
         >
-          <QueueList
-            ref={queueListRef}
-            boardDetails={boardDetails}
-            isEditMode={isEditMode}
-            showHistory={showHistory}
-            selectedItems={selectedItems}
-            onToggleSelect={handleToggleSelect}
-            scrollContainer={queueScrollEl}
-          />
+          <Box sx={{ padding: `${themeTokens.spacing[3]}px ${themeTokens.spacing[4]}px` }}>
+            <Stack spacing={1.5}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Sent to board
+              </Typography>
+              {sentHistory.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No climbs sent yet.
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {sentHistory.slice(0, showPlanAhead ? 4 : 12).map((send) => (
+                    <Box
+                      key={send.id}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        border: '1px solid var(--neutral-200)',
+                        borderRadius: '8px',
+                        padding: `${themeTokens.spacing[2]}px ${themeTokens.spacing[3]}px`,
+                        backgroundColor: 'var(--semantic-surface)',
+                      }}
+                    >
+                      <Lightbulb sx={{ fontSize: 16, color: themeTokens.colors.primary }} />
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                          {send.item.climb.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {send.item.climb.difficulty}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+              <MuiButton
+                variant={showPlanAhead ? 'text' : 'outlined'}
+                size="small"
+                onClick={() => setShowPlanAhead((prev) => !prev)}
+              >
+                {showPlanAhead ? 'Hide plan ahead' : 'Plan ahead'}
+              </MuiButton>
+            </Stack>
+          </Box>
+          {showPlanAhead && (
+            <Box sx={{ borderTop: '1px solid var(--neutral-200)' }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{
+                  overflowX: 'auto',
+                  padding: `${themeTokens.spacing[2]}px ${themeTokens.spacing[4]}px`,
+                }}
+              >
+                {scopeOptions.map((scope) => (
+                  <MuiButton
+                    key={scope.key}
+                    size="small"
+                    variant={scope.key === activeScope.key ? 'contained' : 'outlined'}
+                    onClick={() => {
+                      setActiveScopeKey(scope.key);
+                      setSelectedItems(new Set());
+                      setIsEditMode(false);
+                    }}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    {scope.label}
+                  </MuiButton>
+                ))}
+              </Stack>
+              {scopedQueue.length === 0 ? (
+                <Box sx={{ padding: `${themeTokens.spacing[2]}px ${themeTokens.spacing[4]}px` }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No queued climbs.
+                  </Typography>
+                </Box>
+              ) : (
+                <QueueList
+                  ref={queueListRef}
+                  boardDetails={boardDetails}
+                  isEditMode={isEditMode}
+                  showHistory={false}
+                  selectedItems={selectedItems}
+                  onToggleSelect={handleToggleSelect}
+                  scrollContainer={queueScrollEl}
+                  scopedQueue={scopedQueue}
+                  planMode
+                  active
+                  canMutateItem={isMine}
+                  onReorderItems={handleReorderItems}
+                />
+              )}
+            </Box>
+          )}
         </div>
-        {isEditMode && selectedItems.size > 0 && (
+        {isEditMode && selectedOwnCount > 0 && (
           <div className={styles.bulkRemoveBar}>
             <MuiButton variant="contained" color="error" fullWidth onClick={handleBulkRemove}>
-              {t('queueDrawer.removeItems', { count: selectedItems.size })}
+              {t('queueDrawer.removeItems', { count: selectedOwnCount })}
             </MuiButton>
           </div>
         )}

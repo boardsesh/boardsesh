@@ -37,6 +37,43 @@ const QUEUE_ITEM_FIELDS = `
   suggested
 `;
 
+const USER_PICK_FIELDS = `
+  userId
+  item {
+    ${QUEUE_ITEM_FIELDS}
+  }
+  updatedAt
+`;
+
+const BOARD_SEND_FIELDS = `
+  id
+  sessionId
+  item {
+    ${QUEUE_ITEM_FIELDS}
+  }
+  climbUuid
+  sentByUserId
+  activeClimberUserId
+  correlationId
+  sequence
+  createdAt
+`;
+
+const QUEUE_STATE_FIELDS = `
+  sequence
+  stateHash
+  queue {
+    ${QUEUE_ITEM_FIELDS}
+  }
+  currentClimbQueueItem {
+    ${QUEUE_ITEM_FIELDS}
+  }
+  picks {
+    ${USER_PICK_FIELDS}
+  }
+  activeClimberUserId
+`;
+
 // Mutations
 export const JOIN_SESSION = `
   mutation JoinSession($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String) {
@@ -60,14 +97,7 @@ export const JOIN_SESSION = `
         userId
       }
       queueState {
-        sequence
-        stateHash
-        queue {
-          ${QUEUE_ITEM_FIELDS}
-        }
-        currentClimbQueueItem {
-          ${QUEUE_ITEM_FIELDS}
-        }
+        ${QUEUE_STATE_FIELDS}
       }
     }
   }
@@ -137,6 +167,36 @@ export const SET_CURRENT_CLIMB = `
   }
 `;
 
+export const SET_MY_PICK = `
+  mutation SetMyPick($item: ClimbQueueItemInput!, $correlationId: ID) {
+    setMyPick(item: $item, correlationId: $correlationId) {
+      ${USER_PICK_FIELDS}
+    }
+  }
+`;
+
+export const CLAIM_TURN = `
+  mutation ClaimTurn($correlationId: ID) {
+    claimTurn(correlationId: $correlationId) {
+      ${QUEUE_ITEM_FIELDS}
+    }
+  }
+`;
+
+export const YIELD_TURN = `
+  mutation YieldTurn($toUserId: ID!, $correlationId: ID) {
+    yieldTurn(toUserId: $toUserId, correlationId: $correlationId) {
+      ${QUEUE_ITEM_FIELDS}
+    }
+  }
+`;
+
+export const CLEAR_MY_PICK = `
+  mutation ClearMyPick {
+    clearMyPick
+  }
+`;
+
 export const MIRROR_CURRENT_CLIMB = `
   mutation MirrorCurrentClimb($mirrored: Boolean!) {
     mirrorCurrentClimb(mirrored: $mirrored) {
@@ -156,14 +216,7 @@ export const REPLACE_QUEUE_ITEM = `
 export const SET_QUEUE = `
   mutation SetQueue($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput) {
     setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem) {
-      sequence
-      stateHash
-      queue {
-        ${QUEUE_ITEM_FIELDS}
-      }
-      currentClimbQueueItem {
-        ${QUEUE_ITEM_FIELDS}
-      }
+      ${QUEUE_STATE_FIELDS}
     }
   }
 `;
@@ -190,14 +243,7 @@ export const CREATE_SESSION = `
         userId
       }
       queueState {
-        sequence
-        stateHash
-        queue {
-          ${QUEUE_ITEM_FIELDS}
-        }
-        currentClimbQueueItem {
-          ${QUEUE_ITEM_FIELDS}
-        }
+        ${QUEUE_STATE_FIELDS}
       }
     }
   }
@@ -288,14 +334,7 @@ export const EVENTS_REPLAY = `
         ... on FullSync {
           sequence
           state {
-            sequence
-            stateHash
-            queue {
-              ${QUEUE_ITEM_FIELDS}
-            }
-            currentClimbQueueItem {
-              ${QUEUE_ITEM_FIELDS}
-            }
+            ${QUEUE_STATE_FIELDS}
           }
         }
         ... on QueueItemAdded {
@@ -327,6 +366,25 @@ export const EVENTS_REPLAY = `
           sequence
           mirrored
         }
+        ... on PickChanged {
+          sequence
+          userId
+          pick {
+            ${QUEUE_ITEM_FIELDS}
+          }
+          correlationId
+        }
+        ... on ActiveClimberChanged {
+          sequence
+          activeClimberUserId: userId
+          correlationId
+        }
+        ... on BoardSendAdded {
+          sequence
+          boardSend {
+            ${BOARD_SEND_FIELDS}
+          }
+        }
       }
     }
   }
@@ -339,14 +397,7 @@ export const QUEUE_UPDATES = `
       ... on FullSync {
         sequence
         state {
-          sequence
-          stateHash
-          queue {
-            ${QUEUE_ITEM_FIELDS}
-          }
-          currentClimbQueueItem {
-            ${QUEUE_ITEM_FIELDS}
-          }
+          ${QUEUE_STATE_FIELDS}
         }
       }
       ... on QueueItemAdded {
@@ -378,6 +429,33 @@ export const QUEUE_UPDATES = `
         sequence
         mirrored
       }
+      ... on PickChanged {
+        sequence
+        userId
+        pick {
+          ${QUEUE_ITEM_FIELDS}
+        }
+        correlationId
+      }
+      ... on ActiveClimberChanged {
+        sequence
+        activeClimberUserId: userId
+        correlationId
+      }
+      ... on BoardSendAdded {
+        sequence
+        boardSend {
+          ${BOARD_SEND_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
+export const BOARD_SENDS = `
+  query BoardSends($sessionId: ID!, $deduplicate: Boolean) {
+    boardSends(sessionId: $sessionId, deduplicate: $deduplicate) {
+      ${BOARD_SEND_FIELDS}
     }
   }
 `;

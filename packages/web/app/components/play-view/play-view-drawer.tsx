@@ -19,10 +19,13 @@ import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutl
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import ChatBubbleOutlineOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import Lightbulb from '@mui/icons-material/Lightbulb';
+import LightbulbOutlined from '@mui/icons-material/LightbulbOutlined';
+import SwapHorizOutlined from '@mui/icons-material/SwapHorizOutlined';
 import { TickIcon, TickButtonWithLabel } from '../logbook/tick-icon';
 import { PersonFallingIcon } from '@/app/components/icons/person-falling-icon';
 import { usePathname } from 'next/navigation';
-import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
+import { useQueueActions, useCurrentClimb, useQueueData, useQueueList, useSessionData } from '../graphql-queue';
 import { ClimbActions } from '../climb-actions';
 import { useDoubleTapFavorite } from '../climb-actions/use-double-tap-favorite';
 import HeartAnimationOverlay from '../climb-card/heart-animation-overlay';
@@ -58,6 +61,7 @@ import { getGradeTintColor } from '@/app/lib/grade-colors';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import QueueDrawer from './queue-drawer';
+import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 
 /** Window with optional requestIdleCallback (not available in all browsers). */
 type WindowWithIdleCallback = Window & {
@@ -102,6 +106,11 @@ type PlayViewActionBarProps = {
   onToggleFavorite: () => void;
   onOpenActions: () => void;
   onOpenQueue: () => void;
+  onLightbulb?: () => void;
+  onSwitchToEdit?: () => void;
+  isActiveClimber?: boolean;
+  showLightbulb?: boolean;
+  showSwitchToEdit?: boolean;
   angleSelector?: React.ReactNode;
 };
 
@@ -118,6 +127,11 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   onToggleFavorite,
   onOpenActions,
   onOpenQueue,
+  onLightbulb = () => {},
+  onSwitchToEdit = () => {},
+  isActiveClimber = false,
+  showLightbulb = false,
+  showSwitchToEdit = false,
   angleSelector,
 }: PlayViewActionBarProps) {
   const { t } = useTranslation('session');
@@ -142,6 +156,16 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
           }
         >
           <SyncOutlined />
+        </IconButton>
+      )}
+      {showLightbulb && (
+        <IconButton color={isActiveClimber ? 'primary' : 'default'} onClick={onLightbulb}>
+          {isActiveClimber ? <Lightbulb /> : <LightbulbOutlined />}
+        </IconButton>
+      )}
+      {showSwitchToEdit && (
+        <IconButton onClick={onSwitchToEdit} aria-label={t('playView.actionBar.switchToMyPickAria')}>
+          <SwapHorizOutlined />
         </IconButton>
       )}
       <IconButton onClick={onToggleFavorite}>
@@ -437,6 +461,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   const [isPlaylistSelectorOpen, setIsPlaylistSelectorOpen] = useState(false);
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [isBoardZoomed, setIsBoardZoomed] = useState(false);
+  const [mode, setMode] = useState<'spectate' | 'edit'>('edit');
 
   useEffect(() => {
     const scrollContainer = playPaperRef.current?.querySelector('[data-scroll-container]') as HTMLElement | null;
@@ -461,6 +486,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   const { logbook } = useBoardProvider();
 
   const currentClimbData = useCurrentClimb();
+  const queueData = useQueueData();
   const queueListData = useQueueList();
   const sessionData = useSessionData();
 
@@ -470,16 +496,25 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
 
   const { currentClimb, currentClimbQueueItem } = isOpen ? currentClimbData : deferredCurrentClimb;
   const { queue } = isOpen ? queueListData : deferredQueue;
-  const { viewOnlyMode } = isOpen ? sessionData : deferredSession;
-  const { mirrorClimb, getNextClimbQueueItem, getPreviousClimbQueueItem, setCurrentClimbQueueItem } = useQueueActions();
+  const { viewOnlyMode, clientId } = isOpen ? sessionData : deferredSession;
+  const { activeClimberUserId, picks } = queueData;
+  const { mirrorClimb, getNextClimbQueueItem, getPreviousClimbQueueItem, setMyPickQueueItem, claimTurn } =
+    useQueueActions();
+  const bluetooth = useBluetoothContext();
+
+  const myUserId = useMemo(() => {
+    return clientId ?? null;
+  }, [clientId]);
+  const isActiveClimber = !!myUserId && activeClimberUserId === myUserId;
+  const myPickItem = myUserId ? picks[myUserId]?.item : null;
+  const displayQueueItem = mode === 'edit' ? (myPickItem ?? currentClimbQueueItem) : currentClimbQueueItem;
+  const displayClimb = displayQueueItem?.climb ?? currentClimb;
 
   const { handleDoubleTap, showHeart, dismissHeart, isFavorited, toggleFavorite } = useDoubleTapFavorite({
-    climbUuid: currentClimb?.uuid ?? '',
+    climbUuid: displayClimb?.uuid ?? '',
   });
 
-  const currentQueueIndex = currentClimbQueueItem
-    ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid)
-    : -1;
+  const currentQueueIndex = displayQueueItem ? queue.findIndex((item) => item.uuid === displayQueueItem.uuid) : -1;
   const remainingQueueCount = currentQueueIndex >= 0 ? queue.length - currentQueueIndex : queue.length;
 
   useWakeLock(isOpen);
@@ -515,33 +550,40 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   // Compute ascent info for tick FAB badge
   const currentAngle = typeof angle === 'string' ? parseInt(angle, 10) : angle;
   const filteredLogbook = useMemo(() => {
-    if (!logbook || !currentClimb) return [];
-    return logbook.filter((asc) => asc.climb_uuid === currentClimb.uuid && Number(asc.angle) === currentAngle);
-  }, [logbook, currentClimb, currentAngle]);
+    if (!logbook || !displayClimb) return [];
+    return logbook.filter((asc) => asc.climb_uuid === displayClimb.uuid && Number(asc.angle) === currentAngle);
+  }, [logbook, displayClimb, currentAngle]);
 
   const hasSuccessfulAscent = filteredLogbook.some((asc) => asc.is_ascent);
   const ascentCount = filteredLogbook.length;
 
   // Card-swipe navigation
-  const nextItem = getNextClimbQueueItem();
-  const prevItem = getPreviousClimbQueueItem();
+  const displayQueueIndex = displayQueueItem ? queue.findIndex((item) => item.uuid === displayQueueItem.uuid) : -1;
+  const nextItem =
+    mode === 'edit' && displayQueueIndex >= 0 ? (queue[displayQueueIndex + 1] ?? null) : getNextClimbQueueItem();
+  const prevItem =
+    mode === 'edit' && displayQueueIndex > 0 ? (queue[displayQueueIndex - 1] ?? null) : getPreviousClimbQueueItem();
 
   const handleSwipeNext = useCallback(() => {
     const next = getNextClimbQueueItem();
-    if (!next || viewOnlyMode) return;
-    setCurrentClimbQueueItem(next);
+    if (mode === 'spectate') return;
+    const item = mode === 'edit' && displayQueueIndex >= 0 ? queue[displayQueueIndex + 1] : next;
+    if (!item || viewOnlyMode) return;
+    void setMyPickQueueItem(item);
     track('Queue Navigation', { direction: 'next', method: 'swipePlayViewDrawer' });
-  }, [getNextClimbQueueItem, setCurrentClimbQueueItem, viewOnlyMode]);
+  }, [getNextClimbQueueItem, mode, displayQueueIndex, queue, setMyPickQueueItem, viewOnlyMode]);
 
   const handleSwipePrevious = useCallback(() => {
     const prev = getPreviousClimbQueueItem();
-    if (!prev || viewOnlyMode) return;
-    setCurrentClimbQueueItem(prev);
+    if (mode === 'spectate') return;
+    const item = mode === 'edit' && displayQueueIndex > 0 ? queue[displayQueueIndex - 1] : prev;
+    if (!item || viewOnlyMode) return;
+    void setMyPickQueueItem(item);
     track('Queue Navigation', { direction: 'previous', method: 'swipePlayViewDrawer' });
-  }, [getPreviousClimbQueueItem, setCurrentClimbQueueItem, viewOnlyMode]);
+  }, [getPreviousClimbQueueItem, mode, displayQueueIndex, queue, setMyPickQueueItem, viewOnlyMode]);
 
-  const canSwipeNext = !viewOnlyMode && !!nextItem;
-  const canSwipePrevious = !viewOnlyMode && !!prevItem;
+  const canSwipeNext = mode === 'edit' && !viewOnlyMode && !!nextItem;
+  const canSwipePrevious = mode === 'edit' && !viewOnlyMode && !!prevItem;
 
   // Tick FAB → inline tick bar
   const handleTickFabClick = useCallback(() => {
@@ -556,7 +598,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   // Reset tick bar when the climb changes so it doesn't stay open for the wrong climb
   useEffect(() => {
     setIsTickBarActive(false);
-  }, [currentClimb?.uuid]);
+  }, [displayClimb?.uuid]);
 
   const handleTickBarError = useCallback(() => {
     showMessage(t('playView.tickError'), 'error');
@@ -564,16 +606,18 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
 
   const handlePrevNavClick = useCallback(() => {
     const prev = getPreviousClimbQueueItem();
-    if (!prev) return;
-    setCurrentClimbQueueItem(prev);
+    const item = mode === 'edit' && displayQueueIndex > 0 ? queue[displayQueueIndex - 1] : prev;
+    if (!item || mode === 'spectate') return;
+    void setMyPickQueueItem(item);
     track('Queue Navigation', { direction: 'previous', method: 'playViewDrawer' });
-  }, [getPreviousClimbQueueItem, setCurrentClimbQueueItem]);
+  }, [getPreviousClimbQueueItem, mode, displayQueueIndex, queue, setMyPickQueueItem]);
   const handleNextNavClick = useCallback(() => {
     const next = getNextClimbQueueItem();
-    if (!next) return;
-    setCurrentClimbQueueItem(next);
+    const item = mode === 'edit' && displayQueueIndex >= 0 ? queue[displayQueueIndex + 1] : next;
+    if (!item || mode === 'spectate') return;
+    void setMyPickQueueItem(item);
     track('Queue Navigation', { direction: 'next', method: 'playViewDrawer' });
-  }, [getNextClimbQueueItem, setCurrentClimbQueueItem]);
+  }, [getNextClimbQueueItem, mode, displayQueueIndex, queue, setMyPickQueueItem]);
   const handleOpenActionsMenu = useCallback(() => {
     setIsQueueOpen(false);
     setIsPlaylistSelectorOpen(false);
@@ -586,7 +630,23 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     setIsQueueOpen(true);
   }, []);
 
-  const isMirrored = !!currentClimb?.mirrored;
+  const isMirrored = !!displayClimb?.mirrored;
+
+  const handleLightbulb = useCallback(async () => {
+    if (!displayClimb || mode !== 'edit') return;
+    if (!myPickItem && displayQueueItem) {
+      await setMyPickQueueItem(displayQueueItem);
+    }
+    if (!bluetooth.isConnected && bluetooth.isBluetoothSupported) {
+      const connected = await bluetooth.connect(displayClimb.frames, !!displayClimb.mirrored);
+      if (!connected) return;
+    }
+    await claimTurn();
+  }, [bluetooth, claimTurn, displayClimb, displayQueueItem, mode, myPickItem, setMyPickQueueItem]);
+
+  const handleSwitchToEdit = useCallback(() => {
+    setMode('edit');
+  }, []);
 
   // Go to queue from actions drawer
   const handleGoToQueueFromActions = useCallback(() => {
@@ -670,6 +730,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
 
   useEffect(() => {
     if (isOpen) {
+      setMode(isActiveClimber || !activeClimberUserId ? 'edit' : 'spectate');
       if (playPaperRef.current) {
         playPaperRef.current.style.transform = '';
         playPaperRef.current.style.transition = '';
@@ -685,21 +746,21 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
       }
     }
     return () => cancelAnimationFrame(openRafRef.current);
-  }, [isOpen]);
+  }, [isOpen, isActiveClimber, activeClimberUserId]);
 
   const [sectionsEverEnabled, setSectionsEverEnabled] = useState(false);
   const handleTransitionEnd = useCallback((open: boolean) => {
     if (open) setSectionsEverEnabled(true);
   }, []);
 
-  const currentFrames = currentClimb?.frames;
-  const currentMirrored = currentClimb?.mirrored;
+  const currentFrames = displayClimb?.frames;
+  const currentMirrored = displayClimb?.mirrored;
   useEffect(() => {
-    if (currentClimb) {
+    if (displayClimb) {
       renderBoard({
         boardDetails,
-        frames: currentClimb.frames,
-        mirrored: !!currentClimb.mirrored,
+        frames: displayClimb.frames,
+        mirrored: !!displayClimb.mirrored,
       }).catch((e: unknown) => {
         if (process.env.NODE_ENV === 'development') console.info('Pre-warm render failed:', e);
       });
@@ -751,20 +812,20 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
   }, [boardPull]);
 
   const aboveFold = useMemo(() => {
-    if (!currentClimb) return null;
+    if (!displayClimb) return null;
     return (
       <>
         {/* Header: Grade | Name */}
         <div className={styles.headerSection}>
-          <ClimbDetailHeader climb={currentClimb} />
+          <ClimbDetailHeader climb={displayClimb} />
         </div>
 
         {/* Board renderer with card-swipe and floating Tick FAB */}
         <div className={styles.boardSectionWrapper}>
-          {currentClimb && (
+          {displayClimb && (
             <SwipeBoardCarousel
               boardDetails={boardDetails}
-              currentClimb={currentClimb}
+              currentClimb={displayClimb}
               nextClimb={nextItem?.climb}
               previousClimb={prevItem?.climb}
               onSwipeNext={handleSwipeNext}
@@ -807,10 +868,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           )}
 
           {/* Floating tick bar — overlays bottom of board section, no reflow */}
-          {isOpen && currentClimb && (
+          {isOpen && displayClimb && (
             <PlayViewTickBar
               isTickBarActive={isTickBarActive}
-              currentClimb={currentClimb}
+              currentClimb={displayClimb}
               angle={angle}
               boardDetails={boardDetails}
               onClose={handleTickBarClose}
@@ -834,12 +895,17 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
             onToggleFavorite={toggleFavorite}
             onOpenActions={handleOpenActionsMenu}
             onOpenQueue={handleOpenQueueDrawer}
+            onLightbulb={handleLightbulb}
+            onSwitchToEdit={handleSwitchToEdit}
+            isActiveClimber={isActiveClimber}
+            showLightbulb={mode === 'edit'}
+            showSwitchToEdit={mode === 'spectate'}
             angleSelector={
               <AngleSelector
                 boardName={boardDetails.board_name}
                 boardDetails={boardDetails}
                 currentAngle={currentAngle}
-                currentClimb={currentClimb}
+                currentClimb={displayClimb}
                 isAngleAdjustable
               />
             }
@@ -848,7 +914,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
       </>
     );
   }, [
-    currentClimb,
+    displayClimb,
     boardDetails,
     currentAngle,
     nextItem,
@@ -874,6 +940,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
     toggleFavorite,
     handleOpenActionsMenu,
     handleOpenQueueDrawer,
+    handleLightbulb,
+    handleSwitchToEdit,
+    isActiveClimber,
+    mode,
     angle,
     handleTickBarClose,
     handleTickBarError,
@@ -920,9 +990,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
             onTouchMove={handleBoardTouchMove}
             onTouchEnd={handleBoardTouchEnd}
           >
-            {currentClimb ? (
+            {displayClimb ? (
               <PlayDrawerContent
-                climb={currentClimb}
+                climb={displayClimb}
                 boardType={boardDetails.board_name}
                 angle={currentAngle}
                 sectionsEnabled={sectionsEverEnabled && isOpen}
@@ -934,13 +1004,13 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           </div>
 
           {/* Climb actions drawer */}
-          {isOpen && currentClimb && isActionsOpen && (
+          {isOpen && displayClimb && isActionsOpen && (
             <SwipeableDrawer
               placement="bottom"
               title={
-                currentClimb ? (
+                displayClimb ? (
                   <div data-swipe-blocked="" {...actionsDragHandlers} className={drawerCss.dragHeaderWrapper}>
-                    <DrawerClimbHeader climb={currentClimb} boardDetails={boardDetails} />
+                    <DrawerClimbHeader climb={displayClimb} boardDetails={boardDetails} />
                   </div>
                 ) : undefined
               }
@@ -959,7 +1029,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
               }}
             >
               <ClimbActions
-                climb={currentClimb}
+                climb={displayClimb}
                 boardDetails={boardDetails}
                 angle={currentAngle}
                 currentPathname={pathname}
@@ -975,9 +1045,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
           )}
 
           {/* Playlist selector drawer */}
-          {isOpen && currentClimb && isPlaylistSelectorOpen && (
+          {isOpen && displayClimb && isPlaylistSelectorOpen && (
             <SwipeableDrawer
-              title={<DrawerClimbHeader climb={currentClimb} boardDetails={boardDetails} />}
+              title={<DrawerClimbHeader climb={displayClimb} boardDetails={boardDetails} />}
               placement="bottom"
               open={isPlaylistSelectorOpen}
               onClose={handleClosePlaylist}
@@ -994,7 +1064,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({ activeDrawer, setActive
               }}
             >
               <PlaylistSelectionContent
-                climbUuid={currentClimb.uuid}
+                climbUuid={displayClimb.uuid}
                 boardDetails={boardDetails}
                 angle={currentAngle}
                 onDone={handleClosePlaylist}

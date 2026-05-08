@@ -40,6 +40,9 @@ type QueueClimbListItemProps = {
   isEditMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (uuid: string) => void;
+  canDrag?: boolean;
+  disableSwipe?: boolean;
+  openPlayOnThumbnail?: boolean;
   /** When the climb is user-editable (draft or within the 24h post-publish
    *  window), the queue list surfaces an Edit affordance that routes the user
    *  back to the create form. The parent is responsible for deciding which
@@ -63,6 +66,9 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
   isEditMode = false,
   isSelected = false,
   onToggleSelect,
+  canDrag = true,
+  disableSwipe = false,
+  openPlayOnThumbnail = true,
   onEditClimb,
   isEditable = false,
 }) => {
@@ -108,7 +114,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
 
     const avatar = item.addedByUser ? (
       <MuiTooltip title={item.addedByUser.username}>
-        <MuiAvatar sx={avatarStyle} src={item.addedByUser.avatarUrl}>
+        <MuiAvatar sx={avatarStyle} src={item.addedByUser.avatarUrl ?? undefined}>
           <PersonOutlined />
         </MuiAvatar>
       </MuiTooltip>
@@ -146,12 +152,14 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
   const handleThumbnailClick = useCallback(() => {
     if (isEditMode) return;
     setCurrentClimbQueueItem(item);
-    dispatchOpenPlayDrawer();
-  }, [isEditMode, setCurrentClimbQueueItem, item]);
+    if (openPlayOnThumbnail) {
+      dispatchOpenPlayDrawer();
+    }
+  }, [isEditMode, openPlayOnThumbnail, setCurrentClimbQueueItem, item]);
 
   // Drag-and-drop setup
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || !canDrag) return;
     const element = itemRef.current;
     if (!element) return;
 
@@ -176,7 +184,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
         },
       }),
     );
-  }, [index, item.uuid, isEditMode]);
+  }, [index, item.uuid, isEditMode, canDrag]);
 
   const editModeContainerStyle = useMemo(
     () => ({
@@ -201,7 +209,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
       pathname={pathname}
       isDark={isDark}
       selected={isCurrent}
-      disableSwipe={isEditMode}
+      disableSwipe={isEditMode || disableSwipe}
       onThumbnailClick={handleThumbnailClick}
       onSelect={isEditMode ? () => onToggleSelect?.(item.uuid) : handleSelect}
       swipeRightAction={swipeRightAction}
@@ -214,7 +222,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
   );
 
   return (
-    <div ref={itemRef} data-testid="queue-item" style={isEditMode ? undefined : { cursor: 'grab' }}>
+    <div ref={itemRef} data-testid="queue-item" style={!isEditMode && canDrag ? { cursor: 'grab' } : undefined}>
       {isEditMode ? (
         <div style={editModeContainerStyle} onClick={() => onToggleSelect?.(item.uuid)}>
           <MuiCheckbox

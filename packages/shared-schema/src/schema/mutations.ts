@@ -60,6 +60,26 @@ export const mutationsTypeDefs = /* GraphQL */ `
     setCurrentClimb(item: ClimbQueueItemInput, shouldAddToQueue: Boolean, correlationId: ID): ClimbQueueItem
 
     """
+    Update the caller's personal pick. If the caller is active, the board follows this pick.
+    """
+    setMyPick(item: ClimbQueueItemInput!, correlationId: ID): UserPick!
+
+    """
+    Make the caller's existing pick the active board climb. Re-sends LEDs when already active.
+    """
+    claimTurn(correlationId: ID): ClimbQueueItem!
+
+    """
+    Hand the active board state to another participant's existing pick.
+    """
+    yieldTurn(toUserId: ID!, correlationId: ID): ClimbQueueItem!
+
+    """
+    Clear the caller's personal pick.
+    """
+    clearMyPick: Boolean!
+
+    """
     Toggle mirrored display for the current climb.
     """
     mirrorCurrentClimb(mirrored: Boolean!): ClimbQueueItem

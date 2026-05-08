@@ -35,9 +35,29 @@ export type ClimbQueueItemInput = {
   suggested?: boolean | null;
 };
 
+export type UserPick = {
+  userId: UserId;
+  item: ClimbQueueItem;
+  updatedAt: string;
+};
+
+export type BoardSend = {
+  id: string;
+  sessionId: string;
+  item: ClimbQueueItem;
+  climbUuid: string;
+  sentByUserId: UserId;
+  activeClimberUserId: UserId;
+  correlationId?: string | null;
+  sequence: number;
+  createdAt: string;
+};
+
 export type QueueState = {
   sequence: number;
   stateHash: string;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  picks?: UserPick[];
+  activeClimberUserId?: UserId | null;
 };

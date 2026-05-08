@@ -1,4 +1,6 @@
-import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
+import type { BoardSend, ConnectionContext, ClimbQueueItem, QueueState, UserPick } from '@boardsesh/shared-schema';
+import { db } from '../../../db/client';
+import { sessionSends } from '../../../db/schema';
 import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { requireSession, applyRateLimit, validateInput, MAX_RETRIES } from '../shared/helpers';
@@ -12,6 +14,84 @@ import { logMutationMetrics } from './mutation-metrics';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
+
+function getActorUserId(ctx: ConnectionContext): string {
+  return ctx.userId || ctx.connectionId;
+}
+
+function isOwnedByCaller(item: ClimbQueueItem | undefined, ctx: ConnectionContext): boolean {
+  if (!item) return false;
+  const actorUserId = getActorUserId(ctx);
+  return (
+    item.addedByUser?.id === actorUserId ||
+    item.addedByUser?.id === ctx.userId ||
+    item.addedBy === actorUserId ||
+    item.addedBy === ctx.connectionId
+  );
+}
+
+function upsertPick(picks: UserPick[], userId: string, item: ClimbQueueItem): UserPick[] {
+  const pick: UserPick = { userId, item, updatedAt: new Date().toISOString() };
+  const index = picks.findIndex((p) => p.userId === userId);
+  if (index === -1) return [...picks, pick];
+  const next = [...picks];
+  next[index] = pick;
+  return next;
+}
+
+function removePick(picks: UserPick[], userId: string): UserPick[] {
+  return picks.filter((pick) => pick.userId !== userId);
+}
+
+function findPick(picks: UserPick[], userId: string): ClimbQueueItem | null {
+  return picks.find((pick) => pick.userId === userId)?.item ?? null;
+}
+
+function mapBoardSend(row: typeof sessionSends.$inferSelect): BoardSend {
+  return {
+    id: String(row.id),
+    sessionId: row.sessionId,
+    item: row.item,
+    climbUuid: row.climbUuid,
+    sentByUserId: row.sentByUserId,
+    activeClimberUserId: row.activeClimberUserId,
+    correlationId: row.correlationId,
+    sequence: row.sequence,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+async function appendBoardSend({
+  sessionId,
+  item,
+  sentByUserId,
+  activeClimberUserId,
+  correlationId,
+  sequence,
+}: {
+  sessionId: string;
+  item: ClimbQueueItem;
+  sentByUserId: string;
+  activeClimberUserId: string;
+  correlationId?: string | null;
+  sequence: number;
+}): Promise<BoardSend> {
+  const [row] = await db
+    .insert(sessionSends)
+    .values({
+      sessionId,
+      item,
+      climbUuid: item.climb.uuid,
+      sentByUserId,
+      activeClimberUserId,
+      correlationId: correlationId || null,
+      sequence,
+    })
+    .returning();
+
+  if (!row) throw new Error('Failed to append board send');
+  return mapBoardSend(row);
+}
 
 export const queueMutations = {
   /**
@@ -32,6 +112,12 @@ export const queueMutations = {
     if (position !== undefined) {
       validateInput(QueueIndexSchema, position, 'position');
     }
+
+    const actorUserId = getActorUserId(ctx);
+    const queueItem: ClimbQueueItem = {
+      ...item,
+      addedBy: actorUserId,
+    };
 
     if (DEBUG)
       console.info(
@@ -63,16 +149,16 @@ export const queueMutations = {
       originalQueueLength = queue.length;
 
       // Only add if not already in queue
-      if (queue.some((i) => i.uuid === item.uuid)) {
+      if (queue.some((i) => i.uuid === queueItem.uuid)) {
         // Item already in queue - return without publishing event
         if (DEBUG) console.info('[addQueueItem] Item already in queue, skipping');
-        return item;
+        return queueItem;
       }
 
       if (position !== undefined && position >= 0 && position <= queue.length) {
-        queue = [...queue.slice(0, position), item, ...queue.slice(position)];
+        queue = [...queue.slice(0, position), queueItem, ...queue.slice(position)];
       } else {
-        queue = [...queue, item];
+        queue = [...queue, queueItem];
       }
 
       try {
@@ -101,7 +187,7 @@ export const queueMutations = {
       pubsub.publishQueueEvent(sessionId, {
         __typename: 'QueueItemAdded',
         sequence: resultSequence,
-        item: item,
+        item: queueItem,
         position: actualPosition,
       });
     }
@@ -109,7 +195,7 @@ export const queueMutations = {
     logMutationMetrics('addQueueItem', performance.now() - startTime, sessionId, {
       queueSize: originalQueueLength,
     });
-    return item;
+    return queueItem;
   },
 
   /**
@@ -125,6 +211,10 @@ export const queueMutations = {
     validateInput(QueueItemIdSchema, uuid, 'uuid');
 
     const currentState = await roomManager.getQueueState(sessionId);
+    const removedItem = currentState.queue.find((i) => i.uuid === uuid);
+    if (removedItem && !isOwnedByCaller(removedItem, ctx)) {
+      throw new Error('You can only remove queue items you added');
+    }
     const queue = currentState.queue.filter((i) => i.uuid !== uuid);
     let currentClimb = currentState.currentClimbQueueItem;
 
@@ -168,6 +258,10 @@ export const queueMutations = {
     // Validate indices are within bounds
     if (oldIndex >= queue.length || newIndex >= queue.length) {
       throw new Error(`Invalid index: queue has ${queue.length} items`);
+    }
+
+    if (!isOwnedByCaller(queue[oldIndex], ctx)) {
+      throw new Error('You can only reorder queue items you added');
     }
 
     let resultSequence = currentState.sequence;
@@ -276,6 +370,237 @@ export const queueMutations = {
   },
 
   /**
+   * Update the caller's personal pick. If the caller is active, mirror it to the board.
+   */
+  setMyPick: async (
+    _: unknown,
+    { item, correlationId }: { item: ClimbQueueItem; correlationId?: string },
+    ctx: ConnectionContext,
+  ) => {
+    const startTime = performance.now();
+    await applyRateLimit(ctx, 240);
+    const sessionId = requireSession(ctx);
+    const actorUserId = getActorUserId(ctx);
+
+    validateInput(ClimbQueueItemSchema, item, 'item');
+
+    const currentState = await roomManager.getQueueState(sessionId);
+    const isActive = currentState.activeClimberUserId === actorUserId;
+    const nextPicks = upsertPick(currentState.picks, actorUserId, item);
+    const eventCount = isActive ? 3 : 1;
+    const result = await roomManager.updateQueueState(
+      sessionId,
+      currentState.queue,
+      isActive ? item : currentState.currentClimbQueueItem,
+      currentState.version,
+      {
+        picks: nextPicks,
+        activeClimberUserId: currentState.activeClimberUserId,
+        sequenceIncrement: eventCount,
+      },
+    );
+    const firstSequence = result.sequence - eventCount + 1;
+
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'PickChanged',
+      sequence: firstSequence,
+      userId: actorUserId,
+      pick: item,
+      correlationId: correlationId || null,
+    });
+
+    if (isActive) {
+      const boardSend = await appendBoardSend({
+        sessionId,
+        item,
+        sentByUserId: actorUserId,
+        activeClimberUserId: actorUserId,
+        correlationId,
+        sequence: firstSequence + 2,
+      });
+
+      pubsub.publishQueueEvent(sessionId, {
+        __typename: 'CurrentClimbChanged',
+        sequence: firstSequence + 1,
+        item,
+        clientId: ctx.connectionId || null,
+        correlationId: correlationId || null,
+      });
+      pubsub.publishQueueEvent(sessionId, {
+        __typename: 'BoardSendAdded',
+        sequence: firstSequence + 2,
+        boardSend,
+      });
+    }
+
+    logMutationMetrics('setMyPick', performance.now() - startTime, sessionId, { active: isActive });
+    return nextPicks.find((pick) => pick.userId === actorUserId)!;
+  },
+
+  /**
+   * Make the caller's existing pick the active board climb.
+   */
+  claimTurn: async (_: unknown, { correlationId }: { correlationId?: string }, ctx: ConnectionContext) => {
+    const startTime = performance.now();
+    await applyRateLimit(ctx);
+    const sessionId = requireSession(ctx);
+    const actorUserId = getActorUserId(ctx);
+
+    const currentState = await roomManager.getQueueState(sessionId);
+    const pick = findPick(currentState.picks, actorUserId);
+    if (!pick) {
+      throw new Error('Set a pick before claiming the turn');
+    }
+
+    const eventCount = 3;
+    const result = await roomManager.updateQueueState(sessionId, currentState.queue, pick, currentState.version, {
+      picks: currentState.picks,
+      activeClimberUserId: actorUserId,
+      sequenceIncrement: eventCount,
+    });
+    const firstSequence = result.sequence - eventCount + 1;
+    const boardSend = await appendBoardSend({
+      sessionId,
+      item: pick,
+      sentByUserId: actorUserId,
+      activeClimberUserId: actorUserId,
+      correlationId,
+      sequence: firstSequence + 2,
+    });
+
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'ActiveClimberChanged',
+      sequence: firstSequence,
+      userId: actorUserId,
+      correlationId: correlationId || null,
+    });
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'CurrentClimbChanged',
+      sequence: firstSequence + 1,
+      item: pick,
+      clientId: ctx.connectionId || null,
+      correlationId: correlationId || null,
+    });
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'BoardSendAdded',
+      sequence: firstSequence + 2,
+      boardSend,
+    });
+
+    logMutationMetrics('claimTurn', performance.now() - startTime, sessionId);
+    return pick;
+  },
+
+  /**
+   * Hand the active board state to another participant's existing pick.
+   */
+  yieldTurn: async (
+    _: unknown,
+    { toUserId, correlationId }: { toUserId: string; correlationId?: string },
+    ctx: ConnectionContext,
+  ) => {
+    const startTime = performance.now();
+    await applyRateLimit(ctx);
+    const sessionId = requireSession(ctx);
+    const actorUserId = getActorUserId(ctx);
+
+    if (!toUserId || toUserId.length > 100) {
+      throw new Error('Invalid target user');
+    }
+
+    const currentState = await roomManager.getQueueState(sessionId);
+    const pick = findPick(currentState.picks, toUserId);
+    if (!pick) {
+      throw new Error('Target user has no pick');
+    }
+
+    const eventCount = 3;
+    const result = await roomManager.updateQueueState(sessionId, currentState.queue, pick, currentState.version, {
+      picks: currentState.picks,
+      activeClimberUserId: toUserId,
+      sequenceIncrement: eventCount,
+    });
+    const firstSequence = result.sequence - eventCount + 1;
+    const boardSend = await appendBoardSend({
+      sessionId,
+      item: pick,
+      sentByUserId: actorUserId,
+      activeClimberUserId: toUserId,
+      correlationId,
+      sequence: firstSequence + 2,
+    });
+
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'ActiveClimberChanged',
+      sequence: firstSequence,
+      userId: toUserId,
+      correlationId: correlationId || null,
+    });
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'CurrentClimbChanged',
+      sequence: firstSequence + 1,
+      item: pick,
+      clientId: ctx.connectionId || null,
+      correlationId: correlationId || null,
+    });
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'BoardSendAdded',
+      sequence: firstSequence + 2,
+      boardSend,
+    });
+
+    logMutationMetrics('yieldTurn', performance.now() - startTime, sessionId);
+    return pick;
+  },
+
+  /**
+   * Clear the caller's personal pick.
+   */
+  clearMyPick: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
+    const startTime = performance.now();
+    await applyRateLimit(ctx);
+    const sessionId = requireSession(ctx);
+    const actorUserId = getActorUserId(ctx);
+
+    const currentState = await roomManager.getQueueState(sessionId);
+    const wasActive = currentState.activeClimberUserId === actorUserId;
+    const nextPicks = removePick(currentState.picks, actorUserId);
+    const eventCount = wasActive ? 2 : 1;
+    const result = await roomManager.updateQueueState(
+      sessionId,
+      currentState.queue,
+      currentState.currentClimbQueueItem,
+      currentState.version,
+      {
+        picks: nextPicks,
+        activeClimberUserId: wasActive ? null : currentState.activeClimberUserId,
+        sequenceIncrement: eventCount,
+      },
+    );
+    const firstSequence = result.sequence - eventCount + 1;
+
+    pubsub.publishQueueEvent(sessionId, {
+      __typename: 'PickChanged',
+      sequence: firstSequence,
+      userId: actorUserId,
+      pick: null,
+      correlationId: null,
+    });
+
+    if (wasActive) {
+      pubsub.publishQueueEvent(sessionId, {
+        __typename: 'ActiveClimberChanged',
+        sequence: firstSequence + 1,
+        userId: null,
+        correlationId: null,
+      });
+    }
+
+    logMutationMetrics('clearMyPick', performance.now() - startTime, sessionId, { active: wasActive });
+    return true;
+  },
+
+  /**
    * Toggle the mirrored state of the current climb
    * Updates both the current climb and the queue item if present
    */
@@ -299,8 +624,16 @@ export const queueMutations = {
       const queue = currentState.queue.map((i) =>
         i.uuid === currentClimb!.uuid ? { ...i, climb: { ...i.climb, mirrored } } : i,
       );
+      const picks = currentState.picks.map((pick) =>
+        pick.item.uuid === currentClimb!.uuid
+          ? { ...pick, item: currentClimb!, updatedAt: new Date().toISOString() }
+          : pick,
+      );
 
-      const result = await roomManager.updateQueueState(sessionId, queue, currentClimb);
+      const result = await roomManager.updateQueueState(sessionId, queue, currentClimb, undefined, {
+        picks,
+        activeClimberUserId: currentState.activeClimberUserId,
+      });
       sequence = result.sequence;
     }
 
@@ -333,6 +666,9 @@ export const queueMutations = {
 
     const currentState = await roomManager.getQueueState(sessionId);
     const queue = currentState.queue.map((i) => (i.uuid === uuid ? item : i));
+    const picks = currentState.picks.map((pick) =>
+      pick.item.uuid === uuid ? { ...pick, item, updatedAt: new Date().toISOString() } : pick,
+    );
     let currentClimb = currentState.currentClimbQueueItem;
 
     // Update current climb if it was the replaced item
@@ -340,13 +676,23 @@ export const queueMutations = {
       currentClimb = item;
     }
 
-    const { sequence, stateHash } = await roomManager.updateQueueState(sessionId, queue, currentClimb);
+    const { sequence, stateHash } = await roomManager.updateQueueState(sessionId, queue, currentClimb, undefined, {
+      picks,
+      activeClimberUserId: currentState.activeClimberUserId,
+    });
 
     // Publish as FullSync since replace is less common
     pubsub.publishQueueEvent(sessionId, {
       __typename: 'FullSync',
       sequence,
-      state: { sequence, stateHash, queue, currentClimbQueueItem: currentClimb },
+      state: {
+        sequence,
+        stateHash,
+        queue,
+        currentClimbQueueItem: currentClimb,
+        picks,
+        activeClimberUserId: currentState.activeClimberUserId,
+      },
     });
 
     logMutationMetrics('replaceQueueItem', performance.now() - startTime, sessionId);
@@ -372,13 +718,25 @@ export const queueMutations = {
       validateInput(ClimbQueueItemSchema, currentClimbQueueItem, 'currentClimbQueueItem');
     }
 
-    const { sequence, stateHash } = await roomManager.updateQueueState(sessionId, queue, currentClimbQueueItem || null);
+    const currentState = await roomManager.getQueueState(sessionId);
+    const { sequence, stateHash } = await roomManager.updateQueueState(
+      sessionId,
+      queue,
+      currentClimbQueueItem || null,
+      currentState.version,
+      {
+        picks: currentState.picks,
+        activeClimberUserId: currentState.activeClimberUserId,
+      },
+    );
 
     const state: QueueState = {
       sequence,
       stateHash,
       queue,
       currentClimbQueueItem: currentClimbQueueItem || null,
+      picks: currentState.picks,
+      activeClimberUserId: currentState.activeClimberUserId,
     };
 
     pubsub.publishQueueEvent(sessionId, {

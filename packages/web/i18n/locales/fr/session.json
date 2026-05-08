@@ -208,7 +208,8 @@
     "browseClimbs": "Parcourir les blocs",
     "actionBar": {
       "climbActionsAria": "Actions du bloc",
-      "openQueueAria": "Ouvrir la file d'attente"
+      "openQueueAria": "Ouvrir la file d'attente",
+      "switchToMyPickAria": "Passer à mon choix"
     },
     "tickFab": {
       "logAscentAria": "Enregistrer une ascension"
