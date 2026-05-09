@@ -171,6 +171,7 @@
       "notConnected": "Non lié. Liez votre compte {{boardName}} pour importer vos données Aurora, ou importez depuis un fichier d'export JSON.",
       "link": "Lier",
       "import": "Importer",
+      "export": "Exporter",
       "requestData": "Demander vos données",
       "unlink": "Délier",
       "unlinkConfirm": {
@@ -178,6 +179,12 @@
         "description": "Vraiment délier votre compte {{boardName}} ?",
         "ok": "Oui, délier"
       }
+    },
+    "export": {
+      "generating": "Export {{boardName}} en cours de génération.",
+      "downloaded": "Export {{boardName}} téléchargé.",
+      "readyToSave": "Export {{boardName}} prêt à enregistrer.",
+      "failed": "Export impossible"
     },
     "status": {
       "connected": "Lié",

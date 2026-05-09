@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { fireEvent, render, screen, waitFor, act } from '@testing-library/react';
+import { render, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '@/app/test-utils/test-providers';
@@ -23,10 +23,6 @@ const mockRequest = vi.fn();
 const getPreferenceMock = vi.fn().mockResolvedValue(null);
 const searchFormSpy = vi.fn();
 const showMessageSpy = vi.fn();
-const fetchMock = vi.fn();
-const createObjectURLMock = vi.fn();
-const revokeObjectURLMock = vi.fn();
-const anchorClickMock = vi.fn();
 
 // --- Mocks (must come before component import) ---
 
@@ -134,9 +130,13 @@ vi.mock('../logbook-item-skeleton', () => ({
 }));
 
 vi.mock('../logbook-search-form', () => ({
-  default: (props: { selectedBoards: Array<{ uuid: string }>; boards: Array<{ uuid: string }> }) => {
+  default: (props: {
+    selectedBoards: Array<{ uuid: string }>;
+    boards: Array<{ uuid: string }>;
+    actions?: React.ReactNode;
+  }) => {
     searchFormSpy(props);
-    return <div data-testid="logbook-search-form" />;
+    return <div data-testid="logbook-search-form">{props.actions}</div>;
   },
 }));
 
@@ -177,21 +177,6 @@ beforeEach(() => {
   mockRequest.mockResolvedValue({
     userAscentsFeed: { items: [], hasMore: false },
   });
-  fetchMock.mockReset();
-  createObjectURLMock.mockReset();
-  createObjectURLMock.mockReturnValue('blob:export');
-  revokeObjectURLMock.mockReset();
-  anchorClickMock.mockReset();
-  vi.stubGlobal('fetch', fetchMock);
-  Object.defineProperty(URL, 'createObjectURL', {
-    configurable: true,
-    value: createObjectURLMock,
-  });
-  Object.defineProperty(URL, 'revokeObjectURL', {
-    configurable: true,
-    value: revokeObjectURLMock,
-  });
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(anchorClickMock);
   searchFormSpy.mockClear();
   getPreferenceMock.mockClear();
   showMessageSpy.mockClear();
@@ -319,58 +304,5 @@ describe('LogbookFeed — boards URL round-trip', () => {
         .map((b) => b.uuid)
         .sort(),
     ).toEqual(['logbook-kilter-1', 'logbook-tension-9']);
-  });
-
-  it('requests and downloads an Aurora JSON export for a logbook board', async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ status: 'ready', downloadUrl: '/api/user-data-export/download?boardType=kilter' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response('{}', {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Disposition': 'attachment; filename="boardsesh-kilter-export-2026-W19.json"',
-          },
-        }),
-      );
-
-    renderFeed(false, [makeLayoutStats('kilter', 1)]);
-
-    fireEvent.click(await screen.findByRole('button', { name: /export/i }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Kilter JSON' }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-
-    expect(fetchMock.mock.calls[0]).toEqual([
-      'http://backend.test/api/user-data-export?boardType=kilter',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer test-token',
-        },
-      },
-    ]);
-    expect(fetchMock.mock.calls[1]).toEqual([
-      'http://backend.test/api/user-data-export/download?boardType=kilter',
-      {
-        headers: {
-          Authorization: 'Bearer test-token',
-        },
-      },
-    ]);
-    expect(createObjectURLMock).toHaveBeenCalled();
-    expect(anchorClickMock).toHaveBeenCalled();
-    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:export');
-    expect(showMessageSpy).toHaveBeenCalledWith('Kilter export downloaded.', 'success');
   });
 });

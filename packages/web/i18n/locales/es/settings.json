@@ -171,6 +171,7 @@
       "notConnected": "No vinculado. Vincula tu cuenta de {{boardName}} para importar tus datos de Aurora, o impórtalos desde un archivo JSON.",
       "link": "Vincular",
       "import": "Importar",
+      "export": "Exportar",
       "requestData": "Pedir tus datos",
       "unlink": "Desvincular",
       "unlinkConfirm": {
@@ -178,6 +179,12 @@
         "description": "¿Seguro que quieres desvincular tu cuenta de {{boardName}}?",
         "ok": "Sí, desvincular"
       }
+    },
+    "export": {
+      "generating": "Se está generando la exportación de {{boardName}}.",
+      "downloaded": "Exportación de {{boardName}} descargada.",
+      "readyToSave": "Exportación de {{boardName}} lista para guardar.",
+      "failed": "No se pudo exportar"
     },
     "status": {
       "connected": "Vinculado",

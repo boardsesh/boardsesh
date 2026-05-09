@@ -17,9 +17,11 @@
     "@capacitor/app": "^8",
     "@capacitor/browser": "^8",
     "@capacitor/core": "^8",
+    "@capacitor/filesystem": "^8",
     "@capacitor/geolocation": "8.1.0",
     "@capacitor/ios": "^8",
-    "@capacitor/motion": "^8"
+    "@capacitor/motion": "^8",
+    "@capacitor/share": "^8"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.1",

@@ -56,6 +56,20 @@ type CapacitorDevUrlPlugin = {
   clearUrl(): Promise<void>;
 };
 
+type CapacitorFilesystemPlugin = {
+  writeFile(options: {
+    path: string;
+    data: string;
+    directory?: 'CACHE' | 'DATA' | 'DOCUMENTS' | 'EXTERNAL' | 'EXTERNAL_STORAGE' | 'LIBRARY';
+    recursive?: boolean;
+  }): Promise<{ uri: string }>;
+};
+
+type CapacitorSharePlugin = {
+  canShare?(): Promise<{ value: boolean }>;
+  share(options: { title?: string; text?: string; url?: string; dialogTitle?: string }): Promise<void>;
+};
+
 type CapacitorGlobal = {
   isNativePlatform(): boolean;
   getPlatform(): string;
@@ -68,6 +82,8 @@ type CapacitorGlobal = {
     DevUrl?: CapacitorDevUrlPlugin;
     InAppReview?: CapacitorInAppReviewPlugin;
     Motion?: CapacitorMotionPlugin;
+    Filesystem?: CapacitorFilesystemPlugin;
+    Share?: CapacitorSharePlugin;
     LiveActivity?: {
       isAvailable(): Promise<{ available: boolean }>;
       startSession(options: Record<string, unknown>): Promise<void>;

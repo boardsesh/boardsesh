@@ -3,13 +3,10 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import { FileDownloadOutlined, HistoryOutlined } from '@mui/icons-material';
+import { HistoryOutlined } from '@mui/icons-material';
 import {
   DEFAULT_FILTERS,
   DEFAULT_SORT,
@@ -20,7 +17,6 @@ import {
 } from '@/app/lib/logbook-preferences';
 import { readFiltersFromQuery, readSortFromQuery, filtersToQueryParams } from '@/app/lib/logbook-url-utils';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
-import { getBackendHttpUrl } from '@/app/lib/backend-url';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
@@ -49,7 +45,6 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { isInstagramPostingSupported } from '@/app/lib/instagram-posting';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import LogbookFeedItem from './logbook-feed-item';
 import LogbookSwipeHintOrchestrator from './logbook-swipe-hint-orchestrator';
 import LogbookSearchForm from './logbook-search-form';
@@ -59,41 +54,6 @@ import feedStyles from '@/app/components/activity-feed/ascents-feed.module.css';
 
 const PAGE_SIZE = 20;
 type StatusMode = 'both' | 'send' | 'attempt';
-
-type UserDataExportStatus = {
-  status: 'not_requested' | 'generating' | 'ready' | 'failed' | 'unavailable';
-  downloadUrl?: string;
-  error?: string;
-};
-
-function isAuroraBoardType(value: string): value is AuroraBoardName {
-  return (AURORA_BOARDS as readonly string[]).includes(value);
-}
-
-function formatBoardTypeLabel(boardType: string): string {
-  return boardType.charAt(0).toUpperCase() + boardType.slice(1);
-}
-
-function getExportFilename(response: Response, boardType: AuroraBoardName): string {
-  const disposition = response.headers.get('Content-Disposition') ?? '';
-  const match = disposition.match(/filename="([^"]+)"/);
-  return match?.[1] ?? `boardsesh-${boardType}-export.json`;
-}
-
-async function parseExportResponse(response: Response): Promise<UserDataExportStatus> {
-  const body = (await response.json().catch(() => null)) as (UserDataExportStatus & { error?: string }) | null;
-  if (!response.ok) {
-    throw new Error(body?.error ?? `Export request failed (${response.status})`);
-  }
-  if (!body) {
-    throw new Error('Export request returned an empty response');
-  }
-  return body;
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // ---------- Component ----------
 
@@ -187,8 +147,6 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
   const [editingItemUuid, setEditingItemUuid] = useState<string | null>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [boardsInitialized, setBoardsInitialized] = useState(() => !searchParams.get('boards'));
-  const [exportMenuAnchor, setExportMenuAnchor] = useState<HTMLElement | null>(null);
-  const [exportingBoard, setExportingBoard] = useState<AuroraBoardName | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Debounced search text
@@ -335,11 +293,6 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
     const types = [...new Set(selectedBoards.map((b) => b.boardType))];
     return types;
   }, [selectedBoards]);
-
-  const exportableBoardTypes = useMemo(() => {
-    const sourceBoards = selectedBoards.length > 0 ? selectedBoards : logbookBoards;
-    return [...new Set(sourceBoards.map((board) => board.boardType))].filter(isAuroraBoardType);
-  }, [logbookBoards, selectedBoards]);
 
   const selectedLayoutIds = useMemo(() => {
     if (selectedBoards.length === 0) return undefined;
@@ -562,110 +515,6 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
     setEditingItemUuid(null);
   }, []);
 
-  const downloadExport = useCallback(
-    async (backendUrl: string, boardType: AuroraBoardName) => {
-      const response = await fetch(`${backendUrl}/api/user-data-export/download?boardType=${boardType}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `Export download failed (${response.status})`);
-      }
-
-      const blob = await response.blob();
-      const filename = getExportFilename(response, boardType);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    },
-    [token],
-  );
-
-  const waitForExport = useCallback(
-    async (backendUrl: string, boardType: AuroraBoardName) => {
-      for (let i = 0; i < 30; i++) {
-        await wait(2000);
-        const response = await fetch(`${backendUrl}/api/user-data-export?boardType=${boardType}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const status = await parseExportResponse(response);
-
-        if (status.status === 'ready') return status;
-        if (status.status === 'failed' || status.status === 'unavailable') {
-          throw new Error(status.error ?? 'Export generation failed');
-        }
-      }
-
-      throw new Error('Export is still generating. Try again shortly.');
-    },
-    [token],
-  );
-
-  const handleExportMenuOpen = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    setExportMenuAnchor(event.currentTarget);
-  }, []);
-
-  const handleExportMenuClose = useCallback(() => {
-    setExportMenuAnchor(null);
-  }, []);
-
-  const handleExportBoard = useCallback(
-    async (boardType: AuroraBoardName) => {
-      handleExportMenuClose();
-
-      const backendUrl = getBackendHttpUrl();
-      if (!backendUrl) {
-        showMessage('Boardsesh could not find the export service URL.', 'error');
-        return;
-      }
-
-      if (!token) {
-        showMessage('Sign in again to export your logbook data.', 'error');
-        return;
-      }
-
-      setExportingBoard(boardType);
-      const boardLabel = formatBoardTypeLabel(boardType);
-
-      try {
-        const response = await fetch(`${backendUrl}/api/user-data-export?boardType=${boardType}`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        let status = await parseExportResponse(response);
-
-        if (status.status === 'generating') {
-          showMessage(`${boardLabel} export is being generated.`, 'info', undefined, 5000);
-          status = await waitForExport(backendUrl, boardType);
-        }
-
-        if (status.status !== 'ready') {
-          throw new Error(status.error ?? 'Export is not ready yet');
-        }
-
-        await downloadExport(backendUrl, boardType);
-        showMessage(`${boardLabel} export downloaded.`, 'success');
-      } catch (error) {
-        showMessage(error instanceof Error ? error.message : 'Export failed', 'error');
-      } finally {
-        setExportingBoard(null);
-      }
-    },
-    [downloadExport, handleExportMenuClose, showMessage, token, waitForExport],
-  );
-
   const showBoardType = selectedBoards.length === 0 || selectedBoards.length > 1;
   const hasFilters =
     selectedBoards.length > 0 ||
@@ -715,32 +564,10 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
     />
   );
 
-  const exportControls = exportableBoardTypes.length > 0 && (
-    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}>
-      <Button
-        variant="outlined"
-        size="small"
-        startIcon={exportingBoard ? <CircularProgress size={16} /> : <FileDownloadOutlined fontSize="small" />}
-        onClick={handleExportMenuOpen}
-        disabled={authLoading || !token || !!exportingBoard}
-      >
-        Export
-      </Button>
-      <Menu anchorEl={exportMenuAnchor} open={!!exportMenuAnchor} onClose={handleExportMenuClose}>
-        {exportableBoardTypes.map((boardType) => (
-          <MenuItem key={boardType} onClick={() => void handleExportBoard(boardType)}>
-            {formatBoardTypeLabel(boardType)} JSON
-          </MenuItem>
-        ))}
-      </Menu>
-    </Box>
-  );
-
   if (isLoading) {
     return (
       <>
         {searchForm}
-        {exportControls}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {Array.from({ length: 5 }).map((_, i) => (
             <LogbookItemSkeleton key={i} />
@@ -771,7 +598,6 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
     return (
       <>
         {searchForm}
-        {exportControls}
         {userId && !authLoading && !token && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             {authError
@@ -795,7 +621,6 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
   return (
     <>
       {searchForm}
-      {exportControls}
       <LogbookSwipeHintOrchestrator />
       <div className={feedStyles.feed}>
         <Box sx={{ display: 'flex', flexDirection: 'column' }}>

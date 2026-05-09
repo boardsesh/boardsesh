@@ -53,6 +53,7 @@ type LogbookSearchFormProps = {
   onBoardToggle: (board: UserBoard | null) => void;
   filters: LogbookFilterState;
   onFiltersChange: (updater: (prev: LogbookFilterState) => LogbookFilterState) => void;
+  actions?: React.ReactNode;
 };
 
 function getResultTypeSummary(filters: LogbookFilterState): string[] {
@@ -124,6 +125,7 @@ const LogbookSearchForm: React.FC<LogbookSearchFormProps> = ({
   onBoardToggle,
   filters,
   onFiltersChange,
+  actions,
 }) => {
   const { t } = useTranslation('profile');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -362,6 +364,7 @@ const LogbookSearchForm: React.FC<LogbookSearchFormProps> = ({
                 </IconButton>
                 {activeFilterCount > 0 && <span className={headerStyles.filterActiveIndicator} />}
               </div>
+              {actions}
             </Box>
           </div>
         </div>

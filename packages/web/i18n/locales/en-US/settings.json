@@ -171,6 +171,7 @@
       "notConnected": "Not connected. Link your {{boardName}} account to import your Aurora data, or import from a JSON export file.",
       "link": "Link",
       "import": "Import",
+      "export": "Export",
       "requestData": "Request your data",
       "unlink": "Unlink",
       "unlinkConfirm": {
@@ -178,6 +179,12 @@
         "description": "Are you sure you want to unlink your {{boardName}} account?",
         "ok": "Yes, unlink"
       }
+    },
+    "export": {
+      "generating": "{{boardName}} export is being generated.",
+      "downloaded": "{{boardName}} export downloaded.",
+      "readyToSave": "{{boardName}} export ready to save.",
+      "failed": "Export failed"
     },
     "status": {
       "connected": "Connected",

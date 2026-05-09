@@ -31,6 +31,7 @@ import LinkOutlined from '@mui/icons-material/LinkOutlined';
 import SyncOutlined from '@mui/icons-material/SyncOutlined';
 import WarningOutlined from '@mui/icons-material/WarningOutlined';
 import EmailOutlined from '@mui/icons-material/EmailOutlined';
+import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
 import FileUploadOutlined from '@mui/icons-material/FileUploadOutlined';
 import RadioButtonUncheckedOutlined from '@mui/icons-material/RadioButtonUncheckedOutlined';
 import { useSession } from 'next-auth/react';
@@ -46,6 +47,8 @@ import {
   type StrippedExportData,
 } from '@/app/lib/data-sync/aurora/parse-aurora-export';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { formatBoardTypeLabel, requestAndDeliverUserDataExport } from '@/app/lib/user-data-export-client';
 import styles from './aurora-credentials-section.module.css';
 
 type BoardUnsyncedCounts = {
@@ -108,8 +111,10 @@ export type BoardCredentialCardProps = {
   onAdd: () => void;
   onRemove: () => void;
   onImportJson: () => void;
+  onExportJson?: () => void;
   isRemoving: boolean;
   isImporting: boolean;
+  isExporting?: boolean;
   userName?: string | null;
   userEmail?: string | null;
 };
@@ -121,8 +126,10 @@ export function BoardCredentialCard({
   onAdd,
   onRemove,
   onImportJson,
+  onExportJson,
   isRemoving,
   isImporting,
+  isExporting = false,
   userName,
   userEmail,
 }: BoardCredentialCardProps) {
@@ -186,6 +193,16 @@ export function BoardCredentialCard({
             >
               {t('aurora.card.import')}
             </Button>
+            {onExportJson && (
+              <Button
+                variant="outlined"
+                startIcon={isExporting ? <CircularProgress size={16} /> : <FileDownloadOutlined />}
+                onClick={onExportJson}
+                disabled={isExporting}
+              >
+                {t('aurora.card.export')}
+              </Button>
+            )}
             {isKilter && (
               <Button
                 variant="outlined"
@@ -270,6 +287,16 @@ export function BoardCredentialCard({
           >
             {t('aurora.card.import')}
           </Button>
+          {onExportJson && (
+            <Button
+              variant="outlined"
+              startIcon={isExporting ? <CircularProgress size={16} /> : <FileDownloadOutlined />}
+              onClick={onExportJson}
+              disabled={isExporting}
+            >
+              {t('aurora.card.export')}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -319,6 +346,7 @@ export function ImportProgressSteps({ progress }: { progress: ImportProgress | n
 export default function AuroraCredentialsSection() {
   const { t } = useTranslation('settings');
   const { data: session } = useSession();
+  const { token } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const [credentials, setCredentials] = useState<AuroraCredentialStatus[]>([]);
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
@@ -327,6 +355,7 @@ export default function AuroraCredentialsSection() {
   const [selectedBoard, setSelectedBoard] = useState<AuroraBoardName>('kilter');
   const [isSaving, setIsSaving] = useState(false);
   const [removingBoard, setRemovingBoard] = useState<string | null>(null);
+  const [exportingBoard, setExportingBoard] = useState<AuroraBoardName | null>(null);
   const [formValues, setFormValues] = useState({ username: '', password: '' });
 
   // Import state
@@ -556,6 +585,29 @@ export default function AuroraCredentialsSection() {
     resetImportState();
   };
 
+  const handleExportClick = async (boardType: AuroraBoardName) => {
+    setExportingBoard(boardType);
+    const boardLabel = formatBoardTypeLabel(boardType);
+
+    try {
+      const deliveryResult = await requestAndDeliverUserDataExport(boardType, token, {
+        onGenerating: () => {
+          showMessage(t('aurora.export.generating', { boardName: boardLabel }), 'info', undefined, 5000);
+        },
+      });
+
+      if (deliveryResult === 'downloaded') {
+        showMessage(t('aurora.export.downloaded', { boardName: boardLabel }), 'success');
+      } else if (deliveryResult === 'shared') {
+        showMessage(t('aurora.export.readyToSave', { boardName: boardLabel }), 'success');
+      }
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t('aurora.export.failed'), 'error');
+    } finally {
+      setExportingBoard(null);
+    }
+  };
+
   const getCredentialForBoard = (boardType: AuroraBoardName) => {
     return credentials.find((credential) => credential.boardType === boardType) || null;
   };
@@ -612,8 +664,10 @@ export default function AuroraCredentialsSection() {
                 onAdd={() => handleAddClick(boardType)}
                 onRemove={() => handleRemove(boardType)}
                 onImportJson={() => handleImportClick(boardType)}
+                onExportJson={() => void handleExportClick(boardType)}
                 isRemoving={removingBoard === boardType}
                 isImporting={isImporting && importingBoard === boardType}
+                isExporting={exportingBoard === boardType}
                 userName={boardType === 'kilter' ? session?.user?.name : undefined}
                 userEmail={boardType === 'kilter' ? session?.user?.email : undefined}
               />
