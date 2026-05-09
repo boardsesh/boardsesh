@@ -1,15 +1,20 @@
 'use client';
-import React, { useMemo, useRef } from 'react';
-import type { Climb, ParsedBoardRouteParameters, BoardDetails } from '@/app/lib/types';
+import React, { useMemo, useEffect, useRef } from 'react';
+import type { Climb, ParsedBoardRouteParameters, BoardDetails, SearchRequestPagination } from '@/app/lib/types';
 import { useQueueActions, useCurrentClimb, useSearchData } from '../graphql-queue';
 import ClimbsList from './climbs-list';
 import { stabilizeClimbArrayRef } from './climb-list-utils';
 import RecentSearchPills from '../search-drawer/recent-search-pills';
 import AngleSelector from './angle-selector';
+import { searchParamsToUrlParams } from '@/app/lib/url-utils';
 
 type BoardPageClimbsListProps = ParsedBoardRouteParameters & {
   boardDetails: BoardDetails;
   initialClimbs: Climb[];
+};
+
+const createSearchResetKey = (searchParams: SearchRequestPagination) => {
+  return searchParamsToUrlParams({ ...searchParams, page: 0 }).toString();
 };
 
 const BoardPageClimbsList = ({
@@ -22,8 +27,24 @@ const BoardPageClimbsList = ({
   angle,
 }: BoardPageClimbsListProps) => {
   const { currentClimb } = useCurrentClimb();
-  const { climbSearchResults, hasMoreResults, hasDoneFirstFetch, isFetchingClimbs } = useSearchData();
+  const { climbSearchParams, climbSearchResults, hasMoreResults, hasDoneFirstFetch, isFetchingClimbs } =
+    useSearchData();
   const { setCurrentClimb, addToQueue, fetchMoreClimbs } = useQueueActions();
+
+  const searchResetKey = useMemo(() => createSearchResetKey(climbSearchParams), [climbSearchParams]);
+  const previousSearchResetKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (previousSearchResetKeyRef.current === null) {
+      previousSearchResetKeyRef.current = searchResetKey;
+      return;
+    }
+
+    if (previousSearchResetKeyRef.current !== searchResetKey) {
+      previousSearchResetKeyRef.current = searchResetKey;
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [searchResetKey]);
 
   // Queue Context provider uses React Query infinite to fetch results, which can only happen clientside.
   // That data equals null at the start, so when its null we use the initialClimbs array which we
