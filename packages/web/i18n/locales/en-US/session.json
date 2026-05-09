@@ -232,7 +232,11 @@
       "shareSessionLink": "Share session link",
       "closeTickBar": "Close tick bar",
       "enterPlayMode": "Enter play mode",
-      "logAttempt": "Log attempt"
+      "logAttempt": "Log attempt",
+      "collapseControlBar": "Collapse queue control bar",
+      "openClimbDetails": "Open climb details",
+      "showParticipants": "Show participants",
+      "hideParticipants": "Hide participants"
     }
   },
   "queueDrawer": {

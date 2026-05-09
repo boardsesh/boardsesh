@@ -28,6 +28,111 @@
   background-color: var(--semantic-surface);
 }
 
+.collapsedCard {
+  overflow: hidden;
+}
+
+.queueCollapseHandleRegion {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 24px;
+  border-radius: 9999px;
+  color: var(--neutral-600);
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.queueCollapseHandle {
+  width: 36px;
+  height: 4px;
+  border-radius: 9999px;
+  background-color: currentColor;
+  opacity: 0.45;
+}
+
+.queueCollapseHandleRegion:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.collapsedMiniBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  touch-action: none;
+}
+
+.collapsedClimbButton {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2, 8px);
+  min-height: 36px;
+  border-radius: 4px;
+  color: var(--neutral-900);
+  text-align: left;
+}
+
+.collapsedThumbnail {
+  width: 22px;
+  max-height: 32px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.collapsedGrade {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.collapsedName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 600;
+}
+
+.collapsedAvatarButton,
+.collapsedTickButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapsedAvatarButton {
+  min-width: 34px;
+  min-height: 36px;
+  border-radius: 9999px;
+}
+
+:global(html[data-theme='dark']) .queueCollapseHandleRegion {
+  color: var(--neutral-300);
+}
+
+:global(html[data-theme='dark']) .collapsedClimbButton {
+  color: var(--neutral-100);
+}
+
 @media (min-width: 768px) {
   .queueBar {
     background-color: transparent;
@@ -142,6 +247,7 @@
 
 /* Session header strip — sits above the swipe container inside the card */
 .sessionHeader {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;

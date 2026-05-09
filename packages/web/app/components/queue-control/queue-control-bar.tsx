@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import MuiButton from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import IconButton from '@mui/material/IconButton';
 import MuiCard from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -59,7 +60,7 @@ import Avatar from '@mui/material/Avatar';
 import AvatarGroup from '@mui/material/AvatarGroup';
 import Badge from '@mui/material/Badge';
 import Typography from '@mui/material/Typography';
-import { getGradeTintColor } from '@/app/lib/grade-colors';
+import { formatGrade, getGradeTintColor, getSoftGradeColor } from '@/app/lib/grade-colors';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { usePersistentSessionState } from '../persistent-session/persistent-session-context';
@@ -94,6 +95,13 @@ const TICK_BADGE_SX = {
     border: '2px solid transparent',
   },
 } as const;
+
+const QUEUE_CONTROL_BAR_COLLAPSED_PREFERENCE_KEY = 'queueControlBar:collapsed';
+const QUEUE_CONTROL_BAR_CREATE_COLLAPSED_PREFERENCE_KEY = 'queueControlBar:createCollapsed';
+
+type QueueControlTemporaryExpansion = 'details' | 'tick' | 'participants' | null;
+
+const isCreateClimbPath = (pathname: string): boolean => pathname.split('/').includes('create');
 
 function TickBadgeAvatar({
   user,
@@ -222,10 +230,32 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // Keep the tick row mounted during the close animation so it can collapse.
   const [tickRowVisible, setTickRowVisible] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
+  const isCreateClimbRoute = useMemo(() => isCreateClimbPath(pathname), [pathname]);
+  const queueControlBarPreferenceKey = isCreateClimbRoute
+    ? QUEUE_CONTROL_BAR_CREATE_COLLAPSED_PREFERENCE_KEY
+    : QUEUE_CONTROL_BAR_COLLAPSED_PREFERENCE_KEY;
+  const [queueBarCollapsed, setQueueBarCollapsed] = useState(() => isCreateClimbPath(pathname));
+  const [temporaryExpandedReason, setTemporaryExpandedReason] = useState<QueueControlTemporaryExpansion>(null);
 
   const sessionShareUrl = activeSession?.sessionId
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${activeSession.sessionId}`
     : '';
+
+  useEffect(() => {
+    let cancelled = false;
+    const defaultCollapsed = isCreateClimbRoute;
+    setTemporaryExpandedReason(null);
+    setParticipantsExpanded(false);
+
+    void getPreference<boolean>(queueControlBarPreferenceKey).then((persistedCollapsed) => {
+      if (cancelled) return;
+      setQueueBarCollapsed(persistedCollapsed ?? defaultCollapsed);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreateClimbRoute, queueControlBarPreferenceKey]);
 
   const handleInviteShare = useCallback(async () => {
     if (!sessionShareUrl) return;
@@ -443,6 +473,14 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     () => getGradeTintColor(displayedClimb?.difficulty, 'session', isDark),
     [displayedClimb?.difficulty, isDark],
   );
+  const collapsedGrade = useMemo(
+    () => formatGrade(displayedClimb?.difficulty, 'v-grade') ?? displayedClimb?.difficulty,
+    [displayedClimb?.difficulty],
+  );
+  const collapsedGradeColor = useMemo(
+    () => getSoftGradeColor(displayedClimb?.difficulty, isDark),
+    [displayedClimb?.difficulty, isDark],
+  );
 
   // Deduplicate session users by userId (stable DB UUID).
   // When userId is absent (unauthenticated), fall back to connection id
@@ -477,6 +515,14 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     }
     return set;
   }, [queue, currentClimb?.uuid, myUserId, localTickedClimbs]);
+
+  const isQueueBarCollapsed =
+    queueBarCollapsed &&
+    temporaryExpandedReason === null &&
+    activeDrawer === 'none' &&
+    !tickRowVisible &&
+    !participantsExpanded &&
+    !!displayedClimb;
 
   // Reset local tick cache when the active session changes
   useEffect(() => {
@@ -593,6 +639,18 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       return () => clearTimeout(timer);
     }
   }, [tickBarActive]);
+
+  useEffect(() => {
+    if (activeDrawer === 'none' && temporaryExpandedReason !== null && temporaryExpandedReason !== 'participants') {
+      setTemporaryExpandedReason(null);
+    }
+  }, [activeDrawer, temporaryExpandedReason]);
+
+  useEffect(() => {
+    if (!participantsExpanded && temporaryExpandedReason === 'participants') {
+      setTemporaryExpandedReason(null);
+    }
+  }, [participantsExpanded, temporaryExpandedReason]);
 
   const tickSwipeEnabled = tickBarActive && !tickCommentFocused;
 
@@ -720,6 +778,93 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       source: 'bar_tap',
     });
   }, [currentClimb, boardDetails.layout_name]);
+
+  const persistQueueBarCollapsed = useCallback(
+    (collapsed: boolean) => {
+      setQueueBarCollapsed(collapsed);
+      setTemporaryExpandedReason(null);
+      if (collapsed) {
+        setParticipantsExpanded(false);
+        setActiveDrawer('none');
+      }
+      void setPreference(queueControlBarPreferenceKey, collapsed);
+    },
+    [queueControlBarPreferenceKey],
+  );
+
+  const handleCollapsedClimbInfoClick = useCallback(() => {
+    if (!currentClimb) return;
+    setTemporaryExpandedReason('details');
+    setActiveDrawer('play');
+    track('Play Drawer Opened', {
+      boardLayout: boardDetails.layout_name || '',
+      source: 'collapsed_bar_tap',
+    });
+  }, [currentClimb, boardDetails.layout_name]);
+
+  const handleTickBarActivate = useCallback(() => setActiveDrawer('tick'), []);
+
+  const handleCollapsedTickActivate = useCallback(() => {
+    setTemporaryExpandedReason('tick');
+    setActiveDrawer('tick');
+  }, []);
+
+  const handleCollapsedParticipantsClick = useCallback(() => {
+    setTemporaryExpandedReason('participants');
+    setParticipantsExpanded(true);
+  }, []);
+
+  const handleParticipantToggle = useCallback(() => {
+    setParticipantsExpanded((prev) => !prev);
+  }, []);
+
+  const collapseHandleSwipeHandlers = useSwipeable({
+    onSwipedDown: (eventData) => {
+      if (Math.abs(eventData.deltaY) >= 40 || eventData.velocity > 0.25) {
+        persistQueueBarCollapsed(true);
+      }
+    },
+    trackMouse: true,
+    preventScrollOnSwipe: false,
+    delta: 10,
+  });
+
+  const collapsedMiniBarSwipeHandlers = useSwipeable({
+    onSwipedUp: (eventData) => {
+      if (Math.abs(eventData.deltaY) >= 40 || eventData.velocity > 0.25) {
+        persistQueueBarCollapsed(false);
+      }
+    },
+    trackMouse: true,
+    preventScrollOnSwipe: false,
+    delta: 10,
+  });
+
+  const handleCollapseHandleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        event.stopPropagation();
+        persistQueueBarCollapsed(true);
+      }
+    },
+    [persistQueueBarCollapsed],
+  );
+
+  const queueCollapseHandle = !tickBarActive && !tickRowVisible && (
+    <div
+      {...collapseHandleSwipeHandlers}
+      className={styles.queueCollapseHandleRegion}
+      role="button"
+      tabIndex={0}
+      aria-label={t('queueBar.ariaLabels.collapseControlBar')}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={handleCollapseHandleKeyDown}
+      data-testid="queue-collapse-handle"
+    >
+      <span className={styles.queueCollapseHandle} />
+    </div>
+  );
 
   // Transition style shared by current and peek text
   const getTextTransitionStyle = () => {
@@ -855,6 +1000,84 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     );
   }
 
+  if (isQueueBarCollapsed && displayedClimb) {
+    return (
+      <div id="onboarding-queue-bar" className={`queue-bar-shadow ${styles.queueBar}`} data-testid="queue-control-bar">
+        <MuiCard variant="outlined" className={`${styles.card} ${styles.collapsedCard}`} sx={{ border: 'none' }}>
+          <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+            <div
+              {...collapsedMiniBarSwipeHandlers}
+              className={styles.collapsedMiniBar}
+              data-testid="queue-control-bar-collapsed"
+              style={{
+                backgroundColor: gradeTintColor ?? (isDark ? 'transparent' : 'var(--semantic-surface)'),
+              }}
+            >
+              <ButtonBase
+                className={styles.collapsedClimbButton}
+                onClick={handleCollapsedClimbInfoClick}
+                aria-label={t('queueBar.ariaLabels.openClimbDetails')}
+              >
+                <span className={styles.collapsedThumbnail}>
+                  <ClimbThumbnail
+                    boardDetails={boardDetails}
+                    currentClimb={displayedClimb}
+                    pathname={pathname}
+                    maxHeight="32px"
+                  />
+                </span>
+                <span className={styles.collapsedName}>{displayedClimb.name}</span>
+                {collapsedGrade && (
+                  <span className={styles.collapsedGrade} style={{ color: collapsedGradeColor }}>
+                    {collapsedGrade}
+                  </span>
+                )}
+              </ButtonBase>
+              {activeSession && uniqueSessionUsers.length > 0 && (
+                <ButtonBase
+                  className={styles.collapsedAvatarButton}
+                  onClick={handleCollapsedParticipantsClick}
+                  aria-label={t('queueBar.ariaLabels.showParticipants')}
+                >
+                  <AvatarGroup
+                    max={3}
+                    sx={{
+                      '& .MuiAvatar-root': {
+                        width: 28,
+                        height: 28,
+                        fontSize: 11,
+                        border: '2px solid transparent',
+                      },
+                    }}
+                  >
+                    {uniqueSessionUsers.map((user) => (
+                      <TickBadgeAvatar
+                        key={user.id}
+                        user={user}
+                        hasTicked={tickedBySet.has(user.id) || (user.userId != null && tickedBySet.has(user.userId))}
+                      />
+                    ))}
+                  </AvatarGroup>
+                </ButtonBase>
+              )}
+              <div className={styles.collapsedTickButton}>
+                <TickButton
+                  currentClimb={displayedClimb}
+                  angle={angle}
+                  boardDetails={boardDetails}
+                  onActivateTickBar={handleCollapsedTickActivate}
+                  onTickSave={(el) => quickTickBarRef.current?.save(el)}
+                  tickBarActive={false}
+                  isFlash={isFlash}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </MuiCard>
+      </div>
+    );
+  }
+
   let offlineBannerText: string;
   if (!sessionId) {
     offlineBannerText = 'Offline';
@@ -876,6 +1099,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
             className={`${styles.sessionHeaderWrapper} ${!tickBarActive && !tickRowVisible ? styles.sessionHeaderExpanded : ''}`}
           >
             <div className={styles.sessionHeaderInner} data-tour-anchor="session-mini-bar">
+              {queueCollapseHandle}
               {/* Offline overlay on session header */}
               {isDisconnected && !dismissedDisconnect && (
                 <div
@@ -921,15 +1145,19 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                       className={styles.avatarToggle}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setParticipantsExpanded((prev) => !prev);
+                        handleParticipantToggle();
                       }}
                       role="button"
                       tabIndex={0}
-                      aria-label={participantsExpanded ? 'Hide participants' : 'Show participants'}
+                      aria-label={
+                        participantsExpanded
+                          ? t('queueBar.ariaLabels.hideParticipants')
+                          : t('queueBar.ariaLabels.showParticipants')
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.stopPropagation();
-                          setParticipantsExpanded((prev) => !prev);
+                          handleParticipantToggle();
                         }
                       }}
                     >
@@ -1320,7 +1548,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                       currentClimb={displayedClimb}
                       angle={angle}
                       boardDetails={boardDetails}
-                      onActivateTickBar={() => setActiveDrawer('tick')}
+                      onActivateTickBar={handleTickBarActivate}
                       onTickSave={(el) => quickTickBarRef.current?.save(el)}
                       tickBarActive={tickBarActive}
                       isFlash={isFlash}

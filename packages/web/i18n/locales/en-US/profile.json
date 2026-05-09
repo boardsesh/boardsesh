@@ -138,6 +138,18 @@
         "deleteFailed": "Failed to delete tick",
         "tickDeleted": "Tick deleted",
         "undo": "Undo"
+      },
+      "export": {
+        "action": "Export",
+        "jsonMenuItem": "{{board}} JSON",
+        "missingServiceUrl": "Boardsesh could not find the export service URL.",
+        "signInAgain": "Sign in again to export your logbook data.",
+        "generating": "{{board}} export is being generated.",
+        "generationFailed": "Export generation failed",
+        "stillGenerating": "Export is still generating. Try again shortly.",
+        "notReady": "Export is not ready yet",
+        "downloaded": "{{board}} export downloaded.",
+        "failed": "Export failed"
       }
     },
     "search": {

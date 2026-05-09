@@ -392,12 +392,13 @@ const ClimbsList = ({
     isFetching,
   });
 
-  // Row click: activates the climb but does NOT open the play drawer.
-  // Only the thumbnail (list mode) or card cover (grid mode) opens the drawer.
+  // Row click: first tap activates the climb; tapping the already-active row opens the play drawer.
+  // The thumbnail (list mode) or card cover (grid mode) still activates and opens in one tap.
   const handleClimbClickByIndex = useCallback(
     (index: number) => {
       const climb = climbs[index];
       if (climb) {
+        const alreadySelected = selectedClimbUuid === climb.uuid;
         onClimbSelectRef.current?.(climb);
         // Explicit user-pick signal for the onboarding tour. Fires only while
         // the tour is on the climb-list step so it can advance without
@@ -405,11 +406,13 @@ const ClimbsList = ({
         // hydration can trip).
         if (tourStepRef.current === 'climb-list') {
           dispatchTourClimbListPick();
+        } else if (alreadySelected) {
+          dispatchOpenPlayDrawer();
         }
         track('Climb List Row Clicked', { climbUuid: climb.uuid });
       }
     },
-    [climbs],
+    [climbs, selectedClimbUuid],
   );
 
   // Thumbnail / card-cover click: activates the climb and opens the play drawer.

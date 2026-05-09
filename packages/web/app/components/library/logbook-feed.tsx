@@ -602,13 +602,13 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
 
         if (status.status === 'ready') return status;
         if (status.status === 'failed' || status.status === 'unavailable') {
-          throw new Error(status.error ?? 'Export generation failed');
+          throw new Error(status.error ?? t('logbook.feed.export.generationFailed'));
         }
       }
 
-      throw new Error('Export is still generating. Try again shortly.');
+      throw new Error(t('logbook.feed.export.stillGenerating'));
     },
-    [token],
+    [t, token],
   );
 
   const handleExportMenuOpen = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
@@ -625,12 +625,12 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
 
       const backendUrl = getBackendHttpUrl();
       if (!backendUrl) {
-        showMessage('Boardsesh could not find the export service URL.', 'error');
+        showMessage(t('logbook.feed.export.missingServiceUrl'), 'error');
         return;
       }
 
       if (!token) {
-        showMessage('Sign in again to export your logbook data.', 'error');
+        showMessage(t('logbook.feed.export.signInAgain'), 'error');
         return;
       }
 
@@ -647,23 +647,23 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
         let status = await parseExportResponse(response);
 
         if (status.status === 'generating') {
-          showMessage(`${boardLabel} export is being generated.`, 'info', undefined, 5000);
+          showMessage(t('logbook.feed.export.generating', { board: boardLabel }), 'info', undefined, 5000);
           status = await waitForExport(backendUrl, boardType);
         }
 
         if (status.status !== 'ready') {
-          throw new Error(status.error ?? 'Export is not ready yet');
+          throw new Error(status.error ?? t('logbook.feed.export.notReady'));
         }
 
         await downloadExport(backendUrl, boardType);
-        showMessage(`${boardLabel} export downloaded.`, 'success');
+        showMessage(t('logbook.feed.export.downloaded', { board: boardLabel }), 'success');
       } catch (error) {
-        showMessage(error instanceof Error ? error.message : 'Export failed', 'error');
+        showMessage(error instanceof Error ? error.message : t('logbook.feed.export.failed'), 'error');
       } finally {
         setExportingBoard(null);
       }
     },
-    [downloadExport, handleExportMenuClose, showMessage, token, waitForExport],
+    [downloadExport, handleExportMenuClose, showMessage, t, token, waitForExport],
   );
 
   const showBoardType = selectedBoards.length === 0 || selectedBoards.length > 1;
@@ -724,12 +724,12 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
         onClick={handleExportMenuOpen}
         disabled={authLoading || !token || !!exportingBoard}
       >
-        Export
+        {t('logbook.feed.export.action')}
       </Button>
       <Menu anchorEl={exportMenuAnchor} open={!!exportMenuAnchor} onClose={handleExportMenuClose}>
         {exportableBoardTypes.map((boardType) => (
           <MenuItem key={boardType} onClick={() => void handleExportBoard(boardType)}>
-            {formatBoardTypeLabel(boardType)} JSON
+            {t('logbook.feed.export.jsonMenuItem', { board: formatBoardTypeLabel(boardType) })}
           </MenuItem>
         ))}
       </Menu>
