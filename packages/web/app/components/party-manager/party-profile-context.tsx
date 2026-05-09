@@ -70,7 +70,15 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (sessionStatus === 'authenticated' && session?.user?.id) {
       const userId = session.user.id;
       if (lastAnalyticsDistinctId.current === userId) return;
-      if (lastAnalyticsDistinctId.current === profileId) {
+
+      if (lastAnalyticsDistinctId.current && lastAnalyticsDistinctId.current !== profileId) {
+        reset();
+      }
+      if (lastAnalyticsDistinctId.current !== profileId) {
+        identify(profileId);
+        lastAnalyticsDistinctId.current = profileId;
+      }
+      if (profileId !== userId) {
         alias(userId);
       }
       identify(userId, session.user.email ? { email: session.user.email } : undefined);

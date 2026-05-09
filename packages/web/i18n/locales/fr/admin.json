@@ -3,6 +3,10 @@
     "admin": {
       "title": "Panneau d'administration",
       "description": "Panneau d'administration Boardsesh"
+    },
+    "retention": {
+      "title": "Rétention",
+      "description": "Tableau de bord de rétention par cohorte"
     }
   },
   "title": "Panneau d'administration",
@@ -13,6 +17,33 @@
   "tabs": {
     "roles": "Rôles",
     "settings": "Paramètres"
+  },
+  "nav": {
+    "retention": "Tableau de rétention"
+  },
+  "retention": {
+    "heading": "Rétention utilisateur",
+    "subheading": "Parmi les utilisateurs inscrits pendant la semaine W, combien reviennent dans les N jours, à la fois pour les ticks (blocs enregistrés) et pour toute activité dans l'application.",
+    "definitions": "Cohorte = semaine d'inscription (UTC). Ticks = au moins un bloc enregistré dans Boardsesh (ticks importés depuis Aurora exclus). Toute activité = tick, hôte ou participation à une session, favori, playlist (créée ou épinglée), abonnement (utilisateur, ouvreur ou playlist), abonnement nouveaux blocs, commentaire, vote, vote de proposition ou envoi de feedback. D7 = actif dans les 7 jours suivant l'inscription. Les cohortes plus récentes que la fenêtre affichent —.",
+    "back": "Retour à l'administration",
+    "table": {
+      "cohortWeek": "Semaine de cohorte",
+      "signups": "Inscriptions",
+      "groupTicks": "Ticks",
+      "groupAny": "Toute activité",
+      "activated": "Activés",
+      "d1": "D1",
+      "d3": "D3",
+      "d7": "D7",
+      "d30": "D30",
+      "notReady": "—",
+      "empty": "Aucune donnée de cohorte pour le moment."
+    },
+    "chart": {
+      "title": "Rétention D7 par semaine de cohorte",
+      "label": "Ticks",
+      "labelAny": "Toute activité"
+    }
   },
   "roles": {
     "heading": "Rôles de la communauté",

@@ -28,7 +28,7 @@ function getPosthog(): PostHog | null {
     host,
     autocapture: false,
     captureHistoryEvents: false,
-    persistence: 'localStorage',
+    persistence: 'memory',
   });
 
   return posthogClient;
@@ -47,7 +47,7 @@ function sanitizeForPosthog(properties?: EventProperties): PosthogProperties | u
 
 export function track(name: string, properties?: EventProperties, options?: { flags?: FlagsDataInput }): void {
   if (process.env.NODE_ENV !== 'production') {
-    console.debug('[analytics] track', name, properties);
+    console.info('[analytics] track', name, properties);
   }
 
   vercelTrack(name, properties, options);
