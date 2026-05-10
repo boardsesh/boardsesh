@@ -546,13 +546,15 @@ const ClimbsList = ({
   const selectionStore = useSelectionStore(selectedClimbUuid ?? null);
 
   // --- List virtualization ---
-  // Only ~40-50 items are mounted at a time instead of 600+.
-  // Overscan of 25 items (1800px) provides enough headroom so that fast scrolling
-  // never outpaces the render cycle and causes a blank screen.
+  // Overscan of 10 items (~1070px at the 107px estimate) is enough headroom for
+  // fast scrolling while keeping the LCP-time mount count low. Production traces
+  // showed the previous overscan=25 was mounting ~50 items on first paint, with
+  // each item attaching virtualizer.measureElement (a ResizeObserver) — this
+  // dominated the render delay (76% of LCP / 2.2s of forced reflow) on /list.
   const virtualizer = useWindowVirtualizer({
     count: visibleClimbs.length,
     estimateSize: () => 107,
-    overscan: 25,
+    overscan: 10,
     getItemKey: (index) => visibleClimbs[index]?.uuid ?? index,
     // Provide a fake viewport so the virtualizer renders items during SSR.
     // Without this, getVirtualItems() returns [] on the server and the
