@@ -51,12 +51,14 @@ Dynamic style objects created every render. Should be memoized or moved to CSS.
 
 ### No list virtualization / native paint skipping
 
-**Files:** `packages/web/app/components/board-page/climbs-list.tsx:368-419`
+**Files:** `packages/web/app/components/board-page/climbs-list.tsx`
 **Status:** Fixed
 
 Both grid and list modes used `.map()` directly — all items rendered to DOM at once. With infinite scroll, lists can grow to 200+ items.
 
-**Fix applied:** Added `content-visibility: auto` with `contain-intrinsic-size` via CSS classes on each list/grid item wrapper. The browser natively skips layout and paint for off-screen items while keeping them in the DOM for native scroll feel.
+**Fix applied:** List mode now uses `useWindowVirtualizer` from `@tanstack/react-virtual` (`climbs-list.tsx:552-561`) — only items in the visible window plus an overscan buffer mount to the DOM. Grid mode keeps the older `content-visibility: auto` approach (CSS-only paint skipping) because grid items have a stable aspect ratio and benefit from native infinite-scroll feel.
+
+**Overscan tuning:** Reduced from 25 → 10 (~1070px headroom) to cut first-paint mount count by ~40% on `/list` after a Chrome DevTools trace showed the previous value was driving 2 s of style recalc and 2.2 s of forced reflow on initial render. Pinned in `climbs-list-virtualization.test.tsx`.
 
 ### O(n^2) deduplication
 

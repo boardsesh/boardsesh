@@ -120,7 +120,7 @@ vi.mock('@/app/theme/theme-config', () => ({
 }));
 
 // Track calls to useWindowVirtualizer
-let lastVirtualizerOpts: { count: number } | null = null;
+let lastVirtualizerOpts: { count: number; overscan: number } | null = null;
 
 vi.mock('@tanstack/react-virtual', () => ({
   useWindowVirtualizer: (opts: {
@@ -207,7 +207,8 @@ describe('ClimbsList virtualization', () => {
     );
 
     const items = screen.getAllByTestId('climb-list-item');
-    // Mock renders visible items + overscan (6 + 25 + 1 = 32), far fewer than all 100
+    // Mock renders min(overscan + 7, count) items — with overscan=10 that's
+    // ~17 items, far fewer than all 100.
     expect(items.length).toBeLessThan(allClimbs.length);
     expect(items.length).toBeGreaterThan(0);
   });
@@ -242,6 +243,24 @@ describe('ClimbsList virtualization', () => {
     // The virtualizer should receive the full climb count
     expect(lastVirtualizerOpts).not.toBeNull();
     expect(lastVirtualizerOpts!.count).toBe(100);
+  });
+
+  it('pins overscan at 10 — defends the LCP win against accidental bumps', () => {
+    render(
+      <ClimbsList
+        boardDetails={makeBoardDetails()}
+        climbs={allClimbs}
+        isFetching={false}
+        hasMore={false}
+        onLoadMore={vi.fn()}
+      />,
+    );
+
+    // With estimateSize=107, overscan=10 is ~1070px headroom — enough for
+    // smooth fast scrolling without bloating the first-paint mount count.
+    // Production traces tied a 25→10 cut directly to a render-delay drop.
+    expect(lastVirtualizerOpts).not.toBeNull();
+    expect(lastVirtualizerOpts!.overscan).toBe(10);
   });
 
   it('renders skeleton when fetching with no climbs', () => {
