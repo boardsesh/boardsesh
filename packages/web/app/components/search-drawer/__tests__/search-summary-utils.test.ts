@@ -5,6 +5,7 @@ import {
   getStatusPanelSummary,
   getQualityPanelSummary,
   getSearchPillSummary,
+  getUserPanelSummary,
 } from '../search-summary-utils';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import type { SearchRequestPagination } from '@/app/lib/types';
@@ -62,6 +63,14 @@ describe('hasActiveNonNameFilters', () => {
 
   it('returns true when hideAttempted is true', () => {
     expect(hasActiveNonNameFilters(makeParams({ hideAttempted: true }))).toBe(true);
+  });
+
+  it('returns true when minUserQuality is set', () => {
+    expect(hasActiveNonNameFilters(makeParams({ minUserQuality: 4 }))).toBe(true);
+  });
+
+  it('returns true when hideWithoutUserQuality is true', () => {
+    expect(hasActiveNonNameFilters(makeParams({ hideWithoutUserQuality: true }))).toBe(true);
   });
 
   it('returns true when sortBy differs from default', () => {
@@ -153,5 +162,58 @@ describe('getQualityPanelSummary vs Status (no duplication)', () => {
   it('pill summary for drafts shows "Drafts"', () => {
     const pill = getSearchPillSummary(makeParams({ onlyDrafts: true }), { zone: 'Zone', user: { myRating: (n: number) => `${n}+ my rating`, ratedOnly: 'Rated only' } });
     expect(pill).toContain('Drafts');
+  });
+});
+
+describe('getUserPanelSummary user-quality filter', () => {
+  const userLabels = {
+    myRating: (count: number) => `${count}+ my rating`,
+    ratedOnly: 'Rated only',
+  };
+
+  it('returns empty when neither minUserQuality nor hideWithoutUserQuality is set', () => {
+    expect(getUserPanelSummary(makeParams(), userLabels)).toEqual([]);
+  });
+
+  it('includes minUserQuality summary when threshold is set', () => {
+    const parts = getUserPanelSummary(makeParams({ minUserQuality: 3 }), userLabels);
+    expect(parts).toContain('3+ my rating');
+  });
+
+  it('includes "Rated only" when hideWithoutUserQuality is true', () => {
+    const parts = getUserPanelSummary(makeParams({ hideWithoutUserQuality: true }), userLabels);
+    expect(parts).toContain('Rated only');
+  });
+
+  it('combines both filters when set together', () => {
+    const parts = getUserPanelSummary(
+      makeParams({ minUserQuality: 4, hideWithoutUserQuality: true }),
+      userLabels,
+    );
+    expect(parts).toContain('4+ my rating');
+    expect(parts).toContain('Rated only');
+  });
+
+  it('coexists with hide/only progress filters', () => {
+    const parts = getUserPanelSummary(
+      makeParams({ minUserQuality: 5, hideAttempted: true, showOnlyCompleted: true }),
+      userLabels,
+    );
+    expect(parts).toContain('5+ my rating');
+    expect(parts).toContain('Hide attempted');
+    expect(parts).toContain('Only completed');
+  });
+
+  it('falls back to hardcoded English when labels argument is omitted', () => {
+    const parts = getUserPanelSummary(
+      makeParams({ minUserQuality: 2, hideWithoutUserQuality: true }),
+    );
+    expect(parts).toContain('2+ my rating');
+    expect(parts).toContain('Rated only');
+  });
+
+  it('normalises decimal minUserQuality to a whole star', () => {
+    const parts = getUserPanelSummary(makeParams({ minUserQuality: 2.5 }), userLabels);
+    expect(parts).toContain('3+ my rating');
   });
 });

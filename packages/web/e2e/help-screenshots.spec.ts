@@ -150,8 +150,8 @@ test.describe('Help Page Screenshots - Authenticated', () => {
   test('personal progress filters', async ({ page }) => {
     await page.getByRole('button', { name: 'Open filters' }).click();
     await waitForDrawerOpen(page);
-    // Expand the Progress accordion (user-specific filters: attempts, completions).
-    await page.getByText('Progress', { exact: true }).click();
+    // Expand the Logbook accordion (user-specific filters: attempts, completions, my rating).
+    await page.getByText('Logbook', { exact: true }).click();
     await page.screenshot({ path: `${SCREENSHOT_DIR}/personal-progress.png` });
   });
 

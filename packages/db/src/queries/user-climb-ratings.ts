@@ -8,7 +8,7 @@ import { boardseshTicks, userClimbQualities, userClimbGrades } from '../schema/i
  * helpers work for both the backend `db` (full schema) and the aurora-sync
  * client (no schema baked in), without dragging in a specific schema generic.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Drizzle's PgDatabase requires a schema generic; the helpers don't depend on schema, so we accept any instantiation.
+// oxlint-disable-next-line typescript/no-explicit-any -- Drizzle's PgDatabase requires a schema generic; the helpers don't depend on schema, so we accept any instantiation.
 type Executor = PgDatabase<PgQueryResultHKT, any, any>;
 
 /**
