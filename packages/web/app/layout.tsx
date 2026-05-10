@@ -2,8 +2,7 @@
 import React from 'react';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import ColorModeProvider from './components/providers/color-mode-provider';
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/next';
+import { AnalyticsProviders } from './components/analytics-providers';
 import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
 import { NavigationLoadingProvider } from './components/providers/navigation-loading-provider';
@@ -71,7 +70,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <Analytics beforeSend={(event) => (event.url.includes('/admin') ? null : event)} />
+        <AnalyticsProviders />
         <QueryClientProvider>
           <SessionProviderWrapper>
             <AppRouterCacheProvider>
@@ -100,7 +99,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </AppRouterCacheProvider>
           </SessionProviderWrapper>
         </QueryClientProvider>
-        <SpeedInsights beforeSend={(event) => (event.url.includes('/admin') ? null : event)} />
         {process.env.NODE_ENV === 'development' && <VercelToolbar />}
       </body>
     </html>
