@@ -84,23 +84,18 @@ export async function upsertUserClimbGrade(
 }
 
 /**
- * Recompute the projection rows for a (user, climb) pair after a tick is
- * deleted. Picks the next most-recent tick that still has a non-null value;
- * if none exists, removes the projection row entirely.
- *
- * Quality is recomputed angle-independently. Grade is recomputed at the
- * deleted tick's angle (other angles are unaffected).
+ * Recompute the user_climb_qualities row for a (user, climb) pair from the
+ * remaining ticks. Picks the next most-recent tick (any angle) that still has
+ * a non-null quality; if none exists, removes the projection row entirely.
  */
-export async function recomputeUserClimbProjectionsAfterTickDelete(
+export async function recomputeUserClimbQualityProjection(
   exec: Executor,
   args: {
     userId: string;
     boardType: string;
     climbUuid: string;
-    angle: number;
   },
 ): Promise<void> {
-  // Quality: most-recent remaining tick with a non-null quality, any angle.
   const [latestQualityTick] = await exec
     .select({ quality: boardseshTicks.quality, climbedAt: boardseshTicks.climbedAt })
     .from(boardseshTicks)
@@ -117,7 +112,7 @@ export async function recomputeUserClimbProjectionsAfterTickDelete(
 
   if (latestQualityTick && latestQualityTick.quality != null) {
     // Force the projection to reflect this remaining tick, even if the
-    // current row is "newer" — the previously-newer tick was just deleted.
+    // existing row is "newer" — the previously-newer tick was just removed.
     await exec
       .insert(userClimbQualities)
       .values({
@@ -145,8 +140,21 @@ export async function recomputeUserClimbProjectionsAfterTickDelete(
         ),
       );
   }
+}
 
-  // Grade: most-recent remaining tick at the same angle with a non-null grade.
+/**
+ * Recompute the user_climb_grades row for a (user, climb, angle) triple from
+ * the remaining ticks at the same angle. Other angles are unaffected.
+ */
+export async function recomputeUserClimbGradeProjection(
+  exec: Executor,
+  args: {
+    userId: string;
+    boardType: string;
+    climbUuid: string;
+    angle: number;
+  },
+): Promise<void> {
   const [latestGradeTick] = await exec
     .select({ difficulty: boardseshTicks.difficulty, climbedAt: boardseshTicks.climbedAt })
     .from(boardseshTicks)
@@ -192,4 +200,26 @@ export async function recomputeUserClimbProjectionsAfterTickDelete(
         ),
       );
   }
+}
+
+/**
+ * Recompute both projection rows for a (user, climb, angle) triple — the
+ * tick-deleted use case, where we don't know which value(s) the deleted tick
+ * contributed to the current opinion.
+ */
+export async function recomputeUserClimbProjectionsAfterTickDelete(
+  exec: Executor,
+  args: {
+    userId: string;
+    boardType: string;
+    climbUuid: string;
+    angle: number;
+  },
+): Promise<void> {
+  await recomputeUserClimbQualityProjection(exec, {
+    userId: args.userId,
+    boardType: args.boardType,
+    climbUuid: args.climbUuid,
+  });
+  await recomputeUserClimbGradeProjection(exec, args);
 }

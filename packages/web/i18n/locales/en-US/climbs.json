@@ -161,6 +161,11 @@
     "results": {
       "count": "results"
     },
+    "summary": {
+      "myRating_one": "{{count}}+ my rating",
+      "myRating_other": "{{count}}+ my rating",
+      "ratedOnly": "Rated only"
+    },
     "holds": {
       "include": "Include",
       "exclude": "Exclude",

@@ -89,7 +89,12 @@ export function getStatusPanelSummary(params: SearchRequestPagination): string[]
   return [];
 }
 
-export function getUserPanelSummary(params: SearchRequestPagination): string[] {
+export type UserPanelSummaryLabels = {
+  myRating: (count: number) => string;
+  ratedOnly: string;
+};
+
+export function getUserPanelSummary(params: SearchRequestPagination, labels?: UserPanelSummaryLabels): string[] {
   // Merge "Hide" filters into single entry
   const hideFilters: string[] = [];
   if (params.hideAttempted) hideFilters.push('attempted');
@@ -103,10 +108,10 @@ export function getUserPanelSummary(params: SearchRequestPagination): string[] {
   const parts: string[] = [];
   const minUserQuality = normalizeMinUserQualityFilter(params.minUserQuality);
   if (minUserQuality) {
-    parts.push(`${minUserQuality}+ my rating`);
+    parts.push(labels ? labels.myRating(minUserQuality) : `${minUserQuality}+ my rating`);
   }
   if (params.hideWithoutUserQuality) {
-    parts.push('Rated only');
+    parts.push(labels ? labels.ratedOnly : 'Rated only');
   }
   if (hideFilters.length > 0) {
     parts.push(`Hide ${hideFilters.join(', ')}`);
@@ -133,6 +138,7 @@ export function getZonePanelSummary(params: SearchRequestPagination, label: stri
  */
 export type SearchPillLabels = {
   zone: string;
+  user: UserPanelSummaryLabels;
 };
 
 /**
@@ -144,7 +150,7 @@ export function getSearchPillSummary(params: SearchRequestPagination, labels: Se
     ...getClimbPanelSummary(params),
     ...getQualityPanelSummary(params),
     ...getStatusPanelSummary(params),
-    ...getUserPanelSummary(params),
+    ...getUserPanelSummary(params, labels.user),
     ...getHoldsPanelSummary(params),
     ...getZonePanelSummary(params, labels.zone),
   ];
@@ -168,7 +174,7 @@ export function getSearchPillFullSummary(params: SearchRequestPagination, labels
     ...getClimbPanelSummary(params),
     ...getQualityPanelSummary(params),
     ...getStatusPanelSummary(params),
-    ...getUserPanelSummary(params),
+    ...getUserPanelSummary(params, labels.user),
     ...getHoldsPanelSummary(params),
     ...getZonePanelSummary(params, labels.zone),
   ];

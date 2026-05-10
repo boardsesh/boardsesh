@@ -382,7 +382,11 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
       label: t('search.panels.logbook'),
       title: t('search.panels.logbook'),
       defaultSummary: t('search.panels.anyDefault'),
-      getSummary: () => getUserPanelSummary(uiSearchParams),
+      getSummary: () =>
+        getUserPanelSummary(uiSearchParams, {
+          myRating: (count) => t('search.summary.myRating', { count }),
+          ratedOnly: t('search.summary.ratedOnly'),
+        }),
       content: (
         <div className={styles.panelContent}>
           {!isAuthenticated ? (

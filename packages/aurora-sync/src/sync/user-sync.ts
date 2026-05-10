@@ -4,8 +4,14 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import { UNIFIED_TABLES } from '../db/table-select';
-import { boardseshTicks, playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
-import { upsertUserClimbQuality, upsertUserClimbGrade } from '@boardsesh/db/queries';
+import {
+  boardseshTicks,
+  playlists,
+  playlistClimbs,
+  playlistOwnership,
+  userClimbQualities,
+  userClimbGrades,
+} from '@boardsesh/db/schema/app';
 import { randomUUID } from 'crypto';
 import { convertQuality } from '@boardsesh/shared-schema';
 import { formatDbError } from './db-error';
@@ -206,28 +212,72 @@ async function upsertTableData(
             });
 
           // Project each ascent's quality/difficulty into the user_climb_*
-          // tables. The setWhere guard inside the helpers means out-of-order
-          // Aurora replays can't clobber a newer opinion already on file.
+          // tables. Deduped within the batch (Postgres rejects multiple rows
+          // hitting the same conflict target in one statement) and bulk
+          // upserted in two statements per batch — the WHERE clause on
+          // EXCLUDED.updated_at means an older replay can't clobber a newer
+          // opinion already on file.
+          const qualityRowsByKey = new Map<string, typeof userClimbQualities.$inferInsert>();
+          const gradeRowsByKey = new Map<string, typeof userClimbGrades.$inferInsert>();
           for (const tickValue of tickValues) {
             if (tickValue.quality != null) {
-              await upsertUserClimbQuality(db, {
-                userId: tickValue.userId,
-                boardType: tickValue.boardType,
-                climbUuid: tickValue.climbUuid,
-                quality: tickValue.quality,
-                recordedAt: tickValue.climbedAt,
-              });
+              const key = `${tickValue.userId}|${tickValue.boardType}|${tickValue.climbUuid}`;
+              const existing = qualityRowsByKey.get(key);
+              if (!existing || tickValue.climbedAt > existing.updatedAt!) {
+                qualityRowsByKey.set(key, {
+                  userId: tickValue.userId,
+                  boardType: tickValue.boardType,
+                  climbUuid: tickValue.climbUuid,
+                  quality: tickValue.quality,
+                  updatedAt: tickValue.climbedAt,
+                });
+              }
             }
             if (tickValue.difficulty != null) {
-              await upsertUserClimbGrade(db, {
-                userId: tickValue.userId,
-                boardType: tickValue.boardType,
-                climbUuid: tickValue.climbUuid,
-                angle: tickValue.angle,
-                difficulty: tickValue.difficulty,
-                recordedAt: tickValue.climbedAt,
-              });
+              const key = `${tickValue.userId}|${tickValue.boardType}|${tickValue.climbUuid}|${tickValue.angle}`;
+              const existing = gradeRowsByKey.get(key);
+              if (!existing || tickValue.climbedAt > existing.updatedAt!) {
+                gradeRowsByKey.set(key, {
+                  userId: tickValue.userId,
+                  boardType: tickValue.boardType,
+                  climbUuid: tickValue.climbUuid,
+                  angle: tickValue.angle,
+                  difficulty: tickValue.difficulty,
+                  updatedAt: tickValue.climbedAt,
+                });
+              }
             }
+          }
+          if (qualityRowsByKey.size > 0) {
+            await db
+              .insert(userClimbQualities)
+              .values([...qualityRowsByKey.values()])
+              .onConflictDoUpdate({
+                target: [userClimbQualities.userId, userClimbQualities.boardType, userClimbQualities.climbUuid],
+                set: {
+                  quality: sql`excluded.quality`,
+                  updatedAt: sql`excluded.updated_at`,
+                },
+                setWhere: sql`${userClimbQualities.updatedAt} <= excluded.updated_at`,
+              });
+          }
+          if (gradeRowsByKey.size > 0) {
+            await db
+              .insert(userClimbGrades)
+              .values([...gradeRowsByKey.values()])
+              .onConflictDoUpdate({
+                target: [
+                  userClimbGrades.userId,
+                  userClimbGrades.boardType,
+                  userClimbGrades.climbUuid,
+                  userClimbGrades.angle,
+                ],
+                set: {
+                  difficulty: sql`excluded.difficulty`,
+                  updatedAt: sql`excluded.updated_at`,
+                },
+                setWhere: sql`${userClimbGrades.updatedAt} <= excluded.updated_at`,
+              });
           }
         });
       } else {

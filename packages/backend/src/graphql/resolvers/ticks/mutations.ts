@@ -7,6 +7,8 @@ import * as dbSchema from '@boardsesh/db/schema';
 import {
   upsertUserClimbQuality,
   upsertUserClimbGrade,
+  recomputeUserClimbQualityProjection,
+  recomputeUserClimbGradeProjection,
   recomputeUserClimbProjectionsAfterTickDelete,
 } from '@boardsesh/db/queries';
 import { sessions } from '../../../db/schema';
@@ -491,11 +493,10 @@ export const tickMutations = {
       //     the projection from the user's remaining ticks for that climb.
       if (validatedInput.quality !== undefined) {
         if (validatedInput.quality == null) {
-          await recomputeUserClimbProjectionsAfterTickDelete(tx, {
+          await recomputeUserClimbQualityProjection(tx, {
             userId,
             boardType: row.boardType,
             climbUuid: row.climbUuid,
-            angle: row.angle,
           });
         } else {
           await upsertUserClimbQuality(tx, {
@@ -509,7 +510,7 @@ export const tickMutations = {
       }
       if (validatedInput.difficulty !== undefined) {
         if (validatedInput.difficulty == null) {
-          await recomputeUserClimbProjectionsAfterTickDelete(tx, {
+          await recomputeUserClimbGradeProjection(tx, {
             userId,
             boardType: row.boardType,
             climbUuid: row.climbUuid,

@@ -158,6 +158,11 @@
     "results": {
       "count": "resultados"
     },
+    "summary": {
+      "myRating_one": "{{count}}+ mi valoración",
+      "myRating_other": "{{count}}+ mi valoración",
+      "ratedOnly": "Solo valorados"
+    },
     "holds": {
       "include": "Incluir",
       "exclude": "Excluir",

@@ -11,7 +11,7 @@ import {
   type ClimbSearchResponse,
   type ClimbSearchCountResponse,
 } from '@/app/lib/graphql/operations/climb-search';
-import { normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
+import { normalizeMinRatingFilter, normalizeMinUserQualityFilter } from '@/app/lib/climb-quality-filter-options';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { USER_SPECIFIC_SEARCH_PARAMS } from '@boardsesh/shared-schema';
 
@@ -98,6 +98,8 @@ export const useQueueDataFetching = ({
       hideCompleted: searchParams.hideCompleted || undefined,
       showOnlyAttempted: searchParams.showOnlyAttempted || undefined,
       showOnlyCompleted: searchParams.showOnlyCompleted || undefined,
+      minUserQuality: normalizeMinUserQualityFilter(searchParams.minUserQuality) || undefined,
+      hideWithoutUserQuality: searchParams.hideWithoutUserQuality || undefined,
       onlyDrafts: searchParams.onlyDrafts || undefined,
       projectsOnly: searchParams.projectsOnly || undefined,
       zoneBox: searchParams.zoneBox || undefined,
@@ -180,6 +182,8 @@ export const useQueueDataFetching = ({
       hideCompleted: countSearchParams.hideCompleted || undefined,
       showOnlyAttempted: countSearchParams.showOnlyAttempted || undefined,
       showOnlyCompleted: countSearchParams.showOnlyCompleted || undefined,
+      minUserQuality: normalizeMinUserQualityFilter(countSearchParams.minUserQuality) || undefined,
+      hideWithoutUserQuality: countSearchParams.hideWithoutUserQuality || undefined,
       onlyDrafts: countSearchParams.onlyDrafts || undefined,
       projectsOnly: countSearchParams.projectsOnly || undefined,
       zoneBox: countSearchParams.zoneBox || undefined,

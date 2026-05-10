@@ -88,6 +88,8 @@ export const climbQueries = {
       hideCompleted: input.hideCompleted,
       showOnlyAttempted: input.showOnlyAttempted,
       showOnlyCompleted: input.showOnlyCompleted,
+      minUserQuality: input.minUserQuality,
+      hideWithoutUserQuality: input.hideWithoutUserQuality,
       onlyDrafts: input.onlyDrafts,
       projectsOnly: input.projectsOnly,
       zoneBox: input.zoneBox,
