@@ -5,6 +5,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { boardseshTicks, playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
+import { upsertUserClimbQuality, upsertUserClimbGrade } from '@boardsesh/db/queries';
 import { randomUUID } from 'crypto';
 import { convertQuality } from '@boardsesh/shared-schema';
 import { formatDbError } from './db-error';
@@ -203,6 +204,31 @@ async function upsertTableData(
                 auroraSyncedAt: sql`excluded.aurora_synced_at`,
               },
             });
+
+          // Project each ascent's quality/difficulty into the user_climb_*
+          // tables. The setWhere guard inside the helpers means out-of-order
+          // Aurora replays can't clobber a newer opinion already on file.
+          for (const tickValue of tickValues) {
+            if (tickValue.quality != null) {
+              await upsertUserClimbQuality(db, {
+                userId: tickValue.userId,
+                boardType: tickValue.boardType,
+                climbUuid: tickValue.climbUuid,
+                quality: tickValue.quality,
+                recordedAt: tickValue.climbedAt,
+              });
+            }
+            if (tickValue.difficulty != null) {
+              await upsertUserClimbGrade(db, {
+                userId: tickValue.userId,
+                boardType: tickValue.boardType,
+                climbUuid: tickValue.climbUuid,
+                angle: tickValue.angle,
+                difficulty: tickValue.difficulty,
+                recordedAt: tickValue.climbedAt,
+              });
+            }
+          }
         });
       } else {
         log(`  Skipping ascents sync: no NextAuth user ID provided`);

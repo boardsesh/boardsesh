@@ -1,7 +1,7 @@
 import type { SearchRequestPagination } from '@/app/lib/types';
 import { TENSION_KILTER_GRADES } from '@/app/lib/board-data';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
-import { normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
+import { normalizeMinRatingFilter, normalizeMinUserQualityFilter } from '@/app/lib/climb-quality-filter-options';
 
 export const DEFAULT_CLIMB_SEARCH_SUMMARY = 'What do you want to climb?';
 
@@ -101,6 +101,13 @@ export function getUserPanelSummary(params: SearchRequestPagination): string[] {
   if (params.showOnlyCompleted) onlyFilters.push('completed');
 
   const parts: string[] = [];
+  const minUserQuality = normalizeMinUserQualityFilter(params.minUserQuality);
+  if (minUserQuality) {
+    parts.push(`${minUserQuality}+ my rating`);
+  }
+  if (params.hideWithoutUserQuality) {
+    parts.push('Rated only');
+  }
   if (hideFilters.length > 0) {
     parts.push(`Hide ${hideFilters.join(', ')}`);
   }

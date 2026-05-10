@@ -4,6 +4,11 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import {
+  upsertUserClimbQuality,
+  upsertUserClimbGrade,
+  recomputeUserClimbProjectionsAfterTickDelete,
+} from '@boardsesh/db/queries';
 import { sessions } from '../../../db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
 import { escapeLikePattern } from '../../../utils/like-pattern';
@@ -159,6 +164,9 @@ export const tickMutations = {
         uuid: dbSchema.boardseshTicks.uuid,
         userId: dbSchema.boardseshTicks.userId,
         sessionId: dbSchema.boardseshTicks.sessionId,
+        boardType: dbSchema.boardseshTicks.boardType,
+        climbUuid: dbSchema.boardseshTicks.climbUuid,
+        angle: dbSchema.boardseshTicks.angle,
       })
       .from(dbSchema.boardseshTicks)
       .where(eq(dbSchema.boardseshTicks.uuid, uuid))
@@ -202,6 +210,16 @@ export const tickMutations = {
         .where(and(eq(dbSchema.notifications.entityType, 'tick'), eq(dbSchema.notifications.entityId, uuid)));
       // Delete the tick itself
       await tx.delete(dbSchema.boardseshTicks).where(eq(dbSchema.boardseshTicks.uuid, uuid));
+
+      // Recompute the user's projection rows for this (climb, angle) pair —
+      // the deleted tick may have been the source of the current opinion.
+      // Runs after the tick delete so the recompute query sees the new state.
+      await recomputeUserClimbProjectionsAfterTickDelete(tx, {
+        userId,
+        boardType: tick.boardType,
+        climbUuid: tick.climbUuid,
+        angle: tick.angle,
+      });
 
       if (tick.sessionId) {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, tick.sessionId));
@@ -276,6 +294,30 @@ export const tickMutations = {
           auroraSyncError: null,
         })
         .returning();
+
+      // Project the user's "current opinion" forward into the
+      // user_climb_{qualities,grades} tables so the search filter can read it
+      // without scanning every tick. The upsert helpers guard against an older
+      // tick (replay / out-of-order log) overwriting a newer opinion.
+      if (createdTick.quality != null) {
+        await upsertUserClimbQuality(tx, {
+          userId,
+          boardType: createdTick.boardType,
+          climbUuid: createdTick.climbUuid,
+          quality: createdTick.quality,
+          recordedAt: createdTick.climbedAt,
+        });
+      }
+      if (createdTick.difficulty != null) {
+        await upsertUserClimbGrade(tx, {
+          userId,
+          boardType: createdTick.boardType,
+          climbUuid: createdTick.climbUuid,
+          angle: createdTick.angle,
+          difficulty: createdTick.difficulty,
+          recordedAt: createdTick.climbedAt,
+        });
+      }
 
       if (validatedInput.sessionId) {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, validatedInput.sessionId));
@@ -435,11 +477,58 @@ export const tickMutations = {
     if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
     if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
 
-    const [updated] = await db
-      .update(dbSchema.boardseshTicks)
-      .set(updates)
-      .where(eq(dbSchema.boardseshTicks.uuid, uuid))
-      .returning();
+    const [updated] = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(dbSchema.boardseshTicks)
+        .set(updates)
+        .where(eq(dbSchema.boardseshTicks.uuid, uuid))
+        .returning();
+
+      // Reflect the user's edit into the projection tables.
+      //   - new value set: upsert with the tick's climbedAt so an edit to an
+      //     older tick can't clobber a newer projection (setWhere guard).
+      //   - cleared (set to null): the tick no longer contributes; recompute
+      //     the projection from the user's remaining ticks for that climb.
+      if (validatedInput.quality !== undefined) {
+        if (validatedInput.quality == null) {
+          await recomputeUserClimbProjectionsAfterTickDelete(tx, {
+            userId,
+            boardType: row.boardType,
+            climbUuid: row.climbUuid,
+            angle: row.angle,
+          });
+        } else {
+          await upsertUserClimbQuality(tx, {
+            userId,
+            boardType: row.boardType,
+            climbUuid: row.climbUuid,
+            quality: validatedInput.quality,
+            recordedAt: row.climbedAt,
+          });
+        }
+      }
+      if (validatedInput.difficulty !== undefined) {
+        if (validatedInput.difficulty == null) {
+          await recomputeUserClimbProjectionsAfterTickDelete(tx, {
+            userId,
+            boardType: row.boardType,
+            climbUuid: row.climbUuid,
+            angle: row.angle,
+          });
+        } else {
+          await upsertUserClimbGrade(tx, {
+            userId,
+            boardType: row.boardType,
+            climbUuid: row.climbUuid,
+            angle: row.angle,
+            difficulty: validatedInput.difficulty,
+            recordedAt: row.climbedAt,
+          });
+        }
+      }
+
+      return [row];
+    });
 
     return {
       uuid: updated.uuid,

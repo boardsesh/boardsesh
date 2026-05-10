@@ -26,3 +26,13 @@ export function getMinRatingPickerValue(value: number | null | undefined): numbe
   const normalizedValue = normalizeMinRatingFilter(value);
   return normalizedValue === 0 ? null : normalizedValue;
 }
+
+export function normalizeMinUserQualityFilter(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(5, Math.max(1, Math.ceil(value)));
+}
+
+export function getMinUserQualityPickerValue(value: number | null | undefined): number | null {
+  const normalizedValue = normalizeMinUserQualityFilter(value);
+  return normalizedValue === 0 ? null : normalizedValue;
+}

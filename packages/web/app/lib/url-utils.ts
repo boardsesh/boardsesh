@@ -16,7 +16,11 @@ import type {
 import { BOARD_NAME_PREFIX_REGEX } from '@/app/lib/board-constants';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
-import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
+import {
+  normalizeMinAscentsFilter,
+  normalizeMinRatingFilter,
+  normalizeMinUserQualityFilter,
+} from '@/app/lib/climb-quality-filter-options';
 import { PAGE_LIMIT } from '../components/board-page/constants';
 
 // ---------- Shared URL query param helpers ----------
@@ -96,6 +100,8 @@ export const searchParamsToUrlParams = (input: SearchRequestPagination): URLSear
   const hideCompleted = safeInput.hideCompleted ?? DEFAULT_SEARCH_PARAMS.hideCompleted;
   const showOnlyAttempted = safeInput.showOnlyAttempted ?? DEFAULT_SEARCH_PARAMS.showOnlyAttempted;
   const showOnlyCompleted = safeInput.showOnlyCompleted ?? DEFAULT_SEARCH_PARAMS.showOnlyCompleted;
+  const minUserQuality = normalizeMinUserQualityFilter(safeInput.minUserQuality ?? DEFAULT_SEARCH_PARAMS.minUserQuality);
+  const hideWithoutUserQuality = safeInput.hideWithoutUserQuality ?? DEFAULT_SEARCH_PARAMS.hideWithoutUserQuality;
   const onlyDrafts = safeInput.onlyDrafts ?? DEFAULT_SEARCH_PARAMS.onlyDrafts;
   const projectsOnly = safeInput.projectsOnly ?? DEFAULT_SEARCH_PARAMS.projectsOnly;
   const zoneBox = safeInput.zoneBox ?? DEFAULT_SEARCH_PARAMS.zoneBox;
@@ -160,6 +166,12 @@ export const searchParamsToUrlParams = (input: SearchRequestPagination): URLSear
   if (showOnlyCompleted !== DEFAULT_SEARCH_PARAMS.showOnlyCompleted) {
     params.showOnlyCompleted = showOnlyCompleted.toString();
   }
+  if (minUserQuality != null && minUserQuality !== DEFAULT_SEARCH_PARAMS.minUserQuality) {
+    params.minUserQuality = minUserQuality.toString();
+  }
+  if (hideWithoutUserQuality !== DEFAULT_SEARCH_PARAMS.hideWithoutUserQuality) {
+    params.hideWithoutUserQuality = hideWithoutUserQuality.toString();
+  }
   if (onlyDrafts !== DEFAULT_SEARCH_PARAMS.onlyDrafts) {
     params.onlyDrafts = onlyDrafts.toString();
   }
@@ -213,6 +225,8 @@ export const DEFAULT_SEARCH_PARAMS: SearchRequestPagination = {
   hideCompleted: false,
   showOnlyAttempted: false,
   showOnlyCompleted: false,
+  minUserQuality: 0,
+  hideWithoutUserQuality: false,
   onlyDrafts: false,
   projectsOnly: false,
   zoneBox: null,
@@ -303,6 +317,10 @@ export const urlParamsToSearchParams = (urlParams: URLSearchParams): SearchReque
     hideCompleted: urlParams.get('hideCompleted') === 'true',
     showOnlyAttempted: urlParams.get('showOnlyAttempted') === 'true',
     showOnlyCompleted: urlParams.get('showOnlyCompleted') === 'true',
+    minUserQuality: normalizeMinUserQualityFilter(
+      Number(urlParams.get('minUserQuality') ?? DEFAULT_SEARCH_PARAMS.minUserQuality),
+    ),
+    hideWithoutUserQuality: urlParams.get('hideWithoutUserQuality') === 'true',
     onlyDrafts: urlParams.get('onlyDrafts') === 'true',
     projectsOnly: urlParams.get('projectsOnly') === 'true',
     zoneBox: parseZoneBoxFromQuery(urlParams),
@@ -352,6 +370,10 @@ export const parsedRouteSearchParamsToSearchParams = (urlParams: SearchRequestPa
     minAscents: normalizeMinAscentsFilter(Number(urlParams.minAscents ?? DEFAULT_SEARCH_PARAMS.minAscents)),
     minGrade: Number(urlParams.minGrade ?? DEFAULT_SEARCH_PARAMS.minGrade),
     minRating: normalizeMinRatingFilter(Number(urlParams.minRating ?? DEFAULT_SEARCH_PARAMS.minRating)),
+    minUserQuality: normalizeMinUserQualityFilter(
+      Number(urlParams.minUserQuality ?? DEFAULT_SEARCH_PARAMS.minUserQuality),
+    ),
+    hideWithoutUserQuality: String(urlParams.hideWithoutUserQuality) === 'true',
     page: Number(urlParams.page ?? DEFAULT_SEARCH_PARAMS.page),
     pageSize: Number(urlParams.pageSize ?? DEFAULT_SEARCH_PARAMS.pageSize),
     // Next.js route search params come as strings, so coerce to boolean

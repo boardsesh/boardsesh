@@ -18,7 +18,11 @@ import MinAscentsBucketPicker from '@/app/components/climb-quality-filter/min-as
 import { InlineStarPicker } from '@/app/components/logbook/tick-controls';
 import { useUISearchParams } from '@/app/components/queue-control/ui-searchparams-provider';
 import { useBoardProvider } from '@/app/components/board-provider/board-provider-context';
-import { formatMinAscentsFilterCount, getMinRatingPickerValue } from '@/app/lib/climb-quality-filter-options';
+import {
+  formatMinAscentsFilterCount,
+  getMinRatingPickerValue,
+  getMinUserQualityPickerValue,
+} from '@/app/lib/climb-quality-filter-options';
 import SearchClimbNameInput from './search-climb-name-input';
 import SetterNameSelect from './setter-name-select';
 import ClimbSearchForm from './climb-search-form';
@@ -57,6 +61,7 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
   const isLargestSize = boardDetails.size_name?.toLowerCase().includes('12');
   const showTallClimbsFilter = isKilterHomewall && isLargestSize;
   const minRatingPickerValue = getMinRatingPickerValue(uiSearchParams.minRating);
+  const minUserQualityPickerValue = getMinUserQualityPickerValue(uiSearchParams.minUserQuality);
 
   let statusValue: 'any' | 'drafts' | 'established' | 'projects' = 'any';
   if (uiSearchParams.onlyDrafts) {
@@ -374,9 +379,9 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
     },
     {
       key: 'user',
-      label: 'Progress',
-      title: 'Progress',
-      defaultSummary: 'All climbs',
+      label: t('search.panels.logbook'),
+      title: t('search.panels.logbook'),
+      defaultSummary: t('search.panels.anyDefault'),
       getSummary: () => getUserPanelSummary(uiSearchParams),
       content: (
         <div className={styles.panelContent}>
@@ -391,8 +396,8 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
                   startIcon={<LoginOutlined />}
                   onClick={() =>
                     openAuthModal({
-                      title: t('search.progress.signInModalTitle'),
-                      description: t('search.progress.signInModalDescription'),
+                      title: t('search.logbook.signInModalTitle'),
+                      description: t('search.logbook.signInModalDescription'),
                     })
                   }
                 >
@@ -400,81 +405,112 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
                 </MuiButton>
               }
             >
-              <strong>{t('search.progress.signInTitle')}</strong>
+              <strong>{t('search.logbook.signInTitle')}</strong>
               <br />
-              {t('search.progress.signInBody')}
+              {t('search.logbook.signInBody')}
             </MuiAlert>
           ) : (
-            <div className={styles.switchGroup}>
-              <FormControlLabel
-                className={styles.switchRow}
-                labelPlacement="start"
-                control={
-                  <MuiSwitch
-                    size="small"
-                    color="primary"
-                    checked={uiSearchParams.hideAttempted}
-                    onChange={(_, checked) => updateFilters({ hideAttempted: checked })}
-                  />
-                }
-                label={
-                  <MuiTypography variant="body2" component="span">
-                    {t('search.progress.hideAttempted')}
-                  </MuiTypography>
-                }
-              />
-              <FormControlLabel
-                className={styles.switchRow}
-                labelPlacement="start"
-                control={
-                  <MuiSwitch
-                    size="small"
-                    color="primary"
-                    checked={uiSearchParams.hideCompleted}
-                    onChange={(_, checked) => updateFilters({ hideCompleted: checked })}
-                  />
-                }
-                label={
-                  <MuiTypography variant="body2" component="span">
-                    {t('search.progress.hideCompleted')}
-                  </MuiTypography>
-                }
-              />
-              <FormControlLabel
-                className={styles.switchRow}
-                labelPlacement="start"
-                control={
-                  <MuiSwitch
-                    size="small"
-                    color="primary"
-                    checked={uiSearchParams.showOnlyAttempted}
-                    onChange={(_, checked) => updateFilters({ showOnlyAttempted: checked })}
-                  />
-                }
-                label={
-                  <MuiTypography variant="body2" component="span">
-                    {t('search.progress.onlyAttempted')}
-                  </MuiTypography>
-                }
-              />
-              <FormControlLabel
-                className={styles.switchRow}
-                labelPlacement="start"
-                control={
-                  <MuiSwitch
-                    size="small"
-                    color="primary"
-                    checked={uiSearchParams.showOnlyCompleted}
-                    onChange={(_, checked) => updateFilters({ showOnlyCompleted: checked })}
-                  />
-                }
-                label={
-                  <MuiTypography variant="body2" component="span">
-                    {t('search.progress.onlyCompleted')}
-                  </MuiTypography>
-                }
-              />
-            </div>
+            <>
+              <div className={styles.inputGroup}>
+                <span className={styles.fieldLabel}>{t('search.fields.minUserQuality')}</span>
+                <InlineStarPicker
+                  quality={minUserQualityPickerValue}
+                  onSelect={(value) => updateFilters({ minUserQuality: value ?? 0 })}
+                  align="start"
+                  ariaLabel={t('search.fields.minUserQuality')}
+                  clearLabel={t('search.fields.any')}
+                  clearText={t('search.fields.any')}
+                  getStarLabel={(rating) => t('search.fields.minUserQualityOption', { count: rating })}
+                />
+              </div>
+              <div className={styles.switchGroup}>
+                <FormControlLabel
+                  className={styles.switchRow}
+                  labelPlacement="start"
+                  control={
+                    <MuiSwitch
+                      size="small"
+                      color="primary"
+                      checked={uiSearchParams.hideWithoutUserQuality}
+                      onChange={(_, checked) => updateFilters({ hideWithoutUserQuality: checked })}
+                    />
+                  }
+                  label={
+                    <MuiTypography variant="body2" component="span">
+                      {t('search.logbook.hideWithoutUserQuality')}
+                    </MuiTypography>
+                  }
+                />
+                <FormControlLabel
+                  className={styles.switchRow}
+                  labelPlacement="start"
+                  control={
+                    <MuiSwitch
+                      size="small"
+                      color="primary"
+                      checked={uiSearchParams.hideAttempted}
+                      onChange={(_, checked) => updateFilters({ hideAttempted: checked })}
+                    />
+                  }
+                  label={
+                    <MuiTypography variant="body2" component="span">
+                      {t('search.logbook.hideAttempted')}
+                    </MuiTypography>
+                  }
+                />
+                <FormControlLabel
+                  className={styles.switchRow}
+                  labelPlacement="start"
+                  control={
+                    <MuiSwitch
+                      size="small"
+                      color="primary"
+                      checked={uiSearchParams.hideCompleted}
+                      onChange={(_, checked) => updateFilters({ hideCompleted: checked })}
+                    />
+                  }
+                  label={
+                    <MuiTypography variant="body2" component="span">
+                      {t('search.logbook.hideCompleted')}
+                    </MuiTypography>
+                  }
+                />
+                <FormControlLabel
+                  className={styles.switchRow}
+                  labelPlacement="start"
+                  control={
+                    <MuiSwitch
+                      size="small"
+                      color="primary"
+                      checked={uiSearchParams.showOnlyAttempted}
+                      onChange={(_, checked) => updateFilters({ showOnlyAttempted: checked })}
+                    />
+                  }
+                  label={
+                    <MuiTypography variant="body2" component="span">
+                      {t('search.logbook.onlyAttempted')}
+                    </MuiTypography>
+                  }
+                />
+                <FormControlLabel
+                  className={styles.switchRow}
+                  labelPlacement="start"
+                  control={
+                    <MuiSwitch
+                      size="small"
+                      color="primary"
+                      checked={uiSearchParams.showOnlyCompleted}
+                      onChange={(_, checked) => updateFilters({ showOnlyCompleted: checked })}
+                    />
+                  }
+                  label={
+                    <MuiTypography variant="body2" component="span">
+                      {t('search.logbook.onlyCompleted')}
+                    </MuiTypography>
+                  }
+                />
+              </div>
+            </>
           )}
         </div>
       ),

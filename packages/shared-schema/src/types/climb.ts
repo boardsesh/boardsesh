@@ -112,6 +112,8 @@ export type ClimbSearchInput = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  minUserQuality?: number;
+  hideWithoutUserQuality?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   // Zone filter — restrict to climbs fully inside the bounding box
@@ -131,6 +133,8 @@ export const USER_SPECIFIC_SEARCH_PARAMS = [
   'hideCompleted',
   'showOnlyAttempted',
   'showOnlyCompleted',
+  'minUserQuality',
+  'hideWithoutUserQuality',
   'onlyDrafts',
 ] as const satisfies ReadonlyArray<keyof ClimbSearchInput>;
 

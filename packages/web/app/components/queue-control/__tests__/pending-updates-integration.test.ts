@@ -41,6 +41,8 @@ const mockSearchParams: SearchRequestPagination = {
   hideCompleted: false,
   showOnlyAttempted: false,
   showOnlyCompleted: false,
+  minUserQuality: 0,
+  hideWithoutUserQuality: false,
   onlyDrafts: false,
   projectsOnly: false,
   zoneBox: null,

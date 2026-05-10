@@ -624,6 +624,20 @@
       "when": 1778284800000,
       "tag": "0088_fix_moonboard_grade_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1778397870949,
+      "tag": "0089_mean_husk",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1778397870950,
+      "tag": "0090_backfill_user_climb_ratings",
+      "breakpoints": true
     }
   ]
 }

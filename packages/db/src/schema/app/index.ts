@@ -6,6 +6,7 @@ export * from './favorites';
 export * from './inferred-sessions';
 export * from './session-member-overrides';
 export * from './ascents';
+export * from './user-climb-ratings';
 export * from './playlists';
 export * from './hold-classifications';
 export * from './controllers';

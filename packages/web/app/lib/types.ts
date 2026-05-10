@@ -120,6 +120,8 @@ export type SearchRequest = {
   hideCompleted: boolean;
   showOnlyAttempted: boolean;
   showOnlyCompleted: boolean;
+  minUserQuality: number;
+  hideWithoutUserQuality: boolean;
   onlyDrafts: boolean;
   projectsOnly: boolean;
   zoneBox: ZoneBox | null;

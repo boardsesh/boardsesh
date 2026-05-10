@@ -107,6 +107,9 @@
       "setter": "Aperturista",
       "minAscents": "Encadenes mín.",
       "minRating": "Valoración mín.",
+      "minUserQuality": "Mi valoración mín.",
+      "minUserQualityOption_one": "{{count}} de mis estrellas o más",
+      "minUserQualityOption_other": "{{count}} de mis estrellas o más",
       "any": "Cualquiera",
       "tallClimbsOnly": "Solo bloques altos",
       "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en tablas 10x12)",
@@ -119,6 +122,7 @@
     "panels": {
       "quality": "Calidad",
       "status": "Estado de encadene",
+      "logbook": "Historial",
       "zone": "Zona",
       "holdsAndZone": "Presas y zona",
       "anyDefault": "Cualquiera"
@@ -135,7 +139,7 @@
       "signInModalTitle": "Inicia sesión en Boardsesh",
       "signInModalDescription": "Inicia sesión para ver tus bloques en borrador."
     },
-    "progress": {
+    "logbook": {
       "signInTitle": "Inicia sesión para filtrar por tus datos",
       "signInBody": "Inicia sesión para filtrar bloques según tu historial de intentos y encadenes.",
       "signInModalTitle": "Inicia sesión en Boardsesh",
@@ -143,7 +147,8 @@
       "hideAttempted": "Ocultar intentados",
       "hideCompleted": "Ocultar encadenados",
       "onlyAttempted": "Solo intentados",
-      "onlyCompleted": "Solo encadenados"
+      "onlyCompleted": "Solo encadenados",
+      "hideWithoutUserQuality": "Ocultar bloques que no he valorado"
     },
     "actions": {
       "search": "Buscar",

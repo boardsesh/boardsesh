@@ -107,6 +107,9 @@
       "setter": "Setter",
       "minAscents": "Min Ascents",
       "minRating": "Min Rating",
+      "minUserQuality": "My Min Rating",
+      "minUserQualityOption_one": "{{count}} of my stars and up",
+      "minUserQualityOption_other": "{{count}} of my stars and up",
       "any": "Any",
       "minAscentsOption": "{{value}}+",
       "minRatingOption_one": "{{count}} star and up",
@@ -122,6 +125,7 @@
     "panels": {
       "quality": "Quality",
       "status": "Ascent Status",
+      "logbook": "Logbook",
       "zone": "Zone",
       "holdsAndZone": "Holds & Zone",
       "anyDefault": "Any"
@@ -138,7 +142,7 @@
       "signInModalTitle": "Sign in to Boardsesh",
       "signInModalDescription": "Sign in to browse your draft climbs."
     },
-    "progress": {
+    "logbook": {
       "signInTitle": "Sign in to filter by your data",
       "signInBody": "Login to filter climbs based on your attempt and completion history.",
       "signInModalTitle": "Sign in to Boardsesh",
@@ -146,7 +150,8 @@
       "hideAttempted": "Hide Attempted",
       "hideCompleted": "Hide Completed",
       "onlyAttempted": "Only Attempted",
-      "onlyCompleted": "Only Completed"
+      "onlyCompleted": "Only Completed",
+      "hideWithoutUserQuality": "Hide climbs I haven't rated"
     },
     "actions": {
       "search": "Search",

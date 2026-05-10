@@ -1,5 +1,12 @@
 import { type SQL, eq, gte, sql, like, notLike, inArray, or, and } from 'drizzle-orm';
-import { boardClimbs, boardClimbStats, boardseshTicks, boardProductSizes, boardClimbHolds } from '../../schema/index';
+import {
+  boardClimbs,
+  boardClimbStats,
+  boardseshTicks,
+  boardProductSizes,
+  boardClimbHolds,
+  userClimbQualities,
+} from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
 
 // Kilter Homewall constants for tall-climb filtering
@@ -278,6 +285,40 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
           AND ${boardseshTicks.status} IN ('flash', 'send')
         )`,
       );
+    }
+
+    // User-quality filter — angle-independent.
+    //   minUserQuality > 0, hideWithoutUserQuality off:
+    //     show climbs the user hasn't rated AND climbs they rated >= threshold;
+    //     hide climbs they rated below the threshold.
+    //   hideWithoutUserQuality on:
+    //     require an EXISTS row, optionally clamped by the threshold.
+    const minUserQuality = searchParams.minUserQuality ?? 0;
+    const hideWithoutUserQuality = searchParams.hideWithoutUserQuality ?? false;
+    if (minUserQuality > 0 || hideWithoutUserQuality) {
+      if (hideWithoutUserQuality) {
+        const minClause = minUserQuality > 0 ? sql`AND ${userClimbQualities.quality} >= ${minUserQuality}` : sql``;
+        personalProgressConditions.push(
+          sql`EXISTS (
+            SELECT 1 FROM ${userClimbQualities}
+            WHERE ${userClimbQualities.userId} = ${userId}
+            AND ${userClimbQualities.boardType} = ${params.board_name}
+            AND ${userClimbQualities.climbUuid} = ${boardClimbs.uuid}
+            ${minClause}
+          )`,
+        );
+      } else {
+        // minUserQuality > 0 only: keep unrated climbs, drop too-low ones.
+        personalProgressConditions.push(
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${userClimbQualities}
+            WHERE ${userClimbQualities.userId} = ${userId}
+            AND ${userClimbQualities.boardType} = ${params.board_name}
+            AND ${userClimbQualities.climbUuid} = ${boardClimbs.uuid}
+            AND ${userClimbQualities.quality} < ${minUserQuality}
+          )`,
+        );
+      }
     }
   }
 

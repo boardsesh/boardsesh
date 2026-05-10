@@ -55,6 +55,13 @@ export type ClimbSearchParams = {
   hideCompleted?: boolean;
   showOnlyAttempted?: boolean;
   showOnlyCompleted?: boolean;
+  // Minimum quality threshold the current user has given a climb (1-5 stars).
+  // 0 / undefined means no filter.
+  minUserQuality?: number;
+  // When true, climbs the user has never rated are excluded. When false (default),
+  // unrated climbs still pass through and only ratings below `minUserQuality`
+  // are filtered out.
+  hideWithoutUserQuality?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   // Zone filter — restrict to climbs whose bounding box fits inside this box

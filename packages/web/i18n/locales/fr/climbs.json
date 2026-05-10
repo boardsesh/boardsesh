@@ -107,6 +107,9 @@
       "setter": "Ouvreur",
       "minAscents": "Enchaînements min",
       "minRating": "Note min",
+      "minUserQuality": "Ma note min",
+      "minUserQualityOption_one": "{{count}} de mes étoiles et plus",
+      "minUserQualityOption_other": "{{count}} de mes étoiles et plus",
       "any": "Tous",
       "minAscentsOption": "{{value}}+",
       "minRatingOption_one": "{{count}} étoile et plus",
@@ -122,6 +125,7 @@
     "panels": {
       "quality": "Qualité",
       "status": "Statut d'enchaînement",
+      "logbook": "Carnet",
       "zone": "Zone",
       "holdsAndZone": "Prises et zone",
       "anyDefault": "Toutes"
@@ -138,7 +142,7 @@
       "signInModalTitle": "Connectez-vous à Boardsesh",
       "signInModalDescription": "Connectez-vous pour parcourir vos blocs en brouillon."
     },
-    "progress": {
+    "logbook": {
       "signInTitle": "Connectez-vous pour filtrer par vos données",
       "signInBody": "Connectez-vous pour filtrer les blocs selon vos essais et vos enchaînements.",
       "signInModalTitle": "Connectez-vous à Boardsesh",
@@ -146,7 +150,8 @@
       "hideAttempted": "Masquer les essayés",
       "hideCompleted": "Masquer les enchaînés",
       "onlyAttempted": "Essayés uniquement",
-      "onlyCompleted": "Enchaînés uniquement"
+      "onlyCompleted": "Enchaînés uniquement",
+      "hideWithoutUserQuality": "Masquer les blocs non notés"
     },
     "actions": {
       "search": "Rechercher",
