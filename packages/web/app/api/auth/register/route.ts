@@ -125,8 +125,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Merge anonymous activity into the new account so the pre-signup funnel
-    // (search, climb views, etc.) attaches to this user.
-    aliasServer(attribution.distinctId, userId);
+    // (search, climb views, etc.) attaches to this user. Order matters:
+    // userId is the canonical/surviving person, the anon distinct id is the
+    // alias being merged in. See aliasServer's contract.
+    aliasServer(userId, attribution.distinctId);
     trackServer('Sign Up Succeeded', {
       distinctId: userId,
       properties: { provider: 'email', requiresVerification: emailVerificationEnabled },

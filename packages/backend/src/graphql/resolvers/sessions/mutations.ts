@@ -189,18 +189,15 @@ export const sessionMutations = {
     if (DEBUG) console.info(`[createSession] Generated sessionId: ${sessionId}`);
 
     const createAttribution = resolveContextAttribution(ctx);
-    trackServer('Session Created', {
-      distinctId: createAttribution.distinctId,
-      properties: {
-        sessionId,
-        boardPath: input.boardPath,
-        discoverable: !!input.discoverable,
-        isPermanent: !!input.isPermanent,
-        hasGoal: !!input.goal,
-        boardCount: input.boardIds?.length ?? 0,
-        isAuthenticated: !!ctx.isAuthenticated,
-      },
-    });
+    const sessionCreatedProperties = {
+      sessionId,
+      boardPath: input.boardPath,
+      discoverable: !!input.discoverable,
+      isPermanent: !!input.isPermanent,
+      hasGoal: !!input.goal,
+      boardCount: input.boardIds?.length ?? 0,
+      isAuthenticated: !!ctx.isAuthenticated,
+    } as const;
 
     if (input.discoverable) {
       // Discoverable sessions require authentication (they write to DB with userId)
@@ -279,6 +276,11 @@ export const sessionMutations = {
         });
       }
 
+      trackServer('Session Created', {
+        distinctId: createAttribution.distinctId,
+        properties: sessionCreatedProperties,
+      });
+
       return {
         id: sessionId,
         name: input.name || null,
@@ -306,6 +308,11 @@ export const sessionMutations = {
 
     // HTTP path: return session metadata only; client joins via WebSocket later
     if (DEBUG) console.info(`[createSession] HTTP request - returning session metadata without joining`);
+
+    trackServer('Session Created', {
+      distinctId: createAttribution.distinctId,
+      properties: sessionCreatedProperties,
+    });
 
     return {
       id: sessionId,

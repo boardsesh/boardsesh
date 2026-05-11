@@ -16,7 +16,7 @@ import {
   validateControllerApiKey,
 } from '../middleware/auth';
 import { isOriginAllowed } from '../handlers/cors';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { type ConnectionContext, isValidDistinctId } from '@boardsesh/shared-schema';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -121,12 +121,12 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         }
 
         // Anonymous distinct id propagated by the client (IndexedDB partyProfile UUID).
-        // Used for PostHog server-side attribution before auth.
-        let distinctId: string | undefined;
-        const distinctIdParam = connectionParams?.distinctId;
-        if (typeof distinctIdParam === 'string' && distinctIdParam.length > 0 && distinctIdParam.length <= 256) {
-          distinctId = distinctIdParam;
-        }
+        // Used for PostHog server-side attribution before auth. Validated as a UUID
+        // — the client never sends anything else, and we don't want a malicious
+        // client injecting arbitrary strings into PostHog properties.
+        const distinctId = isValidDistinctId(connectionParams?.distinctId)
+          ? (connectionParams.distinctId as string)
+          : undefined;
 
         // Create context on initial connection with auth info
         const context = createContext(

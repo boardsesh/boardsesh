@@ -115,6 +115,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
         distinctId: attribution.distinctId,
         properties: { boardName: board_name, errorKind: 'validation' },
       });
+      await flushServerAnalytics();
       return NextResponse.json({ error: 'Invalid request data' }, { status: 400 });
     }
 
@@ -125,6 +126,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
           distinctId: attribution.distinctId,
           properties: { boardName: board_name, errorKind: 'invalid_credentials' },
         });
+        await flushServerAnalytics();
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
       if (error.message.includes('403')) {
@@ -132,6 +134,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
           distinctId: attribution.distinctId,
           properties: { boardName: board_name, errorKind: 'forbidden' },
         });
+        await flushServerAnalytics();
         return NextResponse.json({ error: 'Access forbidden' }, { status: 403 });
       }
       if (error.message.startsWith('HTTP error!')) {
@@ -139,6 +142,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
           distinctId: attribution.distinctId,
           properties: { boardName: board_name, errorKind: 'service_unavailable' },
         });
+        await flushServerAnalytics();
         return NextResponse.json({ error: 'Service unavailable' }, { status: 503 });
       }
     }
@@ -149,6 +153,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
       distinctId: attribution.distinctId,
       properties: { boardName: board_name, errorKind: 'unknown' },
     });
+    await flushServerAnalytics();
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

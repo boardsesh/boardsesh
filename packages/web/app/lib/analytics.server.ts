@@ -6,7 +6,7 @@ import { getServerSession, type Session } from 'next-auth';
 import {
   type AnalyticsEventProperties,
   type AnalyticsSanitizedProperties,
-  MAX_DISTINCT_ID_LENGTH,
+  isValidDistinctId,
   SERVER_DISTINCT_ID_HEADER,
 } from '@boardsesh/shared-schema';
 import { authOptions } from './auth/auth-options';
@@ -81,7 +81,7 @@ export async function resolveRequestAttribution(req: Request): Promise<RequestAt
   }
 
   const headerId = req.headers.get(SERVER_DISTINCT_ID_HEADER);
-  if (headerId && headerId.length > 0 && headerId.length <= MAX_DISTINCT_ID_LENGTH) {
+  if (isValidDistinctId(headerId)) {
     return { distinctId: headerId, isAuthenticated: false };
   }
 
@@ -120,13 +120,12 @@ export function identifyServer(distinctId: string, properties?: ServerEventPrope
   return true;
 }
 
-// Matches posthog-node's own alias() shape: `distinctId` is the surviving
-// person, `alias` is the other ID that gets merged into it. For the
-// anonymous → authenticated flow, pass distinctId=anonymousId and
-// alias=newUserId — this mirrors what posthog-js-lite does on the client
-// when we call alias(userId) while still identified as the anon profile.
-// See `node_modules/posthog-node/src/client.ts::alias` for the canonical
-// example which uses the same direction.
+// `distinctId` is the canonical/surviving person id; `alias` is the alternate
+// that gets merged into it. For sign-up:
+//   aliasServer(userId, anonProfileId)
+// makes the new authenticated userId the surviving person and folds the
+// pre-signup anonymous activity into it — so PostHog's UI surfaces the
+// authenticated user as the primary identity for queries and dashboards.
 export function aliasServer(distinctId: string, alias: string): boolean {
   const posthog = getPosthog();
   if (!posthog) return false;

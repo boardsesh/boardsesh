@@ -4,7 +4,7 @@ import { boardSessions } from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { SessionIdSchema } from '@/app/lib/validation/session';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
-import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
+import { flushServerAnalytics, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const DEFAULT_ANGLE = 40;
 
@@ -78,6 +78,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
       isAuthenticated: attribution.isAuthenticated,
     },
   });
+  // Redirect responses complete immediately; flush so the event ships before
+  // the serverless function recycles.
+  await flushServerAnalytics();
 
   const response = NextResponse.redirect(`${baseUrl}/${redirectPath}`, 307);
   response.cookies.set(CLIMB_SESSION_COOKIE, validatedSessionId, {

@@ -105,20 +105,28 @@ describe('backend server analytics', () => {
   });
 
   describe('readDistinctIdHeader', () => {
-    it('reads from a Headers object', async () => {
+    const VALID_UUID = '11111111-2222-4333-8444-555555555555';
+
+    it('reads a valid UUID from a Headers object', async () => {
       const { readDistinctIdHeader, SERVER_DISTINCT_ID_HEADER } = await importFresh();
-      const headers = new Headers({ [SERVER_DISTINCT_ID_HEADER]: 'abc' });
-      expect(readDistinctIdHeader(headers)).toBe('abc');
+      const headers = new Headers({ [SERVER_DISTINCT_ID_HEADER]: VALID_UUID });
+      expect(readDistinctIdHeader(headers)).toBe(VALID_UUID);
     });
 
-    it('reads from a plain object (incoming Node http headers)', async () => {
+    it('reads a valid UUID from a plain object (incoming Node http headers)', async () => {
       const { readDistinctIdHeader, SERVER_DISTINCT_ID_HEADER } = await importFresh();
-      expect(readDistinctIdHeader({ [SERVER_DISTINCT_ID_HEADER]: 'def' })).toBe('def');
+      expect(readDistinctIdHeader({ [SERVER_DISTINCT_ID_HEADER]: VALID_UUID })).toBe(VALID_UUID);
     });
 
     it('rejects oversized headers', async () => {
       const { readDistinctIdHeader, SERVER_DISTINCT_ID_HEADER } = await importFresh();
       const headers = new Headers({ [SERVER_DISTINCT_ID_HEADER]: 'a'.repeat(300) });
+      expect(readDistinctIdHeader(headers)).toBeUndefined();
+    });
+
+    it('rejects non-UUID values (defends against analytics-property injection)', async () => {
+      const { readDistinctIdHeader, SERVER_DISTINCT_ID_HEADER } = await importFresh();
+      const headers = new Headers({ [SERVER_DISTINCT_ID_HEADER]: 'not-a-uuid' });
       expect(readDistinctIdHeader(headers)).toBeUndefined();
     });
 

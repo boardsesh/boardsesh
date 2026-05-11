@@ -219,16 +219,17 @@ describe('server analytics — request attribution', () => {
     expect(result).toEqual({ distinctId: 'auth-user-1', isAuthenticated: true, userId: 'auth-user-1' });
   });
 
-  it('falls back to the x-bs-distinct-id header when anonymous', async () => {
+  it('falls back to the x-bs-distinct-id header when anonymous and the value is a UUID', async () => {
     mockGetServerSession.mockResolvedValue(null);
     const { resolveRequestAttribution, SERVER_DISTINCT_ID_HEADER } = await importFresh();
 
+    const validUuid = '11111111-2222-4333-8444-555555555555';
     const req = new Request('https://x/test', {
-      headers: { [SERVER_DISTINCT_ID_HEADER]: 'anon-party-uuid' },
+      headers: { [SERVER_DISTINCT_ID_HEADER]: validUuid },
     });
     const result = await resolveRequestAttribution(req);
 
-    expect(result).toEqual({ distinctId: 'anon-party-uuid', isAuthenticated: false });
+    expect(result).toEqual({ distinctId: validUuid, isAuthenticated: false });
   });
 
   it('mints a server-anon distinct id when nothing is available', async () => {
@@ -250,6 +251,18 @@ describe('server analytics — request attribution', () => {
     const result = await resolveRequestAttribution(req);
 
     expect(result.distinctId).not.toBe(longId);
+    expect(result.distinctId).toMatch(/^server-anon-/);
+  });
+
+  it('rejects non-UUID header distinct ids (defends against injection)', async () => {
+    mockGetServerSession.mockResolvedValue(null);
+    const { resolveRequestAttribution, SERVER_DISTINCT_ID_HEADER } = await importFresh();
+
+    const malicious = '"><script>alert(1)</script>';
+    const req = new Request('https://x/test', { headers: { [SERVER_DISTINCT_ID_HEADER]: malicious } });
+    const result = await resolveRequestAttribution(req);
+
+    expect(result.distinctId).not.toBe(malicious);
     expect(result.distinctId).toMatch(/^server-anon-/);
   });
 });

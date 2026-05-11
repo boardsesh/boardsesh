@@ -2,7 +2,7 @@ import { PostHog } from 'posthog-node';
 import {
   type AnalyticsEventProperties,
   type AnalyticsSanitizedProperties,
-  MAX_DISTINCT_ID_LENGTH,
+  isValidDistinctId,
   SERVER_DISTINCT_ID_HEADER,
 } from '@boardsesh/shared-schema';
 
@@ -75,7 +75,8 @@ export function resolveContextAttribution(ctx: {
 }
 
 // Read and validate the x-bs-distinct-id header off an incoming request. Returns
-// undefined when missing or oversized.
+// undefined when missing, oversized, or not a UUID (the only shape the client
+// ever sends).
 export function readDistinctIdHeader(
   headers: Headers | Record<string, string | string[] | undefined>,
 ): string | undefined {
@@ -87,8 +88,7 @@ export function readDistinctIdHeader(
           if (Array.isArray(value)) return value[0] ?? null;
           return value ?? null;
         })();
-  if (!raw || raw.length === 0 || raw.length > MAX_DISTINCT_ID_LENGTH) return undefined;
-  return raw;
+  return isValidDistinctId(raw) ? raw : undefined;
 }
 
 type TrackArgs = {
@@ -118,8 +118,10 @@ export function identifyServer(distinctId: string, properties?: ServerEventPrope
   return true;
 }
 
-// See packages/web/app/lib/analytics.server.ts::aliasServer for the
-// directionality contract — `distinctId` survives, `alias` merges in.
+// `distinctId` is the canonical/surviving person id; `alias` is the alternate
+// that gets merged into it. See packages/web/app/lib/analytics.server.ts for
+// the full contract — for anonymous → authenticated linking, pass
+// distinctId=userId and alias=anonProfileId.
 export function aliasServer(distinctId: string, alias: string): boolean {
   const posthog = getPosthog();
   if (!posthog) return false;
