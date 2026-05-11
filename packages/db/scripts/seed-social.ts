@@ -5,6 +5,7 @@ import { users } from '../src/schema/auth/users.js';
 import { userProfiles } from '../src/schema/auth/credentials.js';
 import { userFollows } from '../src/schema/app/follows.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
+import { backfillUserClimbProjectionsFromTicks } from '../src/queries/user-climb-ratings.js';
 import { userBoards, boardFollows } from '../src/schema/app/boards.js';
 import { boardSessions } from '../src/schema/app/sessions.js';
 import {
@@ -840,31 +841,9 @@ async function seedSocialData() {
     console.info(`  Fixture ticks: ${fixtureTickRecords.length}`);
 
     // Populate the user_climb_qualities / user_climb_grades projection from
-    // every seeded tick. Mirrors the migration 0090 backfill SQL — running
-    // here means devs spinning up a fresh DB get a populated projection
-    // without re-running migrations.
-    await db.execute(sql`
-      INSERT INTO user_climb_qualities (user_id, board_type, climb_uuid, quality, updated_at)
-      SELECT DISTINCT ON (user_id, board_type, climb_uuid)
-        user_id, board_type, climb_uuid, quality, climbed_at
-      FROM boardsesh_ticks
-      WHERE quality IS NOT NULL
-      ORDER BY user_id, board_type, climb_uuid, climbed_at DESC, id DESC
-      ON CONFLICT (user_id, board_type, climb_uuid) DO UPDATE
-        SET quality = EXCLUDED.quality, updated_at = EXCLUDED.updated_at
-        WHERE EXCLUDED.updated_at > user_climb_qualities.updated_at
-    `);
-    await db.execute(sql`
-      INSERT INTO user_climb_grades (user_id, board_type, climb_uuid, angle, difficulty, updated_at)
-      SELECT DISTINCT ON (user_id, board_type, climb_uuid, angle)
-        user_id, board_type, climb_uuid, angle, difficulty, climbed_at
-      FROM boardsesh_ticks
-      WHERE difficulty IS NOT NULL
-      ORDER BY user_id, board_type, climb_uuid, angle, climbed_at DESC, id DESC
-      ON CONFLICT (user_id, board_type, climb_uuid, angle) DO UPDATE
-        SET difficulty = EXCLUDED.difficulty, updated_at = EXCLUDED.updated_at
-        WHERE EXCLUDED.updated_at > user_climb_grades.updated_at
-    `);
+    // every seeded tick. Same SQL as migration 0090 — shared helper so the
+    // two stay in sync.
+    await backfillUserClimbProjectionsFromTicks(db);
 
     // =========================================================================
     // Step 8.51: Pin deterministic test-user ticks for the e2e grid-badge spec

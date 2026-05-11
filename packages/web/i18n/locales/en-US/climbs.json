@@ -108,7 +108,7 @@
       "minAscents": "Min Ascents",
       "minRating": "Min Rating",
       "minUserQuality": "My Min Rating",
-      "minUserQualityOption_one": "{{count}} of my stars and up",
+      "minUserQualityOption_one": "{{count}} of my star and up",
       "minUserQualityOption_other": "{{count}} of my stars and up",
       "any": "Any",
       "minAscentsOption": "{{value}}+",

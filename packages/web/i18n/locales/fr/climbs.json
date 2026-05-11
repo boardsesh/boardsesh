@@ -108,7 +108,7 @@
       "minAscents": "Enchaînements min",
       "minRating": "Note min",
       "minUserQuality": "Ma note min",
-      "minUserQualityOption_one": "{{count}} de mes étoiles et plus",
+      "minUserQualityOption_one": "{{count}} de mes étoile et plus",
       "minUserQualityOption_other": "{{count}} de mes étoiles et plus",
       "any": "Tous",
       "minAscentsOption": "{{value}}+",

@@ -110,7 +110,7 @@ export async function recomputeUserClimbQualityProjection(
     .orderBy(desc(boardseshTicks.climbedAt), desc(boardseshTicks.id))
     .limit(1);
 
-  if (latestQualityTick && latestQualityTick.quality != null) {
+  if (latestQualityTick) {
     // Force the projection to reflect this remaining tick, even if the
     // existing row is "newer" — the previously-newer tick was just removed.
     await exec
@@ -119,13 +119,13 @@ export async function recomputeUserClimbQualityProjection(
         userId: args.userId,
         boardType: args.boardType,
         climbUuid: args.climbUuid,
-        quality: latestQualityTick.quality,
+        quality: latestQualityTick.quality!,
         updatedAt: latestQualityTick.climbedAt,
       })
       .onConflictDoUpdate({
         target: [userClimbQualities.userId, userClimbQualities.boardType, userClimbQualities.climbUuid],
         set: {
-          quality: latestQualityTick.quality,
+          quality: latestQualityTick.quality!,
           updatedAt: latestQualityTick.climbedAt,
         },
       });
@@ -170,7 +170,7 @@ export async function recomputeUserClimbGradeProjection(
     .orderBy(desc(boardseshTicks.climbedAt), desc(boardseshTicks.id))
     .limit(1);
 
-  if (latestGradeTick && latestGradeTick.difficulty != null) {
+  if (latestGradeTick) {
     await exec
       .insert(userClimbGrades)
       .values({
@@ -178,13 +178,13 @@ export async function recomputeUserClimbGradeProjection(
         boardType: args.boardType,
         climbUuid: args.climbUuid,
         angle: args.angle,
-        difficulty: latestGradeTick.difficulty,
+        difficulty: latestGradeTick.difficulty!,
         updatedAt: latestGradeTick.climbedAt,
       })
       .onConflictDoUpdate({
         target: [userClimbGrades.userId, userClimbGrades.boardType, userClimbGrades.climbUuid, userClimbGrades.angle],
         set: {
-          difficulty: latestGradeTick.difficulty,
+          difficulty: latestGradeTick.difficulty!,
           updatedAt: latestGradeTick.climbedAt,
         },
       });
@@ -200,6 +200,47 @@ export async function recomputeUserClimbGradeProjection(
         ),
       );
   }
+}
+
+/**
+ * Backfill `user_climb_qualities` and `user_climb_grades` from every existing
+ * tick in `boardsesh_ticks` (most-recent-tick rule). Idempotent — the staleness
+ * guard means re-running this never overwrites a newer projection row with an
+ * older tick.
+ *
+ * Used by:
+ *   - migration `0090_backfill_user_climb_ratings.sql` (the canonical seed
+ *     across the row of historical data)
+ *   - `packages/db/scripts/seed-social.ts` (so dev databases get a populated
+ *     projection without re-running migrations).
+ *
+ * The migration file itself is a frozen artifact and isn't allowed to import
+ * TS, so the SQL is duplicated there. If the projection rules ever change,
+ * write a NEW migration (don't patch 0090) and update this function.
+ */
+export async function backfillUserClimbProjectionsFromTicks(exec: Executor): Promise<void> {
+  await exec.execute(sql`
+    INSERT INTO user_climb_qualities (user_id, board_type, climb_uuid, quality, updated_at)
+    SELECT DISTINCT ON (user_id, board_type, climb_uuid)
+      user_id, board_type, climb_uuid, quality, climbed_at
+    FROM boardsesh_ticks
+    WHERE quality IS NOT NULL
+    ORDER BY user_id, board_type, climb_uuid, climbed_at DESC, id DESC
+    ON CONFLICT (user_id, board_type, climb_uuid) DO UPDATE
+      SET quality = EXCLUDED.quality, updated_at = EXCLUDED.updated_at
+      WHERE EXCLUDED.updated_at > user_climb_qualities.updated_at
+  `);
+  await exec.execute(sql`
+    INSERT INTO user_climb_grades (user_id, board_type, climb_uuid, angle, difficulty, updated_at)
+    SELECT DISTINCT ON (user_id, board_type, climb_uuid, angle)
+      user_id, board_type, climb_uuid, angle, difficulty, climbed_at
+    FROM boardsesh_ticks
+    WHERE difficulty IS NOT NULL
+    ORDER BY user_id, board_type, climb_uuid, angle, climbed_at DESC, id DESC
+    ON CONFLICT (user_id, board_type, climb_uuid, angle) DO UPDATE
+      SET difficulty = EXCLUDED.difficulty, updated_at = EXCLUDED.updated_at
+      WHERE EXCLUDED.updated_at > user_climb_grades.updated_at
+  `);
 }
 
 /**
