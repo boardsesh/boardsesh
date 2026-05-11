@@ -9,13 +9,13 @@ export type MakeEmpty<T extends { [key: string]: unknown }, K extends keyof T> =
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 /** All built-in and custom scalars, mapped to their actual values */
 export type Scalars = {
-  ID: { input: string; output: string; }
-  String: { input: string; output: string; }
-  Boolean: { input: boolean; output: boolean; }
-  Int: { input: number; output: number; }
-  Float: { input: number; output: number; }
+  ID: { input: string; output: string };
+  String: { input: string; output: string };
+  Boolean: { input: boolean; output: boolean };
+  Int: { input: number; output: number };
+  Float: { input: number; output: number };
   /** Arbitrary JSON data */
-  JSON: { input: unknown; output: unknown; }
+  JSON: { input: unknown; output: unknown };
 };
 
 /** Input for activity feed queries. */
@@ -91,12 +91,7 @@ export type ActivityFeedItem = {
   type: ActivityFeedItemType;
 };
 
-export type ActivityFeedItemType =
-  | 'ascent'
-  | 'comment'
-  | 'new_climb'
-  | 'proposal_approved'
-  | 'session_summary';
+export type ActivityFeedItemType = 'ascent' | 'comment' | 'new_climb' | 'proposal_approved' | 'session_summary';
 
 /** Cursor-based paginated activity feed result. */
 export type ActivityFeedResult = {
@@ -786,9 +781,7 @@ export type CommunityRoleAssignment = {
   userId: Scalars['ID']['output'];
 };
 
-export type CommunityRoleType =
-  | 'admin'
-  | 'community_leader';
+export type CommunityRoleType = 'admin' | 'community_leader';
 
 /** A community setting key-value pair. */
 export type CommunitySetting = {
@@ -1646,9 +1639,7 @@ export type GymMemberConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
-export type GymMemberRole =
-  | 'admin'
-  | 'member';
+export type GymMemberRole = 'admin' | 'member';
 
 /** Input for listing gym members. */
 export type GymMembersInput = {
@@ -1969,24 +1960,20 @@ export type Mutation = {
   voteOnProposal: Proposal;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationAddClimbToPlaylistArgs = {
   input: AddClimbToPlaylistInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationAddCommentArgs = {
   input: AddCommentInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationAddGymMemberArgs = {
   input: AddGymMemberInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationAddQueueItemArgs = {
@@ -1994,18 +1981,15 @@ export type MutationAddQueueItemArgs = {
   position?: InputMaybe<Scalars['Int']['input']>;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationAddUserToSessionArgs = {
   input: AddUserToSessionInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationAttachBetaLinkArgs = {
   input: AttachBetaLinkInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationAuthorizeControllerForSessionArgs = {
@@ -2013,72 +1997,60 @@ export type MutationAuthorizeControllerForSessionArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationControllerHeartbeatArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationCreateBoardArgs = {
   input: CreateBoardInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationCreateGymArgs = {
   input: CreateGymInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationCreatePlaylistArgs = {
   input: CreatePlaylistInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationCreateProposalArgs = {
   input: CreateProposalInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationCreateSessionArgs = {
   input: CreateSessionInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationDeleteAccountArgs = {
   input: DeleteAccountInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationDeleteAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationDeleteBoardArgs = {
   boardUuid: Scalars['ID']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationDeleteCommentArgs = {
   commentUuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationDeleteControllerArgs = {
   controllerId: Scalars['ID']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationDeleteDraftClimbArgs = {
@@ -2086,78 +2058,65 @@ export type MutationDeleteDraftClimbArgs = {
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationDeleteGymArgs = {
   gymUuid: Scalars['ID']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationDeletePlaylistArgs = {
   playlistId: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationDeleteProposalArgs = {
   input: DeleteProposalInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationDeleteTickArgs = {
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationEndSessionArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationFollowBoardArgs = {
   input: FollowBoardInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationFollowGymArgs = {
   input: FollowGymInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationFollowPlaylistArgs = {
   input: FollowPlaylistInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationFollowSetterArgs = {
   input: FollowSetterInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationFollowUserArgs = {
   input: FollowInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationFreezeClimbArgs = {
   input: FreezeClimbInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationGrantRoleArgs = {
   input: GrantRoleInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationJoinSessionArgs = {
@@ -2170,12 +2129,10 @@ export type MutationJoinSessionArgs = {
   username?: InputMaybe<Scalars['String']['input']>;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationLinkBoardToGymArgs = {
   input: LinkBoardToGymInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationMarkGroupNotificationsReadArgs = {
@@ -2184,18 +2141,15 @@ export type MutationMarkGroupNotificationsReadArgs = {
   type: NotificationType;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationMarkNotificationReadArgs = {
   notificationUuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationMirrorCurrentClimbArgs = {
   mirrored: Scalars['Boolean']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationNavigateQueueArgs = {
@@ -2205,42 +2159,35 @@ export type MutationNavigateQueueArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationPinPlaylistArgs = {
   input: PinPlaylistInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationRegisterControllerArgs = {
   input: RegisterControllerInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationRemoveGymMemberArgs = {
   input: RemoveGymMemberInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationRemoveQueueItemArgs = {
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationRemoveUserFromSessionArgs = {
   input: RemoveUserFromSessionInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationReorderQueueItemArgs = {
@@ -2249,55 +2196,46 @@ export type MutationReorderQueueItemArgs = {
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationReplaceQueueItemArgs = {
   item: ClimbQueueItemInput;
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationRevokeRoleArgs = {
   input: RevokeRoleInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSaveAuroraCredentialArgs = {
   input: SaveAuroraCredentialInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSaveClimbArgs = {
   input: SaveClimbInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSaveMoonBoardClimbArgs = {
   input: SaveMoonBoardClimbInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSaveTickArgs = {
   input: SaveTickInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSendDeviceLogsArgs = {
   input: SendDeviceLogsInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSetClimbFromLedPositionsArgs = {
@@ -2306,12 +2244,10 @@ export type MutationSetClimbFromLedPositionsArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSetCommunitySettingsArgs = {
   input: SetCommunitySettingInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSetCurrentClimbArgs = {
@@ -2320,13 +2256,11 @@ export type MutationSetCurrentClimbArgs = {
   shouldAddToQueue?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSetInferredSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSetQueueArgs = {
@@ -2334,120 +2268,100 @@ export type MutationSetQueueArgs = {
   queue: Array<ClimbQueueItemInput>;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSetterOverrideCommunityStatusArgs = {
   input: SetterOverrideInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationSubmitAppFeedbackArgs = {
   input: SubmitAppFeedbackInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationSubscribeNewClimbsArgs = {
   input: NewClimbSubscriptionInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationToggleFavoriteArgs = {
   input: ToggleFavoriteInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUnfollowBoardArgs = {
   input: FollowBoardInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUnfollowGymArgs = {
   input: FollowGymInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUnfollowPlaylistArgs = {
   input: FollowPlaylistInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUnfollowSetterArgs = {
   input: FollowSetterInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUnfollowUserArgs = {
   input: FollowInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUnpinPlaylistArgs = {
   input: PinPlaylistInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUnsubscribeNewClimbsArgs = {
   input: NewClimbSubscriptionInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUpdateBoardArgs = {
   input: UpdateBoardInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUpdateClimbArgs = {
   input: UpdateClimbInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUpdateCommentArgs = {
   input: UpdateCommentInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUpdateGymArgs = {
   input: UpdateGymInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUpdateInferredSessionArgs = {
   input: UpdateInferredSessionInput;
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUpdatePlaylistArgs = {
   input: UpdatePlaylistInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUpdatePlaylistLastAccessedArgs = {
   playlistId: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUpdateProfileArgs = {
   input: UpdateProfileInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationUpdateTickArgs = {
@@ -2455,19 +2369,16 @@ export type MutationUpdateTickArgs = {
   uuid: Scalars['ID']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationUpdateUsernameArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   username: Scalars['String']['input'];
 };
 
-
 /** Root mutation type for all write operations. */
 export type MutationVoteArgs = {
   input: VoteInput;
 };
-
 
 /** Root mutation type for all write operations. */
 export type MutationVoteOnProposalArgs = {
@@ -2806,16 +2717,9 @@ export type ProposalConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
-export type ProposalStatus =
-  | 'approved'
-  | 'open'
-  | 'rejected'
-  | 'superseded';
+export type ProposalStatus = 'approved' | 'open' | 'rejected' | 'superseded';
 
-export type ProposalType =
-  | 'benchmark'
-  | 'classic'
-  | 'grade';
+export type ProposalType = 'benchmark' | 'classic' | 'grade';
 
 /** Vote tally for a proposal. */
 export type ProposalVoteSummary = {
@@ -3159,18 +3063,15 @@ export type Query = {
   voteSummary: VoteSummary;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryActivityFeedArgs = {
   input?: InputMaybe<ActivityFeedInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryAllUserPlaylistsArgs = {
   input: GetAllUserPlaylistsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryAnglesArgs = {
@@ -3178,12 +3079,10 @@ export type QueryAnglesArgs = {
   layoutId: Scalars['Int']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryBetaLinksArgs = {
@@ -3191,36 +3090,30 @@ export type QueryBetaLinksArgs = {
   climbUuid: Scalars['String']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryBoardArgs = {
   boardUuid: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryBoardBySlugArgs = {
   slug: Scalars['String']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryBoardsBySerialNumbersArgs = {
   serialNumbers: Array<Scalars['String']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryBrowseProposalsArgs = {
   input: BrowseProposalsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryBulkClimbCommunityStatusArgs = {
@@ -3229,18 +3122,15 @@ export type QueryBulkClimbCommunityStatusArgs = {
   climbUuids: Array<Scalars['String']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryBulkVoteSummariesArgs = {
   input: BulkVoteSummaryInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryCheckMoonBoardClimbDuplicatesArgs = {
   input: CheckMoonBoardClimbDuplicatesInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryClimbArgs = {
@@ -3252,13 +3142,11 @@ export type QueryClimbArgs = {
   sizeId: Scalars['Int']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryClimbClassicStatusArgs = {
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryClimbCommunityStatusArgs = {
@@ -3267,12 +3155,10 @@ export type QueryClimbCommunityStatusArgs = {
   climbUuid: Scalars['String']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryClimbProposalsArgs = {
   input: GetClimbProposalsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryClimbStatsHistoryArgs = {
@@ -3280,18 +3166,15 @@ export type QueryClimbStatsHistoryArgs = {
   climbUuid: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryCommentsArgs = {
   input: CommentsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryCommunityRolesArgs = {
   boardType?: InputMaybe<Scalars['String']['input']>;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryCommunitySettingsArgs = {
@@ -3299,19 +3182,16 @@ export type QueryCommunitySettingsArgs = {
   scopeKey: Scalars['String']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryDiscoverPlaylistsArgs = {
   input: DiscoverPlaylistsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryEventsReplayArgs = {
   sessionId: Scalars['ID']['input'];
   sinceSequence: Scalars['Int']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryFavoritesArgs = {
@@ -3320,48 +3200,40 @@ export type QueryFavoritesArgs = {
   climbUuids: Array<Scalars['String']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryFollowersArgs = {
   input: FollowListInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryFollowingArgs = {
   input: FollowListInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryFollowingAscentsFeedArgs = {
   input?: InputMaybe<FollowingAscentsFeedInput>;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryFollowingClimbAscentsArgs = {
   input: FollowingClimbAscentsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryGlobalAscentsFeedArgs = {
   input?: InputMaybe<FollowingAscentsFeedInput>;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryGlobalCommentFeedArgs = {
   input?: InputMaybe<GlobalCommentFeedInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryGradesArgs = {
   boardName: Scalars['String']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryGroupedNotificationsArgs = {
@@ -3369,54 +3241,45 @@ export type QueryGroupedNotificationsArgs = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryGymArgs = {
   gymUuid: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryGymBySlugArgs = {
   slug: Scalars['String']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryIsFollowingArgs = {
   userId: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryMyBoardSerialConfigsArgs = {
   serialNumbers: Array<Scalars['String']['input']>;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryMyBoardsArgs = {
   input?: InputMaybe<MyBoardsInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryMyGymsArgs = {
   input?: InputMaybe<MyGymsInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryMyPinnedPlaylistsArgs = {
   input: GetMyPinnedPlaylistsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryNearbySessionsArgs = {
@@ -3425,12 +3288,10 @@ export type QueryNearbySessionsArgs = {
   radiusMeters?: InputMaybe<Scalars['Float']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryNewClimbFeedArgs = {
   input: NewClimbFeedInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryNotificationsArgs = {
@@ -3439,144 +3300,120 @@ export type QueryNotificationsArgs = {
   unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryPlaylistArgs = {
   playlistId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryPlaylistClimbsArgs = {
   input: GetPlaylistClimbsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryPlaylistCreatorsArgs = {
   input: GetPlaylistCreatorsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryPlaylistsForClimbArgs = {
   input: GetPlaylistsForClimbInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryPlaylistsForClimbsArgs = {
   input: GetPlaylistsForClimbsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryPopularBoardConfigsArgs = {
   input?: InputMaybe<PopularBoardConfigsInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySearchBoardsArgs = {
   input: SearchBoardsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySearchClimbsArgs = {
   input: ClimbSearchInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySearchGymsArgs = {
   input: SearchGymsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySearchPlaylistsArgs = {
   input: SearchPlaylistsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySearchUsersArgs = {
   input: SearchUsersInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySearchUsersAndSettersArgs = {
   input: SearchUsersInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySessionArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySessionDetailArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySessionGroupedFeedArgs = {
   input?: InputMaybe<ActivityFeedInput>;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySessionSummaryArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySetterClimbsArgs = {
   input: SetterClimbsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySetterClimbsFullArgs = {
   input: SetterClimbsFullInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QuerySetterProfileArgs = {
   input: SetterProfileInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QuerySmartPlaylistArgs = {
   input: GetSmartPlaylistInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryTicksArgs = {
   input: GetTicksInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryTrendingFeedArgs = {
   input?: InputMaybe<ActivityFeedInput>;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryUserAscentsFeedArgs = {
@@ -3584,24 +3421,20 @@ export type QueryUserAscentsFeedArgs = {
   userId: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryUserClimbPercentileArgs = {
   userId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryUserClimbsArgs = {
   input: UserClimbsInput;
 };
 
-
 /** Root query type for all read operations. */
 export type QueryUserFavoriteClimbsArgs = {
   input: GetUserFavoriteClimbsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryUserGroupedAscentsFeedArgs = {
@@ -3609,25 +3442,21 @@ export type QueryUserGroupedAscentsFeedArgs = {
   userId: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryUserPlaylistsArgs = {
   input: GetUserPlaylistsInput;
 };
-
 
 /** Root query type for all read operations. */
 export type QueryUserProfileStatsArgs = {
   userId: Scalars['ID']['input'];
 };
 
-
 /** Root query type for all read operations. */
 export type QueryUserTicksArgs = {
   boardType: Scalars['String']['input'];
   userId: Scalars['ID']['input'];
 };
-
 
 /** Root query type for all read operations. */
 export type QueryVoteSummaryArgs = {
@@ -3636,7 +3465,13 @@ export type QueryVoteSummaryArgs = {
 };
 
 /** Union of possible queue events. */
-export type QueueEvent = ClimbMirrored | CurrentClimbChanged | FullSync | QueueItemAdded | QueueItemRemoved | QueueReordered;
+export type QueueEvent =
+  | ClimbMirrored
+  | CurrentClimbChanged
+  | FullSync
+  | QueueItemAdded
+  | QueueItemRemoved
+  | QueueReordered;
 
 /** Event when an item is added to the queue. */
 export type QueueItemAdded = {
@@ -4355,10 +4190,7 @@ export type SmartPlaylistResult = {
  * - MOST_REPEATED: climbs the user has logged the most attempts on
  * - PROJECTS: climbs with the most attempts that have never been sent
  */
-export type SmartPlaylistType =
-  | 'FIVE_STARS'
-  | 'MOST_REPEATED'
-  | 'PROJECTS';
+export type SmartPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS';
 
 export type SocialEntityType =
   | 'board'
@@ -4370,11 +4202,7 @@ export type SocialEntityType =
   | 'session'
   | 'tick';
 
-export type SortMode =
-  | 'controversial'
-  | 'hot'
-  | 'new'
-  | 'top';
+export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
 /** Input for submitAppFeedback mutation. */
 export type SubmitAppFeedbackInput = {
@@ -4427,19 +4255,16 @@ export type Subscription = {
   sessionUpdates: SessionEvent;
 };
 
-
 /** Root subscription type for real-time updates. */
 export type SubscriptionCommentUpdatesArgs = {
   entityId: Scalars['String']['input'];
   entityType: SocialEntityType;
 };
 
-
 /** Root subscription type for real-time updates. */
 export type SubscriptionControllerEventsArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root subscription type for real-time updates. */
 export type SubscriptionNewClimbCreatedArgs = {
@@ -4447,12 +4272,10 @@ export type SubscriptionNewClimbCreatedArgs = {
   layoutId: Scalars['Int']['input'];
 };
 
-
 /** Root subscription type for real-time updates. */
 export type SubscriptionQueueUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
 
 /** Root subscription type for real-time updates. */
 export type SubscriptionSessionUpdatesArgs = {
@@ -4521,13 +4344,7 @@ export type TickStatus =
   /** Completed after multiple attempts */
   | 'send';
 
-export type TimePeriod =
-  | 'all'
-  | 'day'
-  | 'hour'
-  | 'month'
-  | 'week'
-  | 'year';
+export type TimePeriod = 'all' | 'day' | 'hour' | 'month' | 'week' | 'year';
 
 /** Input for toggling a climb as favorite. */
 export type ToggleFavoriteInput = {
@@ -4930,97 +4747,251 @@ export type ZoneBoxInput = {
   edgeTop: Scalars['Int']['input'];
 };
 
-export type GetDeleteAccountInfoQueryVariables = Exact<{ [key: string]: never; }>;
+export type GetDeleteAccountInfoQueryVariables = Exact<{ [key: string]: never }>;
 
-
-export type GetDeleteAccountInfoQuery = { __typename?: 'Query', deleteAccountInfo: { __typename?: 'DeleteAccountInfo', publishedClimbCount: number } };
+export type GetDeleteAccountInfoQuery = {
+  __typename?: 'Query';
+  deleteAccountInfo: { __typename?: 'DeleteAccountInfo'; publishedClimbCount: number };
+};
 
 export type DeleteAccountMutationVariables = Exact<{
   input: DeleteAccountInput;
 }>;
 
-
-export type DeleteAccountMutation = { __typename?: 'Mutation', deleteAccount: boolean };
+export type DeleteAccountMutation = { __typename?: 'Mutation'; deleteAccount: boolean };
 
 export type GetBetaLinksQueryVariables = Exact<{
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
 }>;
 
-
-export type GetBetaLinksQuery = { __typename?: 'Query', betaLinks: Array<{ __typename?: 'BetaLink', climbUuid: string, link: string, foreignUsername?: string | null, angle?: number | null, thumbnail?: string | null, isListed?: boolean | null, createdAt?: string | null }> };
+export type GetBetaLinksQuery = {
+  __typename?: 'Query';
+  betaLinks: Array<{
+    __typename?: 'BetaLink';
+    climbUuid: string;
+    link: string;
+    foreignUsername?: string | null;
+    angle?: number | null;
+    thumbnail?: string | null;
+    isListed?: boolean | null;
+    createdAt?: string | null;
+  }>;
+};
 
 export type ClimbStatsHistoryQueryVariables = Exact<{
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
 }>;
 
-
-export type ClimbStatsHistoryQuery = { __typename?: 'Query', climbStatsHistory: Array<{ __typename?: 'ClimbStatsHistoryEntry', angle: number, ascensionistCount?: number | null, qualityAverage?: number | null, difficultyAverage?: number | null, displayDifficulty?: number | null, createdAt: string }> };
+export type ClimbStatsHistoryQuery = {
+  __typename?: 'Query';
+  climbStatsHistory: Array<{
+    __typename?: 'ClimbStatsHistoryEntry';
+    angle: number;
+    ascensionistCount?: number | null;
+    qualityAverage?: number | null;
+    difficultyAverage?: number | null;
+    displayDifficulty?: number | null;
+    createdAt: string;
+  }>;
+};
 
 export type GetGlobalCommentFeedQueryVariables = Exact<{
   input?: InputMaybe<GlobalCommentFeedInput>;
 }>;
 
-
-export type GetGlobalCommentFeedQuery = { __typename?: 'Query', globalCommentFeed: { __typename?: 'CommentConnection', totalCount: number, hasMore: boolean, cursor?: string | null, comments: Array<{ __typename?: 'Comment', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, entityType: SocialEntityType, entityId: string, parentCommentUuid?: string | null, body?: string | null, isDeleted: boolean, replyCount: number, upvotes: number, downvotes: number, voteScore: number, userVote: number, createdAt: string, updatedAt: string }> } };
+export type GetGlobalCommentFeedQuery = {
+  __typename?: 'Query';
+  globalCommentFeed: {
+    __typename?: 'CommentConnection';
+    totalCount: number;
+    hasMore: boolean;
+    cursor?: string | null;
+    comments: Array<{
+      __typename?: 'Comment';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      entityType: SocialEntityType;
+      entityId: string;
+      parentCommentUuid?: string | null;
+      body?: string | null;
+      isDeleted: boolean;
+      replyCount: number;
+      upvotes: number;
+      downvotes: number;
+      voteScore: number;
+      userVote: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
+};
 
 export type GetCommentsQueryVariables = Exact<{
   input: CommentsInput;
 }>;
 
-
-export type GetCommentsQuery = { __typename?: 'Query', comments: { __typename?: 'CommentConnection', totalCount: number, hasMore: boolean, comments: Array<{ __typename?: 'Comment', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, entityType: SocialEntityType, entityId: string, parentCommentUuid?: string | null, body?: string | null, isDeleted: boolean, replyCount: number, upvotes: number, downvotes: number, voteScore: number, userVote: number, createdAt: string, updatedAt: string }> } };
+export type GetCommentsQuery = {
+  __typename?: 'Query';
+  comments: {
+    __typename?: 'CommentConnection';
+    totalCount: number;
+    hasMore: boolean;
+    comments: Array<{
+      __typename?: 'Comment';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      entityType: SocialEntityType;
+      entityId: string;
+      parentCommentUuid?: string | null;
+      body?: string | null;
+      isDeleted: boolean;
+      replyCount: number;
+      upvotes: number;
+      downvotes: number;
+      voteScore: number;
+      userVote: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
+};
 
 export type GetVoteSummaryQueryVariables = Exact<{
   entityType: SocialEntityType;
   entityId: Scalars['String']['input'];
 }>;
 
-
-export type GetVoteSummaryQuery = { __typename?: 'Query', voteSummary: { __typename?: 'VoteSummary', entityType: SocialEntityType, entityId: string, upvotes: number, downvotes: number, voteScore: number, userVote: number } };
+export type GetVoteSummaryQuery = {
+  __typename?: 'Query';
+  voteSummary: {
+    __typename?: 'VoteSummary';
+    entityType: SocialEntityType;
+    entityId: string;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    userVote: number;
+  };
+};
 
 export type GetBulkVoteSummariesQueryVariables = Exact<{
   input: BulkVoteSummaryInput;
 }>;
 
-
-export type GetBulkVoteSummariesQuery = { __typename?: 'Query', bulkVoteSummaries: Array<{ __typename?: 'VoteSummary', entityType: SocialEntityType, entityId: string, upvotes: number, downvotes: number, voteScore: number, userVote: number }> };
+export type GetBulkVoteSummariesQuery = {
+  __typename?: 'Query';
+  bulkVoteSummaries: Array<{
+    __typename?: 'VoteSummary';
+    entityType: SocialEntityType;
+    entityId: string;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    userVote: number;
+  }>;
+};
 
 export type AddCommentMutationVariables = Exact<{
   input: AddCommentInput;
 }>;
 
-
-export type AddCommentMutation = { __typename?: 'Mutation', addComment: { __typename?: 'Comment', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, entityType: SocialEntityType, entityId: string, parentCommentUuid?: string | null, body?: string | null, isDeleted: boolean, replyCount: number, upvotes: number, downvotes: number, voteScore: number, userVote: number, createdAt: string, updatedAt: string } };
+export type AddCommentMutation = {
+  __typename?: 'Mutation';
+  addComment: {
+    __typename?: 'Comment';
+    uuid: string;
+    userId: string;
+    userDisplayName?: string | null;
+    userAvatarUrl?: string | null;
+    entityType: SocialEntityType;
+    entityId: string;
+    parentCommentUuid?: string | null;
+    body?: string | null;
+    isDeleted: boolean;
+    replyCount: number;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    userVote: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+};
 
 export type UpdateCommentMutationVariables = Exact<{
   input: UpdateCommentInput;
 }>;
 
-
-export type UpdateCommentMutation = { __typename?: 'Mutation', updateComment: { __typename?: 'Comment', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, entityType: SocialEntityType, entityId: string, parentCommentUuid?: string | null, body?: string | null, isDeleted: boolean, replyCount: number, upvotes: number, downvotes: number, voteScore: number, userVote: number, createdAt: string, updatedAt: string } };
+export type UpdateCommentMutation = {
+  __typename?: 'Mutation';
+  updateComment: {
+    __typename?: 'Comment';
+    uuid: string;
+    userId: string;
+    userDisplayName?: string | null;
+    userAvatarUrl?: string | null;
+    entityType: SocialEntityType;
+    entityId: string;
+    parentCommentUuid?: string | null;
+    body?: string | null;
+    isDeleted: boolean;
+    replyCount: number;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    userVote: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+};
 
 export type DeleteCommentMutationVariables = Exact<{
   commentUuid: Scalars['ID']['input'];
 }>;
 
-
-export type DeleteCommentMutation = { __typename?: 'Mutation', deleteComment: boolean };
+export type DeleteCommentMutation = { __typename?: 'Mutation'; deleteComment: boolean };
 
 export type VoteMutationVariables = Exact<{
   input: VoteInput;
 }>;
 
-
-export type VoteMutation = { __typename?: 'Mutation', vote: { __typename?: 'VoteSummary', entityType: SocialEntityType, entityId: string, upvotes: number, downvotes: number, voteScore: number, userVote: number } };
+export type VoteMutation = {
+  __typename?: 'Mutation';
+  vote: {
+    __typename?: 'VoteSummary';
+    entityType: SocialEntityType;
+    entityId: string;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    userVote: number;
+  };
+};
 
 export type CreateSessionMutationVariables = Exact<{
   input: CreateSessionInput;
 }>;
 
-
-export type CreateSessionMutation = { __typename?: 'Mutation', createSession: { __typename?: 'Session', id: string, name?: string | null, boardPath: string, goal?: string | null, isPublic: boolean, isPermanent: boolean, color?: string | null, startedAt?: string | null } };
+export type CreateSessionMutation = {
+  __typename?: 'Mutation';
+  createSession: {
+    __typename?: 'Session';
+    id: string;
+    name?: string | null;
+    boardPath: string;
+    goal?: string | null;
+    isPublic: boolean;
+    isPermanent: boolean;
+    color?: string | null;
+    startedAt?: string | null;
+  };
+};
 
 export type FavoritesQueryVariables = Exact<{
   boardName: Scalars['String']['input'];
@@ -5028,109 +4999,207 @@ export type FavoritesQueryVariables = Exact<{
   angle: Scalars['Int']['input'];
 }>;
 
-
-export type FavoritesQuery = { __typename?: 'Query', favorites: Array<string> };
+export type FavoritesQuery = { __typename?: 'Query'; favorites: Array<string> };
 
 export type ToggleFavoriteMutationVariables = Exact<{
   input: ToggleFavoriteInput;
 }>;
 
+export type ToggleFavoriteMutation = {
+  __typename?: 'Mutation';
+  toggleFavorite: { __typename?: 'ToggleFavoriteResult'; favorited: boolean };
+};
 
-export type ToggleFavoriteMutation = { __typename?: 'Mutation', toggleFavorite: { __typename?: 'ToggleFavoriteResult', favorited: boolean } };
+export type UserFavoritesCountsQueryVariables = Exact<{ [key: string]: never }>;
 
-export type UserFavoritesCountsQueryVariables = Exact<{ [key: string]: never; }>;
+export type UserFavoritesCountsQuery = {
+  __typename?: 'Query';
+  userFavoritesCounts: Array<{ __typename?: 'FavoritesCount'; boardName: string; count: number }>;
+};
 
+export type UserActiveBoardsQueryVariables = Exact<{ [key: string]: never }>;
 
-export type UserFavoritesCountsQuery = { __typename?: 'Query', userFavoritesCounts: Array<{ __typename?: 'FavoritesCount', boardName: string, count: number }> };
-
-export type UserActiveBoardsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type UserActiveBoardsQuery = { __typename?: 'Query', userActiveBoards: Array<string> };
+export type UserActiveBoardsQuery = { __typename?: 'Query'; userActiveBoards: Array<string> };
 
 export type GetUserFavoriteClimbsQueryVariables = Exact<{
   input: GetUserFavoriteClimbsInput;
 }>;
 
-
-export type GetUserFavoriteClimbsQuery = { __typename?: 'Query', userFavoriteClimbs: { __typename?: 'PlaylistClimbsResult', totalCount: number, hasMore: boolean, climbs: Array<{ __typename?: 'Climb', uuid: string, layoutId?: number | null, setter_username: string, name: string, description?: string | null, frames: string, angle: number, ascensionist_count: number, difficulty: string, quality_average: string, stars: number, difficulty_error: string, benchmark_difficulty?: string | null }> } };
+export type GetUserFavoriteClimbsQuery = {
+  __typename?: 'Query';
+  userFavoriteClimbs: {
+    __typename?: 'PlaylistClimbsResult';
+    totalCount: number;
+    hasMore: boolean;
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      angle: number;
+      ascensionist_count: number;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+    }>;
+  };
+};
 
 export type SubmitAppFeedbackMutationVariables = Exact<{
   input: SubmitAppFeedbackInput;
 }>;
 
-
-export type SubmitAppFeedbackMutation = { __typename?: 'Mutation', submitAppFeedback: boolean };
+export type SubmitAppFeedbackMutation = { __typename?: 'Mutation'; submitAppFeedback: boolean };
 
 export type GetNewClimbFeedQueryVariables = Exact<{
   input: NewClimbFeedInput;
 }>;
 
+export type GetNewClimbFeedQuery = {
+  __typename?: 'Query';
+  newClimbFeed: {
+    __typename?: 'NewClimbFeedResult';
+    totalCount: number;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'NewClimbFeedItem';
+      uuid: string;
+      name?: string | null;
+      boardType: string;
+      layoutId: number;
+      setterDisplayName?: string | null;
+      setterAvatarUrl?: string | null;
+      angle?: number | null;
+      frames?: string | null;
+      difficultyName?: string | null;
+      isNoMatch: boolean;
+      createdAt: string;
+    }>;
+  };
+};
 
-export type GetNewClimbFeedQuery = { __typename?: 'Query', newClimbFeed: { __typename?: 'NewClimbFeedResult', totalCount: number, hasMore: boolean, items: Array<{ __typename?: 'NewClimbFeedItem', uuid: string, name?: string | null, boardType: string, layoutId: number, setterDisplayName?: string | null, setterAvatarUrl?: string | null, angle?: number | null, frames?: string | null, difficultyName?: string | null, isNoMatch: boolean, createdAt: string }> } };
+export type GetMyNewClimbSubscriptionsQueryVariables = Exact<{ [key: string]: never }>;
 
-export type GetMyNewClimbSubscriptionsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMyNewClimbSubscriptionsQuery = { __typename?: 'Query', myNewClimbSubscriptions: Array<{ __typename?: 'NewClimbSubscription', id: string, boardType: string, layoutId: number, createdAt: string }> };
+export type GetMyNewClimbSubscriptionsQuery = {
+  __typename?: 'Query';
+  myNewClimbSubscriptions: Array<{
+    __typename?: 'NewClimbSubscription';
+    id: string;
+    boardType: string;
+    layoutId: number;
+    createdAt: string;
+  }>;
+};
 
 export type SubscribeNewClimbsMutationVariables = Exact<{
   input: NewClimbSubscriptionInput;
 }>;
 
-
-export type SubscribeNewClimbsMutation = { __typename?: 'Mutation', subscribeNewClimbs: boolean };
+export type SubscribeNewClimbsMutation = { __typename?: 'Mutation'; subscribeNewClimbs: boolean };
 
 export type UnsubscribeNewClimbsMutationVariables = Exact<{
   input: NewClimbSubscriptionInput;
 }>;
 
-
-export type UnsubscribeNewClimbsMutation = { __typename?: 'Mutation', unsubscribeNewClimbs: boolean };
+export type UnsubscribeNewClimbsMutation = { __typename?: 'Mutation'; unsubscribeNewClimbs: boolean };
 
 export type OnNewClimbCreatedSubscriptionVariables = Exact<{
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
 }>;
 
-
-export type OnNewClimbCreatedSubscription = { __typename?: 'Subscription', newClimbCreated: { __typename?: 'NewClimbCreatedEvent', climb: { __typename?: 'NewClimbFeedItem', uuid: string, name?: string | null, boardType: string, layoutId: number, setterDisplayName?: string | null, setterAvatarUrl?: string | null, angle?: number | null, frames?: string | null, difficultyName?: string | null, isNoMatch: boolean, createdAt: string } } };
+export type OnNewClimbCreatedSubscription = {
+  __typename?: 'Subscription';
+  newClimbCreated: {
+    __typename?: 'NewClimbCreatedEvent';
+    climb: {
+      __typename?: 'NewClimbFeedItem';
+      uuid: string;
+      name?: string | null;
+      boardType: string;
+      layoutId: number;
+      setterDisplayName?: string | null;
+      setterAvatarUrl?: string | null;
+      angle?: number | null;
+      frames?: string | null;
+      difficultyName?: string | null;
+      isNoMatch: boolean;
+      createdAt: string;
+    };
+  };
+};
 
 export type CheckMoonBoardClimbDuplicatesQueryVariables = Exact<{
   input: CheckMoonBoardClimbDuplicatesInput;
 }>;
 
-
-export type CheckMoonBoardClimbDuplicatesQuery = { __typename?: 'Query', checkMoonBoardClimbDuplicates: Array<{ __typename?: 'MoonBoardClimbDuplicateMatch', clientKey: string, exists: boolean, existingClimbUuid?: string | null, existingClimbName?: string | null }> };
+export type CheckMoonBoardClimbDuplicatesQuery = {
+  __typename?: 'Query';
+  checkMoonBoardClimbDuplicates: Array<{
+    __typename?: 'MoonBoardClimbDuplicateMatch';
+    clientKey: string;
+    exists: boolean;
+    existingClimbUuid?: string | null;
+    existingClimbName?: string | null;
+  }>;
+};
 
 export type SaveClimbMutationVariables = Exact<{
   input: SaveClimbInput;
 }>;
 
-
-export type SaveClimbMutation = { __typename?: 'Mutation', saveClimb: { __typename?: 'SaveClimbResult', uuid: string, synced: boolean, createdAt?: string | null, publishedAt?: string | null } };
+export type SaveClimbMutation = {
+  __typename?: 'Mutation';
+  saveClimb: {
+    __typename?: 'SaveClimbResult';
+    uuid: string;
+    synced: boolean;
+    createdAt?: string | null;
+    publishedAt?: string | null;
+  };
+};
 
 export type SaveMoonBoardClimbMutationVariables = Exact<{
   input: SaveMoonBoardClimbInput;
 }>;
 
-
-export type SaveMoonBoardClimbMutation = { __typename?: 'Mutation', saveMoonBoardClimb: { __typename?: 'SaveClimbResult', uuid: string, synced: boolean, createdAt?: string | null, publishedAt?: string | null } };
+export type SaveMoonBoardClimbMutation = {
+  __typename?: 'Mutation';
+  saveMoonBoardClimb: {
+    __typename?: 'SaveClimbResult';
+    uuid: string;
+    synced: boolean;
+    createdAt?: string | null;
+    publishedAt?: string | null;
+  };
+};
 
 export type UpdateClimbMutationVariables = Exact<{
   input: UpdateClimbInput;
 }>;
 
-
-export type UpdateClimbMutation = { __typename?: 'Mutation', updateClimb: { __typename?: 'UpdateClimbResult', uuid: string, createdAt?: string | null, publishedAt?: string | null, isDraft: boolean } };
+export type UpdateClimbMutation = {
+  __typename?: 'Mutation';
+  updateClimb: {
+    __typename?: 'UpdateClimbResult';
+    uuid: string;
+    createdAt?: string | null;
+    publishedAt?: string | null;
+    isDraft: boolean;
+  };
+};
 
 export type DeleteDraftClimbMutationVariables = Exact<{
   uuid: Scalars['ID']['input'];
   boardType: Scalars['String']['input'];
 }>;
 
-
-export type DeleteDraftClimbMutation = { __typename?: 'Mutation', deleteDraftClimb: boolean };
+export type DeleteDraftClimbMutation = { __typename?: 'Mutation'; deleteDraftClimb: boolean };
 
 export type GetNotificationsQueryVariables = Exact<{
   unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
@@ -5138,28 +5207,79 @@ export type GetNotificationsQueryVariables = Exact<{
   offset?: InputMaybe<Scalars['Int']['input']>;
 }>;
 
-
-export type GetNotificationsQuery = { __typename?: 'Query', notifications: { __typename?: 'NotificationConnection', totalCount: number, unreadCount: number, hasMore: boolean, notifications: Array<{ __typename?: 'Notification', uuid: string, type: NotificationType, actorId?: string | null, actorDisplayName?: string | null, actorAvatarUrl?: string | null, entityType?: SocialEntityType | null, entityId?: string | null, commentBody?: string | null, climbName?: string | null, climbUuid?: string | null, boardType?: string | null, proposalUuid?: string | null, isRead: boolean, createdAt: string }> } };
+export type GetNotificationsQuery = {
+  __typename?: 'Query';
+  notifications: {
+    __typename?: 'NotificationConnection';
+    totalCount: number;
+    unreadCount: number;
+    hasMore: boolean;
+    notifications: Array<{
+      __typename?: 'Notification';
+      uuid: string;
+      type: NotificationType;
+      actorId?: string | null;
+      actorDisplayName?: string | null;
+      actorAvatarUrl?: string | null;
+      entityType?: SocialEntityType | null;
+      entityId?: string | null;
+      commentBody?: string | null;
+      climbName?: string | null;
+      climbUuid?: string | null;
+      boardType?: string | null;
+      proposalUuid?: string | null;
+      isRead: boolean;
+      createdAt: string;
+    }>;
+  };
+};
 
 export type GetGroupedNotificationsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
 }>;
 
+export type GetGroupedNotificationsQuery = {
+  __typename?: 'Query';
+  groupedNotifications: {
+    __typename?: 'GroupedNotificationConnection';
+    totalCount: number;
+    unreadCount: number;
+    hasMore: boolean;
+    groups: Array<{
+      __typename?: 'GroupedNotification';
+      uuid: string;
+      type: NotificationType;
+      entityType?: SocialEntityType | null;
+      entityId?: string | null;
+      actorCount: number;
+      commentBody?: string | null;
+      climbName?: string | null;
+      climbUuid?: string | null;
+      boardType?: string | null;
+      proposalUuid?: string | null;
+      setterUsername?: string | null;
+      isRead: boolean;
+      createdAt: string;
+      actors: Array<{
+        __typename?: 'GroupedNotificationActor';
+        id: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+      }>;
+    }>;
+  };
+};
 
-export type GetGroupedNotificationsQuery = { __typename?: 'Query', groupedNotifications: { __typename?: 'GroupedNotificationConnection', totalCount: number, unreadCount: number, hasMore: boolean, groups: Array<{ __typename?: 'GroupedNotification', uuid: string, type: NotificationType, entityType?: SocialEntityType | null, entityId?: string | null, actorCount: number, commentBody?: string | null, climbName?: string | null, climbUuid?: string | null, boardType?: string | null, proposalUuid?: string | null, setterUsername?: string | null, isRead: boolean, createdAt: string, actors: Array<{ __typename?: 'GroupedNotificationActor', id: string, displayName?: string | null, avatarUrl?: string | null }> }> } };
+export type GetUnreadNotificationCountQueryVariables = Exact<{ [key: string]: never }>;
 
-export type GetUnreadNotificationCountQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetUnreadNotificationCountQuery = { __typename?: 'Query', unreadNotificationCount: number };
+export type GetUnreadNotificationCountQuery = { __typename?: 'Query'; unreadNotificationCount: number };
 
 export type MarkNotificationReadMutationVariables = Exact<{
   notificationUuid: Scalars['ID']['input'];
 }>;
 
-
-export type MarkNotificationReadMutation = { __typename?: 'Mutation', markNotificationRead: boolean };
+export type MarkNotificationReadMutation = { __typename?: 'Mutation'; markNotificationRead: boolean };
 
 export type MarkGroupNotificationsReadMutationVariables = Exact<{
   type: NotificationType;
@@ -5167,174 +5287,475 @@ export type MarkGroupNotificationsReadMutationVariables = Exact<{
   entityId?: InputMaybe<Scalars['String']['input']>;
 }>;
 
+export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation'; markGroupNotificationsRead: number };
 
-export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation', markGroupNotificationsRead: number };
+export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never }>;
 
-export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never; }>;
+export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation'; markAllNotificationsRead: boolean };
 
-
-export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation', markAllNotificationsRead: boolean };
-
-export type PlaylistFieldsFragment = { __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean };
+export type PlaylistFieldsFragment = {
+  __typename?: 'Playlist';
+  id: string;
+  uuid: string;
+  boardType: string;
+  layoutId?: number | null;
+  name: string;
+  description?: string | null;
+  isPublic: boolean;
+  color?: string | null;
+  icon?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastAccessedAt?: string | null;
+  climbCount: number;
+  userRole?: string | null;
+  followerCount: number;
+  isFollowedByMe: boolean;
+  isPinnedByMe: boolean;
+};
 
 export type GetUserPlaylistsQueryVariables = Exact<{
   input: GetUserPlaylistsInput;
 }>;
 
-
-export type GetUserPlaylistsQuery = { __typename?: 'Query', userPlaylists: Array<{ __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean }> };
+export type GetUserPlaylistsQuery = {
+  __typename?: 'Query';
+  userPlaylists: Array<{
+    __typename?: 'Playlist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    isPublic: boolean;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastAccessedAt?: string | null;
+    climbCount: number;
+    userRole?: string | null;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    isPinnedByMe: boolean;
+  }>;
+};
 
 export type GetAllUserPlaylistsQueryVariables = Exact<{
   input: GetAllUserPlaylistsInput;
 }>;
 
-
-export type GetAllUserPlaylistsQuery = { __typename?: 'Query', allUserPlaylists: { __typename?: 'AllUserPlaylistsResult', totalCount: number, hasMore: boolean, playlists: Array<{ __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean }> } };
+export type GetAllUserPlaylistsQuery = {
+  __typename?: 'Query';
+  allUserPlaylists: {
+    __typename?: 'AllUserPlaylistsResult';
+    totalCount: number;
+    hasMore: boolean;
+    playlists: Array<{
+      __typename?: 'Playlist';
+      id: string;
+      uuid: string;
+      boardType: string;
+      layoutId?: number | null;
+      name: string;
+      description?: string | null;
+      isPublic: boolean;
+      color?: string | null;
+      icon?: string | null;
+      createdAt: string;
+      updatedAt: string;
+      lastAccessedAt?: string | null;
+      climbCount: number;
+      userRole?: string | null;
+      followerCount: number;
+      isFollowedByMe: boolean;
+      isPinnedByMe: boolean;
+    }>;
+  };
+};
 
 export type GetMyPinnedPlaylistsQueryVariables = Exact<{
   input: GetMyPinnedPlaylistsInput;
 }>;
 
-
-export type GetMyPinnedPlaylistsQuery = { __typename?: 'Query', myPinnedPlaylists: Array<{ __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean }> };
+export type GetMyPinnedPlaylistsQuery = {
+  __typename?: 'Query';
+  myPinnedPlaylists: Array<{
+    __typename?: 'Playlist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    isPublic: boolean;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastAccessedAt?: string | null;
+    climbCount: number;
+    userRole?: string | null;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    isPinnedByMe: boolean;
+  }>;
+};
 
 export type PinPlaylistMutationVariables = Exact<{
   input: PinPlaylistInput;
 }>;
 
-
-export type PinPlaylistMutation = { __typename?: 'Mutation', pinPlaylist: boolean };
+export type PinPlaylistMutation = { __typename?: 'Mutation'; pinPlaylist: boolean };
 
 export type UnpinPlaylistMutationVariables = Exact<{
   input: PinPlaylistInput;
 }>;
 
-
-export type UnpinPlaylistMutation = { __typename?: 'Mutation', unpinPlaylist: boolean };
+export type UnpinPlaylistMutation = { __typename?: 'Mutation'; unpinPlaylist: boolean };
 
 export type GetPlaylistQueryVariables = Exact<{
   playlistId: Scalars['ID']['input'];
 }>;
 
-
-export type GetPlaylistQuery = { __typename?: 'Query', playlist?: { __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean } | null };
+export type GetPlaylistQuery = {
+  __typename?: 'Query';
+  playlist?: {
+    __typename?: 'Playlist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    isPublic: boolean;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastAccessedAt?: string | null;
+    climbCount: number;
+    userRole?: string | null;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    isPinnedByMe: boolean;
+  } | null;
+};
 
 export type GetPlaylistsForClimbQueryVariables = Exact<{
   input: GetPlaylistsForClimbInput;
 }>;
 
-
-export type GetPlaylistsForClimbQuery = { __typename?: 'Query', playlistsForClimb: Array<string> };
+export type GetPlaylistsForClimbQuery = { __typename?: 'Query'; playlistsForClimb: Array<string> };
 
 export type GetPlaylistsForClimbsQueryVariables = Exact<{
   input: GetPlaylistsForClimbsInput;
 }>;
 
-
-export type GetPlaylistsForClimbsQuery = { __typename?: 'Query', playlistsForClimbs: Array<{ __typename?: 'ClimbPlaylistMembership', climbUuid: string, playlistUuids: Array<string> }> };
+export type GetPlaylistsForClimbsQuery = {
+  __typename?: 'Query';
+  playlistsForClimbs: Array<{
+    __typename?: 'ClimbPlaylistMembership';
+    climbUuid: string;
+    playlistUuids: Array<string>;
+  }>;
+};
 
 export type CreatePlaylistMutationVariables = Exact<{
   input: CreatePlaylistInput;
 }>;
 
-
-export type CreatePlaylistMutation = { __typename?: 'Mutation', createPlaylist: { __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean } };
+export type CreatePlaylistMutation = {
+  __typename?: 'Mutation';
+  createPlaylist: {
+    __typename?: 'Playlist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    isPublic: boolean;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastAccessedAt?: string | null;
+    climbCount: number;
+    userRole?: string | null;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    isPinnedByMe: boolean;
+  };
+};
 
 export type UpdatePlaylistMutationVariables = Exact<{
   input: UpdatePlaylistInput;
 }>;
 
-
-export type UpdatePlaylistMutation = { __typename?: 'Mutation', updatePlaylist: { __typename?: 'Playlist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, isPublic: boolean, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, lastAccessedAt?: string | null, climbCount: number, userRole?: string | null, followerCount: number, isFollowedByMe: boolean, isPinnedByMe: boolean } };
+export type UpdatePlaylistMutation = {
+  __typename?: 'Mutation';
+  updatePlaylist: {
+    __typename?: 'Playlist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    isPublic: boolean;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastAccessedAt?: string | null;
+    climbCount: number;
+    userRole?: string | null;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    isPinnedByMe: boolean;
+  };
+};
 
 export type DeletePlaylistMutationVariables = Exact<{
   playlistId: Scalars['ID']['input'];
 }>;
 
-
-export type DeletePlaylistMutation = { __typename?: 'Mutation', deletePlaylist: boolean };
+export type DeletePlaylistMutation = { __typename?: 'Mutation'; deletePlaylist: boolean };
 
 export type AddClimbToPlaylistMutationVariables = Exact<{
   input: AddClimbToPlaylistInput;
 }>;
 
-
-export type AddClimbToPlaylistMutation = { __typename?: 'Mutation', addClimbToPlaylist: { __typename?: 'PlaylistClimb', id: string, playlistId: string, climbUuid: string, angle?: number | null, position: number, addedAt: string } };
+export type AddClimbToPlaylistMutation = {
+  __typename?: 'Mutation';
+  addClimbToPlaylist: {
+    __typename?: 'PlaylistClimb';
+    id: string;
+    playlistId: string;
+    climbUuid: string;
+    angle?: number | null;
+    position: number;
+    addedAt: string;
+  };
+};
 
 export type RemoveClimbFromPlaylistMutationVariables = Exact<{
   input: RemoveClimbFromPlaylistInput;
 }>;
 
-
-export type RemoveClimbFromPlaylistMutation = { __typename?: 'Mutation', removeClimbFromPlaylist: boolean };
+export type RemoveClimbFromPlaylistMutation = { __typename?: 'Mutation'; removeClimbFromPlaylist: boolean };
 
 export type GetPlaylistClimbsQueryVariables = Exact<{
   input: GetPlaylistClimbsInput;
 }>;
 
-
-export type GetPlaylistClimbsQuery = { __typename?: 'Query', playlistClimbs: { __typename?: 'PlaylistClimbsResult', totalCount: number, hasMore: boolean, climbs: Array<{ __typename?: 'Climb', uuid: string, layoutId?: number | null, boardType?: string | null, setter_username: string, name: string, description?: string | null, frames: string, angle: number, ascensionist_count: number, difficulty: string, quality_average: string, stars: number, difficulty_error: string, benchmark_difficulty?: string | null }> } };
+export type GetPlaylistClimbsQuery = {
+  __typename?: 'Query';
+  playlistClimbs: {
+    __typename?: 'PlaylistClimbsResult';
+    totalCount: number;
+    hasMore: boolean;
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      boardType?: string | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      angle: number;
+      ascensionist_count: number;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+    }>;
+  };
+};
 
 export type DiscoverPlaylistsQueryVariables = Exact<{
   input: DiscoverPlaylistsInput;
 }>;
 
-
-export type DiscoverPlaylistsQuery = { __typename?: 'Query', discoverPlaylists: { __typename?: 'DiscoverPlaylistsResult', totalCount: number, hasMore: boolean, playlists: Array<{ __typename?: 'DiscoverablePlaylist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, color?: string | null, icon?: string | null, createdAt: string, updatedAt: string, climbCount: number, creatorId: string, creatorName: string }> } };
+export type DiscoverPlaylistsQuery = {
+  __typename?: 'Query';
+  discoverPlaylists: {
+    __typename?: 'DiscoverPlaylistsResult';
+    totalCount: number;
+    hasMore: boolean;
+    playlists: Array<{
+      __typename?: 'DiscoverablePlaylist';
+      id: string;
+      uuid: string;
+      boardType: string;
+      layoutId?: number | null;
+      name: string;
+      description?: string | null;
+      color?: string | null;
+      icon?: string | null;
+      createdAt: string;
+      updatedAt: string;
+      climbCount: number;
+      creatorId: string;
+      creatorName: string;
+    }>;
+  };
+};
 
 export type GetPlaylistCreatorsQueryVariables = Exact<{
   input: GetPlaylistCreatorsInput;
 }>;
 
-
-export type GetPlaylistCreatorsQuery = { __typename?: 'Query', playlistCreators: Array<{ __typename?: 'PlaylistCreator', userId: string, displayName: string, playlistCount: number }> };
+export type GetPlaylistCreatorsQuery = {
+  __typename?: 'Query';
+  playlistCreators: Array<{
+    __typename?: 'PlaylistCreator';
+    userId: string;
+    displayName: string;
+    playlistCount: number;
+  }>;
+};
 
 export type UpdatePlaylistLastAccessedMutationVariables = Exact<{
   playlistId: Scalars['ID']['input'];
 }>;
 
-
-export type UpdatePlaylistLastAccessedMutation = { __typename?: 'Mutation', updatePlaylistLastAccessed: boolean };
+export type UpdatePlaylistLastAccessedMutation = { __typename?: 'Mutation'; updatePlaylistLastAccessed: boolean };
 
 export type SearchPlaylistsQueryVariables = Exact<{
   input: SearchPlaylistsInput;
 }>;
 
-
-export type SearchPlaylistsQuery = { __typename?: 'Query', searchPlaylists: { __typename?: 'SearchPlaylistsResult', totalCount: number, hasMore: boolean, playlists: Array<{ __typename?: 'DiscoverablePlaylist', id: string, uuid: string, boardType: string, layoutId?: number | null, name: string, description?: string | null, color?: string | null, icon?: string | null, climbCount: number, creatorId: string, creatorName: string, createdAt: string, updatedAt: string }> } };
+export type SearchPlaylistsQuery = {
+  __typename?: 'Query';
+  searchPlaylists: {
+    __typename?: 'SearchPlaylistsResult';
+    totalCount: number;
+    hasMore: boolean;
+    playlists: Array<{
+      __typename?: 'DiscoverablePlaylist';
+      id: string;
+      uuid: string;
+      boardType: string;
+      layoutId?: number | null;
+      name: string;
+      description?: string | null;
+      color?: string | null;
+      icon?: string | null;
+      climbCount: number;
+      creatorId: string;
+      creatorName: string;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
+};
 
 export type FollowPlaylistMutationVariables = Exact<{
   input: FollowPlaylistInput;
 }>;
 
-
-export type FollowPlaylistMutation = { __typename?: 'Mutation', followPlaylist: boolean };
+export type FollowPlaylistMutation = { __typename?: 'Mutation'; followPlaylist: boolean };
 
 export type UnfollowPlaylistMutationVariables = Exact<{
   input: FollowPlaylistInput;
 }>;
 
-
-export type UnfollowPlaylistMutation = { __typename?: 'Mutation', unfollowPlaylist: boolean };
+export type UnfollowPlaylistMutation = { __typename?: 'Mutation'; unfollowPlaylist: boolean };
 
 export type GetSmartPlaylistQueryVariables = Exact<{
   input: GetSmartPlaylistInput;
 }>;
 
+export type GetSmartPlaylistQuery = {
+  __typename?: 'Query';
+  smartPlaylist: {
+    __typename?: 'SmartPlaylistResult';
+    totalCount: number;
+    hasMore: boolean;
+    meta: {
+      __typename?: 'SmartPlaylistMeta';
+      type: SmartPlaylistType;
+      userId: string;
+      userName: string;
+      userAvatar?: string | null;
+      climbCount: number;
+    };
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      boardType?: string | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      angle: number;
+      ascensionist_count: number;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+    }>;
+  };
+};
 
-export type GetSmartPlaylistQuery = { __typename?: 'Query', smartPlaylist: { __typename?: 'SmartPlaylistResult', totalCount: number, hasMore: boolean, meta: { __typename?: 'SmartPlaylistMeta', type: SmartPlaylistType, userId: string, userName: string, userAvatar?: string | null, climbCount: number }, climbs: Array<{ __typename?: 'Climb', uuid: string, layoutId?: number | null, boardType?: string | null, setter_username: string, name: string, description?: string | null, frames: string, angle: number, ascensionist_count: number, difficulty: string, quality_average: string, stars: number, difficulty_error: string, benchmark_difficulty?: string | null }> } };
+export type GetMySmartPlaylistCountsQueryVariables = Exact<{ [key: string]: never }>;
 
-export type GetMySmartPlaylistCountsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMySmartPlaylistCountsQuery = { __typename?: 'Query', mySmartPlaylistCounts: Array<{ __typename?: 'SmartPlaylistCount', type: SmartPlaylistType, count: number }> };
+export type GetMySmartPlaylistCountsQuery = {
+  __typename?: 'Query';
+  mySmartPlaylistCounts: Array<{ __typename?: 'SmartPlaylistCount'; type: SmartPlaylistType; count: number }>;
+};
 
 export type GetClimbProposalsQueryVariables = Exact<{
   input: GetClimbProposalsInput;
 }>;
 
-
-export type GetClimbProposalsQuery = { __typename?: 'Query', climbProposals: { __typename?: 'ProposalConnection', totalCount: number, hasMore: boolean, proposals: Array<{ __typename?: 'Proposal', uuid: string, climbUuid: string, boardType: string, angle?: number | null, proposerId: string, proposerDisplayName?: string | null, proposerAvatarUrl?: string | null, type: ProposalType, proposedValue: string, currentValue: string, status: ProposalStatus, reason?: string | null, resolvedAt?: string | null, resolvedBy?: string | null, createdAt: string, weightedUpvotes: number, weightedDownvotes: number, requiredUpvotes: number, userVote: number, climbName?: string | null, frames?: string | null, layoutId?: number | null, climbSetterUsername?: string | null, climbDifficulty?: string | null, climbQualityAverage?: string | null, climbAscensionistCount?: number | null, climbDifficultyError?: string | null, climbBenchmarkDifficulty?: string | null, climbIsNoMatch?: boolean | null }> } };
+export type GetClimbProposalsQuery = {
+  __typename?: 'Query';
+  climbProposals: {
+    __typename?: 'ProposalConnection';
+    totalCount: number;
+    hasMore: boolean;
+    proposals: Array<{
+      __typename?: 'Proposal';
+      uuid: string;
+      climbUuid: string;
+      boardType: string;
+      angle?: number | null;
+      proposerId: string;
+      proposerDisplayName?: string | null;
+      proposerAvatarUrl?: string | null;
+      type: ProposalType;
+      proposedValue: string;
+      currentValue: string;
+      status: ProposalStatus;
+      reason?: string | null;
+      resolvedAt?: string | null;
+      resolvedBy?: string | null;
+      createdAt: string;
+      weightedUpvotes: number;
+      weightedDownvotes: number;
+      requiredUpvotes: number;
+      userVote: number;
+      climbName?: string | null;
+      frames?: string | null;
+      layoutId?: number | null;
+      climbSetterUsername?: string | null;
+      climbDifficulty?: string | null;
+      climbQualityAverage?: string | null;
+      climbAscensionistCount?: number | null;
+      climbDifficultyError?: string | null;
+      climbBenchmarkDifficulty?: string | null;
+      climbIsNoMatch?: boolean | null;
+    }>;
+  };
+};
 
 export type GetClimbCommunityStatusQueryVariables = Exact<{
   climbUuid: Scalars['String']['input'];
@@ -5342,8 +5763,30 @@ export type GetClimbCommunityStatusQueryVariables = Exact<{
   angle: Scalars['Int']['input'];
 }>;
 
-
-export type GetClimbCommunityStatusQuery = { __typename?: 'Query', climbCommunityStatus: { __typename?: 'ClimbCommunityStatus', climbUuid: string, boardType: string, angle: number, communityGrade?: string | null, isBenchmark: boolean, isClassic: boolean, isFrozen: boolean, freezeReason?: string | null, openProposalCount: number, updatedAt?: string | null, outlierAnalysis?: { __typename?: 'OutlierAnalysis', isOutlier: boolean, currentGrade: number, neighborAverage: number, neighborCount: number, gradeDifference: number } | null } };
+export type GetClimbCommunityStatusQuery = {
+  __typename?: 'Query';
+  climbCommunityStatus: {
+    __typename?: 'ClimbCommunityStatus';
+    climbUuid: string;
+    boardType: string;
+    angle: number;
+    communityGrade?: string | null;
+    isBenchmark: boolean;
+    isClassic: boolean;
+    isFrozen: boolean;
+    freezeReason?: string | null;
+    openProposalCount: number;
+    updatedAt?: string | null;
+    outlierAnalysis?: {
+      __typename?: 'OutlierAnalysis';
+      isOutlier: boolean;
+      currentGrade: number;
+      neighborAverage: number;
+      neighborCount: number;
+      gradeDifference: number;
+    } | null;
+  };
+};
 
 export type GetBulkClimbCommunityStatusQueryVariables = Exact<{
   climbUuids: Array<Scalars['String']['input']> | Scalars['String']['input'];
@@ -5351,410 +5794,6324 @@ export type GetBulkClimbCommunityStatusQueryVariables = Exact<{
   angle: Scalars['Int']['input'];
 }>;
 
-
-export type GetBulkClimbCommunityStatusQuery = { __typename?: 'Query', bulkClimbCommunityStatus: Array<{ __typename?: 'ClimbCommunityStatus', climbUuid: string, boardType: string, angle: number, communityGrade?: string | null, isBenchmark: boolean, isClassic: boolean, isFrozen: boolean, freezeReason?: string | null, openProposalCount: number, updatedAt?: string | null }> };
+export type GetBulkClimbCommunityStatusQuery = {
+  __typename?: 'Query';
+  bulkClimbCommunityStatus: Array<{
+    __typename?: 'ClimbCommunityStatus';
+    climbUuid: string;
+    boardType: string;
+    angle: number;
+    communityGrade?: string | null;
+    isBenchmark: boolean;
+    isClassic: boolean;
+    isFrozen: boolean;
+    freezeReason?: string | null;
+    openProposalCount: number;
+    updatedAt?: string | null;
+  }>;
+};
 
 export type BrowseProposalsQueryVariables = Exact<{
   input: BrowseProposalsInput;
 }>;
 
-
-export type BrowseProposalsQuery = { __typename?: 'Query', browseProposals: { __typename?: 'ProposalConnection', totalCount: number, hasMore: boolean, proposals: Array<{ __typename?: 'Proposal', uuid: string, climbUuid: string, boardType: string, angle?: number | null, proposerId: string, proposerDisplayName?: string | null, proposerAvatarUrl?: string | null, type: ProposalType, proposedValue: string, currentValue: string, status: ProposalStatus, reason?: string | null, resolvedAt?: string | null, resolvedBy?: string | null, createdAt: string, weightedUpvotes: number, weightedDownvotes: number, requiredUpvotes: number, userVote: number, climbName?: string | null, frames?: string | null, layoutId?: number | null, climbSetterUsername?: string | null, climbDifficulty?: string | null, climbQualityAverage?: string | null, climbAscensionistCount?: number | null, climbDifficultyError?: string | null, climbBenchmarkDifficulty?: string | null, climbIsNoMatch?: boolean | null }> } };
+export type BrowseProposalsQuery = {
+  __typename?: 'Query';
+  browseProposals: {
+    __typename?: 'ProposalConnection';
+    totalCount: number;
+    hasMore: boolean;
+    proposals: Array<{
+      __typename?: 'Proposal';
+      uuid: string;
+      climbUuid: string;
+      boardType: string;
+      angle?: number | null;
+      proposerId: string;
+      proposerDisplayName?: string | null;
+      proposerAvatarUrl?: string | null;
+      type: ProposalType;
+      proposedValue: string;
+      currentValue: string;
+      status: ProposalStatus;
+      reason?: string | null;
+      resolvedAt?: string | null;
+      resolvedBy?: string | null;
+      createdAt: string;
+      weightedUpvotes: number;
+      weightedDownvotes: number;
+      requiredUpvotes: number;
+      userVote: number;
+      climbName?: string | null;
+      frames?: string | null;
+      layoutId?: number | null;
+      climbSetterUsername?: string | null;
+      climbDifficulty?: string | null;
+      climbQualityAverage?: string | null;
+      climbAscensionistCount?: number | null;
+      climbDifficultyError?: string | null;
+      climbBenchmarkDifficulty?: string | null;
+      climbIsNoMatch?: boolean | null;
+    }>;
+  };
+};
 
 export type GetClimbClassicStatusQueryVariables = Exact<{
   climbUuid: Scalars['String']['input'];
   boardType: Scalars['String']['input'];
 }>;
 
-
-export type GetClimbClassicStatusQuery = { __typename?: 'Query', climbClassicStatus: { __typename?: 'ClimbClassicStatus', climbUuid: string, boardType: string, isClassic: boolean, updatedAt?: string | null } };
+export type GetClimbClassicStatusQuery = {
+  __typename?: 'Query';
+  climbClassicStatus: {
+    __typename?: 'ClimbClassicStatus';
+    climbUuid: string;
+    boardType: string;
+    isClassic: boolean;
+    updatedAt?: string | null;
+  };
+};
 
 export type CreateProposalMutationVariables = Exact<{
   input: CreateProposalInput;
 }>;
 
-
-export type CreateProposalMutation = { __typename?: 'Mutation', createProposal: { __typename?: 'Proposal', uuid: string, climbUuid: string, boardType: string, angle?: number | null, proposerId: string, proposerDisplayName?: string | null, proposerAvatarUrl?: string | null, type: ProposalType, proposedValue: string, currentValue: string, status: ProposalStatus, reason?: string | null, createdAt: string, weightedUpvotes: number, weightedDownvotes: number, requiredUpvotes: number, userVote: number, climbName?: string | null, frames?: string | null, layoutId?: number | null, climbSetterUsername?: string | null, climbDifficulty?: string | null, climbQualityAverage?: string | null, climbAscensionistCount?: number | null, climbDifficultyError?: string | null, climbBenchmarkDifficulty?: string | null, climbIsNoMatch?: boolean | null } };
+export type CreateProposalMutation = {
+  __typename?: 'Mutation';
+  createProposal: {
+    __typename?: 'Proposal';
+    uuid: string;
+    climbUuid: string;
+    boardType: string;
+    angle?: number | null;
+    proposerId: string;
+    proposerDisplayName?: string | null;
+    proposerAvatarUrl?: string | null;
+    type: ProposalType;
+    proposedValue: string;
+    currentValue: string;
+    status: ProposalStatus;
+    reason?: string | null;
+    createdAt: string;
+    weightedUpvotes: number;
+    weightedDownvotes: number;
+    requiredUpvotes: number;
+    userVote: number;
+    climbName?: string | null;
+    frames?: string | null;
+    layoutId?: number | null;
+    climbSetterUsername?: string | null;
+    climbDifficulty?: string | null;
+    climbQualityAverage?: string | null;
+    climbAscensionistCount?: number | null;
+    climbDifficultyError?: string | null;
+    climbBenchmarkDifficulty?: string | null;
+    climbIsNoMatch?: boolean | null;
+  };
+};
 
 export type VoteOnProposalMutationVariables = Exact<{
   input: VoteOnProposalInput;
 }>;
 
-
-export type VoteOnProposalMutation = { __typename?: 'Mutation', voteOnProposal: { __typename?: 'Proposal', uuid: string, climbUuid: string, boardType: string, angle?: number | null, proposerId: string, proposerDisplayName?: string | null, proposerAvatarUrl?: string | null, type: ProposalType, proposedValue: string, currentValue: string, status: ProposalStatus, reason?: string | null, resolvedAt?: string | null, resolvedBy?: string | null, createdAt: string, weightedUpvotes: number, weightedDownvotes: number, requiredUpvotes: number, userVote: number, climbName?: string | null, frames?: string | null, layoutId?: number | null, climbSetterUsername?: string | null, climbDifficulty?: string | null, climbQualityAverage?: string | null, climbAscensionistCount?: number | null, climbDifficultyError?: string | null, climbBenchmarkDifficulty?: string | null, climbIsNoMatch?: boolean | null } };
+export type VoteOnProposalMutation = {
+  __typename?: 'Mutation';
+  voteOnProposal: {
+    __typename?: 'Proposal';
+    uuid: string;
+    climbUuid: string;
+    boardType: string;
+    angle?: number | null;
+    proposerId: string;
+    proposerDisplayName?: string | null;
+    proposerAvatarUrl?: string | null;
+    type: ProposalType;
+    proposedValue: string;
+    currentValue: string;
+    status: ProposalStatus;
+    reason?: string | null;
+    resolvedAt?: string | null;
+    resolvedBy?: string | null;
+    createdAt: string;
+    weightedUpvotes: number;
+    weightedDownvotes: number;
+    requiredUpvotes: number;
+    userVote: number;
+    climbName?: string | null;
+    frames?: string | null;
+    layoutId?: number | null;
+    climbSetterUsername?: string | null;
+    climbDifficulty?: string | null;
+    climbQualityAverage?: string | null;
+    climbAscensionistCount?: number | null;
+    climbDifficultyError?: string | null;
+    climbBenchmarkDifficulty?: string | null;
+    climbIsNoMatch?: boolean | null;
+  };
+};
 
 export type ResolveProposalMutationVariables = Exact<{
   input: ResolveProposalInput;
 }>;
 
-
-export type ResolveProposalMutation = { __typename?: 'Mutation', resolveProposal: { __typename?: 'Proposal', uuid: string, status: ProposalStatus, resolvedAt?: string | null, resolvedBy?: string | null, weightedUpvotes: number, weightedDownvotes: number, requiredUpvotes: number, userVote: number, climbName?: string | null, frames?: string | null, layoutId?: number | null, climbSetterUsername?: string | null, climbDifficulty?: string | null, climbQualityAverage?: string | null, climbAscensionistCount?: number | null, climbDifficultyError?: string | null, climbBenchmarkDifficulty?: string | null, climbIsNoMatch?: boolean | null } };
+export type ResolveProposalMutation = {
+  __typename?: 'Mutation';
+  resolveProposal: {
+    __typename?: 'Proposal';
+    uuid: string;
+    status: ProposalStatus;
+    resolvedAt?: string | null;
+    resolvedBy?: string | null;
+    weightedUpvotes: number;
+    weightedDownvotes: number;
+    requiredUpvotes: number;
+    userVote: number;
+    climbName?: string | null;
+    frames?: string | null;
+    layoutId?: number | null;
+    climbSetterUsername?: string | null;
+    climbDifficulty?: string | null;
+    climbQualityAverage?: string | null;
+    climbAscensionistCount?: number | null;
+    climbDifficultyError?: string | null;
+    climbBenchmarkDifficulty?: string | null;
+    climbIsNoMatch?: boolean | null;
+  };
+};
 
 export type DeleteProposalMutationVariables = Exact<{
   input: DeleteProposalInput;
 }>;
 
-
-export type DeleteProposalMutation = { __typename?: 'Mutation', deleteProposal: boolean };
+export type DeleteProposalMutation = { __typename?: 'Mutation'; deleteProposal: boolean };
 
 export type SetterOverrideCommunityStatusMutationVariables = Exact<{
   input: SetterOverrideInput;
 }>;
 
-
-export type SetterOverrideCommunityStatusMutation = { __typename?: 'Mutation', setterOverrideCommunityStatus: { __typename?: 'ClimbCommunityStatus', climbUuid: string, boardType: string, angle: number, communityGrade?: string | null, isBenchmark: boolean, isClassic: boolean, isFrozen: boolean, updatedAt?: string | null } };
+export type SetterOverrideCommunityStatusMutation = {
+  __typename?: 'Mutation';
+  setterOverrideCommunityStatus: {
+    __typename?: 'ClimbCommunityStatus';
+    climbUuid: string;
+    boardType: string;
+    angle: number;
+    communityGrade?: string | null;
+    isBenchmark: boolean;
+    isClassic: boolean;
+    isFrozen: boolean;
+    updatedAt?: string | null;
+  };
+};
 
 export type FreezeClimbMutationVariables = Exact<{
   input: FreezeClimbInput;
 }>;
 
-
-export type FreezeClimbMutation = { __typename?: 'Mutation', freezeClimb: boolean };
+export type FreezeClimbMutation = { __typename?: 'Mutation'; freezeClimb: boolean };
 
 export type GetCommunityRolesQueryVariables = Exact<{
   boardType?: InputMaybe<Scalars['String']['input']>;
 }>;
 
+export type GetCommunityRolesQuery = {
+  __typename?: 'Query';
+  communityRoles: Array<{
+    __typename?: 'CommunityRoleAssignment';
+    id: number;
+    userId: string;
+    userDisplayName?: string | null;
+    userAvatarUrl?: string | null;
+    role: CommunityRoleType;
+    boardType?: string | null;
+    grantedBy?: string | null;
+    grantedByDisplayName?: string | null;
+    createdAt: string;
+  }>;
+};
 
-export type GetCommunityRolesQuery = { __typename?: 'Query', communityRoles: Array<{ __typename?: 'CommunityRoleAssignment', id: number, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, role: CommunityRoleType, boardType?: string | null, grantedBy?: string | null, grantedByDisplayName?: string | null, createdAt: string }> };
+export type GetMyRolesQueryVariables = Exact<{ [key: string]: never }>;
 
-export type GetMyRolesQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMyRolesQuery = { __typename?: 'Query', myRoles: Array<{ __typename?: 'CommunityRoleAssignment', id: number, userId: string, role: CommunityRoleType, boardType?: string | null, createdAt: string }> };
+export type GetMyRolesQuery = {
+  __typename?: 'Query';
+  myRoles: Array<{
+    __typename?: 'CommunityRoleAssignment';
+    id: number;
+    userId: string;
+    role: CommunityRoleType;
+    boardType?: string | null;
+    createdAt: string;
+  }>;
+};
 
 export type GrantRoleMutationVariables = Exact<{
   input: GrantRoleInput;
 }>;
 
-
-export type GrantRoleMutation = { __typename?: 'Mutation', grantRole: { __typename?: 'CommunityRoleAssignment', id: number, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, role: CommunityRoleType, boardType?: string | null, grantedBy?: string | null, grantedByDisplayName?: string | null, createdAt: string } };
+export type GrantRoleMutation = {
+  __typename?: 'Mutation';
+  grantRole: {
+    __typename?: 'CommunityRoleAssignment';
+    id: number;
+    userId: string;
+    userDisplayName?: string | null;
+    userAvatarUrl?: string | null;
+    role: CommunityRoleType;
+    boardType?: string | null;
+    grantedBy?: string | null;
+    grantedByDisplayName?: string | null;
+    createdAt: string;
+  };
+};
 
 export type RevokeRoleMutationVariables = Exact<{
   input: RevokeRoleInput;
 }>;
 
-
-export type RevokeRoleMutation = { __typename?: 'Mutation', revokeRole: boolean };
+export type RevokeRoleMutation = { __typename?: 'Mutation'; revokeRole: boolean };
 
 export type GetCommunitySettingsQueryVariables = Exact<{
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
 }>;
 
-
-export type GetCommunitySettingsQuery = { __typename?: 'Query', communitySettings: Array<{ __typename?: 'CommunitySetting', id: number, scope: string, scopeKey: string, key: string, value: string, setBy?: string | null, createdAt: string, updatedAt: string }> };
+export type GetCommunitySettingsQuery = {
+  __typename?: 'Query';
+  communitySettings: Array<{
+    __typename?: 'CommunitySetting';
+    id: number;
+    scope: string;
+    scopeKey: string;
+    key: string;
+    value: string;
+    setBy?: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
 
 export type SetCommunitySettingsMutationVariables = Exact<{
   input: SetCommunitySettingInput;
 }>;
 
+export type SetCommunitySettingsMutation = {
+  __typename?: 'Mutation';
+  setCommunitySettings: {
+    __typename?: 'CommunitySetting';
+    id: number;
+    scope: string;
+    scopeKey: string;
+    key: string;
+    value: string;
+    setBy?: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+};
 
-export type SetCommunitySettingsMutation = { __typename?: 'Mutation', setCommunitySettings: { __typename?: 'CommunitySetting', id: number, scope: string, scopeKey: string, key: string, value: string, setBy?: string | null, createdAt: string, updatedAt: string } };
-
-export type SessionSummaryFieldsFragment = { __typename?: 'SessionSummary', sessionId: string, totalSends: number, totalAttempts: number, startedAt?: string | null, endedAt?: string | null, durationMinutes?: number | null, goal?: string | null, gradeDistribution: Array<{ __typename?: 'SessionGradeCount', grade: string, count: number }>, hardestClimb?: { __typename?: 'SessionHardestClimb', climbUuid: string, climbName: string, grade: string } | null, participants: Array<{ __typename?: 'SessionParticipant', userId: string, displayName?: string | null, avatarUrl?: string | null, sends: number, attempts: number }> };
+export type SessionSummaryFieldsFragment = {
+  __typename?: 'SessionSummary';
+  sessionId: string;
+  totalSends: number;
+  totalAttempts: number;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  durationMinutes?: number | null;
+  goal?: string | null;
+  gradeDistribution: Array<{ __typename?: 'SessionGradeCount'; grade: string; count: number }>;
+  hardestClimb?: { __typename?: 'SessionHardestClimb'; climbUuid: string; climbName: string; grade: string } | null;
+  participants: Array<{
+    __typename?: 'SessionParticipant';
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    sends: number;
+    attempts: number;
+  }>;
+};
 
 export type EndSessionMutationVariables = Exact<{
   sessionId: Scalars['ID']['input'];
 }>;
 
-
-export type EndSessionMutation = { __typename?: 'Mutation', endSession?: { __typename?: 'SessionSummary', sessionId: string, totalSends: number, totalAttempts: number, startedAt?: string | null, endedAt?: string | null, durationMinutes?: number | null, goal?: string | null, gradeDistribution: Array<{ __typename?: 'SessionGradeCount', grade: string, count: number }>, hardestClimb?: { __typename?: 'SessionHardestClimb', climbUuid: string, climbName: string, grade: string } | null, participants: Array<{ __typename?: 'SessionParticipant', userId: string, displayName?: string | null, avatarUrl?: string | null, sends: number, attempts: number }> } | null };
+export type EndSessionMutation = {
+  __typename?: 'Mutation';
+  endSession?: {
+    __typename?: 'SessionSummary';
+    sessionId: string;
+    totalSends: number;
+    totalAttempts: number;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    durationMinutes?: number | null;
+    goal?: string | null;
+    gradeDistribution: Array<{ __typename?: 'SessionGradeCount'; grade: string; count: number }>;
+    hardestClimb?: { __typename?: 'SessionHardestClimb'; climbUuid: string; climbName: string; grade: string } | null;
+    participants: Array<{
+      __typename?: 'SessionParticipant';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      sends: number;
+      attempts: number;
+    }>;
+  } | null;
+};
 
 export type GetSessionSummaryQueryVariables = Exact<{
   sessionId: Scalars['ID']['input'];
 }>;
 
-
-export type GetSessionSummaryQuery = { __typename?: 'Query', sessionSummary?: { __typename?: 'SessionSummary', sessionId: string, totalSends: number, totalAttempts: number, startedAt?: string | null, endedAt?: string | null, durationMinutes?: number | null, goal?: string | null, gradeDistribution: Array<{ __typename?: 'SessionGradeCount', grade: string, count: number }>, hardestClimb?: { __typename?: 'SessionHardestClimb', climbUuid: string, climbName: string, grade: string } | null, participants: Array<{ __typename?: 'SessionParticipant', userId: string, displayName?: string | null, avatarUrl?: string | null, sends: number, attempts: number }> } | null };
+export type GetSessionSummaryQuery = {
+  __typename?: 'Query';
+  sessionSummary?: {
+    __typename?: 'SessionSummary';
+    sessionId: string;
+    totalSends: number;
+    totalAttempts: number;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    durationMinutes?: number | null;
+    goal?: string | null;
+    gradeDistribution: Array<{ __typename?: 'SessionGradeCount'; grade: string; count: number }>;
+    hardestClimb?: { __typename?: 'SessionHardestClimb'; climbUuid: string; climbName: string; grade: string } | null;
+    participants: Array<{
+      __typename?: 'SessionParticipant';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      sends: number;
+      attempts: number;
+    }>;
+  } | null;
+};
 
 export type FollowUserMutationVariables = Exact<{
   input: FollowInput;
 }>;
 
-
-export type FollowUserMutation = { __typename?: 'Mutation', followUser: boolean };
+export type FollowUserMutation = { __typename?: 'Mutation'; followUser: boolean };
 
 export type UnfollowUserMutationVariables = Exact<{
   input: FollowInput;
 }>;
 
-
-export type UnfollowUserMutation = { __typename?: 'Mutation', unfollowUser: boolean };
+export type UnfollowUserMutation = { __typename?: 'Mutation'; unfollowUser: boolean };
 
 export type GetPublicProfileQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
 }>;
 
-
-export type GetPublicProfileQuery = { __typename?: 'Query', publicProfile?: { __typename?: 'PublicUserProfile', id: string, displayName?: string | null, avatarUrl?: string | null, followerCount: number, followingCount: number, isFollowedByMe: boolean } | null };
+export type GetPublicProfileQuery = {
+  __typename?: 'Query';
+  publicProfile?: {
+    __typename?: 'PublicUserProfile';
+    id: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    followerCount: number;
+    followingCount: number;
+    isFollowedByMe: boolean;
+  } | null;
+};
 
 export type GetFollowersQueryVariables = Exact<{
   input: FollowListInput;
 }>;
 
-
-export type GetFollowersQuery = { __typename?: 'Query', followers: { __typename?: 'FollowConnection', totalCount: number, hasMore: boolean, users: Array<{ __typename?: 'PublicUserProfile', id: string, displayName?: string | null, avatarUrl?: string | null, followerCount: number, followingCount: number, isFollowedByMe: boolean }> } };
+export type GetFollowersQuery = {
+  __typename?: 'Query';
+  followers: {
+    __typename?: 'FollowConnection';
+    totalCount: number;
+    hasMore: boolean;
+    users: Array<{
+      __typename?: 'PublicUserProfile';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      followerCount: number;
+      followingCount: number;
+      isFollowedByMe: boolean;
+    }>;
+  };
+};
 
 export type GetFollowingQueryVariables = Exact<{
   input: FollowListInput;
 }>;
 
-
-export type GetFollowingQuery = { __typename?: 'Query', following: { __typename?: 'FollowConnection', totalCount: number, hasMore: boolean, users: Array<{ __typename?: 'PublicUserProfile', id: string, displayName?: string | null, avatarUrl?: string | null, followerCount: number, followingCount: number, isFollowedByMe: boolean }> } };
+export type GetFollowingQuery = {
+  __typename?: 'Query';
+  following: {
+    __typename?: 'FollowConnection';
+    totalCount: number;
+    hasMore: boolean;
+    users: Array<{
+      __typename?: 'PublicUserProfile';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      followerCount: number;
+      followingCount: number;
+      isFollowedByMe: boolean;
+    }>;
+  };
+};
 
 export type IsFollowingQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
 }>;
 
-
-export type IsFollowingQuery = { __typename?: 'Query', isFollowing: boolean };
+export type IsFollowingQuery = { __typename?: 'Query'; isFollowing: boolean };
 
 export type SearchUsersQueryVariables = Exact<{
   input: SearchUsersInput;
 }>;
 
-
-export type SearchUsersQuery = { __typename?: 'Query', searchUsers: { __typename?: 'UserSearchConnection', totalCount: number, hasMore: boolean, results: Array<{ __typename?: 'UserSearchResult', recentAscentCount: number, matchReason?: string | null, user: { __typename?: 'PublicUserProfile', id: string, displayName?: string | null, avatarUrl?: string | null, followerCount: number, followingCount: number, isFollowedByMe: boolean } }> } };
+export type SearchUsersQuery = {
+  __typename?: 'Query';
+  searchUsers: {
+    __typename?: 'UserSearchConnection';
+    totalCount: number;
+    hasMore: boolean;
+    results: Array<{
+      __typename?: 'UserSearchResult';
+      recentAscentCount: number;
+      matchReason?: string | null;
+      user: {
+        __typename?: 'PublicUserProfile';
+        id: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+        followerCount: number;
+        followingCount: number;
+        isFollowedByMe: boolean;
+      };
+    }>;
+  };
+};
 
 export type GetFollowingAscentsFeedQueryVariables = Exact<{
   input?: InputMaybe<FollowingAscentsFeedInput>;
 }>;
 
-
-export type GetFollowingAscentsFeedQuery = { __typename?: 'Query', followingAscentsFeed: { __typename?: 'FollowingAscentsFeedResult', totalCount: number, hasMore: boolean, items: Array<{ __typename?: 'FollowingAscentFeedItem', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, climbUuid: string, climbName: string, setterUsername?: string | null, boardType: string, layoutId?: number | null, angle: number, isMirror: boolean, status: string, attemptCount: number, quality?: number | null, difficulty?: number | null, difficultyName?: string | null, isBenchmark: boolean, isNoMatch: boolean, comment: string, climbedAt: string, frames?: string | null }> } };
+export type GetFollowingAscentsFeedQuery = {
+  __typename?: 'Query';
+  followingAscentsFeed: {
+    __typename?: 'FollowingAscentsFeedResult';
+    totalCount: number;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'FollowingAscentFeedItem';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      climbUuid: string;
+      climbName: string;
+      setterUsername?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      isMirror: boolean;
+      status: string;
+      attemptCount: number;
+      quality?: number | null;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      comment: string;
+      climbedAt: string;
+      frames?: string | null;
+    }>;
+  };
+};
 
 export type GetGlobalAscentsFeedQueryVariables = Exact<{
   input?: InputMaybe<FollowingAscentsFeedInput>;
 }>;
 
-
-export type GetGlobalAscentsFeedQuery = { __typename?: 'Query', globalAscentsFeed: { __typename?: 'FollowingAscentsFeedResult', totalCount: number, hasMore: boolean, items: Array<{ __typename?: 'FollowingAscentFeedItem', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, climbUuid: string, climbName: string, setterUsername?: string | null, boardType: string, layoutId?: number | null, angle: number, isMirror: boolean, status: string, attemptCount: number, quality?: number | null, difficulty?: number | null, difficultyName?: string | null, isBenchmark: boolean, isNoMatch: boolean, comment: string, climbedAt: string, frames?: string | null }> } };
+export type GetGlobalAscentsFeedQuery = {
+  __typename?: 'Query';
+  globalAscentsFeed: {
+    __typename?: 'FollowingAscentsFeedResult';
+    totalCount: number;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'FollowingAscentFeedItem';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      climbUuid: string;
+      climbName: string;
+      setterUsername?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      isMirror: boolean;
+      status: string;
+      attemptCount: number;
+      quality?: number | null;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      comment: string;
+      climbedAt: string;
+      frames?: string | null;
+    }>;
+  };
+};
 
 export type GetFollowingClimbAscentsQueryVariables = Exact<{
   input: FollowingClimbAscentsInput;
 }>;
 
-
-export type GetFollowingClimbAscentsQuery = { __typename?: 'Query', followingClimbAscents: { __typename?: 'FollowingClimbAscentsResult', items: Array<{ __typename?: 'FollowingAscentFeedItem', uuid: string, userId: string, userDisplayName?: string | null, userAvatarUrl?: string | null, climbUuid: string, angle: number, isMirror: boolean, status: string, attemptCount: number, quality?: number | null, comment: string, climbedAt: string, upvotes?: number | null, downvotes?: number | null, commentCount?: number | null }> } };
+export type GetFollowingClimbAscentsQuery = {
+  __typename?: 'Query';
+  followingClimbAscents: {
+    __typename?: 'FollowingClimbAscentsResult';
+    items: Array<{
+      __typename?: 'FollowingAscentFeedItem';
+      uuid: string;
+      userId: string;
+      userDisplayName?: string | null;
+      userAvatarUrl?: string | null;
+      climbUuid: string;
+      angle: number;
+      isMirror: boolean;
+      status: string;
+      attemptCount: number;
+      quality?: number | null;
+      comment: string;
+      climbedAt: string;
+      upvotes?: number | null;
+      downvotes?: number | null;
+      commentCount?: number | null;
+    }>;
+  };
+};
 
 export type FollowSetterMutationVariables = Exact<{
   input: FollowSetterInput;
 }>;
 
-
-export type FollowSetterMutation = { __typename?: 'Mutation', followSetter: boolean };
+export type FollowSetterMutation = { __typename?: 'Mutation'; followSetter: boolean };
 
 export type UnfollowSetterMutationVariables = Exact<{
   input: FollowSetterInput;
 }>;
 
-
-export type UnfollowSetterMutation = { __typename?: 'Mutation', unfollowSetter: boolean };
+export type UnfollowSetterMutation = { __typename?: 'Mutation'; unfollowSetter: boolean };
 
 export type GetSetterProfileQueryVariables = Exact<{
   input: SetterProfileInput;
 }>;
 
-
-export type GetSetterProfileQuery = { __typename?: 'Query', setterProfile?: { __typename?: 'SetterProfile', username: string, climbCount: number, boardTypes: Array<string>, followerCount: number, isFollowedByMe: boolean, linkedUserId?: string | null, linkedUserDisplayName?: string | null, linkedUserAvatarUrl?: string | null } | null };
+export type GetSetterProfileQuery = {
+  __typename?: 'Query';
+  setterProfile?: {
+    __typename?: 'SetterProfile';
+    username: string;
+    climbCount: number;
+    boardTypes: Array<string>;
+    followerCount: number;
+    isFollowedByMe: boolean;
+    linkedUserId?: string | null;
+    linkedUserDisplayName?: string | null;
+    linkedUserAvatarUrl?: string | null;
+  } | null;
+};
 
 export type GetSetterClimbsFullQueryVariables = Exact<{
   input: SetterClimbsFullInput;
 }>;
 
-
-export type GetSetterClimbsFullQuery = { __typename?: 'Query', setterClimbsFull: { __typename?: 'PlaylistClimbsResult', totalCount: number, hasMore: boolean, climbs: Array<{ __typename?: 'Climb', uuid: string, layoutId?: number | null, boardType?: string | null, setter_username: string, name: string, description?: string | null, frames: string, angle: number, ascensionist_count: number, difficulty: string, quality_average: string, stars: number, difficulty_error: string, benchmark_difficulty?: string | null }> } };
+export type GetSetterClimbsFullQuery = {
+  __typename?: 'Query';
+  setterClimbsFull: {
+    __typename?: 'PlaylistClimbsResult';
+    totalCount: number;
+    hasMore: boolean;
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      boardType?: string | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      angle: number;
+      ascensionist_count: number;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+    }>;
+  };
+};
 
 export type GetUserClimbsQueryVariables = Exact<{
   input: UserClimbsInput;
 }>;
 
-
-export type GetUserClimbsQuery = { __typename?: 'Query', userClimbs: { __typename?: 'PlaylistClimbsResult', totalCount: number, hasMore: boolean, climbs: Array<{ __typename?: 'Climb', uuid: string, layoutId?: number | null, boardType?: string | null, setter_username: string, name: string, description?: string | null, frames: string, angle: number, ascensionist_count: number, difficulty: string, quality_average: string, stars: number, difficulty_error: string, benchmark_difficulty?: string | null }> } };
+export type GetUserClimbsQuery = {
+  __typename?: 'Query';
+  userClimbs: {
+    __typename?: 'PlaylistClimbsResult';
+    totalCount: number;
+    hasMore: boolean;
+    climbs: Array<{
+      __typename?: 'Climb';
+      uuid: string;
+      layoutId?: number | null;
+      boardType?: string | null;
+      setter_username: string;
+      name: string;
+      description?: string | null;
+      frames: string;
+      angle: number;
+      ascensionist_count: number;
+      difficulty: string;
+      quality_average: string;
+      stars: number;
+      difficulty_error: string;
+      benchmark_difficulty?: string | null;
+    }>;
+  };
+};
 
 export type SearchUsersAndSettersQueryVariables = Exact<{
   input: SearchUsersInput;
 }>;
 
-
-export type SearchUsersAndSettersQuery = { __typename?: 'Query', searchUsersAndSetters: { __typename?: 'UnifiedSearchConnection', totalCount: number, hasMore: boolean, results: Array<{ __typename?: 'UnifiedSearchResult', recentAscentCount: number, matchReason?: string | null, user?: { __typename?: 'PublicUserProfile', id: string, displayName?: string | null, avatarUrl?: string | null, followerCount: number, followingCount: number, isFollowedByMe: boolean } | null, setter?: { __typename?: 'SetterSearchResult', username: string, climbCount: number, boardTypes: Array<string>, isFollowedByMe: boolean } | null }> } };
+export type SearchUsersAndSettersQuery = {
+  __typename?: 'Query';
+  searchUsersAndSetters: {
+    __typename?: 'UnifiedSearchConnection';
+    totalCount: number;
+    hasMore: boolean;
+    results: Array<{
+      __typename?: 'UnifiedSearchResult';
+      recentAscentCount: number;
+      matchReason?: string | null;
+      user?: {
+        __typename?: 'PublicUserProfile';
+        id: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+        followerCount: number;
+        followingCount: number;
+        isFollowedByMe: boolean;
+      } | null;
+      setter?: {
+        __typename?: 'SetterSearchResult';
+        username: string;
+        climbCount: number;
+        boardTypes: Array<string>;
+        isFollowedByMe: boolean;
+      } | null;
+    }>;
+  };
+};
 
 export type GetTicksQueryVariables = Exact<{
   input: GetTicksInput;
 }>;
 
-
-export type GetTicksQuery = { __typename?: 'Query', ticks: Array<{ __typename?: 'Tick', uuid: string, climbUuid: string, angle: number, isMirror: boolean, status: TickStatus, attemptCount: number, quality?: number | null, difficulty?: number | null, isBenchmark: boolean, comment: string, climbedAt: string, upvotes?: number | null, downvotes?: number | null, commentCount?: number | null }> };
+export type GetTicksQuery = {
+  __typename?: 'Query';
+  ticks: Array<{
+    __typename?: 'Tick';
+    uuid: string;
+    climbUuid: string;
+    angle: number;
+    isMirror: boolean;
+    status: TickStatus;
+    attemptCount: number;
+    quality?: number | null;
+    difficulty?: number | null;
+    isBenchmark: boolean;
+    comment: string;
+    climbedAt: string;
+    upvotes?: number | null;
+    downvotes?: number | null;
+    commentCount?: number | null;
+  }>;
+};
 
 export type GetUserTicksQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
   boardType: Scalars['String']['input'];
 }>;
 
-
-export type GetUserTicksQuery = { __typename?: 'Query', userTicks: Array<{ __typename?: 'Tick', climbUuid: string, angle: number, status: TickStatus, attemptCount: number, difficulty?: number | null, climbedAt: string, layoutId?: number | null }> };
+export type GetUserTicksQuery = {
+  __typename?: 'Query';
+  userTicks: Array<{
+    __typename?: 'Tick';
+    climbUuid: string;
+    angle: number;
+    status: TickStatus;
+    attemptCount: number;
+    difficulty?: number | null;
+    climbedAt: string;
+    layoutId?: number | null;
+  }>;
+};
 
 export type SaveTickMutationVariables = Exact<{
   input: SaveTickInput;
 }>;
 
-
-export type SaveTickMutation = { __typename?: 'Mutation', saveTick: { __typename?: 'Tick', uuid: string, climbUuid: string, angle: number, isMirror: boolean, status: TickStatus, attemptCount: number, quality?: number | null, difficulty?: number | null, comment: string, climbedAt: string } };
+export type SaveTickMutation = {
+  __typename?: 'Mutation';
+  saveTick: {
+    __typename?: 'Tick';
+    uuid: string;
+    climbUuid: string;
+    angle: number;
+    isMirror: boolean;
+    status: TickStatus;
+    attemptCount: number;
+    quality?: number | null;
+    difficulty?: number | null;
+    comment: string;
+    climbedAt: string;
+  };
+};
 
 export type AttachBetaLinkMutationVariables = Exact<{
   input: AttachBetaLinkInput;
 }>;
 
-
-export type AttachBetaLinkMutation = { __typename?: 'Mutation', attachBetaLink: boolean };
+export type AttachBetaLinkMutation = { __typename?: 'Mutation'; attachBetaLink: boolean };
 
 export type DeleteTickMutationVariables = Exact<{
   uuid: Scalars['ID']['input'];
 }>;
 
-
-export type DeleteTickMutation = { __typename?: 'Mutation', deleteTick: boolean };
+export type DeleteTickMutation = { __typename?: 'Mutation'; deleteTick: boolean };
 
 export type GetUserAscentsFeedQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
   input?: InputMaybe<AscentFeedInput>;
 }>;
 
-
-export type GetUserAscentsFeedQuery = { __typename?: 'Query', userAscentsFeed: { __typename?: 'AscentFeedResult', totalCount: number, hasMore: boolean, items: Array<{ __typename?: 'AscentFeedItem', uuid: string, climbUuid: string, climbName: string, setterUsername?: string | null, boardType: string, layoutId?: number | null, angle: number, isMirror: boolean, status: TickStatus, attemptCount: number, quality?: number | null, difficulty?: number | null, difficultyName?: string | null, consensusDifficulty?: number | null, consensusDifficultyName?: string | null, qualityAverage?: number | null, isBenchmark: boolean, isNoMatch: boolean, comment: string, climbedAt: string, frames?: string | null }> } };
+export type GetUserAscentsFeedQuery = {
+  __typename?: 'Query';
+  userAscentsFeed: {
+    __typename?: 'AscentFeedResult';
+    totalCount: number;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'AscentFeedItem';
+      uuid: string;
+      climbUuid: string;
+      climbName: string;
+      setterUsername?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      isMirror: boolean;
+      status: TickStatus;
+      attemptCount: number;
+      quality?: number | null;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      consensusDifficulty?: number | null;
+      consensusDifficultyName?: string | null;
+      qualityAverage?: number | null;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      comment: string;
+      climbedAt: string;
+      frames?: string | null;
+    }>;
+  };
+};
 
 export type GetUserGroupedAscentsFeedQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
   input?: InputMaybe<AscentFeedInput>;
 }>;
 
-
-export type GetUserGroupedAscentsFeedQuery = { __typename?: 'Query', userGroupedAscentsFeed: { __typename?: 'GroupedAscentFeedResult', totalCount: number, hasMore: boolean, groups: Array<{ __typename?: 'GroupedAscentFeedItem', key: string, climbUuid: string, climbName: string, setterUsername?: string | null, boardType: string, layoutId?: number | null, angle: number, isMirror: boolean, frames?: string | null, difficultyName?: string | null, isBenchmark: boolean, isNoMatch: boolean, date: string, flashCount: number, sendCount: number, attemptCount: number, bestQuality?: number | null, latestComment?: string | null, items: Array<{ __typename?: 'AscentFeedItem', uuid: string, climbUuid: string, climbName: string, setterUsername?: string | null, boardType: string, layoutId?: number | null, angle: number, isMirror: boolean, status: TickStatus, attemptCount: number, quality?: number | null, difficulty?: number | null, difficultyName?: string | null, isBenchmark: boolean, isNoMatch: boolean, comment: string, climbedAt: string, frames?: string | null }> }> } };
+export type GetUserGroupedAscentsFeedQuery = {
+  __typename?: 'Query';
+  userGroupedAscentsFeed: {
+    __typename?: 'GroupedAscentFeedResult';
+    totalCount: number;
+    hasMore: boolean;
+    groups: Array<{
+      __typename?: 'GroupedAscentFeedItem';
+      key: string;
+      climbUuid: string;
+      climbName: string;
+      setterUsername?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      isMirror: boolean;
+      frames?: string | null;
+      difficultyName?: string | null;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      date: string;
+      flashCount: number;
+      sendCount: number;
+      attemptCount: number;
+      bestQuality?: number | null;
+      latestComment?: string | null;
+      items: Array<{
+        __typename?: 'AscentFeedItem';
+        uuid: string;
+        climbUuid: string;
+        climbName: string;
+        setterUsername?: string | null;
+        boardType: string;
+        layoutId?: number | null;
+        angle: number;
+        isMirror: boolean;
+        status: TickStatus;
+        attemptCount: number;
+        quality?: number | null;
+        difficulty?: number | null;
+        difficultyName?: string | null;
+        isBenchmark: boolean;
+        isNoMatch: boolean;
+        comment: string;
+        climbedAt: string;
+        frames?: string | null;
+      }>;
+    }>;
+  };
+};
 
 export type GetUserProfileStatsQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
 }>;
 
-
-export type GetUserProfileStatsQuery = { __typename?: 'Query', userProfileStats: { __typename?: 'ProfileStats', totalDistinctClimbs: number, layoutStats: Array<{ __typename?: 'LayoutStats', layoutKey: string, boardType: string, layoutId?: number | null, distinctClimbCount: number, gradeCounts: Array<{ __typename?: 'GradeCount', grade: string, count: number }> }> } };
+export type GetUserProfileStatsQuery = {
+  __typename?: 'Query';
+  userProfileStats: {
+    __typename?: 'ProfileStats';
+    totalDistinctClimbs: number;
+    layoutStats: Array<{
+      __typename?: 'LayoutStats';
+      layoutKey: string;
+      boardType: string;
+      layoutId?: number | null;
+      distinctClimbCount: number;
+      gradeCounts: Array<{ __typename?: 'GradeCount'; grade: string; count: number }>;
+    }>;
+  };
+};
 
 export type GetUserClimbPercentileQueryVariables = Exact<{
   userId: Scalars['ID']['input'];
 }>;
 
-
-export type GetUserClimbPercentileQuery = { __typename?: 'Query', userClimbPercentile: { __typename?: 'UserClimbPercentile', totalDistinctClimbs: number, percentile: number, totalActiveUsers: number } };
+export type GetUserClimbPercentileQuery = {
+  __typename?: 'Query';
+  userClimbPercentile: {
+    __typename?: 'UserClimbPercentile';
+    totalDistinctClimbs: number;
+    percentile: number;
+    totalActiveUsers: number;
+  };
+};
 
 export type UpdateTickMutationVariables = Exact<{
   uuid: Scalars['ID']['input'];
   input: UpdateTickInput;
 }>;
 
+export type UpdateTickMutation = {
+  __typename?: 'Mutation';
+  updateTick: {
+    __typename?: 'Tick';
+    uuid: string;
+    status: TickStatus;
+    attemptCount: number;
+    quality?: number | null;
+    difficulty?: number | null;
+    isBenchmark: boolean;
+    comment: string;
+    updatedAt: string;
+  };
+};
 
-export type UpdateTickMutation = { __typename?: 'Mutation', updateTick: { __typename?: 'Tick', uuid: string, status: TickStatus, attemptCount: number, quality?: number | null, difficulty?: number | null, isBenchmark: boolean, comment: string, updatedAt: string } };
-
-export const PlaylistFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<PlaylistFieldsFragment, unknown>;
-export const SessionSummaryFieldsFragmentDoc = {"kind":"Document","definitions":[{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"totalSends"}},{"kind":"Field","name":{"kind":"Name","value":"totalAttempts"}},{"kind":"Field","name":{"kind":"Name","value":"gradeDistribution"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"grade"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"hardestClimb"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"grade"}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"sends"}},{"kind":"Field","name":{"kind":"Name","value":"attempts"}}]}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"durationMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"goal"}}]}}]} as unknown as DocumentNode<SessionSummaryFieldsFragment, unknown>;
-export const GetDeleteAccountInfoDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetDeleteAccountInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteAccountInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"publishedClimbCount"}}]}}]}}]} as unknown as DocumentNode<GetDeleteAccountInfoQuery, GetDeleteAccountInfoQueryVariables>;
-export const DeleteAccountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteAccount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteAccountInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteAccount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<DeleteAccountMutation, DeleteAccountMutationVariables>;
-export const GetBetaLinksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetBetaLinks"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"betaLinks"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}},{"kind":"Argument","name":{"kind":"Name","value":"climbUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"link"}},{"kind":"Field","name":{"kind":"Name","value":"foreignUsername"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"thumbnail"}},{"kind":"Field","name":{"kind":"Name","value":"isListed"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GetBetaLinksQuery, GetBetaLinksQueryVariables>;
-export const ClimbStatsHistoryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ClimbStatsHistory"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardName"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbStatsHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"boardName"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardName"}}},{"kind":"Argument","name":{"kind":"Name","value":"climbUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"qualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyAverage"}},{"kind":"Field","name":{"kind":"Name","value":"displayDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<ClimbStatsHistoryQuery, ClimbStatsHistoryQueryVariables>;
-export const GetGlobalCommentFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetGlobalCommentFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"GlobalCommentFeedInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"globalCommentFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"comments"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"parentCommentUuid"}},{"kind":"Field","name":{"kind":"Name","value":"body"}},{"kind":"Field","name":{"kind":"Name","value":"isDeleted"}},{"kind":"Field","name":{"kind":"Name","value":"replyCount"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}},{"kind":"Field","name":{"kind":"Name","value":"cursor"}}]}}]}}]} as unknown as DocumentNode<GetGlobalCommentFeedQuery, GetGlobalCommentFeedQueryVariables>;
-export const GetCommentsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetComments"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CommentsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"comments"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"comments"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"parentCommentUuid"}},{"kind":"Field","name":{"kind":"Name","value":"body"}},{"kind":"Field","name":{"kind":"Name","value":"isDeleted"}},{"kind":"Field","name":{"kind":"Name","value":"replyCount"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetCommentsQuery, GetCommentsQueryVariables>;
-export const GetVoteSummaryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetVoteSummary"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SocialEntityType"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"entityId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"voteSummary"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"entityType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}}},{"kind":"Argument","name":{"kind":"Name","value":"entityId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"entityId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}}]}}]}}]} as unknown as DocumentNode<GetVoteSummaryQuery, GetVoteSummaryQueryVariables>;
-export const GetBulkVoteSummariesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetBulkVoteSummaries"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BulkVoteSummaryInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bulkVoteSummaries"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}}]}}]}}]} as unknown as DocumentNode<GetBulkVoteSummariesQuery, GetBulkVoteSummariesQueryVariables>;
-export const AddCommentDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AddComment"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"AddCommentInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"addComment"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"parentCommentUuid"}},{"kind":"Field","name":{"kind":"Name","value":"body"}},{"kind":"Field","name":{"kind":"Name","value":"isDeleted"}},{"kind":"Field","name":{"kind":"Name","value":"replyCount"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<AddCommentMutation, AddCommentMutationVariables>;
-export const UpdateCommentDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateComment"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateCommentInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateComment"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"parentCommentUuid"}},{"kind":"Field","name":{"kind":"Name","value":"body"}},{"kind":"Field","name":{"kind":"Name","value":"isDeleted"}},{"kind":"Field","name":{"kind":"Name","value":"replyCount"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<UpdateCommentMutation, UpdateCommentMutationVariables>;
-export const DeleteCommentDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteComment"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"commentUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteComment"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"commentUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"commentUuid"}}}]}]}}]} as unknown as DocumentNode<DeleteCommentMutation, DeleteCommentMutationVariables>;
-export const VoteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"Vote"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"VoteInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"vote"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"voteScore"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}}]}}]}}]} as unknown as DocumentNode<VoteMutation, VoteMutationVariables>;
-export const CreateSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateSessionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"boardPath"}},{"kind":"Field","name":{"kind":"Name","value":"goal"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"isPermanent"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}}]}}]}}]} as unknown as DocumentNode<CreateSessionMutation, CreateSessionMutationVariables>;
-export const FavoritesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"Favorites"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardName"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuids"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"angle"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"favorites"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"boardName"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardName"}}},{"kind":"Argument","name":{"kind":"Name","value":"climbUuids"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuids"}}},{"kind":"Argument","name":{"kind":"Name","value":"angle"},"value":{"kind":"Variable","name":{"kind":"Name","value":"angle"}}}]}]}}]} as unknown as DocumentNode<FavoritesQuery, FavoritesQueryVariables>;
-export const ToggleFavoriteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ToggleFavorite"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ToggleFavoriteInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"toggleFavorite"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"favorited"}}]}}]}}]} as unknown as DocumentNode<ToggleFavoriteMutation, ToggleFavoriteMutationVariables>;
-export const UserFavoritesCountsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"UserFavoritesCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userFavoritesCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"boardName"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}}]} as unknown as DocumentNode<UserFavoritesCountsQuery, UserFavoritesCountsQueryVariables>;
-export const UserActiveBoardsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"UserActiveBoards"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userActiveBoards"}}]}}]} as unknown as DocumentNode<UserActiveBoardsQuery, UserActiveBoardsQueryVariables>;
-export const GetUserFavoriteClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserFavoriteClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetUserFavoriteClimbsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userFavoriteClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"setter_username"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionist_count"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"quality_average"}},{"kind":"Field","name":{"kind":"Name","value":"stars"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty_error"}},{"kind":"Field","name":{"kind":"Name","value":"benchmark_difficulty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetUserFavoriteClimbsQuery, GetUserFavoriteClimbsQueryVariables>;
-export const SubmitAppFeedbackDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SubmitAppFeedback"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SubmitAppFeedbackInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"submitAppFeedback"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<SubmitAppFeedbackMutation, SubmitAppFeedbackMutationVariables>;
-export const GetNewClimbFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetNewClimbFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"NewClimbFeedInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"newClimbFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"setterDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"setterAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetNewClimbFeedQuery, GetNewClimbFeedQueryVariables>;
-export const GetMyNewClimbSubscriptionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMyNewClimbSubscriptions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myNewClimbSubscriptions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GetMyNewClimbSubscriptionsQuery, GetMyNewClimbSubscriptionsQueryVariables>;
-export const SubscribeNewClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SubscribeNewClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"NewClimbSubscriptionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscribeNewClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<SubscribeNewClimbsMutation, SubscribeNewClimbsMutationVariables>;
-export const UnsubscribeNewClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UnsubscribeNewClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"NewClimbSubscriptionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unsubscribeNewClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<UnsubscribeNewClimbsMutation, UnsubscribeNewClimbsMutationVariables>;
-export const OnNewClimbCreatedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"OnNewClimbCreated"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"layoutId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"newClimbCreated"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}},{"kind":"Argument","name":{"kind":"Name","value":"layoutId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"layoutId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climb"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"setterDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"setterAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]}}]} as unknown as DocumentNode<OnNewClimbCreatedSubscription, OnNewClimbCreatedSubscriptionVariables>;
-export const CheckMoonBoardClimbDuplicatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"CheckMoonBoardClimbDuplicates"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CheckMoonBoardClimbDuplicatesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"checkMoonBoardClimbDuplicates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clientKey"}},{"kind":"Field","name":{"kind":"Name","value":"exists"}},{"kind":"Field","name":{"kind":"Name","value":"existingClimbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"existingClimbName"}}]}}]}}]} as unknown as DocumentNode<CheckMoonBoardClimbDuplicatesQuery, CheckMoonBoardClimbDuplicatesQueryVariables>;
-export const SaveClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SaveClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SaveClimbInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"saveClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"synced"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"publishedAt"}}]}}]}}]} as unknown as DocumentNode<SaveClimbMutation, SaveClimbMutationVariables>;
-export const SaveMoonBoardClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SaveMoonBoardClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SaveMoonBoardClimbInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"saveMoonBoardClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"synced"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"publishedAt"}}]}}]}}]} as unknown as DocumentNode<SaveMoonBoardClimbMutation, SaveMoonBoardClimbMutationVariables>;
-export const UpdateClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateClimbInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"publishedAt"}},{"kind":"Field","name":{"kind":"Name","value":"isDraft"}}]}}]}}]} as unknown as DocumentNode<UpdateClimbMutation, UpdateClimbMutationVariables>;
-export const DeleteDraftClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteDraftClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteDraftClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"uuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}}},{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}}]}]}}]} as unknown as DocumentNode<DeleteDraftClimbMutation, DeleteDraftClimbMutationVariables>;
-export const GetNotificationsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetNotifications"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"unreadOnly"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"offset"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"notifications"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"unreadOnly"},"value":{"kind":"Variable","name":{"kind":"Name","value":"unreadOnly"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"offset"},"value":{"kind":"Variable","name":{"kind":"Name","value":"offset"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"notifications"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"actorId"}},{"kind":"Field","name":{"kind":"Name","value":"actorDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"actorAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"commentBody"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"proposalUuid"}},{"kind":"Field","name":{"kind":"Name","value":"isRead"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"unreadCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetNotificationsQuery, GetNotificationsQueryVariables>;
-export const GetGroupedNotificationsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetGroupedNotifications"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"offset"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"groupedNotifications"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"offset"},"value":{"kind":"Variable","name":{"kind":"Name","value":"offset"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"entityType"}},{"kind":"Field","name":{"kind":"Name","value":"entityId"}},{"kind":"Field","name":{"kind":"Name","value":"actorCount"}},{"kind":"Field","name":{"kind":"Name","value":"actors"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}}]}},{"kind":"Field","name":{"kind":"Name","value":"commentBody"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"proposalUuid"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"isRead"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"unreadCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetGroupedNotificationsQuery, GetGroupedNotificationsQueryVariables>;
-export const GetUnreadNotificationCountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUnreadNotificationCount"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unreadNotificationCount"}}]}}]} as unknown as DocumentNode<GetUnreadNotificationCountQuery, GetUnreadNotificationCountQueryVariables>;
-export const MarkNotificationReadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MarkNotificationRead"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"notificationUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markNotificationRead"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"notificationUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"notificationUuid"}}}]}]}}]} as unknown as DocumentNode<MarkNotificationReadMutation, MarkNotificationReadMutationVariables>;
-export const MarkGroupNotificationsReadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MarkGroupNotificationsRead"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"type"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"NotificationType"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"SocialEntityType"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"entityId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markGroupNotificationsRead"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"type"},"value":{"kind":"Variable","name":{"kind":"Name","value":"type"}}},{"kind":"Argument","name":{"kind":"Name","value":"entityType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"entityType"}}},{"kind":"Argument","name":{"kind":"Name","value":"entityId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"entityId"}}}]}]}}]} as unknown as DocumentNode<MarkGroupNotificationsReadMutation, MarkGroupNotificationsReadMutationVariables>;
-export const MarkAllNotificationsReadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MarkAllNotificationsRead"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"markAllNotificationsRead"}}]}}]} as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
-export const GetUserPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserPlaylists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetUserPlaylistsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userPlaylists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<GetUserPlaylistsQuery, GetUserPlaylistsQueryVariables>;
-export const GetAllUserPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetAllUserPlaylists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetAllUserPlaylistsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"allUserPlaylists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<GetAllUserPlaylistsQuery, GetAllUserPlaylistsQueryVariables>;
-export const GetMyPinnedPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMyPinnedPlaylists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetMyPinnedPlaylistsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myPinnedPlaylists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<GetMyPinnedPlaylistsQuery, GetMyPinnedPlaylistsQueryVariables>;
-export const PinPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"PinPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PinPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pinPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<PinPlaylistMutation, PinPlaylistMutationVariables>;
-export const UnpinPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UnpinPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"PinPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unpinPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<UnpinPlaylistMutation, UnpinPlaylistMutationVariables>;
-export const GetPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<GetPlaylistQuery, GetPlaylistQueryVariables>;
-export const GetPlaylistsForClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylistsForClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetPlaylistsForClimbInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlistsForClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<GetPlaylistsForClimbQuery, GetPlaylistsForClimbQueryVariables>;
-export const GetPlaylistsForClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylistsForClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetPlaylistsForClimbsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlistsForClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"playlistUuids"}}]}}]}}]} as unknown as DocumentNode<GetPlaylistsForClimbsQuery, GetPlaylistsForClimbsQueryVariables>;
-export const CreatePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreatePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreatePlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<CreatePlaylistMutation, CreatePlaylistMutationVariables>;
-export const UpdatePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdatePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdatePlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaylistFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaylistFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Playlist"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"isPublic"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastAccessedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"userRole"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"isPinnedByMe"}}]}}]} as unknown as DocumentNode<UpdatePlaylistMutation, UpdatePlaylistMutationVariables>;
-export const DeletePlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeletePlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deletePlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}]}]}}]} as unknown as DocumentNode<DeletePlaylistMutation, DeletePlaylistMutationVariables>;
-export const AddClimbToPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AddClimbToPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"AddClimbToPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"addClimbToPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"playlistId"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"position"}},{"kind":"Field","name":{"kind":"Name","value":"addedAt"}}]}}]}}]} as unknown as DocumentNode<AddClimbToPlaylistMutation, AddClimbToPlaylistMutationVariables>;
-export const RemoveClimbFromPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RemoveClimbFromPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RemoveClimbFromPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeClimbFromPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<RemoveClimbFromPlaylistMutation, RemoveClimbFromPlaylistMutationVariables>;
-export const GetPlaylistClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylistClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetPlaylistClimbsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlistClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"setter_username"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionist_count"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"quality_average"}},{"kind":"Field","name":{"kind":"Name","value":"stars"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty_error"}},{"kind":"Field","name":{"kind":"Name","value":"benchmark_difficulty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetPlaylistClimbsQuery, GetPlaylistClimbsQueryVariables>;
-export const DiscoverPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"DiscoverPlaylists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DiscoverPlaylistsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"discoverPlaylists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"creatorId"}},{"kind":"Field","name":{"kind":"Name","value":"creatorName"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<DiscoverPlaylistsQuery, DiscoverPlaylistsQueryVariables>;
-export const GetPlaylistCreatorsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaylistCreators"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetPlaylistCreatorsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlistCreators"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"playlistCount"}}]}}]}}]} as unknown as DocumentNode<GetPlaylistCreatorsQuery, GetPlaylistCreatorsQueryVariables>;
-export const UpdatePlaylistLastAccessedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdatePlaylistLastAccessed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatePlaylistLastAccessed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"playlistId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"playlistId"}}}]}]}}]} as unknown as DocumentNode<UpdatePlaylistLastAccessedMutation, UpdatePlaylistLastAccessedMutationVariables>;
-export const SearchPlaylistsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SearchPlaylists"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SearchPlaylistsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"searchPlaylists"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playlists"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"color"}},{"kind":"Field","name":{"kind":"Name","value":"icon"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"creatorId"}},{"kind":"Field","name":{"kind":"Name","value":"creatorName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<SearchPlaylistsQuery, SearchPlaylistsQueryVariables>;
-export const FollowPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"FollowPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<FollowPlaylistMutation, FollowPlaylistMutationVariables>;
-export const UnfollowPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UnfollowPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unfollowPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<UnfollowPlaylistMutation, UnfollowPlaylistMutationVariables>;
-export const GetSmartPlaylistDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSmartPlaylist"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetSmartPlaylistInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"smartPlaylist"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"meta"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatar"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"climbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"setter_username"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionist_count"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"quality_average"}},{"kind":"Field","name":{"kind":"Name","value":"stars"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty_error"}},{"kind":"Field","name":{"kind":"Name","value":"benchmark_difficulty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetSmartPlaylistQuery, GetSmartPlaylistQueryVariables>;
-export const GetMySmartPlaylistCountsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMySmartPlaylistCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"mySmartPlaylistCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}}]} as unknown as DocumentNode<GetMySmartPlaylistCountsQuery, GetMySmartPlaylistCountsQueryVariables>;
-export const GetClimbProposalsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetClimbProposals"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetClimbProposalsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbProposals"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"proposals"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"proposerId"}},{"kind":"Field","name":{"kind":"Name","value":"proposerDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"proposerAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"proposedValue"}},{"kind":"Field","name":{"kind":"Name","value":"currentValue"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedAt"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedBy"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"weightedUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"weightedDownvotes"}},{"kind":"Field","name":{"kind":"Name","value":"requiredUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"climbSetterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbQualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"climbAscensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficultyError"}},{"kind":"Field","name":{"kind":"Name","value":"climbBenchmarkDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbIsNoMatch"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetClimbProposalsQuery, GetClimbProposalsQueryVariables>;
-export const GetClimbCommunityStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetClimbCommunityStatus"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"angle"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbCommunityStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"climbUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}}},{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}},{"kind":"Argument","name":{"kind":"Name","value":"angle"},"value":{"kind":"Variable","name":{"kind":"Name","value":"angle"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"communityGrade"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isClassic"}},{"kind":"Field","name":{"kind":"Name","value":"isFrozen"}},{"kind":"Field","name":{"kind":"Name","value":"freezeReason"}},{"kind":"Field","name":{"kind":"Name","value":"openProposalCount"}},{"kind":"Field","name":{"kind":"Name","value":"outlierAnalysis"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isOutlier"}},{"kind":"Field","name":{"kind":"Name","value":"currentGrade"}},{"kind":"Field","name":{"kind":"Name","value":"neighborAverage"}},{"kind":"Field","name":{"kind":"Name","value":"neighborCount"}},{"kind":"Field","name":{"kind":"Name","value":"gradeDifference"}}]}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<GetClimbCommunityStatusQuery, GetClimbCommunityStatusQueryVariables>;
-export const GetBulkClimbCommunityStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetBulkClimbCommunityStatus"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuids"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"angle"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bulkClimbCommunityStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"climbUuids"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuids"}}},{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}},{"kind":"Argument","name":{"kind":"Name","value":"angle"},"value":{"kind":"Variable","name":{"kind":"Name","value":"angle"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"communityGrade"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isClassic"}},{"kind":"Field","name":{"kind":"Name","value":"isFrozen"}},{"kind":"Field","name":{"kind":"Name","value":"freezeReason"}},{"kind":"Field","name":{"kind":"Name","value":"openProposalCount"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<GetBulkClimbCommunityStatusQuery, GetBulkClimbCommunityStatusQueryVariables>;
-export const BrowseProposalsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"BrowseProposals"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BrowseProposalsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"browseProposals"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"proposals"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"proposerId"}},{"kind":"Field","name":{"kind":"Name","value":"proposerDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"proposerAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"proposedValue"}},{"kind":"Field","name":{"kind":"Name","value":"currentValue"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedAt"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedBy"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"weightedUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"weightedDownvotes"}},{"kind":"Field","name":{"kind":"Name","value":"requiredUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"climbSetterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbQualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"climbAscensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficultyError"}},{"kind":"Field","name":{"kind":"Name","value":"climbBenchmarkDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbIsNoMatch"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<BrowseProposalsQuery, BrowseProposalsQueryVariables>;
-export const GetClimbClassicStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetClimbClassicStatus"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbClassicStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"climbUuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"climbUuid"}}},{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"isClassic"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<GetClimbClassicStatusQuery, GetClimbClassicStatusQueryVariables>;
-export const CreateProposalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateProposal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"CreateProposalInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createProposal"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"proposerId"}},{"kind":"Field","name":{"kind":"Name","value":"proposerDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"proposerAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"proposedValue"}},{"kind":"Field","name":{"kind":"Name","value":"currentValue"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"weightedUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"weightedDownvotes"}},{"kind":"Field","name":{"kind":"Name","value":"requiredUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"climbSetterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbQualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"climbAscensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficultyError"}},{"kind":"Field","name":{"kind":"Name","value":"climbBenchmarkDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbIsNoMatch"}}]}}]}}]} as unknown as DocumentNode<CreateProposalMutation, CreateProposalMutationVariables>;
-export const VoteOnProposalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"VoteOnProposal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"VoteOnProposalInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"voteOnProposal"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"proposerId"}},{"kind":"Field","name":{"kind":"Name","value":"proposerDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"proposerAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"proposedValue"}},{"kind":"Field","name":{"kind":"Name","value":"currentValue"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedAt"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedBy"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"weightedUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"weightedDownvotes"}},{"kind":"Field","name":{"kind":"Name","value":"requiredUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"climbSetterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbQualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"climbAscensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficultyError"}},{"kind":"Field","name":{"kind":"Name","value":"climbBenchmarkDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbIsNoMatch"}}]}}]}}]} as unknown as DocumentNode<VoteOnProposalMutation, VoteOnProposalMutationVariables>;
-export const ResolveProposalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ResolveProposal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ResolveProposalInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"resolveProposal"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedAt"}},{"kind":"Field","name":{"kind":"Name","value":"resolvedBy"}},{"kind":"Field","name":{"kind":"Name","value":"weightedUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"weightedDownvotes"}},{"kind":"Field","name":{"kind":"Name","value":"requiredUpvotes"}},{"kind":"Field","name":{"kind":"Name","value":"userVote"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"climbSetterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbQualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"climbAscensionistCount"}},{"kind":"Field","name":{"kind":"Name","value":"climbDifficultyError"}},{"kind":"Field","name":{"kind":"Name","value":"climbBenchmarkDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbIsNoMatch"}}]}}]}}]} as unknown as DocumentNode<ResolveProposalMutation, ResolveProposalMutationVariables>;
-export const DeleteProposalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteProposal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteProposalInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteProposal"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<DeleteProposalMutation, DeleteProposalMutationVariables>;
-export const SetterOverrideCommunityStatusDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SetterOverrideCommunityStatus"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SetterOverrideInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setterOverrideCommunityStatus"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"communityGrade"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isClassic"}},{"kind":"Field","name":{"kind":"Name","value":"isFrozen"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<SetterOverrideCommunityStatusMutation, SetterOverrideCommunityStatusMutationVariables>;
-export const FreezeClimbDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"FreezeClimb"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FreezeClimbInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"freezeClimb"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<FreezeClimbMutation, FreezeClimbMutationVariables>;
-export const GetCommunityRolesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCommunityRoles"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"communityRoles"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"grantedBy"}},{"kind":"Field","name":{"kind":"Name","value":"grantedByDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GetCommunityRolesQuery, GetCommunityRolesQueryVariables>;
-export const GetMyRolesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMyRoles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myRoles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GetMyRolesQuery, GetMyRolesQueryVariables>;
-export const GrantRoleDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"GrantRole"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GrantRoleInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"grantRole"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"grantedBy"}},{"kind":"Field","name":{"kind":"Name","value":"grantedByDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GrantRoleMutation, GrantRoleMutationVariables>;
-export const RevokeRoleDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RevokeRole"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"RevokeRoleInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"revokeRole"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<RevokeRoleMutation, RevokeRoleMutationVariables>;
-export const GetCommunitySettingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCommunitySettings"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"scope"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"scopeKey"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"communitySettings"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"scope"},"value":{"kind":"Variable","name":{"kind":"Name","value":"scope"}}},{"kind":"Argument","name":{"kind":"Name","value":"scopeKey"},"value":{"kind":"Variable","name":{"kind":"Name","value":"scopeKey"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"scope"}},{"kind":"Field","name":{"kind":"Name","value":"scopeKey"}},{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"setBy"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<GetCommunitySettingsQuery, GetCommunitySettingsQueryVariables>;
-export const SetCommunitySettingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SetCommunitySettings"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SetCommunitySettingInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setCommunitySettings"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"scope"}},{"kind":"Field","name":{"kind":"Name","value":"scopeKey"}},{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"setBy"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
-export const EndSessionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"EndSession"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"endSession"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"sessionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"totalSends"}},{"kind":"Field","name":{"kind":"Name","value":"totalAttempts"}},{"kind":"Field","name":{"kind":"Name","value":"gradeDistribution"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"grade"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"hardestClimb"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"grade"}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"sends"}},{"kind":"Field","name":{"kind":"Name","value":"attempts"}}]}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"durationMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"goal"}}]}}]} as unknown as DocumentNode<EndSessionMutation, EndSessionMutationVariables>;
-export const GetSessionSummaryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSessionSummary"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionSummary"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"sessionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"SessionSummaryFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SessionSummaryFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SessionSummary"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"totalSends"}},{"kind":"Field","name":{"kind":"Name","value":"totalAttempts"}},{"kind":"Field","name":{"kind":"Name","value":"gradeDistribution"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"grade"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"hardestClimb"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"grade"}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"sends"}},{"kind":"Field","name":{"kind":"Name","value":"attempts"}}]}},{"kind":"Field","name":{"kind":"Name","value":"startedAt"}},{"kind":"Field","name":{"kind":"Name","value":"endedAt"}},{"kind":"Field","name":{"kind":"Name","value":"durationMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"goal"}}]}}]} as unknown as DocumentNode<GetSessionSummaryQuery, GetSessionSummaryQueryVariables>;
-export const FollowUserDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"FollowUser"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followUser"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<FollowUserMutation, FollowUserMutationVariables>;
-export const UnfollowUserDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UnfollowUser"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unfollowUser"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<UnfollowUserMutation, UnfollowUserMutationVariables>;
-export const GetPublicProfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPublicProfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"publicProfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"followingCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}}]}}]} as unknown as DocumentNode<GetPublicProfileQuery, GetPublicProfileQueryVariables>;
-export const GetFollowersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFollowers"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowListInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followers"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"users"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"followingCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetFollowersQuery, GetFollowersQueryVariables>;
-export const GetFollowingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFollowing"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowListInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"following"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"users"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"followingCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetFollowingQuery, GetFollowingQueryVariables>;
-export const IsFollowingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"IsFollowing"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isFollowing"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}}]}]}}]} as unknown as DocumentNode<IsFollowingQuery, IsFollowingQueryVariables>;
-export const SearchUsersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SearchUsers"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SearchUsersInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"searchUsers"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"results"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"followingCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}},{"kind":"Field","name":{"kind":"Name","value":"recentAscentCount"}},{"kind":"Field","name":{"kind":"Name","value":"matchReason"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<SearchUsersQuery, SearchUsersQueryVariables>;
-export const GetFollowingAscentsFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFollowingAscentsFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowingAscentsFeedInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followingAscentsFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetFollowingAscentsFeedQuery, GetFollowingAscentsFeedQueryVariables>;
-export const GetGlobalAscentsFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetGlobalAscentsFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowingAscentsFeedInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"globalAscentsFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetGlobalAscentsFeedQuery, GetGlobalAscentsFeedQueryVariables>;
-export const GetFollowingClimbAscentsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetFollowingClimbAscents"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowingClimbAscentsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followingClimbAscents"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"userDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"userAvatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"commentCount"}}]}}]}}]}}]} as unknown as DocumentNode<GetFollowingClimbAscentsQuery, GetFollowingClimbAscentsQueryVariables>;
-export const FollowSetterDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"FollowSetter"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowSetterInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"followSetter"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<FollowSetterMutation, FollowSetterMutationVariables>;
-export const UnfollowSetterDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UnfollowSetter"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"FollowSetterInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"unfollowSetter"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<UnfollowSetterMutation, UnfollowSetterMutationVariables>;
-export const GetSetterProfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSetterProfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SetterProfileInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setterProfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"boardTypes"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}},{"kind":"Field","name":{"kind":"Name","value":"linkedUserId"}},{"kind":"Field","name":{"kind":"Name","value":"linkedUserDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"linkedUserAvatarUrl"}}]}}]}}]} as unknown as DocumentNode<GetSetterProfileQuery, GetSetterProfileQueryVariables>;
-export const GetSetterClimbsFullDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetSetterClimbsFull"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SetterClimbsFullInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"setterClimbsFull"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"setter_username"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionist_count"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"quality_average"}},{"kind":"Field","name":{"kind":"Name","value":"stars"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty_error"}},{"kind":"Field","name":{"kind":"Name","value":"benchmark_difficulty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetSetterClimbsFullQuery, GetSetterClimbsFullQueryVariables>;
-export const GetUserClimbsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserClimbs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UserClimbsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userClimbs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"setter_username"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"ascensionist_count"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"quality_average"}},{"kind":"Field","name":{"kind":"Name","value":"stars"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty_error"}},{"kind":"Field","name":{"kind":"Name","value":"benchmark_difficulty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetUserClimbsQuery, GetUserClimbsQueryVariables>;
-export const SearchUsersAndSettersDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SearchUsersAndSetters"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SearchUsersInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"searchUsersAndSetters"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"results"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"}},{"kind":"Field","name":{"kind":"Name","value":"followerCount"}},{"kind":"Field","name":{"kind":"Name","value":"followingCount"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}},{"kind":"Field","name":{"kind":"Name","value":"setter"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"username"}},{"kind":"Field","name":{"kind":"Name","value":"climbCount"}},{"kind":"Field","name":{"kind":"Name","value":"boardTypes"}},{"kind":"Field","name":{"kind":"Name","value":"isFollowedByMe"}}]}},{"kind":"Field","name":{"kind":"Name","value":"recentAscentCount"}},{"kind":"Field","name":{"kind":"Name","value":"matchReason"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<SearchUsersAndSettersQuery, SearchUsersAndSettersQueryVariables>;
-export const GetTicksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetTicks"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"GetTicksInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"ticks"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"upvotes"}},{"kind":"Field","name":{"kind":"Name","value":"downvotes"}},{"kind":"Field","name":{"kind":"Name","value":"commentCount"}}]}}]}}]} as unknown as DocumentNode<GetTicksQuery, GetTicksQueryVariables>;
-export const GetUserTicksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserTicks"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userTicks"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}},{"kind":"Argument","name":{"kind":"Name","value":"boardType"},"value":{"kind":"Variable","name":{"kind":"Name","value":"boardType"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}}]}}]}}]} as unknown as DocumentNode<GetUserTicksQuery, GetUserTicksQueryVariables>;
-export const SaveTickDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SaveTick"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SaveTickInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"saveTick"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}}]}}]}}]} as unknown as DocumentNode<SaveTickMutation, SaveTickMutationVariables>;
-export const AttachBetaLinkDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AttachBetaLink"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"AttachBetaLinkInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"attachBetaLink"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<AttachBetaLinkMutation, AttachBetaLinkMutationVariables>;
-export const DeleteTickDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteTick"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteTick"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"uuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}}}]}]}}]} as unknown as DocumentNode<DeleteTickMutation, DeleteTickMutationVariables>;
-export const GetUserAscentsFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserAscentsFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"AscentFeedInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userAscentsFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}},{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"consensusDifficulty"}},{"kind":"Field","name":{"kind":"Name","value":"consensusDifficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"qualityAverage"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetUserAscentsFeedQuery, GetUserAscentsFeedQueryVariables>;
-export const GetUserGroupedAscentsFeedDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserGroupedAscentsFeed"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"AscentFeedInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userGroupedAscentsFeed"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}},{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"flashCount"}},{"kind":"Field","name":{"kind":"Name","value":"sendCount"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"bestQuality"}},{"kind":"Field","name":{"kind":"Name","value":"latestComment"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbUuid"}},{"kind":"Field","name":{"kind":"Name","value":"climbName"}},{"kind":"Field","name":{"kind":"Name","value":"setterUsername"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"angle"}},{"kind":"Field","name":{"kind":"Name","value":"isMirror"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"difficultyName"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"isNoMatch"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"climbedAt"}},{"kind":"Field","name":{"kind":"Name","value":"frames"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}}]}}]}}]} as unknown as DocumentNode<GetUserGroupedAscentsFeedQuery, GetUserGroupedAscentsFeedQueryVariables>;
-export const GetUserProfileStatsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserProfileStats"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userProfileStats"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalDistinctClimbs"}},{"kind":"Field","name":{"kind":"Name","value":"layoutStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"layoutKey"}},{"kind":"Field","name":{"kind":"Name","value":"boardType"}},{"kind":"Field","name":{"kind":"Name","value":"layoutId"}},{"kind":"Field","name":{"kind":"Name","value":"distinctClimbCount"}},{"kind":"Field","name":{"kind":"Name","value":"gradeCounts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"grade"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetUserProfileStatsQuery, GetUserProfileStatsQueryVariables>;
-export const GetUserClimbPercentileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetUserClimbPercentile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"userId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userClimbPercentile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"userId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"userId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalDistinctClimbs"}},{"kind":"Field","name":{"kind":"Name","value":"percentile"}},{"kind":"Field","name":{"kind":"Name","value":"totalActiveUsers"}}]}}]}}]} as unknown as DocumentNode<GetUserClimbPercentileQuery, GetUserClimbPercentileQueryVariables>;
-export const UpdateTickDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateTick"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateTickInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateTick"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"uuid"},"value":{"kind":"Variable","name":{"kind":"Name","value":"uuid"}}},{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uuid"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"attemptCount"}},{"kind":"Field","name":{"kind":"Name","value":"quality"}},{"kind":"Field","name":{"kind":"Name","value":"difficulty"}},{"kind":"Field","name":{"kind":"Name","value":"isBenchmark"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]} as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
+export const PlaylistFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PlaylistFieldsFragment, unknown>;
+export const SessionSummaryFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionSummaryFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionSummary' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SessionSummaryFieldsFragment, unknown>;
+export const GetDeleteAccountInfoDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetDeleteAccountInfo' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteAccountInfo' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'publishedClimbCount' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetDeleteAccountInfoQuery, GetDeleteAccountInfoQueryVariables>;
+export const DeleteAccountDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteAccount' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'DeleteAccountInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteAccount' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteAccountMutation, DeleteAccountMutationVariables>;
+export const GetBetaLinksDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetBetaLinks' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'betaLinks' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetBetaLinksQuery, GetBetaLinksQueryVariables>;
+export const ClimbStatsHistoryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ClimbStatsHistory' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbStatsHistory' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardName' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ClimbStatsHistoryQuery, ClimbStatsHistoryQueryVariables>;
+export const GetGlobalCommentFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetGlobalCommentFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'GlobalCommentFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'globalCommentFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'comments' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'parentCommentUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'replyCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'cursor' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetGlobalCommentFeedQuery, GetGlobalCommentFeedQueryVariables>;
+export const GetCommentsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetComments' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'CommentsInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'comments' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'comments' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'parentCommentUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'replyCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetCommentsQuery, GetCommentsQueryVariables>;
+export const GetVoteSummaryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetVoteSummary' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'SocialEntityType' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'voteSummary' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetVoteSummaryQuery, GetVoteSummaryQueryVariables>;
+export const GetBulkVoteSummariesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetBulkVoteSummaries' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'BulkVoteSummaryInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'bulkVoteSummaries' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetBulkVoteSummariesQuery, GetBulkVoteSummariesQueryVariables>;
+export const AddCommentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'AddComment' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'AddCommentInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'addComment' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'parentCommentUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'replyCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AddCommentMutation, AddCommentMutationVariables>;
+export const UpdateCommentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateComment' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateCommentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateComment' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'parentCommentUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'body' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDeleted' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'replyCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateCommentMutation, UpdateCommentMutationVariables>;
+export const DeleteCommentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteComment' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'commentUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteComment' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'commentUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'commentUuid' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteCommentMutation, DeleteCommentMutationVariables>;
+export const VoteDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'Vote' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'VoteInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'vote' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<VoteMutation, VoteMutationVariables>;
+export const CreateSessionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreateSession' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CreateSessionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createSession' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardPath' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPermanent' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreateSessionMutation, CreateSessionMutationVariables>;
+export const FavoritesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'Favorites' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+            },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'favorites' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardName' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuids' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'angle' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FavoritesQuery, FavoritesQueryVariables>;
+export const ToggleFavoriteDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ToggleFavorite' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ToggleFavoriteInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'toggleFavorite' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'favorited' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ToggleFavoriteMutation, ToggleFavoriteMutationVariables>;
+export const UserFavoritesCountsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'UserFavoritesCounts' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userFavoritesCounts' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UserFavoritesCountsQuery, UserFavoritesCountsQueryVariables>;
+export const UserActiveBoardsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'UserActiveBoards' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'userActiveBoards' } }],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UserActiveBoardsQuery, UserActiveBoardsQueryVariables>;
+export const GetUserFavoriteClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserFavoriteClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetUserFavoriteClimbsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userFavoriteClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserFavoriteClimbsQuery, GetUserFavoriteClimbsQueryVariables>;
+export const SubmitAppFeedbackDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SubmitAppFeedback' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SubmitAppFeedbackInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'submitAppFeedback' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SubmitAppFeedbackMutation, SubmitAppFeedbackMutationVariables>;
+export const GetNewClimbFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetNewClimbFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'NewClimbFeedInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'newClimbFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetNewClimbFeedQuery, GetNewClimbFeedQueryVariables>;
+export const GetMyNewClimbSubscriptionsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyNewClimbSubscriptions' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myNewClimbSubscriptions' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyNewClimbSubscriptionsQuery, GetMyNewClimbSubscriptionsQueryVariables>;
+export const SubscribeNewClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SubscribeNewClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'NewClimbSubscriptionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'subscribeNewClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SubscribeNewClimbsMutation, SubscribeNewClimbsMutationVariables>;
+export const UnsubscribeNewClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UnsubscribeNewClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'NewClimbSubscriptionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'unsubscribeNewClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UnsubscribeNewClimbsMutation, UnsubscribeNewClimbsMutationVariables>;
+export const OnNewClimbCreatedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'subscription',
+      name: { kind: 'Name', value: 'OnNewClimbCreated' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'newClimbCreated' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'layoutId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climb' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<OnNewClimbCreatedSubscription, OnNewClimbCreatedSubscriptionVariables>;
+export const CheckMoonBoardClimbDuplicatesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'CheckMoonBoardClimbDuplicates' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CheckMoonBoardClimbDuplicatesInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'checkMoonBoardClimbDuplicates' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'clientKey' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'exists' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'existingClimbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'existingClimbName' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CheckMoonBoardClimbDuplicatesQuery, CheckMoonBoardClimbDuplicatesQueryVariables>;
+export const SaveClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SaveClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'SaveClimbInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'saveClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'synced' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SaveClimbMutation, SaveClimbMutationVariables>;
+export const SaveMoonBoardClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SaveMoonBoardClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SaveMoonBoardClimbInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'saveMoonBoardClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'synced' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SaveMoonBoardClimbMutation, SaveMoonBoardClimbMutationVariables>;
+export const UpdateClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateClimbInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isDraft' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateClimbMutation, UpdateClimbMutationVariables>;
+export const DeleteDraftClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteDraftClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteDraftClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'uuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteDraftClimbMutation, DeleteDraftClimbMutationVariables>;
+export const GetNotificationsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetNotifications' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'unreadOnly' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Boolean' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'notifications' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'unreadOnly' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'unreadOnly' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'limit' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'offset' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'notifications' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentBody' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'unreadCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetNotificationsQuery, GetNotificationsQueryVariables>;
+export const GetGroupedNotificationsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetGroupedNotifications' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'groupedNotifications' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'limit' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'offset' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'groups' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorCount' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'actors' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentBody' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'unreadCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetGroupedNotificationsQuery, GetGroupedNotificationsQueryVariables>;
+export const GetUnreadNotificationCountDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUnreadNotificationCount' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'unreadNotificationCount' } }],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUnreadNotificationCountQuery, GetUnreadNotificationCountQueryVariables>;
+export const MarkNotificationReadDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'MarkNotificationRead' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'notificationUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'markNotificationRead' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'notificationUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'notificationUuid' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MarkNotificationReadMutation, MarkNotificationReadMutationVariables>;
+export const MarkGroupNotificationsReadDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'MarkGroupNotificationsRead' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'type' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'NotificationType' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'SocialEntityType' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'markGroupNotificationsRead' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'type' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'type' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MarkGroupNotificationsReadMutation, MarkGroupNotificationsReadMutationVariables>;
+export const MarkAllNotificationsReadDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'MarkAllNotificationsRead' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'markAllNotificationsRead' } }],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
+export const GetUserPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetUserPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserPlaylistsQuery, GetUserPlaylistsQueryVariables>;
+export const GetAllUserPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetAllUserPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetAllUserPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'allUserPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'playlists' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetAllUserPlaylistsQuery, GetAllUserPlaylistsQueryVariables>;
+export const GetMyPinnedPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyPinnedPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetMyPinnedPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myPinnedPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyPinnedPlaylistsQuery, GetMyPinnedPlaylistsQueryVariables>;
+export const PinPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'PinPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'PinPlaylistInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'pinPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PinPlaylistMutation, PinPlaylistMutationVariables>;
+export const UnpinPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UnpinPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'PinPlaylistInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'unpinPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UnpinPlaylistMutation, UnpinPlaylistMutationVariables>;
+export const GetPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'playlistId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistQuery, GetPlaylistQueryVariables>;
+export const GetPlaylistsForClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylistsForClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetPlaylistsForClimbInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistsForClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistsForClimbQuery, GetPlaylistsForClimbQueryVariables>;
+export const GetPlaylistsForClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylistsForClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetPlaylistsForClimbsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistsForClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playlistUuids' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistsForClimbsQuery, GetPlaylistsForClimbsQueryVariables>;
+export const CreatePlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreatePlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CreatePlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreatePlaylistMutation, CreatePlaylistMutationVariables>;
+export const UpdatePlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdatePlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdatePlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updatePlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'PlaylistFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'PlaylistFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'Playlist' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastAccessedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'userRole' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPinnedByMe' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdatePlaylistMutation, UpdatePlaylistMutationVariables>;
+export const DeletePlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeletePlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deletePlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'playlistId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeletePlaylistMutation, DeletePlaylistMutationVariables>;
+export const AddClimbToPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'AddClimbToPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'AddClimbToPlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'addClimbToPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playlistId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'position' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'addedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AddClimbToPlaylistMutation, AddClimbToPlaylistMutationVariables>;
+export const RemoveClimbFromPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RemoveClimbFromPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'RemoveClimbFromPlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'removeClimbFromPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RemoveClimbFromPlaylistMutation, RemoveClimbFromPlaylistMutationVariables>;
+export const GetPlaylistClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylistClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetPlaylistClimbsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistClimbsQuery, GetPlaylistClimbsQueryVariables>;
+export const DiscoverPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'DiscoverPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'DiscoverPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'discoverPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'playlists' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'creatorId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'creatorName' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DiscoverPlaylistsQuery, DiscoverPlaylistsQueryVariables>;
+export const GetPlaylistCreatorsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylistCreators' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetPlaylistCreatorsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistCreators' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'playlistCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistCreatorsQuery, GetPlaylistCreatorsQueryVariables>;
+export const UpdatePlaylistLastAccessedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdatePlaylistLastAccessed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updatePlaylistLastAccessed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'playlistId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'playlistId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdatePlaylistLastAccessedMutation, UpdatePlaylistLastAccessedMutationVariables>;
+export const SearchPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SearchPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SearchPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'searchPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'playlists' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'creatorId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'creatorName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SearchPlaylistsQuery, SearchPlaylistsQueryVariables>;
+export const FollowPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'FollowPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowPlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FollowPlaylistMutation, FollowPlaylistMutationVariables>;
+export const UnfollowPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UnfollowPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowPlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'unfollowPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UnfollowPlaylistMutation, UnfollowPlaylistMutationVariables>;
+export const GetSmartPlaylistDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSmartPlaylist' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetSmartPlaylistInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'smartPlaylist' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'meta' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatar' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSmartPlaylistQuery, GetSmartPlaylistQueryVariables>;
+export const GetMySmartPlaylistCountsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMySmartPlaylistCounts' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'mySmartPlaylistCounts' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMySmartPlaylistCountsQuery, GetMySmartPlaylistCountsQueryVariables>;
+export const GetClimbProposalsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetClimbProposals' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetClimbProposalsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbProposals' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'proposals' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetClimbProposalsQuery, GetClimbProposalsQueryVariables>;
+export const GetClimbCommunityStatusDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetClimbCommunityStatus' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbCommunityStatus' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'angle' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'communityGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isClassic' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFrozen' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'freezeReason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'openProposalCount' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'outlierAnalysis' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'isOutlier' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentGrade' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'neighborAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'neighborCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'gradeDifference' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetClimbCommunityStatusQuery, GetClimbCommunityStatusQueryVariables>;
+export const GetBulkClimbCommunityStatusDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetBulkClimbCommunityStatus' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+            },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'bulkClimbCommunityStatus' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuids' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'angle' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'communityGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isClassic' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFrozen' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'freezeReason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'openProposalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetBulkClimbCommunityStatusQuery, GetBulkClimbCommunityStatusQueryVariables>;
+export const BrowseProposalsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BrowseProposals' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'BrowseProposalsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'browseProposals' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'proposals' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BrowseProposalsQuery, BrowseProposalsQueryVariables>;
+export const GetClimbClassicStatusDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetClimbClassicStatus' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbClassicStatus' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isClassic' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetClimbClassicStatusQuery, GetClimbClassicStatusQueryVariables>;
+export const CreateProposalDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreateProposal' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CreateProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreateProposalMutation, CreateProposalMutationVariables>;
+export const VoteOnProposalDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'VoteOnProposal' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'VoteOnProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'voteOnProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<VoteOnProposalMutation, VoteOnProposalMutationVariables>;
+export const ResolveProposalDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ResolveProposal' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ResolveProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resolveProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResolveProposalMutation, ResolveProposalMutationVariables>;
+export const DeleteProposalDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteProposal' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'DeleteProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteProposalMutation, DeleteProposalMutationVariables>;
+export const SetterOverrideCommunityStatusDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetterOverrideCommunityStatus' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetterOverrideInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setterOverrideCommunityStatus' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'communityGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isClassic' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFrozen' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetterOverrideCommunityStatusMutation, SetterOverrideCommunityStatusMutationVariables>;
+export const FreezeClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'FreezeClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'FreezeClimbInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'freezeClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FreezeClimbMutation, FreezeClimbMutationVariables>;
+export const GetCommunityRolesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetCommunityRoles' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'communityRoles' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grantedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grantedByDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetCommunityRolesQuery, GetCommunityRolesQueryVariables>;
+export const GetMyRolesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyRoles' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myRoles' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyRolesQuery, GetMyRolesQueryVariables>;
+export const GrantRoleDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'GrantRole' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'GrantRoleInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'grantRole' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grantedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grantedByDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GrantRoleMutation, GrantRoleMutationVariables>;
+export const RevokeRoleDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RevokeRole' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'RevokeRoleInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'revokeRole' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RevokeRoleMutation, RevokeRoleMutationVariables>;
+export const GetCommunitySettingsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetCommunitySettings' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'scope' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'scopeKey' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'communitySettings' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'scope' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'scope' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'scopeKey' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'scopeKey' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'scope' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'scopeKey' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'key' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'value' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetCommunitySettingsQuery, GetCommunitySettingsQueryVariables>;
+export const SetCommunitySettingsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetCommunitySettings' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetCommunitySettingInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setCommunitySettings' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'scope' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'scopeKey' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'key' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'value' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
+export const EndSessionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'EndSession' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'endSession' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SessionSummaryFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionSummaryFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionSummary' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<EndSessionMutation, EndSessionMutationVariables>;
+export const GetSessionSummaryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionSummary' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionSummary' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SessionSummaryFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionSummaryFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionSummary' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionSummaryQuery, GetSessionSummaryQueryVariables>;
+export const FollowUserDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'FollowUser' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followUser' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FollowUserMutation, FollowUserMutationVariables>;
+export const UnfollowUserDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UnfollowUser' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'unfollowUser' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UnfollowUserMutation, UnfollowUserMutationVariables>;
+export const GetPublicProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPublicProfile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPublicProfileQuery, GetPublicProfileQueryVariables>;
+export const GetFollowersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetFollowers' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowListInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followers' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'users' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetFollowersQuery, GetFollowersQueryVariables>;
+export const GetFollowingDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetFollowing' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowListInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'following' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'users' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetFollowingQuery, GetFollowingQueryVariables>;
+export const IsFollowingDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'IsFollowing' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'isFollowing' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<IsFollowingQuery, IsFollowingQueryVariables>;
+export const SearchUsersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SearchUsers' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'SearchUsersInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'searchUsers' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'results' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'user' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'recentAscentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'matchReason' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SearchUsersQuery, SearchUsersQueryVariables>;
+export const GetFollowingAscentsFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetFollowingAscentsFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowingAscentsFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followingAscentsFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetFollowingAscentsFeedQuery, GetFollowingAscentsFeedQueryVariables>;
+export const GetGlobalAscentsFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetGlobalAscentsFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowingAscentsFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'globalAscentsFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetGlobalAscentsFeedQuery, GetGlobalAscentsFeedQueryVariables>;
+export const GetFollowingClimbAscentsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetFollowingClimbAscents' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowingClimbAscentsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followingClimbAscents' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetFollowingClimbAscentsQuery, GetFollowingClimbAscentsQueryVariables>;
+export const FollowSetterDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'FollowSetter' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowSetterInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followSetter' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FollowSetterMutation, FollowSetterMutationVariables>;
+export const UnfollowSetterDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UnfollowSetter' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'FollowSetterInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'unfollowSetter' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UnfollowSetterMutation, UnfollowSetterMutationVariables>;
+export const GetSetterProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSetterProfile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetterProfileInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setterProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'username' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'linkedUserId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'linkedUserDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'linkedUserAvatarUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSetterProfileQuery, GetSetterProfileQueryVariables>;
+export const GetSetterClimbsFullDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSetterClimbsFull' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetterClimbsFullInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setterClimbsFull' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSetterClimbsFullQuery, GetSetterClimbsFullQueryVariables>;
+export const GetUserClimbsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserClimbs' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'UserClimbsInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userClimbs' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'climbs' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setter_username' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'ascensionist_count' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality_average' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'stars' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty_error' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'benchmark_difficulty' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserClimbsQuery, GetUserClimbsQueryVariables>;
+export const SearchUsersAndSettersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SearchUsersAndSetters' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'SearchUsersInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'searchUsersAndSetters' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'results' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'user' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'setter' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'username' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'recentAscentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'matchReason' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SearchUsersAndSettersQuery, SearchUsersAndSettersQueryVariables>;
+export const GetTicksDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetTicks' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'GetTicksInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'ticks' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetTicksQuery, GetTicksQueryVariables>;
+export const GetUserTicksDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserTicks' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userTicks' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserTicksQuery, GetUserTicksQueryVariables>;
+export const SaveTickDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SaveTick' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'SaveTickInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'saveTick' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SaveTickMutation, SaveTickMutationVariables>;
+export const AttachBetaLinkDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'AttachBetaLink' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'AttachBetaLinkInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'attachBetaLink' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AttachBetaLinkMutation, AttachBetaLinkMutationVariables>;
+export const DeleteTickDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteTick' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteTick' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'uuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteTickMutation, DeleteTickMutationVariables>;
+export const GetUserAscentsFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserAscentsFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'AscentFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userAscentsFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'consensusDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'consensusDifficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserAscentsFeedQuery, GetUserAscentsFeedQueryVariables>;
+export const GetUserGroupedAscentsFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserGroupedAscentsFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'AscentFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userGroupedAscentsFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'groups' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'key' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'date' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'flashCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'bestQuality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'latestComment' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'items' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserGroupedAscentsFeedQuery, GetUserGroupedAscentsFeedQueryVariables>;
+export const GetUserProfileStatsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserProfileStats' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userProfileStats' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'totalDistinctClimbs' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'layoutStats' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutKey' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'distinctClimbCount' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'gradeCounts' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserProfileStatsQuery, GetUserProfileStatsQueryVariables>;
+export const GetUserClimbPercentileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserClimbPercentile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userClimbPercentile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'totalDistinctClimbs' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'percentile' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalActiveUsers' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserClimbPercentileQuery, GetUserClimbPercentileQueryVariables>;
+export const UpdateTickDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateTick' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateTickInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateTick' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'uuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
