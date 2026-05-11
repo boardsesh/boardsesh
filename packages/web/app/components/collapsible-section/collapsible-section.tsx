@@ -139,9 +139,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   };
 
   return (
-    <div
-      className={`${styles.steppedContainer} ${compactDesktopGrid ? styles.steppedContainerCompactDesktop : ''}`}
-    >
+    <div className={`${styles.steppedContainer} ${compactDesktopGrid ? styles.steppedContainerCompactDesktop : ''}`}>
       {sections.map((section) => {
         const isActive = effectiveActiveKey === section.key;
         const summaryParts = section.getSummary?.() ?? [];

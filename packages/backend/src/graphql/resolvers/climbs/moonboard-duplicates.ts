@@ -153,7 +153,9 @@ export async function findMoonBoardDuplicateMatches(
       uniqueSignatures.map((signature) => sql`${signature}`),
       sql`, `,
     );
-    const exactMatchRows = await executeRows<DuplicateLookupRow>(db, sql`
+    const exactMatchRows = await executeRows<DuplicateLookupRow>(
+      db,
+      sql`
       SELECT
         ${dbSchema.boardClimbs.uuid} AS uuid,
         ${dbSchema.boardClimbs.name} AS name,
@@ -184,7 +186,8 @@ export async function findMoonBoardDuplicateMatches(
         ',' ORDER BY ${dbSchema.boardClimbHolds.holdId}
       ) IN (${signatureValues})
       ORDER BY COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, ${dbSchema.boardClimbs.uuid} ASC
-    `);
+    `,
+    );
 
     for (const row of exactMatchRows) {
       const next = {
@@ -198,7 +201,9 @@ export async function findMoonBoardDuplicateMatches(
       }
     }
 
-    const legacyRows = await executeRows<LegacyDuplicateLookupRow>(db, sql`
+    const legacyRows = await executeRows<LegacyDuplicateLookupRow>(
+      db,
+      sql`
       SELECT
         ${dbSchema.boardClimbs.uuid} AS uuid,
         ${dbSchema.boardClimbs.name} AS name,
@@ -221,7 +226,8 @@ export async function findMoonBoardDuplicateMatches(
             AND legacy_holds.climb_uuid = ${dbSchema.boardClimbs.uuid}
         )
       ORDER BY COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, ${dbSchema.boardClimbs.uuid} ASC
-    `);
+    `,
+    );
 
     for (const row of legacyRows) {
       const signature = buildMoonBoardHoldSignatureFromFrames(row.frames);

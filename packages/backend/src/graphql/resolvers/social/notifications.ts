@@ -69,7 +69,9 @@ export const socialNotificationQueries = {
         totalCount: string;
         unreadCount: string;
       }
-    >(db, sql`
+    >(
+      db,
+      sql`
       SELECT
         n."uuid",
         n."type",
@@ -95,7 +97,8 @@ export const socialNotificationQueries = {
       ORDER BY n."created_at" DESC
       LIMIT ${limit}
       OFFSET ${offset}
-    `);
+    `,
+    );
 
     const notifications = rows.map(mapNotificationRow);
     const totalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
@@ -135,7 +138,9 @@ export const socialNotificationQueries = {
       totalGroupCount: string;
     };
 
-    const rows = await executeRows<GroupedRow>(db, sql`
+    const rows = await executeRows<GroupedRow>(
+      db,
+      sql`
       WITH all_groups AS (
         SELECT
           n."type",
@@ -176,7 +181,8 @@ export const socialNotificationQueries = {
           LEFT JOIN "user_profiles" up ON up."user_id" = aid.id
         ) as "actorAvatarUrls"
       FROM paged p
-    `);
+    `,
+    );
 
     // Total group count from window function (same value on every row)
     const totalCount = rows.length > 0 ? Number(rows[0].totalGroupCount) : 0;

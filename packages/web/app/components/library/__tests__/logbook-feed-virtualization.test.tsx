@@ -279,5 +279,4 @@ describe('LogbookFeed virtualization', () => {
       expect(screen.getAllByTestId('logbook-feed-item')).toHaveLength(5);
     });
   });
-
 });

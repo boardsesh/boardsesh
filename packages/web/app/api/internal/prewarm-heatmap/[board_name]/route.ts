@@ -30,14 +30,17 @@ type WarmTarget = {
 
 async function getAnglesForLayout(boardName: AuroraBoardName, layoutId: number): Promise<number[]> {
   // Same query used by packages/backend/src/graphql/resolvers/board/queries.ts:44-50
-  const result = await executeRows<{ angle: number }>(db, sql`
+  const result = await executeRows<{ angle: number }>(
+    db,
+    sql`
     SELECT DISTINCT pa.angle
     FROM board_products_angles pa
     JOIN board_layouts l
       ON l.board_type = pa.board_type AND l.product_id = pa.product_id
     WHERE l.board_type = ${boardName} AND l.id = ${layoutId}
     ORDER BY pa.angle ASC
-  `);
+  `,
+  );
   return result.map((row) => Number(row.angle));
 }
 

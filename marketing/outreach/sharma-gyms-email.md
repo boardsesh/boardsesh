@@ -62,18 +62,19 @@ Alex
 Boardsesh
 https://www.boardsesh.com
 
---- 
+---
 
 ## Spanish version
 
 ---
+
 Hola,
 
 Como comenté el otro dia con [persona de contacto], estoy colaborando en una aplicación para Kilter y me gustaría poder un QR o un banner junto a la kilter.
 
 **Qué es Boardsesh?**
 
-Boardsesh es una aplicación gratuita y de código abierto para escaladores que entrenan en paneles LED. Funciona con Kilter, Tension y MoonBoard con un único inicio de sesión, por lo que los miembros no tienen que lidiar con tres aplicaciones distintas. 
+Boardsesh es una aplicación gratuita y de código abierto para escaladores que entrenan en paneles LED. Funciona con Kilter, Tension y MoonBoard con un único inicio de sesión, por lo que los miembros no tienen que lidiar con tres aplicaciones distintas.
 
 No estamos afiliados a Aurora, Tension, Moon, ni ninguna marca comercial solo somos un proyecto de código abierto creado por y para escaladores.
 

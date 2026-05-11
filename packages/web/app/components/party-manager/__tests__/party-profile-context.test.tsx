@@ -92,10 +92,7 @@ describe('PartyProfileProvider PostHog identity wiring', () => {
     });
 
     expect(mocks.reset).not.toHaveBeenCalled();
-    expect(mocks.identify.mock.calls).toEqual([
-      ['profile-1'],
-      ['user-1', { email: 'one@example.com' }],
-    ]);
+    expect(mocks.identify.mock.calls).toEqual([['profile-1'], ['user-1', { email: 'one@example.com' }]]);
     expect(mocks.hasRecordedPosthogAlias).toHaveBeenCalledWith('profile-1', 'user-1');
     expect(mocks.alias).toHaveBeenCalledWith('user-1');
     expect(mocks.recordPosthogAlias).toHaveBeenCalledWith('profile-1', 'user-1');

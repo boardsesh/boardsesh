@@ -29,7 +29,8 @@ export const getProfileOgSummary = cache(async (userId: string): Promise<Profile
     display_name: string | null;
     avatar_url: string | null;
     version_at: string | Date | null;
-  }>(await rawSql`
+  }>(
+    await rawSql`
     SELECT
       u.name,
       u.image,
@@ -44,7 +45,8 @@ export const getProfileOgSummary = cache(async (userId: string): Promise<Profile
     LEFT JOIN user_profiles p ON p.user_id = u.id
     WHERE u.id = ${userId}
     LIMIT 1
-  `);
+  `,
+  );
 
   const row = rows[0];
   if (!row) {
@@ -71,7 +73,9 @@ export const getSetterOgSummary = cache(async (username: string): Promise<Setter
     display_name: string | null;
     avatar_url: string | null;
     version_at: string | Date | null;
-  }>(dbz, drizzleSql`
+  }>(
+    dbz,
+    drizzleSql`
     SELECT
       profile.name,
       profile.display_name,
@@ -111,7 +115,8 @@ export const getSetterOgSummary = cache(async (username: string): Promise<Setter
       WHERE ubm.board_username = ${username}
       LIMIT 1
     ) AS profile ON true
-  `);
+  `,
+  );
 
   const row = result[0];
 
@@ -312,7 +317,9 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     layout_id: number | null;
     size_id: number | null;
     set_ids: string | null;
-  }>(dbz, drizzleSql`
+  }>(
+    dbz,
+    drizzleSql`
     SELECT
       bs.name,
       COALESCE(
@@ -347,7 +354,8 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     LEFT JOIN user_boards ub ON ub.id = bs.board_id
     WHERE bs.id = ${sessionId}
     LIMIT 1
-  `);
+  `,
+  );
 
   if (partySessionResult[0]) {
     sessionType = 'party';
@@ -364,7 +372,9 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       layout_id: number | null;
       size_id: number | null;
       set_ids: string | null;
-    }>(dbz, drizzleSql`
+    }>(
+      dbz,
+      drizzleSql`
       SELECT
         s.name,
         COALESCE(
@@ -388,7 +398,8 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       LEFT JOIN user_profiles up ON up.user_id = s.user_id
       WHERE s.id = ${sessionId}
       LIMIT 1
-    `);
+    `,
+    );
 
     if (inferredSessionResult[0]) {
       sessionType = 'inferred';
@@ -421,14 +432,19 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
   const [participantCountResult, participantResult, totalSendsResult, gradeResult, boardInfo] = await Promise.all([
     executeRows<{
       participant_count: number;
-    }>(dbz, drizzleSql`
+    }>(
+      dbz,
+      drizzleSql`
       SELECT COUNT(DISTINCT bt.user_id)::int as participant_count
       FROM boardsesh_ticks bt
       WHERE ${tickWhereClause}
-    `),
+    `,
+    ),
     executeRows<{
       display_name: string;
-    }>(dbz, drizzleSql`
+    }>(
+      dbz,
+      drizzleSql`
       SELECT DISTINCT
         COALESCE(up.display_name, u.name, 'Climber') as display_name
       FROM boardsesh_ticks bt
@@ -436,19 +452,25 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       LEFT JOIN user_profiles up ON up.user_id = bt.user_id
       WHERE ${tickWhereClause}
       LIMIT 6
-    `),
+    `,
+    ),
     executeRows<{
       total_sends: number;
-    }>(dbz, drizzleSql`
+    }>(
+      dbz,
+      drizzleSql`
       SELECT COUNT(*)::int as total_sends
       FROM boardsesh_ticks bt
       WHERE ${tickWhereClause}
         AND bt.status IN ('flash', 'send')
-    `),
+    `,
+    ),
     executeRows<{
       difficulty: number;
       cnt: number;
-    }>(dbz, drizzleSql`
+    }>(
+      dbz,
+      drizzleSql`
       SELECT
         COALESCE(bt.difficulty, ROUND(bcs.display_difficulty)::int) as difficulty,
         COUNT(*) as cnt
@@ -462,7 +484,8 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
         AND COALESCE(bt.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
       GROUP BY COALESCE(bt.difficulty, ROUND(bcs.display_difficulty)::int)
       ORDER BY COALESCE(bt.difficulty, ROUND(bcs.display_difficulty)::int)
-    `),
+    `,
+    ),
     resolveSessionBoardInfo({
       boardPath: sessionRow.board_path,
       boardSlug: sessionRow.board_slug,
@@ -517,7 +540,8 @@ export const getPlaylistOgSummary = cache(async (playlistUuid: string): Promise<
     board_type: string;
     climb_count: number;
     version_at: string | Date | null;
-  }>(await rawSql`
+  }>(
+    await rawSql`
     SELECT
       p.name,
       p.description,
@@ -530,7 +554,8 @@ export const getPlaylistOgSummary = cache(async (playlistUuid: string): Promise<
     FROM playlists p
     WHERE p.uuid = ${playlistUuid}
     LIMIT 1
-  `);
+  `,
+  );
 
   const row = rows[0];
   if (!row) {

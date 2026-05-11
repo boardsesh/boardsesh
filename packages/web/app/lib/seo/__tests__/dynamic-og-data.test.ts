@@ -27,7 +27,7 @@ vi.mock('@/app/lib/board-utils', () => ({
 // tagged template) for replica-tolerant reads. Mock both onto the existing
 // `executeMock` and a fresh tagged-template fake.
 const mockSqlTag = vi.fn();
-const rowsFromResultMock = <T,>(result: unknown): T[] => {
+const rowsFromResultMock = <T>(result: unknown): T[] => {
   if (Array.isArray(result)) return result as T[];
   throw new TypeError('Expected postgres-js query result to be a row array');
 };
@@ -37,7 +37,7 @@ vi.mock('@/app/lib/db/db', () => ({
   dbzRead: { execute: executeMock },
   getReadPool: () => mockSqlTag,
   rowsFromResult: rowsFromResultMock,
-  executeRows: async <T,>(conn: { execute: (query: unknown) => Promise<unknown> }, query: unknown) =>
+  executeRows: async <T>(conn: { execute: (query: unknown) => Promise<unknown> }, query: unknown) =>
     rowsFromResultMock<T>(await conn.execute(query)),
 }));
 

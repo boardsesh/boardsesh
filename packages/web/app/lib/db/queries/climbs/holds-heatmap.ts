@@ -101,7 +101,9 @@ export const getHoldHeatmapData = async (
 
       // Query for user ascents and attempts per hold in parallel
       const [userAscentsQuery, userAttemptsQuery] = await Promise.all([
-        executeRows<{ hold_id: number; user_ascents: number }>(db, sql`
+        executeRows<{ hold_id: number; user_ascents: number }>(
+          db,
+          sql`
           SELECT ch.hold_id, COUNT(*) as user_ascents
           FROM ${boardseshTicks} t
           JOIN board_climb_holds ch ON t.climb_uuid = ch.climb_uuid AND ch.board_type = ${params.board_name}
@@ -110,8 +112,11 @@ export const getHoldHeatmapData = async (
             AND t.angle = ${params.angle}
             AND t.status IN ('flash', 'send')
           GROUP BY ch.hold_id
-        `),
-        executeRows<{ hold_id: number; user_attempts: number }>(db, sql`
+        `,
+        ),
+        executeRows<{ hold_id: number; user_attempts: number }>(
+          db,
+          sql`
           SELECT ch.hold_id, SUM(t.attempt_count) as user_attempts
           FROM ${boardseshTicks} t
           JOIN board_climb_holds ch ON t.climb_uuid = ch.climb_uuid AND ch.board_type = ${params.board_name}
@@ -119,7 +124,8 @@ export const getHoldHeatmapData = async (
             AND t.board_type = ${params.board_name}
             AND t.angle = ${params.angle}
           GROUP BY ch.hold_id
-        `),
+        `,
+        ),
       ]);
 
       // Convert results to Maps for easier lookup

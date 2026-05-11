@@ -7,13 +7,15 @@ export async function GET(req: Request, props: { params: Promise<{ board_name: s
   const { /*board_name,*/ layout_id } = params;
 
   try {
-    const angles = rowsFromResult<{ angle: number }>(await sql`
+    const angles = rowsFromResult<{ angle: number }>(
+      await sql`
       SELECT angle
       FROM kilter_products_angles
       JOIN layouts ON layouts.product_id = products_angles.product_id
       WHERE layouts.id = ${layout_id}
       ORDER BY angle ASC
-    `);
+    `,
+    );
     return NextResponse.json(angles);
   } catch {
     return NextResponse.json({ error: 'Failed to fetch angles' }, { status: 500 });

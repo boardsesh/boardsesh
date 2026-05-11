@@ -30,14 +30,17 @@ export const boardQueries: Pick<QueryResolvers, 'grades' | 'angles'> = {
   angles: async (_, { boardName, layoutId }) => {
     validateInput(BoardNameSchema, boardName, 'boardName');
 
-    const result = await executeRows<{ angle: number }>(db, sql`
+    const result = await executeRows<{ angle: number }>(
+      db,
+      sql`
       SELECT DISTINCT pa.angle
       FROM board_products_angles pa
       JOIN board_layouts l
         ON l.board_type = pa.board_type AND l.product_id = pa.product_id
       WHERE l.board_type = ${boardName} AND l.id = ${layoutId}
       ORDER BY pa.angle ASC
-    `);
+    `,
+    );
 
     return result.map((r) => ({ angle: r.angle }));
   },

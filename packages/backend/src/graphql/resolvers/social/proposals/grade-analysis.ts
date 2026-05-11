@@ -24,13 +24,16 @@ export async function analyzeGradeOutlier(
       angle: number;
       display_difficulty: number;
       ascensionist_count: number;
-    }>(db, sql`
+    }>(
+      db,
+      sql`
       SELECT angle, display_difficulty, ascensionist_count
       FROM board_climb_stats
       WHERE climb_uuid = ${climbUuid}
         AND board_type = ${boardType}
       ORDER BY angle
-    `);
+    `,
+    );
     if (!rows || rows.length < 2) return null;
 
     // Find the current angle's data

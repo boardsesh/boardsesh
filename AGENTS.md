@@ -67,7 +67,6 @@ This file adds repo-specific guidance for agents creating or updating public pag
 - Should it be added to the sitemap?
 - If trademarked board names are used, is the wording descriptive and non-affiliative?
 
-
 ---
 
 ## Copied Project Guidance from CLAUDE.md

@@ -146,7 +146,9 @@ export const socialCommentQueries = {
     const totalCount = Number(countResult[0]?.count || 0);
 
     // Main query — LEFT JOIN vote_counts instead of LATERAL JOIN subqueries
-    const rawRows = await executeRows<CommentRow>(db, sql`
+    const rawRows = await executeRows<CommentRow>(
+      db,
+      sql`
       SELECT
         c."id",
         c."uuid",
@@ -190,7 +192,8 @@ export const socialCommentQueries = {
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
-    `);
+    `,
+    );
 
     const comments = rawRows.map(mapCommentRow);
 
@@ -256,7 +259,9 @@ export const socialCommentQueries = {
 
     const distinctClause = boardTypeFilter ? sql`DISTINCT ON (c."id")` : sql``;
 
-    const rawRows = await executeRows<CommentRow>(db, sql`
+    const rawRows = await executeRows<CommentRow>(
+      db,
+      sql`
       SELECT ${distinctClause}
         c."id",
         c."uuid",
@@ -301,7 +306,8 @@ export const socialCommentQueries = {
       ORDER BY ${boardTypeFilter ? sql`c."id",` : sql``} c."created_at" DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}
-    `);
+    `,
+    );
 
     const hasMore = rawRows.length > limit;
     const resultRows = hasMore ? rawRows.slice(0, limit) : rawRows;

@@ -77,17 +77,23 @@ async function main() {
         );
 
     // Get product sizes from DB for display
-    const sizeRows = await executeRows<{ id: number; name: string }>(db, sql`
+    const sizeRows = await executeRows<{ id: number; name: string }>(
+      db,
+      sql`
       SELECT id, name FROM board_product_sizes ORDER BY board_type, id
-    `);
+    `,
+    );
     const sizeNames = new Map(sizeRows.map((s) => [s.id, s.name]));
 
     // Get set-to-layout-size mappings
-    const setRows = await executeRows<SetRow>(db, sql`
+    const setRows = await executeRows<SetRow>(
+      db,
+      sql`
       SELECT layout_id, product_size_id, set_id
       FROM board_product_sizes_layouts_sets
       ORDER BY layout_id, product_size_id, set_id
-    `);
+    `,
+    );
     const setsForConfig = new Map<string, number[]>();
     for (const row of setRows) {
       const key = `${row.layout_id}-${row.product_size_id}`;
@@ -120,7 +126,9 @@ async function main() {
         const sizeKeys = layoutSizeKeys.filter((k) => k.startsWith(`${layoutId}-`)).map((k) => Number(k.split('-')[1]));
 
         // Fetch ALL climbs for this board/layout once (reused across sizes)
-        const climbs = await executeRows<ClimbRow>(db, sql`
+        const climbs = await executeRows<ClimbRow>(
+          db,
+          sql`
           SELECT uuid, board_type, layout_id, name, setter_username, frames,
                  is_listed, required_set_ids, compatible_size_ids,
                  edge_left, edge_right, edge_bottom, edge_top
@@ -129,15 +137,19 @@ async function main() {
             AND layout_id = ${layoutId}
             AND frames IS NOT NULL
             AND frames != ''
-        `);
+        `,
+        );
 
         // Fetch ascensionist counts
-        const statsRows = await executeRows<StatsRow>(db, sql`
+        const statsRows = await executeRows<StatsRow>(
+          db,
+          sql`
           SELECT climb_uuid, COALESCE(SUM(ascensionist_count), 0) as total_ascents
           FROM board_climb_stats
           WHERE board_type = ${boardName}
           GROUP BY climb_uuid
-        `);
+        `,
+        );
         const statsMap = new Map(statsRows.map((s) => [s.climb_uuid, Number(s.total_ascents)]));
 
         for (const sizeId of sizeKeys) {

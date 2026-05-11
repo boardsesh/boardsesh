@@ -21,7 +21,10 @@ export default async function PlaylistDetailPage({ params }: { params: Promise<{
   const initialMyBoards = authToken ? await serverMyBoards(authToken) : null;
 
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed', 'playlists']}>
+    <I18nProvider
+      locale={locale}
+      namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed', 'playlists']}
+    >
       <div className={styles.pageContainer}>
         <PlaylistDetailContent playlistUuid={playlist_uuid} initialMyBoards={initialMyBoards} />
       </div>
