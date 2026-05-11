@@ -4,6 +4,12 @@ import { GET } from '../route';
 import { getServerSession } from 'next-auth/next';
 import { issueNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 
+vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/analytics.server', () => ({
+  trackServer: vi.fn(),
+  resolveRequestAttribution: vi.fn(async () => ({ distinctId: 'test-anon', isAuthenticated: false })),
+}));
+
 // Mock dependencies before importing the route handler
 vi.mock('next-auth/next', () => ({
   getServerSession: vi.fn(),

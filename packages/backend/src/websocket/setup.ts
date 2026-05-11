@@ -120,6 +120,14 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           console.info(`[Auth] Controller MAC: ${controllerMac}`);
         }
 
+        // Anonymous distinct id propagated by the client (IndexedDB partyProfile UUID).
+        // Used for PostHog server-side attribution before auth.
+        let distinctId: string | undefined;
+        const distinctIdParam = connectionParams?.distinctId;
+        if (typeof distinctIdParam === 'string' && distinctIdParam.length > 0 && distinctIdParam.length <= 256) {
+          distinctId = distinctIdParam;
+        }
+
         // Create context on initial connection with auth info
         const context = createContext(
           undefined,
@@ -128,6 +136,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           controllerId,
           controllerApiKey,
           controllerMac,
+          distinctId,
         );
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
         console.info(`Client connected: ${context.connectionId} (authenticated: ${isAuthenticated})`);

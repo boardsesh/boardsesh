@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { type PartyProfile, getPartyProfile, clearPartyProfile, ensurePartyProfile } from '@/app/lib/party-profile-db';
 import { alias, identify, reset } from '@/app/lib/analytics';
 import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
+import { setActiveDistinctId } from '@/app/lib/analytics-distinct-id';
 import { hasRecordedPosthogAlias, recordPosthogAlias } from '@/app/lib/posthog-alias-storage';
 
 type UserProfileData = {
@@ -84,6 +85,7 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (lastAnalyticsDistinctId.current !== profileId) {
         identify(profileId);
         lastAnalyticsDistinctId.current = profileId;
+        setActiveDistinctId(profileId);
       }
       if (profileId !== userId && !hasRecordedPosthogAlias(profileId, userId)) {
         if (alias(userId)) {
@@ -92,6 +94,7 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       identify(userId, session.user.email ? { email: session.user.email } : undefined);
       lastAnalyticsDistinctId.current = userId;
+      setActiveDistinctId(userId);
       return;
     }
 
@@ -102,6 +105,7 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       identify(profileId);
       lastAnalyticsDistinctId.current = profileId;
+      setActiveDistinctId(profileId);
     }
   }, [pathname, profile?.id, sessionStatus, session?.user?.id, session?.user?.email]);
 

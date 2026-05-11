@@ -13,6 +13,7 @@ import {
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, validateInput } from '../shared/helpers';
+import { resolveContextAttribution, trackServer } from '../../../analytics/server-analytics';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import {
   BoardNameSchema,
@@ -26,6 +27,29 @@ import * as dbSchema from '@boardsesh/db/schema';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
+
+function countActiveSearchFilters(input: ClimbSearchInput): number {
+  // Count anything beyond the implicit board route. Used as a quick "how filtered
+  // is this search" signal in PostHog without serializing every filter value.
+  let count = 0;
+  if (input.minGrade != null) count++;
+  if (input.maxGrade != null) count++;
+  if (input.minAscents != null) count++;
+  if (input.minRating != null) count++;
+  if (input.gradeAccuracy != null) count++;
+  if (input.name && input.name.length > 0) count++;
+  if (input.setter && input.setter.length > 0) count++;
+  if (input.holdsFilter) count++;
+  if (input.onlyTallClimbs) count++;
+  if (input.hideAttempted) count++;
+  if (input.hideCompleted) count++;
+  if (input.showOnlyAttempted) count++;
+  if (input.showOnlyCompleted) count++;
+  if (input.zoneBox) count++;
+  if (input.projectsOnly) count++;
+  if (input.onlyDrafts) count++;
+  return count;
+}
 
 export const climbQueries = {
   checkMoonBoardClimbDuplicates: async (
@@ -102,6 +126,29 @@ export const climbQueries = {
       );
     }
 
+    const filterCount = countActiveSearchFilters(input);
+    const attribution = resolveContextAttribution(ctx);
+    trackServer('Search Climbs', {
+      distinctId: attribution.distinctId,
+      properties: {
+        boardName: input.boardName,
+        layoutId: input.layoutId,
+        sizeId: input.sizeId,
+        angle: input.angle,
+        page: input.page ?? 0,
+        pageSize: input.pageSize ?? 20,
+        sortBy: input.sortBy ?? 'ascents',
+        sortOrder: input.sortOrder ?? 'desc',
+        hasNameQuery: !!input.name && input.name.length > 0,
+        hasSetterFilter: !!input.setter && input.setter.length > 0,
+        hasZoneFilter: !!input.zoneBox,
+        onlyDrafts: !!input.onlyDrafts,
+        projectsOnly: !!input.projectsOnly,
+        filterCount,
+        isAuthenticated: !!ctx.isAuthenticated,
+      },
+    });
+
     // Drafts require authentication — return empty results if not signed in
     if (input.onlyDrafts && !ctx.isAuthenticated) {
       return {
@@ -156,6 +203,7 @@ export const climbQueries = {
       angle: number;
       climbUuid: string;
     },
+    ctx: ConnectionContext,
   ) => {
     // Validate board name
     validateInput(BoardNameSchema, boardName, 'boardName');
@@ -178,6 +226,20 @@ export const climbQueries = {
       size_id: sizeId,
       angle,
       climb_uuid: climbUuid,
+    });
+
+    const attribution = resolveContextAttribution(ctx);
+    trackServer('Climb Viewed', {
+      distinctId: attribution.distinctId,
+      properties: {
+        boardName,
+        climbUuid,
+        layoutId,
+        sizeId,
+        angle,
+        isAuthenticated: !!ctx.isAuthenticated,
+        found: !!climb,
+      },
     });
 
     return climb;

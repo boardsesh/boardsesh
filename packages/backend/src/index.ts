@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/node';
 import { startServer } from './server';
 import { redisClientManager } from './redis/client';
 import { closePool, closeReadPool } from '@boardsesh/db/client';
+import { shutdownServerAnalytics } from './analytics/server-analytics';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -49,6 +50,13 @@ async function main() {
         resolve();
       });
     });
+
+    // Flush + close PostHog server-side analytics (no-op if disabled)
+    try {
+      await shutdownServerAnalytics();
+    } catch (error) {
+      console.warn('Error shutting down server analytics:', error);
+    }
 
     // Disconnect from Redis
     await redisClientManager.disconnect();

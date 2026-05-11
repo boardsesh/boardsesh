@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@/app/lib/email/email-service';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { aliasServer, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
@@ -19,12 +20,22 @@ const registerSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const attribution = await resolveRequestAttribution(request);
+  trackServer('Sign Up Attempted', {
+    distinctId: attribution.distinctId,
+    properties: { provider: 'email' },
+  });
+
   try {
     // Rate limiting - 10 requests per minute per IP for registration
     const clientIp = getClientIp(request);
     const rateLimitResult = checkRateLimit(`register:${clientIp}`, 10, 60_000);
 
     if (rateLimitResult.limited) {
+      trackServer('Sign Up Failed', {
+        distinctId: attribution.distinctId,
+        properties: { provider: 'email', errorKind: 'rate_limited' },
+      });
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         {
@@ -51,6 +62,10 @@ export async function POST(request: NextRequest) {
     const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
 
     if (existingUser.length > 0) {
+      trackServer('Sign Up Failed', {
+        distinctId: attribution.distinctId,
+        properties: { provider: 'email', errorKind: 'email_exists' },
+      });
       // An account with this email already exists
       // Do not allow registering again - user should use their existing authentication method
       // This prevents account takeover attacks where someone registers with an OAuth user's email
@@ -109,6 +124,14 @@ export async function POST(request: NextRequest) {
       throw insertError;
     }
 
+    // Merge anonymous activity into the new account so the pre-signup funnel
+    // (search, climb views, etc.) attaches to this user.
+    aliasServer(attribution.distinctId, userId);
+    trackServer('Sign Up Succeeded', {
+      distinctId: userId,
+      properties: { provider: 'email', requiresVerification: emailVerificationEnabled },
+    });
+
     // Send verification email if enabled
     if (emailVerificationEnabled && verificationToken) {
       const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
@@ -143,6 +166,10 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('Registration error:', error);
+    trackServer('Sign Up Failed', {
+      distinctId: attribution.distinctId,
+      properties: { provider: 'email', errorKind: 'server_error' },
+    });
     return NextResponse.json({ error: 'An error occurred during registration' }, { status: 500 });
   }
 }

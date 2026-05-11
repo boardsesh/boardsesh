@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 
+vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/analytics.server', () => ({
+  trackServer: vi.fn(),
+  resolveRequestAttribution: vi.fn(async () => ({ distinctId: 'test', isAuthenticated: false })),
+}));
+
 vi.mock('@/app/lib/url-utils.server', () => ({
   parseBoardRouteParamsWithSlugs: vi.fn(async (params) => ({
     board_name: params.board_name,

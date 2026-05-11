@@ -4,6 +4,7 @@ import { boardSessions } from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { SessionIdSchema } from '@/app/lib/validation/session';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
+import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const DEFAULT_ANGLE = 40;
 
@@ -67,6 +68,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
   const { boardPath } = session[0];
   const cleanPath = boardPath.replace(/^\/+/, '');
   const redirectPath = ensureViewSegment(cleanPath);
+
+  const attribution = await resolveRequestAttribution(request);
+  trackServer('Session Join Link Followed', {
+    distinctId: attribution.distinctId,
+    properties: {
+      sessionId: validatedSessionId,
+      boardPath,
+      isAuthenticated: attribution.isAuthenticated,
+    },
+  });
 
   const response = NextResponse.redirect(`${baseUrl}/${redirectPath}`, 307);
   response.cookies.set(CLIMB_SESSION_COOKIE, validatedSessionId, {

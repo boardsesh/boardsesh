@@ -1,6 +1,7 @@
 import { type Client, type Sink, createClient } from 'graphql-ws';
 import { connectionManager, KEEP_ALIVE_MS } from '../connection-manager/websocket-connection-manager';
 import { INITIAL_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS, BACKOFF_MULTIPLIER } from './retry-constants';
+import { getActiveDistinctId } from '@/app/lib/analytics-distinct-id';
 
 export type { Client };
 
@@ -89,8 +90,17 @@ export function createGraphQLClient(
     lazy: true,
     // Keep alive to detect disconnections
     keepAlive: KEEP_ALIVE_MS,
-    // Pass auth token in connection params for backend validation
-    connectionParams: authToken ? { authToken } : undefined,
+    // Pass auth token + anonymous distinct id in connection params for backend
+    // attribution. distinctId is the IndexedDB partyProfile UUID; the backend
+    // uses it for PostHog server-side attribution before auth.
+    connectionParams: () => {
+      const params: Record<string, string> = {};
+      if (authToken) params.authToken = authToken;
+      // Lazy-resolved at connect time so the most recently published distinct id wins.
+      const distinctId = getActiveDistinctId();
+      if (distinctId) params.distinctId = distinctId;
+      return Object.keys(params).length > 0 ? params : undefined;
+    },
     on: {
       connected: () => {
         if (DEBUG) console.info(`[GraphQL] Client #${clientId} connected (first: ${!hasConnectedOnce})`);

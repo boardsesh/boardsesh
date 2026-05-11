@@ -4,6 +4,7 @@ import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { updateContext } from '../../context';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
+import { resolveContextAttribution, trackServer } from '../../../analytics/server-analytics';
 import {
   SessionIdSchema,
   BoardPathSchema,
@@ -120,6 +121,19 @@ export const sessionMutations = {
       });
     }
 
+    const joinAttribution = resolveContextAttribution(ctx);
+    trackServer('Session Joined', {
+      distinctId: joinAttribution.distinctId,
+      properties: {
+        sessionId,
+        boardPath,
+        isLeader: result.isLeader,
+        isAuthenticated: !!ctx.isAuthenticated,
+        initialQueueLength: initialQueue?.length ?? 0,
+        hasInitialCurrentClimb: !!initialCurrentClimb,
+      },
+    });
+
     // Notify session about new user
     const userJoinedEvent: SessionEvent = {
       __typename: 'UserJoined',
@@ -173,6 +187,20 @@ export const sessionMutations = {
     // Generate a unique session ID
     const sessionId = uuidv4();
     if (DEBUG) console.info(`[createSession] Generated sessionId: ${sessionId}`);
+
+    const createAttribution = resolveContextAttribution(ctx);
+    trackServer('Session Created', {
+      distinctId: createAttribution.distinctId,
+      properties: {
+        sessionId,
+        boardPath: input.boardPath,
+        discoverable: !!input.discoverable,
+        isPermanent: !!input.isPermanent,
+        hasGoal: !!input.goal,
+        boardCount: input.boardIds?.length ?? 0,
+        isAuthenticated: !!ctx.isAuthenticated,
+      },
+    });
 
     if (input.discoverable) {
       // Discoverable sessions require authentication (they write to DB with userId)

@@ -21,6 +21,7 @@ export function createContext(
   controllerId?: string,
   controllerApiKey?: string,
   controllerMac?: string,
+  distinctId?: string,
 ): ConnectionContext {
   const id = connectionId || uuidv4();
   const context: ConnectionContext = {
@@ -31,6 +32,7 @@ export function createContext(
     controllerId,
     controllerApiKey,
     controllerMac,
+    distinctId,
   };
   connections.set(id, context);
   if (DEBUG) {

@@ -8,6 +8,7 @@ import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-col
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export const runtime = 'nodejs';
 
@@ -32,13 +33,24 @@ export async function GET(request: NextRequest) {
       return new Response('Missing username parameter', { status: 400 });
     }
 
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'setter',
+        username,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
+
     const dbT0 = performance.now();
     const [summary, gradeResult] = await Promise.all([
       getSetterOgSummary(username),
       executeRows<{
         difficulty: number;
         cnt: number;
-      }>(dbz, sql`
+      }>(
+        dbz,
+        sql`
         SELECT bt.difficulty, COUNT(*) as cnt
         FROM boardsesh_ticks bt
         JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
@@ -47,7 +59,8 @@ export async function GET(request: NextRequest) {
           AND bt.difficulty IS NOT NULL
         GROUP BY bt.difficulty
         ORDER BY bt.difficulty
-      `),
+      `,
+      ),
     ]);
     const dbMs = performance.now() - dbT0;
     const gradeRows = gradeResult;

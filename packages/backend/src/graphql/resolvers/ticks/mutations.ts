@@ -6,6 +6,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { trackServer } from '../../../analytics/server-analytics';
 import { escapeLikePattern } from '../../../utils/like-pattern';
 import { getConsensusDifficultyName } from '../shared/sql-expressions';
 import { SaveTickInputSchema, UpdateTickInputSchema, AttachBetaLinkInputSchema } from '../../../validation/schemas';
@@ -346,6 +347,24 @@ export const tickMutations = {
     if (tick.sessionId) {
       publishDebouncedSessionStats(tick.sessionId);
     }
+
+    trackServer('Tick Logged', {
+      distinctId: userId,
+      properties: {
+        boardName: tick.boardType,
+        climbUuid: tick.climbUuid,
+        angle: tick.angle,
+        status: tick.status,
+        attemptCount: tick.attemptCount,
+        quality: tick.quality,
+        difficulty: tick.difficulty,
+        isMirror: tick.isMirror,
+        isBenchmark: tick.isBenchmark,
+        hasComment: !!tick.comment,
+        hasVideo: !!attachedVideoUrl,
+        inPartySession: !!tick.sessionId,
+      },
+    });
 
     return result;
   },

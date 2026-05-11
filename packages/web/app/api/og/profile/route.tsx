@@ -7,6 +7,7 @@ import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-col
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export const runtime = 'nodejs';
 
@@ -33,9 +34,9 @@ export async function GET(request: NextRequest) {
 
     const dbT0 = performance.now();
     const sql = getReadPool();
-    const [summary, gradeRows] = await Promise.all([
+    const [summary, gradeQueryResult] = await Promise.all([
       getProfileOgSummary(userId),
-      rowsFromResult<{ difficulty: number; cnt: number }>(await sql`
+      sql`
         SELECT difficulty, COUNT(DISTINCT climb_uuid) as cnt
         FROM boardsesh_ticks
         WHERE user_id = ${userId}
@@ -43,13 +44,23 @@ export async function GET(request: NextRequest) {
           AND difficulty IS NOT NULL
         GROUP BY difficulty
         ORDER BY difficulty
-      `),
+      `,
     ]);
+    const gradeRows = rowsFromResult<{ difficulty: number; cnt: number }>(gradeQueryResult);
     const dbMs = performance.now() - dbT0;
 
     if (!summary) {
       return new Response('User not found', { status: 404 });
     }
+
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'profile',
+        userId,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
 
     const displayName = summary.displayName;
     const avatarUrl = summary.avatarUrl || summary.fallbackImageUrl;

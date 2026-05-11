@@ -7,6 +7,7 @@ import { validateNextAuthToken } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
+import { readDistinctIdHeader } from '../analytics/server-analytics';
 
 /**
  * Create and configure the GraphQL Yoga instance
@@ -33,6 +34,8 @@ export function createYogaInstance() {
       const clientIp =
         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || undefined;
 
+      const distinctId = readDistinctIdHeader(request.headers);
+
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7);
         const authResult = await validateNextAuthToken(token);
@@ -44,6 +47,7 @@ export function createYogaInstance() {
             userId: authResult.userId,
             isAuthenticated: true,
             clientIp,
+            distinctId,
           };
         }
       }
@@ -54,6 +58,7 @@ export function createYogaInstance() {
         userId: undefined,
         isAuthenticated: false,
         clientIp,
+        distinctId,
       };
     },
     // Disable GraphiQL in production

@@ -5,6 +5,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getPlaylistOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export const runtime = 'nodejs';
 
@@ -54,6 +55,16 @@ export async function GET(request: NextRequest) {
     if (!playlist.isPublic) {
       return new Response('Playlist is private', { status: 404 });
     }
+
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'playlist',
+        playlistUuid: uuid,
+        boardName: playlist.boardType,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
 
     const name = playlist.name || 'Playlist';
     const description = playlist.description?.trim() || null;

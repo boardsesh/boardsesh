@@ -8,6 +8,7 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { trackServer } from '../../../analytics/server-analytics';
 import {
   UpdateProfileInputSchema,
   SaveAuroraCredentialInputSchema,
@@ -67,6 +68,15 @@ export const userMutations = {
     const user = users[0];
     const profile = profiles[0];
 
+    trackServer('Profile Updated', {
+      distinctId: userId,
+      properties: {
+        displayNameChanged: input.displayName !== undefined,
+        avatarUrlChanged: input.avatarUrl !== undefined,
+        firstTimeProfile: existingProfile.length === 0,
+      },
+    });
+
     return {
       id: user.id,
       email: user.email,
@@ -121,6 +131,14 @@ export const userMutations = {
           and(eq(dbSchema.auroraCredentials.userId, userId), eq(dbSchema.auroraCredentials.boardType, input.boardType)),
         );
     }
+
+    trackServer('Aurora Credentials Saved', {
+      distinctId: userId,
+      properties: {
+        boardName: input.boardType,
+        firstTimeForBoard: existing.length === 0,
+      },
+    });
 
     return {
       boardType: input.boardType,

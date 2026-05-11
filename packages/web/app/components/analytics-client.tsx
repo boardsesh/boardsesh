@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals';
 import { capturePosthog, pageview } from '@/app/lib/analytics';
 import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
+import { attachDistinctIdFetchInterceptor } from '@/app/lib/analytics-distinct-id';
 
 export default function AnalyticsClient() {
   const pathname = usePathname();
@@ -14,6 +15,10 @@ export default function AnalyticsClient() {
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
+
+  useEffect(() => {
+    attachDistinctIdFetchInterceptor();
+  }, []);
 
   useEffect(() => {
     if (vitalsRegistered.current) return;

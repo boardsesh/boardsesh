@@ -1,14 +1,4 @@
-import 'server-only';
-
-import { track as vercelTrack } from '@vercel/analytics/server';
 import { PostHog } from 'posthog-node';
-import { getServerSession, type Session } from 'next-auth';
-import { authOptions } from './auth/auth-options';
-import { isAdminAnalyticsUrl } from './analytics-paths';
-
-export const track: typeof vercelTrack = (eventName, properties, options) => {
-  return vercelTrack(eventName, properties, options);
-};
 
 type AllowedPropertyValues = string | number | boolean | null | undefined;
 export type ServerEventProperties = Record<string, AllowedPropertyValues>;
@@ -19,7 +9,7 @@ const MAX_HEADER_DISTINCT_ID_LENGTH = 256;
 
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
-const shouldDebug = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
+const shouldDebug = process.env.ANALYTICS_DEBUG === '1';
 
 function shouldEnableServerAnalytics(): boolean {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return false;
@@ -56,49 +46,55 @@ function sanitize(properties?: ServerEventProperties): SanitizedProperties | und
   return out;
 }
 
-export type RequestAttribution = {
+export type ContextAttribution = {
   distinctId: string;
   isAuthenticated: boolean;
   userId?: string;
 };
 
-// Resolution order: NextAuth session -> x-bs-distinct-id header (anonymous client distinct
-// id propagated by api-client.ts) -> ephemeral server-anon UUID. The last branch produces a
-// new PostHog person per event and should be rare; it's only hit when the client never
-// hydrated the IndexedDB partyProfile (e.g. server-to-server cron callbacks).
-export async function resolveRequestAttribution(req: Request): Promise<RequestAttribution> {
-  let session: Session | null = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch (err) {
-    if (shouldDebug) console.warn('[analytics.server] getServerSession failed', err);
+// Resolve attribution from a GraphQL connection context. Authenticated users prefer
+// session.userId; otherwise the client supplies its IndexedDB partyProfile UUID via the
+// x-bs-distinct-id header (parsed in yoga.ts/websocket setup and stashed on the context).
+export function resolveContextAttribution(ctx: {
+  isAuthenticated?: boolean;
+  userId?: string;
+  distinctId?: string;
+  connectionId: string;
+}): ContextAttribution {
+  if (ctx.isAuthenticated && ctx.userId) {
+    return { distinctId: ctx.userId, isAuthenticated: true, userId: ctx.userId };
   }
-
-  if (session?.user?.id) {
-    return { distinctId: session.user.id, isAuthenticated: true, userId: session.user.id };
+  if (ctx.distinctId) {
+    return { distinctId: ctx.distinctId, isAuthenticated: false };
   }
+  return { distinctId: `server-anon-${ctx.connectionId}`, isAuthenticated: false };
+}
 
-  const headerId = req.headers.get(SERVER_DISTINCT_ID_HEADER);
-  if (headerId && headerId.length > 0 && headerId.length <= MAX_HEADER_DISTINCT_ID_LENGTH) {
-    return { distinctId: headerId, isAuthenticated: false };
-  }
-
-  return { distinctId: `server-anon-${crypto.randomUUID()}`, isAuthenticated: false };
+// Read and validate the x-bs-distinct-id header off an incoming request. Returns
+// undefined when missing or oversized.
+export function readDistinctIdHeader(
+  headers: Headers | Record<string, string | string[] | undefined>,
+): string | undefined {
+  const raw =
+    headers instanceof Headers
+      ? headers.get(SERVER_DISTINCT_ID_HEADER)
+      : (() => {
+          const value = headers[SERVER_DISTINCT_ID_HEADER];
+          if (Array.isArray(value)) return value[0] ?? null;
+          return value ?? null;
+        })();
+  if (!raw || raw.length === 0 || raw.length > MAX_HEADER_DISTINCT_ID_LENGTH) return undefined;
+  return raw;
 }
 
 type TrackArgs = {
   distinctId: string;
   properties?: ServerEventProperties;
-  // If set, the event is dropped when the route is the admin surface. Pass the path
-  // that triggered the event (route handler URL or referer pathname).
-  route?: string;
 };
 
 export function trackServer(eventName: string, args: TrackArgs): boolean {
-  if (args.route && isAdminAnalyticsUrl(args.route)) return false;
-
   if (process.env.NODE_ENV !== 'production' && shouldDebug) {
-    console.info('[analytics.server] track', eventName, { distinctId: args.distinctId, ...args.properties });
+    console.info('[analytics] track', eventName, { distinctId: args.distinctId, ...args.properties });
   }
 
   const posthog = getPosthog();
@@ -139,7 +135,7 @@ export async function shutdownServerAnalytics(): Promise<void> {
   posthogInitAttempted = false;
 }
 
-// Test-only: reset the lazy singleton so tests can re-initialize with new env.
+// Test-only: reset lazy singleton so tests can re-initialize with fresh env.
 export function __resetServerAnalyticsForTests(): void {
   posthogClient = null;
   posthogInitAttempted = false;

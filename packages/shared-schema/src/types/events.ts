@@ -95,6 +95,9 @@ export type ConnectionContext = {
   isAuthenticated?: boolean;
   // Client IP for rate limiting anonymous HTTP requests
   clientIp?: string;
+  // Anonymous distinct id propagated from the client (IndexedDB partyProfile UUID).
+  // Used for PostHog server-side attribution when no NextAuth session is present.
+  distinctId?: string;
   // Controller-specific context (set when using API key auth)
   controllerId?: string;
   controllerApiKey?: string;

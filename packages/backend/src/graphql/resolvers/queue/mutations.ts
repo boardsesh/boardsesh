@@ -9,6 +9,7 @@ import {
   QueueArraySchema,
 } from '../../../validation/schemas';
 import { logMutationMetrics } from './mutation-metrics';
+import { resolveContextAttribution, trackServer } from '../../../analytics/server-analytics';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -109,6 +110,20 @@ export const queueMutations = {
     logMutationMetrics('addQueueItem', performance.now() - startTime, sessionId, {
       queueSize: originalQueueLength,
     });
+
+    if (itemWasAdded) {
+      const attribution = resolveContextAttribution(ctx);
+      trackServer('Queue Item Added', {
+        distinctId: attribution.distinctId,
+        properties: {
+          sessionId,
+          climbUuid: item.climb?.uuid ?? null,
+          queueSizeBefore: originalQueueLength,
+          positionExplicit: position !== undefined,
+        },
+      });
+    }
+
     return item;
   },
 
@@ -272,6 +287,18 @@ export const queueMutations = {
     logMutationMetrics('setCurrentClimb', performance.now() - startTime, sessionId, {
       shouldAddToQueue: !!shouldAddToQueue,
     });
+
+    const attribution = resolveContextAttribution(ctx);
+    trackServer('Current Climb Set', {
+      distinctId: attribution.distinctId,
+      properties: {
+        sessionId,
+        climbUuid: item?.climb?.uuid ?? null,
+        cleared: item === null,
+        shouldAddToQueue: !!shouldAddToQueue,
+      },
+    });
+
     return item;
   },
 

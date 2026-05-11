@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { issueNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
+import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const sanitizeNextPath = (nextPath: string | null): string => (nextPath && nextPath.startsWith('/') ? nextPath : '/');
 
@@ -39,6 +40,11 @@ const deepLinkRedirect = (url: string) =>
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
+    const attribution = await resolveRequestAttribution(request);
+    trackServer('Native OAuth Callback', {
+      distinctId: attribution.distinctId,
+      properties: { status: 'session_missing' },
+    });
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   }
 
@@ -50,8 +56,17 @@ export async function GET(request: NextRequest) {
       nextPath,
     });
   } catch {
+    trackServer('Native OAuth Callback', {
+      distinctId: session.user.id,
+      properties: { status: 'token_issue_failed' },
+    });
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=token_issue_failed`);
   }
+
+  trackServer('Native OAuth Callback', {
+    distinctId: session.user.id,
+    properties: { status: 'success' },
+  });
 
   const redirectUrl = `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
   return deepLinkRedirect(redirectUrl);

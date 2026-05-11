@@ -4,6 +4,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { createOgImageHeaders } from '@/app/lib/seo/og';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +42,19 @@ export async function GET(request: NextRequest) {
     if (!currentClimb?.frames) {
       return new Response('Climb not found', { status: 404 });
     }
+
+    // OG fetches come from preview bots (Slack, iMessage, etc.); attribute to a
+    // shared "og-bot" person so the count of share-previews stays usable in PostHog
+    // without inflating people count.
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'climb',
+        boardName: parsedParams.board_name,
+        climbUuid: parsedParams.climb_uuid,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
 
     const targetPath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
     const targetUrl = new URL(targetPath, request.url);

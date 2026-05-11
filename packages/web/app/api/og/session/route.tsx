@@ -6,6 +6,7 @@ import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-col
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export const runtime = 'nodejs';
 
@@ -55,6 +56,16 @@ export async function GET(request: NextRequest) {
     if (!summary.found) {
       return new Response('Session not found', { status: 404 });
     }
+
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'session',
+        sessionId,
+        variant: variant ?? null,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
 
     const sessionName = summary.sessionName;
     const participantNames = summary.participantNames.join(', ');

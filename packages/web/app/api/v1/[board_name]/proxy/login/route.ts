@@ -10,6 +10,7 @@ import type { Session } from '@/app/lib/api-wrappers/aurora-rest-client/types';
 import type { AuroraBoardName } from '@/app/lib/api-wrappers/aurora/types';
 import { getSession } from '@/app/lib/session';
 import { isAuroraBoardName } from '@/app/lib/board-constants';
+import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 // Input validation schema
 const loginSchema = z.object({
@@ -82,6 +83,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
   }
 
   const board_name = params.board_name as AuroraBoardName;
+  const attribution = await resolveRequestAttribution(request);
 
   try {
     // Parse and validate request body
@@ -99,28 +101,53 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
     session.userId = loginResponse.user_id;
     await session.save();
 
+    trackServer('Aurora Login Succeeded', {
+      distinctId: attribution.distinctId,
+      properties: { boardName: board_name },
+    });
+
     return response;
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('Login validation error:', error.issues);
+      trackServer('Aurora Login Failed', {
+        distinctId: attribution.distinctId,
+        properties: { boardName: board_name, errorKind: 'validation' },
+      });
       return NextResponse.json({ error: 'Invalid request data' }, { status: 400 });
     }
 
     // Handle fetch errors
     if (error instanceof Error) {
       if (error.message.includes('401')) {
+        trackServer('Aurora Login Failed', {
+          distinctId: attribution.distinctId,
+          properties: { boardName: board_name, errorKind: 'invalid_credentials' },
+        });
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
       if (error.message.includes('403')) {
+        trackServer('Aurora Login Failed', {
+          distinctId: attribution.distinctId,
+          properties: { boardName: board_name, errorKind: 'forbidden' },
+        });
         return NextResponse.json({ error: 'Access forbidden' }, { status: 403 });
       }
       if (error.message.startsWith('HTTP error!')) {
+        trackServer('Aurora Login Failed', {
+          distinctId: attribution.distinctId,
+          properties: { boardName: board_name, errorKind: 'service_unavailable' },
+        });
         return NextResponse.json({ error: 'Service unavailable' }, { status: 503 });
       }
     }
 
     // Generic error
     console.error('Login error:', error);
+    trackServer('Aurora Login Failed', {
+      distinctId: attribution.distinctId,
+      properties: { boardName: board_name, errorKind: 'unknown' },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

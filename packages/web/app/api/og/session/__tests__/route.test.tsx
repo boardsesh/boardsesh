@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 
+vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/analytics.server', () => ({
+  trackServer: vi.fn(),
+}));
+
 const sessionRouteState = vi.hoisted(() => ({
   getSessionOgSummaryMock: vi.fn(),
   capturedElement: null as unknown,

@@ -3,6 +3,7 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { trackServer } from '@/app/lib/analytics.server';
 
 export async function GET(request: NextRequest) {
   // Rate limiting - 20 attempts per minute per IP
@@ -66,6 +67,10 @@ export async function GET(request: NextRequest) {
     await tx
       .delete(schema.verificationTokens)
       .where(and(eq(schema.verificationTokens.identifier, email), eq(schema.verificationTokens.token, token)));
+  });
+
+  trackServer('Email Verified', {
+    distinctId: user[0].id,
   });
 
   // Redirect to login with success message
