@@ -108,12 +108,26 @@ export function reset(): boolean {
   return true;
 }
 
-export function pageview(url: string): void {
+export function pageview(url: string, prevPageviewProperties?: PosthogProperties): void {
   if (isAdminAnalyticsUrl(url)) return;
 
   const posthog = getPosthog();
   if (!posthog) return;
-  posthog.capture('$pageview', { $current_url: analyticsPathname(url) });
+  posthog.capture('$pageview', {
+    $current_url: analyticsPathname(url),
+    ...prevPageviewProperties,
+  });
+}
+
+export function pageleave(url: string, prevPageviewProperties?: PosthogProperties): void {
+  if (isAdminAnalyticsUrl(url)) return;
+
+  const posthog = getPosthog();
+  if (!posthog) return;
+  posthog.capture('$pageleave', {
+    $current_url: analyticsPathname(url),
+    ...prevPageviewProperties,
+  });
 }
 
 export type { AllowedPropertyValues };

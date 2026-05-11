@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals';
 import { capturePosthog, pageview } from '@/app/lib/analytics';
 import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
+import { attachLifecycleListeners, startPageview } from '@/app/lib/analytics-page-tracker';
 
 export default function AnalyticsClient() {
   const pathname = usePathname();
@@ -41,9 +42,14 @@ export default function AnalyticsClient() {
   }, []);
 
   useEffect(() => {
+    attachLifecycleListeners();
+  }, []);
+
+  useEffect(() => {
     if (!pathname) return;
+    const prevPageviewProperties = startPageview(pathname);
     if (isAdminAnalyticsUrl(pathname)) return;
-    pageview(pathname);
+    pageview(pathname, prevPageviewProperties ?? undefined);
   }, [pathname]);
 
   return null;

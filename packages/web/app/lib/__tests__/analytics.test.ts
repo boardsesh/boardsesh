@@ -105,6 +105,47 @@ describe('analytics wrapper', () => {
     expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', { $current_url: '/b/kilter' });
   });
 
+  it('attaches previous-pageview properties to $pageview events when provided', async () => {
+    const { pageview } = await import('../analytics');
+
+    pageview('/b/kilter', {
+      $prev_pageview_pathname: '/',
+      $prev_pageview_max_scroll_percentage: 0.42,
+    });
+
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageview', {
+      $current_url: '/b/kilter',
+      $prev_pageview_pathname: '/',
+      $prev_pageview_max_scroll_percentage: 0.42,
+    });
+  });
+
+  it('captures $pageleave with current URL and previous-pageview properties', async () => {
+    const { pageleave } = await import('../analytics');
+
+    pageleave('https://boardsesh.com/b/kilter?sort=popular#top', {
+      $prev_pageview_pathname: '/b/kilter',
+      $prev_pageview_max_scroll: 1200,
+      $prev_pageview_max_scroll_percentage: 0.85,
+    });
+
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('$pageleave', {
+      $current_url: '/b/kilter',
+      $prev_pageview_pathname: '/b/kilter',
+      $prev_pageview_max_scroll: 1200,
+      $prev_pageview_max_scroll_percentage: 0.85,
+    });
+  });
+
+  it('skips $pageleave on admin URLs', async () => {
+    const { pageleave } = await import('../analytics');
+
+    pageleave('/admin/retention', { $prev_pageview_pathname: '/admin/retention' });
+    pageleave('/fr/admin/retention', { $prev_pageview_pathname: '/fr/admin/retention' });
+
+    expect(mocks.posthog.capture).not.toHaveBeenCalled();
+  });
+
   it('identifies, aliases, and resets through PostHog', async () => {
     const { alias, identify, reset } = await import('../analytics');
 
@@ -119,10 +160,11 @@ describe('analytics wrapper', () => {
 
   it('skips all analytics calls on admin pages', async () => {
     setWindowLocation('https://boardsesh.com/admin/retention');
-    const { alias, capturePosthog, identify, pageview, reset, track } = await import('../analytics');
+    const { alias, capturePosthog, identify, pageleave, pageview, reset, track } = await import('../analytics');
 
     track('Admin Event');
     pageview('/admin/retention');
+    pageleave('/admin/retention');
 
     expect(capturePosthog('Admin PostHog Event')).toBe(false);
     expect(identify('profile-1')).toBe(false);
