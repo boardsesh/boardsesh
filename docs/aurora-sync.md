@@ -48,9 +48,15 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
 - **Batched inserts** (100 rows per batch) for performance
 - **Fresh pool per sync** to avoid Neon WebSocket timeouts
 - **Dual-write** for certain tables:
-  - `ascents` → `kilter_ascents` + `boardsesh_ticks`
-  - `bids` → `kilter_bids` + `boardsesh_ticks`
+  - `ascents` → `kilter_ascents` + `boardsesh_ticks` + `user_climb_qualities` + `user_climb_grades`
+  - `bids` → `kilter_bids` + `boardsesh_ticks` (no projection — bids carry no quality/grade)
   - `circuits` → `kilter_circuits` + `playlists` + `playlist_climbs`
+
+The `user_climb_*` projection tables hold each user's "current opinion" of a
+climb (one row per `(user, climb)` for quality, per `(user, climb, angle)` for
+grade) and back the **My Min Rating** search filter. They're populated from the
+most-recent tick via a `setWhere updated_at <= excluded.updated_at` staleness
+guard, so out-of-order Aurora replays can't clobber a newer opinion.
 
 ### Tables Synced
 
@@ -60,7 +66,7 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
 | ------------ | ---------------------------------- | -------------------------- |
 | users        | kilter_users / tension_users       | -                          |
 | walls        | kilter_walls / tension_walls       | -                          |
-| ascents      | kilter_ascents / tension_ascents   | boardsesh_ticks            |
+| ascents      | kilter_ascents / tension_ascents   | boardsesh_ticks, user_climb_qualities, user_climb_grades |
 | bids         | kilter_bids / tension_bids         | boardsesh_ticks            |
 | tags         | kilter_tags / tension_tags         | -                          |
 | circuits     | kilter_circuits / tension_circuits | playlists, playlist_climbs |

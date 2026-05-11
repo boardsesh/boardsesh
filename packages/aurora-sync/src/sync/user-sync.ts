@@ -217,6 +217,12 @@ async function upsertTableData(
           // upserted in two statements per batch — the WHERE clause on
           // EXCLUDED.updated_at means an older replay can't clobber a newer
           // opinion already on file.
+          //
+          // Note: this uses `excluded.updated_at` (the row currently being
+          // inserted) rather than a JS-bound timestamp param like the
+          // single-row helpers in @boardsesh/db/queries do. That's because a
+          // bulk insert can carry rows with different climbedAt values; only
+          // EXCLUDED gives us per-row access to the incoming timestamp.
           const qualityRowsByKey = new Map<string, typeof userClimbQualities.$inferInsert>();
           const gradeRowsByKey = new Map<string, typeof userClimbGrades.$inferInsert>();
           for (const tickValue of tickValues) {
@@ -233,7 +239,11 @@ async function upsertTableData(
                 });
               }
             }
-            if (tickValue.difficulty != null) {
+            // Guard against bogus Aurora payloads — `angle` was coerced by
+            // `Number(item.angle)` upstream, which silently turns `null` /
+            // empty string into 0. 0 isn't a valid board angle on Kilter or
+            // Tension, so skip rather than create a phantom row.
+            if (tickValue.difficulty != null && Number.isFinite(tickValue.angle) && tickValue.angle > 0) {
               const key = `${tickValue.userId}|${tickValue.boardType}|${tickValue.climbUuid}|${tickValue.angle}`;
               const existing = gradeRowsByKey.get(key);
               if (!existing || tickValue.climbedAt > existing.updatedAt!) {

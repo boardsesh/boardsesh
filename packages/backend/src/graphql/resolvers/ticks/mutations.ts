@@ -491,6 +491,15 @@ export const tickMutations = {
       //     older tick can't clobber a newer projection (setWhere guard).
       //   - cleared (set to null): the tick no longer contributes; recompute
       //     the projection from the user's remaining ticks for that climb.
+      //
+      // Intentional silent no-op: if the user edits the quality on an *older*
+      // tick and a newer tick already owns the projection row, the upsert's
+      // staleness guard skips the update. The "current opinion" is by design
+      // the most-recent tick's value, so an edit to a historical tick is a
+      // correction of the historical record and shouldn't override that. The
+      // mutation still returns success because the tick row itself updated;
+      // the projection just doesn't change. This is the same shape as Aurora
+      // replay handling and keeps both write paths consistent.
       if (validatedInput.quality !== undefined) {
         if (validatedInput.quality == null) {
           await recomputeUserClimbQualityProjection(tx, {

@@ -199,3 +199,61 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(attemptsSql, /'attempt'/);
   });
 });
+
+void describe('createClimbFilters: minUserQuality / hideWithoutUserQuality', () => {
+  const userId = 'user-abc';
+  const angleParams: BoardRouteParams = { ...params, angle: 50 };
+
+  function progressSql(searchParams: ClimbSearchParams): string {
+    const f = createClimbFilters(angleParams, searchParams, userId);
+    return f.personalProgressConditions.map(sqlToString).join(' && ');
+  }
+
+  void it('emits no user-quality condition when both fields are at defaults', () => {
+    const f = createClimbFilters(angleParams, {}, userId);
+    // The four normal progress filters are all off by default, so this should
+    // be empty too.
+    assert.equal(f.personalProgressConditions.length, 0);
+  });
+
+  void it('minUserQuality with switch OFF: NOT EXISTS clause that allows unrated climbs', () => {
+    const sql = progressSql({ minUserQuality: 4 });
+    assert.match(sql, /NOT EXISTS/);
+    // The threshold predicate must use < (so climbs rated >= threshold AND
+    // climbs the user hasn't rated both pass through).
+    assert.match(sql, /quality\s*<\s*4/);
+  });
+
+  void it('hideWithoutUserQuality with no threshold: positive EXISTS, no quality predicate', () => {
+    const sql = progressSql({ hideWithoutUserQuality: true });
+    assert.match(sql, /EXISTS/);
+    assert.doesNotMatch(sql, /NOT EXISTS/);
+    // Without a min threshold there should be no `quality >= N` predicate.
+    assert.doesNotMatch(sql, /quality\s*>=/);
+    // Nor a `quality <` predicate that would belong to the negative branch.
+    assert.doesNotMatch(sql, /quality\s*</);
+  });
+
+  void it('minUserQuality + hideWithoutUserQuality: positive EXISTS with quality >= threshold', () => {
+    const sql = progressSql({ minUserQuality: 3, hideWithoutUserQuality: true });
+    assert.match(sql, /EXISTS/);
+    assert.doesNotMatch(sql, /NOT EXISTS/);
+    assert.match(sql, /quality\s*>=\s*3/);
+  });
+
+  void it('user-quality conditions are NOT scoped to the angle column (quality is angle-independent)', () => {
+    // angleParams has angle=50; if the subquery scoped on angle it would
+    // render `angle = 50` like the personal-progress filters do.
+    const qualitySql = progressSql({ minUserQuality: 4 });
+    const progressOnlySql = progressSql({ hideCompleted: true });
+    // hideCompleted *does* scope by angle — sanity-check the negative space.
+    assert.match(progressOnlySql, /angle\s*=\s*50/);
+    // minUserQuality must not.
+    assert.doesNotMatch(qualitySql, /angle\s*=\s*50/);
+  });
+
+  void it('skips user-quality conditions entirely when no userId is supplied', () => {
+    const f = createClimbFilters(angleParams, { minUserQuality: 4, hideWithoutUserQuality: true });
+    assert.equal(f.personalProgressConditions.length, 0);
+  });
+});
