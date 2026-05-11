@@ -94,7 +94,7 @@ export type UserPanelSummaryLabels = {
   ratedOnly: string;
 };
 
-export function getUserPanelSummary(params: SearchRequestPagination, labels?: UserPanelSummaryLabels): string[] {
+export function getUserPanelSummary(params: SearchRequestPagination, labels: UserPanelSummaryLabels): string[] {
   // Merge "Hide" filters into single entry
   const hideFilters: string[] = [];
   if (params.hideAttempted) hideFilters.push('attempted');
@@ -108,10 +108,10 @@ export function getUserPanelSummary(params: SearchRequestPagination, labels?: Us
   const parts: string[] = [];
   const minUserQuality = normalizeMinUserQualityFilter(params.minUserQuality);
   if (minUserQuality) {
-    parts.push(labels ? labels.myRating(minUserQuality) : `${minUserQuality}+ my rating`);
+    parts.push(labels.myRating(minUserQuality));
   }
   if (params.hideWithoutUserQuality) {
-    parts.push(labels ? labels.ratedOnly : 'Rated only');
+    parts.push(labels.ratedOnly);
   }
   if (hideFilters.length > 0) {
     parts.push(`Hide ${hideFilters.join(', ')}`);

@@ -605,7 +605,7 @@ export type ClimbSearchInput = {
   /** Minimum quality rating */
   minRating?: InputMaybe<Scalars['Float']['input']>;
   /** Minimum quality the current user has assigned to climbs they've rated (requires auth). 1-5 stars; 0 / null means no filter. */
-  minUserQuality?: InputMaybe<Scalars['Float']['input']>;
+  minUserQuality?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by climb name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Only show benchmark climbs */

@@ -156,7 +156,7 @@ input ClimbSearchInput {
   "Only show climbs the user has completed (requires auth)"
   showOnlyCompleted: Boolean
   "Minimum quality the current user has assigned to climbs they've rated (requires auth). 1-5 stars; 0 / null means no filter."
-  minUserQuality: Float
+  minUserQuality: Int
   "Hide climbs the current user hasn't rated (requires auth). When false, unrated climbs still pass through and only too-low ratings are excluded."
   hideWithoutUserQuality: Boolean
   "Show only the user's draft climbs (requires auth)"

@@ -17,12 +17,16 @@
 --   - "Most recent" = highest climbed_at, tiebroken by highest tick id.
 --
 -- Safety:
---   - ON CONFLICT ... DO UPDATE ... WHERE EXCLUDED.updated_at > existing.updated_at
+--   - ON CONFLICT ... DO UPDATE ... WHERE EXCLUDED.updated_at >= existing.updated_at
 --     means re-running the migration (or running it after the new write path
 --     has populated some rows) never overwrites newer projection data with
---     older tick data.
+--     older tick data. `>=` matches the live-write helpers in
+--     packages/db/src/queries/user-climb-ratings.ts and aurora-sync.
 --   - Only ticks where quality / difficulty is non-null contribute. Pure
 --     attempt rows have nulls and are skipped.
+--   - Grade backfill also filters `angle > 0` — bogus Aurora payloads where
+--     `null` / "" coerced to `0` aren't valid Kilter/Tension angles. Mirrors
+--     the live-write guard in aurora-sync.
 
 DO $$
 DECLARE
@@ -39,7 +43,7 @@ BEGIN
   ON CONFLICT (user_id, board_type, climb_uuid) DO UPDATE
     SET quality = EXCLUDED.quality,
         updated_at = EXCLUDED.updated_at
-    WHERE EXCLUDED.updated_at > user_climb_qualities.updated_at;
+    WHERE EXCLUDED.updated_at >= user_climb_qualities.updated_at;
 
   GET DIAGNOSTICS qualities_count = ROW_COUNT;
   RAISE NOTICE 'Backfilled % user_climb_qualities rows', qualities_count;
@@ -50,11 +54,12 @@ BEGIN
     user_id, board_type, climb_uuid, angle, difficulty, climbed_at
   FROM boardsesh_ticks
   WHERE difficulty IS NOT NULL
+    AND angle > 0
   ORDER BY user_id, board_type, climb_uuid, angle, climbed_at DESC, id DESC
   ON CONFLICT (user_id, board_type, climb_uuid, angle) DO UPDATE
     SET difficulty = EXCLUDED.difficulty,
         updated_at = EXCLUDED.updated_at
-    WHERE EXCLUDED.updated_at > user_climb_grades.updated_at;
+    WHERE EXCLUDED.updated_at >= user_climb_grades.updated_at;
 
   GET DIAGNOSTICS grades_count = ROW_COUNT;
   RAISE NOTICE 'Backfilled % user_climb_grades rows', grades_count;

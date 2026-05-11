@@ -88,7 +88,14 @@ export const climbQueries = {
       hideCompleted: input.hideCompleted,
       showOnlyAttempted: input.showOnlyAttempted,
       showOnlyCompleted: input.showOnlyCompleted,
-      minUserQuality: input.minUserQuality,
+      // Clamp server-side — GraphQL types it as Int but a direct API caller
+      // could still send a value outside the 1-5 star range. The filter SQL
+      // treats > 0 as "active", so a negative would silently activate the
+      // filter with a nonsense threshold; clamp to [1,5] before passing on.
+      minUserQuality:
+        input.minUserQuality && input.minUserQuality > 0
+          ? Math.min(5, Math.max(1, Math.floor(input.minUserQuality)))
+          : undefined,
       hideWithoutUserQuality: input.hideWithoutUserQuality,
       onlyDrafts: input.onlyDrafts,
       projectsOnly: input.projectsOnly,

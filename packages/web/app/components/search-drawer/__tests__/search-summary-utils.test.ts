@@ -204,14 +204,6 @@ describe('getUserPanelSummary user-quality filter', () => {
     expect(parts).toContain('Only completed');
   });
 
-  it('falls back to hardcoded English when labels argument is omitted', () => {
-    const parts = getUserPanelSummary(
-      makeParams({ minUserQuality: 2, hideWithoutUserQuality: true }),
-    );
-    expect(parts).toContain('2+ my rating');
-    expect(parts).toContain('Rated only');
-  });
-
   it('normalises decimal minUserQuality to a whole star', () => {
     const parts = getUserPanelSummary(makeParams({ minUserQuality: 2.5 }), userLabels);
     expect(parts).toContain('3+ my rating');

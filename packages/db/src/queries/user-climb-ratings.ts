@@ -219,6 +219,9 @@ export async function recomputeUserClimbGradeProjection(
  * write a NEW migration (don't patch 0090) and update this function.
  */
 export async function backfillUserClimbProjectionsFromTicks(exec: Executor): Promise<void> {
+  // `>=` matches the staleness guard used by upsertUserClimbQuality and the
+  // Aurora bulk-upsert path — equal timestamps tie-break in favour of the
+  // incoming row, which keeps repeat seeds idempotent in the no-op case.
   await exec.execute(sql`
     INSERT INTO user_climb_qualities (user_id, board_type, climb_uuid, quality, updated_at)
     SELECT DISTINCT ON (user_id, board_type, climb_uuid)
@@ -228,18 +231,22 @@ export async function backfillUserClimbProjectionsFromTicks(exec: Executor): Pro
     ORDER BY user_id, board_type, climb_uuid, climbed_at DESC, id DESC
     ON CONFLICT (user_id, board_type, climb_uuid) DO UPDATE
       SET quality = EXCLUDED.quality, updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > user_climb_qualities.updated_at
+      WHERE EXCLUDED.updated_at >= user_climb_qualities.updated_at
   `);
+  // `angle > 0` guards against bogus Aurora payloads — `Number(null)` or
+  // `Number("")` coerces to 0, and 0 isn't a valid Kilter/Tension angle.
+  // Mirrors the live-write guard in aurora-sync/user-sync.ts.
   await exec.execute(sql`
     INSERT INTO user_climb_grades (user_id, board_type, climb_uuid, angle, difficulty, updated_at)
     SELECT DISTINCT ON (user_id, board_type, climb_uuid, angle)
       user_id, board_type, climb_uuid, angle, difficulty, climbed_at
     FROM boardsesh_ticks
     WHERE difficulty IS NOT NULL
+      AND angle > 0
     ORDER BY user_id, board_type, climb_uuid, angle, climbed_at DESC, id DESC
     ON CONFLICT (user_id, board_type, climb_uuid, angle) DO UPDATE
       SET difficulty = EXCLUDED.difficulty, updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > user_climb_grades.updated_at
+      WHERE EXCLUDED.updated_at >= user_climb_grades.updated_at
   `);
 }
 
