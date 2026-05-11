@@ -263,6 +263,20 @@ describe('deleteUserPreference mutation', () => {
 
     expect(result).toBe(true);
   });
+
+  it('should reject invalid keys without touching the database', async () => {
+    setupDeleteMock();
+
+    await expect(
+      userPreferencesMutations.deleteUserPreference({}, { key: 'has spaces' }, makeAuthCtx('user-1')),
+    ).rejects.toThrow();
+
+    await expect(
+      userPreferencesMutations.deleteUserPreference({}, { key: '1leading-digit' }, makeAuthCtx('user-1')),
+    ).rejects.toThrow();
+
+    expect(mockDb.delete).not.toHaveBeenCalled();
+  });
 });
 
 describe('userPreference query', () => {

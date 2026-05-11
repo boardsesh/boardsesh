@@ -39,12 +39,16 @@ const computeIsDecided = (value: ConsentValue): boolean =>
 
 /**
  * Write the mirror cookie that server code reads on first render. Guarded
- * so importing this module under SSR doesn't blow up.
+ * so importing this module under SSR doesn't blow up. Adds the `Secure`
+ * attribute when the page is loaded over HTTPS so the cookie cannot be sent
+ * over a plaintext connection on production.
  */
 const writeMirrorCookie = (value: ConsentValue): void => {
   if (typeof document === 'undefined') return;
   const serialized = serializeConsentCookie(value);
-  document.cookie = `${CONSENT_COOKIE}=${serialized}; path=/; SameSite=Lax; max-age=${CONSENT_COOKIE_MAX_AGE_SECONDS}`;
+  const isSecureContext = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const securePart = isSecureContext ? '; Secure' : '';
+  document.cookie = `${CONSENT_COOKIE}=${serialized}; path=/; SameSite=Lax; max-age=${CONSENT_COOKIE_MAX_AGE_SECONDS}${securePart}`;
 };
 
 const ConsentContext = createContext<UseConsentResult | null>(null);

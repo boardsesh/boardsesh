@@ -62,6 +62,25 @@ const parseServerTimestamp = (raw: string): number => {
 };
 
 /**
+ * Time-box the initial pull. A stalled GraphQL round-trip at auth time would
+ * otherwise block every downstream preference write — when the request hangs
+ * we'd rather drop into the offline-queue path and try again later.
+ */
+const PULL_INITIAL_TIMEOUT_MS = 5_000;
+
+const withTimeout = <T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`[user-preferences-sync] ${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  return Promise.race([work, timeoutPromise]).finally(() => {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  });
+};
+
+/**
  * Pull every server-side preference, resolve conflicts against the local
  * meta timestamp (newer wins), then push any local syncable preferences
  * the server doesn't yet know about. Finally drains the queue so any
@@ -72,7 +91,11 @@ export async function pullInitial(authToken: string): Promise<void> {
 
   let response: GetUserPreferencesQueryResponse;
   try {
-    response = await executeGraphQL<GetUserPreferencesQueryResponse>(GET_USER_PREFERENCES, undefined, authToken);
+    response = await withTimeout(
+      executeGraphQL<GetUserPreferencesQueryResponse>(GET_USER_PREFERENCES, undefined, authToken),
+      PULL_INITIAL_TIMEOUT_MS,
+      'pullInitial GET',
+    );
   } catch (error) {
     console.warn('[user-preferences-sync] pullInitial GET failed:', error);
     return;

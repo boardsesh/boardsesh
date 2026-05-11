@@ -1129,6 +1129,19 @@ The `QueueControlBar` reads connection state from the provider. When `state` is 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### User Preferences (HTTP, not WebSocket)
+
+Per-user preferences — including the consent state for cookies and analytics — live in their own sync system that runs alongside the WebSocket session and intentionally does **not** ride the graphql-ws connection.
+
+- Authoritative storage: `user_preferences` table (composite PK `user_id, key`, jsonb value, `updated_at` timestamp) — see `packages/db/src/schema/auth/user-preferences.ts`.
+- Transport: ordinary HTTP GraphQL via `executeGraphQL` (`packages/web/app/lib/graphql/client.ts`), reusing the NextAuth bearer token. The four operations are `userPreferences`, `userPreference`, `setUserPreference`, `deleteUserPreference`.
+- Client cache: IndexedDB database `boardsesh-user-preferences` with three object stores — `preferences`, `preferences_meta` (per-key `updatedAt` for latest-write-wins merging), and `sync_queue` (FIFO offline buffer, capped at 100 entries).
+- Cross-tab consistency: a `BroadcastChannel('boardsesh:user-preferences')` publishes every write so other tabs in the same browser update their `useUserPreference` state without an extra IDB or network read. This channel is **independent of the WebSocket** — it works while a party session is open, while it's closed, and for users who never join a session.
+- Sync triggers: initial pull on `useWsAuthToken` becoming authenticated (with a 5s timeout so a stalled GraphQL call doesn't block downstream writes), write-through enqueue on every `setPreference`, and a queue flush on the browser `online` event. There is no focus/visibility refetch.
+- The sync engine and its provider mount inside `SessionProviderWrapper` in `app/layout.tsx` so the auth token is available, but they have no dependency on the party-session state machine.
+
+The party-session WebSocket continues to handle queue state, presence, and leader election; preferences are deliberately routed through this HTTP path so a single offline tab or absent party session does not stall preference writes.
+
 ### Postgres-Only Fallback (Single Instance Mode)
 
 When Redis is unavailable, RoomManager falls back to **Postgres-only mode**:

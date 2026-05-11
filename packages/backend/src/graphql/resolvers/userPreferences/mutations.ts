@@ -3,7 +3,7 @@ import type { ConnectionContext, SetUserPreferenceInput, UserPreference } from '
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
-import { SetUserPreferenceInputSchema } from '../../../validation/schemas';
+import { SetUserPreferenceInputSchema, UserPreferenceKeySchema } from '../../../validation/schemas';
 
 export const userPreferencesMutations = {
   /**
@@ -51,6 +51,7 @@ export const userPreferencesMutations = {
    */
   deleteUserPreference: async (_: unknown, { key }: { key: string }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
+    validateInput(UserPreferenceKeySchema, key, 'key');
 
     await db
       .delete(dbSchema.userPreferences)
