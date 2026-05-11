@@ -37,7 +37,14 @@ export function getListPageCacheTTL(pathname: string, searchParams: URLSearchPar
 
   const hasUserParams = USER_SPECIFIC_SEARCH_PARAMS.some((param) => {
     const value = searchParams.get(param);
-    return value === 'true' || value === '1';
+    if (value === 'true' || value === '1') return true;
+    // Numeric user-specific params (e.g. minUserQuality=3) serialise as a
+    // plain integer string, not the literal 'true'. Treat any positive
+    // finite number as "user-specific" so the CDN won't cache one user's
+    // filtered results and serve them to everyone else. Negative / NaN /
+    // empty / '0' all fall through to the default-cacheable case.
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0;
   });
 
   if (hasUserParams) {

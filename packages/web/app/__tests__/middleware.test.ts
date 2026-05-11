@@ -101,6 +101,14 @@ describe('getListPageCacheTTL', () => {
       ['showOnlyCompleted', '1'],
       ['onlyDrafts', 'true'],
       ['onlyDrafts', '1'],
+      // Numeric param — historically the cache check matched only
+      // 'true'/'1', which silently let CDN serve one user's filtered
+      // results to every visitor when ?minUserQuality=N landed in the URL.
+      ['minUserQuality', '1'],
+      ['minUserQuality', '3'],
+      ['minUserQuality', '5'],
+      ['hideWithoutUserQuality', 'true'],
+      ['hideWithoutUserQuality', '1'],
     ])('skips cache for %s=%s (legacy format)', (param, value) => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ [param]: value }))).toBeNull();
     });
@@ -111,6 +119,8 @@ describe('getListPageCacheTTL', () => {
       ['showOnlyAttempted', 'true'],
       ['showOnlyCompleted', '1'],
       ['onlyDrafts', 'true'],
+      ['minUserQuality', '3'],
+      ['hideWithoutUserQuality', 'true'],
     ])('skips cache for %s=%s (slug format)', (param, value) => {
       expect(getListPageCacheTTL(SLUG_LIST, sp({ [param]: value }))).toBeNull();
     });
@@ -128,6 +138,12 @@ describe('getListPageCacheTTL', () => {
       ['showOnlyCompleted', '0'],
       ['onlyDrafts', 'false'],
       ['onlyDrafts', '0'],
+      // Default / explicitly-unset numeric param: caching is fine.
+      ['minUserQuality', '0'],
+      ['minUserQuality', ''],
+      ['minUserQuality', 'false'],
+      ['hideWithoutUserQuality', 'false'],
+      ['hideWithoutUserQuality', '0'],
     ])('caches for %s=%s', (param, value) => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ [param]: value }))).toBe(TTL_24H);
     });
@@ -186,6 +202,18 @@ describe('hasUserSpecificFilters', () => {
       expect(hasUserSpecificFilters({ ...baseParams, [param]: true })).toBe(true);
     },
   );
+
+  it('returns true when minUserQuality is set', () => {
+    expect(hasUserSpecificFilters({ ...baseParams, minUserQuality: 3 })).toBe(true);
+  });
+
+  it('returns false when minUserQuality is 0 (default)', () => {
+    expect(hasUserSpecificFilters({ ...baseParams, minUserQuality: 0 })).toBe(false);
+  });
+
+  it('returns true when hideWithoutUserQuality is true', () => {
+    expect(hasUserSpecificFilters({ ...baseParams, hideWithoutUserQuality: true })).toBe(true);
+  });
 
   it('returns false when all user-specific filters are explicitly false', () => {
     expect(
