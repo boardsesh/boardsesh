@@ -551,6 +551,23 @@ export const queriesTypeDefs = /* GraphQL */ `
     bulkVoteSummaries(input: BulkVoteSummaryInput!): [VoteSummary!]!
 
     # ============================================
+    # User Preferences Queries (require auth)
+    # ============================================
+
+    """
+    Get a single user preference by key for the authenticated user.
+    Returns null if the preference is not set.
+    Requires authentication.
+    """
+    userPreference(key: String!): UserPreference
+
+    """
+    Get all user preferences for the authenticated user.
+    Requires authentication.
+    """
+    userPreferences: [UserPreference!]!
+
+    # ============================================
     # Beta Link Queries
     # ============================================
 

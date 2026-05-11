@@ -1,0 +1,40 @@
+{
+  "banner": {
+    "headline": "We don't track you by default.",
+    "body": "Analytics tells us what's working. Error reports help us fix crashes. Your call on both.",
+    "actions": {
+      "acceptAll": "Accept all",
+      "reject": "Reject",
+      "customize": "Customize"
+    }
+  },
+  "dialog": {
+    "title": "Cookies and analytics",
+    "intro": "Strictly necessary stuff stays on so the app works. Everything else is up to you.",
+    "essential": {
+      "title": "Strictly necessary",
+      "body": "Login session, language, party session. These stay on so the app works.",
+      "status": "Always on"
+    },
+    "analytics": {
+      "title": "Product analytics",
+      "body": "We watch which features get used so we know what to build next. Covers PostHog and Vercel Analytics."
+    },
+    "errorMonitoring": {
+      "title": "Error monitoring",
+      "body": "Sentry catches crashes with the stack trace and device info we need to reproduce them."
+    },
+    "footer": {
+      "privacyLink": "Read the privacy policy",
+      "noteOnErrors": "Error monitoring kicks in on the next page load."
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "save": "Save preferences"
+    }
+  },
+  "settingsEntry": {
+    "title": "Cookies and analytics",
+    "subtitle": "Change what data Boardsesh collects"
+  }
+}

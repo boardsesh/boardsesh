@@ -17,6 +17,7 @@ import UploadOutlined from '@mui/icons-material/UploadOutlined';
 import Instagram from '@mui/icons-material/Instagram';
 import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
 import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined';
+import CookieOutlined from '@mui/icons-material/CookieOutlined';
 import { useSession } from 'next-auth/react';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { localeHref } from '@/app/lib/i18n/locale-href';
@@ -28,6 +29,7 @@ import ControllersSection from '@/app/components/settings/controllers-section';
 import DeleteAccountSection from '@/app/components/settings/delete-account-section';
 import SetPasswordSection from '@/app/components/settings/set-password-section';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { ConsentDialog } from '@/app/components/consent';
 import BackButton from '@/app/components/back-button';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '@/app/components/party-manager/party-profile-context';
@@ -120,7 +122,9 @@ export default function SettingsPageContent() {
   const { data: session, status } = useSession();
   const router = useLocaleRouter();
   const { t, i18n } = useTranslation('settings');
+  const { t: tConsent } = useTranslation('consent');
   const activeLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
+  const [consentDialogOpen, setConsentDialogOpen] = useState(false);
   const [formValues, setFormValues] = useState({ displayName: '', instagramUrl: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -646,6 +650,32 @@ export default function SettingsPageContent() {
         <MuiDivider sx={{ my: 2 }} />
 
         <ControllersSection />
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <Card variant="outlined" sx={{ borderRadius: 2 }}>
+          <CardContent
+            onClick={() => setConsentDialogOpen(true)}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              cursor: 'pointer',
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            <CookieOutlined color="action" />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle2">{tConsent('settingsEntry.title')}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {tConsent('settingsEntry.subtitle')}
+              </Typography>
+            </Box>
+            <ChevronRightOutlined color="action" />
+          </CardContent>
+        </Card>
+
+        <ConsentDialog open={consentDialogOpen} onClose={() => setConsentDialogOpen(false)} />
 
         <MuiDivider sx={{ my: 2 }} />
 

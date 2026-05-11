@@ -1,5 +1,6 @@
 // app/layout.tsx
 import React, { Suspense } from 'react';
+import { cookies } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import ColorModeProvider from './components/providers/color-mode-provider';
 import { VercelAnalytics, VercelSpeedInsights } from './components/providers/vercel-telemetry';
@@ -12,6 +13,8 @@ import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
 import { NotificationSubscriptionManager } from './components/providers/notification-subscription-manager';
 import I18nProvider from './components/providers/i18n-provider';
+import { UserPreferencesSyncProvider } from './components/providers/user-preferences-sync-provider';
+import { ConsentBanner, ConsentProvider } from './components/consent';
 import { VercelToolbar } from '@vercel/toolbar/next';
 import { getAllBoardConfigs } from './lib/server-board-configs';
 import { EMPTY_FEATURE_FLAGS } from './flags';
@@ -22,6 +25,7 @@ import OnboardingDummySeshMount from './components/onboarding/onboarding-dummy-s
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
+import { CONSENT_COOKIE, parseConsentCookie } from './lib/consent';
 import { SITE_URL } from './lib/seo/base-url';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
@@ -68,10 +72,18 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [boardConfigs, locale] = await Promise.all([getAllBoardConfigs(), getLocale()]);
 
+  // Read the consent cookie server-side so the third-party telemetry mounts
+  // below can be gated on the first render — no flash of analytics scripts
+  // for users who already opted out.
+  const cookieStore = await cookies();
+  const consentCookieValue = cookieStore.get(CONSENT_COOKIE)?.value ?? null;
+  const initialConsent = parseConsentCookie(consentCookieValue);
+  const analyticsAllowed = initialConsent.analytics === 'granted';
+
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <VercelAnalytics />
+        <VercelAnalytics enabled={analyticsAllowed} />
         <Suspense fallback={null}>
           <AnalyticsClient />
         </Suspense>
@@ -79,6 +91,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             PersistQueryClientProvider can read useSession() — do not reorder. */}
         <SessionProviderWrapper>
           <QueryClientProvider>
+            <UserPreferencesSyncProvider />
             <AppRouterCacheProvider>
               <ColorModeProvider>
                 <I18nProvider
@@ -93,29 +106,33 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     'climbs',
                     'profile',
                     'feed',
+                    'consent',
                   ]}
                 >
-                  <SnackbarProvider>
-                    <AuthModalProvider>
-                      <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                        <PersistentSessionWrapper boardConfigs={boardConfigs}>
-                          <NavigationLoadingProvider>
-                            <OnboardingTourProvider>
-                              <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
-                              <OnboardingTourOverlay />
-                              <OnboardingDummySeshMount />
-                            </OnboardingTourProvider>
-                          </NavigationLoadingProvider>
-                        </PersistentSessionWrapper>
-                      </FeatureFlagsProvider>
-                    </AuthModalProvider>
-                  </SnackbarProvider>
+                  <ConsentProvider initialCookieValue={consentCookieValue}>
+                    <SnackbarProvider>
+                      <AuthModalProvider>
+                        <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
+                          <PersistentSessionWrapper boardConfigs={boardConfigs}>
+                            <NavigationLoadingProvider>
+                              <OnboardingTourProvider>
+                                <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>
+                                <OnboardingTourOverlay />
+                                <OnboardingDummySeshMount />
+                              </OnboardingTourProvider>
+                            </NavigationLoadingProvider>
+                          </PersistentSessionWrapper>
+                        </FeatureFlagsProvider>
+                      </AuthModalProvider>
+                      <ConsentBanner />
+                    </SnackbarProvider>
+                  </ConsentProvider>
                 </I18nProvider>
               </ColorModeProvider>
             </AppRouterCacheProvider>
           </QueryClientProvider>
         </SessionProviderWrapper>
-        <VercelSpeedInsights />
+        <VercelSpeedInsights enabled={analyticsAllowed} />
         {process.env.NODE_ENV === 'development' && <VercelToolbar />}
       </body>
     </html>

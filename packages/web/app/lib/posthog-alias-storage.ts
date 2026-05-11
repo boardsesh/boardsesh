@@ -1,3 +1,5 @@
+import { hasAnalyticsConsent } from './consent';
+
 const POSTHOG_ALIAS_STORAGE_KEY = 'boardsesh:posthog-aliases';
 const MAX_STORED_ALIAS_PAIRS = 64;
 
@@ -31,11 +33,19 @@ function readAliasKeys(): string[] {
 }
 
 export function hasRecordedPosthogAlias(profileId: string, userId: string): boolean {
+  // No aliases exist (or matter) when analytics is denied/undecided — the
+  // identity effect short-circuits before it can call `alias()`. Returning
+  // false here keeps callers consistent without reading storage.
+  if (!hasAnalyticsConsent()) return false;
   return readAliasKeys().includes(aliasPairKey(profileId, userId));
 }
 
 export function recordPosthogAlias(profileId: string, userId: string): void {
   if (typeof window === 'undefined') return;
+  // No-op when the user hasn't granted analytics consent. The alias() call
+  // itself is gated upstream, but this is a defense-in-depth guard so we
+  // don't write dedupe entries for events we never sent.
+  if (!hasAnalyticsConsent()) return;
 
   try {
     const pairKey = aliasPairKey(profileId, userId);

@@ -14,6 +14,9 @@ import { DEFAULT_LOGBOOK_PREFERENCES } from '../logbook-preferences';
 
 const DB_NAME = 'boardsesh-user-preferences';
 const STORE_NAME = 'preferences';
+const META_STORE = 'preferences_meta';
+const QUEUE_STORE = 'sync_queue';
+const DB_VERSION = 2;
 const createStorageShim = () => {
   const store = new Map<string, string>();
 
@@ -40,15 +43,24 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 beforeEach(async () => {
   storage.clear();
-  // Clear the store contents using a separate short-lived connection
-  const db = await openDB(DB_NAME, 1, {
+  // Clear the store contents using a separate short-lived connection at
+  // the same version the module under test uses.
+  const db = await openDB(DB_NAME, DB_VERSION, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        db.createObjectStore(META_STORE);
+      }
+      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+        db.createObjectStore(QUEUE_STORE, { autoIncrement: true });
+      }
     },
   });
   await db.clear(STORE_NAME);
+  await db.clear(META_STORE);
+  await db.clear(QUEUE_STORE);
   db.close();
 });
 
@@ -221,7 +233,7 @@ describe('user-preferences-db', () => {
 
       // Corrupt the store by writing a value, then force an error by
       // closing the underlying connection and operating on a closed db
-      const db = await openDB(DB_NAME, 1);
+      const db = await openDB(DB_NAME, DB_VERSION);
       db.close();
 
       // Re-import with a broken openDB to test error path
@@ -269,6 +281,82 @@ describe('user-preferences-db', () => {
 
       errorSpy.mockRestore();
       vi.doUnmock('idb');
+    });
+  });
+
+  describe('meta + sync queue smoke', () => {
+    // Each test imports the modules fresh so the prior `vi.resetModules` /
+    // `vi.doMock` calls in the error-handling block can't leak module state.
+    it('writes a meta entry when storing a preference', async () => {
+      vi.resetModules();
+      const mod = await import('../user-preferences-db');
+      const before = Date.now();
+      await mod.setPreference('libraryTab', 'logbook');
+      const meta = await mod.getPreferenceMeta('libraryTab');
+      expect(meta).not.toBeNull();
+      expect(meta!.updatedAt).toBeGreaterThanOrEqual(before);
+    });
+
+    it('clears the meta entry when removing a preference', async () => {
+      vi.resetModules();
+      const mod = await import('../user-preferences-db');
+      await mod.setPreference('libraryTab', 'logbook');
+      await mod.removePreference('libraryTab');
+      const meta = await mod.getPreferenceMeta('libraryTab');
+      expect(meta).toBeNull();
+    });
+
+    it('enqueues a set op when a syncable key is written (with sync engine loaded)', async () => {
+      vi.resetModules();
+      // Mock the GraphQL client so importing the sync engine doesn't try to
+      // hit a real backend (just the registerSyncableKeys side-effect matters).
+      vi.doMock('../graphql/client', () => ({ executeGraphQL: vi.fn() }));
+      // Importing the sync engine registers SYNCABLE_KEYS with the IDB layer.
+      await import('../user-preferences-sync');
+      const mod = await import('../user-preferences-db');
+      await mod.setPreference('libraryTab', 'logbook');
+      const queue = await mod.getSyncQueueSnapshot();
+      expect(queue).toHaveLength(1);
+      expect(queue[0].op).toBe('set');
+      expect(queue[0].key).toBe('libraryTab');
+      vi.doUnmock('../graphql/client');
+    });
+
+    it('does not enqueue ops for non-syncable keys', async () => {
+      vi.resetModules();
+      vi.doMock('../graphql/client', () => ({ executeGraphQL: vi.fn() }));
+      await import('../user-preferences-sync');
+      const mod = await import('../user-preferences-db');
+      await mod.setPreference('esp32Connections', []);
+      const queue = await mod.getSyncQueueSnapshot();
+      expect(queue).toHaveLength(0);
+      vi.doUnmock('../graphql/client');
+    });
+  });
+
+  describe('v1 -> v2 migration', () => {
+    it('preserves existing v1 preferences across the schema bump', async () => {
+      vi.resetModules();
+      // Fresh IDB factory to avoid any leftover state.
+      const { IDBFactory } = await import('fake-indexeddb');
+      (globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory();
+
+      // Seed a v1 database with a single store, just like the previous schema.
+      const v1Db = await openDB(DB_NAME, 1, {
+        upgrade(upgradeDb) {
+          if (!upgradeDb.objectStoreNames.contains(STORE_NAME)) {
+            upgradeDb.createObjectStore(STORE_NAME);
+          }
+        },
+      });
+      await v1Db.put(STORE_NAME, 'logbook', 'libraryTab');
+      v1Db.close();
+
+      // Now hit the module — it should open at v2, run the upgrade, create
+      // the meta + queue stores, and still see the seeded value.
+      const mod = await import('../user-preferences-db');
+      const value = await mod.getPreference<'logbook' | 'playlists'>('libraryTab');
+      expect(value).toBe('logbook');
     });
   });
 });

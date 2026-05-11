@@ -5,6 +5,7 @@ import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import LocaleLink from '@/app/components/i18n/locale-link';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -50,6 +51,17 @@ export default async function PrivacyPolicyPage() {
       <Paragraph>{t('privacy.intro1')}</Paragraph>
       <Paragraph>{t('privacy.intro2ProductAnalytics')}</Paragraph>
 
+      <Section title={t('privacy.consent.title')}>
+        <Paragraph>{t('privacy.consent.body1')}</Paragraph>
+        <Paragraph>
+          {t('privacy.consent.body2Start')}
+          <Link component={LocaleLink} href="/settings">
+            {t('privacy.consent.settingsLink')}
+          </Link>
+          {t('privacy.consent.body2End')}
+        </Paragraph>
+      </Section>
+
       <Section title={t('privacy.collect.title')}>
         <Paragraph>
           <strong>{t('privacy.collect.accountLabel')}</strong> {t('privacy.collect.accountBody')}
@@ -63,6 +75,10 @@ export default async function PrivacyPolicyPage() {
         <Paragraph>
           <strong>{t('privacy.collect.productAnalyticsLabel')}</strong> {t('privacy.collect.productAnalyticsBody')}
         </Paragraph>
+      </Section>
+
+      <Section title={t('privacy.errorMonitoring.title')}>
+        <Paragraph>{t('privacy.errorMonitoring.body')}</Paragraph>
       </Section>
 
       <Section title={t('privacy.bluetooth.title')}>
@@ -86,6 +102,13 @@ export default async function PrivacyPolicyPage() {
           <strong>{t('privacy.thirdParty.posthogLabel')}</strong> {t('privacy.thirdParty.posthogBody')}
           <Link href="https://posthog.com/privacy" target="_blank" rel="noopener">
             {t('privacy.thirdParty.posthogLink')}
+          </Link>
+          .
+        </Paragraph>
+        <Paragraph>
+          <strong>{t('privacy.thirdParty.sentryLabel')}</strong> {t('privacy.thirdParty.sentryBody')}
+          <Link href="https://sentry.io/privacy/" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.sentryLink')}
           </Link>
           .
         </Paragraph>

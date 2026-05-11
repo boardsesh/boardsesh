@@ -1,0 +1,40 @@
+{
+  "banner": {
+    "headline": "Nous ne vous suivons pas par défaut.",
+    "body": "Les statistiques nous montrent ce qui fonctionne. Les rapports d'erreurs nous aident à corriger les bugs. Vous décidez pour les deux.",
+    "actions": {
+      "acceptAll": "Tout accepter",
+      "reject": "Refuser",
+      "customize": "Personnaliser"
+    }
+  },
+  "dialog": {
+    "title": "Cookies et statistiques",
+    "intro": "Le strict nécessaire reste activé pour que l'app fonctionne. Le reste est à votre choix.",
+    "essential": {
+      "title": "Strictement nécessaire",
+      "body": "Session de connexion, langue, session de groupe. Toujours actifs pour que l'app fonctionne.",
+      "status": "Toujours actif"
+    },
+    "analytics": {
+      "title": "Statistiques produit",
+      "body": "Nous regardons quelles fonctionnalités sont utilisées pour savoir quoi construire ensuite. Couvre PostHog et Vercel Analytics."
+    },
+    "errorMonitoring": {
+      "title": "Surveillance des erreurs",
+      "body": "Sentry capte les plantages avec la trace et les infos d'appareil nécessaires pour les reproduire."
+    },
+    "footer": {
+      "privacyLink": "Lire la politique de confidentialité",
+      "noteOnErrors": "La surveillance des erreurs s'active au prochain chargement de page."
+    },
+    "actions": {
+      "cancel": "Annuler",
+      "save": "Enregistrer les préférences"
+    }
+  },
+  "settingsEntry": {
+    "title": "Cookies et statistiques",
+    "subtitle": "Modifier les données que Boardsesh collecte"
+  }
+}

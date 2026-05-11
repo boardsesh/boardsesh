@@ -2,6 +2,7 @@ import { track as vercelTrack } from '@vercel/analytics';
 import { PostHog } from 'posthog-js-lite';
 import { analyticsPathname, isAdminAnalyticsUrl } from './analytics-paths';
 import { getBackendHttpUrl } from './backend-url';
+import { hasAnalyticsConsent } from './consent';
 
 // Mirror @vercel/analytics' AllowedPropertyValues so existing call sites
 // type-check unchanged when they swap to this wrapper.
@@ -15,23 +16,43 @@ const shouldDebugAnalytics = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 
 function getPosthog(): PostHog | null {
   if (typeof window === 'undefined') return null;
+  // Consent gate: if analytics is denied or undecided, refuse to construct
+  // the PostHog client. Evaluated BEFORE the `posthogInitAttempted` sticky
+  // check so that flipping consent to granted later still allows lazy init.
+  if (!hasAnalyticsConsent()) return null;
   if (posthogClient) return posthogClient;
   if (posthogInitAttempted) return null;
-  posthogInitAttempted = true;
 
   // Hostname-gate to production, mirroring Sentry. Dev/preview deploys stay
   // out of the prod PostHog project.
-  if (!window.location.hostname.includes('boardsesh.com')) return null;
+  if (!window.location.hostname.includes('boardsesh.com')) {
+    // Mark as attempted so we don't re-check env vars on every event in
+    // dev/preview. (Consent gate above already short-circuits when denied,
+    // so flipping consent mid-session is unaffected.)
+    posthogInitAttempted = true;
+    return null;
+  }
 
   const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    posthogInitAttempted = true;
+    return null;
+  }
   // Default to the boardsesh backend's PostHog reverse proxy so events look
   // first-party to ad-blockers. NEXT_PUBLIC_POSTHOG_HOST overrides for incident
   // recovery (point straight at us.i.posthog.com if the proxy is down).
   const backendUrl = getBackendHttpUrl();
   const host = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? (backendUrl ? `${backendUrl}/api/posthog` : null);
-  if (!host) return null;
+  if (!host) {
+    posthogInitAttempted = true;
+    return null;
+  }
 
+  // Mark attempted only when we actually construct the client. This avoids
+  // pinning the "no posthog" state when consent was denied earlier in the
+  // session — once the user opts in, the next call to getPosthog() falls
+  // through to construction.
+  posthogInitAttempted = true;
   posthogClient = new PostHog(apiKey, {
     host,
     autocapture: false,
@@ -73,6 +94,9 @@ function isCurrentAdminAnalyticsPage(): boolean {
 
 export function track(name: string, properties?: EventProperties, options?: { flags?: FlagsDataInput }): void {
   if (isCurrentAdminAnalyticsPage()) return;
+  // Consent gate: skip BOTH Vercel and PostHog when analytics is denied or
+  // undecided. The banner sits above content until the user picks one.
+  if (!hasAnalyticsConsent()) return;
 
   if (process.env.NODE_ENV !== 'production' && shouldDebugAnalytics) {
     console.info('[analytics] track', name, properties);
@@ -88,6 +112,7 @@ export function track(name: string, properties?: EventProperties, options?: { fl
 
 export function capturePosthog(name: string, properties?: PosthogProperties): boolean {
   if (isCurrentAdminAnalyticsPage()) return false;
+  if (!hasAnalyticsConsent()) return false;
 
   const posthog = getPosthog();
   if (!posthog) return false;
@@ -97,11 +122,22 @@ export function capturePosthog(name: string, properties?: PosthogProperties): bo
 
 export function identify(distinctId: string, properties?: PosthogProperties): boolean {
   if (isCurrentAdminAnalyticsPage()) return false;
+  if (!hasAnalyticsConsent()) return false;
 
   const posthog = getPosthog();
   if (!posthog) return false;
   posthog.identify(distinctId, properties);
   return true;
+}
+
+/**
+ * Eagerly construct the PostHog client. Callers (e.g. the consent context
+ * when the user flips analytics to granted mid-session) can invoke this to
+ * warm up the client so the next `track()` doesn't pay init cost. No-ops
+ * when consent is denied or undecided.
+ */
+export function initAnalytics(): void {
+  getPosthog();
 }
 
 // Sets person properties on the current distinct_id. `setOnce` properties are

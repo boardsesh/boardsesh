@@ -50,6 +50,8 @@ import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions'
 import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { feedbackMutations } from './feedback/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
+import { userPreferencesQueries } from './userPreferences/queries';
+import { userPreferencesMutations } from './userPreferences/mutations';
 import { isNoMatchClimb } from './shared/helpers';
 
 export const resolvers = {
@@ -83,6 +85,7 @@ export const resolvers = {
     ...socialCommunitySettingsQueries,
     ...newClimbSubscriptionResolvers.Query,
     ...betaLinkQueries,
+    ...userPreferencesQueries,
   },
 
   Mutation: {
@@ -108,6 +111,7 @@ export const resolvers = {
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
     ...feedbackMutations,
+    ...userPreferencesMutations,
   },
 
   Subscription: {

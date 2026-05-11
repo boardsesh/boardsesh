@@ -121,6 +121,9 @@ type Documents = {
   '\n  query GetUserProfileStats($userId: ID!) {\n    userProfileStats(userId: $userId) {\n      totalDistinctClimbs\n      layoutStats {\n        layoutKey\n        boardType\n        layoutId\n        distinctClimbCount\n        gradeCounts {\n          grade\n          count\n        }\n      }\n    }\n  }\n': typeof types.GetUserProfileStatsDocument;
   '\n  query GetUserClimbPercentile($userId: ID!) {\n    userClimbPercentile(userId: $userId) {\n      totalDistinctClimbs\n      percentile\n      totalActiveUsers\n    }\n  }\n': typeof types.GetUserClimbPercentileDocument;
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      updatedAt\n    }\n  }\n': typeof types.UpdateTickDocument;
+  '\n  query GetUserPreferences {\n    userPreferences {\n      key\n      value\n      updatedAt\n    }\n  }\n': typeof types.GetUserPreferencesDocument;
+  '\n  mutation SetUserPreference($input: SetUserPreferenceInput!) {\n    setUserPreference(input: $input) {\n      key\n      value\n      updatedAt\n    }\n  }\n': typeof types.SetUserPreferenceDocument;
+  '\n  mutation DeleteUserPreference($key: String!) {\n    deleteUserPreference(key: $key)\n  }\n': typeof types.DeleteUserPreferenceDocument;
 };
 const documents: Documents = {
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
@@ -332,6 +335,12 @@ const documents: Documents = {
     types.GetUserClimbPercentileDocument,
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      updatedAt\n    }\n  }\n':
     types.UpdateTickDocument,
+  '\n  query GetUserPreferences {\n    userPreferences {\n      key\n      value\n      updatedAt\n    }\n  }\n':
+    types.GetUserPreferencesDocument,
+  '\n  mutation SetUserPreference($input: SetUserPreferenceInput!) {\n    setUserPreference(input: $input) {\n      key\n      value\n      updatedAt\n    }\n  }\n':
+    types.SetUserPreferenceDocument,
+  '\n  mutation DeleteUserPreference($key: String!) {\n    deleteUserPreference(key: $key)\n  }\n':
+    types.DeleteUserPreferenceDocument,
 };
 
 /**
@@ -990,6 +999,24 @@ export function graphql(
 export function graphql(
   source: '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      updatedAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      updatedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetUserPreferences {\n    userPreferences {\n      key\n      value\n      updatedAt\n    }\n  }\n',
+): (typeof documents)['\n  query GetUserPreferences {\n    userPreferences {\n      key\n      value\n      updatedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation SetUserPreference($input: SetUserPreferenceInput!) {\n    setUserPreference(input: $input) {\n      key\n      value\n      updatedAt\n    }\n  }\n',
+): (typeof documents)['\n  mutation SetUserPreference($input: SetUserPreferenceInput!) {\n    setUserPreference(input: $input) {\n      key\n      value\n      updatedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeleteUserPreference($key: String!) {\n    deleteUserPreference(key: $key)\n  }\n',
+): (typeof documents)['\n  mutation DeleteUserPreference($key: String!) {\n    deleteUserPreference(key: $key)\n  }\n'];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

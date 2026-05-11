@@ -541,6 +541,24 @@ export const mutationsTypeDefs = /* GraphQL */ `
     sendDeviceLogs(input: SendDeviceLogsInput!): SendDeviceLogsResponse!
 
     # ============================================
+    # User Preferences Mutations (require auth)
+    # ============================================
+
+    """
+    Create or update a single user preference for the authenticated user.
+    Upserts on (userId, key). Returns the stored preference row.
+    Requires authentication.
+    """
+    setUserPreference(input: SetUserPreferenceInput!): UserPreference!
+
+    """
+    Delete a single user preference by key for the authenticated user.
+    Idempotent — returns true whether or not the preference existed.
+    Requires authentication.
+    """
+    deleteUserPreference(key: String!): Boolean!
+
+    # ============================================
     # App Feedback Mutations (public)
     # ============================================
 

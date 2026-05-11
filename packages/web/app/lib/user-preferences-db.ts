@@ -1,10 +1,23 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import { openDB, type IDBPDatabase } from 'idb';
 
-import { createIndexedDBStore, migrateFromLocalStorage } from './idb-helper';
+import { migrateFromLocalStorage } from './idb-helper';
 import type { LogbookPreferences } from './logbook-preferences';
 import type { GradeDisplayFormat } from './grade-colors';
+import type { ConsentValue } from './consent';
 
+const DB_NAME = 'boardsesh-user-preferences';
 const STORE_NAME = 'preferences';
+const META_STORE = 'preferences_meta';
+const QUEUE_STORE = 'sync_queue';
+const DB_VERSION = 2;
+
+// Cap on the number of pending sync ops we keep around. Once a user's queue
+// grows past this, we drop the oldest entry (the more recent state wins on
+// the server anyway because writes are key-overwriting).
+const SYNC_QUEUE_MAX_ENTRIES = 100;
+
+const BROADCAST_CHANNEL_NAME = 'boardsesh:user-preferences';
 
 // Persisted ESP32 emulator connections for the dev-only /development page.
 export type Esp32Connection = {
@@ -37,7 +50,19 @@ export type UserPreferenceKeyMap = {
   'shakeToReport:dismissed': boolean;
   esp32Connections: Esp32Connection[];
   lastUsedGrade: number;
+  consent: ConsentValue;
 };
+
+export type PreferenceMetaEntry = {
+  key: string;
+  updatedAt: number;
+};
+
+export type SyncQueueEntry =
+  | { op: 'set'; key: string; value: unknown; queuedAt: number }
+  | { op: 'delete'; key: string; queuedAt: number };
+
+export type PreferenceBroadcastMessage = { type: 'set'; key: string; value: unknown } | { type: 'remove'; key: string };
 
 // Map of IDB preference keys to their legacy localStorage keys for one-time migration
 const LEGACY_LOCALSTORAGE_KEYS: Record<string, string> = {
@@ -55,11 +80,31 @@ const ORPHANED_PREFERENCE_KEYS = [
   'swipeHint:playViewSeen',
 ] as const;
 
-const getDBRaw = createIndexedDBStore('boardsesh-user-preferences', STORE_NAME);
-
+let dbPromise: Promise<IDBPDatabase> | null = null;
 let orphanCleanupPromise: Promise<void> | null = null;
-const getDB: typeof getDBRaw = async () => {
-  const db = await getDBRaw();
+
+const getDB = async (): Promise<IDBPDatabase | null> => {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return null;
+  }
+  if (!dbPromise) {
+    dbPromise = openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        // Idempotent so a fresh install at v2 and an in-place upgrade from v1
+        // converge on the same shape.
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+        if (!db.objectStoreNames.contains(META_STORE)) {
+          db.createObjectStore(META_STORE);
+        }
+        if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+          db.createObjectStore(QUEUE_STORE, { autoIncrement: true });
+        }
+      },
+    });
+  }
+  const db = await dbPromise;
   if (db && !orphanCleanupPromise) {
     orphanCleanupPromise = (async () => {
       for (const key of ORPHANED_PREFERENCE_KEYS) {
@@ -73,6 +118,113 @@ const getDB: typeof getDBRaw = async () => {
     })();
   }
   return db;
+};
+
+// Test-only reset helper. Allows tests that mock `idb` to force a fresh
+// open against the new mock. Also resets the orphan-cleanup latch and the
+// BroadcastChannel singleton so each test starts from a clean slate.
+export const __resetDbPromiseForTests = (): void => {
+  dbPromise = null;
+  orphanCleanupPromise = null;
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.close();
+    } catch {
+      // Already closed — ignore.
+    }
+  }
+  broadcastChannel = null;
+  broadcastChannelCreated = false;
+};
+
+let broadcastChannel: BroadcastChannel | null = null;
+let broadcastChannelCreated = false;
+
+const getBroadcastChannel = (): BroadcastChannel | null => {
+  if (broadcastChannelCreated) return broadcastChannel;
+  broadcastChannelCreated = true;
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') {
+    return null;
+  }
+  try {
+    broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+  } catch (error) {
+    console.warn('Failed to open preferences BroadcastChannel:', error);
+    broadcastChannel = null;
+  }
+  return broadcastChannel;
+};
+
+/**
+ * Subscribe to preference change events broadcast across tabs/windows
+ * for the current origin. Returns an unsubscribe function.
+ */
+export const subscribeToPreferenceChanges = (listener: (message: PreferenceBroadcastMessage) => void): (() => void) => {
+  const channel = getBroadcastChannel();
+  if (!channel) return () => {};
+  const handler = (event: MessageEvent<PreferenceBroadcastMessage>) => {
+    if (event.data && typeof event.data === 'object' && 'type' in event.data) {
+      listener(event.data);
+    }
+  };
+  channel.addEventListener('message', handler);
+  return () => {
+    channel.removeEventListener('message', handler);
+  };
+};
+
+const publishPreferenceChange = (message: PreferenceBroadcastMessage): void => {
+  const channel = getBroadcastChannel();
+  if (!channel) return;
+  try {
+    channel.postMessage(message);
+  } catch (error) {
+    console.warn('Failed to publish preference change:', error);
+  }
+};
+
+const setMetaEntry = async (db: IDBPDatabase, key: string, updatedAt: number): Promise<void> => {
+  const entry: PreferenceMetaEntry = { key, updatedAt };
+  await db.put(META_STORE, entry, key);
+};
+
+const deleteMetaEntry = async (db: IDBPDatabase, key: string): Promise<void> => {
+  await db.delete(META_STORE, key);
+};
+
+const enqueueSyncOp = async (db: IDBPDatabase, entry: SyncQueueEntry): Promise<void> => {
+  const tx = db.transaction(QUEUE_STORE, 'readwrite');
+  const store = tx.objectStore(QUEUE_STORE);
+  await store.add(entry);
+
+  // Bound the queue size — drop oldest entries (lowest keys) when over the cap.
+  const count = await store.count();
+  if (count > SYNC_QUEUE_MAX_ENTRIES) {
+    const overflow = count - SYNC_QUEUE_MAX_ENTRIES;
+    let cursor = await store.openCursor();
+    let removed = 0;
+    while (cursor && removed < overflow) {
+      await cursor.delete();
+      removed += 1;
+      cursor = await cursor.continue();
+    }
+  }
+  await tx.done;
+};
+
+// The sync engine registers its SYNCABLE_KEYS set at module-load time via
+// {@link registerSyncableKeys}. We keep the registration out of this file
+// (and have the sync engine import this one rather than the other way
+// around) so there's no circular dependency.
+let syncableKeyMatcher: ((key: string) => boolean) | null = null;
+
+export const registerSyncableKeys = (matcher: (key: string) => boolean): void => {
+  syncableKeyMatcher = matcher;
+};
+
+const isSyncableKey = (key: string): boolean => {
+  if (!syncableKeyMatcher) return false;
+  return syncableKeyMatcher(key);
 };
 
 /**
@@ -94,6 +246,7 @@ export const getPreference = async <T = unknown, K extends string = string>(
       let migratedValue: T | null = null;
       await migrateFromLocalStorage<T>(legacyKey, async (val) => {
         await db.put(STORE_NAME, val, key);
+        await setMetaEntry(db, key, Date.now());
         migratedValue = val;
         migrated = true;
       });
@@ -108,7 +261,9 @@ export const getPreference = async <T = unknown, K extends string = string>(
 };
 
 /**
- * Save a preference value to IndexedDB.
+ * Save a preference value to IndexedDB. Updates the meta store, broadcasts
+ * the change to other tabs, and enqueues the op for upstream sync when the
+ * key is in the SYNCABLE_KEYS set.
  */
 export const setPreference = async <K extends string>(
   key: K,
@@ -117,7 +272,13 @@ export const setPreference = async <K extends string>(
   try {
     const db = await getDB();
     if (!db) return;
+    const updatedAt = Date.now();
     await db.put(STORE_NAME, value, key);
+    await setMetaEntry(db, key, updatedAt);
+    publishPreferenceChange({ type: 'set', key, value });
+    if (isSyncableKey(key)) {
+      await enqueueSyncOp(db, { op: 'set', key, value, queuedAt: updatedAt });
+    }
   } catch (error) {
     console.error('Failed to save preference:', error);
   }
@@ -131,8 +292,127 @@ export const removePreference = async (key: string): Promise<void> => {
     const db = await getDB();
     if (!db) return;
     await db.delete(STORE_NAME, key);
+    await deleteMetaEntry(db, key);
+    publishPreferenceChange({ type: 'remove', key });
+    if (isSyncableKey(key)) {
+      await enqueueSyncOp(db, { op: 'delete', key, queuedAt: Date.now() });
+    }
   } catch (error) {
     console.error('Failed to remove preference:', error);
+  }
+};
+
+/**
+ * Silent variant of {@link setPreference} used by the sync engine when
+ * pulling state down from the server. Writes the value + meta with the
+ * provided server timestamp, broadcasts to other tabs so hooks update,
+ * and intentionally skips the sync queue so we don't echo back a write
+ * we just received.
+ */
+export const setPreferenceFromServer = async (key: string, value: unknown, serverUpdatedAt: number): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.put(STORE_NAME, value, key);
+    await setMetaEntry(db, key, serverUpdatedAt);
+    publishPreferenceChange({ type: 'set', key, value });
+  } catch (error) {
+    console.error('Failed to apply server preference:', error);
+  }
+};
+
+/**
+ * Read meta updatedAt for a key. Returns null when there's no local entry,
+ * which the sync engine treats as "the server wins".
+ */
+export const getPreferenceMeta = async (key: string): Promise<PreferenceMetaEntry | null> => {
+  try {
+    const db = await getDB();
+    if (!db) return null;
+    const entry = (await db.get(META_STORE, key)) as PreferenceMetaEntry | undefined;
+    return entry ?? null;
+  } catch (error) {
+    console.error('Failed to read preference meta:', error);
+    return null;
+  }
+};
+
+/**
+ * Read every locally-stored syncable preference along with its meta
+ * timestamp. Used by the sync engine to decide which orphaned local
+ * entries need to be pushed up to the server.
+ */
+export const getAllSyncablePreferences = async (): Promise<
+  Array<{ key: string; value: unknown; updatedAt: number }>
+> => {
+  try {
+    const db = await getDB();
+    if (!db) return [];
+
+    // Preference keys are always strings — every call site goes through
+    // setPreference<K extends string> — so it's safe to coerce here.
+    const [rawKeys, rawMetaKeys] = await Promise.all([db.getAllKeys(STORE_NAME), db.getAllKeys(META_STORE)]);
+    const keys = rawKeys.filter((candidate): candidate is string => typeof candidate === 'string');
+    const metaKeys = rawMetaKeys.filter((candidate): candidate is string => typeof candidate === 'string');
+
+    const metaByKey = new Map<string, number>();
+    for (const metaKey of metaKeys) {
+      const metaEntry = (await db.get(META_STORE, metaKey)) as PreferenceMetaEntry | undefined;
+      if (metaEntry) metaByKey.set(metaKey, metaEntry.updatedAt);
+    }
+
+    const out: Array<{ key: string; value: unknown; updatedAt: number }> = [];
+    for (const key of keys) {
+      if (!isSyncableKey(key)) continue;
+      const value = await db.get(STORE_NAME, key);
+      if (value === undefined) continue;
+      out.push({
+        key,
+        value,
+        updatedAt: metaByKey.get(key) ?? 0,
+      });
+    }
+    return out;
+  } catch (error) {
+    console.error('Failed to enumerate syncable preferences:', error);
+    return [];
+  }
+};
+
+/**
+ * Snapshot of the pending sync queue, oldest-first. Each returned entry
+ * carries the IDB primary key so callers can delete it after a successful
+ * upstream write.
+ */
+export type SyncQueueSnapshotEntry = SyncQueueEntry & { id: IDBValidKey };
+
+export const getSyncQueueSnapshot = async (): Promise<SyncQueueSnapshotEntry[]> => {
+  try {
+    const db = await getDB();
+    if (!db) return [];
+    const keys = await db.getAllKeys(QUEUE_STORE);
+    const values = (await db.getAll(QUEUE_STORE)) as SyncQueueEntry[];
+    const result: SyncQueueSnapshotEntry[] = [];
+    for (let index = 0; index < keys.length; index += 1) {
+      const entry = values[index];
+      if (entry) {
+        result.push({ ...entry, id: keys[index] });
+      }
+    }
+    return result;
+  } catch (error) {
+    console.error('Failed to read sync queue:', error);
+    return [];
+  }
+};
+
+export const deleteSyncQueueEntry = async (id: IDBValidKey): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.delete(QUEUE_STORE, id);
+  } catch (error) {
+    console.error('Failed to delete sync queue entry:', error);
   }
 };
 

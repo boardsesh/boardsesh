@@ -1,0 +1,94 @@
+'use client';
+
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+
+import { useConsent } from './consent-context';
+import ConsentDialog from './consent-dialog';
+
+const Z_INDEX_CONSENT_BANNER = 1300; // Above Snackbar (1400 is Dialog/Modal — banner sits just below).
+
+/**
+ * Bottom-anchored consent banner. Renders nothing once the user has
+ * decided both categories. Uses a fixed `<Paper>` rather than MUI Snackbar
+ * so we get edge-to-edge layout on mobile with safe-area-inset support
+ * and proper word-wrapping for the body copy.
+ */
+export default function ConsentBanner() {
+  const { t } = useTranslation('consent');
+  const { isDecided, isLoading, acceptAll, rejectAll } = useConsent();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  if (isLoading || isDecided) {
+    return <ConsentDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />;
+  }
+
+  return (
+    <>
+      <Box
+        role="region"
+        aria-label={t('banner.headline')}
+        sx={(theme) => ({
+          position: 'fixed',
+          zIndex: Z_INDEX_CONSENT_BANNER,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          paddingX: { xs: 0, sm: 2 },
+          paddingBottom: {
+            xs: 'env(safe-area-inset-bottom, 0px)',
+            sm: `calc(${theme.spacing(2)} + env(safe-area-inset-bottom, 0px))`,
+          },
+          pointerEvents: 'none',
+        })}
+      >
+        <Paper
+          elevation={8}
+          sx={(theme) => ({
+            pointerEvents: 'auto',
+            width: '100%',
+            maxWidth: { xs: '100%', sm: theme.breakpoints.values.sm },
+            padding: theme.spacing(2),
+            borderRadius: { xs: 0, sm: theme.shape.borderRadius },
+            borderTop: { xs: `1px solid ${theme.palette.divider}`, sm: 'none' },
+          })}
+        >
+          <Stack spacing={1.5}>
+            <Stack spacing={0.5}>
+              <Typography variant="subtitle1" component="h2">
+                {t('banner.headline')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('banner.body')}
+              </Typography>
+            </Stack>
+            <Stack
+              direction={{ xs: 'column-reverse', sm: 'row' }}
+              spacing={1}
+              justifyContent={{ sm: 'flex-end' }}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+            >
+              <Button variant="text" onClick={() => void rejectAll()} size="medium">
+                {t('banner.actions.reject')}
+              </Button>
+              <Button variant="outlined" onClick={() => setDialogOpen(true)} size="medium">
+                {t('banner.actions.customize')}
+              </Button>
+              <Button variant="contained" onClick={() => void acceptAll()} size="medium" autoFocus>
+                {t('banner.actions.acceptAll')}
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      </Box>
+      <ConsentDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+    </>
+  );
+}

@@ -487,6 +487,13 @@
     "lastUpdatedProductAnalytics": "Last updated: May 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
+    "consent": {
+      "title": "Your choices",
+      "body1": "Two things are opt-in and off until you accept them: product analytics (Vercel Analytics and PostHog) and error monitoring (Sentry). The app works without either.",
+      "body2Start": "You can change your mind at any time from ",
+      "settingsLink": "Settings",
+      "body2End": ". The first banner you see has the same controls."
+    },
     "collect": {
       "title": "What we collect",
       "accountLabel": "Account information.",
@@ -496,11 +503,15 @@
       "locationLabel": "Location.",
       "locationBody": "If you grant location permission, we use your approximate location to help you discover nearby Party Mode sessions. We do not track your location in the background or store location history.",
       "productAnalyticsLabel": "Product analytics.",
-      "productAnalyticsBody": "We use PostHog and Vercel Analytics to understand feature usage, page views, performance, and where the app is slow. Some signed-in product events are linked to your Boardsesh account so we can understand which features are useful. We do not use this data for ads."
+      "productAnalyticsBody": "We use PostHog and Vercel Analytics to understand feature usage, page views, performance, and where the app is slow. Both are opt-in and stay off until you accept them in the consent banner. Some signed-in product events are linked to your Boardsesh account so we can understand which features are useful. We do not use this data for ads."
     },
     "bluetooth": {
       "title": "Bluetooth",
       "body": "Boardsesh uses Bluetooth Low Energy (BLE) to connect to your climbing board's LED controller. The Bluetooth connection is used exclusively to send hold lighting commands to the board. No personal data is transmitted over Bluetooth. The app does not read data from the board beyond basic device identification during pairing."
+    },
+    "errorMonitoring": {
+      "title": "Error monitoring",
+      "body": "If you opt in, Boardsesh sends crash reports to Sentry. A report includes the route you were on, the stack trace, and basic device info (browser, OS, screen size) so we can reproduce the bug. Error monitoring is off until you accept it in the consent banner, and you can switch it back off from Settings."
     },
     "location": {
       "title": "Location data",
@@ -513,8 +524,11 @@
       "vercelBody": "We use Vercel for hosting and analytics. Vercel processes requests to serve the app and collects anonymous usage metrics. See ",
       "vercelLink": "Vercel's privacy policy",
       "posthogLabel": "PostHog.",
-      "posthogBody": "We use PostHog for product analytics, including server-side events for native app features like iOS Live Activities. See ",
+      "posthogBody": "We use PostHog for product analytics, including server-side events for native app features like iOS Live Activities. It only runs when you opt in to analytics. See ",
       "posthogLink": "PostHog's privacy policy",
+      "sentryLabel": "Sentry.",
+      "sentryBody": "If you opt in to error monitoring, Sentry receives crash reports: the route, the stack trace, and basic device info. It is off until you accept it in the consent banner. See ",
+      "sentryLink": "Sentry's privacy policy",
       "auroraLabel": "Aurora Climbing API.",
       "auroraBody": "If you link your Aurora Climbing account (used by Kilter and Tension boards), we sync your climb data with Aurora's servers so your logbook stays consistent across apps. This sync only happens when you initiate it. See ",
       "auroraLink": "Aurora Climbing",

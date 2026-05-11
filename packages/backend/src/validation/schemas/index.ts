@@ -13,3 +13,4 @@ export * from './proposals';
 export * from './boards';
 export * from './gyms';
 export * from './feedback';
+export * from './user-preferences';

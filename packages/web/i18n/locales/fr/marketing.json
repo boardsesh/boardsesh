@@ -487,6 +487,13 @@
     "lastUpdatedProductAnalytics": "Dernière mise à jour : mai 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
+    "consent": {
+      "title": "Vos choix",
+      "body1": "Deux choses sont opt-in et désactivées tant que vous ne les acceptez pas : l'analytique produit (Vercel Analytics et PostHog) et le monitoring d'erreurs (Sentry). L'app fonctionne sans l'un ni l'autre.",
+      "body2Start": "Vous pouvez changer d'avis à tout moment depuis ",
+      "settingsLink": "Paramètres",
+      "body2End": ". Le premier bandeau affiché propose les mêmes contrôles."
+    },
     "collect": {
       "title": "Ce que nous collectons",
       "accountLabel": "Informations de compte.",
@@ -496,11 +503,15 @@
       "locationLabel": "Localisation.",
       "locationBody": "Si vous accordez la permission de localisation, nous utilisons votre position approximative pour vous aider à découvrir des sessions Mode Party à proximité. Nous ne suivons pas votre position en arrière-plan et ne stockons pas d'historique de localisation.",
       "productAnalyticsLabel": "Analytique produit.",
-      "productAnalyticsBody": "Nous utilisons PostHog et Vercel Analytics pour comprendre l'utilisation des fonctionnalités, les pages vues, les performances et les endroits où l'app est lente. Certains événements produit des utilisateurs connectés sont liés à votre compte Boardsesh afin de comprendre quelles fonctionnalités sont utiles. Nous n'utilisons pas ces données pour la publicité."
+      "productAnalyticsBody": "Nous utilisons PostHog et Vercel Analytics pour comprendre l'utilisation des fonctionnalités, les pages vues, les performances et les endroits où l'app est lente. Les deux sont opt-in et restent désactivés tant que vous ne les acceptez pas dans le bandeau de consentement. Certains événements produit des utilisateurs connectés sont liés à votre compte Boardsesh afin de comprendre quelles fonctionnalités sont utiles. Nous n'utilisons pas ces données pour la publicité."
     },
     "bluetooth": {
       "title": "Bluetooth",
       "body": "Boardsesh utilise Bluetooth Low Energy (BLE) pour se connecter au contrôleur LED de votre board. La connexion Bluetooth sert exclusivement à envoyer des commandes d'éclairage des prises au board. Aucune donnée personnelle n'est transmise par Bluetooth. L'app ne lit pas de données depuis le board, en dehors de l'identification basique de l'appareil lors de l'appairage."
+    },
+    "errorMonitoring": {
+      "title": "Monitoring d'erreurs",
+      "body": "Si vous l'acceptez, Boardsesh envoie des rapports de crash à Sentry. Un rapport inclut la route que vous consultiez, la stack trace et des infos basiques sur l'appareil (navigateur, OS, taille d'écran) pour que nous puissions reproduire le bug. Le monitoring d'erreurs est désactivé tant que vous ne l'acceptez pas dans le bandeau de consentement, et vous pouvez le redésactiver depuis Paramètres."
     },
     "location": {
       "title": "Données de localisation",
@@ -513,8 +524,11 @@
       "vercelBody": "Nous utilisons Vercel pour l'hébergement et l'analytique. Vercel traite les requêtes pour servir l'app et collecte des métriques d'utilisation anonymes. Voir ",
       "vercelLink": "la politique de confidentialité de Vercel",
       "posthogLabel": "PostHog.",
-      "posthogBody": "Nous utilisons PostHog pour l'analytique produit, y compris des événements côté serveur pour des fonctionnalités natives comme les Live Activities iOS. Voir ",
+      "posthogBody": "Nous utilisons PostHog pour l'analytique produit, y compris des événements côté serveur pour des fonctionnalités natives comme les Live Activities iOS. Il ne s'exécute que si vous activez l'analytique. Voir ",
       "posthogLink": "la politique de confidentialité de PostHog",
+      "sentryLabel": "Sentry.",
+      "sentryBody": "Si vous activez le monitoring d'erreurs, Sentry reçoit des rapports de crash : la route, la stack trace et des infos basiques sur l'appareil. C'est désactivé tant que vous ne l'acceptez pas dans le bandeau de consentement. Voir ",
+      "sentryLink": "la politique de confidentialité de Sentry",
       "auroraLabel": "API Aurora Climbing.",
       "auroraBody": "Si vous liez votre compte Aurora Climbing (utilisé par les boards Kilter et Tension), nous synchronisons vos données de blocs avec les serveurs d'Aurora afin que votre carnet reste cohérent entre les apps. Cette synchronisation n'a lieu que lorsque vous la déclenchez. Voir ",
       "auroraLink": "Aurora Climbing",

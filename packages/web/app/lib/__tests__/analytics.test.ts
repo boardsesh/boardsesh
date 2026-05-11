@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     setPersonProperties: vi.fn(),
   },
   vercelTrack: vi.fn(),
+  hasAnalyticsConsent: vi.fn(() => true),
 }));
 
 vi.mock('@vercel/analytics', () => ({
@@ -18,6 +19,10 @@ vi.mock('@vercel/analytics', () => ({
 
 vi.mock('posthog-js-lite', () => ({
   PostHog: mocks.PostHog,
+}));
+
+vi.mock('../consent', () => ({
+  hasAnalyticsConsent: mocks.hasAnalyticsConsent,
 }));
 
 const originalLocation = window.location;
@@ -41,6 +46,9 @@ describe('analytics wrapper', () => {
     mocks.PostHog.mockImplementation(function MockPostHog() {
       return mocks.posthog;
     });
+    // Default to "consent granted" so the existing tests exercise the
+    // happy path. Tests that need a denied state override per-case.
+    mocks.hasAnalyticsConsent.mockReturnValue(true);
     setWindowLocation('https://boardsesh.com/b/kilter');
   });
 
@@ -157,5 +165,69 @@ describe('analytics wrapper', () => {
     expect(mocks.vercelTrack).not.toHaveBeenCalled();
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
+  });
+
+  describe('consent gate', () => {
+    it('skips track() — both Vercel and PostHog — when analytics consent is denied', async () => {
+      mocks.hasAnalyticsConsent.mockReturnValue(false);
+      const { track } = await import('../analytics');
+
+      track('Climb Opened', { kept: 'yes' });
+
+      expect(mocks.vercelTrack).not.toHaveBeenCalled();
+      expect(mocks.PostHog).not.toHaveBeenCalled();
+      expect(mocks.posthog.capture).not.toHaveBeenCalled();
+    });
+
+    it('skips capturePosthog when consent is denied', async () => {
+      mocks.hasAnalyticsConsent.mockReturnValue(false);
+      const { capturePosthog } = await import('../analytics');
+
+      expect(capturePosthog('$web_vitals', { metric: 'LCP' })).toBe(false);
+      expect(mocks.PostHog).not.toHaveBeenCalled();
+    });
+
+    it('skips identify when consent is denied', async () => {
+      mocks.hasAnalyticsConsent.mockReturnValue(false);
+      const { identify } = await import('../analytics');
+
+      expect(identify('profile-1')).toBe(false);
+      expect(mocks.posthog.identify).not.toHaveBeenCalled();
+    });
+
+    it('lets a later opt-in initialize PostHog after an earlier denied call', async () => {
+      // First call: consent denied → no init.
+      mocks.hasAnalyticsConsent.mockReturnValue(false);
+      const { track } = await import('../analytics');
+      track('Denied Event');
+      expect(mocks.PostHog).not.toHaveBeenCalled();
+      expect(mocks.vercelTrack).not.toHaveBeenCalled();
+
+      // Now consent flips to granted; PostHog must lazily construct on the
+      // next track() call rather than staying pinned to "no client".
+      mocks.hasAnalyticsConsent.mockReturnValue(true);
+      track('Granted Event', { value: 1 });
+
+      expect(mocks.vercelTrack).toHaveBeenCalledWith('Granted Event', { value: 1 }, undefined);
+      expect(mocks.PostHog).toHaveBeenCalledTimes(1);
+      expect(mocks.posthog.capture).toHaveBeenCalledWith('Granted Event', { value: 1 });
+    });
+
+    it('initAnalytics warms up PostHog when consent is granted', async () => {
+      const { initAnalytics } = await import('../analytics');
+
+      initAnalytics();
+
+      expect(mocks.PostHog).toHaveBeenCalledTimes(1);
+    });
+
+    it('initAnalytics is a no-op when consent is denied', async () => {
+      mocks.hasAnalyticsConsent.mockReturnValue(false);
+      const { initAnalytics } = await import('../analytics');
+
+      initAnalytics();
+
+      expect(mocks.PostHog).not.toHaveBeenCalled();
+    });
   });
 });

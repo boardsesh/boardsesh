@@ -12,17 +12,26 @@ import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
 // unless you explicitly expose it by marking it with 'use server'."
 //
 // Regression fixed in #2043 / re-guarded in #2061 (Sentry BOARDSESH-65).
-// Keep `dropAdminEvents` module-scoped and the exported wrappers prop-less
-// — never re-shape these to accept a `beforeSend` from the caller, or the
-// home route SSR will break for every visitor on the next deploy.
+// Keep `dropAdminEvents` module-scoped — never re-shape these to accept a
+// `beforeSend` from the caller, or the home route SSR will break for every
+// visitor on the next deploy. The `enabled` prop below is a plain boolean,
+// which IS RSC-serializable, so it does not violate this constraint.
 const dropAdminEvents = <Event extends { url: string }>(event: Event): Event | null => {
   return isAdminAnalyticsUrl(event.url) ? null : event;
 };
 
-export function VercelAnalytics() {
+type TelemetryWrapperProps = {
+  /** When `false`, the wrapper renders nothing — used to honour the
+   * analytics consent decision read in the root layout. Defaults to `true`. */
+  enabled?: boolean;
+};
+
+export function VercelAnalytics({ enabled = true }: TelemetryWrapperProps = {}) {
+  if (!enabled) return null;
   return <Analytics beforeSend={dropAdminEvents} />;
 }
 
-export function VercelSpeedInsights() {
+export function VercelSpeedInsights({ enabled = true }: TelemetryWrapperProps = {}) {
+  if (!enabled) return null;
   return <SpeedInsights beforeSend={dropAdminEvents} />;
 }
