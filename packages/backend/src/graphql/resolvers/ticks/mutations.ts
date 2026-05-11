@@ -486,6 +486,14 @@ export const tickMutations = {
         .where(eq(dbSchema.boardseshTicks.uuid, uuid))
         .returning();
 
+      // The ownership check above ran outside the transaction, so a concurrent
+      // delete between then and now leaves `row` undefined. Surface a clear
+      // error rather than null-dereferencing on row.boardType / row.climbUuid
+      // in the projection upserts below.
+      if (!row) {
+        throw new Error('Tick not found');
+      }
+
       // Reflect the user's edit into the projection tables.
       //   - new value set: upsert with the tick's climbedAt so an edit to an
       //     older tick can't clobber a newer projection (setWhere guard).

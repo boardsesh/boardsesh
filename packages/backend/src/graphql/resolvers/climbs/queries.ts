@@ -92,9 +92,10 @@ export const climbQueries = {
       // could still send a value outside the 1-5 star range. The filter SQL
       // treats > 0 as "active", so a negative would silently activate the
       // filter with a nonsense threshold; clamp to [1,5] before passing on.
+      // Math.round matches normalizeMinUserQualityFilter on the web side.
       minUserQuality:
         input.minUserQuality && input.minUserQuality > 0
-          ? Math.min(5, Math.max(1, Math.floor(input.minUserQuality)))
+          ? Math.min(5, Math.max(1, Math.round(input.minUserQuality)))
           : undefined,
       hideWithoutUserQuality: input.hideWithoutUserQuality,
       onlyDrafts: input.onlyDrafts,

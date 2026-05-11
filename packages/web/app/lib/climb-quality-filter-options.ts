@@ -29,7 +29,10 @@ export function getMinRatingPickerValue(value: number | null | undefined): numbe
 
 export function normalizeMinUserQualityFilter(value: number | null | undefined): number {
   if (value == null || !Number.isFinite(value) || value <= 0) return 0;
-  return Math.min(5, Math.max(1, Math.ceil(value)));
+  // Math.round (not Math.ceil) matches the server-side clamp in
+  // backend/src/graphql/resolvers/climbs/queries.ts, so any fractional input
+  // bucketed by either side picks the same star.
+  return Math.min(5, Math.max(1, Math.round(value)));
 }
 
 export function getMinUserQualityPickerValue(value: number | null | undefined): number | null {
