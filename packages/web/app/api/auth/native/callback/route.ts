@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { issueNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
-import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
+import { flushServerAnalytics, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const sanitizeNextPath = (nextPath: string | null): string => (nextPath && nextPath.startsWith('/') ? nextPath : '/');
 
@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
     distinctId: session.user.id,
     properties: { status: 'success' },
   });
+  await flushServerAnalytics();
 
   const redirectUrl = `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(transferToken)}&next=${encodeURIComponent(nextPath)}`;
   return deepLinkRedirect(redirectUrl);

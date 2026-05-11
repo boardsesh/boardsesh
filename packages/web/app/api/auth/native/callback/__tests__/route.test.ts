@@ -8,6 +8,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/analytics.server', () => ({
   trackServer: vi.fn(),
   resolveRequestAttribution: vi.fn(async () => ({ distinctId: 'test-anon', isAuthenticated: false })),
+  flushServerAnalytics: vi.fn(async () => {}),
 }));
 
 // Mock dependencies before importing the route handler

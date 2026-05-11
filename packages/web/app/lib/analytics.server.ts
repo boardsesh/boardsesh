@@ -3,6 +3,12 @@ import 'server-only';
 import { track as vercelTrack } from '@vercel/analytics/server';
 import { PostHog } from 'posthog-node';
 import { getServerSession, type Session } from 'next-auth';
+import {
+  type AnalyticsEventProperties,
+  type AnalyticsSanitizedProperties,
+  MAX_DISTINCT_ID_LENGTH,
+  SERVER_DISTINCT_ID_HEADER,
+} from '@boardsesh/shared-schema';
 import { authOptions } from './auth/auth-options';
 import { isAdminAnalyticsUrl } from './analytics-paths';
 
@@ -10,12 +16,8 @@ export const track: typeof vercelTrack = (eventName, properties, options) => {
   return vercelTrack(eventName, properties, options);
 };
 
-type AllowedPropertyValues = string | number | boolean | null | undefined;
-export type ServerEventProperties = Record<string, AllowedPropertyValues>;
-type SanitizedProperties = Record<string, string | number | boolean | null>;
-
-export const SERVER_DISTINCT_ID_HEADER = 'x-bs-distinct-id';
-const MAX_HEADER_DISTINCT_ID_LENGTH = 256;
+export type ServerEventProperties = AnalyticsEventProperties;
+export { SERVER_DISTINCT_ID_HEADER };
 
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
@@ -47,9 +49,9 @@ function getPosthog(): PostHog | null {
   return posthogClient;
 }
 
-function sanitize(properties?: ServerEventProperties): SanitizedProperties | undefined {
+function sanitize(properties?: AnalyticsEventProperties): AnalyticsSanitizedProperties | undefined {
   if (!properties) return undefined;
-  const out: SanitizedProperties = {};
+  const out: AnalyticsSanitizedProperties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (value !== undefined) out[key] = value;
   }
@@ -79,7 +81,7 @@ export async function resolveRequestAttribution(req: Request): Promise<RequestAt
   }
 
   const headerId = req.headers.get(SERVER_DISTINCT_ID_HEADER);
-  if (headerId && headerId.length > 0 && headerId.length <= MAX_HEADER_DISTINCT_ID_LENGTH) {
+  if (headerId && headerId.length > 0 && headerId.length <= MAX_DISTINCT_ID_LENGTH) {
     return { distinctId: headerId, isAuthenticated: false };
   }
 
@@ -118,6 +120,13 @@ export function identifyServer(distinctId: string, properties?: ServerEventPrope
   return true;
 }
 
+// Matches posthog-node's own alias() shape: `distinctId` is the surviving
+// person, `alias` is the other ID that gets merged into it. For the
+// anonymous → authenticated flow, pass distinctId=anonymousId and
+// alias=newUserId — this mirrors what posthog-js-lite does on the client
+// when we call alias(userId) while still identified as the anon profile.
+// See `node_modules/posthog-node/src/client.ts::alias` for the canonical
+// example which uses the same direction.
 export function aliasServer(distinctId: string, alias: string): boolean {
   const posthog = getPosthog();
   if (!posthog) return false;
@@ -137,6 +146,26 @@ export async function shutdownServerAnalytics(): Promise<void> {
   await posthog.shutdown();
   posthogClient = null;
   posthogInitAttempted = false;
+}
+
+// Derive a low-cardinality, leak-safe error kind for analytics from an
+// arbitrary thrown value. Avoids putting raw error.message in event
+// properties — those routinely contain DB constraint names, table names,
+// stack frames, or user-controlled text.
+//
+// Handles common shapes:
+//   - HTTP-status-prefixed messages like "401: Unauthorized" → "401"
+//   - "HTTP error! status=503" patterns → "http_error"
+//   - falls back to error.name (TypeError, ZodError, …) or 'unknown'
+const HTTP_STATUS_PREFIX = /^([1-5]\d{2})\b/;
+
+export function safeErrorKind(err: unknown): string {
+  if (!(err instanceof Error)) return 'unknown';
+  const statusMatch = err.message.match(HTTP_STATUS_PREFIX);
+  if (statusMatch) return statusMatch[1];
+  if (err.message.startsWith('HTTP error!')) return 'http_error';
+  if (err.name && err.name !== 'Error') return err.name;
+  return 'unknown';
 }
 
 // Test-only: reset the lazy singleton so tests can re-initialize with new env.

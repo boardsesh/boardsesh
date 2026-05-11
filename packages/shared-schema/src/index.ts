@@ -6,3 +6,4 @@ export * from './schema';
 export * from './operations';
 export * from './utils';
 export * from './beta-video-url';
+export * from './analytics';

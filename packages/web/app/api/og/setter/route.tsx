@@ -33,15 +33,6 @@ export async function GET(request: NextRequest) {
       return new Response('Missing username parameter', { status: 400 });
     }
 
-    trackServer('OG Image Requested', {
-      distinctId: 'og-bot',
-      properties: {
-        kind: 'setter',
-        username,
-        userAgent: request.headers.get('user-agent') ?? null,
-      },
-    });
-
     const dbT0 = performance.now();
     const [summary, gradeResult] = await Promise.all([
       getSetterOgSummary(username),
@@ -64,6 +55,15 @@ export async function GET(request: NextRequest) {
     ]);
     const dbMs = performance.now() - dbT0;
     const gradeRows = gradeResult;
+
+    trackServer('OG Image Requested', {
+      distinctId: 'og-bot',
+      properties: {
+        kind: 'setter',
+        username,
+        userAgent: request.headers.get('user-agent') ?? null,
+      },
+    });
 
     const displayName = summary.displayName;
     const origin = process.env.VERCEL_URL ? 'https://www.boardsesh.com' : 'http://localhost:3000';

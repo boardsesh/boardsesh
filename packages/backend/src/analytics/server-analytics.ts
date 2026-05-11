@@ -1,15 +1,19 @@
 import { PostHog } from 'posthog-node';
+import {
+  type AnalyticsEventProperties,
+  type AnalyticsSanitizedProperties,
+  MAX_DISTINCT_ID_LENGTH,
+  SERVER_DISTINCT_ID_HEADER,
+} from '@boardsesh/shared-schema';
 
-type AllowedPropertyValues = string | number | boolean | null | undefined;
-export type ServerEventProperties = Record<string, AllowedPropertyValues>;
-type SanitizedProperties = Record<string, string | number | boolean | null>;
-
-export const SERVER_DISTINCT_ID_HEADER = 'x-bs-distinct-id';
-const MAX_HEADER_DISTINCT_ID_LENGTH = 256;
+export type ServerEventProperties = AnalyticsEventProperties;
+export { SERVER_DISTINCT_ID_HEADER };
 
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
-const shouldDebug = process.env.ANALYTICS_DEBUG === '1';
+// Same env var name as the web client/server wrapper. Backend doesn't see
+// NEXT_PUBLIC_* runtime injections, but ops can set this directly.
+const shouldDebug = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 
 function shouldEnableServerAnalytics(): boolean {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return false;
@@ -37,9 +41,9 @@ function getPosthog(): PostHog | null {
   return posthogClient;
 }
 
-function sanitize(properties?: ServerEventProperties): SanitizedProperties | undefined {
+function sanitize(properties?: AnalyticsEventProperties): AnalyticsSanitizedProperties | undefined {
   if (!properties) return undefined;
-  const out: SanitizedProperties = {};
+  const out: AnalyticsSanitizedProperties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (value !== undefined) out[key] = value;
   }
@@ -83,7 +87,7 @@ export function readDistinctIdHeader(
           if (Array.isArray(value)) return value[0] ?? null;
           return value ?? null;
         })();
-  if (!raw || raw.length === 0 || raw.length > MAX_HEADER_DISTINCT_ID_LENGTH) return undefined;
+  if (!raw || raw.length === 0 || raw.length > MAX_DISTINCT_ID_LENGTH) return undefined;
   return raw;
 }
 
@@ -114,6 +118,8 @@ export function identifyServer(distinctId: string, properties?: ServerEventPrope
   return true;
 }
 
+// See packages/web/app/lib/analytics.server.ts::aliasServer for the
+// directionality contract — `distinctId` survives, `alias` merges in.
 export function aliasServer(distinctId: string, alias: string): boolean {
   const posthog = getPosthog();
   if (!posthog) return false;

@@ -3,7 +3,7 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { trackServer } from '@/app/lib/analytics.server';
+import { flushServerAnalytics, trackServer } from '@/app/lib/analytics.server';
 
 export async function GET(request: NextRequest) {
   // Rate limiting - 20 attempts per minute per IP
@@ -72,6 +72,8 @@ export async function GET(request: NextRequest) {
   trackServer('Email Verified', {
     distinctId: user[0].id,
   });
+  // Once-per-user event on a redirect path; flush so it isn't lost.
+  await flushServerAnalytics();
 
   // Redirect to login with success message
   return NextResponse.redirect(new URL('/auth/login?verified=true', request.url));

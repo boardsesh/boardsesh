@@ -10,7 +10,7 @@ import type { Session } from '@/app/lib/api-wrappers/aurora-rest-client/types';
 import type { AuroraBoardName } from '@/app/lib/api-wrappers/aurora/types';
 import { getSession } from '@/app/lib/session';
 import { isAuroraBoardName } from '@/app/lib/board-constants';
-import { resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
+import { flushServerAnalytics, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 // Input validation schema
 const loginSchema = z.object({
@@ -105,6 +105,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
       distinctId: attribution.distinctId,
       properties: { boardName: board_name },
     });
+    await flushServerAnalytics();
 
     return response;
   } catch (error) {

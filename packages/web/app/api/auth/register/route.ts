@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@/app/lib/email/email-service';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { aliasServer, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
+import { aliasServer, flushServerAnalytics, resolveRequestAttribution, trackServer } from '@/app/lib/analytics.server';
 
 const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
@@ -131,6 +131,10 @@ export async function POST(request: NextRequest) {
       distinctId: userId,
       properties: { provider: 'email', requiresVerification: emailVerificationEnabled },
     });
+    // Sign-up is a once-per-user event; flush before responding to make sure
+    // the alias + Sign Up Succeeded land even if this serverless function dies
+    // before the next batched flush window.
+    await flushServerAnalytics();
 
     // Send verification email if enabled
     if (emailVerificationEnabled && verificationToken) {

@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
-import { trackServer } from '@/app/lib/analytics.server';
+import { flushServerAnalytics, safeErrorKind, trackServer } from '@/app/lib/analytics.server';
 
 const saveAscentSchema = z.object({
   token: z.string().min(1),
@@ -69,6 +69,7 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
         latencyMs: Math.round(performance.now() - startedAt),
       },
     });
+    await flushServerAnalytics();
     return NextResponse.json(response);
   } catch (error) {
     console.error('SaveAscent error details:', {
@@ -91,9 +92,10 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
         boardName: board_name,
         climbUuid: parsedClimbUuid ?? null,
         latencyMs: Math.round(performance.now() - startedAt),
-        errorKind: error instanceof Error ? error.message.split(':')[0] : 'unknown',
+        errorKind: safeErrorKind(error),
       },
     });
+    await flushServerAnalytics();
     // Only database errors should reach here now
     return NextResponse.json({ error: 'Failed to save ascent' }, { status: 500 });
   }

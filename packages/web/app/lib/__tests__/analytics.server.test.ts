@@ -158,6 +158,44 @@ describe('server analytics — PostHog capture', () => {
   });
 });
 
+describe('safeErrorKind', () => {
+  it('extracts an HTTP status code from a status-prefixed message', async () => {
+    const { safeErrorKind } = await importFresh();
+    expect(safeErrorKind(new Error('401: Unauthorized'))).toBe('401');
+    expect(safeErrorKind(new Error('503 Service Unavailable'))).toBe('503');
+  });
+
+  it('classifies HTTP errors generically', async () => {
+    const { safeErrorKind } = await importFresh();
+    expect(safeErrorKind(new Error('HTTP error! status=500'))).toBe('http_error');
+  });
+
+  it('falls back to error.name for typed errors', async () => {
+    const { safeErrorKind } = await importFresh();
+    class ZodError extends Error {
+      constructor() {
+        super('whatever');
+        this.name = 'ZodError';
+      }
+    }
+    expect(safeErrorKind(new ZodError())).toBe('ZodError');
+  });
+
+  it('does not leak raw message text for unknown errors', async () => {
+    const { safeErrorKind } = await importFresh();
+    const err = new Error('relation "users" does not exist (constraint users_email_key)');
+    // Falls back to 'unknown' (default Error.name === 'Error' is filtered).
+    expect(safeErrorKind(err)).toBe('unknown');
+  });
+
+  it('returns "unknown" for non-Error throws', async () => {
+    const { safeErrorKind } = await importFresh();
+    expect(safeErrorKind('something bad')).toBe('unknown');
+    expect(safeErrorKind(undefined)).toBe('unknown');
+    expect(safeErrorKind({ code: 'X' })).toBe('unknown');
+  });
+});
+
 describe('server analytics — request attribution', () => {
   beforeEach(() => {
     vi.clearAllMocks();

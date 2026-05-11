@@ -3,7 +3,9 @@
 // fetch / GraphQL transports so server-side handlers can attribute events to
 // the same person PostHog sees on the client.
 
-const DISTINCT_ID_HEADER = 'x-bs-distinct-id';
+import { SERVER_DISTINCT_ID_HEADER } from '@boardsesh/shared-schema';
+
+const DISTINCT_ID_HEADER = SERVER_DISTINCT_ID_HEADER;
 const ATTACHED_FLAG = '__bsDistinctIdFetchPatched';
 
 let activeDistinctId: string | null = null;
