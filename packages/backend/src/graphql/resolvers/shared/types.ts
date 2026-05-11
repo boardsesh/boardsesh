@@ -15,6 +15,12 @@ export type ClimbSearchContext = {
   _cachedTotalCount?: number;
   /** True when the query has no user-specific filters and results can be cached in Redis */
   _isCacheable?: boolean;
+  // Analytics deferred from the resolver so the Search Climbs event can carry
+  // resultCount once the climbs field has actually executed. The flag prevents
+  // duplicate emission when both `climbs` and `totalCount` field resolvers run.
+  _analyticsDistinctId?: string;
+  _analyticsBaseProperties?: Record<string, string | number | boolean | null>;
+  _analyticsEmitted?: boolean;
 };
 
 /**

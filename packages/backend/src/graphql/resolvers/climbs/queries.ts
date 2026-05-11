@@ -31,9 +31,12 @@ const DEBUG = process.env.NODE_ENV === 'development';
 function countActiveSearchFilters(input: ClimbSearchInput): number {
   // Count anything beyond the implicit board route. Used as a quick "how filtered
   // is this search" signal in PostHog without serializing every filter value.
+  // minGrade and maxGrade collapse into a single "grade range" filter — the
+  // common case is a climber setting both bounds at once via a slider, so
+  // counting them separately would double the score for what's logically
+  // one filter.
   let count = 0;
-  if (input.minGrade != null) count++;
-  if (input.maxGrade != null) count++;
+  if (input.minGrade != null || input.maxGrade != null) count++;
   if (input.minAscents != null) count++;
   if (input.minRating != null) count++;
   if (input.gradeAccuracy != null) count++;
@@ -126,28 +129,27 @@ export const climbQueries = {
       );
     }
 
-    const filterCount = countActiveSearchFilters(input);
     const attribution = resolveContextAttribution(ctx);
-    trackServer('Search Climbs', {
-      distinctId: attribution.distinctId,
-      properties: {
-        boardName: input.boardName,
-        layoutId: input.layoutId,
-        sizeId: input.sizeId,
-        angle: input.angle,
-        page: input.page ?? 0,
-        pageSize: input.pageSize ?? 20,
-        sortBy: input.sortBy ?? 'ascents',
-        sortOrder: input.sortOrder ?? 'desc',
-        hasNameQuery: !!input.name && input.name.length > 0,
-        hasSetterFilter: !!input.setter && input.setter.length > 0,
-        hasZoneFilter: !!input.zoneBox,
-        onlyDrafts: !!input.onlyDrafts,
-        projectsOnly: !!input.projectsOnly,
-        filterCount,
-        isAuthenticated: !!ctx.isAuthenticated,
-      },
-    });
+    // Stash the inputs; the actual Search Climbs event fires from the climbs
+    // field resolver once results are computed (so resultCount is included).
+    // See climbFieldResolvers.climbs in field-resolvers.ts.
+    const analyticsBaseProperties: Record<string, string | number | boolean | null> = {
+      boardName: input.boardName,
+      layoutId: input.layoutId,
+      sizeId: input.sizeId,
+      angle: input.angle,
+      page: input.page ?? 0,
+      pageSize: input.pageSize ?? 20,
+      sortBy: input.sortBy ?? 'ascents',
+      sortOrder: input.sortOrder ?? 'desc',
+      hasNameQuery: !!input.name && input.name.length > 0,
+      hasSetterFilter: !!input.setter && input.setter.length > 0,
+      hasZoneFilter: !!input.zoneBox,
+      onlyDrafts: !!input.onlyDrafts,
+      projectsOnly: !!input.projectsOnly,
+      filterCount: countActiveSearchFilters(input),
+      isAuthenticated: !!ctx.isAuthenticated,
+    };
 
     // Drafts require authentication — return empty results if not signed in
     if (input.onlyDrafts && !ctx.isAuthenticated) {
@@ -158,6 +160,8 @@ export const climbQueries = {
         _cachedClimbs: [],
         _cachedHasMore: false,
         _cachedTotalCount: 0,
+        _analyticsDistinctId: attribution.distinctId,
+        _analyticsBaseProperties: analyticsBaseProperties,
       };
     }
 
@@ -180,6 +184,8 @@ export const climbQueries = {
       searchParams,
       userId,
       _isCacheable: !hasUserSpecificFilters && isCacheableBoard,
+      _analyticsDistinctId: attribution.distinctId,
+      _analyticsBaseProperties: analyticsBaseProperties,
     };
   },
 

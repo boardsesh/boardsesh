@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
       distinctId: attribution.distinctId,
       properties: { status: 'session_missing' },
     });
+    await flushServerAnalytics();
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);
   }
 
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
       distinctId: session.user.id,
       properties: { status: 'token_issue_failed' },
     });
+    await flushServerAnalytics();
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=token_issue_failed`);
   }
 

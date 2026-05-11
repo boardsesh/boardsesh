@@ -1,6 +1,7 @@
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
-import { distinctIdHeaderName, getActiveDistinctId } from '@/app/lib/analytics-distinct-id';
+import { getActiveDistinctId } from '@/app/lib/analytics-distinct-id';
+import { SERVER_DISTINCT_ID_HEADER } from '@boardsesh/shared-schema';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -29,7 +30,7 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
 
   const distinctId = getActiveDistinctId();
   if (distinctId) {
-    headers[distinctIdHeaderName()] = distinctId;
+    headers[SERVER_DISTINCT_ID_HEADER] = distinctId;
   }
 
   if (DEBUG) {

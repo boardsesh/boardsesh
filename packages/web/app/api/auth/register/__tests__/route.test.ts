@@ -152,4 +152,29 @@ describe('api/auth/register analytics', () => {
       properties: { provider: 'email', errorKind: 'rate_limited' },
     });
   });
+
+  it('does not emit Sign Up Attempted when rate-limited (bot floods would inflate the funnel)', async () => {
+    checkRateLimitMock.mockReturnValue({ limited: true, retryAfterSeconds: 30 });
+    const POST = await importGet();
+    await POST(jsonRequest({ email: 'x@y.com', password: 'password123' }));
+
+    const attempted = trackServerMock.mock.calls.find(([name]) => name === 'Sign Up Attempted');
+    expect(attempted).toBeUndefined();
+  });
+
+  it('emits Sign Up Failed with errorKind=validation on a Zod parse failure', async () => {
+    const POST = await importGet();
+    const response = await POST(jsonRequest({ email: 'not-an-email', password: 'short' }));
+
+    expect(response.status).toBe(400);
+    expect(trackServerMock).toHaveBeenCalledWith('Sign Up Attempted', {
+      distinctId: 'anon-uuid-123',
+      properties: { provider: 'email' },
+    });
+    expect(trackServerMock).toHaveBeenCalledWith('Sign Up Failed', {
+      distinctId: 'anon-uuid-123',
+      properties: { provider: 'email', errorKind: 'validation' },
+    });
+    expect(aliasServerMock).not.toHaveBeenCalled();
+  });
 });

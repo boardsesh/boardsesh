@@ -232,14 +232,13 @@ describe('server analytics — request attribution', () => {
     expect(result).toEqual({ distinctId: validUuid, isAuthenticated: false });
   });
 
-  it('mints a server-anon distinct id when nothing is available', async () => {
+  it('returns undefined distinctId when nothing is available so the event is dropped', async () => {
     mockGetServerSession.mockResolvedValue(null);
     const { resolveRequestAttribution } = await importFresh();
 
     const result = await resolveRequestAttribution(new Request('https://x/test'));
 
-    expect(result.isAuthenticated).toBe(false);
-    expect(result.distinctId).toMatch(/^server-anon-/);
+    expect(result).toEqual({ distinctId: undefined, isAuthenticated: false });
   });
 
   it('rejects oversized header distinct ids', async () => {
@@ -250,8 +249,7 @@ describe('server analytics — request attribution', () => {
     const req = new Request('https://x/test', { headers: { [SERVER_DISTINCT_ID_HEADER]: longId } });
     const result = await resolveRequestAttribution(req);
 
-    expect(result.distinctId).not.toBe(longId);
-    expect(result.distinctId).toMatch(/^server-anon-/);
+    expect(result.distinctId).toBeUndefined();
   });
 
   it('rejects non-UUID header distinct ids (defends against injection)', async () => {
@@ -262,7 +260,41 @@ describe('server analytics — request attribution', () => {
     const req = new Request('https://x/test', { headers: { [SERVER_DISTINCT_ID_HEADER]: malicious } });
     const result = await resolveRequestAttribution(req);
 
-    expect(result.distinctId).not.toBe(malicious);
-    expect(result.distinctId).toMatch(/^server-anon-/);
+    expect(result.distinctId).toBeUndefined();
+  });
+
+  it('honors userIdOverride to skip getServerSession for callers that already have it', async () => {
+    const { resolveRequestAttribution } = await importFresh();
+
+    const result = await resolveRequestAttribution(new Request('https://x/test'), {
+      userIdOverride: 'pre-resolved-user',
+    });
+
+    expect(result).toEqual({ distinctId: 'pre-resolved-user', isAuthenticated: true, userId: 'pre-resolved-user' });
+    expect(mockGetServerSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('trackServer drops events when distinctId is undefined', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    reloadEnv({
+      NEXT_PUBLIC_POSTHOG_KEY: 'test-key',
+      BOARDSESH_ENABLE_SERVER_ANALYTICS: '1',
+      NODE_ENV: 'test',
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns false and does not call PostHog when distinctId is undefined', async () => {
+    const { trackServer } = await importFresh();
+
+    const ok = trackServer('Search Climbs', { distinctId: undefined });
+
+    expect(ok).toBe(false);
+    expect(posthogMocks.capture).not.toHaveBeenCalled();
   });
 });

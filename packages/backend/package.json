@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1000.0",
+    "@boardsesh/analytics-server": "*",
     "@boardsesh/aurora-sync": "*",
     "@boardsesh/board-constants": "*",
     "@boardsesh/crypto": "*",
@@ -46,7 +47,6 @@
     "graphql-yoga": "^5.18.0",
     "ioredis": "^5.10.0",
     "jose": "^6.1.3",
-    "posthog-node": "^5.33.4",
     "tsx": "^4.21.0",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",

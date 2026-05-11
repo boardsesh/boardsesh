@@ -1,0 +1,29 @@
+{
+  "name": "@boardsesh/analytics-server",
+  "version": "1.0.0",
+  "description": "Shared server-side PostHog analytics wrapper used by both the Next.js app and the GraphQL backend",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "vp lint",
+    "lint-fix": "vp lint --fix"
+  },
+  "dependencies": {
+    "@boardsesh/shared-schema": "*",
+    "posthog-node": "^5.33.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25",
+    "typescript": "^5.9.3"
+  }
+}

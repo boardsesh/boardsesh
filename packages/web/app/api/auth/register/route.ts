@@ -21,13 +21,11 @@ const registerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   const attribution = await resolveRequestAttribution(request);
-  trackServer('Sign Up Attempted', {
-    distinctId: attribution.distinctId,
-    properties: { provider: 'email' },
-  });
 
   try {
-    // Rate limiting - 10 requests per minute per IP for registration
+    // Rate limiting - 10 requests per minute per IP for registration.
+    // We check this BEFORE emitting Sign Up Attempted so bot floods that
+    // get rejected here don't inflate signup-funnel conversion metrics.
     const clientIp = getClientIp(request);
     const rateLimitResult = checkRateLimit(`register:${clientIp}`, 10, 60_000);
 
@@ -47,11 +45,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    trackServer('Sign Up Attempted', {
+      distinctId: attribution.distinctId,
+      properties: { provider: 'email' },
+    });
+
     const body = await request.json();
 
     // Validate input
     const validationResult = registerSchema.safeParse(body);
     if (!validationResult.success) {
+      trackServer('Sign Up Failed', {
+        distinctId: attribution.distinctId,
+        properties: { provider: 'email', errorKind: 'validation' },
+      });
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
@@ -127,8 +134,11 @@ export async function POST(request: NextRequest) {
     // Merge anonymous activity into the new account so the pre-signup funnel
     // (search, climb views, etc.) attaches to this user. Order matters:
     // userId is the canonical/surviving person, the anon distinct id is the
-    // alias being merged in. See aliasServer's contract.
-    aliasServer(userId, attribution.distinctId);
+    // alias being merged in. Skip when no usable anon distinct id was sent —
+    // there's nothing to merge.
+    if (attribution.distinctId) {
+      aliasServer(userId, attribution.distinctId);
+    }
     trackServer('Sign Up Succeeded', {
       distinctId: userId,
       properties: { provider: 'email', requiresVerification: emailVerificationEnabled },

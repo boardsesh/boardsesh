@@ -109,51 +109,36 @@ export async function POST(request: Request, props: { params: Promise<BoardOnlyR
 
     return response;
   } catch (error) {
+    // Compute response + errorKind without awaiting analytics, then track and
+    // flush exactly once before returning so an already-failing request
+    // doesn't pay multiple analytics round-trips.
+    let response: NextResponse;
+    let errorKind: string;
+
     if (error instanceof z.ZodError) {
       console.error('Login validation error:', error.issues);
-      trackServer('Aurora Login Failed', {
-        distinctId: attribution.distinctId,
-        properties: { boardName: board_name, errorKind: 'validation' },
-      });
-      await flushServerAnalytics();
-      return NextResponse.json({ error: 'Invalid request data' }, { status: 400 });
+      errorKind = 'validation';
+      response = NextResponse.json({ error: 'Invalid request data' }, { status: 400 });
+    } else if (error instanceof Error && error.message.includes('401')) {
+      errorKind = 'invalid_credentials';
+      response = NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    } else if (error instanceof Error && error.message.includes('403')) {
+      errorKind = 'forbidden';
+      response = NextResponse.json({ error: 'Access forbidden' }, { status: 403 });
+    } else if (error instanceof Error && error.message.startsWith('HTTP error!')) {
+      errorKind = 'service_unavailable';
+      response = NextResponse.json({ error: 'Service unavailable' }, { status: 503 });
+    } else {
+      console.error('Login error:', error);
+      errorKind = 'unknown';
+      response = NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 
-    // Handle fetch errors
-    if (error instanceof Error) {
-      if (error.message.includes('401')) {
-        trackServer('Aurora Login Failed', {
-          distinctId: attribution.distinctId,
-          properties: { boardName: board_name, errorKind: 'invalid_credentials' },
-        });
-        await flushServerAnalytics();
-        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      }
-      if (error.message.includes('403')) {
-        trackServer('Aurora Login Failed', {
-          distinctId: attribution.distinctId,
-          properties: { boardName: board_name, errorKind: 'forbidden' },
-        });
-        await flushServerAnalytics();
-        return NextResponse.json({ error: 'Access forbidden' }, { status: 403 });
-      }
-      if (error.message.startsWith('HTTP error!')) {
-        trackServer('Aurora Login Failed', {
-          distinctId: attribution.distinctId,
-          properties: { boardName: board_name, errorKind: 'service_unavailable' },
-        });
-        await flushServerAnalytics();
-        return NextResponse.json({ error: 'Service unavailable' }, { status: 503 });
-      }
-    }
-
-    // Generic error
-    console.error('Login error:', error);
     trackServer('Aurora Login Failed', {
       distinctId: attribution.distinctId,
-      properties: { boardName: board_name, errorKind: 'unknown' },
+      properties: { boardName: board_name, errorKind },
     });
     await flushServerAnalytics();
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return response;
   }
 }

@@ -9,6 +9,7 @@ import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { trackServer } from '@/app/lib/analytics.server';
+import { OG_BOT_DISTINCT_ID } from '@boardsesh/shared-schema';
 
 export const runtime = 'nodejs';
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     const gradeRows = gradeResult;
 
     trackServer('OG Image Requested', {
-      distinctId: 'og-bot',
+      distinctId: OG_BOT_DISTINCT_ID,
       properties: {
         kind: 'setter',
         username,

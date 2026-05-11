@@ -81,7 +81,6 @@ describe('backend server analytics', () => {
     it('returns userId when authenticated', async () => {
       const { resolveContextAttribution } = await importFresh();
       const result = resolveContextAttribution({
-        connectionId: 'c1',
         isAuthenticated: true,
         userId: 'u1',
       });
@@ -91,16 +90,24 @@ describe('backend server analytics', () => {
     it('returns the propagated distinctId for anonymous', async () => {
       const { resolveContextAttribution } = await importFresh();
       const result = resolveContextAttribution({
-        connectionId: 'c1',
         distinctId: 'anon-uuid',
       });
       expect(result).toEqual({ distinctId: 'anon-uuid', isAuthenticated: false });
     });
 
-    it('falls back to a server-anon id keyed by connectionId', async () => {
+    it('returns undefined distinctId when no attribution is available', async () => {
       const { resolveContextAttribution } = await importFresh();
-      const result = resolveContextAttribution({ connectionId: 'c1' });
-      expect(result).toEqual({ distinctId: 'server-anon-c1', isAuthenticated: false });
+      const result = resolveContextAttribution({});
+      expect(result).toEqual({ distinctId: undefined, isAuthenticated: false });
+    });
+  });
+
+  describe('trackServer drops events when distinctId is undefined', () => {
+    it('returns false and does not call PostHog when distinctId is undefined', async () => {
+      const { trackServer } = await importFresh();
+      const ok = trackServer('Search Climbs', { distinctId: undefined });
+      expect(ok).toBe(false);
+      expect(posthogMocks.capture).not.toHaveBeenCalled();
     });
   });
 

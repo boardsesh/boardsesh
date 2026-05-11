@@ -2,11 +2,25 @@ import type { Climb } from '@boardsesh/shared-schema';
 import { searchClimbs as searchClimbsQuery, countClimbs } from '../../../db/queries/climbs/index';
 import type { ClimbSearchContext } from '../shared/types';
 import { searchCache, DEFAULT_SEARCH_CACHE_TTL } from '../../../services/search-cache';
+import { trackServer } from '../../../analytics/server-analytics';
 
 type CachedClimbsResult = {
   climbs: Climb[];
   hasMore: boolean;
 };
+
+// Fire the Search Climbs analytics event with the actual result count. Idempotent
+// across re-entry — both `climbs` and `totalCount` field resolvers can run for
+// a single query, and we only want one event per search.
+function emitSearchClimbsEvent(parent: ClimbSearchContext, resultCount: number, hasMore: boolean): void {
+  if (parent._analyticsEmitted) return;
+  if (!parent._analyticsBaseProperties) return;
+  parent._analyticsEmitted = true;
+  trackServer('Search Climbs', {
+    distinctId: parent._analyticsDistinctId,
+    properties: { ...parent._analyticsBaseProperties, resultCount, hasMore },
+  });
+}
 
 /**
  * Field-level resolvers for ClimbSearchResult
@@ -19,6 +33,7 @@ export const climbFieldResolvers = {
    */
   climbs: async (parent: ClimbSearchContext): Promise<Climb[]> => {
     if (parent._cachedClimbs !== undefined) {
+      emitSearchClimbsEvent(parent, parent._cachedClimbs.length, parent._cachedHasMore ?? false);
       return parent._cachedClimbs;
     }
 
@@ -27,6 +42,7 @@ export const climbFieldResolvers = {
       const result = await searchClimbsQuery(parent.params, parent.searchParams, parent.userId);
       parent._cachedClimbs = result.climbs;
       parent._cachedHasMore = result.hasMore;
+      emitSearchClimbsEvent(parent, result.climbs.length, result.hasMore);
       return result.climbs;
     }
 
@@ -35,6 +51,7 @@ export const climbFieldResolvers = {
     if (cached) {
       parent._cachedClimbs = cached.climbs;
       parent._cachedHasMore = cached.hasMore;
+      emitSearchClimbsEvent(parent, cached.climbs.length, cached.hasMore);
       return cached.climbs;
     }
 
@@ -44,6 +61,7 @@ export const climbFieldResolvers = {
     parent._cachedHasMore = result.hasMore;
 
     searchCache.setCachedResult(cacheKey, { climbs: result.climbs, hasMore: result.hasMore }, DEFAULT_SEARCH_CACHE_TTL);
+    emitSearchClimbsEvent(parent, result.climbs.length, result.hasMore);
     return result.climbs;
   },
 

@@ -5,6 +5,13 @@
 export const SERVER_DISTINCT_ID_HEADER = 'x-bs-distinct-id';
 export const MAX_DISTINCT_ID_LENGTH = 256;
 
+// Sentinel distinct id for OG image fetches. These come from preview bots
+// (Slack, iMessage, Twitter) which we can't attribute to a real person, so
+// every OG event collapses into one PostHog person to keep counts stable.
+// Defined here rather than per-route so a typo in one OG handler can't
+// silently fork into a second person.
+export const OG_BOT_DISTINCT_ID = 'og-bot';
+
 // The client always sends a crypto.randomUUID() (anonymous partyProfile.id) or
 // the NextAuth user id, both of which are RFC 4122 UUIDs. Reject anything else
 // so a malicious client can't inject arbitrary text into PostHog properties.

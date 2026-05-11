@@ -5,6 +5,7 @@ import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { createOgImageHeaders } from '@/app/lib/seo/og';
 import { trackServer } from '@/app/lib/analytics.server';
+import { OG_BOT_DISTINCT_ID } from '@boardsesh/shared-schema';
 
 export const runtime = 'nodejs';
 
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     // shared "og-bot" person so the count of share-previews stays usable in PostHog
     // without inflating people count.
     trackServer('OG Image Requested', {
-      distinctId: 'og-bot',
+      distinctId: OG_BOT_DISTINCT_ID,
       properties: {
         kind: 'climb',
         boardName: parsedParams.board_name,

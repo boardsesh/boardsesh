@@ -5,7 +5,6 @@
 
 import { SERVER_DISTINCT_ID_HEADER } from '@boardsesh/shared-schema';
 
-const DISTINCT_ID_HEADER = SERVER_DISTINCT_ID_HEADER;
 const ATTACHED_FLAG = '__bsDistinctIdFetchPatched';
 
 let activeDistinctId: string | null = null;
@@ -16,10 +15,6 @@ export function setActiveDistinctId(id: string | null): void {
 
 export function getActiveDistinctId(): string | null {
   return activeDistinctId;
-}
-
-export function distinctIdHeaderName(): string {
-  return DISTINCT_ID_HEADER;
 }
 
 // Patch window.fetch so internal /api/* and same-origin GraphQL requests carry the
@@ -50,8 +45,8 @@ export function attachDistinctIdFetchInterceptor(): void {
     if (!shouldAttachHeader(url)) return originalFetch(input, init);
 
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-    if (!headers.has(DISTINCT_ID_HEADER)) {
-      headers.set(DISTINCT_ID_HEADER, distinctId);
+    if (!headers.has(SERVER_DISTINCT_ID_HEADER)) {
+      headers.set(SERVER_DISTINCT_ID_HEADER, distinctId);
     }
     return originalFetch(input, { ...init, headers });
   };

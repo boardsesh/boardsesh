@@ -1,57 +1,21 @@
-import { PostHog } from 'posthog-node';
+import { type AnalyticsEventProperties, isValidDistinctId, SERVER_DISTINCT_ID_HEADER } from '@boardsesh/shared-schema';
 import {
-  type AnalyticsEventProperties,
-  type AnalyticsSanitizedProperties,
-  isValidDistinctId,
-  SERVER_DISTINCT_ID_HEADER,
-} from '@boardsesh/shared-schema';
+  aliasCore,
+  flushAnalytics,
+  identifyCore,
+  shutdownAnalytics,
+  trackCore,
+  __resetAnalyticsForTests,
+} from '@boardsesh/analytics-server';
 
 export type ServerEventProperties = AnalyticsEventProperties;
 export { SERVER_DISTINCT_ID_HEADER };
 
-let posthogClient: PostHog | null = null;
-let posthogInitAttempted = false;
-// Same env var name as the web client/server wrapper. Backend doesn't see
-// NEXT_PUBLIC_* runtime injections, but ops can set this directly.
-const shouldDebug = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
-
-function shouldEnableServerAnalytics(): boolean {
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return false;
-  if (process.env.NODE_ENV === 'production') return true;
-  return process.env.BOARDSESH_ENABLE_SERVER_ANALYTICS === '1';
-}
-
-function getPosthog(): PostHog | null {
-  if (posthogClient) return posthogClient;
-  if (posthogInitAttempted) return null;
-  posthogInitAttempted = true;
-
-  if (!shouldEnableServerAnalytics()) return null;
-
-  const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-  if (!apiKey) return null;
-  const host = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
-
-  posthogClient = new PostHog(apiKey, {
-    host,
-    flushAt: 20,
-    flushInterval: 10_000,
-  });
-
-  return posthogClient;
-}
-
-function sanitize(properties?: AnalyticsEventProperties): AnalyticsSanitizedProperties | undefined {
-  if (!properties) return undefined;
-  const out: AnalyticsSanitizedProperties = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
-}
-
 export type ContextAttribution = {
-  distinctId: string;
+  // undefined when the WS connection has neither a NextAuth user nor a
+  // client-supplied distinct id. Callers pass this through to trackServer
+  // and the event is silently dropped.
+  distinctId: string | undefined;
   isAuthenticated: boolean;
   userId?: string;
 };
@@ -63,7 +27,6 @@ export function resolveContextAttribution(ctx: {
   isAuthenticated?: boolean;
   userId?: string;
   distinctId?: string;
-  connectionId: string;
 }): ContextAttribution {
   if (ctx.isAuthenticated && ctx.userId) {
     return { distinctId: ctx.userId, isAuthenticated: true, userId: ctx.userId };
@@ -71,7 +34,7 @@ export function resolveContextAttribution(ctx: {
   if (ctx.distinctId) {
     return { distinctId: ctx.distinctId, isAuthenticated: false };
   }
-  return { distinctId: `server-anon-${ctx.connectionId}`, isAuthenticated: false };
+  return { distinctId: undefined, isAuthenticated: false };
 }
 
 // Read and validate the x-bs-distinct-id header off an incoming request. Returns
@@ -92,30 +55,16 @@ export function readDistinctIdHeader(
 }
 
 type TrackArgs = {
-  distinctId: string;
-  properties?: ServerEventProperties;
+  distinctId: string | undefined;
+  properties?: AnalyticsEventProperties;
 };
 
 export function trackServer(eventName: string, args: TrackArgs): boolean {
-  if (process.env.NODE_ENV !== 'production' && shouldDebug) {
-    console.info('[analytics] track', eventName, { distinctId: args.distinctId, ...args.properties });
-  }
-
-  const posthog = getPosthog();
-  if (!posthog) return false;
-  posthog.capture({
-    distinctId: args.distinctId,
-    event: eventName,
-    properties: sanitize(args.properties),
-  });
-  return true;
+  return trackCore(eventName, { distinctId: args.distinctId, properties: args.properties });
 }
 
-export function identifyServer(distinctId: string, properties?: ServerEventProperties): boolean {
-  const posthog = getPosthog();
-  if (!posthog) return false;
-  posthog.identify({ distinctId, properties: sanitize(properties) });
-  return true;
+export function identifyServer(distinctId: string, properties?: AnalyticsEventProperties): boolean {
+  return identifyCore(distinctId, properties);
 }
 
 // `distinctId` is the canonical/surviving person id; `alias` is the alternate
@@ -123,28 +72,18 @@ export function identifyServer(distinctId: string, properties?: ServerEventPrope
 // the full contract — for anonymous → authenticated linking, pass
 // distinctId=userId and alias=anonProfileId.
 export function aliasServer(distinctId: string, alias: string): boolean {
-  const posthog = getPosthog();
-  if (!posthog) return false;
-  posthog.alias({ distinctId, alias });
-  return true;
+  return aliasCore(distinctId, alias);
 }
 
 export async function flushServerAnalytics(): Promise<void> {
-  const posthog = posthogClient;
-  if (!posthog) return;
-  await posthog.flush();
+  await flushAnalytics();
 }
 
 export async function shutdownServerAnalytics(): Promise<void> {
-  const posthog = posthogClient;
-  if (!posthog) return;
-  await posthog.shutdown();
-  posthogClient = null;
-  posthogInitAttempted = false;
+  await shutdownAnalytics();
 }
 
 // Test-only: reset lazy singleton so tests can re-initialize with fresh env.
 export function __resetServerAnalyticsForTests(): void {
-  posthogClient = null;
-  posthogInitAttempted = false;
+  __resetAnalyticsForTests();
 }
