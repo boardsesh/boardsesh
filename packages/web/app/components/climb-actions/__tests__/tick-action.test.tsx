@@ -368,7 +368,7 @@ describe('TickAction', () => {
       expect(screen.getByTestId('log-ascent-drawer')).toBeTruthy();
     });
 
-    it('shows sign-in prompt when not authenticated and drawer is opened', async () => {
+    it('opens the log ascent drawer for signed-out users (local IndexedDB save)', async () => {
       setupMocks({ hasBoardProvider: true, isAuthenticated: false });
       render(<TestTickAction {...defaultProps} />);
 
@@ -376,9 +376,8 @@ describe('TickAction', () => {
         screen.getByRole('button', { name: /log ascent/i }).click();
       });
 
-      const drawer = screen.getByTestId('swipeable-drawer');
-      expect(drawer.getAttribute('data-title')).toBe('Sign in required');
-      expect(screen.getByText('Sign in to record ticks')).toBeTruthy();
+      expect(screen.queryByText('Sign in to record ticks')).toBeNull();
+      expect(screen.getByTestId('log-ascent-drawer')).toBeTruthy();
     });
 
     it('does not show board selector', async () => {
@@ -636,7 +635,7 @@ describe('TickAction', () => {
   });
 
   describe('without BoardProvider, not authenticated', () => {
-    it('shows sign-in prompt', async () => {
+    it('opens the log ascent form (signed-out users save locally)', async () => {
       setupMocks({ isAuthenticated: false });
       render(<TestTickAction {...defaultProps} />);
 
@@ -644,9 +643,8 @@ describe('TickAction', () => {
         screen.getByRole('button', { name: /log ascent/i }).click();
       });
 
-      const drawer = screen.getByTestId('swipeable-drawer');
-      expect(drawer.getAttribute('data-title')).toBe('Sign in required');
-      expect(screen.getByText('Sign in to record ticks')).toBeTruthy();
+      expect(screen.queryByText('Sign in to record ticks')).toBeNull();
+      expect(screen.getByTestId('log-ascent-form')).toBeTruthy();
     });
 
     it('does not fetch user boards', () => {
@@ -657,7 +655,7 @@ describe('TickAction', () => {
       expect(mockUseMyBoards).toHaveBeenCalledWith(false);
     });
 
-    it('does not show board selector or LogAscentForm', async () => {
+    it('skips the board selector for signed-out users', async () => {
       setupMocks({ isAuthenticated: false });
       render(<TestTickAction {...defaultProps} />);
 
@@ -666,7 +664,6 @@ describe('TickAction', () => {
       });
 
       expect(screen.queryByText('Which board did you climb on?')).toBeNull();
-      expect(screen.queryByTestId('log-ascent-form')).toBeNull();
     });
   });
 

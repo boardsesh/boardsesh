@@ -59,7 +59,7 @@ type LogAscentFormProps = {
 export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boardDetails, onClose }) => {
   const { t } = useTranslation('climbs');
   const { t: tProfile } = useTranslation('profile');
-  const { saveTick, isAuthenticated } = useBoardProvider();
+  const { saveTick } = useBoardProvider();
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
   const angleOptions = ANGLES[boardDetails.board_name];
 
@@ -127,7 +127,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   };
 
   const handleSubmit = async (values: LogAscentFormValues) => {
-    if (!currentClimb?.uuid || !isAuthenticated) {
+    if (!currentClimb?.uuid) {
       return;
     }
 

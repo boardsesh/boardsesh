@@ -30,6 +30,11 @@ vi.mock('@/app/lib/graphql/operations', () => ({
   SAVE_TICK: 'SAVE_TICK_MUTATION',
 }));
 
+const mockSaveLocalTick = vi.fn();
+vi.mock('@/app/lib/local-ticks-db', () => ({
+  saveLocalTick: (...args: unknown[]) => mockSaveLocalTick(...args),
+}));
+
 const mockUseWsAuthToken = vi.mocked(useWsAuthToken);
 const mockUseSession = vi.mocked(useSession);
 
@@ -75,6 +80,7 @@ describe('useSaveTick', () => {
     vi.clearAllMocks();
     mockRequest.mockReset();
     mockShowMessage.mockReset();
+    mockSaveLocalTick.mockReset();
     mockUseWsAuthToken.mockReturnValue({
       token: 'test-token',
       isAuthenticated: true,
@@ -88,15 +94,32 @@ describe('useSaveTick', () => {
     });
   });
 
-  it('throws when not authenticated', async () => {
+  it('saves locally when not authenticated', async () => {
     mockUseSession.mockReturnValue({
       status: 'unauthenticated',
       data: null,
       update: vi.fn(),
     });
+    mockSaveLocalTick.mockResolvedValue({
+      uuid: 'local-uuid-1',
+      climbUuid: 'climb-1',
+      angle: 40,
+      isMirror: false,
+      status: 'send',
+      attemptCount: 3,
+      quality: null,
+      difficulty: null,
+      comment: 'Great climb',
+      climbedAt: '2024-01-01',
+      videoUrl: null,
+      boardName: 'kilter',
+      layoutId: null,
+      sizeId: null,
+      setIds: null,
+      localSessionId: 'session-1',
+    });
 
     const { wrapper } = createTestWrapper();
-
     const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
 
     await act(async () => {
@@ -104,22 +127,71 @@ describe('useSaveTick', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.isError).toBe(true);
+      expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(result.current.error?.message).toBe('Not authenticated');
+    expect(mockSaveLocalTick).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climbUuid: 'climb-1',
+        angle: 40,
+        status: 'send',
+        attemptCount: 3,
+        boardName: 'kilter',
+      }),
+    );
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 
-  it('throws when no token', async () => {
+  it('saves locally when no token is available', async () => {
     mockUseWsAuthToken.mockReturnValue({
       token: null,
       isAuthenticated: false,
       isLoading: false,
       error: null,
     });
+    mockSaveLocalTick.mockResolvedValue({
+      uuid: 'local-uuid-2',
+      climbUuid: 'climb-1',
+      angle: 40,
+      isMirror: false,
+      status: 'send',
+      attemptCount: 3,
+      quality: null,
+      difficulty: null,
+      comment: 'Great climb',
+      climbedAt: '2024-01-01',
+      videoUrl: null,
+      boardName: 'kilter',
+      layoutId: null,
+      sizeId: null,
+      setIds: null,
+      localSessionId: 'session-2',
+    });
 
     const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
 
+    await act(async () => {
+      result.current.mutate(createTickOptions());
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockSaveLocalTick).toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a local-storage error when IndexedDB is unavailable', async () => {
+    mockUseSession.mockReturnValue({
+      status: 'unauthenticated',
+      data: null,
+      update: vi.fn(),
+    });
+    mockSaveLocalTick.mockResolvedValue(null);
+
+    const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
 
     await act(async () => {
@@ -130,7 +202,7 @@ describe('useSaveTick', () => {
       expect(result.current.isError).toBe(true);
     });
 
-    expect(result.current.error?.message).toBe('Auth token not available');
+    expect(result.current.error?.message).toBe('Local storage unavailable');
   });
 
   it('calls GraphQL mutation with correct variables', async () => {

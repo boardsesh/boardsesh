@@ -9,11 +9,8 @@ import Box from '@mui/material/Box';
 import SwipeableDrawer from '../../swipeable-drawer/swipeable-drawer';
 import { ActionTooltip } from '../action-tooltip';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import LoginOutlined from '@mui/icons-material/LoginOutlined';
-import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useOptionalBoardProvider, BoardProvider } from '../../board-provider/board-provider-context';
-import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { LogAscentForm } from '../../logbook/logascent-form';
 import { track } from '@/app/lib/analytics';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
@@ -52,7 +49,6 @@ export function TickAction({
   const { t } = useTranslation('climbs');
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(null);
-  const { openAuthModal } = useAuthModal();
 
   // Use optional board provider - allows TickAction to work outside board routes
   const boardProvider = useOptionalBoardProvider();
@@ -79,7 +75,7 @@ export function TickAction({
     [myBoards, boardDetails.board_name],
   );
 
-  const { alwaysUseApp, loaded, enableAlwaysUseApp } = useAlwaysTickInApp();
+  const { alwaysUseApp, loaded } = useAlwaysTickInApp();
 
   // Find ascent entries for this climb
   const filteredLogbook = useMemo(() => {
@@ -124,60 +120,6 @@ export function TickAction({
     setSelectedBoard(null);
     onComplete?.();
   }, [onComplete]);
-
-  // URL for opening in the Aurora app (null for Kilter as app URL is no longer accessible)
-  const openInAppUrl = useMemo(() => constructClimbInfoUrl(boardDetails, climb.uuid), [boardDetails, climb.uuid]);
-
-  const handleOpenInApp = useCallback(() => {
-    if (!openInAppUrl) return;
-    openExternalUrl(openInAppUrl);
-    closeDrawer();
-  }, [openInAppUrl, closeDrawer]);
-
-  const renderSignInPrompt = () => (
-    <Stack spacing={3} sx={{ width: '100%', textAlign: 'center', padding: '24px 0' }}>
-      <Typography variant="body2" component="span" fontWeight={600} sx={{ fontSize: 16 }}>
-        {t('actions.tick.drawer.signInToRecord')}
-      </Typography>
-      <Typography variant="body1" component="p" color="text.secondary">
-        {t('actions.tick.drawer.createAccountBlurb')}
-      </Typography>
-      <MuiButton
-        variant="contained"
-        startIcon={<LoginOutlined />}
-        onClick={() =>
-          openAuthModal({
-            title: t('actions.tick.drawer.authModalTitle'),
-            description: t('actions.tick.drawer.authModalDescription'),
-          })
-        }
-        fullWidth
-      >
-        {t('actions.tick.drawer.signIn')}
-      </MuiButton>
-      {openInAppUrl && (
-        <>
-          <Typography variant="body1" component="p" color="text.secondary">
-            {t('actions.tick.drawer.orLogInOfficialApp')}
-          </Typography>
-          <MuiButton variant="outlined" startIcon={<AppsOutlined />} onClick={handleOpenInApp} fullWidth>
-            {t('actions.tick.drawer.openInApp')}
-          </MuiButton>
-          <MuiButton
-            variant="text"
-            size="small"
-            color="secondary"
-            onClick={async () => {
-              await enableAlwaysUseApp();
-              handleOpenInApp();
-            }}
-          >
-            {t('actions.tick.drawer.alwaysOpenInApp')}
-          </MuiButton>
-        </>
-      )}
-    </Stack>
-  );
 
   const label = t('actions.tick.drawer.logAscent');
   const shouldShowLabel = showLabel ?? (viewMode === 'button' || viewMode === 'dropdown');
@@ -255,31 +197,15 @@ export function TickAction({
 
   const renderDrawers = () => {
     if (boardProvider) {
-      // Inside a board route - existing flow unchanged
-      if (isAuthenticated) {
-        return (
-          <LogAscentDrawer
-            open={drawerVisible}
-            onClose={closeDrawer}
-            currentClimb={climb}
-            boardDetails={boardDetails}
-          />
-        );
-      }
+      // Inside a board route — works for signed-in (server save) and signed-out (local IndexedDB save).
       return (
-        <SwipeableDrawer
-          title={t('actions.tick.drawer.signInRequired')}
-          placement="bottom"
-          onClose={closeDrawer}
-          open={drawerVisible}
-          styles={{ wrapper: { height: '60%' } }}
-        >
-          {renderSignInPrompt()}
-        </SwipeableDrawer>
+        <LogAscentDrawer open={drawerVisible} onClose={closeDrawer} currentClimb={climb} boardDetails={boardDetails} />
       );
     }
+    // Outside a board route. Authenticated users get the board selector (their linked
+    // Aurora boards); signed-out users skip the selector and log against the boardDetails
+    // we already have (the local-tick path doesn't need user-specific board metadata).
     if (isAuthenticated) {
-      // Outside board route, authenticated - board selector + log form
       return (
         <SwipeableDrawer
           title={showBoardSelector ? t('actions.tick.drawer.selectBoard') : t('actions.tick.drawer.logAscent')}
@@ -300,16 +226,16 @@ export function TickAction({
         </SwipeableDrawer>
       );
     }
-    // Outside board route, not authenticated - sign-in prompt
     return (
       <SwipeableDrawer
-        title={t('actions.tick.drawer.signInRequired')}
+        title={t('actions.tick.drawer.logAscent')}
         placement="bottom"
         onClose={closeDrawer}
         open={drawerVisible}
-        styles={{ wrapper: { height: '60%' } }}
+        fullHeight
+        styles={{ wrapper: { height: '100%' } }}
       >
-        {renderSignInPrompt()}
+        <BoardProvider boardName={resolvedBoardName}>{renderLogAscentForm()}</BoardProvider>
       </SwipeableDrawer>
     );
   };

@@ -1,21 +1,13 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { Angle, Climb, BoardDetails } from '@/app/lib/types';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import MuiBadge from '@mui/material/Badge';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import type { SxProps, Theme } from '@mui/material/styles';
-import Stack from '@mui/material/Stack';
-import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
-import LoginOutlined from '@mui/icons-material/LoginOutlined';
-import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import { track } from '@/app/lib/analytics';
 import { LogAscentDrawer } from './log-ascent-drawer';
-import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { constructClimbInfoUrl } from '@/app/lib/url-utils';
 import { openExternalUrl } from '@/app/lib/open-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -47,11 +39,9 @@ export const TickButton: React.FC<TickButtonProps> = ({
   isFlash,
   ascentType,
 }) => {
-  const { t } = useTranslation('climbs');
   const { logbook, isAuthenticated } = useBoardProvider();
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const { openAuthModal } = useAuthModal();
-  const { alwaysUseApp, loaded, enableAlwaysUseApp } = useAlwaysTickInApp();
+  const { alwaysUseApp, loaded } = useAlwaysTickInApp();
 
   // URL for opening in the Aurora app (null for Kilter as app URL is no longer accessible)
   const openInAppUrl = useMemo(
@@ -76,8 +66,8 @@ export const TickButton: React.FC<TickButtonProps> = ({
       return;
     }
 
-    // Use inline tick bar when available and authenticated
-    if (isAuthenticated && onActivateTickBar) {
+    // Use inline tick bar when available — works for signed-in and signed-out users.
+    if (onActivateTickBar) {
       onActivateTickBar();
       return;
     }
@@ -85,12 +75,6 @@ export const TickButton: React.FC<TickButtonProps> = ({
     setDrawerVisible(true);
   };
   const closeDrawer = () => setDrawerVisible(false);
-
-  const handleOpenInApp = () => {
-    if (!openInAppUrl) return;
-    openExternalUrl(openInAppUrl);
-    closeDrawer();
-  };
 
   const filteredLogbook = useMemo(
     () => logbook.filter((asc) => asc.climb_uuid === currentClimb?.uuid && Number(asc.angle) === angle),
@@ -165,65 +149,12 @@ export const TickButton: React.FC<TickButtonProps> = ({
     <>
       {tickBarActive ? <TickButtonWithLabel label={tickLabel}>{badge}</TickButtonWithLabel> : badge}
 
-      {isAuthenticated ? (
-        <LogAscentDrawer
-          open={drawerVisible}
-          onClose={closeDrawer}
-          currentClimb={currentClimb}
-          boardDetails={boardDetails}
-        />
-      ) : (
-        <SwipeableDrawer
-          title={t('actions.tick.drawer.signInRequired')}
-          placement="bottom"
-          onClose={closeDrawer}
-          open={drawerVisible}
-          styles={{ wrapper: { height: '60%' } }}
-        >
-          <Stack spacing={3} sx={{ width: '100%', textAlign: 'center', padding: '24px 0' }}>
-            <Typography variant="body2" component="span" fontWeight={600} sx={{ fontSize: 16 }}>
-              {t('actions.tick.drawer.signInToRecord')}
-            </Typography>
-            <Typography variant="body1" component="p" color="text.secondary">
-              {t('actions.tick.drawer.createAccountBlurb')}
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<LoginOutlined />}
-              onClick={() =>
-                openAuthModal({
-                  title: t('actions.tick.drawer.authModalTitle'),
-                  description: t('actions.tick.drawer.authModalDescription'),
-                })
-              }
-              fullWidth
-            >
-              {t('actions.tick.drawer.signIn')}
-            </Button>
-            {openInAppUrl && (
-              <>
-                <Typography variant="body1" component="p" color="text.secondary">
-                  {t('actions.tick.drawer.orLogInOfficialApp')}
-                </Typography>
-                <Button variant="outlined" startIcon={<AppsOutlined />} onClick={handleOpenInApp} fullWidth>
-                  {t('actions.tick.drawer.openInApp')}
-                </Button>
-                <Button
-                  variant="text"
-                  size="small"
-                  color="secondary"
-                  onClick={async () => {
-                    await enableAlwaysUseApp();
-                    handleOpenInApp();
-                  }}
-                >
-                  {t('actions.tick.drawer.alwaysOpenInApp')}
-                </Button>
-              </>
-            )}
-          </Stack>
-        </SwipeableDrawer>
-      )}
+      <LogAscentDrawer
+        open={drawerVisible}
+        onClose={closeDrawer}
+        currentClimb={currentClimb}
+        boardDetails={boardDetails}
+      />
     </>
   );
 };

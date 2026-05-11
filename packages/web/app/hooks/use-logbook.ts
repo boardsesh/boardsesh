@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_TICKS, type GetTicksQueryVariables, type GetTicksQueryResponse } from '@/app/lib/graphql/operations';
 import type { BoardName, ClimbUuid } from '@/app/lib/types';
+import { listAllLocalTicks, type LocalTick } from '@/app/lib/local-ticks-db';
 
 // Tick status type matching the database enum
 export type TickStatus = 'flash' | 'send' | 'attempt';
@@ -68,6 +69,21 @@ function transformTicks(ticks: GetTicksQueryResponse['ticks']): LogbookEntry[] {
   return ticks.map(toLogbookEntry);
 }
 
+function localTickToLogbookEntry(tick: LocalTick): LogbookEntry {
+  return toLogbookEntry({
+    uuid: tick.uuid,
+    climbUuid: tick.climbUuid,
+    angle: tick.angle,
+    isMirror: tick.isMirror,
+    status: tick.status,
+    attemptCount: tick.attemptCount,
+    quality: tick.quality,
+    difficulty: tick.difficulty,
+    comment: tick.comment,
+    climbedAt: tick.climbedAt,
+  });
+}
+
 export function mergeLogbookEntries(existing: LogbookEntry[], incoming: LogbookEntry[]): LogbookEntry[] {
   if (incoming.length === 0) return existing;
 
@@ -119,6 +135,8 @@ export function useLogbook(boardName: BoardName, climbUuids: ClimbUuid[]) {
   const [invalidationCount, setInvalidationCount] = useState(0);
 
   const isEnabled = sessionStatus === 'authenticated' && !!token;
+  // Signed-out → hydrate from local IndexedDB. Token isn't required for local mode.
+  const isLocalMode = sessionStatus === 'unauthenticated';
 
   const accumulatedQuery = useQuery<LogbookEntry[]>({
     queryKey: accumulatedKey,
@@ -207,6 +225,29 @@ export function useLogbook(boardName: BoardName, climbUuids: ClimbUuid[]) {
       queryClient.removeQueries({ queryKey: ['logbook', boardName] });
     }
   }, [isEnabled, boardName, queryClient]);
+
+  // Hydrate the accumulated cache from IndexedDB whenever we're in local mode.
+  // Runs after the reset above so it survives the logout-clear and re-runs if
+  // the cache subscription bumps invalidationCount. Subsequent local saves are
+  // merged optimistically via useSaveTick.onMutate, so this is one-shot per
+  // session-status transition.
+  useEffect(() => {
+    if (!isLocalMode) return;
+    let cancelled = false;
+    void (async () => {
+      const localTicks = await listAllLocalTicks();
+      if (cancelled) return;
+      const forBoard = localTicks.filter((tick) => tick.boardName === boardName);
+      if (forBoard.length === 0) return;
+      const entries = forBoard.map(localTickToLogbookEntry);
+      queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) =>
+        mergeLogbookEntries(existing, entries),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLocalMode, accumulatedKey, queryClient, invalidationCount, boardName]);
 
   return {
     logbook,

@@ -14,6 +14,7 @@ import {
   type LogbookEntry,
 } from './use-logbook';
 import { clearTickDraft } from '@/app/lib/tick-draft-db';
+import { saveLocalTick } from '@/app/lib/local-ticks-db';
 
 // Options for saving a tick (local storage, no Aurora required)
 export type SaveTickOptions = {
@@ -46,11 +47,45 @@ export function useSaveTick(boardName: BoardName) {
 
   return useMutation({
     mutationFn: async (options: SaveTickOptions) => {
-      if (sessionStatus !== 'authenticated') {
-        throw new Error('Not authenticated');
-      }
-      if (!token) {
-        throw new Error('Auth token not available');
+      // Signed-out users: persist locally instead of hitting the server.
+      // The optimistic merge handles UI updates; we return a tick-shaped object
+      // so the rest of the lifecycle treats this just like a server save.
+      if (sessionStatus !== 'authenticated' || !token) {
+        const setIdsForLocal =
+          options.setIds === undefined || options.setIds === null || options.setIds === ''
+            ? null
+            : String(options.setIds);
+        const tick = await saveLocalTick({
+          climbUuid: options.climbUuid,
+          angle: options.angle,
+          isMirror: options.isMirror,
+          status: options.status,
+          attemptCount: options.attemptCount,
+          quality: options.quality ?? null,
+          difficulty: options.difficulty ?? null,
+          comment: options.comment,
+          climbedAt: options.climbedAt,
+          videoUrl: options.videoUrl ?? null,
+          boardName,
+          layoutId: options.layoutId ?? null,
+          sizeId: options.sizeId ?? null,
+          setIds: setIdsForLocal,
+        });
+        if (!tick) {
+          throw new Error('Local storage unavailable');
+        }
+        return {
+          uuid: tick.uuid,
+          climbUuid: tick.climbUuid,
+          angle: tick.angle,
+          isMirror: tick.isMirror,
+          status: tick.status,
+          attemptCount: tick.attemptCount,
+          quality: tick.quality,
+          difficulty: tick.difficulty,
+          comment: tick.comment,
+          climbedAt: tick.climbedAt,
+        };
       }
 
       const client = createGraphQLHttpClient(token);

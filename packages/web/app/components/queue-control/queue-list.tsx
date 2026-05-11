@@ -9,7 +9,6 @@ import Stack from '@mui/material/Stack';
 import MuiDivider from '@mui/material/Divider';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import drawerCss from '../swipeable-drawer/swipeable-drawer.module.css';
-import LoginOutlined from '@mui/icons-material/LoginOutlined';
 import { useQueueActions, useCurrentClimbUuid, useQueueList, useSearchData, useSessionData } from '../graphql-queue';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
@@ -28,9 +27,7 @@ import { ClimbActions } from '../climb-actions';
 import PlaylistSelectionContent from '../climb-actions/playlist-selection-content';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
 import { themeTokens } from '@/app/theme/theme-config';
-import { useOptionalBoardProvider } from '../board-provider/board-provider-context';
 import { LogAscentDrawer } from '../logbook/log-ascent-drawer';
-import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import type { ClimbQueueItem } from './types';
 import { isClimbEditable } from './is-climb-editable';
 import styles from './queue-list.module.css';
@@ -106,12 +103,9 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
       [router, boardSlug, angleParam],
     );
 
-    const isAuthenticated = useOptionalBoardProvider()?.isAuthenticated ?? false;
-
     // Tick drawer state
     const [tickDrawerVisible, setTickDrawerVisible] = useState(false);
     const [tickClimb, setTickClimb] = useState<Climb | null>(null);
-    const { openAuthModal } = useAuthModal();
 
     // Shared drawer state — one actions drawer and one playlist drawer for all items.
     // This replaces the per-ClimbListItem drawers (previously 100+ drawer trees).
@@ -497,50 +491,13 @@ const QueueList = forwardRef<QueueListHandle, QueueListProps>(
           })}
         </div>
 
-        {/* Tick drawer - now works with just NextAuth authentication */}
-        {isAuthenticated ? (
-          <LogAscentDrawer
-            open={tickDrawerVisible}
-            onClose={closeTickDrawer}
-            currentClimb={tickClimb}
-            boardDetails={boardDetails}
-          />
-        ) : (
-          <SwipeableDrawer
-            title={t('actions.tick.drawer.signInRequired')}
-            placement="bottom"
-            onClose={closeTickDrawer}
-            open={tickDrawerVisible}
-            styles={{ wrapper: { height: '50%' } }}
-          >
-            <Stack spacing={3} sx={{ width: '100%', textAlign: 'center', padding: `${themeTokens.spacing[6]}px 0` }}>
-              <Typography
-                variant="body2"
-                component="span"
-                fontWeight={600}
-                sx={{ fontSize: themeTokens.typography.fontSize.base }}
-              >
-                {t('actions.tick.drawer.signInToRecord')}
-              </Typography>
-              <Typography variant="body1" component="p" color="text.secondary">
-                {t('actions.tick.drawer.createAccountBlurb')}
-              </Typography>
-              <Button
-                variant="contained"
-                startIcon={<LoginOutlined />}
-                onClick={() =>
-                  openAuthModal({
-                    title: t('actions.tick.drawer.authModalTitle'),
-                    description: t('actions.tick.drawer.authModalDescription'),
-                  })
-                }
-                fullWidth
-              >
-                {t('actions.tick.drawer.signIn')}
-              </Button>
-            </Stack>
-          </SwipeableDrawer>
-        )}
+        {/* Tick drawer — works for signed-in users (server save) and signed-out users (local IndexedDB save). */}
+        <LogAscentDrawer
+          open={tickDrawerVisible}
+          onClose={closeTickDrawer}
+          currentClimb={tickClimb}
+          boardDetails={boardDetails}
+        />
 
         {/* Shared actions drawer — only mount when a climb's actions are open */}
         {actionsClimb && (
