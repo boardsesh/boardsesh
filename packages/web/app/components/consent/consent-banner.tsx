@@ -56,7 +56,7 @@ export default function ConsentBanner() {
             width: '100%',
             maxWidth: { xs: '100%', sm: theme.breakpoints.values.sm },
             padding: theme.spacing(2),
-            borderRadius: { xs: 0, sm: theme.shape.borderRadius },
+            borderRadius: { xs: 0, sm: 1 },
             borderTop: { xs: `1px solid ${theme.palette.divider}`, sm: 'none' },
           })}
         >

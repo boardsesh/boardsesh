@@ -6,6 +6,11 @@ const ACCEPT_ALL = 'Accept all';
 const REJECT = 'Reject';
 const CUSTOMIZE = 'Customize';
 
+// Override the global storageState (which pre-seeds the consent cookie so
+// it doesn't cover bottom-of-viewport UI in other specs) — this spec needs
+// the fresh, no-decision-yet state to actually verify the banner shows.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 function bannerRegion(page: Page) {
   return page.getByRole('region', { name: BANNER_HEADLINE });
 }

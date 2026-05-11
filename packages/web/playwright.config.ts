@@ -42,6 +42,30 @@ export default defineConfig({
     actionTimeout: 15_000,
     /* Timeout for page navigations */
     navigationTimeout: 30_000,
+    /* Pre-seed the consent cookie so the bottom-anchored consent banner does
+     * not cover bottom-of-viewport UI (tab bar, queue control bar, etc.)
+     * during functional and screenshot specs. Specs that need the fresh
+     * "no choice yet" state must override with
+     *   test.use({ storageState: { cookies: [], origins: [] } });
+     * The cookie value matches `serializeConsentCookie({ analytics: 'denied',
+     * errorMonitoring: 'denied', decidedAt: <fixed>, version: 1 })` — we keep
+     * everything denied so PostHog/Sentry stay off during tests and we don't
+     * accidentally emit telemetry from CI. */
+    storageState: {
+      cookies: [
+        {
+          name: 'boardsesh:consent',
+          value: 'a=0&e=0&v=1',
+          domain: 'localhost',
+          path: '/',
+          expires: Math.floor(Date.now() / 1000) + 31_536_000,
+          httpOnly: false,
+          secure: false,
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [],
+    },
   },
 
   /* Configure projects for major browsers */
