@@ -1,13 +1,18 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { track } from '@/app/lib/analytics';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Stack from '@mui/material/Stack';
 import LoginOutlined from '@mui/icons-material/LoginOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
+import AutoFixHighOutlined from '@mui/icons-material/AutoFixHighOutlined';
+import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import Collapse from '@mui/material/Collapse';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
@@ -18,6 +23,7 @@ import SessionCreationForm, { type SessionCreationFormData } from './session-cre
 import BoardSelectorDrawer from '@/app/components/board-selector-drawer/board-selector-drawer';
 import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
 import BoardScrollCard from '@/app/components/board-scroll/board-scroll-card';
+import { WorkoutGeneratorDrawer, type GeneratorTarget, type WorkoutType } from '@/app/components/workout-generator';
 import { useCreateSession } from '@/app/hooks/use-create-session';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useSession } from 'next-auth/react';
@@ -31,6 +37,7 @@ import {
   tryConstructSlugListUrl,
 } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
+import { getBoardDetails } from '@/app/lib/board-constants';
 import { isBoardRoutePath } from '@/app/lib/board-route-paths';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { setClimbSessionCookie } from '@/app/lib/climb-session-cookie';
@@ -41,7 +48,8 @@ import { useMyBoards } from '@/app/hooks/use-my-boards';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import type { BoardName } from '@/app/lib/types';
+import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';
+import type { ClimbQueueItem as LocalClimbQueueItem } from '@/app/components/queue-control/types';
 
 type StartSeshDrawerProps = {
   open: boolean;
@@ -86,6 +94,9 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
   const [showBoardDrawer, setShowBoardDrawer] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [boardSelectorExpanded, setBoardSelectorExpanded] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [generatedClimbs, setGeneratedClimbs] = useState<Climb[]>([]);
+  const [generatedWorkoutType, setGeneratedWorkoutType] = useState<WorkoutType | null>(null);
   const hasAutoSelectedRef = useRef(false);
   const formSubmitRef = useRef<(() => void) | null>(null);
 
@@ -97,6 +108,9 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     if (!open) {
       hasAutoSelectedRef.current = false;
       setBoardSelectorExpanded(false);
+      setGeneratorOpen(false);
+      setGeneratedClimbs([]);
+      setGeneratedWorkoutType(null);
     }
   }, [open]);
 
@@ -163,8 +177,26 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     setSelectedCustomPath(null);
     setSelectedCustomConfig(null);
     setBoardSelectorExpanded(false);
+    setGeneratedClimbs([]);
+    setGeneratedWorkoutType(null);
     setFormKey((k) => k + 1);
   }, [onClose]);
+
+  // The generator's output is tied to a specific board — if the user switches
+  // boards after generating, drop the generated queue. Using a ref to skip the
+  // first render (auto-selection populating the board) so we don't wipe state
+  // on the initial assignment.
+  const lastGeneratorBoardKeyRef = useRef<string | null>(null);
+  const generatorBoardKey = selectedBoard?.uuid ?? selectedCustomPath ?? null;
+  useEffect(() => {
+    if (lastGeneratorBoardKeyRef.current !== null && lastGeneratorBoardKeyRef.current !== generatorBoardKey) {
+      if (generatedClimbs.length > 0 || generatedWorkoutType) {
+        setGeneratedClimbs([]);
+        setGeneratedWorkoutType(null);
+      }
+    }
+    lastGeneratorBoardKeyRef.current = generatorBoardKey;
+  }, [generatorBoardKey, generatedClimbs.length, generatedWorkoutType]);
 
   const handleBoardSelect = useCallback((board: UserBoard) => {
     setSelectedBoard(board);
@@ -222,6 +254,81 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     setBoardSelectorExpanded(false);
   };
 
+  // Resolve the BoardDetails + angle for whichever board the user has picked.
+  // The generator needs both. Returns null when nothing is selected yet
+  // (button stays disabled) or when getBoardDetails throws for an exotic
+  // combination we can't render.
+  const generatorContext = useMemo<{ boardDetails: BoardDetails; angle: number } | null>(() => {
+    if (selectedBoard) {
+      try {
+        const setIds = selectedBoard.setIds
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map(Number);
+        const boardDetails = getBoardDetails({
+          board_name: selectedBoard.boardType as BoardName,
+          layout_id: selectedBoard.layoutId,
+          size_id: selectedBoard.sizeId,
+          set_ids: setIds,
+        });
+        return { boardDetails, angle: selectedBoard.angle };
+      } catch {
+        return null;
+      }
+    }
+    if (selectedCustomConfig) {
+      try {
+        const boardDetails = getBoardDetails({
+          board_name: selectedCustomConfig.board,
+          layout_id: selectedCustomConfig.layoutId,
+          size_id: selectedCustomConfig.sizeId,
+          set_ids: selectedCustomConfig.setIds,
+        });
+        return { boardDetails, angle: selectedCustomConfig.angle };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [selectedBoard, selectedCustomConfig]);
+
+  // Session target: drawer accumulates climbs internally and hands the final
+  // list to onComplete. saveClimb is a no-op — there is no session yet, so we
+  // can't write anywhere durable. The full list is stored locally and committed
+  // to the new session's initial queue inside handleSubmit.
+  const sessionGeneratorTarget = useMemo<GeneratorTarget>(
+    () => ({
+      saveClimb: async () => {
+        // intentional no-op — see comment above
+      },
+      onComplete: (savedClimbs, meta) => {
+        if (savedClimbs.length === 0) return;
+        setGeneratedClimbs(savedClimbs);
+        setGeneratedWorkoutType(meta.workoutType);
+        track('Session Queue Generated', {
+          workoutType: meta.workoutType,
+          boardName: generatorContext?.boardDetails.board_name ?? '',
+          angle: generatorContext?.angle ?? 0,
+          savedCount: savedClimbs.length,
+          failedCount: meta.failed,
+        });
+      },
+    }),
+    [generatorContext],
+  );
+
+  const handleClearGeneratedQueue = useCallback(() => {
+    if (generatedClimbs.length === 0) return;
+    track('Session Queue Generated Cleared', {
+      workoutType: generatedWorkoutType,
+      savedCount: generatedClimbs.length,
+      boardName: generatorContext?.boardDetails.board_name ?? '',
+    });
+    setGeneratedClimbs([]);
+    setGeneratedWorkoutType(null);
+  }, [generatedClimbs.length, generatedWorkoutType, generatorContext]);
+
   const handleSubmit = async (formData: SessionCreationFormData) => {
     let boardPath: string | undefined;
     let navigateUrl: string | undefined;
@@ -261,8 +368,16 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
       const effectiveCurrentClimb = localCurrentClimbQueueItem ?? bridgeCurrentClimbQueueItem;
       const boardsMatch = effectiveBaseBoardPath != null && effectiveBaseBoardPath === getBaseBoardPath(boardPath);
 
-      // Transfer existing queue to the new session if on the same board
-      if (boardsMatch && (effectiveQueue.length > 0 || effectiveCurrentClimb)) {
+      // If the user generated a workout queue inside the drawer, that is their
+      // explicit intent — use it and skip any carryover. Otherwise fall back
+      // to transferring the existing local/bridge queue if the boards match.
+      if (generatedClimbs.length > 0) {
+        const generatedQueueItems: LocalClimbQueueItem[] = generatedClimbs.map((climb) => ({
+          climb,
+          uuid: uuidv4(),
+        }));
+        setInitialQueueForSession(sessionId, generatedQueueItems, null, formData.name);
+      } else if (boardsMatch && (effectiveQueue.length > 0 || effectiveCurrentClimb)) {
         setInitialQueueForSession(sessionId, effectiveQueue, effectiveCurrentClimb, formData.name);
       }
 
@@ -297,6 +412,8 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
         boardName: effectiveBoardDetails?.board_name ?? '',
         hasGoal: !!formData.goal,
         isDiscoverable: !!formData.discoverable,
+        generatedQueueCount: generatedClimbs.length,
+        generatedWorkoutType: generatedWorkoutType ?? undefined,
       });
 
       handleClose();
@@ -369,6 +486,55 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
     </Box>
   );
 
+  const canOpenGenerator = !!generatorContext;
+  const queuePlannerSection = (
+    <Box>
+      {generatedClimbs.length > 0 ? (
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          sx={{
+            p: 1.25,
+            borderRadius: 1,
+            border: `1px solid ${themeTokens.colors.primary}`,
+            bgcolor: themeTokens.semantic.selectedLight,
+          }}
+        >
+          <AutoFixHighOutlined fontSize="small" sx={{ color: 'primary.main' }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {t('creation.generator.summary', { count: generatedClimbs.length })}
+            </Typography>
+          </Box>
+          <Button size="small" variant="text" onClick={() => setGeneratorOpen(true)} disabled={!canOpenGenerator}>
+            {t('creation.generator.regenerate')}
+          </Button>
+          <IconButton size="small" onClick={handleClearGeneratedQueue} aria-label={t('creation.generator.clear')}>
+            <CloseOutlined fontSize="small" />
+          </IconButton>
+        </Stack>
+      ) : (
+        <Button
+          variant="outlined"
+          fullWidth
+          startIcon={<AutoFixHighOutlined />}
+          onClick={() => setGeneratorOpen(true)}
+          disabled={!canOpenGenerator}
+        >
+          {canOpenGenerator ? t('creation.generator.openButton') : t('creation.generator.openButtonHint')}
+        </Button>
+      )}
+    </Box>
+  );
+
+  const combinedHeaderContent = (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {boardSelector}
+      {queuePlannerSection}
+    </Box>
+  );
+
   return (
     <>
       <SwipeableDrawer
@@ -420,7 +586,7 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
             onSubmit={handleSubmit}
             isSubmitting={isCreating}
             submitLabel={t('creation.submitDefault')}
-            headerContent={boardSelector}
+            headerContent={combinedHeaderContent}
             isAnonymous={!isLoggedIn}
             renderSubmit={({ onSubmit: formSubmit }) => {
               formSubmitRef.current = formSubmit;
@@ -453,6 +619,17 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
           boardConfigs={boardConfigs}
           placement="top"
           onBoardSelected={handleCustomSelect}
+        />
+      )}
+
+      {generatorContext && (
+        <WorkoutGeneratorDrawer
+          open={generatorOpen}
+          onClose={() => setGeneratorOpen(false)}
+          boardDetails={generatorContext.boardDetails}
+          angle={generatorContext.angle}
+          target={sessionGeneratorTarget}
+          targetType="session"
         />
       )}
     </>

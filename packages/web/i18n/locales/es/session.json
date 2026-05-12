@@ -127,6 +127,14 @@
     },
     "errors": {
       "createFailed": "No se pudo empezar la sesión"
+    },
+    "generator": {
+      "openButton": "Planifica tu cola",
+      "openButtonHint": "Elige un tablero primero",
+      "summary_one": "{{count}} bloque en cola",
+      "summary_other": "{{count}} bloques en cola",
+      "regenerate": "Regenerar",
+      "clear": "Limpiar"
     }
   },
   "summary": {

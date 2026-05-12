@@ -127,6 +127,14 @@
     },
     "errors": {
       "createFailed": "Failed to start session"
+    },
+    "generator": {
+      "openButton": "Plan your queue",
+      "openButtonHint": "Pick a board first",
+      "summary_one": "{{count}} climb queued",
+      "summary_other": "{{count}} climbs queued",
+      "regenerate": "Regenerate",
+      "clear": "Clear"
     }
   },
   "summary": {

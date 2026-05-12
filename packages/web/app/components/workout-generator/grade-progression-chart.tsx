@@ -21,7 +21,7 @@ function getGradeName(difficultyId: number, grades: ReturnType<typeof getGradesF
 }
 
 const GradeProgressionChart: React.FC<GradeProgressionChartProps> = ({ plannedSlots, boardDetails, height = 120 }) => {
-  const { t } = useTranslation('playlists');
+  const { t } = useTranslation('generator');
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
   const bars: CssBarChartBar[] = useMemo(() => {
     if (plannedSlots.length === 0) return [];
@@ -61,21 +61,13 @@ const GradeProgressionChart: React.FC<GradeProgressionChartProps> = ({ plannedSl
         }}
       >
         <Typography variant="body2" color="text.secondary">
-          {t('generator.chart.configurePrompt')}
+          {t('chart.configurePrompt')}
         </Typography>
       </Box>
     );
   }
 
-  return (
-    <CssBarChart
-      bars={bars}
-      height={height}
-      mobileHeight={height}
-      showLegend
-      ariaLabel={t('generator.chart.ariaLabel')}
-    />
-  );
+  return <CssBarChart bars={bars} height={height} mobileHeight={height} showLegend ariaLabel={t('chart.ariaLabel')} />;
 };
 
 export default GradeProgressionChart;

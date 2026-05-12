@@ -127,6 +127,14 @@
     },
     "errors": {
       "createFailed": "Échec du lancement de la session"
+    },
+    "generator": {
+      "openButton": "Planifie ta file",
+      "openButtonHint": "Choisis un board d'abord",
+      "summary_one": "{{count}} bloc dans la file",
+      "summary_other": "{{count}} blocs dans la file",
+      "regenerate": "Regénérer",
+      "clear": "Effacer"
     }
   },
   "summary": {

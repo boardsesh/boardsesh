@@ -35,10 +35,13 @@ import {
   type UpdatePlaylistLastAccessedMutationResponse,
   type DeletePlaylistMutationVariables,
   type DeletePlaylistMutationResponse,
+  type AddClimbToPlaylistMutationResponse,
+  type AddClimbToPlaylistMutationVariables,
   GET_PLAYLIST,
   GET_PLAYLIST_CLIMBS,
   DELETE_PLAYLIST,
   UPDATE_PLAYLIST_LAST_ACCESSED,
+  ADD_CLIMB_TO_PLAYLIST,
   FOLLOW_PLAYLIST,
   UNFOLLOW_PLAYLIST,
   PIN_PLAYLIST,
@@ -63,7 +66,7 @@ import { getBoardDetailsForPlaylist, getDefaultAngleForBoard } from '@/app/lib/b
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import BackButton from '@/app/components/back-button';
-import { PlaylistGeneratorDrawer } from '@/app/components/playlist-generator';
+import { WorkoutGeneratorDrawer, type GeneratorTarget } from '@/app/components/workout-generator';
 import PlaylistEditDrawer from '@/app/components/library/playlist-edit-drawer';
 import CommentSection from '@/app/components/social/comment-section';
 import MultiboardClimbList from '@/app/components/climb-list/multiboard-climb-list';
@@ -414,6 +417,29 @@ export default function PlaylistDetailContent({
 
   const generatorAngle = playlist ? getDefaultAngleForBoard(playlist.boardType) : 40;
 
+  // Per-climb playlist write. Refreshes the playlist's climb list on success.
+  const playlistGeneratorTarget = useMemo<GeneratorTarget>(
+    () => ({
+      saveClimb: async (climb) => {
+        await executeGraphQL<AddClimbToPlaylistMutationResponse, AddClimbToPlaylistMutationVariables>(
+          ADD_CLIMB_TO_PLAYLIST,
+          {
+            input: {
+              playlistId: playlistUuid,
+              climbUuid: climb.uuid,
+              angle: generatorAngle,
+            },
+          },
+          token,
+        );
+      },
+      onComplete: (savedClimbs) => {
+        if (savedClimbs.length > 0) handlePlaylistUpdated();
+      },
+    }),
+    [playlistUuid, generatorAngle, token, handlePlaylistUpdated],
+  );
+
   // With SSR data we have content to render, so don't gate on tokenLoading.
   // Showing the spinner during the first-tick auth bootstrap defeats the
   // no-spinner goal of seeding initialPlaylist from the server.
@@ -640,13 +666,13 @@ export default function PlaylistDetailContent({
 
       {/* Generator Drawer */}
       {generatorBoardDetails && (
-        <PlaylistGeneratorDrawer
+        <WorkoutGeneratorDrawer
           open={generatorOpen}
           onClose={() => setGeneratorOpen(false)}
-          playlistUuid={playlistUuid}
           boardDetails={generatorBoardDetails}
           angle={generatorAngle}
-          onSuccess={handlePlaylistUpdated}
+          target={playlistGeneratorTarget}
+          targetType="playlist"
         />
       )}
     </>

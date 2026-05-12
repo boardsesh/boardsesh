@@ -1,0 +1,79 @@
+{
+  "drawerTitle": "Générer une séance",
+  "generatingTitle": "Génération...",
+  "optionsTitle": "Options",
+  "generatingProgress": "Ajout des blocs... {{current}} / {{total}}",
+  "generate": "Générer",
+  "reset": "Réinitialiser",
+  "totals": {
+    "total": "Total",
+    "climbs_one": "{{count}} bloc",
+    "climbs_other": "{{count}} blocs"
+  },
+  "summaryRow_one": "{{count}} bloc ({{range}})",
+  "summaryRow_other": "{{count}} blocs ({{range}})",
+  "options": {
+    "warmUp": "Échauffement",
+    "targetGrade": "Cotation cible",
+    "minAscents": "Enchaînements min.",
+    "minRating": "Note min.",
+    "any": "Tous",
+    "minAscentsOption": "{{value}}+",
+    "minRatingOption_one": "{{count}} étoile et plus",
+    "minRatingOption_other": "{{count}} étoiles et plus",
+    "climbBias": "Préférence de blocs",
+    "tallClimbsLabel": "Blocs hauts uniquement",
+    "tallClimbsTooltip": "Affiche uniquement les blocs qui utilisent les prises des 8 rangées du bas (uniquement sur les boards 10x12)",
+    "mainSetClimbs": "Blocs de la série principale",
+    "mainSetVariability": "Variabilité de la série principale",
+    "numberOfSteps": "Nombre de paliers",
+    "climbsPerStep": "Blocs par palier",
+    "numberOfClimbs": "Nombre de blocs"
+  },
+  "warmUpOptions": {
+    "standard": "Standard",
+    "extended": "Prolongé",
+    "none": "Aucun"
+  },
+  "climbBiasOptions": {
+    "unfamiliar": "Jamais essayés",
+    "attempted": "Déjà essayés",
+    "any": "Tous"
+  },
+  "workoutTypes": {
+    "volume": {
+      "name": "Volume",
+      "description": "Une séance à fort volume."
+    },
+    "pyramid": {
+      "name": "Pyramide",
+      "description": "Montez jusqu'à votre cotation max, puis redescendez."
+    },
+    "ladder": {
+      "name": "Échelle",
+      "description": "Progressez dans les cotations par paliers."
+    },
+    "gradeFocus": {
+      "name": "Cotation ciblée",
+      "description": "Choisissez une cotation et c'est parti !"
+    }
+  },
+  "sections": {
+    "warmUp": "Échauffement",
+    "increasing": "Montée",
+    "peak": "Pic",
+    "decreasing": "Descente",
+    "main": "Série principale"
+  },
+  "chart": {
+    "ariaLabel": "Aperçu de la distribution des cotations",
+    "configurePrompt": "Configurez les options pour prévisualiser"
+  },
+  "messages": {
+    "noClimbs": "Aucun bloc à générer",
+    "addedAll_one": "{{count}} bloc ajouté",
+    "addedAll_other": "{{count}} blocs ajoutés",
+    "addedPartial": "{{added}} blocs ajoutés. {{failed}} emplacements n'ont pas pu être remplis.",
+    "failed": "Impossible de générer la séance. Aucun bloc adapté trouvé."
+  }
+}

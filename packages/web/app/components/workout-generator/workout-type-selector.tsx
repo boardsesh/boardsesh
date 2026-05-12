@@ -16,7 +16,7 @@ type WorkoutTypeSelectorProps = {
 };
 
 const WorkoutTypeSelector: React.FC<WorkoutTypeSelectorProps> = ({ onSelect }) => {
-  const { t } = useTranslation('playlists');
+  const { t } = useTranslation('generator');
   return (
     <div className={styles.container}>
       <MuiList>
@@ -28,10 +28,10 @@ const WorkoutTypeSelector: React.FC<WorkoutTypeSelectorProps> = ({ onSelect }) =
               </div>
               <div className={styles.textContent}>
                 <Typography variant="body2" component="span" fontWeight={600} className={styles.title}>
-                  {t(`generator.workoutTypes.${item.type}.name`)}
+                  {t(`workoutTypes.${item.type}.name`)}
                 </Typography>
                 <Typography variant="body2" component="span" color="text.secondary" className={styles.description}>
-                  {t(`generator.workoutTypes.${item.type}.description`)}
+                  {t(`workoutTypes.${item.type}.description`)}
                 </Typography>
               </div>
             </div>

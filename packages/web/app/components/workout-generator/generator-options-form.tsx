@@ -62,16 +62,16 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
   onReset,
   boardDetails,
 }) => {
-  const { t } = useTranslation('playlists');
+  const { t } = useTranslation('generator');
   const grades = getGradesForBoard(boardDetails.board_name);
 
   const warmUpOptions = WARM_UP_OPTIONS.map((opt) => ({
     value: opt.value,
-    label: t(`generator.warmUpOptions.${opt.value}`),
+    label: t(`warmUpOptions.${opt.value}`),
   }));
   const climbBiasOptions = CLIMB_BIAS_OPTIONS.map((opt) => ({
     value: opt.value,
-    label: t(`generator.climbBiasOptions.${opt.value}`),
+    label: t(`climbBiasOptions.${opt.value}`),
   }));
 
   // Check if we should show the tall climbs filter
@@ -152,14 +152,12 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
   const renderCommonOptions = () => (
     <>
       {/* Warm Up */}
-      {renderSelect<WarmUpType>(t('generator.options.warmUp'), options.warmUp, warmUpOptions, (v) =>
-        updateOption('warmUp', v),
-      )}
+      {renderSelect<WarmUpType>(t('options.warmUp'), options.warmUp, warmUpOptions, (v) => updateOption('warmUp', v))}
 
       {/* Target Grade */}
       <div className={styles.formRow}>
         <Typography variant="body2" component="span" className={styles.label}>
-          {t('generator.options.targetGrade')}
+          {t('options.targetGrade')}
         </Typography>
         <MuiSelect
           value={options.targetGrade}
@@ -186,44 +184,44 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
       <>
         <MuiBox sx={qualityBucketRowSx}>
           <Typography variant="body2" component="span" className={styles.label}>
-            {t('generator.options.minAscents')}
+            {t('options.minAscents')}
           </Typography>
           <MinAscentsBucketPicker
             value={options.minAscents}
             onChange={(minAscents) => updateOption('minAscents', minAscents)}
-            ariaLabel={t('generator.options.minAscents')}
+            ariaLabel={t('options.minAscents')}
             getOptionLabel={(minAscents) =>
-              t('generator.options.minAscentsOption', { value: formatMinAscentsFilterCount(minAscents) })
+              t('options.minAscentsOption', { value: formatMinAscentsFilterCount(minAscents) })
             }
           />
         </MuiBox>
 
         <MuiBox sx={qualityBucketRowSx}>
           <Typography variant="body2" component="span" className={styles.label}>
-            {t('generator.options.minRating')}
+            {t('options.minRating')}
           </Typography>
           <InlineStarPicker
             quality={minRatingPickerValue}
             onSelect={(value) => updateOption('minRating', value ?? 0)}
             align="start"
-            ariaLabel={t('generator.options.minRating')}
-            clearLabel={t('generator.options.any')}
-            clearText={t('generator.options.any')}
-            getStarLabel={(rating) => t('generator.options.minRatingOption', { count: rating })}
+            ariaLabel={t('options.minRating')}
+            clearLabel={t('options.any')}
+            clearText={t('options.any')}
+            getStarLabel={(rating) => t('options.minRatingOption', { count: rating })}
           />
         </MuiBox>
 
         {/* Climb Bias */}
-        {renderSelect<ClimbBias>(t('generator.options.climbBias'), options.climbBias, climbBiasOptions, (v) =>
+        {renderSelect<ClimbBias>(t('options.climbBias'), options.climbBias, climbBiasOptions, (v) =>
           updateOption('climbBias', v),
         )}
 
         {/* Tall Climbs Only - only for Kilter Homewall large size */}
         {showTallClimbsFilter && (
           <div className={styles.formRow}>
-            <MuiTooltip title={t('generator.options.tallClimbsTooltip')}>
+            <MuiTooltip title={t('options.tallClimbsTooltip')}>
               <Typography variant="body2" component="span" className={styles.label}>
-                {t('generator.options.tallClimbsLabel')}
+                {t('options.tallClimbsLabel')}
               </Typography>
             </MuiTooltip>
             <MuiSwitch
@@ -243,12 +241,12 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
       <>
         {renderCommonOptions()}
 
-        {renderStepper(t('generator.options.mainSetClimbs'), volumeOptions.mainSetClimbs, (v) =>
+        {renderStepper(t('options.mainSetClimbs'), volumeOptions.mainSetClimbs, (v) =>
           onChange({ ...volumeOptions, mainSetClimbs: v }),
         )}
 
         {renderStepper(
-          t('generator.options.mainSetVariability'),
+          t('options.mainSetVariability'),
           volumeOptions.mainSetVariability,
           (v) => onChange({ ...volumeOptions, mainSetVariability: v }),
           0,
@@ -268,7 +266,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
         {renderCommonOptions()}
 
         {renderStepper(
-          t('generator.options.numberOfSteps'),
+          t('options.numberOfSteps'),
           pyramidOptions.numberOfSteps,
           (v) => onChange({ ...pyramidOptions, numberOfSteps: v }),
           3,
@@ -276,7 +274,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
         )}
 
         {renderStepper(
-          t('generator.options.climbsPerStep'),
+          t('options.climbsPerStep'),
           pyramidOptions.climbsPerStep,
           (v) => onChange({ ...pyramidOptions, climbsPerStep: v }),
           1,
@@ -296,7 +294,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
         {renderCommonOptions()}
 
         {renderStepper(
-          t('generator.options.numberOfSteps'),
+          t('options.numberOfSteps'),
           ladderOptions.numberOfSteps,
           (v) => onChange({ ...ladderOptions, numberOfSteps: v }),
           3,
@@ -304,7 +302,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
         )}
 
         {renderStepper(
-          t('generator.options.climbsPerStep'),
+          t('options.climbsPerStep'),
           ladderOptions.climbsPerStep,
           (v) => onChange({ ...ladderOptions, climbsPerStep: v }),
           1,
@@ -324,7 +322,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
         {renderCommonOptions()}
 
         {renderStepper(
-          t('generator.options.numberOfClimbs'),
+          t('options.numberOfClimbs'),
           focusOptions.numberOfClimbs,
           (v) => onChange({ ...focusOptions, numberOfClimbs: v }),
           1,
@@ -358,7 +356,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
 
       <div className={styles.resetContainer}>
         <MuiButton variant="text" startIcon={<RefreshOutlined />} onClick={onReset} className={styles.resetButton}>
-          {t('generator.reset')}
+          {t('reset')}
         </MuiButton>
       </div>
     </div>

@@ -30,6 +30,7 @@ import enBoards from '@/i18n/locales/en-US/boards.json';
 import enClimbs from '@/i18n/locales/en-US/climbs.json';
 import enCommon from '@/i18n/locales/en-US/common.json';
 import enFeed from '@/i18n/locales/en-US/feed.json';
+import enGenerator from '@/i18n/locales/en-US/generator.json';
 import enMarketing from '@/i18n/locales/en-US/marketing.json';
 import enNotifications from '@/i18n/locales/en-US/notifications.json';
 import enPlaylists from '@/i18n/locales/en-US/playlists.json';
@@ -46,6 +47,7 @@ const CATALOGS: Record<string, unknown> = {
   climbs: enClimbs,
   common: enCommon,
   feed: enFeed,
+  generator: enGenerator,
   marketing: enMarketing,
   notifications: enNotifications,
   playlists: enPlaylists,
