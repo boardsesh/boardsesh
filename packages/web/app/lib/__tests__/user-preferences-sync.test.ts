@@ -207,7 +207,7 @@ describe('pushQueueFlush', () => {
     expect(remaining).toHaveLength(0);
   });
 
-  it('stops at the first failure and leaves the rest queued', async () => {
+  it('skips past a failed entry and continues with the rest of the queue', async () => {
     await setPreference('libraryTab', 'logbook');
     await setPreference('swipeHint:climbListSeen', true);
     await setPreference('swipeHint:queueBarSeen', true);
@@ -222,11 +222,38 @@ describe('pushQueueFlush', () => {
 
     await pushQueueFlush(AUTH_TOKEN);
 
-    // First op succeeded -> removed; second failed -> kept; third never tried.
+    // All three are tried (no longer blocks on the first failure).
+    // The failed entry stays in the queue with attempts incremented to 1;
+    // the two successful entries are deleted.
+    expect(call).toBe(3);
     const remaining = await getSyncQueueSnapshot();
-    expect(remaining).toHaveLength(2);
-    expect(call).toBe(2);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.key).toBe('swipeHint:climbListSeen');
+    expect(remaining[0]!.attempts).toBe(1);
     expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('drops a poison entry after MAX_QUEUE_ENTRY_ATTEMPTS (5) failures', async () => {
+    await setPreference('libraryTab', 'logbook');
+    executeGraphQLMock.mockImplementation(async () => {
+      throw new Error('always-fails');
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // 4 flushes: attempts go 0 → 1 → 2 → 3 → 4 — entry still queued each time.
+    for (let attemptRound = 0; attemptRound < 4; attemptRound += 1) {
+      await pushQueueFlush(AUTH_TOKEN);
+      const remaining = await getSyncQueueSnapshot();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.attempts).toBe(attemptRound + 1);
+    }
+
+    // 5th flush: attempts hits 5 → entry is dropped with a dead-letter warning.
+    await pushQueueFlush(AUTH_TOKEN);
+    const remaining = await getSyncQueueSnapshot();
+    expect(remaining).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('dropping poison queue entry'), 'set', 'libraryTab');
     warnSpy.mockRestore();
   });
 

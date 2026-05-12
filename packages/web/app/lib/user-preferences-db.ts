@@ -59,8 +59,8 @@ export type PreferenceMetaEntry = {
 };
 
 export type SyncQueueEntry =
-  | { op: 'set'; key: string; value: unknown; queuedAt: number }
-  | { op: 'delete'; key: string; queuedAt: number };
+  | { op: 'set'; key: string; value: unknown; queuedAt: number; attempts?: number }
+  | { op: 'delete'; key: string; queuedAt: number; attempts?: number };
 
 export type PreferenceBroadcastMessage = { type: 'set'; key: string; value: unknown } | { type: 'remove'; key: string };
 
@@ -413,6 +413,30 @@ export const deleteSyncQueueEntry = async (id: IDBValidKey): Promise<void> => {
     await db.delete(QUEUE_STORE, id);
   } catch (error) {
     console.error('Failed to delete sync queue entry:', error);
+  }
+};
+
+/**
+ * Persist an updated attempts counter on a queue entry without changing
+ * the auto-increment key (so FIFO ordering is preserved). Used by the
+ * sync engine to skip past entries that just failed, without losing
+ * them — they retry on the next flush.
+ */
+export const updateSyncQueueEntryAttempts = async (id: IDBValidKey, attempts: number): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    const tx = db.transaction(QUEUE_STORE, 'readwrite');
+    const store = tx.objectStore(QUEUE_STORE);
+    const existing = (await store.get(id)) as SyncQueueEntry | undefined;
+    if (!existing) {
+      await tx.done;
+      return;
+    }
+    await store.put({ ...existing, attempts }, id);
+    await tx.done;
+  } catch (error) {
+    console.error('Failed to update sync queue entry attempts:', error);
   }
 };
 

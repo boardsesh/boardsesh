@@ -30,6 +30,7 @@ import {
   registerSyncableKeys,
   setPreference,
   setPreferenceFromServer,
+  updateSyncQueueEntryAttempts,
   type SyncQueueSnapshotEntry,
   type UserPreferenceKeyMap,
 } from './user-preferences-db';
@@ -128,9 +129,18 @@ export async function pullInitial(authToken: string): Promise<void> {
 }
 
 /**
- * Drain pending sync ops to the server in FIFO order. Stops on the first
- * failure and leaves the rest queued for the next flush — the next online
- * event or pullInitial will pick them back up.
+ * Maximum times a single queue entry will be retried before being dropped.
+ * Prevents a single poison entry (e.g. malformed value the server rejects
+ * deterministically) from starving the queue indefinitely.
+ */
+const MAX_QUEUE_ENTRY_ATTEMPTS = 5;
+
+/**
+ * Drain pending sync ops to the server in FIFO order. On per-entry failure
+ * we increment that entry's attempts counter and skip past it so later
+ * entries can still flush — the next `online` event or `pullInitial` retries
+ * the failed entry. After `MAX_QUEUE_ENTRY_ATTEMPTS` failures we drop the
+ * poison entry with a warning rather than blocking the queue forever.
  */
 export async function pushQueueFlush(authToken: string): Promise<void> {
   if (!authToken) return;
@@ -138,11 +148,25 @@ export async function pushQueueFlush(authToken: string): Promise<void> {
   const snapshot = await getSyncQueueSnapshot();
   for (const entry of snapshot) {
     const succeeded = await sendQueueEntry(entry, authToken);
-    if (!succeeded) {
-      // Stop here — leave this entry and everything after it queued for retry.
-      return;
+    if (succeeded) {
+      await deleteSyncQueueEntry(entry.id);
+      continue;
     }
-    await deleteSyncQueueEntry(entry.id);
+
+    const previousAttempts = entry.attempts ?? 0;
+    const nextAttempts = previousAttempts + 1;
+    if (nextAttempts >= MAX_QUEUE_ENTRY_ATTEMPTS) {
+      console.warn(
+        `[user-preferences-sync] dropping poison queue entry after ${nextAttempts} attempts:`,
+        entry.op,
+        entry.key,
+      );
+      await deleteSyncQueueEntry(entry.id);
+      continue;
+    }
+    await updateSyncQueueEntryAttempts(entry.id, nextAttempts);
+    // Continue to the next entry — earlier behaviour returned here, which let
+    // a single failing entry block every later write indefinitely.
   }
 }
 

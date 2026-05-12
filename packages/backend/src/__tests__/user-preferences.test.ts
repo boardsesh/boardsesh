@@ -184,6 +184,45 @@ describe('setUserPreference mutation', () => {
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
+  it('should reject values larger than 8 KB when serialized', async () => {
+    setupInsertMock({ key: 'big', value: 'unused', updatedAt: FIXED_DATE });
+
+    // 9 KB string → ~9216 bytes after JSON quoting; exceeds the 8192-byte cap.
+    const fatPayload = 'x'.repeat(9 * 1024);
+
+    await expect(
+      userPreferencesMutations.setUserPreference({}, { input: { key: 'big', value: fatPayload } }, makeAuthCtx()),
+    ).rejects.toThrow();
+
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it('should reject non-JSON-serializable values (functions, undefined)', async () => {
+    setupInsertMock({ key: 'bad', value: 'unused', updatedAt: FIXED_DATE });
+
+    await expect(
+      userPreferencesMutations.setUserPreference({}, { input: { key: 'bad', value: () => 'oops' } }, makeAuthCtx()),
+    ).rejects.toThrow();
+
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it('should accept values right at the size cap', async () => {
+    setupInsertMock({ key: 'edge', value: 'unused', updatedAt: FIXED_DATE });
+
+    // JSON.stringify wraps a string in quotes, so a 8190-char string serializes
+    // to 8192 bytes — exactly the cap.
+    const justUnderCap = 'a'.repeat(8 * 1024 - 2);
+
+    await userPreferencesMutations.setUserPreference(
+      {},
+      { input: { key: 'edge', value: justUnderCap } },
+      makeAuthCtx(),
+    );
+
+    expect(mockDb.insert).toHaveBeenCalled();
+  });
+
   it('should accept namespaced keys with colon', async () => {
     setupInsertMock({ key: 'consent:analytics', value: true, updatedAt: FIXED_DATE });
 

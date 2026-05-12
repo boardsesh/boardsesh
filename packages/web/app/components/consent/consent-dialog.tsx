@@ -54,14 +54,22 @@ export default function ConsentDialog({ open, onClose, source = 'dialog' }: Prop
   }, [open, state.analytics, state.errorMonitoring]);
 
   const handleSave = async () => {
-    await saveCategories(
-      {
-        analytics: decisionFromSwitch(analyticsOn),
-        errorMonitoring: decisionFromSwitch(errorOn),
-      },
-      source,
-    );
-    onClose();
+    try {
+      await saveCategories(
+        {
+          analytics: decisionFromSwitch(analyticsOn),
+          errorMonitoring: decisionFromSwitch(errorOn),
+        },
+        source,
+      );
+    } catch (error) {
+      // saveCategories writes IDB + cookie + (best-effort) the backend sync
+      // queue. If any one of those throws, never trap the user inside the
+      // dialog — close anyway so they don't have to guess what went wrong.
+      console.warn('[consent-dialog] failed to save preferences:', error);
+    } finally {
+      onClose();
+    }
   };
 
   return (
@@ -152,7 +160,7 @@ export default function ConsentDialog({ open, onClose, source = 'dialog' }: Prop
         <Button onClick={onClose} variant="text">
           {t('dialog.actions.cancel')}
         </Button>
-        <Button onClick={handleSave} variant="contained">
+        <Button onClick={() => void handleSave()} variant="contained">
           {t('dialog.actions.save')}
         </Button>
       </DialogActions>
