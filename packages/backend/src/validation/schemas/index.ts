@@ -14,3 +14,4 @@ export * from './boards';
 export * from './gyms';
 export * from './feedback';
 export * from './user-preferences';
+export * from './consent-events';

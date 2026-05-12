@@ -675,7 +675,7 @@ export default function SettingsPageContent() {
           </CardContent>
         </Card>
 
-        <ConsentDialog open={consentDialogOpen} onClose={() => setConsentDialogOpen(false)} />
+        <ConsentDialog open={consentDialogOpen} onClose={() => setConsentDialogOpen(false)} source="settings" />
 
         <MuiDivider sx={{ my: 2 }} />
 

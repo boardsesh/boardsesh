@@ -52,6 +52,7 @@ import { feedbackMutations } from './feedback/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { userPreferencesQueries } from './userPreferences/queries';
 import { userPreferencesMutations } from './userPreferences/mutations';
+import { consentEventsMutations } from './consentEvents/mutations';
 import { isNoMatchClimb } from './shared/helpers';
 
 export const resolvers = {
@@ -112,6 +113,7 @@ export const resolvers = {
     ...sessionEditMutations,
     ...feedbackMutations,
     ...userPreferencesMutations,
+    ...consentEventsMutations,
   },
 
   Subscription: {

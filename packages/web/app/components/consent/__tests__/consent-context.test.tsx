@@ -12,6 +12,13 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
+// Spy on the rejection-event firing — we want to assert which sources fire
+// without actually hitting the GraphQL backend.
+const recordConsentRejectionSpy = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/app/lib/consent-events', () => ({
+  recordConsentRejection: (source: string) => recordConsentRejectionSpy(source),
+}));
+
 // LocaleLink calls useTranslation internally; the mock above covers it but we
 // stub it anyway so the link renders without next/link's app-router context.
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -61,6 +68,7 @@ beforeEach(async () => {
   await db.clear(META_STORE);
   await db.clear(QUEUE_STORE);
   db.close();
+  recordConsentRejectionSpy.mockClear();
 });
 
 afterEach(() => {
@@ -141,6 +149,76 @@ describe('ConsentProvider write paths', () => {
       expect(result.current.state.errorMonitoring).toBe('denied');
     });
     expect(result.current.isDecided).toBe(true);
+  });
+});
+
+describe('ConsentProvider rejection event firing', () => {
+  it('fires a banner-sourced event on rejectAll() with no source argument', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.rejectAll();
+    });
+
+    expect(recordConsentRejectionSpy).toHaveBeenCalledTimes(1);
+    expect(recordConsentRejectionSpy).toHaveBeenCalledWith('banner');
+  });
+
+  it('forwards the explicit source argument on rejectAll()', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.rejectAll('settings');
+    });
+
+    expect(recordConsentRejectionSpy).toHaveBeenCalledWith('settings');
+  });
+
+  it('does NOT fire on acceptAll()', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.acceptAll();
+    });
+
+    expect(recordConsentRejectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire on a partial deny via saveCategories', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.saveCategories({ analytics: 'granted', errorMonitoring: 'denied' });
+    });
+
+    expect(recordConsentRejectionSpy).not.toHaveBeenCalled();
+  });
+
+  it('fires a dialog-sourced event when saveCategories denies both', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.saveCategories({ analytics: 'denied', errorMonitoring: 'denied' });
+    });
+
+    expect(recordConsentRejectionSpy).toHaveBeenCalledTimes(1);
+    expect(recordConsentRejectionSpy).toHaveBeenCalledWith('dialog');
+  });
+
+  it('forwards the explicit source argument on saveCategories', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.saveCategories({ analytics: 'denied', errorMonitoring: 'denied' }, 'settings');
+    });
+
+    expect(recordConsentRejectionSpy).toHaveBeenCalledWith('settings');
   });
 });
 

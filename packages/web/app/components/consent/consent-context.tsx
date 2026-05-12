@@ -11,6 +11,7 @@ import {
   type ConsentDecision,
   type ConsentValue,
 } from '@/app/lib/consent';
+import { recordConsentRejection, type ConsentRejectionSource } from '@/app/lib/consent-events';
 import { useUserPreference } from '@/app/lib/user-preferences-hooks';
 
 /**
@@ -22,12 +23,18 @@ export type UseConsentResult = {
   isDecided: boolean;
   isLoading: boolean;
   acceptAll: () => Promise<void>;
-  rejectAll: () => Promise<void>;
+  rejectAll: (source?: ConsentRejectionSource) => Promise<void>;
   setCategory: (category: ConsentCategory, decision: ConsentDecision) => Promise<void>;
-  saveCategories: (categories: { analytics: ConsentDecision; errorMonitoring: ConsentDecision }) => Promise<void>;
+  saveCategories: (
+    categories: { analytics: ConsentDecision; errorMonitoring: ConsentDecision },
+    source?: ConsentRejectionSource,
+  ) => Promise<void>;
 };
 
 export type ConsentCategory = 'analytics' | 'errorMonitoring';
+
+const isFullRejection = (next: ConsentValue): boolean =>
+  next.analytics === 'denied' && next.errorMonitoring === 'denied';
 
 const CONSENT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year
 
@@ -120,14 +127,21 @@ export function ConsentProvider({
     });
   }, [persist]);
 
-  const rejectAll = useCallback(async () => {
-    await persist({
-      analytics: 'denied',
-      errorMonitoring: 'denied',
-      decidedAt: Date.now(),
-      version: CONSENT_POLICY_VERSION,
-    });
-  }, [persist]);
+  const rejectAll = useCallback(
+    async (source: ConsentRejectionSource = 'banner') => {
+      const next: ConsentValue = {
+        analytics: 'denied',
+        errorMonitoring: 'denied',
+        decidedAt: Date.now(),
+        version: CONSENT_POLICY_VERSION,
+      };
+      // Fire-and-forget — never block the UI on telemetry. The helper
+      // swallows its own errors.
+      void recordConsentRejection(source);
+      await persist(next);
+    },
+    [persist],
+  );
 
   const setCategory = useCallback(
     async (category: ConsentCategory, decision: ConsentDecision) => {
@@ -138,19 +152,32 @@ export function ConsentProvider({
         decidedAt: Date.now(),
         version: CONSENT_POLICY_VERSION,
       };
+      // setCategory has no source plumbing of its own; it's only used by the
+      // settings dialog today. Treat a "both denied" transition as a settings
+      // rejection.
+      if (isFullRejection(next) && !isFullRejection(baseline)) {
+        void recordConsentRejection('settings');
+      }
       await persist(next);
     },
     [persist, value, localOverride],
   );
 
   const saveCategories = useCallback(
-    async (categories: { analytics: ConsentDecision; errorMonitoring: ConsentDecision }) => {
-      await persist({
+    async (
+      categories: { analytics: ConsentDecision; errorMonitoring: ConsentDecision },
+      source: ConsentRejectionSource = 'dialog',
+    ) => {
+      const next: ConsentValue = {
         analytics: categories.analytics,
         errorMonitoring: categories.errorMonitoring,
         decidedAt: Date.now(),
         version: CONSENT_POLICY_VERSION,
-      });
+      };
+      if (isFullRejection(next)) {
+        void recordConsentRejection(source);
+      }
+      await persist(next);
     },
     [persist],
   );

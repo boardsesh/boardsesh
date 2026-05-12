@@ -23,6 +23,7 @@ import { controllerTypeDefs } from './controller';
 import { feedbackTypeDefs } from './feedback';
 import { betaLinksTypeDefs } from './beta-links';
 import { userPreferencesTypeDefs } from './user-preferences';
+import { consentEventsTypeDefs } from './consent-events';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -44,6 +45,7 @@ export const typeDefs = [
   newClimbFeedTypeDefs,
   betaLinksTypeDefs,
   userPreferencesTypeDefs,
+  consentEventsTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

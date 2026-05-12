@@ -559,6 +559,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     deleteUserPreference(key: String!): Boolean!
 
     # ============================================
+    # Consent Event Mutations (public, anonymous)
+    # ============================================
+
+    """
+    Record an anonymous consent-rejection event. Stores only a timestamp
+    and the source surface — no userId, no IP, no PII. Used to measure
+    consent-flow effectiveness in aggregate.
+    """
+    recordConsentRejection(input: RecordConsentRejectionInput!): Boolean!
+
+    # ============================================
     # App Feedback Mutations (public)
     # ============================================
 

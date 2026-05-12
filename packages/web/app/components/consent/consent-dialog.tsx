@@ -17,12 +17,19 @@ import Typography from '@mui/material/Typography';
 
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { ConsentDecision } from '@/app/lib/consent';
+import type { ConsentRejectionSource } from '@/app/lib/consent-events';
 
 import { useConsent } from './consent-context';
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  /**
+   * Where this dialog was opened from. Forwarded to the rejection-tracking
+   * event so we can tell whether users are rejecting from the first-touch
+   * banner customize flow vs the /settings entry. Defaults to `'dialog'`.
+   */
+  source?: ConsentRejectionSource;
 };
 
 const decisionFromSwitch = (checked: boolean): ConsentDecision => (checked ? 'granted' : 'denied');
@@ -32,7 +39,7 @@ const decisionFromSwitch = (checked: boolean): ConsentDecision => (checked ? 'gr
  * "Strictly necessary" block. The Cancel action lives in the dialog's
  * action row alongside Save so users can back out without writing.
  */
-export default function ConsentDialog({ open, onClose }: Props) {
+export default function ConsentDialog({ open, onClose, source = 'dialog' }: Props) {
   const { t } = useTranslation('consent');
   const { state, saveCategories } = useConsent();
 
@@ -47,10 +54,13 @@ export default function ConsentDialog({ open, onClose }: Props) {
   }, [open, state.analytics, state.errorMonitoring]);
 
   const handleSave = async () => {
-    await saveCategories({
-      analytics: decisionFromSwitch(analyticsOn),
-      errorMonitoring: decisionFromSwitch(errorOn),
-    });
+    await saveCategories(
+      {
+        analytics: decisionFromSwitch(analyticsOn),
+        errorMonitoring: decisionFromSwitch(errorOn),
+      },
+      source,
+    );
     onClose();
   };
 

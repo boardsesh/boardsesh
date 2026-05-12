@@ -21,3 +21,4 @@ export * from './controller';
 export * from './device-logging';
 export * from './feedback';
 export * from './user-preferences';
+export * from './consent-events';

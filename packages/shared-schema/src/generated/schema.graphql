@@ -3456,6 +3456,21 @@ input SetUserPreferenceInput {
   value: JSON!
 }
 
+# ============================================
+# Consent Events
+# ============================================
+
+"""
+Input for recording an anonymous consent-rejection event.
+Fired when a user picks (or flips to) a state that denies both
+analytics and error monitoring. Carries no PII — server records only
+the source surface and a timestamp.
+"""
+input RecordConsentRejectionInput {
+  "Which surface the rejection came from: 'banner', 'dialog', or 'settings'."
+  source: String!
+}
+
 """
 A recent beta link enriched with the parent climb's display name. Used
 by the home-page slider where multiple climbs are aggregated together.
@@ -4618,6 +4633,17 @@ type Mutation {
   Requires authentication.
   """
   deleteUserPreference(key: String!): Boolean!
+
+  # ============================================
+  # Consent Event Mutations (public, anonymous)
+  # ============================================
+
+  """
+  Record an anonymous consent-rejection event. Stores only a timestamp
+  and the source surface — no userId, no IP, no PII. Used to measure
+  consent-flow effectiveness in aggregate.
+  """
+  recordConsentRejection(input: RecordConsentRejectionInput!): Boolean!
 
   # ============================================
   # App Feedback Mutations (public)
