@@ -1,1 +1,40 @@
-{}
+{
+  "banner": {
+    "headline": "No te rastreamos por defecto.",
+    "body": "La analítica nos muestra qué funciona. Los reportes de errores nos ayudan a arreglar bugs. Tú decides en los dos.",
+    "actions": {
+      "acceptAll": "Aceptar todo",
+      "reject": "Rechazar",
+      "customize": "Personalizar"
+    }
+  },
+  "dialog": {
+    "title": "Cookies y analítica",
+    "intro": "Lo estrictamente necesario sigue activo para que la app funcione. El resto depende de ti.",
+    "essential": {
+      "title": "Estrictamente necesario",
+      "body": "Sesión de inicio, idioma, sesión de grupo. Siempre activas para que la app funcione.",
+      "status": "Siempre activo"
+    },
+    "analytics": {
+      "title": "Analítica de producto",
+      "body": "Miramos qué funciones se usan para saber qué construir después. Incluye PostHog y Vercel Analytics."
+    },
+    "errorMonitoring": {
+      "title": "Monitoreo de errores",
+      "body": "Sentry captura los fallos con la traza y la info del dispositivo necesaria para reproducirlos."
+    },
+    "footer": {
+      "privacyLink": "Leer la política de privacidad",
+      "noteOnErrors": "El monitoreo de errores se activa en la próxima carga de página."
+    },
+    "actions": {
+      "cancel": "Cancelar",
+      "save": "Guardar preferencias"
+    }
+  },
+  "settingsEntry": {
+    "title": "Cookies y analítica",
+    "subtitle": "Cambiar qué datos recoge Boardsesh"
+  }
+}

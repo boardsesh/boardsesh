@@ -26,9 +26,14 @@ if (shouldInitializeSentry) {
     // Enable logs to be sent to Sentry
     enableLogs: true,
 
-    // Enable sending user PII (Personally Identifiable Information)
+    // Don't send default PII (cookies, IP, auth headers, request bodies).
+    // Our privacy page describes the Sentry payload as "route, stack trace,
+    // and basic device info" — sending cookies and auth headers would
+    // overshoot that promise. The default Sentry surface (error, route,
+    // browser, OS) is still captured because Sentry collects that without
+    // `sendDefaultPii`.
     // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-    sendDefaultPii: true,
+    sendDefaultPii: false,
 
     // Filter out errors from browser extensions and third-party scripts
     beforeSend(event, hint) {

@@ -8,6 +8,7 @@ import MuiAvatar from '@mui/material/Avatar';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -654,25 +655,28 @@ export default function SettingsPageContent() {
         <MuiDivider sx={{ my: 2 }} />
 
         <Card variant="outlined" sx={{ borderRadius: 2 }}>
-          <CardContent
-            onClick={() => setConsentDialogOpen(true)}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 2,
-              cursor: 'pointer',
-              '&:hover': { bgcolor: 'action.hover' },
-            }}
-          >
-            <CookieOutlined color="action" />
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="subtitle2">{tConsent('settingsEntry.title')}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {tConsent('settingsEntry.subtitle')}
-              </Typography>
-            </Box>
-            <ChevronRightOutlined color="action" />
-          </CardContent>
+          {/* CardActionArea wraps the content in a button element with proper
+              tabIndex, role="button", Enter/Space activation, and focus ring.
+              Replaces a raw onClick on CardContent which wasn't keyboard-
+              reachable. */}
+          <CardActionArea onClick={() => setConsentDialogOpen(true)} aria-label={tConsent('settingsEntry.title')}>
+            <CardContent
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <CookieOutlined color="action" />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2">{tConsent('settingsEntry.title')}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {tConsent('settingsEntry.subtitle')}
+                </Typography>
+              </Box>
+              <ChevronRightOutlined color="action" />
+            </CardContent>
+          </CardActionArea>
         </Card>
 
         <ConsentDialog open={consentDialogOpen} onClose={() => setConsentDialogOpen(false)} source="settings" />

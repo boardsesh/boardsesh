@@ -82,8 +82,13 @@ describe('recordConsentRejection mutation', () => {
   it('rejects sources outside the enum without touching the DB', async () => {
     setupInsertMock();
 
+    // Cast through `unknown` — the TS input type now narrows `source` to the
+    // literal union, but the runtime Zod check still has to defend against
+    // malformed payloads that escape the type system (e.g. an unversioned
+    // client, a tampered request body).
+    const evilInput = { source: 'evil-source' } as unknown as { source: 'banner' | 'dialog' | 'settings' };
     await expect(
-      consentEventsMutations.recordConsentRejection({}, { input: { source: 'evil-source' } }, makeAnonCtx()),
+      consentEventsMutations.recordConsentRejection({}, { input: evilInput }, makeAnonCtx()),
     ).rejects.toThrow();
 
     expect(mockDb.insert).not.toHaveBeenCalled();

@@ -5,7 +5,7 @@ import Divider from '@mui/material/Divider';
 import Link from '@mui/material/Link';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import LocaleLink from '@/app/components/i18n/locale-link';
+import ConsentChangeParagraph from './consent-change-paragraph';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -53,13 +53,7 @@ export default async function PrivacyPolicyPage() {
 
       <Section title={t('privacy.consent.title')}>
         <Paragraph>{t('privacy.consent.body1')}</Paragraph>
-        <Paragraph>
-          {t('privacy.consent.body2Start')}
-          <Link component={LocaleLink} href="/settings">
-            {t('privacy.consent.settingsLink')}
-          </Link>
-          {t('privacy.consent.body2End')}
-        </Paragraph>
+        <ConsentChangeParagraph />
       </Section>
 
       <Section title={t('privacy.collect.title')}>

@@ -198,16 +198,18 @@ const enqueueSyncOp = async (db: IDBPDatabase, entry: SyncQueueEntry): Promise<v
   const store = tx.objectStore(QUEUE_STORE);
   await store.add(entry);
 
-  // Bound the queue size — drop oldest entries (lowest keys) when over the cap.
+  // Bound the queue size — drop the oldest entries (lowest autoIncrement
+  // keys) when over the cap. We use a direct `getAllKeys` + slice + delete
+  // batch rather than a cursor iteration: `getAllKeys` returns keys in
+  // insertion order, and a small slice deletion is easier to reason about
+  // than the cursor.continue() loop it replaces.
   const count = await store.count();
   if (count > SYNC_QUEUE_MAX_ENTRIES) {
     const overflow = count - SYNC_QUEUE_MAX_ENTRIES;
-    let cursor = await store.openCursor();
-    let removed = 0;
-    while (cursor && removed < overflow) {
-      await cursor.delete();
-      removed += 1;
-      cursor = await cursor.continue();
+    const orderedKeys = await store.getAllKeys();
+    const oldest = orderedKeys.slice(0, overflow);
+    for (const key of oldest) {
+      await store.delete(key);
     }
   }
   await tx.done;

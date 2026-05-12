@@ -490,9 +490,7 @@
     "consent": {
       "title": "Vos choix",
       "body1": "Deux choses sont opt-in et désactivées tant que vous ne les acceptez pas : l'analytique produit (Vercel Analytics et PostHog) et le monitoring d'erreurs (Sentry). L'app fonctionne sans l'un ni l'autre.",
-      "body2Start": "Vous pouvez changer d'avis à tout moment depuis ",
-      "settingsLink": "Paramètres",
-      "body2End": ". Le premier bandeau affiché propose les mêmes contrôles."
+      "body2": "Vous pouvez changer d'avis à tout moment depuis <a>Paramètres</a>. Le premier bandeau affiché propose les mêmes contrôles."
     },
     "collect": {
       "title": "Ce que nous collectons",

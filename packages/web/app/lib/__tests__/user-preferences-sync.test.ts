@@ -90,6 +90,31 @@ describe('setPreference / sync queue interaction', () => {
     expect(queue[1].op).toBe('delete');
     expect(queue[1].key).toBe('libraryTab');
   });
+
+  it('caps the sync queue at 100 entries, dropping the oldest on overflow', async () => {
+    // Drive 105 writes through a syncable key. Each setPreference enqueues
+    // a 'set' op; once we cross 100, every subsequent write should drop the
+    // oldest entry rather than letting the queue grow without bound.
+    for (let index = 0; index < 105; index += 1) {
+      await setPreference('libraryTab', index % 2 === 0 ? 'logbook' : 'playlists');
+    }
+
+    const queue = await getSyncQueueSnapshot();
+    expect(queue).toHaveLength(100);
+
+    // Snapshot is oldest-first by autoIncrement key. The first entry in the
+    // snapshot must correspond to write #5 (writes 0..4 got trimmed), and
+    // the last must correspond to write #104. Each entry's value alternates
+    // 'logbook' / 'playlists' by index parity.
+    const firstEntry = queue[0];
+    const lastEntry = queue[queue.length - 1];
+    if (firstEntry.op !== 'set' || lastEntry.op !== 'set') {
+      throw new Error('expected only set ops in the queue');
+    }
+    // index 5 is odd -> 'playlists'; index 104 is even -> 'logbook'.
+    expect(firstEntry.value).toBe('playlists');
+    expect(lastEntry.value).toBe('logbook');
+  });
 });
 
 describe('pullInitial', () => {
@@ -220,6 +245,39 @@ describe('pullInitial', () => {
   it('does no work when the auth token is empty', async () => {
     await pullInitial('');
     expect(executeGraphQLMock).not.toHaveBeenCalled();
+  });
+
+  it('does not block downstream writes when the GET stalls (5s timeout)', async () => {
+    // pullInitial wraps the GET in a 5s withTimeout. Mock executeGraphQL with
+    // a promise that never resolves; we expect pullInitial to reject the
+    // GET internally, swallow the error, and still return — and importantly,
+    // never throw to the caller.
+    let getCallResolve: (() => void) | undefined;
+    executeGraphQLMock.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // Hold the resolver so the await inside pullInitial sits on the
+          // unresolved promise. The withTimeout wrapper races against this
+          // and rejects after 5s; getCallResolve stays unused on purpose.
+          getCallResolve = () => {};
+        }),
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Use vitest fake timers so the test doesn't actually wait 5 real seconds.
+    vi.useFakeTimers();
+    const pullPromise = pullInitial(AUTH_TOKEN);
+    await vi.advanceTimersByTimeAsync(5_500);
+    vi.useRealTimers();
+
+    // The pullInitial promise must resolve (not throw) after the timeout fires.
+    await expect(pullPromise).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('pullInitial GET failed'), expect.anything());
+    // Reference getCallResolve to silence the unused-variable lint without
+    // changing the mock's semantics.
+    expect(getCallResolve).toBeDefined();
+
+    warnSpy.mockRestore();
   });
 });
 

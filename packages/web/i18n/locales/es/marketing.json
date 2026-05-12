@@ -111,9 +111,7 @@
     "consent": {
       "title": "Tus opciones",
       "body1": "Dos cosas son opt-in y están apagadas hasta que las aceptes: analítica de producto (Vercel Analytics y PostHog) y monitoreo de errores (Sentry). La app funciona sin ninguna de las dos.",
-      "body2Start": "Puedes cambiar de opinión en cualquier momento desde ",
-      "settingsLink": "Ajustes",
-      "body2End": ". El primer banner que ves tiene los mismos controles."
+      "body2": "Puedes cambiar de opinión en cualquier momento desde <a>Ajustes</a>. El primer banner que ves tiene los mismos controles."
     },
     "collect": {
       "title": "Qué recogemos",
