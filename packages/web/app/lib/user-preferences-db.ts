@@ -120,9 +120,13 @@ const getDB = async (): Promise<IDBPDatabase | null> => {
   return db;
 };
 
+let broadcastChannel: BroadcastChannel | null = null;
+let broadcastChannelCreated = false;
+
 // Test-only reset helper. Allows tests that mock `idb` to force a fresh
-// open against the new mock. Also resets the orphan-cleanup latch and the
-// BroadcastChannel singleton so each test starts from a clean slate.
+// open against the new mock. Also clears the orphan-cleanup latch and the
+// BroadcastChannel singleton so the next test's `getBroadcastChannel()`
+// builds a fresh channel against any swapped `globalThis.BroadcastChannel`.
 export const __resetDbPromiseForTests = (): void => {
   dbPromise = null;
   orphanCleanupPromise = null;
@@ -130,15 +134,12 @@ export const __resetDbPromiseForTests = (): void => {
     try {
       broadcastChannel.close();
     } catch {
-      // Already closed — ignore.
+      // ignore — channel may already be torn down
     }
   }
   broadcastChannel = null;
   broadcastChannelCreated = false;
 };
-
-let broadcastChannel: BroadcastChannel | null = null;
-let broadcastChannelCreated = false;
 
 const getBroadcastChannel = (): BroadcastChannel | null => {
   if (broadcastChannelCreated) return broadcastChannel;
@@ -318,6 +319,63 @@ export const setPreferenceFromServer = async (key: string, value: unknown, serve
     publishPreferenceChange({ type: 'set', key, value });
   } catch (error) {
     console.error('Failed to apply server preference:', error);
+  }
+};
+
+/**
+ * Silent variant of {@link removePreference} used when the sync engine
+ * observes that a preference is missing on the server. Deletes the local
+ * row and meta entry, broadcasts to other tabs, and intentionally skips
+ * the sync queue — otherwise we'd echo the delete back up and undo
+ * whatever device originally removed it.
+ */
+export const removePreferenceFromServer = async (key: string): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.delete(STORE_NAME, key);
+    await deleteMetaEntry(db, key);
+    publishPreferenceChange({ type: 'remove', key });
+  } catch (error) {
+    console.error('Failed to apply server preference deletion:', error);
+  }
+};
+
+/**
+ * IDB key under which we stash the timestamp of the most recent successful
+ * `pullInitial` round-trip. Lives in the meta store next to per-key
+ * timestamps; the leading double-underscore + colon namespace keeps it
+ * separate from real preference keys (which are constrained to
+ * `^[a-zA-Z][a-zA-Z0-9:_-]{0,63}$` by the backend regex — they can never
+ * start with `_`).
+ */
+const LAST_PULLED_AT_META_KEY = '__sync:lastPulledAt';
+
+/**
+ * Read the timestamp (ms) of the last successful pull from the backend.
+ * Returns 0 when this device has never pulled — callers should treat 0 as
+ * "any local pref absent from the server is brand-new, push it up".
+ */
+export const getLastSyncPulledAt = async (): Promise<number> => {
+  try {
+    const db = await getDB();
+    if (!db) return 0;
+    const entry = (await db.get(META_STORE, LAST_PULLED_AT_META_KEY)) as PreferenceMetaEntry | undefined;
+    if (!entry || typeof entry.updatedAt !== 'number') return 0;
+    return entry.updatedAt;
+  } catch (error) {
+    console.error('Failed to read lastPulledAt:', error);
+    return 0;
+  }
+};
+
+export const setLastSyncPulledAt = async (timestamp: number): Promise<void> => {
+  try {
+    const db = await getDB();
+    if (!db) return;
+    await db.put(META_STORE, { key: LAST_PULLED_AT_META_KEY, updatedAt: timestamp }, LAST_PULLED_AT_META_KEY);
+  } catch (error) {
+    console.error('Failed to write lastPulledAt:', error);
   }
 };
 

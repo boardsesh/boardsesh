@@ -15,7 +15,9 @@
  * always treat "no cookie yet" as a not-granted state.
  */
 
-export const CONSENT_COOKIE = 'boardsesh:consent';
+// RFC 6265 reserves `:` as a separator in cookie names; some intermediaries
+// (and a strict reading of the spec) reject it. Use a hyphen to stay safe.
+export const CONSENT_COOKIE = 'boardsesh-consent';
 export const CONSENT_POLICY_VERSION = 1;
 
 export type ConsentDecision = 'granted' | 'denied';
@@ -50,6 +52,12 @@ const flagToDecision = (flag: string | undefined): ConsentDecision | 'unknown' =
  * Serialize a {@link ConsentValue} into the compact cookie format
  * (`a=1&e=0&v=1`). Any field whose decision is `unknown` is omitted so
  * parsers can distinguish "never decided" from "decided as denied".
+ *
+ * Returned value is raw, NOT URI-encoded — every character used here is
+ * a cookie-value-legal byte per RFC 6265 (digits, `=`, `&`, `v`, `a`, `e`).
+ * The reader is symmetric: it does not decodeURIComponent. If the format
+ * ever expands to include reserved characters, encode here AND decode in
+ * `readBrowserCookie` — keep the two in lockstep.
  */
 export function serializeConsentCookie(value: ConsentValue): string {
   const parts: string[] = [];
@@ -102,13 +110,16 @@ export function parseConsentCookie(raw: string | null | undefined): ConsentValue
 const readBrowserCookie = (cookieName: string): string | null => {
   if (typeof document === 'undefined') return null;
   // document.cookie is a flat "k=v; k2=v2" string per RFC 6265.
+  // Read the raw value as-is — `serializeConsentCookie` writes a raw,
+  // unencoded string today. If the wire format ever uses reserved
+  // characters and the writer adds encodeURIComponent, decode here.
   const cookieJar = document.cookie;
   if (!cookieJar) return null;
   const prefix = `${cookieName}=`;
   for (const entry of cookieJar.split(';')) {
     const trimmed = entry.trim();
     if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length));
+      return trimmed.slice(prefix.length);
     }
   }
   return null;

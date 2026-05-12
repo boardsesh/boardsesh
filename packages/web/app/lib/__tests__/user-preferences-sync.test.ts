@@ -160,6 +160,63 @@ describe('pullInitial', () => {
     expect(libraryTabSet).toBeTruthy();
   });
 
+  it('honors a remote deletion: local pref absent from server AFTER a prior pull is removed locally, not re-pushed', async () => {
+    // First pull: server has libraryTab=logbook. Establishes lastPulledAt
+    // and lands the key locally.
+    const firstServerTimestamp = new Date(Date.now() - 60_000).toISOString();
+    executeGraphQLMock.mockImplementationOnce(async () => ({
+      userPreferences: [{ key: 'libraryTab', value: 'logbook', updatedAt: firstServerTimestamp }],
+    }));
+    executeGraphQLMock.mockResolvedValue({});
+    await pullInitial(AUTH_TOKEN);
+    expect(await getPreference('libraryTab')).toBe('logbook');
+
+    // Second pull, much later: server no longer reports libraryTab. We
+    // should drop it locally rather than re-push, because the previous
+    // pull saw the key — that means another device deleted it.
+    executeGraphQLMock.mockReset();
+    const mutationCalls: unknown[] = [];
+    executeGraphQLMock.mockImplementationOnce(async () => ({ userPreferences: [] }));
+    executeGraphQLMock.mockImplementation(async (doc: unknown, vars: unknown) => {
+      mutationCalls.push({ doc, vars });
+      return {};
+    });
+
+    await pullInitial(AUTH_TOKEN);
+
+    expect(await getPreference('libraryTab')).toBeNull();
+    // Critically: NO setUserPreference mutation should have been emitted
+    // for libraryTab — that would undo the remote delete.
+    const libraryTabSet = mutationCalls.find((call) => {
+      const typed = call as { doc: unknown; vars: { input?: { key?: string } } };
+      return typed.doc === SET_USER_PREFERENCE && typed.vars?.input?.key === 'libraryTab';
+    });
+    expect(libraryTabSet).toBeUndefined();
+  });
+
+  it('still pushes on first-ever pull (no previous lastPulledAt) when local has a pref the server lacks', async () => {
+    // Fresh device, no previous pull. Local has a value, server is empty.
+    // Without a prior lastPulledAt we can't distinguish "first-install
+    // local" from "remote-deleted", so we conservatively push.
+    await setPreference('libraryTab', 'logbook');
+
+    const mutationCalls: unknown[] = [];
+    executeGraphQLMock.mockImplementationOnce(async () => ({ userPreferences: [] }));
+    executeGraphQLMock.mockImplementation(async (doc: unknown, vars: unknown) => {
+      mutationCalls.push({ doc, vars });
+      return { setUserPreference: { key: 'libraryTab', value: 'logbook', updatedAt: new Date().toISOString() } };
+    });
+
+    await pullInitial(AUTH_TOKEN);
+
+    expect(await getPreference('libraryTab')).toBe('logbook');
+    const libraryTabSet = mutationCalls.find((call) => {
+      const typed = call as { doc: unknown; vars: { input?: { key?: string } } };
+      return typed.doc === SET_USER_PREFERENCE && typed.vars?.input?.key === 'libraryTab';
+    });
+    expect(libraryTabSet).toBeTruthy();
+  });
+
   it('does no work when the auth token is empty', async () => {
     await pullInitial('');
     expect(executeGraphQLMock).not.toHaveBeenCalled();

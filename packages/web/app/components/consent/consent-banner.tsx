@@ -33,6 +33,7 @@ export default function ConsentBanner() {
       <Box
         role="region"
         aria-label={t('banner.headline')}
+        data-testid="consent-banner"
         sx={(theme) => ({
           position: 'fixed',
           zIndex: Z_INDEX_CONSENT_BANNER,

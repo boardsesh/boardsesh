@@ -17,8 +17,18 @@ const shouldDebugAnalytics = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 function getPosthog(): PostHog | null {
   if (typeof window === 'undefined') return null;
   // Consent gate: if analytics is denied or undecided, refuse to construct
-  // the PostHog client. Evaluated BEFORE the `posthogInitAttempted` sticky
-  // check so that flipping consent to granted later still allows lazy init.
+  // the PostHog client AND refuse to return an existing one. The consent
+  // check is evaluated BEFORE the `posthogInitAttempted` sticky check so
+  // that flipping consent to granted later still allows lazy init.
+  //
+  // Caveat: when consent is revoked mid-session after a successful init,
+  // `posthogClient` keeps its in-memory state and any keep-alive HTTP/2
+  // connection until the page reloads. Future `track()` / `capture()`
+  // calls short-circuit here so no new events are emitted, but the client
+  // object itself is not torn down. Same caveat applies to Sentry (see
+  // instrumentation-client.ts) — both honor a fresh page load to fully
+  // detach. If we ever need synchronous teardown, switch to the full
+  // posthog-js SDK which exposes `posthog.reset()` + `opt_out_capturing()`.
   if (!hasAnalyticsConsent()) return null;
   if (posthogClient) return posthogClient;
   if (posthogInitAttempted) return null;

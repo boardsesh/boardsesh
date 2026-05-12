@@ -25,9 +25,12 @@ import {
 import {
   deleteSyncQueueEntry,
   getAllSyncablePreferences,
+  getLastSyncPulledAt,
   getPreferenceMeta,
   getSyncQueueSnapshot,
   registerSyncableKeys,
+  removePreferenceFromServer,
+  setLastSyncPulledAt,
   setPreference,
   setPreferenceFromServer,
   updateSyncQueueEntryAttempts,
@@ -83,9 +86,21 @@ const withTimeout = <T>(work: Promise<T>, timeoutMs: number, label: string): Pro
 
 /**
  * Pull every server-side preference, resolve conflicts against the local
- * meta timestamp (newer wins), then push any local syncable preferences
- * the server doesn't yet know about. Finally drains the queue so any
- * brand-new writes ride the same authenticated round-trip.
+ * meta timestamp (newer wins), then reconcile local-only preferences with
+ * the help of a `lastPulledAt` watermark to distinguish:
+ *
+ *  - "Server deleted this key on another device" — local pref was last
+ *    touched at or before the previous successful pull, and the server
+ *    doesn't have it now. Drop locally without enqueueing — otherwise
+ *    we'd undo the remote deletion on every login.
+ *
+ *  - "Brand-new local change the server hasn't seen yet" — local pref was
+ *    touched AFTER the previous successful pull, or no previous pull has
+ *    happened on this device. Push the value up via the normal
+ *    setPreference path so it lands on the server.
+ *
+ * Finally drains the queue so any brand-new writes ride the same
+ * authenticated round-trip.
  */
 export async function pullInitial(authToken: string): Promise<void> {
   if (!authToken) return;
@@ -102,6 +117,9 @@ export async function pullInitial(authToken: string): Promise<void> {
     return;
   }
 
+  const previousPulledAt = await getLastSyncPulledAt();
+  const nowForPull = Date.now();
+
   const serverEntries = response.userPreferences ?? [];
   const serverKeys = new Set<string>();
 
@@ -116,14 +134,29 @@ export async function pullInitial(authToken: string): Promise<void> {
     }
   }
 
-  // Orphan local preferences — present locally, absent on server — must be
-  // pushed up. We re-route them through setPreference so the standard write
-  // path (meta + queue + broadcast) does the bookkeeping.
+  // Reconcile keys present locally but absent on the server.
   const localSyncable = await getAllSyncablePreferences();
   for (const localEntry of localSyncable) {
     if (serverKeys.has(localEntry.key)) continue;
-    await setPreference(localEntry.key, localEntry.value as never);
+
+    const localMeta = await getPreferenceMeta(localEntry.key);
+    const localUpdatedAt = localMeta?.updatedAt ?? 0;
+
+    if (previousPulledAt > 0 && localUpdatedAt <= previousPulledAt) {
+      // The server had this key the last time we successfully pulled and
+      // now doesn't — another device deleted it. Honor the deletion
+      // locally without re-enqueueing it.
+      await removePreferenceFromServer(localEntry.key);
+    } else {
+      // Either this is the first pull this device has ever done (we can't
+      // tell apart a fresh-install local pref from a server-deleted one,
+      // so default to "keep + push"), or the local pref was written after
+      // the previous pull and the server hasn't seen it yet. Push it up.
+      await setPreference(localEntry.key, localEntry.value as never);
+    }
   }
+
+  await setLastSyncPulledAt(nowForPull);
 
   await pushQueueFlush(authToken);
 }

@@ -54,7 +54,7 @@ export default defineConfig({
     storageState: {
       cookies: [
         {
-          name: 'boardsesh:consent',
+          name: 'boardsesh-consent',
           value: 'a=0&e=0&v=1',
           domain: 'localhost',
           path: '/',
