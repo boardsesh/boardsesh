@@ -521,6 +521,35 @@ describe.skipIf(!redisAvailable)('DistributedStateManager - Multi-Instance', () 
     expect(leader).toBe('conn-concurrent-c');
   });
 
+  it('should re-elect leader across instances when removeConnection drops the leader', async () => {
+    // Mirrors the dead-connection sweep path: when an instance reaps a stale
+    // connection (vs. the client gracefully calling `leaveSession`), the
+    // remaining members on another instance must still see a new leader.
+    await manager1.registerConnection('cross-leader', 'Leader');
+    await manager1.joinSession('cross-leader', 'cross-remove-session');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await manager2.registerConnection('cross-member', 'Member');
+    await manager2.joinSession('cross-member', 'cross-remove-session');
+
+    const initialLeader = await manager2.getSessionLeader('cross-remove-session');
+    expect(initialLeader).toBe('cross-leader');
+
+    // Instance 1 reaps its own leader connection (e.g. heartbeat timeout sweep).
+    const result = await manager1.removeConnection('cross-leader');
+    expect(result.wasLeader).toBe(true);
+    expect(result.newLeaderId).toBe('cross-member');
+
+    const leader1 = await manager1.getSessionLeader('cross-remove-session');
+    const leader2 = await manager2.getSessionLeader('cross-remove-session');
+    expect(leader1).toBe('cross-member');
+    expect(leader2).toBe('cross-member');
+
+    const memberConn = await manager2.getConnection('cross-member');
+    expect(memberConn!.isLeader).toBe(true);
+  });
+
   it('should clean up connections when instance stops', async () => {
     // Register connection on instance 1
     await manager1.registerConnection('conn-k', 'UserK');

@@ -417,6 +417,7 @@ class RoomManager {
     return endSessionFn(
       sessionId,
       this.sessions,
+      this.sessionParticipants,
       this.redisStore,
       this.writeScheduler,
       this.sessionGraceTimers,

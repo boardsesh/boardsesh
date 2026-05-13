@@ -28,6 +28,40 @@ describe('persistent session event utils', () => {
       expect(result).toEqual([updatedUserA]);
       expect(result).toHaveLength(1);
     });
+
+    it('keeps the user in the list when transitioning to RECONNECTING', () => {
+      const reconnecting: SessionUser = { ...userA, connectionState: 'RECONNECTING' };
+      const result = upsertSessionUser([userA], reconnecting);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe('user-a');
+      expect(result[0]?.connectionState).toBe('RECONNECTING');
+    });
+
+    it('restores CONNECTED state without duplicating the user', () => {
+      const reconnecting: SessionUser = { ...userA, connectionState: 'RECONNECTING' };
+      const afterReconnect = upsertSessionUser([userA], reconnecting);
+      const restored: SessionUser = { ...userA, connectionState: 'CONNECTED' };
+      const result = upsertSessionUser(afterReconnect, restored);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.connectionState).toBe('CONNECTED');
+    });
+
+    it('merges new fields onto an existing RECONNECTING user', () => {
+      const reconnecting: SessionUser = { ...userA, connectionState: 'RECONNECTING' };
+      const afterReconnect = upsertSessionUser([userA], reconnecting);
+      const restored: SessionUser = {
+        id: 'user-a',
+        username: 'User A renamed',
+        avatarUrl: 'https://example.com/a.png',
+        isLeader: true,
+        connectionState: 'CONNECTED',
+      };
+      const result = upsertSessionUser(afterReconnect, restored);
+
+      expect(result).toEqual([restored]);
+    });
   });
 
   describe('insertQueueItemIdempotent', () => {

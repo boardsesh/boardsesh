@@ -266,7 +266,11 @@ export async function getSessionMembers(redis: Redis, sessionId: string): Promis
   return users;
 }
 
-async function getSessionParticipants(redis: Redis, sessionId: string, participantIds: string[]): Promise<SessionUser[]> {
+async function getSessionParticipants(
+  redis: Redis,
+  sessionId: string,
+  participantIds: string[],
+): Promise<SessionUser[]> {
   const pipeline = redis.pipeline();
   for (const participantId of participantIds) {
     pipeline.hgetall(KEYS.participant(sessionId, participantId));
@@ -326,15 +330,27 @@ async function getSessionParticipants(redis: Redis, sessionId: string, participa
       cleanup.del(KEYS.participant(sessionId, participantId));
       cleanup.del(KEYS.participantConnections(sessionId, participantId));
     }
-    cleanup.exec().catch(() => {});
+    cleanup.exec().catch((err) => {
+      console.error(
+        `[DistributedState] Failed to clean up ${staleParticipantIds.length} stale participant(s) for session ${sessionId}:`,
+        err,
+      );
+    });
   }
 
   if (staleConnectionsByParticipant.size > 0) {
     const cleanup = redis.multi();
+    let staleConnectionCount = 0;
     for (const [participantId, connectionIds] of staleConnectionsByParticipant) {
       cleanup.srem(KEYS.participantConnections(sessionId, participantId), ...connectionIds);
+      staleConnectionCount += connectionIds.length;
     }
-    cleanup.exec().catch(() => {});
+    cleanup.exec().catch((err) => {
+      console.error(
+        `[DistributedState] Failed to clean up ${staleConnectionCount} stale connection(s) across ${staleConnectionsByParticipant.size} participant(s) for session ${sessionId}:`,
+        err,
+      );
+    });
   }
 
   return users;

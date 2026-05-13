@@ -6,7 +6,7 @@ import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
 import type { WriteScheduler } from './write-scheduler';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
-import type { DiscoverableSession } from './types';
+import type { DiscoverableSession, LocalSessionParticipant } from './types';
 
 /**
  * Get a session by its ID from the database.
@@ -191,6 +191,7 @@ export async function getUserSessions(userId: string): Promise<Session[]> {
 export async function endSession(
   sessionId: string,
   sessionsMap: Map<string, Set<string>>,
+  sessionParticipants: Map<string, Map<string, LocalSessionParticipant>>,
   redisStore: RedisSessionStore | null,
   writeScheduler: WriteScheduler,
   sessionGraceTimers: Map<string, NodeJS.Timeout>,
@@ -204,6 +205,21 @@ export async function endSession(
   if (graceTimer) {
     clearTimeout(graceTimer);
     sessionGraceTimers.delete(sessionId);
+  }
+
+  // Cancel per-participant reconnect timers. Without this, a session ended
+  // while one or more participants are mid-reconnect leaves dangling 60s
+  // timers that will eventually fire removeParticipant on a session that's
+  // already deleted from Redis and Postgres.
+  const participants = sessionParticipants.get(sessionId);
+  if (participants) {
+    for (const participant of participants.values()) {
+      if (participant.reconnectTimer) {
+        clearTimeout(participant.reconnectTimer);
+        participant.reconnectTimer = undefined;
+      }
+    }
+    sessionParticipants.delete(sessionId);
   }
 
   // Await pending join persist
