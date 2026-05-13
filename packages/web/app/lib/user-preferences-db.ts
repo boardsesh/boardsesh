@@ -23,6 +23,10 @@ export type Esp32Connection = {
 export type UserPreferenceKeyMap = {
   libraryTab: 'playlists' | 'logbook';
   logbookPreferences: LogbookPreferences;
+  obsRecorderSettings: {
+    url: string;
+    textSourceName: string;
+  };
   'swipeHint:climbListSeen': boolean;
   'swipeHint:queueBarSeen': boolean;
   'swipeHint:logbookSeen': boolean;

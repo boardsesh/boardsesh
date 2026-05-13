@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import type { ClimbQueueItem } from '@/app/components/queue-control/types';
 import SeshSettingsDrawer from '../sesh-settings-drawer';
 
 vi.mock('react-i18next', () => ({
@@ -14,6 +15,7 @@ vi.mock('react-i18next', () => ({
 
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
+const mockShowMessage = vi.fn();
 let mockPathname = '/kilter/1/10/1,2/40/list';
 let mockActiveSession: Record<string, unknown> | null = {
   sessionId: 'session-123',
@@ -24,6 +26,22 @@ let mockSession: Record<string, unknown> | null = {
   name: 'Morning Sesh',
   goal: 'Send V5',
   startedAt: new Date(Date.now() - 30 * 60000).toISOString(),
+};
+const mockCurrentClimbQueueItem: ClimbQueueItem = {
+  uuid: 'queue-1',
+  climb: {
+    uuid: 'climb-1',
+    setter_username: 'setter',
+    name: 'Moon Ladder',
+    frames: '',
+    angle: 40,
+    ascensionist_count: 0,
+    difficulty: 'V5',
+    quality_average: '0',
+    stars: 0,
+    difficulty_error: '0',
+    benchmark_difficulty: null,
+  },
 };
 const mockDeactivateSession = vi.fn();
 let mockAngle: number | undefined = 40;
@@ -64,12 +82,14 @@ vi.mock('@/app/components/persistent-session/persistent-session-context', () => 
     activeSession: mockActiveSession,
     session: mockSession,
     users: [],
+    currentClimbQueueItem: mockCurrentClimbQueueItem,
     deactivateSession: mockDeactivateSession,
   }),
   usePersistentSessionState: () => ({
     activeSession: mockActiveSession,
     session: mockSession,
     users: [],
+    currentClimbQueueItem: mockCurrentClimbQueueItem,
   }),
   usePersistentSessionActions: () => ({
     deactivateSession: mockDeactivateSession,
@@ -141,7 +161,7 @@ vi.mock('@/app/lib/share-utils', () => ({
 }));
 
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
-  useSnackbar: () => ({ showMessage: vi.fn() }),
+  useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
 vi.mock('@/app/lib/session-utils', () => ({
@@ -156,10 +176,29 @@ vi.mock('@/app/components/board-page/angle-selector', () => ({
   default: () => null,
 }));
 
+vi.mock('../obs-recorder-panel', () => ({
+  default: ({
+    currentClimbQueueItem,
+    onRecordingActiveChange,
+  }: {
+    currentClimbQueueItem: ClimbQueueItem | null;
+    onRecordingActiveChange?: (active: boolean) => void;
+  }) => (
+    <div>
+      <h2>OBS recorder</h2>
+      <button>Connect OBS</button>
+      <span>{currentClimbQueueItem?.climb.name}</span>
+      <button onClick={() => onRecordingActiveChange?.(true)}>Mock recording active</button>
+      <button onClick={() => onRecordingActiveChange?.(false)}>Mock recording inactive</button>
+    </div>
+  ),
+}));
+
 vi.mock('@/app/session/[sessionId]/session-detail-content', () => ({
   default: ({
     onAngleChange,
     currentAngle,
+    inviteContent,
   }: {
     onAngleChange?: (angle: number) => void;
     currentAngle?: number;
@@ -170,6 +209,7 @@ vi.mock('@/app/session/[sessionId]/session-detail-content', () => ({
     namedBoardName?: string;
   }) => (
     <div data-testid="session-detail-content">
+      {inviteContent && <div data-testid="invite-content">{inviteContent}</div>}
       {onAngleChange && currentAngle != null && (
         <div data-testid="angle-controls">
           <span>Current: {currentAngle}</span>
@@ -241,6 +281,66 @@ describe('SeshSettingsDrawer', () => {
   it('renders session detail content', () => {
     render(<SeshSettingsDrawer open onClose={vi.fn()} />);
     expect(screen.getByTestId('session-detail-content')).toBeTruthy();
+  });
+
+  it('renders OBS recorder controls in live session invite content', () => {
+    render(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    expect(screen.getByTestId('invite-content')).toBeTruthy();
+    expect(screen.getByText('OBS recorder')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Connect OBS' })).toBeTruthy();
+    expect(screen.getByText('Moon Ladder')).toBeTruthy();
+  });
+
+  it('blocks session stop while OBS is recording', () => {
+    render(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Mock recording active'));
+    fireEvent.click(screen.getByLabelText('Stop session'));
+
+    expect(mockDeactivateSession).not.toHaveBeenCalled();
+    expect(mockClearClimbSessionCookie).not.toHaveBeenCalled();
+    expect(mockShowMessage).toHaveBeenCalledWith('Stop the OBS recording before ending the session.', 'warning');
+  });
+
+  it('allows session stop again after OBS recording becomes inactive', () => {
+    render(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Mock recording active'));
+    fireEvent.click(screen.getByText('Mock recording inactive'));
+    fireEvent.click(screen.getByLabelText('Stop session'));
+
+    expect(mockDeactivateSession).toHaveBeenCalled();
+    expect(mockClearClimbSessionCookie).toHaveBeenCalled();
+  });
+
+  it('allows session stop after the active session disappears while OBS was recording', () => {
+    const { rerender } = render(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Mock recording active'));
+
+    mockActiveSession = null;
+    rerender(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    mockActiveSession = {
+      sessionId: 'session-123',
+      boardPath: '/kilter/1/10/1,2/40/list',
+      sessionName: 'Test Session',
+    };
+    rerender(<SeshSettingsDrawer open onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText('Stop session'));
+
+    expect(mockDeactivateSession).toHaveBeenCalled();
+    expect(mockClearClimbSessionCookie).toHaveBeenCalled();
+    expect(mockShowMessage).not.toHaveBeenCalledWith('Stop the OBS recording before ending the session.', 'warning');
+  });
+
+  it('does not render OBS recorder controls in tour preview content', () => {
+    render(<SeshSettingsDrawer open onClose={vi.fn()} tourMockSession={mockSessionDetail as never} />);
+
+    expect(screen.queryByText('OBS recorder')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect OBS' })).toBeNull();
   });
 
   it('opens as a bottom drawer', () => {
@@ -331,6 +431,7 @@ describe('SeshSettingsDrawer', () => {
       fireEvent.click(screen.getByLabelText('Stop session'));
       expect(screen.getByLabelText('Dismiss')).toBeTruthy();
       expect(screen.queryByLabelText('Stop session')).toBeNull();
+      expect(screen.queryByText('OBS recorder')).toBeNull();
     });
 
     it('calls onClose when Dismiss is clicked', () => {

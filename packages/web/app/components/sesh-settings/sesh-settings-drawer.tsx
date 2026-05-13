@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
 import StopCircleOutlined from '@mui/icons-material/StopCircleOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import IosShare from '@mui/icons-material/IosShare';
@@ -29,6 +30,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import type { SessionDetail } from '@boardsesh/shared-schema';
 import { generateSessionName } from '@/app/lib/session-utils';
 import SessionDetailContent from '@/app/session/[sessionId]/session-detail-content';
+import ObsRecorderPanel from './obs-recorder-panel';
 
 const getShareUrl = (sessionId: string | null) => {
   try {
@@ -69,7 +71,7 @@ export default function SeshSettingsDrawer({
   tourActiveSection,
 }: SeshSettingsDrawerProps) {
   const { t } = useTranslation('session');
-  const { activeSession, session, users, deactivateSession } = usePersistentSession();
+  const { activeSession, session, users, deactivateSession, currentClimbQueueItem } = usePersistentSession();
   const { boardDetails, angle } = useQueueBridgeBoardInfo();
   const router = useLocaleRouter();
   const pathname = usePathname();
@@ -78,6 +80,7 @@ export default function SeshSettingsDrawer({
   const { showMessage } = useSnackbar();
   const sessionBoardDetails = activeSession?.boardDetails ?? boardDetails;
   const [isStopped, setIsStopped] = useState(false);
+  const [obsRecordingActive, setObsRecordingActive] = useState(false);
 
   const { paperRef, dragHandlers } = useDrawerDragResize({
     open,
@@ -125,15 +128,26 @@ export default function SeshSettingsDrawer({
   );
 
   const handleStopSession = useCallback(() => {
+    if (obsRecordingActive) {
+      showMessage(t('settings.recorder.stopRecordingBeforeSessionEnd'), 'warning');
+      return;
+    }
+
     deactivateSession();
     clearClimbSessionCookie();
     setIsStopped(true);
-  }, [deactivateSession]);
+  }, [deactivateSession, obsRecordingActive, showMessage, t]);
 
   const handleClose = useCallback(() => {
     setIsStopped(false);
     onClose();
   }, [onClose]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      setObsRecordingActive(false);
+    }
+  }, [activeSession]);
 
   const {
     session: sessionDetail,
@@ -222,6 +236,11 @@ export default function SeshSettingsDrawer({
     ? displaySession.sessionName || generateSessionName(displaySession.firstTickAt, displaySession.boardTypes)
     : t('settings.fallbackTitle');
 
+  const recorderContent =
+    tourMockSession || !activeSession || isStopped ? null : (
+      <ObsRecorderPanel currentClimbQueueItem={currentClimbQueueItem} onRecordingActiveChange={setObsRecordingActive} />
+    );
+
   let inviteContent: React.ReactNode;
   if (tourMockSession) {
     inviteContent = (
@@ -268,6 +287,18 @@ export default function SeshSettingsDrawer({
     );
   } else {
     inviteContent = undefined;
+  }
+
+  if (recorderContent) {
+    inviteContent = inviteContent ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        {inviteContent}
+        <Divider />
+        {recorderContent}
+      </Box>
+    ) : (
+      recorderContent
+    );
   }
 
   if (!activeSession && !tourMockSession && !isStopped) return null;
