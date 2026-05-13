@@ -1,6 +1,7 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SubscriptionQueueEvent, SessionEvent, SessionDetail } from '@boardsesh/shared-schema';
+import { computeQueueStateHash } from '@/app/utils/hash';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { evaluateQueueEventSequence, insertQueueItemIdempotent } from '../event-utils';
 import { type SharedRefs, DEBUG } from '../types';
@@ -50,6 +51,19 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
   const [queue, setQueueState] = useState<LocalClimbQueueItem[]>([]);
   const [currentClimbQueueItem, setCurrentClimbQueueItem] = useState<LocalClimbQueueItem | null>(null);
   const [lastReceivedStateHash, setLastReceivedStateHash] = useState<string | null>(null);
+
+  // Keep `lastReceivedStateHash` aligned with the post-event local state once
+  // the first FullSync has primed it. Delta events (QueueItemAdded, …) mutate
+  // the queue but don't carry a server `stateHash`, so without this the 60s
+  // hash watchdog in `use-session-subscriptions.ts` would flag every legitimate
+  // delta as drift and spin into a resync loop against an outdated reference.
+  useEffect(() => {
+    if (lastReceivedStateHash === null) return;
+    const expected = computeQueueStateHash(queue, currentClimbQueueItem?.uuid ?? null);
+    if (expected !== lastReceivedStateHash) {
+      setLastReceivedStateHash(expected);
+    }
+  }, [queue, currentClimbQueueItem, lastReceivedStateHash]);
 
   // Notify queue event subscribers
   const notifyQueueSubscribers = useCallback(

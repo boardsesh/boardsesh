@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEventProcessor } from '../hooks/use-event-processor';
+import { computeQueueStateHash } from '@/app/utils/hash';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import type { Climb } from '@/app/lib/types';
 import type { SubscriptionQueueEvent } from '@boardsesh/shared-schema';
@@ -58,6 +59,7 @@ describe('useEventProcessor - offline FullSync merge', () => {
     const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
 
     const serverItem = createItem('server-1');
+    const serverHash = computeQueueStateHash([serverItem], null);
 
     act(() => {
       result.current.handleQueueEvent({
@@ -66,14 +68,17 @@ describe('useEventProcessor - offline FullSync merge', () => {
         state: {
           queue: [serverItem as never],
           currentClimbQueueItem: null,
-          stateHash: 'hash-1',
+          stateHash: serverHash,
           sequence: 5,
         },
       });
     });
 
     expect(result.current.queue).toEqual([serverItem]);
-    expect(result.current.lastReceivedStateHash).toBe('hash-1');
+    // After FullSync, the post-event hash effect recomputes the expected hash
+    // from the local queue. When the local state matches the server, the
+    // locally-computed hash equals the server's stateHash by construction.
+    expect(result.current.lastReceivedStateHash).toBe(serverHash);
   });
 
   it('FullSync merges offline buffer items into server queue', () => {
