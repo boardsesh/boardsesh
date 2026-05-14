@@ -30,6 +30,8 @@ describe('toLogbookEntry', () => {
       tries: 1,
       quality: 3,
       difficulty: 12,
+      // No `effectiveDifficulty` on the source tick → falls back to the raw override.
+      effectiveDifficulty: 12,
       comment: 'nice',
       climbed_at: '2026-05-30T00:00:00.000Z',
       is_ascent: true,
@@ -60,6 +62,27 @@ describe('toLogbookEntry', () => {
     expect(entry.upvotes).toBe(0);
     expect(entry.downvotes).toBe(0);
     expect(entry.commentCount).toBe(0);
+  });
+
+  it('keeps a server-provided effectiveDifficulty when the user override is null', () => {
+    // `userTicks` (profile/`/you`) supplies `effectiveDifficulty` from the
+    // climb's consensus grade even when the user logged no personal override.
+    const entry = toLogbookEntry({
+      uuid: 'tick-consensus',
+      climbUuid: 'climb-consensus',
+      angle: 40,
+      isMirror: false,
+      status: 'send',
+      attemptCount: 1,
+      quality: null,
+      difficulty: null,
+      effectiveDifficulty: 7,
+      comment: '',
+      climbedAt: '2026-05-30T00:00:00.000Z',
+    });
+
+    expect(entry.difficulty).toBeNull();
+    expect(entry.effectiveDifficulty).toBe(7);
   });
 
   it('preserves provided vote and comment counts', () => {
@@ -95,6 +118,7 @@ describe('mergeLogbookEntries', () => {
     tries: 1,
     quality: null,
     difficulty: null,
+    effectiveDifficulty: null,
     comment: '',
     climbed_at: '2026-05-30T00:00:00.000Z',
     is_ascent: true,

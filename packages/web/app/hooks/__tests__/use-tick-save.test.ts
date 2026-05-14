@@ -92,6 +92,7 @@ function makeLogbookEntry(overrides: Partial<LogbookEntry> = {}): LogbookEntry {
     tries: 1,
     quality: null,
     difficulty: null,
+    effectiveDifficulty: null,
     comment: '',
     climbed_at: '2025-01-01T00:00:00Z',
     is_ascent: false,

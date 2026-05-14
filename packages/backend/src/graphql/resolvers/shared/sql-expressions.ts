@@ -63,6 +63,28 @@ export const difficultyNameWithFallbackExpr = sql<string | null>`COALESCE(
 export const consensusDifficultyExpr = sql<number | null>`ROUND(${dbSchema.boardClimbStats.displayDifficulty})`;
 
 /**
+ * The "effective" grade id for a tick: the user's logged override when present,
+ * otherwise the climb's consensus grade. NULL difficulty in `boardseshTicks`
+ * means "use consensus" — see docs/ascents-and-attempts.md.
+ *
+ * ## Required tables / joins
+ *
+ * - `boardseshTicks` must be in the FROM clause (the override side of the
+ *   COALESCE).
+ * - `boardClimbStats` must be LEFT JOINed on (climbUuid, boardType, angle) —
+ *   otherwise `consensusDifficultyExpr` resolves to NULL and the COALESCE
+ *   silently degrades to the user-override-only behaviour, hiding ungraded
+ *   ticks from grade-range filters and per-grade aggregates.
+ *
+ * Drizzle's SQL-template type can't encode the join requirement, so this
+ * comment is the contract — keep `boardClimbStats` joined wherever this
+ * expression is used.
+ */
+export const effectiveDifficultyExpr = sql<
+  number | null
+>`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
+
+/**
  * Number of non-deleted comments targeting each tick, as a correlated
  * subquery.
  *

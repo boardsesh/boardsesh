@@ -3,11 +3,25 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { track } from '@/app/lib/analytics';
 import { hasPriorHistoryForClimb as _hasPriorHistoryForClimb } from '@boardsesh/play-view';
-import type { Climb, BoardDetails, Angle } from '@/app/lib/types';
+import type { Climb, BoardDetails, Angle, BoardName } from '@/app/lib/types';
 import { useBoardProvider } from '../components/board-provider/board-provider-context';
 import type { LogbookEntry, TickStatus } from '@boardsesh/board-react';
+import { getGradesForBoard, type BoulderGrade } from '@/app/lib/board-data';
 import { useConfetti } from './use-confetti';
 import { saveTickDraft, clearTickDraft } from '@/app/lib/tick-draft-db';
+
+/**
+ * Resolve the climb's consensus grade *id* (numeric) from its consensus grade
+ * *name* (string on `Climb.difficulty`). Used to seed the optimistic logbook
+ * entry's `effectiveDifficulty` when the user hasn't picked a personal grade
+ * override — keeps charts from rendering the optimistic row gradeless. Returns
+ * null when the climb has no consensus or the name doesn't match a known grade.
+ */
+function resolveConsensusGradeId(climb: Climb, boardName: BoardName): number | null {
+  if (!climb.difficulty) return null;
+  const grades = getGradesForBoard(boardName);
+  return grades.find((grade: BoulderGrade) => grade.difficulty_name === climb.difficulty)?.difficulty_id ?? null;
+}
 
 /** Snapshot of the tick target taken when the bar is first opened with a valid climb. */
 export type TickTarget = {
@@ -147,6 +161,7 @@ export function useTickSave(options: UseTickSaveOptions): {
         attemptCount,
         quality: quality ?? undefined,
         difficulty,
+        consensusDifficulty: resolveConsensusGradeId(climb, targetBoard.board_name),
         isBenchmark: false,
         comment: comment || '',
         climbedAt: new Date().toISOString(),

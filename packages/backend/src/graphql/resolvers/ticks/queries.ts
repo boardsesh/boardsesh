@@ -7,6 +7,7 @@ import {
   consensusDifficultyNameExpr,
   consensusDifficultyExpr,
   difficultyNameWithFallbackExpr,
+  effectiveDifficultyExpr,
   consensusGradeTable,
   consensusGradeJoinCondition,
 } from '../shared/sql-expressions';
@@ -150,9 +151,7 @@ export const tickQueries = {
       .select({
         tick: dbSchema.boardseshTicks,
         layoutId: dbSchema.boardClimbs.layoutId,
-        effectiveDifficulty: sql<
-          number | null
-        >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`,
+        effectiveDifficulty: effectiveDifficultyExpr,
       })
       .from(dbSchema.boardseshTicks)
       // Resolve dedup-merged climbs to their canonical UUID before joining
@@ -283,8 +282,8 @@ export const tickQueries = {
 
     // Filter on the effective difficulty (user override → consensus fallback) so
     // a grade-range filter doesn't silently hide ungraded ascents whose consensus
-    // is in range. See docs/ascents-and-attempts.md.
-    const effectiveDifficultyExpr = sql<number>`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
+    // is in range. See docs/ascents-and-attempts.md. The boardClimbStats LEFT JOIN
+    // below is required by `effectiveDifficultyExpr`.
 
     // Build shared WHERE conditions
     const tickConditions = [
@@ -876,12 +875,9 @@ export const tickQueries = {
 
     // Helper function to fetch stats for a single board type
     const fetchBoardStats = async (boardType: BoardName) => {
-      // COALESCE the tick's own difficulty with the climb's consensus difficulty so a
-      // tick logged without a user-picked grade still buckets into the consensus grade
-      // (a NULL stored value means "use consensus" — see the matching join in userTicks).
-      const effectiveDifficultyExpr = sql<
-        number | null
-      >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
+      // `effectiveDifficultyExpr` (shared) buckets a NULL-difficulty tick under
+      // the climb's consensus grade. The boardClimbStats LEFT JOIN below is the
+      // matching precondition for that expression.
 
       const baseConditions = and(
         eq(dbSchema.boardseshTicks.userId, userId),

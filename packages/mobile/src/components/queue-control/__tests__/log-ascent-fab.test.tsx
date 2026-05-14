@@ -114,6 +114,7 @@ function makeSendEntry(over: Partial<LogbookEntry> = {}): LogbookEntry {
     tries: 2,
     quality: 3,
     difficulty: 22,
+    effectiveDifficulty: 22,
     comment: '',
     climbed_at: '2025-01-01T00:00:00Z',
     is_ascent: true,
@@ -141,7 +142,13 @@ describe('LogAscentFab', () => {
   });
 
   it('opens the log-ascent sheet with the expected payload when tapped', () => {
-    const climb = makeClimb({ uuid: 'climb-123', angle: 40, difficulty: 'V5', mirrored: true, benchmark_difficulty: 'V6' });
+    const climb = makeClimb({
+      uuid: 'climb-123',
+      angle: 40,
+      difficulty: 'V5',
+      mirrored: true,
+      benchmark_difficulty: 'V6',
+    });
     drawer.boardConfig = makeBoardConfig({ boardName: 'tension', layoutId: 8, sizeId: 17, setIds: '26,27' });
     queue.sessionId = 'sess-42';
 

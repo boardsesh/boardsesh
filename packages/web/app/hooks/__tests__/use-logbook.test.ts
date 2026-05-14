@@ -158,6 +158,9 @@ describe('useLogbook', () => {
       tries: 3,
       quality: 4,
       difficulty: 10,
+      // `ticks` query doesn't return `effectiveDifficulty`; toLogbookEntry
+      // falls back to the raw override.
+      effectiveDifficulty: 10,
       comment: 'Nice climb',
       climbed_at: '2024-01-01',
       is_ascent: true,
@@ -427,6 +430,7 @@ describe('useLogbook', () => {
       tries: 1,
       quality: null,
       difficulty: null,
+      effectiveDifficulty: null,
       comment: 'optimistic',
       climbed_at: '2024-02-01',
       is_ascent: true,

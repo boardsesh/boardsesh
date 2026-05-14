@@ -85,12 +85,20 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   // submit button is disabled until the user picks one in the angle Select.
   const effectiveAngle = useEffectiveAngle(currentClimb);
 
+  // Climb's consensus grade id (numeric). Used to seed the initial difficulty
+  // override AND passed to `saveTick` so the optimistic logbook entry's
+  // `effectiveDifficulty` is non-null when the user clears the override.
+  const consensusDifficultyId = useMemo(
+    () => grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id ?? null,
+    [grades, currentClimb?.difficulty],
+  );
+
   const getInitialValues = (): LogAscentFormValues => ({
     date: dayjs(),
     angle: effectiveAngle,
     attempts: 1,
     quality: 0,
-    difficulty: grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id,
+    difficulty: consensusDifficultyId ?? undefined,
   });
 
   const [formValues, setFormValues] = useState<LogAscentFormValues>(getInitialValues);
@@ -196,6 +204,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         attemptCount: values.attempts,
         quality: logType === 'ascent' && values.quality ? values.quality : undefined,
         difficulty: logType === 'ascent' ? values.difficulty : undefined,
+        consensusDifficulty: consensusDifficultyId,
         isBenchmark: false,
         comment: values.notes || '',
         climbedAt: values.date.toISOString(),

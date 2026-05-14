@@ -11,6 +11,12 @@ export type SaveTickOptions = {
   attemptCount: number;
   quality?: number | null;
   difficulty?: number | null;
+  // Climb's consensus grade id, looked up client-side from board grade tables.
+  // Used only to seed the optimistic entry's `effectiveDifficulty` so a tick
+  // logged without a personal grade override (`difficulty` undefined) doesn't
+  // appear gradeless in chart consumers between optimistic insert and the
+  // server response. Not forwarded to the GraphQL mutation.
+  consensusDifficulty?: number | null;
   isBenchmark: boolean;
   comment: string;
   climbedAt: string;
@@ -31,6 +37,7 @@ export function buildOptimisticTickEntry(options: SaveTickOptions, tempUuid: str
     tries: options.attemptCount,
     quality: options.quality ?? null,
     difficulty: options.difficulty ?? null,
+    effectiveDifficulty: options.difficulty ?? options.consensusDifficulty ?? null,
     comment: options.comment,
     climbed_at: options.climbedAt,
     is_ascent: options.status === 'flash' || options.status === 'send',

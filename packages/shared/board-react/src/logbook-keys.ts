@@ -14,6 +14,11 @@ export type LogbookEntry = {
   tries: number;
   quality: number | null;
   difficulty: number | null;
+  // COALESCE(difficulty, climb consensus). Mirrors the backend `effectiveDifficulty`
+  // field — chart/aggregate consumers should prefer this so a NULL-difficulty
+  // tick still buckets at the climb's consensus grade. Null when neither the
+  // user nor the climb has a grade. See docs/ascents-and-attempts.md.
+  effectiveDifficulty: number | null;
   comment: string;
   climbed_at: string;
   is_ascent: boolean;
@@ -46,6 +51,7 @@ export type LogbookSourceTick = {
   attemptCount: number;
   quality: number | null;
   difficulty: number | null;
+  effectiveDifficulty?: number | null;
   comment: string;
   climbedAt: string;
   upvotes?: number | null;
@@ -62,6 +68,10 @@ export function toLogbookEntry(tick: LogbookSourceTick): LogbookEntry {
     tries: tick.attemptCount,
     quality: tick.quality,
     difficulty: tick.difficulty,
+    // The `ticks` GraphQL query (used by `useLogbook`'s fetch path) doesn't
+    // select `effectiveDifficulty`, so fall back to the raw override here.
+    // `userTicks` (profile/`/you`) sets it explicitly server-side.
+    effectiveDifficulty: tick.effectiveDifficulty ?? tick.difficulty ?? null,
     comment: tick.comment,
     climbed_at: tick.climbedAt,
     is_ascent: tick.status === 'flash' || tick.status === 'send',
