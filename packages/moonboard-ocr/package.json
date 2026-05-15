@@ -46,7 +46,7 @@
     "vitest": "^4.1.5"
   },
   "optionalDependencies": {
-    "canvas": "^3.2.1"
+    "canvas": "^3.2.3"
   },
   "engines": {
     "node": ">=18"
