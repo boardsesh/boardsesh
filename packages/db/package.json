@@ -67,7 +67,7 @@
   "dependencies": {
     "@boardsesh/board-constants": "*",
     "@boardsesh/shared-schema": "*",
-    "@hangtime/climbing-boards": "^1.0.6",
+    "@hangtime/climbing-boards": "^1.0.36",
     "drizzle-orm": "^0.45.1",
     "postgres": "^3.4.8"
   },

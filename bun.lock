@@ -117,7 +117,7 @@
       "dependencies": {
         "@boardsesh/board-constants": "*",
         "@boardsesh/shared-schema": "*",
-        "@hangtime/climbing-boards": "^1.0.6",
+        "@hangtime/climbing-boards": "^1.0.36",
         "drizzle-orm": "^0.45.1",
         "postgres": "^3.4.8",
       },
@@ -697,7 +697,7 @@
 
     "@graphql-yoga/typed-event-target": ["@graphql-yoga/typed-event-target@3.0.2", "", { "dependencies": { "@repeaterjs/repeater": "^3.0.4", "tslib": "^2.8.1" } }, "sha512-ZpJxMqB+Qfe3rp6uszCQoag4nSw42icURnBRfFYSOmTgEeOe4rD0vYlbA8spvCu2TlCesNTlEN9BLWtQqLxabA=="],
 
-    "@hangtime/climbing-boards": ["@hangtime/climbing-boards@1.0.6", "", { "dependencies": { "@powersync/node": "^0.18.3", "@turf/turf": "^7.3.4", "dotenv": "^17.4.0", "user-agents": "^2.1.19" } }, "sha512-FukKn9AFIsXqy/v912a3VlDXneIVNJayUJJ5GnD99Q6fSwrh/PubLj6bBAoWDnIZXJff4o/OjvxyJ8XnFDSV8Q=="],
+    "@hangtime/climbing-boards": ["@hangtime/climbing-boards@1.0.36", "", { "dependencies": { "@powersync/node": "^0.18.3", "@turf/turf": "^7.3.4", "dotenv": "^17.4.0", "user-agents": "^2.1.19" } }, "sha512-Bbqup3pHGGvO7gls/4bnNwBNbISrw/pz2eWd5czGn7Ce1dz3LcnVj4lUuJMYXnA3BbSH+s1/1lQgoZQos9yq2g=="],
 
     "@img/colour": ["@img/colour@1.0.0", "", {}, "sha512-A5P/LfWGFSl6nsckYtjw9da+19jB8hkJ6ACTGcDfEJ0aE+l2n2El7dsVM7UVHZQ9s2lmYMWlrS21YLy2IR1LUw=="],
 
