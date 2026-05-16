@@ -17,6 +17,10 @@ export default defineConfig({
       typeCheck: true,
     },
     overrides: [
+      // Backend uses the winston logger at packages/backend/src/utils/logger.ts.
+      // Block all console.* in production code; allow warn/error/info in tests
+      // (test infra emits orchestration noise via console).
+      // See docs/logging.md and commit f91697a.
       {
         files: ['packages/backend/src/**/*.ts'],
         rules: {
