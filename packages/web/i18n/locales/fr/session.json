@@ -208,7 +208,8 @@
     "endMessage": "C'est tout pour l'instant"
   },
   "queueProvider": {
-    "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs."
+    "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs.",
+    "rateLimitCatchUp": "Doucement — on rattrape…"
   },
   "playView": {
     "yourAscents_one": "Ton ascension ({{count}})",

@@ -19,6 +19,7 @@ import { useSnackbar } from '../providers/snackbar-provider';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
 import { trackQueueOperation, trackQueueOperationError, type QueueOperationMode } from '@/app/lib/queue-metrics';
 
+import { onRateLimited } from './rate-limit-error';
 import { useSessionIdManagement } from './hooks/use-session-id-management';
 import { useQueueRestoration } from './hooks/use-queue-restoration';
 import { useQueueEventSubscription } from './hooks/use-queue-event-subscription';
@@ -171,6 +172,22 @@ export const GraphQLQueueProvider = ({
       showMessage(t('queueProvider.offlineLimitReached'), 'warning');
     }
   }, [rawOfflineBuffer.isBufferFull, showMessage, t]);
+
+  // Surface a calmer toast when a mutation hits the rate limit and is being
+  // retried. Stay silent on the first retry (most reconciliation hiccups
+  // recover in one round); only toast if a *second* retry is needed. Debounce
+  // so a flurry of rate-limited mutations doesn't spam the snackbar.
+  const lastRateLimitToastRef = useRef(0);
+  useEffect(() => {
+    const RATE_LIMIT_TOAST_DEBOUNCE_MS = 3000;
+    return onRateLimited((_err, attempt) => {
+      if (attempt < 2) return;
+      const now = Date.now();
+      if (now - lastRateLimitToastRef.current < RATE_LIMIT_TOAST_DEBOUNCE_MS) return;
+      lastRateLimitToastRef.current = now;
+      showMessage(t('queueProvider.rateLimitCatchUp'), 'info');
+    });
+  }, [showMessage, t]);
 
   // --- Offline reconciliation (push buffered additions on reconnect) ---
   useOfflineReconciliation({

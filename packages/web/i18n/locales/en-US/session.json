@@ -208,7 +208,8 @@
     "endMessage": "That's all for now"
   },
   "queueProvider": {
-    "offlineLimitReached": "You've hit the offline queue limit. Reconnect to sync your climbs."
+    "offlineLimitReached": "You've hit the offline queue limit. Reconnect to sync your climbs.",
+    "rateLimitCatchUp": "Slow down — catching up…"
   },
   "playView": {
     "yourAscents_one": "Your Ascent ({{count}})",

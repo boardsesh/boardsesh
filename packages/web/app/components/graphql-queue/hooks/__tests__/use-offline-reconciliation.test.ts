@@ -195,6 +195,8 @@ describe('useOfflineReconciliation', () => {
             sequence: 10,
           },
         });
+        // Flush inter-op pacing delays (75ms each between buffered ops).
+        await vi.advanceTimersByTimeAsync(1000);
       });
 
       // Should use individual addQueueItem, NOT setQueue
@@ -252,6 +254,7 @@ describe('useOfflineReconciliation', () => {
             sequence: 10,
           },
         });
+        await vi.advanceTimersByTimeAsync(1000);
       });
 
       expect(mockAddQueueItem).toHaveBeenCalledTimes(3);
@@ -311,6 +314,7 @@ describe('useOfflineReconciliation', () => {
             sequence: 10,
           },
         });
+        await vi.advanceTimersByTimeAsync(1000);
       });
 
       // Should use setQueue (full replace), NOT individual addQueueItem

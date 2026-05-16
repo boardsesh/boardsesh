@@ -3,6 +3,8 @@
  * Uses a sliding window algorithm with per-connection tracking.
  */
 
+import { createRateLimitError } from './rate-limit-error';
+
 type RateLimitEntry = {
   count: number;
   resetAt: number;
@@ -42,7 +44,7 @@ export function checkRateLimit(
   // Check if limit exceeded
   if (entry.count >= maxRequests) {
     const retryAfterSeconds = Math.ceil((entry.resetAt - now) / 1000);
-    throw new Error(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+    throw createRateLimitError(retryAfterSeconds);
   }
 
   // Increment counter

@@ -1,6 +1,7 @@
 // GraphQL Queue - New graphql-ws based queue management
 export { createGraphQLClient, execute, subscribe } from './graphql-client';
 export type { Client } from './graphql-client';
+export { RateLimitError, onRateLimited } from './rate-limit-error';
 
 export {
   GraphQLQueueProvider,

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { GraphQLError } from 'graphql';
 import { checkRateLimit, cleanupRateLimit, getRateLimitStatus } from '../utils/rate-limiter';
+import { wrapDatabaseOperation } from '../utils/error-handler';
+import { createRateLimitError, RATE_LIMIT_ERROR_CODE } from '../utils/rate-limit-error';
 
 describe('In-memory rate limiter', () => {
   beforeEach(() => {
@@ -45,6 +48,22 @@ describe('In-memory rate limiter', () => {
         expect.fail('should have thrown');
       } catch (err) {
         expect((err as Error).message).toMatch(/Try again in \d+ seconds/);
+      }
+    });
+
+    it('throws a GraphQLError with RATE_LIMITED extension code', () => {
+      for (let i = 0; i < 5; i++) {
+        checkRateLimit('test-conn', 5, 60_000);
+      }
+      try {
+        checkRateLimit('test-conn', 5, 60_000);
+        expect.fail('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(GraphQLError);
+        const gqlErr = err as GraphQLError;
+        expect(gqlErr.extensions?.code).toBe(RATE_LIMIT_ERROR_CODE);
+        expect(typeof gqlErr.extensions?.retryAfterSeconds).toBe('number');
+        expect(gqlErr.extensions?.retryAfterSeconds as number).toBeGreaterThan(0);
       }
     });
 
@@ -99,6 +118,24 @@ describe('In-memory rate limiter', () => {
 
     it('is safe to call for non-existent connections', () => {
       expect(() => cleanupRateLimit('nonexistent')).not.toThrow();
+    });
+  });
+
+  describe('wrapDatabaseOperation rate-limit passthrough', () => {
+    it('passes GraphQLError instances through unchanged', async () => {
+      const original = createRateLimitError(7);
+      let caught: unknown;
+      try {
+        await wrapDatabaseOperation(async () => {
+          throw original;
+        }, 'test');
+        expect.fail('should have thrown');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBe(original);
+      expect((caught as GraphQLError).extensions?.code).toBe(RATE_LIMIT_ERROR_CODE);
+      expect((caught as GraphQLError).extensions?.retryAfterSeconds).toBe(7);
     });
   });
 

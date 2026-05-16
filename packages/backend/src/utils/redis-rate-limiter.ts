@@ -1,5 +1,7 @@
+import { GraphQLError } from 'graphql';
 import { redisClientManager } from '../redis/client';
 import { checkRateLimit } from './rate-limiter';
+import { createRateLimitError, RATE_LIMIT_ERROR_CODE } from './rate-limit-error';
 import { logger } from './logger';
 
 /**
@@ -51,10 +53,13 @@ export async function checkRateLimitRedis(
 
     if (count > maxRequests) {
       const retryAfterSeconds = Math.ceil((windowMs - (Date.now() % windowMs)) / 1000);
-      throw new Error(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+      throw createRateLimitError(retryAfterSeconds);
     }
   } catch (err) {
     // If the error is our rate limit error, re-throw it
+    if (err instanceof GraphQLError && err.extensions?.code === RATE_LIMIT_ERROR_CODE) {
+      throw err;
+    }
     if (err instanceof Error && err.message.startsWith('Rate limit exceeded')) {
       throw err;
     }

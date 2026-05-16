@@ -1,6 +1,13 @@
 import { type Client, type Sink, createClient } from 'graphql-ws';
 import { connectionManager, KEEP_ALIVE_MS } from '../connection-manager/websocket-connection-manager';
 import { INITIAL_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS, BACKOFF_MULTIPLIER } from './retry-constants';
+import {
+  parseRateLimitError,
+  emitRateLimited,
+  MAX_RATE_LIMIT_RETRIES,
+  MAX_RATE_LIMIT_WAIT_MS,
+  RateLimitError,
+} from './rate-limit-error';
 
 export type { Client };
 
@@ -143,19 +150,12 @@ export function createGraphQLClient(
   return client;
 }
 
-/**
- * Execute a GraphQL mutation and return the result as a promise
- * Includes automatic cleanup and timeout handling
- */
-export function execute<TData = unknown, TVariables = Record<string, unknown>>(
+function executeOnce<TData, TVariables>(
   client: Client,
   operation: { query: string; variables?: TVariables },
-  timeoutMs: number = MUTATION_TIMEOUT_MS,
+  opName: string,
+  timeoutMs: number,
 ): Promise<TData> {
-  const opName = getOperationName(operation, 'mutation');
-
-  if (DEBUG) console.info(`[GraphQL] execute START: ${opName}`);
-
   const executionPromise = new Promise<TData>((resolve, reject) => {
     let result: TData | undefined;
     let hasResolved = false;
@@ -178,6 +178,11 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
             if (!hasResolved) {
               hasResolved = true;
               unsubscribe();
+              const rateLimitError = parseRateLimitError(data.errors);
+              if (rateLimitError) {
+                reject(rateLimitError);
+                return;
+              }
               reject(new Error(data.errors.map((e) => e.message).join(', ')));
             }
           }
@@ -211,14 +216,59 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
     );
   });
 
-  // Add timeout to prevent mutations from hanging forever
+  // Per-attempt timeout: reset on each retry so a rate-limit wait can't trip the
+  // mutation timeout. Otherwise a 30s wait + 5s execution would exceed a single
+  // outer 30s timeout.
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       reject(new Error(`GraphQL mutation '${opName}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });
 
-  return Promise.race([executionPromise, timeoutPromise]);
+  return Promise.race([executionPromise, timeoutPromise]).finally(() => {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  });
+}
+
+/**
+ * Execute a GraphQL mutation and return the result as a promise.
+ * Retries automatically on rate-limit errors (RateLimitError) up to
+ * MAX_RATE_LIMIT_RETRIES, waiting `retryAfterSeconds` between attempts.
+ */
+export function execute<TData = unknown, TVariables = Record<string, unknown>>(
+  client: Client,
+  operation: { query: string; variables?: TVariables },
+  timeoutMs: number = MUTATION_TIMEOUT_MS,
+): Promise<TData> {
+  const opName = getOperationName(operation, 'mutation');
+
+  if (DEBUG) console.info(`[GraphQL] execute START: ${opName}`);
+
+  return executeWithRateLimitRetry<TData, TVariables>(client, operation, opName, timeoutMs);
+}
+
+async function executeWithRateLimitRetry<TData, TVariables>(
+  client: Client,
+  operation: { query: string; variables?: TVariables },
+  opName: string,
+  timeoutMs: number,
+): Promise<TData> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await executeOnce<TData, TVariables>(client, operation, opName, timeoutMs);
+    } catch (err) {
+      if (!(err instanceof RateLimitError) || attempt >= MAX_RATE_LIMIT_RETRIES) {
+        throw err;
+      }
+      attempt++;
+      emitRateLimited(err, attempt);
+      const waitMs = Math.min(err.retryAfterSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS) + Math.floor(Math.random() * 250);
+      if (DEBUG) console.info(`[GraphQL] execute RATE_LIMITED ${opName}, retry #${attempt} in ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
 }
 
 /**
@@ -243,7 +293,8 @@ export function subscribe<TData = unknown, TVariables = Record<string, unknown>>
           sink.next?.(data.data);
         }
         if (data.errors) {
-          sink.error?.(new Error(data.errors.map((e) => e.message).join(', ')));
+          const rateLimitError = parseRateLimitError(data.errors);
+          sink.error?.(rateLimitError ?? new Error(data.errors.map((e) => e.message).join(', ')));
         }
       },
       error: (error) => {

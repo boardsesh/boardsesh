@@ -3,6 +3,14 @@ import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-sche
 import type { ClimbQueueItem } from '../../queue-control/types';
 
 const RECONCILIATION_TIMEOUT_MS = 15000;
+// Space replayed mutations so a backlog of buffered additions can't trip the
+// per-user rate limit (60/min default, 30/min for some operations) the instant
+// the WebSocket reconnects. 75ms = ~13 ops/sec, well under any per-minute cap.
+const RECONCILIATION_INTER_OP_DELAY_MS = 75;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export type UseOfflineReconciliationParams = {
   offlineBuffer: {
@@ -111,6 +119,8 @@ export function useOfflineReconciliation({
         if (isSuperseded()) return;
         await persistentSession.setQueue(localQueue, localCurrentClimb);
         if (localCurrentClimb && !isSuperseded()) {
+          await sleep(RECONCILIATION_INTER_OP_DELAY_MS);
+          if (isSuperseded()) return;
           await persistentSession.setCurrentClimb(localCurrentClimb, false);
         }
       } catch (error) {
@@ -125,11 +135,17 @@ export function useOfflineReconciliation({
       const pending = offlineBuffer.getBufferedAdditions();
       const serverUuids = new Set(serverQueue.map((item) => item.uuid));
 
+      let sentCount = 0;
       for (const item of pending) {
         if (isSuperseded()) return;
         if (serverUuids.has(item.uuid)) continue;
+        if (sentCount > 0) {
+          await sleep(RECONCILIATION_INTER_OP_DELAY_MS);
+          if (isSuperseded()) return;
+        }
         try {
           await persistentSession.addQueueItem(item);
+          sentCount++;
         } catch (error) {
           console.error('[OfflineReconciliation] Failed to add buffered item:', item.climb?.name, error);
         }

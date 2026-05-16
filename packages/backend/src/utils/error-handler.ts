@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { logger } from './logger';
 /**
  * Error handling utilities for preventing information disclosure.
@@ -18,6 +19,12 @@ export async function wrapDatabaseOperation<T>(operation: () => Promise<T>, cont
   } catch (error) {
     // Log the full error internally for debugging
     logger.error(`[${context}] Database operation failed:`, error);
+
+    // Pass through structured GraphQL errors (rate limits, etc.) so client-side
+    // handling can inspect extensions.code instead of regex-parsing the message.
+    if (error instanceof GraphQLError) {
+      throw error;
+    }
 
     // Check for specific error types we want to handle specially
     if (error instanceof Error) {
