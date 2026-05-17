@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import BottomNavigation from '@mui/material/BottomNavigation';
 import BottomNavigationAction from '@mui/material/BottomNavigationAction';
@@ -28,6 +28,7 @@ import { useColorMode } from '@/app/hooks/use-color-mode';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { usePersistentSessionState } from '../persistent-session';
 import { getLastUsedBoard } from '@/app/lib/last-used-board-db';
+import { getPreference } from '@/app/lib/user-preferences-db';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import BoardDiscoveryScroll from '../board-scroll/board-discovery-scroll';
 import BoardSelectorDrawer from '../board-selector-drawer/board-selector-drawer';
@@ -112,6 +113,21 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
 
   // Determine active tab from pathname
   const activeTab = getActiveTab(pathname);
+
+  // Resume the user on whichever /you sub-tab they had open last time. While on
+  // a /you path we use that path directly so re-tapping the icon is a no-op
+  // navigation; otherwise we fall back to the persisted preference. The IDB
+  // read is fast but async, so the link briefly points at /you on first paint
+  // before settling on the resumed sub-tab — acceptable since the icon and
+  // label don't change.
+  const [resumedYouHref, setResumedYouHref] = useState('/you');
+  useEffect(() => {
+    if (pathname.startsWith('/you')) return;
+    void getPreference('youLastTab').then((tab) => {
+      setResumedYouHref(tab === 'logbook' || tab === 'sessions' ? `/you/${tab}` : '/you');
+    });
+  }, [pathname]);
+  const youHref = pathname.startsWith('/you') ? pathname : resumedYouHref;
 
   // Build URLs using effective board details
   // If we're on a /b/ slug route, preserve the slug URL format
@@ -373,7 +389,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           icon={<PersonOutlined sx={{ fontSize: 20 }} />}
           value="you"
           component={LocaleLink}
-          href="/you"
+          href={youHref}
           onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
             // During the session-loading window we don't yet know whether the
             // user is signed in. Let Next.js navigate to /you; the layout
@@ -384,7 +400,7 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
                 title: t('bottomTabBar.youSignInTitle'),
                 description: t('bottomTabBar.youSignInDescription'),
                 onSuccess: () => {
-                  router.push('/you');
+                  router.push(youHref);
                 },
               });
               return;

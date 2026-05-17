@@ -37,6 +37,7 @@ export type UserPreferenceKeyMap = {
   'shakeToReport:dismissed': boolean;
   esp32Connections: Esp32Connection[];
   lastUsedGrade: number;
+  youLastTab: 'progress' | 'sessions' | 'logbook';
 };
 
 // Map of IDB preference keys to their legacy localStorage keys for one-time migration

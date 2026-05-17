@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
+import { setPreference } from '@/app/lib/user-preferences-db';
 
 type YouTab = 'progress' | 'sessions' | 'logbook';
 
@@ -21,6 +22,12 @@ export default function YouTabBar() {
   } else {
     activeTab = 'progress';
   }
+
+  // Remember the last /you sub-tab the user was on so the bottom tab bar's
+  // "you" link can resume them where they left off.
+  useEffect(() => {
+    void setPreference('youLastTab', activeTab);
+  }, [activeTab]);
 
   const handleTabChange = useCallback(
     (_: React.SyntheticEvent, value: YouTab) => {
