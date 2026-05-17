@@ -215,10 +215,26 @@ describe('useUpdateTick', () => {
     expect(logbookData?.pages[0].items[0].comment).toBe('Sent');
 
     const ascentsData = queryClient.getQueryData<{
-      pages: { groups: { items: (typeof baseRow)[] }[] }[];
+      pages: {
+        groups: {
+          items: (typeof baseRow)[];
+          flashCount: number;
+          sendCount: number;
+          attemptCount: number;
+          bestQuality: number | null;
+          latestComment: string | null;
+        }[];
+      }[];
     }>(['ascentsFeed', '1', 10]);
     expect(ascentsData?.pages[0].groups[0].items[0].status).toBe('flash');
     expect(ascentsData?.pages[0].groups[0].items[0].comment).toBe('Sent');
+    // status flipped send -> flash: group counters must follow, and bestQuality
+    // / latestComment recompute from the new item set.
+    expect(ascentsData?.pages[0].groups[0].flashCount).toBe(1);
+    expect(ascentsData?.pages[0].groups[0].sendCount).toBe(0);
+    expect(ascentsData?.pages[0].groups[0].attemptCount).toBe(0);
+    expect(ascentsData?.pages[0].groups[0].bestQuality).toBe(5);
+    expect(ascentsData?.pages[0].groups[0].latestComment).toBe('Sent');
 
     const invalidatedKeys = invalidateSpy.mock.calls.map((call) => call[0]?.queryKey);
     expect(invalidatedKeys).toContainEqual(['sessionDetail']);

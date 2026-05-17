@@ -235,6 +235,112 @@ describe('useDeleteTick', () => {
     expect(mockShowMessage).toHaveBeenCalledWith('Delete failed', 'error');
   });
 
+  it('recomputes group bestQuality + latestComment when deleting from a multi-item group', async () => {
+    mockRequest.mockResolvedValue({ deleteTick: true });
+
+    const { wrapper, queryClient } = createTestWrapper();
+
+    const baseRow = {
+      climbUuid: 'climb-1',
+      climbName: 'Test climb',
+      setterUsername: null,
+      boardType: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      isMirror: false,
+      attemptCount: 1,
+      difficulty: 22,
+      difficultyName: null,
+      consensusDifficulty: null,
+      consensusDifficultyName: null,
+      qualityAverage: null,
+      isBenchmark: false,
+      isNoMatch: false,
+      climbedAt: '2026-04-16T10:00:00.000Z',
+      frames: null,
+    };
+    const toDelete = {
+      ...baseRow,
+      uuid: 'tick-uuid-1',
+      status: 'send' as const,
+      quality: 5, // highest — bestQuality should fall to the surviving row's value
+      comment: 'Best ever',
+      climbedAt: '2026-04-16T15:00:00.000Z', // latest — latestComment should fall to survivor
+    };
+    const survivor = {
+      ...baseRow,
+      uuid: 'tick-uuid-2',
+      status: 'flash' as const,
+      quality: 3,
+      comment: 'Solid',
+      climbedAt: '2026-04-16T09:00:00.000Z',
+    };
+    queryClient.setQueryData(['ascentsFeed', 'user-1', 10], {
+      pages: [
+        {
+          groups: [
+            {
+              key: 'g1',
+              climbUuid: 'climb-1',
+              climbName: 'Test climb',
+              setterUsername: null,
+              boardType: 'kilter',
+              layoutId: 1,
+              angle: 40,
+              isMirror: false,
+              frames: null,
+              difficultyName: null,
+              isBenchmark: false,
+              isNoMatch: false,
+              date: '2026-04-16',
+              flashCount: 1,
+              sendCount: 1,
+              attemptCount: 0,
+              bestQuality: 5,
+              latestComment: 'Best ever',
+              items: [toDelete, survivor],
+            },
+          ],
+          totalCount: 1,
+          hasMore: false,
+        },
+      ],
+      pageParams: [0],
+    });
+
+    const { result } = renderHook(() => useDeleteTick(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate('tick-uuid-1');
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const ascentsData = queryClient.getQueryData<{
+      pages: {
+        groups: {
+          items: (typeof survivor)[];
+          flashCount: number;
+          sendCount: number;
+          attemptCount: number;
+          bestQuality: number | null;
+          latestComment: string | null;
+        }[];
+      }[];
+    }>(['ascentsFeed', 'user-1', 10]);
+
+    expect(ascentsData?.pages[0].groups).toHaveLength(1);
+    const group = ascentsData!.pages[0].groups[0];
+    expect(group.items.map((i) => i.uuid)).toEqual(['tick-uuid-2']);
+    expect(group.flashCount).toBe(1);
+    expect(group.sendCount).toBe(0);
+    expect(group.attemptCount).toBe(0);
+    expect(group.bestQuality).toBe(3);
+    expect(group.latestComment).toBe('Solid');
+  });
+
   it('extracts GraphQL error message from response', async () => {
     const graphqlError: Error & { response?: { errors: { message: string }[] } } = new Error('GraphQL error');
     graphqlError.response = {

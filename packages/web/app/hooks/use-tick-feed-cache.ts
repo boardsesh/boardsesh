@@ -89,6 +89,39 @@ export function mergeIntoLogbookFeed(queryClient: QueryClient, uuid: string, pat
   });
 }
 
+// Recompute every group-level aggregate that's derived from `items`. We do
+// this after any in-place mutation (merge or remove) instead of patching
+// individual counters incrementally — an edit can change an item's status
+// (e.g. attempt → flash), which would flip two counters at once; tracking
+// that with delta logic is fragile and easy to leave inconsistent.
+function recomputeGroupAggregates(group: GroupedAscentFeedItem): GroupedAscentFeedItem {
+  let flashCount = 0;
+  let sendCount = 0;
+  let attemptCount = 0;
+  let bestQuality: number | null = null;
+  for (const item of group.items) {
+    if (item.status === 'flash') flashCount++;
+    else if (item.status === 'send') sendCount++;
+    else attemptCount++;
+    if (item.quality !== null && (bestQuality === null || item.quality > bestQuality)) {
+      bestQuality = item.quality;
+    }
+  }
+  // Latest non-empty comment by climbedAt. Items aren't guaranteed sorted in
+  // cache, so do a single pass tracking the most recent timestamp seen.
+  let latestComment: string | null = null;
+  let latestCommentAt = '';
+  for (const item of group.items) {
+    const trimmed = item.comment?.trim();
+    if (!trimmed) continue;
+    if (item.climbedAt > latestCommentAt) {
+      latestCommentAt = item.climbedAt;
+      latestComment = item.comment;
+    }
+  }
+  return { ...group, flashCount, sendCount, attemptCount, bestQuality, latestComment };
+}
+
 export function removeFromAscentsFeed(queryClient: QueryClient, uuid: string): void {
   queryClient.setQueriesData<AscentsFeedData>({ queryKey: ASCENTS_FEED_KEY }, (old) => {
     if (!old) return old;
@@ -98,15 +131,10 @@ export function removeFromAscentsFeed(queryClient: QueryClient, uuid: string): v
         let groupChanged = false;
         const groups = page.groups
           .map((group) => {
-            const removed = group.items.find((i) => i.uuid === uuid);
-            if (!removed) return group;
-            groupChanged = true;
             const items = group.items.filter((i) => i.uuid !== uuid);
-            const next: GroupedAscentFeedItem = { ...group, items };
-            if (removed.status === 'flash') next.flashCount = Math.max(0, group.flashCount - 1);
-            else if (removed.status === 'send') next.sendCount = Math.max(0, group.sendCount - 1);
-            else next.attemptCount = Math.max(0, group.attemptCount - 1);
-            return next;
+            if (items.length === group.items.length) return group;
+            groupChanged = true;
+            return recomputeGroupAggregates({ ...group, items });
           })
           .filter((group) => group.items.length > 0);
         return groupChanged ? { ...page, groups } : page;
@@ -131,7 +159,7 @@ export function mergeIntoAscentsFeed(queryClient: QueryClient, uuid: string, pat
           });
           if (!groupChanged) return group;
           pageChanged = true;
-          return { ...group, items };
+          return recomputeGroupAggregates({ ...group, items });
         });
         return pageChanged ? { ...page, groups } : page;
       }),
