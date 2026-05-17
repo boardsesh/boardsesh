@@ -11,6 +11,8 @@ import {
   type UpdateTickVariables,
   type UpdateTickInput,
 } from '@/app/lib/graphql/operations';
+import type { AscentFeedItem } from '@/app/lib/graphql/operations/ticks';
+import { mergeIntoAscentsFeed, mergeIntoLogbookFeed } from './use-tick-feed-cache';
 
 export type UpdateTickOptions = {
   uuid: string;
@@ -41,9 +43,22 @@ export function useUpdateTick() {
       const response = await client.request<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, variables);
       return response.updateTick;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['logbookFeed'] });
-      void queryClient.invalidateQueries({ queryKey: ['ascentsFeed'] });
+    onSuccess: (updatedTick) => {
+      // Merge the edited fields directly into every cached feed row that holds
+      // this tick uuid. The persister picks up the new shape on its next throttled
+      // dehydrate, so the change survives a reload without a refetch.
+      const patch: Partial<AscentFeedItem> = {
+        status: updatedTick.status as AscentFeedItem['status'],
+        attemptCount: updatedTick.attemptCount,
+        quality: updatedTick.quality,
+        difficulty: updatedTick.difficulty,
+        isBenchmark: updatedTick.isBenchmark,
+        comment: updatedTick.comment,
+      };
+      mergeIntoLogbookFeed(queryClient, updatedTick.uuid, patch);
+      mergeIntoAscentsFeed(queryClient, updatedTick.uuid, patch);
+
+      // Aggregates we can't recompute locally — let them refetch.
       void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
       void queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });
       void queryClient.invalidateQueries({ queryKey: ['userTicks'] });

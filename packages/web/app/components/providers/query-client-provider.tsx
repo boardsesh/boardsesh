@@ -2,9 +2,9 @@
 
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { PersistQueryClientProvider, persistQueryClient } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
-import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
+import { createIdbPersister, createSharedIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 
 type QueryClientProviderProps = {
   children: ReactNode;
@@ -23,7 +23,8 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
       }),
   );
 
-  const [persister] = useState(() => createIdbPersister());
+  const [userPersister] = useState(() => createIdbPersister());
+  const [sharedPersister] = useState(() => createSharedIdbPersister());
   // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
   // See app/layout.tsx for the nesting order.
   const { data: session } = useSession();
@@ -33,21 +34,39 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   // page load (status: loading), so any session-derived buster would discard
   // the persisted cache before the session resolves. Per-user isolation comes
   // from the query keys themselves (['profile', userId], etc.) — a different
-  // user simply misses the cache because their keys don't exist in it.
-  const persistOptions = useMemo(
+  // user simply misses the cache because their keys don't exist in it. The
+  // SessionCacheBuster below still wipes the IDB blob on actual user-change
+  // transitions, belt-and-braces.
+  const userPersistOptions = useMemo(
     () => ({
-      persister,
+      persister: userPersister,
       maxAge: PERSIST_MAX_AGE_MS,
       dehydrateOptions: {
         shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
       },
     }),
-    [persister],
+    [userPersister],
   );
 
+  // Shared persister: no buster, lifecycle independent of session. Set up once
+  // on mount via the imperative API since `PersistQueryClientProvider` only
+  // supports a single persister. Queries opt in via `meta.persistShared`.
+  useEffect(() => {
+    const [unsubscribe] = persistQueryClient({
+      queryClient,
+      persister: sharedPersister,
+      maxAge: PERSIST_MAX_AGE_MS,
+      buster: '',
+      dehydrateOptions: {
+        shouldDehydrateQuery: (query: Query) => query.meta?.persistShared === true && query.state.status === 'success',
+      },
+    });
+    return unsubscribe;
+  }, [queryClient, sharedPersister]);
+
   return (
-    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
-      <SessionCacheBuster persister={persister} sessionUserId={sessionUserId} />
+    <PersistQueryClientProvider client={queryClient} persistOptions={userPersistOptions}>
+      <SessionCacheBuster persister={userPersister} sessionUserId={sessionUserId} />
       {children}
     </PersistQueryClientProvider>
   );
@@ -58,9 +77,11 @@ type SessionCacheBusterProps = {
   sessionUserId: string | null;
 };
 
-// Wipe both the in-memory persisted queries and the IDB blob when the user
-// transitions from one signed-in identity to another, or signs out — so the
-// next render can't show one user a frame of another user's data.
+// Wipe both the in-memory user-scoped queries and the user IDB blob when the
+// user transitions from one signed-in identity to another, or signs out — so
+// the next render can't show one user a frame of another user's data. Shared
+// queries (`meta.persistShared`) are left alone — they're the same payload
+// for every viewer.
 //
 // The ref is seeded `undefined` as a sentinel for "no transition observed
 // yet", which lets us skip two non-transitions that would otherwise wipe a

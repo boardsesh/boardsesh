@@ -9,6 +9,7 @@ import PersonSearchOutlined from '@mui/icons-material/PersonSearchOutlined';
 import PublicOutlined from '@mui/icons-material/PublicOutlined';
 import ErrorOutline from '@mui/icons-material/ErrorOutline';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -69,7 +70,12 @@ export default function ActivityFeed({
       return lastPage.cursor ?? undefined;
     },
     enabled: isAuthenticated ? !!token : true,
-    staleTime: isAuthenticated ? 60 * 1000 : 24 * 60 * 60 * 1000,
+    staleTime: isAuthenticated ? 5 * 60 * 1000 : 24 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    // Only persist the signed-in viewer's feed; public reads can vary by viewer
+    // identity (block lists etc.) and aren't worth bothering with IDB for.
+    meta: isAuthenticated ? persistUser : undefined,
     ...(hasInitialData
       ? {
           initialData: {

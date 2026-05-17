@@ -7,6 +7,7 @@ import MuiButton from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import PersonSearchOutlined from '@mui/icons-material/PersonSearchOutlined';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -44,7 +45,10 @@ export default function FollowingAscentsFeed({ onFindClimbers }: FollowingAscent
       return lastPageParam + lastPage.items.length;
     },
     enabled: isAuthenticated && !!token,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const items: FollowingAscentFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);

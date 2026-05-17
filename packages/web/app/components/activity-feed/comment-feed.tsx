@@ -16,6 +16,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -74,7 +75,10 @@ export default function CommentFeed({ isAuthenticated, boardUuid }: CommentFeedP
       return lastPage.cursor ?? undefined;
     },
     enabled: isAuthenticated ? !!token : true,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistShared,
   });
 
   const comments: CommentType[] = useMemo(() => data?.pages.flatMap((p) => p.comments) ?? [], [data]);

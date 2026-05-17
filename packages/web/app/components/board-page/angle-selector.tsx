@@ -17,6 +17,7 @@ import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import DrawerClimbHeader from '../climb-card/drawer-climb-header';
 import { useTranslation } from 'react-i18next';
 import styles from './angle-selector.module.css';
@@ -51,6 +52,9 @@ export default function AngleSelector({
     queryFn: () => fetch(`/api/v1/${boardName}/climb-stats/${currentClimb!.uuid}`).then((res) => res.json()),
     enabled: !!currentClimb && isDrawerOpen,
     staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistShared,
   });
 
   // Create a map for easy lookup of stats by angle

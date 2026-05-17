@@ -7,6 +7,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import { type Client, createGraphQLClient, subscribe } from '../graphql-queue/graphql-client';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -75,7 +76,10 @@ export default function NewClimbFeed({
       if (!lastPage.hasMore) return undefined;
       return (lastPageParam as number) + lastPage.items.length;
     },
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistShared,
   });
 
   const items: NewClimbFeedItemType[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);

@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import PublicOutlined from '@mui/icons-material/PublicOutlined';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
@@ -35,7 +36,10 @@ export default function GlobalAscentsFeed() {
       if (!lastPage.hasMore) return undefined;
       return lastPageParam + lastPage.items.length;
     },
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistShared,
   });
 
   const items: FollowingAscentFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import VideocamOutlined from '@mui/icons-material/VideocamOutlined';
 import Box from '@mui/material/Box';
 import type { CollapsibleSectionConfig } from '@/app/components/collapsible-section/collapsible-section';
@@ -83,6 +84,9 @@ export function useBuildClimbDetailSections({
     },
     enabled: enabledProp && !!climbUuid,
     staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistShared,
   });
   const dedupedBetaLinks = useMemo(() => dedupeBetaLinks(betaLinks), [betaLinks]);
   const betaCount = dedupedBetaLinks.length;

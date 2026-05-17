@@ -20,6 +20,7 @@ import {
 } from '@/app/lib/logbook-preferences';
 import { readFiltersFromQuery, readSortFromQuery, filtersToQueryParams } from '@/app/lib/logbook-url-utils';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
@@ -446,7 +447,10 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
       return lastPageParam + lastPage.items.length;
     },
     enabled: !!userId && !!token && preferencesLoaded && boardsInitialized,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const items: AscentFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);

@@ -161,6 +161,10 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         sizeId: boardDetails.size_id,
         setIds: Array.isArray(boardDetails.set_ids) ? boardDetails.set_ids.join(',') : String(boardDetails.set_ids),
         videoUrl: logType === 'ascent' && trimmedVideoUrl ? trimmedVideoUrl : undefined,
+        // Context for the optimistic logbook-feed row.
+        climbName: currentClimb.name,
+        setterUsername: currentClimb.setter_username ?? null,
+        frames: currentClimb.frames ?? null,
       });
 
       track('Tick Logged', {

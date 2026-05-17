@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { EmptyState } from '@/app/components/ui/empty-state';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   GET_FOLLOWING_CLIMB_ASCENTS,
@@ -46,7 +47,10 @@ export const CrewLogbookView: React.FC<CrewLogbookViewProps> = ({ currentClimb, 
       return response.followingClimbAscents;
     },
     enabled,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const items = useMemo(() => data?.items ?? [], [data]);

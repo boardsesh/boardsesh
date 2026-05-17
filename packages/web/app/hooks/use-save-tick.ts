@@ -13,6 +13,15 @@ import {
   type TickStatus,
   type LogbookEntry,
 } from './use-logbook';
+import {
+  buildOptimisticAscentItem,
+  cancelTickFeeds,
+  prependToLogbookFeed,
+  removeFromLogbookFeed,
+  restoreTickFeeds,
+  snapshotTickFeeds,
+  type TickFeedSnapshot,
+} from './use-tick-feed-cache';
 import { clearTickDraft } from '@/app/lib/tick-draft-db';
 
 // Options for saving a tick (local storage, no Aurora required)
@@ -32,6 +41,13 @@ export type SaveTickOptions = {
   sizeId?: number;
   setIds?: string;
   videoUrl?: string;
+  // Optional context for optimistic insert into the logbook feed cache.
+  // Populated by callers that already have the climb on hand; the row renders
+  // instantly with these fields and the background refetch fills in the rest.
+  climbName?: string;
+  setterUsername?: string | null;
+  frames?: string | null;
+  difficultyName?: string | null;
 };
 
 /**
@@ -82,8 +98,9 @@ export function useSaveTick(boardName: BoardName) {
       // Cancel outgoing fetch batches so stale responses merge against the
       // latest accumulated cache entry instead of racing the optimistic write.
       await queryClient.cancelQueries({ queryKey: fetchLogbookQueryKeyPrefix(boardName) });
+      // Same idea for the IDB-persisted logbook/ascents feed caches.
+      await cancelTickFeeds(queryClient);
 
-      // Create optimistic entry
       const tempUuid = `temp-${Date.now()}`;
       const optimisticEntry: LogbookEntry = {
         uuid: tempUuid,
@@ -104,7 +121,33 @@ export function useSaveTick(boardName: BoardName) {
 
       queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) => [optimisticEntry, ...existing]);
 
-      return { tempUuid };
+      // Snapshot the persisted feed caches before mutating so we can roll back
+      // on error.
+      const feedSnapshot = snapshotTickFeeds(queryClient);
+      prependToLogbookFeed(
+        queryClient,
+        buildOptimisticAscentItem({
+          tempUuid,
+          climbUuid: options.climbUuid,
+          climbName: options.climbName,
+          setterUsername: options.setterUsername,
+          boardType: boardName,
+          layoutId: options.layoutId,
+          angle: options.angle,
+          isMirror: options.isMirror,
+          status: options.status,
+          attemptCount: options.attemptCount,
+          quality: options.quality,
+          difficulty: options.difficulty,
+          difficultyName: options.difficultyName,
+          isBenchmark: options.isBenchmark,
+          comment: options.comment,
+          climbedAt: options.climbedAt,
+          frames: options.frames,
+        }),
+      );
+
+      return { tempUuid, feedSnapshot };
     },
     onSuccess: (savedTick, options, context) => {
       const savedEntry = toLogbookEntry(savedTick);
@@ -134,6 +177,16 @@ export function useSaveTick(boardName: BoardName) {
       // Clear any IndexedDB draft for this climb (belt-and-suspenders with QuickTickBar's .then)
       void clearTickDraft(options.climbUuid, options.angle);
 
+      // Drop the temp row from the persisted feed caches; the invalidation
+      // below pulls the canonical server row (with the real uuid + full
+      // metadata) into its place. Doing it in this order avoids a transient
+      // "two rows for the same tick" state.
+      if (context?.tempUuid) {
+        removeFromLogbookFeed(queryClient, context.tempUuid);
+      }
+      void queryClient.invalidateQueries({ queryKey: ['logbookFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['ascentsFeed'] });
+
       // Bust the You-page stats caches so the next visit reflects the new tick.
       // React Query does prefix matching on queryKey arrays — the bare root
       // string invalidates every variant (['userTicks', '<any-userId>']).
@@ -157,6 +210,9 @@ export function useSaveTick(boardName: BoardName) {
         queryClient.setQueriesData<LogbookEntry[]>({ queryKey: accumulatedKey, exact: true }, (existing = []) =>
           existing.filter((entry) => entry.uuid !== context.tempUuid),
         );
+      }
+      if (context?.feedSnapshot) {
+        restoreTickFeeds(queryClient, context.feedSnapshot satisfies TickFeedSnapshot);
       }
     },
   });

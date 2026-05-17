@@ -161,6 +161,11 @@ export function useTickSave(options: UseTickSaveOptions): {
         layoutId: targetBoard.layout_id,
         sizeId: targetBoard.size_id,
         setIds: Array.isArray(targetBoard.set_ids) ? targetBoard.set_ids.join(',') : String(targetBoard.set_ids),
+        // Context for the optimistic logbook-feed row so it doesn't render
+        // empty for the ~200ms before the refetch arrives.
+        climbName: climb.name,
+        setterUsername: climb.setter_username ?? null,
+        frames: climb.frames ?? null,
       })
         .then(() => {
           track('Quick Tick Saved', {

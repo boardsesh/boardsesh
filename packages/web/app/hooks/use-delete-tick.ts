@@ -10,6 +10,7 @@ import {
   type DeleteTickMutationVariables,
   type DeleteTickMutationResponse,
 } from '@/app/lib/graphql/operations';
+import { removeFromAscentsFeed, removeFromLogbookFeed } from './use-tick-feed-cache';
 
 /**
  * Hook to delete a tick (logbook entry) via GraphQL mutation.
@@ -35,8 +36,11 @@ export function useDeleteTick() {
       const response = await client.request<DeleteTickMutationResponse>(DELETE_TICK, variables);
       return response.deleteTick;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ascentsFeed'] });
+    onSuccess: (_result, uuid) => {
+      // Drop the row from every cached feed (and its containing group, if any).
+      // The persister picks up the new shape on its next throttled dehydrate.
+      removeFromLogbookFeed(queryClient, uuid);
+      removeFromAscentsFeed(queryClient, uuid);
       queryClient.removeQueries({ queryKey: ['logbook'] });
       void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
       void queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });

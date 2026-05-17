@@ -11,6 +11,7 @@ import {
 } from '@/app/lib/graphql/operations';
 import type { GroupedNotification, GroupedNotificationConnection } from '@boardsesh/shared-schema';
 import { UNREAD_COUNT_QUERY_KEY } from './use-unread-notification-count';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 
 const PAGE_SIZE = 20;
 
@@ -50,7 +51,10 @@ export function useGroupedNotifications(initialData?: GroupedNotificationConnect
       return lastPageParam + lastPage.groups.length;
     },
     enabled: isAuthenticated && !!token,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
     ...(initialData
       ? {
           initialData: { pages: [initialData], pageParams: [0] },

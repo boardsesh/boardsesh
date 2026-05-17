@@ -113,7 +113,7 @@ describe('useUpdateTick', () => {
     });
   });
 
-  it('refreshes related caches and shows a success snackbar on success', async () => {
+  it('merges the edit into the persisted feed caches and refreshes aggregates', async () => {
     mockRequest.mockResolvedValue({
       updateTick: {
         uuid: 'tick-1',
@@ -128,6 +128,69 @@ describe('useUpdateTick', () => {
     });
 
     const { wrapper, queryClient } = createTestWrapper();
+
+    // Seed both feed caches with a row that holds the same tick uuid so we can
+    // assert the edit lands in place (no skeleton flash on edit).
+    const baseRow = {
+      uuid: 'tick-1',
+      climbUuid: 'climb-1',
+      climbName: 'Test climb',
+      setterUsername: null,
+      boardType: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      isMirror: false,
+      status: 'send' as const,
+      attemptCount: 3,
+      quality: 2,
+      difficulty: 22,
+      difficultyName: null,
+      consensusDifficulty: null,
+      consensusDifficultyName: null,
+      qualityAverage: null,
+      isBenchmark: false,
+      isNoMatch: false,
+      comment: 'Stale',
+      climbedAt: '2026-04-16T00:00:00.000Z',
+      frames: null,
+    };
+    queryClient.setQueryData(['logbookFeed', '1', 'all', 'all-layouts', '', '{}', '{}'], {
+      pages: [{ items: [baseRow], totalCount: 1, hasMore: false }],
+      pageParams: [0],
+    });
+    queryClient.setQueryData(['ascentsFeed', '1', 10], {
+      pages: [
+        {
+          groups: [
+            {
+              key: 'g1',
+              climbUuid: 'climb-1',
+              climbName: 'Test climb',
+              setterUsername: null,
+              boardType: 'kilter',
+              layoutId: 1,
+              angle: 40,
+              isMirror: false,
+              frames: null,
+              difficultyName: null,
+              isBenchmark: false,
+              isNoMatch: false,
+              date: '2026-04-16',
+              flashCount: 0,
+              sendCount: 1,
+              attemptCount: 0,
+              bestQuality: null,
+              latestComment: null,
+              items: [baseRow],
+            },
+          ],
+          totalCount: 1,
+          hasMore: false,
+        },
+      ],
+      pageParams: [0],
+    });
+
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const removeSpy = vi.spyOn(queryClient, 'removeQueries');
 
@@ -144,11 +207,24 @@ describe('useUpdateTick', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
+    const logbookData = queryClient.getQueryData<{
+      pages: { items: (typeof baseRow)[] }[];
+    }>(['logbookFeed', '1', 'all', 'all-layouts', '', '{}', '{}']);
+    expect(logbookData?.pages[0].items[0].status).toBe('flash');
+    expect(logbookData?.pages[0].items[0].attemptCount).toBe(1);
+    expect(logbookData?.pages[0].items[0].comment).toBe('Sent');
+
+    const ascentsData = queryClient.getQueryData<{
+      pages: { groups: { items: (typeof baseRow)[] }[] }[];
+    }>(['ascentsFeed', '1', 10]);
+    expect(ascentsData?.pages[0].groups[0].items[0].status).toBe('flash');
+    expect(ascentsData?.pages[0].groups[0].items[0].comment).toBe('Sent');
+
     const invalidatedKeys = invalidateSpy.mock.calls.map((call) => call[0]?.queryKey);
-    expect(invalidatedKeys).toContainEqual(['logbookFeed']);
-    expect(invalidatedKeys).toContainEqual(['ascentsFeed']);
     expect(invalidatedKeys).toContainEqual(['sessionDetail']);
     expect(invalidatedKeys).toContainEqual(['userProfileStats']);
+    expect(invalidatedKeys).toContainEqual(['userTicks']);
+    expect(invalidatedKeys).toContainEqual(['userClimbPercentile']);
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: ['logbook'] });
     expect(mockShowMessage).toHaveBeenCalledWith('Tick updated', 'success');
   });

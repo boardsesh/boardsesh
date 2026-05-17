@@ -7,6 +7,7 @@ import {
   GET_UNREAD_NOTIFICATION_COUNT,
   type GetUnreadNotificationCountQueryResponse,
 } from '@/app/lib/graphql/operations';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 
 export const UNREAD_COUNT_QUERY_KEY = ['notifications', 'unreadCount'] as const;
 
@@ -25,7 +26,10 @@ export function useUnreadNotificationCount() {
       return data.unreadNotificationCount;
     },
     enabled: isAuthenticated && !!token,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   return unreadCount;

@@ -17,6 +17,7 @@ import { PersonFallingIcon } from '@/app/components/icons/person-falling-icon';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import type { TFunction } from 'i18next';
 import { formatTickRelativeTime, tickTimeMs } from '@/app/lib/format-tick-time';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -279,7 +280,10 @@ export const AscentsFeed: React.FC<AscentsFeedProps> = ({ userId, pageSize = 10,
       if (!lastPage.hasMore) return undefined;
       return lastPageParam + lastPage.groups.length;
     },
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const groups: GroupedAscentFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.groups) ?? [], [data]);

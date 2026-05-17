@@ -12,6 +12,7 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_MY_GYMS, type GetMyGymsQueryVariables, type GetMyGymsQueryResponse } from '@/app/lib/graphql/operations';
 import type { Gym } from '@boardsesh/shared-schema';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import CreateGymForm from './create-gym-form';
 
 type GymSelectorProps = {
@@ -36,6 +37,9 @@ export default function GymSelector({ selectedGymUuid, onSelect }: GymSelectorPr
     },
     enabled: !!token,
     staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const gyms = data ?? [];

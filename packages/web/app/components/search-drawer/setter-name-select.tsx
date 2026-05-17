@@ -7,6 +7,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useUISearchParams } from '../queue-control/ui-searchparams-provider';
 import { useSearchData } from '../graphql-queue';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { persistShared } from '@/app/lib/react-query-persist-meta';
 import { constructSetterStatsUrl } from '@/app/lib/url-utils';
 
 type SetterStat = {
@@ -43,7 +44,10 @@ const SetterNameSelect = () => {
     queryFn: () => fetcher(apiUrl!),
     enabled: !!apiUrl,
     staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
     placeholderData: keepPreviousData,
+    meta: persistShared,
   });
 
   // Map setter stats to Autocomplete options

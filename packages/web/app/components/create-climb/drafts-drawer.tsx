@@ -9,6 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import MuiTooltip from '@mui/material/Tooltip';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import ClimbListItem from '../climb-card/climb-list-item';
@@ -178,6 +179,10 @@ const DraftsDrawer: React.FC<DraftsDrawerProps> = ({
       return result.searchClimbs.climbs;
     },
     refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
+    meta: persistUser,
   });
 
   const deleteDraftMutation = useMutation({

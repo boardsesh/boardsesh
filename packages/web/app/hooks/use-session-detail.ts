@@ -12,6 +12,7 @@ import {
   type GetSessionDetailQueryResponse,
 } from '@/app/lib/graphql/operations/activity-feed';
 import type { SessionDetail } from '@boardsesh/shared-schema';
+import { persistUser } from '@/app/lib/react-query-persist-meta';
 
 export const SESSION_DETAIL_QUERY_KEY = (sessionId: string) => ['sessionDetail', sessionId] as const;
 
@@ -38,10 +39,13 @@ export function useSessionDetail({ sessionId, initialData, enabled = true }: Use
       return data.sessionDetail;
     },
     enabled: enabled && !!sessionId && isAuthenticated && !!token,
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnMount: 'always',
     // Live updates arrive via SessionStatsUpdated cache patches, so a
     // window-focus refetch would only race the WS feed and reintroduce flicker.
     refetchOnWindowFocus: false,
+    meta: persistUser,
     ...(initialData
       ? {
           initialData,
