@@ -1,6 +1,7 @@
 import type { ConnectionContext, RecordConsentRejectionInput } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { logger } from '../../../utils/logger';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { RecordConsentRejectionInputSchema } from '../../../validation/schemas';
 
@@ -43,7 +44,7 @@ export const consentEventsMutations = {
       });
       return true;
     } catch (error) {
-      console.warn('[consent-events] failed to record rejection:', error);
+      logger.warn('[consent-events] failed to record rejection:', error);
       return false;
     }
   },
