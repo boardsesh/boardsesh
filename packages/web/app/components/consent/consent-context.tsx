@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   CONSENT_COOKIE,
@@ -12,6 +12,7 @@ import {
   type ConsentValue,
 } from '@/app/lib/consent';
 import { recordConsentRejection, type ConsentRejectionSource } from '@/app/lib/consent-events';
+import { tearDownErrorMonitoring } from '@/app/lib/teardown-error-monitoring';
 import { useUserPreference } from '@/app/lib/user-preferences-hooks';
 
 /**
@@ -108,6 +109,23 @@ export function ConsentProvider({
       setLocalOverride(null);
     }
   }, [value, localOverride]);
+
+  // Watch for an errorMonitoring `granted → denied` transition mid-session
+  // and tear down the live Sentry client. Without this, Sentry would keep
+  // capturing until the next page reload (init only happens at module
+  // load), which violates GDPR Art. 7(3) ("data collection must stop
+  // promptly on revocation"). A ref tracks the previous decision so we
+  // don't fire teardown on the initial render or on identity-preserving
+  // re-renders.
+  const previousErrorMonitoringRef = useRef<ConsentDecision | 'unknown'>(state.errorMonitoring);
+  useEffect(() => {
+    const previous = previousErrorMonitoringRef.current;
+    const current = state.errorMonitoring;
+    if (previous === 'granted' && current === 'denied') {
+      void tearDownErrorMonitoring();
+    }
+    previousErrorMonitoringRef.current = current;
+  }, [state.errorMonitoring]);
 
   const persist = useCallback(
     async (next: ConsentValue) => {

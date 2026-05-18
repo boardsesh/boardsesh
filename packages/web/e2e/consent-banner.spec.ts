@@ -69,8 +69,10 @@ test.describe('Cookie consent banner', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    // Two switches: Analytics + Error monitoring. Both start at the consent default ('unknown' → off).
-    const analyticsSwitch = dialog.getByRole('switch').first();
+    // Locate the analytics switch by its aria-label rather than by index —
+    // ties the assertion to the semantics so a future reorder of switches
+    // in the dialog can't silently flip which category we toggle.
+    const analyticsSwitch = dialog.getByRole('switch', { name: 'Product analytics' });
     await analyticsSwitch.click();
 
     await dialog.getByRole('button', { name: SAVE }).click();

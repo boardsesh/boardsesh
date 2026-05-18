@@ -19,6 +19,13 @@ vi.mock('@/app/lib/consent-events', () => ({
   recordConsentRejection: (source: string) => recordConsentRejectionSpy(source),
 }));
 
+// Stub the Sentry teardown helper so the test runtime doesn't try to
+// dynamic-import @sentry/nextjs.
+const tearDownErrorMonitoringSpy = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/app/lib/teardown-error-monitoring', () => ({
+  tearDownErrorMonitoring: () => tearDownErrorMonitoringSpy(),
+}));
+
 // LocaleLink calls useTranslation internally; the mock above covers it but we
 // stub it anyway so the link renders without next/link's app-router context.
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -69,6 +76,7 @@ beforeEach(async () => {
   await db.clear(QUEUE_STORE);
   db.close();
   recordConsentRejectionSpy.mockClear();
+  tearDownErrorMonitoringSpy.mockClear();
 });
 
 afterEach(() => {
@@ -219,6 +227,39 @@ describe('ConsentProvider rejection event firing', () => {
     });
 
     expect(recordConsentRejectionSpy).toHaveBeenCalledWith('settings');
+  });
+});
+
+describe('ConsentProvider Sentry teardown on revocation', () => {
+  it('tears down Sentry when errorMonitoring transitions granted → denied', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // First grant — should NOT trigger teardown (no previous granted state).
+    await act(async () => {
+      await result.current.acceptAll();
+    });
+    await waitFor(() => expect(result.current.state.errorMonitoring).toBe('granted'));
+    expect(tearDownErrorMonitoringSpy).not.toHaveBeenCalled();
+
+    // Now revoke — must trigger teardown exactly once.
+    await act(async () => {
+      await result.current.setCategory('errorMonitoring', 'denied');
+    });
+    await waitFor(() => expect(result.current.state.errorMonitoring).toBe('denied'));
+    expect(tearDownErrorMonitoringSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not tear down on initial render or partial state changes that don't flip errorMonitoring", async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Flipping ONLY analytics shouldn't touch Sentry teardown.
+    await act(async () => {
+      await result.current.setCategory('analytics', 'granted');
+    });
+    await waitFor(() => expect(result.current.state.analytics).toBe('granted'));
+    expect(tearDownErrorMonitoringSpy).not.toHaveBeenCalled();
   });
 });
 

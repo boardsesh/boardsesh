@@ -415,16 +415,30 @@ export const getAllSyncablePreferences = async (): Promise<
     const keys = rawKeys.filter((candidate): candidate is string => typeof candidate === 'string');
     const metaKeys = rawMetaKeys.filter((candidate): candidate is string => typeof candidate === 'string');
 
+    // Fetch every meta entry in parallel rather than awaiting each in turn —
+    // a serial loop here was O(n) round-trips through the IDB request queue.
+    const metaEntries = await Promise.all(
+      metaKeys.map(async (metaKey) => {
+        const metaEntry = (await db.get(META_STORE, metaKey)) as PreferenceMetaEntry | undefined;
+        return [metaKey, metaEntry] as const;
+      }),
+    );
     const metaByKey = new Map<string, number>();
-    for (const metaKey of metaKeys) {
-      const metaEntry = (await db.get(META_STORE, metaKey)) as PreferenceMetaEntry | undefined;
+    for (const [metaKey, metaEntry] of metaEntries) {
       if (metaEntry) metaByKey.set(metaKey, metaEntry.updatedAt);
     }
 
+    // Same story for the syncable preference values themselves.
+    const syncableKeys = keys.filter(isSyncableKey);
+    const valueEntries = await Promise.all(
+      syncableKeys.map(async (key) => {
+        const value = await db.get(STORE_NAME, key);
+        return [key, value] as const;
+      }),
+    );
+
     const out: Array<{ key: string; value: unknown; updatedAt: number }> = [];
-    for (const key of keys) {
-      if (!isSyncableKey(key)) continue;
-      const value = await db.get(STORE_NAME, key);
+    for (const [key, value] of valueEntries) {
       if (value === undefined) continue;
       out.push({
         key,

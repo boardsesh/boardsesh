@@ -59,8 +59,32 @@ const FIXED_DATE = new Date('2024-01-01T00:00:00Z');
  * Wire mockDb.insert(...).values(...).onConflictDoUpdate(...).returning() to
  * resolve with a single row that mirrors what the DB would return.
  */
-function setupInsertMock(returningRow: { key: string; value: unknown; updatedAt: Date }) {
+function setupInsertMock(
+  returningRow: { key: string; value: unknown; updatedAt: Date },
+  quotaOverride?: { total: number; keyExists: boolean },
+) {
   capturedCalls.length = 0;
+
+  // setUserPreference performs a quota select BEFORE the insert. Wire that
+  // select to return a benign default (no existing rows, key not present)
+  // unless a caller passes an override that simulates a full-quota state.
+  const quotaResponse = [
+    {
+      total: quotaOverride?.total ?? 0,
+      keyExists: quotaOverride?.keyExists ?? false,
+    },
+  ];
+  mockDb.select.mockReturnValueOnce({
+    from: vi.fn().mockImplementation((table: unknown) => {
+      capturedCalls.push({ method: 'select.from', table });
+      return {
+        where: vi.fn().mockImplementation((...whereArgs: unknown[]) => {
+          capturedCalls.push({ method: 'select.where', args: whereArgs });
+          return Promise.resolve(quotaResponse);
+        }),
+      };
+    }),
+  });
 
   const returningFn = vi.fn().mockResolvedValue([returningRow]);
   const onConflictDoUpdateFn = vi.fn().mockImplementation((args: unknown) => {
@@ -220,6 +244,30 @@ describe('setUserPreference mutation', () => {
       makeAuthCtx(),
     );
 
+    expect(mockDb.insert).toHaveBeenCalled();
+  });
+
+  it('should reject a NEW key once the per-user cap (100) is reached', async () => {
+    setupInsertMock({ key: 'pref-101', value: true, updatedAt: FIXED_DATE }, { total: 100, keyExists: false });
+
+    await expect(
+      userPreferencesMutations.setUserPreference({}, { input: { key: 'pref-101', value: true } }, makeAuthCtx()),
+    ).rejects.toThrow(/Preference limit reached/);
+
+    // The quota select runs, but no insert should have been attempted.
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it('should still allow updating an existing key at the cap (no new row)', async () => {
+    setupInsertMock({ key: 'libraryTab', value: 'logbook', updatedAt: FIXED_DATE }, { total: 100, keyExists: true });
+
+    const result = await userPreferencesMutations.setUserPreference(
+      {},
+      { input: { key: 'libraryTab', value: 'logbook' } },
+      makeAuthCtx('user-1'),
+    );
+
+    expect(result.key).toBe('libraryTab');
     expect(mockDb.insert).toHaveBeenCalled();
   });
 

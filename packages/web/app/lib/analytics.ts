@@ -37,8 +37,15 @@ function getPosthog(): PostHog | null {
   // out of the prod PostHog project.
   if (!window.location.hostname.includes('boardsesh.com')) {
     // Mark as attempted so we don't re-check env vars on every event in
-    // dev/preview. (Consent gate above already short-circuits when denied,
-    // so flipping consent mid-session is unaffected.)
+    // dev/preview. The consent gate at the top of getPosthog() runs first,
+    // so deny-mode never reaches this branch. The interaction *inside* dev
+    // can look quirky if you flip consent on a non-prod hostname:
+    //   - First call (consent granted): returns null, sets attempted=true.
+    //   - Subsequent grant/deny/grant: still returns null because we're not
+    //     on boardsesh.com, regardless of the consent flip.
+    // That's intentional — staging must never write to the production
+    // PostHog project — but it's worth noting that consent-mid-session is
+    // a no-op outside production.
     posthogInitAttempted = true;
     return null;
   }
@@ -67,20 +74,20 @@ function getPosthog(): PostHog | null {
     host,
     autocapture: false,
     captureHistoryEvents: false,
-    // Persist distinct_id in localStorage so anonymous → authed merges and
-    // cross-session retention cohorts work. The IndexedDB party-profile UUID
-    // is still the canonical anon id; PartyProfileProvider calls identify()
-    // on hydration to reconcile if storage was cleared.
+    // POLICY EXCEPTION — see CLAUDE.md "Client-Side Storage: IndexedDB Only".
     //
-    // CLAUDE.md mandates IndexedDB for client persistence (the no-restricted-globals
-    // lint rule enforces it on bare globals, which is why this config string
-    // doesn't trigger it). posthog-js-lite only exposes
-    // 'localStorage' | 'sessionStorage' | 'cookie' | 'memory' — there is no
-    // IDB option in the lite SDK. 'memory' (the prior setting) regenerated a
-    // fresh anon id on every reload, which broke retention math. Until/unless
-    // we migrate to the full posthog-js SDK or self-host IDB-backed persistence,
-    // this is the documented exception. Do not copy this pattern for other
-    // persistence needs — use idb-helper.ts as usual.
+    // posthog-js-lite only exposes 'localStorage' | 'sessionStorage' | 'cookie' | 'memory'
+    // for distinct_id persistence; there is no IndexedDB option in the lite SDK.
+    // 'memory' (the prior setting) regenerated a fresh anon id on every reload,
+    // which broke retention math. Until we migrate to the full posthog-js SDK or
+    // self-host IDB-backed persistence, this is the explicit, documented
+    // exception to the IDB-only rule.
+    //
+    // The `no-restricted-globals` lint rule isn't triggered by this string
+    // literal (the rule only fires on bare `localStorage` / `sessionStorage`
+    // identifier references), so we record the exception in this comment
+    // rather than via an `oxlint-disable` marker. Do NOT copy this pattern
+    // for other persistence needs — use idb-helper.ts as usual.
     persistence: 'localStorage',
   });
 
