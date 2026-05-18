@@ -33,13 +33,16 @@ enum LiveActivityBleBridge {
 /// **Designed for short-lived stack use** — pair `begin(name:)` with an
 /// explicit `end()`, typically via `defer { task.end() }` (as
 /// `LiveActivityBleBridge.writeBoardForIntent` does). The class deliberately
-/// has **no `deinit`-based cleanup**: `deinit` can't run `@MainActor` methods
-/// in Swift 5, so a property-stored instance whose owner is released without
-/// calling `end()` will leak the task identifier (the expiration handler
-/// eventually fires and ends it, but iOS may have already begun reclaiming
-/// budget). The type is non-`private` purely so `BleIntentBackgroundTaskTests`
-/// can verify the idempotency contract — production callers should treat it
-/// as an implementation detail of `LiveActivityBleBridge`.
+/// has **no production `deinit`-based cleanup**: `deinit` can't run
+/// `@MainActor` methods in Swift 5/6 (the deinit is implicitly nonisolated),
+/// so a property-stored instance whose owner is released without calling
+/// `end()` will leak the task identifier (the expiration handler eventually
+/// fires and ends it, but iOS may have already begun reclaiming budget).
+/// A `#if DEBUG` deinit asserts `taskId == .invalid` as a development-time
+/// safety net to surface the leak at the point of release. The type is
+/// non-`private` purely so `BleIntentBackgroundTaskTests` can verify the
+/// idempotency contract — production callers should treat it as an
+/// implementation detail of `LiveActivityBleBridge`.
 ///
 /// `@MainActor`-isolated so `UIApplication.shared` (also `@MainActor`-isolated
 /// under Swift 6 strict concurrency) can be accessed without locks. The
@@ -69,4 +72,15 @@ final class BleIntentBackgroundTask {
         taskId = .invalid
         UIApplication.shared.endBackgroundTask(id)
     }
+
+    #if DEBUG
+        // Only observes the `Sendable` sentinel — never calls a `@MainActor`
+        // method, which an implicitly-nonisolated deinit cannot reach.
+        deinit {
+            assert(
+                taskId == .invalid,
+                "BleIntentBackgroundTask deallocated without end() — caller stored it as a property and leaked the UIBackgroundTaskIdentifier. Use defer { task.end() } or call end() explicitly."
+            )
+        }
+    #endif
 }

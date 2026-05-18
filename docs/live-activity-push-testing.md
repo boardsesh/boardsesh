@@ -376,6 +376,8 @@ Lock your iPhone. The Live Activity widget should update within a few seconds sh
 7. The HTTP POST to `/api/widget/navigate` should appear in backend logs (independent of the BLE write — they run in parallel)
 8. Filter Console.app by subsystem `com.boardsesh.app`, category `LiveActivityIntent` to confirm the intent ran in the App process (DEBUG builds only)
 
+> **Note on the state-restoration delegate-ordering race:** When iOS background-launches the app for state restoration, `centralManagerDidUpdateState(.poweredOn)` and per-peripheral `didDiscoverCharacteristicsFor` callbacks can fire in either order — including discovery before the central reports `.poweredOn`. Write paths must therefore wait on a readiness signal that handles both orderings rather than gating on observing `central.state == .poweredOn` first. `BoardBleManager.displayCurrentItemAwaitingReady` is the path that satisfies this requirement.
+
 ### Test with App Force-Killed
 
 1. Force-kill the app from the app switcher
