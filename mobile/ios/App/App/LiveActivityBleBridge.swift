@@ -74,13 +74,17 @@ final class BleIntentBackgroundTask {
     }
 
     #if DEBUG
-        // Only observes the `Sendable` sentinel — never calls a `@MainActor`
-        // method, which an implicitly-nonisolated deinit cannot reach.
+        // `deinit` is implicitly nonisolated, so reading the `@MainActor`
+        // `taskId` requires the same `assumeIsolated` hop used by the
+        // expiration handler above. Production callers always release the
+        // instance from a `@MainActor` context, so the precondition holds.
         deinit {
-            assert(
-                taskId == .invalid,
-                "BleIntentBackgroundTask deallocated without end() — caller stored it as a property and leaked the UIBackgroundTaskIdentifier. Use defer { task.end() } or call end() explicitly."
-            )
+            MainActor.assumeIsolated {
+                assert(
+                    taskId == .invalid,
+                    "BleIntentBackgroundTask deallocated without end() — caller stored it as a property and leaked the UIBackgroundTaskIdentifier. Use defer { task.end() } or call end() explicitly."
+                )
+            }
         }
     #endif
 }
