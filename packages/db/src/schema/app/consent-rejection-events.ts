@@ -14,10 +14,7 @@ import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  * authenticated table.
  */
 export const consentRejectionEvents = pgTable('consent_rejection_events', {
-  id: uuid('id')
-    .notNull()
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+  id: uuid('id').notNull().primaryKey().defaultRandom(),
   source: text('source').notNull(), // 'banner' | 'dialog' | 'settings' — kept as text so adding a source doesn't need a migration
   recordedAt: timestamp('recorded_at').defaultNow().notNull(),
 });

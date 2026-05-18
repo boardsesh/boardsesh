@@ -35,6 +35,16 @@ vi.mock('../db/client', () => ({
   db: mockDb,
 }));
 
+// Bypass applyRateLimit's in-memory + Redis tiers in resolver unit tests —
+// the unit tests don't run with a Redis container, and applyRateLimit's
+// NODE_ENV=development early-return doesn't fire under vitest's NODE_ENV=test.
+vi.mock('../utils/rate-limiter', () => ({
+  checkRateLimit: vi.fn(),
+}));
+vi.mock('../utils/redis-rate-limiter', () => ({
+  checkRateLimitRedis: vi.fn().mockResolvedValue(undefined),
+}));
+
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {
     connectionId: `http-${userId}`,

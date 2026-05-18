@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SetUserPreferenceInput, UserPreference } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { SetUserPreferenceInputSchema, UserPreferenceKeySchema } from '../../../validation/schemas';
 
 /**
@@ -31,6 +31,7 @@ export const userPreferencesMutations = {
     ctx: ConnectionContext,
   ): Promise<UserPreference> => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 60, 'setUserPreference');
     validateInput(SetUserPreferenceInputSchema, input, 'input');
 
     const userId = ctx.userId!;
@@ -88,6 +89,7 @@ export const userPreferencesMutations = {
    */
   deleteUserPreference: async (_: unknown, { key }: { key: string }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 60, 'deleteUserPreference');
     validateInput(UserPreferenceKeySchema, key, 'key');
 
     await db

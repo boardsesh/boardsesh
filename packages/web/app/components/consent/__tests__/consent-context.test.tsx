@@ -26,6 +26,13 @@ vi.mock('@/app/lib/teardown-error-monitoring', () => ({
   tearDownErrorMonitoring: () => tearDownErrorMonitoringSpy(),
 }));
 
+// Same idea for the analytics teardown — the real one pokes posthog-js-lite
+// state that isn't constructed in the JSDOM runtime.
+const tearDownAnalyticsSpy = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/app/lib/teardown-analytics', () => ({
+  tearDownAnalytics: () => tearDownAnalyticsSpy(),
+}));
+
 // LocaleLink calls useTranslation internally; the mock above covers it but we
 // stub it anyway so the link renders without next/link's app-router context.
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -77,6 +84,7 @@ beforeEach(async () => {
   db.close();
   recordConsentRejectionSpy.mockClear();
   tearDownErrorMonitoringSpy.mockClear();
+  tearDownAnalyticsSpy.mockClear();
 });
 
 afterEach(() => {
@@ -260,6 +268,36 @@ describe('ConsentProvider Sentry teardown on revocation', () => {
     });
     await waitFor(() => expect(result.current.state.analytics).toBe('granted'));
     expect(tearDownErrorMonitoringSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConsentProvider analytics teardown on revocation', () => {
+  it('tears down analytics when analytics transitions granted → denied', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.acceptAll();
+    });
+    await waitFor(() => expect(result.current.state.analytics).toBe('granted'));
+    expect(tearDownAnalyticsSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.setCategory('analytics', 'denied');
+    });
+    await waitFor(() => expect(result.current.state.analytics).toBe('denied'));
+    expect(tearDownAnalyticsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not tear down analytics on initial render or when only errorMonitoring flips', async () => {
+    const { result } = renderHook(() => useConsent(), { wrapper: wrapper(null) });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.setCategory('errorMonitoring', 'granted');
+    });
+    await waitFor(() => expect(result.current.state.errorMonitoring).toBe('granted'));
+    expect(tearDownAnalyticsSpy).not.toHaveBeenCalled();
   });
 });
 

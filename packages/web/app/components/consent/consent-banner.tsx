@@ -76,13 +76,18 @@ export default function ConsentBanner() {
               justifyContent={{ sm: 'flex-end' }}
               alignItems={{ xs: 'stretch', sm: 'center' }}
             >
-              <Button variant="text" onClick={() => void rejectAll()} size="medium">
+              {/* Reject and Accept share the same visual weight per GDPR
+                  EDPB guidance + national-DPA enforcement (CNIL, Garante):
+                  unequal-weight buttons are treated as evidence the
+                  consent was nudged, not freely given. `autoFocus` on
+                  Accept used to be a dark-pattern signal too — dropped. */}
+              <Button variant="outlined" onClick={() => void rejectAll()} size="medium">
                 {t('banner.actions.reject')}
               </Button>
               <Button variant="outlined" onClick={() => setDialogOpen(true)} size="medium">
                 {t('banner.actions.customize')}
               </Button>
-              <Button variant="contained" onClick={() => void acceptAll()} size="medium" autoFocus>
+              <Button variant="outlined" onClick={() => void acceptAll()} size="medium">
                 {t('banner.actions.acceptAll')}
               </Button>
             </Stack>

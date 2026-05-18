@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { ConnectionContext, UserPreference } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated } from '../shared/helpers';
+import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
 /**
  * Map a raw DB row to the GraphQL UserPreference shape.
@@ -27,6 +27,7 @@ export const userPreferencesQueries = {
     ctx: ConnectionContext,
   ): Promise<UserPreference | null> => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 120, 'userPreference');
 
     const rows = await db
       .select()
@@ -46,6 +47,7 @@ export const userPreferencesQueries = {
    */
   userPreferences: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<UserPreference[]> => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 120, 'userPreferences');
 
     const rows = await db
       .select()

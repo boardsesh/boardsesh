@@ -7,7 +7,7 @@ CREATE TABLE "user_preferences" (
 );
 --> statement-breakpoint
 CREATE TABLE "consent_rejection_events" (
-	"id" uuid PRIMARY KEY NOT NULL,
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"source" text NOT NULL,
 	"recorded_at" timestamp DEFAULT now() NOT NULL
 );

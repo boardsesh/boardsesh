@@ -12,6 +12,7 @@ import {
   type ConsentValue,
 } from '@/app/lib/consent';
 import { recordConsentRejection, type ConsentRejectionSource } from '@/app/lib/consent-events';
+import { tearDownAnalytics } from '@/app/lib/teardown-analytics';
 import { tearDownErrorMonitoring } from '@/app/lib/teardown-error-monitoring';
 import { useUserPreference } from '@/app/lib/user-preferences-hooks';
 
@@ -126,6 +127,23 @@ export function ConsentProvider({
     }
     previousErrorMonitoringRef.current = current;
   }, [state.errorMonitoring]);
+
+  // Same story for analytics. PostHog's lite client keeps its in-memory
+  // state + localStorage distinct_id + any in-flight capture batch until
+  // the next reload; without an explicit teardown, revoking consent does
+  // not actually stop the network traffic (`getPosthog()` short-circuits
+  // *new* calls but leaves the client object live). Vercel Analytics is
+  // already reactive via the `<VercelAnalytics enabled>` prop in
+  // `layout.tsx`, so it needs no work here.
+  const previousAnalyticsRef = useRef<ConsentDecision | 'unknown'>(state.analytics);
+  useEffect(() => {
+    const previous = previousAnalyticsRef.current;
+    const current = state.analytics;
+    if (previous === 'granted' && current === 'denied') {
+      void tearDownAnalytics();
+    }
+    previousAnalyticsRef.current = current;
+  }, [state.analytics]);
 
   const persist = useCallback(
     async (next: ConsentValue) => {

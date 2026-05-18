@@ -190,6 +190,44 @@ export function reset(): boolean {
   return true;
 }
 
+/**
+ * Tear down the live PostHog client when the user revokes analytics consent
+ * mid-session. Without this, the in-memory client + the localStorage
+ * `distinct_id` + any in-flight capture batch keep working until the next
+ * page reload — long enough to be a GDPR Art. 7(3) issue
+ * ("data collection must stop promptly on revocation").
+ *
+ * Mirrors `tearDownErrorMonitoring` for Sentry. Order matters:
+ *   1. `optOut()` stops future capture calls immediately (safe even mid-batch).
+ *   2. `shutdown()` flushes any in-flight events with a short timeout.
+ *   3. Null the module-scoped client + reset the `initAttempted` latch so a
+ *      future grant-→re-init in the same tab still works.
+ *
+ * `posthog.reset()` is intentionally NOT called: distinct_id rotation is the
+ * caller's responsibility on re-grant (via `alias()` from PartyProfileProvider),
+ * not on revoke. Wiping it here would orphan future anonymous events.
+ *
+ * Best-effort: never throws. Safe to call even if PostHog was never
+ * initialized (no-ops when `posthogClient` is null).
+ */
+export async function tearDownPostHog(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!posthogClient) return;
+  const client = posthogClient;
+  posthogClient = null;
+  posthogInitAttempted = false;
+  try {
+    await client.optOut();
+  } catch (error) {
+    console.warn('[analytics] PostHog optOut failed:', error);
+  }
+  try {
+    await client.shutdown(2000);
+  } catch (error) {
+    console.warn('[analytics] PostHog shutdown failed:', error);
+  }
+}
+
 export function pageview(url: string): void {
   if (isAdminAnalyticsUrl(url)) return;
 
