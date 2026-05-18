@@ -1830,6 +1830,12 @@ export type Mutation = {
   deleteProposal: Scalars['Boolean']['output'];
   /** Delete a tick (climb attempt record). Only the owner can delete. */
   deleteTick: Scalars['Boolean']['output'];
+  /**
+   * Delete a single user preference by key for the authenticated user.
+   * Idempotent — returns true whether or not the preference existed.
+   * Requires authentication.
+   */
+  deleteUserPreference: Scalars['Boolean']['output'];
   /** End a session (active participant only). */
   endSession?: Maybe<SessionSummary>;
   /** Follow a board. */
@@ -1873,6 +1879,12 @@ export type Mutation = {
    * Only playlists the user can access (own or public) may be pinned.
    */
   pinPlaylist: Scalars['Boolean']['output'];
+  /**
+   * Record an anonymous consent-rejection event. Stores only a timestamp
+   * and the source surface — no userId, no IP, no PII. Used to measure
+   * consent-flow effectiveness in aggregate.
+   */
+  recordConsentRejection: Scalars['Boolean']['output'];
   /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
@@ -1944,6 +1956,12 @@ export type Mutation = {
    * resolved from the WebSocket connection context — no `sessionId` argument is required.
    */
   setSessionBoardSerial: Session;
+  /**
+   * Create or update a single user preference for the authenticated user.
+   * Upserts on (userId, key). Returns the stored preference row.
+   * Requires authentication.
+   */
+  setUserPreference: UserPreference;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
   /**
@@ -2149,6 +2167,11 @@ export type MutationDeleteTickArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationDeleteUserPreferenceArgs = {
+  key: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationEndSessionArgs = {
   sessionId: Scalars['ID']['input'];
 };
@@ -2233,6 +2256,11 @@ export type MutationNavigateQueueArgs = {
 /** Root mutation type for all write operations. */
 export type MutationPinPlaylistArgs = {
   input: PinPlaylistInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRecordConsentRejectionArgs = {
+  input: RecordConsentRejectionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -2348,6 +2376,11 @@ export type MutationSetQueueArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetSessionBoardSerialArgs = {
   serial: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetUserPreferenceArgs = {
+  input: SetUserPreferenceInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -3172,6 +3205,17 @@ export type Query = {
    * Requires authentication.
    */
   userPlaylists: Array<Playlist>;
+  /**
+   * Get a single user preference by key for the authenticated user.
+   * Returns null if the preference is not set.
+   * Requires authentication.
+   */
+  userPreference?: Maybe<UserPreference>;
+  /**
+   * Get all user preferences for the authenticated user.
+   * Requires authentication.
+   */
+  userPreferences: Array<UserPreference>;
   /** Get profile statistics with distinct climb counts per grade. */
   userProfileStats: ProfileStats;
   /** Get public ticks for any user by their ID. */
@@ -3582,6 +3626,11 @@ export type QueryUserPlaylistsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryUserPreferenceArgs = {
+  key: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryUserProfileStatsArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -3708,6 +3757,17 @@ export type RecentBetaLink = {
   betaLink: BetaLink;
   boardType: Scalars['String']['output'];
   climbName?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * Input for recording an anonymous consent-rejection event.
+ * Fired when a user picks (or flips to) a state that denies both
+ * analytics and error monitoring. Carries no PII — server records only
+ * the source surface and a timestamp.
+ */
+export type RecordConsentRejectionInput = {
+  /** Which surface the rejection came from: 'banner', 'dialog', or 'settings'. */
+  source: Scalars['String']['input'];
 };
 
 export type RegisterControllerInput = {
@@ -4206,6 +4266,14 @@ export type SetCommunitySettingInput = {
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
   value: Scalars['String']['input'];
+};
+
+/** Input for setting (creating or updating) a single user preference. */
+export type SetUserPreferenceInput = {
+  /** Stable key identifying the preference */
+  key: Scalars['String']['input'];
+  /** Arbitrary JSON-encoded value to store */
+  value: Scalars['JSON']['input'];
 };
 
 /** A climb created by a setter, for display on profile pages. */
@@ -4911,6 +4979,22 @@ export type UserLeft = {
   userId: Scalars['ID']['output'];
 };
 
+/**
+ * A single per-user key/value preference entry.
+ * Used for any small preference the user can toggle (consent flags,
+ * onboarding completion markers, feature opt-ins, etc.) that should
+ * survive across devices when the user is signed in.
+ */
+export type UserPreference = {
+  __typename?: 'UserPreference';
+  /** Stable key identifying the preference (e.g. 'consent:analytics') */
+  key: Scalars['String']['output'];
+  /** When this preference was last written (ISO 8601) */
+  updatedAt: Scalars['String']['output'];
+  /** Arbitrary JSON-encoded value */
+  value: Scalars['JSON']['output'];
+};
+
 /** Event when a participant's realtime presence state changes. */
 export type UserPresenceChanged = {
   __typename?: 'UserPresenceChanged';
@@ -5301,6 +5385,12 @@ export type VoteMutation = {
     userVote: number;
   };
 };
+
+export type RecordConsentRejectionMutationVariables = Exact<{
+  input: RecordConsentRejectionInput;
+}>;
+
+export type RecordConsentRejectionMutation = { __typename?: 'Mutation'; recordConsentRejection: boolean };
 
 export type CreateSessionMutationVariables = Exact<{
   input: CreateSessionInput;
@@ -7099,6 +7189,28 @@ export type UpdateTickMutation = {
   };
 };
 
+export type GetUserPreferencesQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetUserPreferencesQuery = {
+  __typename?: 'Query';
+  userPreferences: Array<{ __typename?: 'UserPreference'; key: string; value: unknown; updatedAt: string }>;
+};
+
+export type SetUserPreferenceMutationVariables = Exact<{
+  input: SetUserPreferenceInput;
+}>;
+
+export type SetUserPreferenceMutation = {
+  __typename?: 'Mutation';
+  setUserPreference: { __typename?: 'UserPreference'; key: string; value: unknown; updatedAt: string };
+};
+
+export type DeleteUserPreferenceMutationVariables = Exact<{
+  key: Scalars['String']['input'];
+}>;
+
+export type DeleteUserPreferenceMutation = { __typename?: 'Mutation'; deleteUserPreference: boolean };
+
 export const PlaylistFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -7910,6 +8022,42 @@ export const VoteDocument = {
     },
   ],
 } as unknown as DocumentNode<VoteMutation, VoteMutationVariables>;
+export const RecordConsentRejectionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RecordConsentRejection' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'RecordConsentRejectionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'recordConsentRejection' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RecordConsentRejectionMutation, RecordConsentRejectionMutationVariables>;
 export const CreateSessionDocument = {
   kind: 'Document',
   definitions: [
@@ -12657,3 +12805,107 @@ export const UpdateTickDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
+export const GetUserPreferencesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserPreferences' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userPreferences' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'key' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'value' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserPreferencesQuery, GetUserPreferencesQueryVariables>;
+export const SetUserPreferenceDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetUserPreference' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetUserPreferenceInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setUserPreference' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'key' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'value' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetUserPreferenceMutation, SetUserPreferenceMutationVariables>;
+export const DeleteUserPreferenceDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteUserPreference' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'key' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteUserPreference' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'key' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'key' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteUserPreferenceMutation, DeleteUserPreferenceMutationVariables>;
