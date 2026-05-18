@@ -101,9 +101,16 @@ const withTimeout = <T>(work: Promise<T>, timeoutMs: number, label: string): Pro
  *
  * Finally drains the queue so any brand-new writes ride the same
  * authenticated round-trip.
+ *
+ * The optional `signal` aborts the pull at every IDB-touching boundary so
+ * that an auth-state flip mid-pull (user A signs out, user B signs in
+ * during the 5 s window) cannot land user A's server-side prefs in the
+ * shared local store. The caller passes an `AbortController` keyed to the
+ * current token; the cleanup of the token-change effect aborts it.
  */
-export async function pullInitial(authToken: string): Promise<void> {
+export async function pullInitial(authToken: string, signal?: AbortSignal): Promise<void> {
   if (!authToken) return;
+  if (signal?.aborted) return;
 
   let response: GetUserPreferencesQueryResponse;
   try {
@@ -117,6 +124,12 @@ export async function pullInitial(authToken: string): Promise<void> {
     return;
   }
 
+  // The GraphQL round-trip won out over the abort, but the auth context
+  // may have already flipped by the time the response landed. Discard the
+  // server payload rather than write it into IDB where it could leak to
+  // a different signed-in user.
+  if (signal?.aborted) return;
+
   const previousPulledAt = await getLastSyncPulledAt();
   const nowForPull = Date.now();
 
@@ -124,6 +137,7 @@ export async function pullInitial(authToken: string): Promise<void> {
   const serverKeys = new Set<string>();
 
   for (const serverEntry of serverEntries) {
+    if (signal?.aborted) return;
     serverKeys.add(serverEntry.key);
     if (!SYNCABLE_KEYS.has(serverEntry.key as keyof UserPreferenceKeyMap)) continue;
     const serverUpdatedAt = parseServerTimestamp(serverEntry.updatedAt);
@@ -137,6 +151,7 @@ export async function pullInitial(authToken: string): Promise<void> {
   // Reconcile keys present locally but absent on the server.
   const localSyncable = await getAllSyncablePreferences();
   for (const localEntry of localSyncable) {
+    if (signal?.aborted) return;
     if (serverKeys.has(localEntry.key)) continue;
 
     const localMeta = await getPreferenceMeta(localEntry.key);
@@ -156,6 +171,7 @@ export async function pullInitial(authToken: string): Promise<void> {
     }
   }
 
+  if (signal?.aborted) return;
   await setLastSyncPulledAt(nowForPull);
 
   await pushQueueFlush(authToken);

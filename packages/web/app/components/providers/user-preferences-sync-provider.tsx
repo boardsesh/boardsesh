@@ -27,7 +27,15 @@ export function UserPreferencesSyncProvider(): null {
     }
     if (lastPulledTokenRef.current === token) return;
     lastPulledTokenRef.current = token;
-    void pullInitial(token);
+    // Tie the pull's lifetime to this token. If the auth context flips
+    // before the 5 s pull completes (sign-out + sign-in as a different
+    // user), the cleanup below aborts the in-flight pull so user A's
+    // server-side prefs never land in user B's shared IDB store.
+    const controller = new AbortController();
+    void pullInitial(token, controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [token, isAuthenticated]);
 
   useEffect(() => {

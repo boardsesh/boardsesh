@@ -32,7 +32,7 @@ export default function ConsentBanner() {
     <>
       <Box
         role="region"
-        aria-label={t('banner.headline')}
+        aria-labelledby="consent-banner-headline"
         data-testid="consent-banner"
         sx={(theme) => ({
           position: 'fixed',
@@ -63,7 +63,7 @@ export default function ConsentBanner() {
         >
           <Stack spacing={1.5}>
             <Stack spacing={0.5}>
-              <Typography variant="subtitle1" component="h2">
+              <Typography variant="subtitle1" component="h2" id="consent-banner-headline">
                 {t('banner.headline')}
               </Typography>
               <Typography variant="body2" color="text.secondary">

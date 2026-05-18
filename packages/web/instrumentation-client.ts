@@ -77,9 +77,18 @@ if (shouldInitializeSentry) {
   });
 }
 
-// Next.js requires this export from the instrumentation-client module. When
-// Sentry has not been initialized (no consent, or non-production hostname)
-// the router transition hook must still exist as a no-op — otherwise the
-// router-transition wiring on the framework side throws on undefined.
+// Next.js requires this export from the instrumentation-client module.
+// We can't pin the hook at module load — consent can flip mid-session, and
+// if the user revokes error-monitoring we MUST stop forwarding navigation
+// spans even before the next reload. So instead of binding to the live or
+// no-op variant once, the export is a thin shim that re-checks consent
+// every time the router transitions. (`captureRouterTransitionStart` itself
+// no-ops when no Sentry client is active, but checking consent up front is
+// belt-and-braces against any internal queuing the Next SDK might do.)
 // eslint-disable-next-line import/namespace -- oxlint can't see captureRouterTransitionStart in @sentry/nextjs's exports, but it's a real export.
-export const onRouterTransitionStart = shouldInitializeSentry ? Sentry.captureRouterTransitionStart : () => {};
+export const onRouterTransitionStart: typeof Sentry.captureRouterTransitionStart = (...args) => {
+  if (!isProductionDomain) return;
+  if (!hasErrorMonitoringConsent()) return;
+  // eslint-disable-next-line import/namespace
+  return Sentry.captureRouterTransitionStart(...args);
+};
