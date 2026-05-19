@@ -1,4 +1,8 @@
 import { randomUUID } from 'crypto';
+import { and, eq } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
+import { db } from '../../../db/client';
+import { pubsub } from '../../../pubsub/index';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
 import { recomputeClimbStats } from './recompute-climb-stats';
@@ -74,6 +78,44 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
         await recomputeClimbStats(boardType, climbUuid, angle);
       } catch (error) {
         logger.error(`[debouncedClimbStats] Failed to recompute stats for ${key}:`, error);
+        return;
+      }
+
+      // Read back the canonical stats row and push it to any clients
+      // subscribed to this (boardType, climbUuid, angle). The subscription
+      // resolver lives in climb-stats-subscriptions.ts; the channel key
+      // shape mirrors the one used there.
+      try {
+        const [row] = await db
+          .select({
+            ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+            qualityAverage: dbSchema.boardClimbStats.qualityAverage,
+            difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
+            displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+          })
+          .from(dbSchema.boardClimbStats)
+          .where(
+            and(
+              eq(dbSchema.boardClimbStats.boardType, boardType),
+              eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+              eq(dbSchema.boardClimbStats.angle, angle),
+            ),
+          )
+          .limit(1);
+
+        if (row) {
+          pubsub.publishClimbStatsEvent(`${boardType}:${climbUuid}:${angle}`, {
+            boardType,
+            climbUuid,
+            angle,
+            ascensionistCount: row.ascensionistCount ?? 0,
+            qualityAverage: row.qualityAverage,
+            difficultyAverage: row.difficultyAverage,
+            displayDifficulty: row.displayDifficulty,
+          });
+        }
+      } catch (error) {
+        logger.error(`[debouncedClimbStats] Failed to publish stats event for ${key}:`, error);
       }
     }, DEBOUNCE_MS),
   );

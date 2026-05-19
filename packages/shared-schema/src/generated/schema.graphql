@@ -190,6 +190,22 @@ type ClimbSearchResult {
 }
 
 """
+Live update for a single (climb, angle) pair. Pushed from the backend after
+the debounced climb-stats recompute finishes — clients subscribed to the
+matching channel use it to replace optimistically-bumped values with the
+canonical numbers.
+"""
+type ClimbStatsEvent {
+  boardType: String!
+  climbUuid: ID!
+  angle: Int!
+  ascensionistCount: Int!
+  qualityAverage: Float
+  difficultyAverage: Float
+  displayDifficulty: Float
+}
+
+"""
 User information displayed in queue items.
 """
 type QueueItemUser {
@@ -4595,6 +4611,13 @@ type Subscription {
   Subscribe to new climbs for a board type and layout.
   """
   newClimbCreated(boardType: String!, layoutId: Int!): NewClimbCreatedEvent!
+
+  """
+  Subscribe to live climb stat updates for a single (climb, angle) pair.
+  Fires after the debounced recompute finishes (~2s after a tick), so
+  clients can replace optimistically-bumped values with canonical numbers.
+  """
+  climbStatsUpdated(boardType: String!, climbUuid: ID!, angle: Int!): ClimbStatsEvent!
 
   # ESP32 subscribes to receive LED commands - uses API key auth via connectionParams
   controllerEvents(sessionId: ID!): ControllerEvent!

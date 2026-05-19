@@ -1307,7 +1307,16 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                           cursor: tickBarActive ? 'default' : undefined,
                         }}
                       >
-                        <ClimbTitle climb={displayedClimb} gradePosition="right" showSetterInfo isActive />
+                        <ClimbTitle
+                          climb={
+                            displayedClimb
+                              ? { ...displayedClimb, boardType: displayedClimb.boardType ?? boardDetails.board_name }
+                              : displayedClimb
+                          }
+                          gradePosition="right"
+                          showSetterInfo
+                          isActive
+                        />
                       </div>
 
                       {/* Peek text — shows next/previous climb sliding in from the edge */}
@@ -1319,7 +1328,11 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                             transition: getTextTransitionStyle(),
                           }}
                         >
-                          <ClimbTitle climb={peekClimbData} gradePosition="right" showSetterInfo />
+                          <ClimbTitle
+                            climb={{ ...peekClimbData, boardType: peekClimbData.boardType ?? boardDetails.board_name }}
+                            gradePosition="right"
+                            showSetterInfo
+                          />
                         </div>
                       )}
                     </div>

@@ -19,7 +19,118 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import DrawerClimbHeader from '../climb-card/drawer-climb-header';
 import { useTranslation } from 'react-i18next';
+import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
+import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
 import styles from './angle-selector.module.css';
+
+/**
+ * One card in the per-angle stats grid. Subscribes to live stat updates
+ * for this (climbUuid, angle) so the drawer reflects the user's tick
+ * without waiting for a refetch (drawer's own REST query caches for 5min).
+ */
+function AngleCard({
+  boardName,
+  climbUuid,
+  angle,
+  stats,
+  hasStats,
+  currentClimb,
+  isLoading,
+  isSelected,
+  isDrawerOpen,
+  onClick,
+  cardRef,
+  t,
+}: {
+  boardName: BoardName;
+  climbUuid: string | undefined;
+  angle: number;
+  stats: ClimbStatsForAngle | undefined;
+  hasStats: boolean;
+  currentClimb: Climb | null;
+  isLoading: boolean;
+  isSelected: boolean;
+  isDrawerOpen: boolean;
+  onClick: () => void;
+  cardRef: React.Ref<HTMLDivElement> | null;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  // Only subscribe when the drawer is open — avoids N idle WS subscriptions
+  // when the picker is collapsed. The current-climb identity also gates it
+  // so we don't subscribe with an undefined uuid.
+  const subscriptionBoard = climbUuid && isDrawerOpen ? boardName : undefined;
+  useSubscribeClimbStatsUpdates(subscriptionBoard, isDrawerOpen ? climbUuid : undefined, angle);
+
+  const effective = useEffectiveClimbStats(subscriptionBoard, climbUuid, angle, {
+    ascensionist_count: stats?.ascensionist_count == null ? 0 : Number(stats.ascensionist_count),
+    quality_average: stats?.quality_average == null ? null : String(stats.quality_average),
+    difficulty: stats?.difficulty ?? null,
+  });
+
+  return (
+    <div ref={cardRef}>
+      <MuiCard
+        onClick={onClick}
+        sx={{
+          cursor: 'pointer',
+          '&:hover': { boxShadow: 3 },
+          backgroundColor: isSelected ? 'var(--semantic-selected)' : undefined,
+          borderColor: isSelected ? themeTokens.colors.primary : undefined,
+          borderWidth: isSelected ? 2 : 1,
+          borderStyle: 'solid',
+        }}
+      >
+        <CardContent
+          sx={{
+            p: '12px 8px',
+            minHeight: 80,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            '&:last-child': { pb: '12px' },
+          }}
+        >
+          <Typography variant="body2" component="span" fontWeight={600} sx={{ fontSize: 20, lineHeight: 1.2 }}>
+            {angle}°
+          </Typography>
+          {hasStats && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center', marginTop: '4px' }}>
+              {effective.difficulty && (
+                <Typography variant="body2" component="span" sx={{ fontSize: 12, fontWeight: 500 }}>
+                  {effective.difficulty}
+                </Typography>
+              )}
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: '4px',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {effective.qualityAverage !== null && Number(effective.qualityAverage) > 0 && (
+                  <Typography variant="body2" component="span" sx={{ fontSize: 11, color: themeTokens.colors.warning }}>
+                    ★{Number(effective.qualityAverage).toFixed(1)}
+                  </Typography>
+                )}
+                <Typography variant="body2" component="span" color="text.secondary" sx={{ fontSize: 10 }}>
+                  {t('angleSelector.sends', { count: effective.ascensionistCount })}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+          {currentClimb && !hasStats && !isLoading && (
+            <Typography variant="body2" component="span" color="text.secondary" sx={{ fontSize: 10, marginTop: '4px' }}>
+              {t('angleSelector.noData')}
+            </Typography>
+          )}
+        </CardContent>
+      </MuiCard>
+    </div>
+  );
+}
 
 type AngleSelectorProps = {
   boardName: BoardName;
@@ -107,87 +218,24 @@ export default function AngleSelector({
   const renderAngleCard = (angle: number) => {
     const stats = statsMap.get(angle);
     const isSelected = angle === currentAngle;
-    const hasStats = currentClimb && stats;
+    const hasStats = Boolean(currentClimb && stats);
 
     return (
-      <div key={angle} ref={isSelected ? currentAngleRef : null}>
-        <MuiCard
-          onClick={() => handleAngleChange(angle)}
-          sx={{
-            cursor: 'pointer',
-            '&:hover': { boxShadow: 3 },
-            backgroundColor: isSelected ? 'var(--semantic-selected)' : undefined,
-            borderColor: isSelected ? themeTokens.colors.primary : undefined,
-            borderWidth: isSelected ? 2 : 1,
-            borderStyle: 'solid',
-          }}
-        >
-          <CardContent
-            sx={{
-              p: '12px 8px',
-              minHeight: 80,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              '&:last-child': { pb: '12px' },
-            }}
-          >
-            <Typography variant="body2" component="span" fontWeight={600} sx={{ fontSize: 20, lineHeight: 1.2 }}>
-              {angle}°
-            </Typography>
-            {hasStats && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  alignItems: 'center',
-                  marginTop: '4px',
-                }}
-              >
-                {stats.difficulty && (
-                  <Typography variant="body2" component="span" sx={{ fontSize: 12, fontWeight: 500 }}>
-                    {stats.difficulty}
-                  </Typography>
-                )}
-                <Box
-                  sx={{
-                    display: 'flex',
-                    gap: '4px',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {stats.quality_average !== null && Number(stats.quality_average) > 0 && (
-                    <Typography
-                      variant="body2"
-                      component="span"
-                      sx={{ fontSize: 11, color: themeTokens.colors.warning }}
-                    >
-                      ★{Number(stats.quality_average).toFixed(1)}
-                    </Typography>
-                  )}
-                  <Typography variant="body2" component="span" color="text.secondary" sx={{ fontSize: 10 }}>
-                    {t('angleSelector.sends', { count: Number(stats.ascensionist_count ?? 0) })}
-                  </Typography>
-                </Box>
-              </Box>
-            )}
-            {currentClimb && !hasStats && !isLoading && (
-              <Typography
-                variant="body2"
-                component="span"
-                color="text.secondary"
-                sx={{ fontSize: 10, marginTop: '4px' }}
-              >
-                {t('angleSelector.noData')}
-              </Typography>
-            )}
-          </CardContent>
-        </MuiCard>
-      </div>
+      <AngleCard
+        key={angle}
+        boardName={boardName}
+        climbUuid={currentClimb?.uuid}
+        angle={angle}
+        stats={stats}
+        hasStats={hasStats}
+        currentClimb={currentClimb}
+        isLoading={isLoading}
+        isSelected={isSelected}
+        isDrawerOpen={isDrawerOpen}
+        onClick={() => handleAngleChange(angle)}
+        cardRef={isSelected ? currentAngleRef : null}
+        t={t}
+      />
     );
   };
 

@@ -659,6 +659,23 @@ export type ClimbSearchResult = {
 };
 
 /**
+ * Live update for a single (climb, angle) pair. Pushed from the backend after
+ * the debounced climb-stats recompute finishes — clients subscribed to the
+ * matching channel use it to replace optimistically-bumped values with the
+ * canonical numbers.
+ */
+export type ClimbStatsEvent = {
+  __typename?: 'ClimbStatsEvent';
+  angle: Scalars['Int']['output'];
+  ascensionistCount: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  climbUuid: Scalars['ID']['output'];
+  difficultyAverage?: Maybe<Scalars['Float']['output']>;
+  displayDifficulty?: Maybe<Scalars['Float']['output']>;
+  qualityAverage?: Maybe<Scalars['Float']['output']>;
+};
+
+/**
  * A single snapshot of climb statistics from the history table.
  * Captured during shared sync to track trends over time.
  */
@@ -4487,6 +4504,12 @@ export type SubmitAppFeedbackInput = {
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
+  /**
+   * Subscribe to live climb stat updates for a single (climb, angle) pair.
+   * Fires after the debounced recompute finishes (~2s after a tick), so
+   * clients can replace optimistically-bumped values with canonical numbers.
+   */
+  climbStatsUpdated: ClimbStatsEvent;
   /** Subscribe to real-time comment updates on an entity. */
   commentUpdates: CommentEvent;
   controllerEvents: ControllerEvent;
@@ -4501,6 +4524,13 @@ export type Subscription = {
   queueUpdates: QueueEvent;
   /** Subscribe to real-time session events (membership, lifecycle, and live stats). */
   sessionUpdates: SessionEvent;
+};
+
+/** Root subscription type for real-time updates. */
+export type SubscriptionClimbStatsUpdatedArgs = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
 };
 
 /** Root subscription type for real-time updates. */
@@ -5158,6 +5188,7 @@ export type ResolversTypes = ResolversObject<{
   ClimbQueueItemInput: ClimbQueueItemInput;
   ClimbSearchInput: ClimbSearchInput;
   ClimbSearchResult: ResolverTypeWrapper<ClimbSearchResult>;
+  ClimbStatsEvent: ResolverTypeWrapper<ClimbStatsEvent>;
   ClimbStatsHistoryEntry: ResolverTypeWrapper<ClimbStatsHistoryEntry>;
   Comment: ResolverTypeWrapper<Comment>;
   CommentAdded: ResolverTypeWrapper<CommentAdded>;
@@ -5414,6 +5445,7 @@ export type ResolversParentTypes = ResolversObject<{
   ClimbQueueItemInput: ClimbQueueItemInput;
   ClimbSearchInput: ClimbSearchInput;
   ClimbSearchResult: ClimbSearchResult;
+  ClimbStatsEvent: ClimbStatsEvent;
   ClimbStatsHistoryEntry: ClimbStatsHistoryEntry;
   Comment: Comment;
   CommentAdded: CommentAdded;
@@ -5909,6 +5941,20 @@ export type ClimbSearchResultResolvers<
   climbs?: Resolver<Array<ResolversTypes['Climb']>, ParentType, ContextType>;
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ClimbStatsEventResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ClimbStatsEvent'] = ResolversParentTypes['ClimbStatsEvent'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  ascensionistCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  difficultyAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -8195,6 +8241,13 @@ export type SubscriptionResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Subscription'] = ResolversParentTypes['Subscription'],
 > = ResolversObject<{
+  climbStatsUpdated?: SubscriptionResolver<
+    ResolversTypes['ClimbStatsEvent'],
+    'climbStatsUpdated',
+    ParentType,
+    ContextType,
+    RequireFields<SubscriptionClimbStatsUpdatedArgs, 'angle' | 'boardType' | 'climbUuid'>
+  >;
   commentUpdates?: SubscriptionResolver<
     ResolversTypes['CommentEvent'],
     'commentUpdates',
@@ -8472,6 +8525,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ClimbPlaylistMembership?: ClimbPlaylistMembershipResolvers<ContextType>;
   ClimbQueueItem?: ClimbQueueItemResolvers<ContextType>;
   ClimbSearchResult?: ClimbSearchResultResolvers<ContextType>;
+  ClimbStatsEvent?: ClimbStatsEventResolvers<ContextType>;
   ClimbStatsHistoryEntry?: ClimbStatsHistoryEntryResolvers<ContextType>;
   Comment?: CommentResolvers<ContextType>;
   CommentAdded?: CommentAddedResolvers<ContextType>;

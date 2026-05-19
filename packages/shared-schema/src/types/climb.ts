@@ -207,3 +207,19 @@ export type UpdateClimbResult = {
   publishedAt?: string | null;
   isDraft: boolean;
 };
+
+/**
+ * Live climb-stats event pushed from the backend after the debounced
+ * `recomputeClimbStats` finishes. Subscribers (climb cards, climb detail,
+ * angle selector) listen for the matching (boardType, climbUuid, angle)
+ * channel and overwrite their displayed values with these canonical numbers.
+ */
+export type ClimbStatsEvent = {
+  boardType: string;
+  climbUuid: string;
+  angle: number;
+  ascensionistCount: number;
+  qualityAverage?: number | null;
+  difficultyAverage?: number | null;
+  displayDifficulty?: number | null;
+};

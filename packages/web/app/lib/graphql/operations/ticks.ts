@@ -468,3 +468,39 @@ export type UpdateTickResponse = {
     updatedAt: string;
   };
 };
+
+// ============================================
+// Climb Stats Subscription
+// ============================================
+
+export const CLIMB_STATS_UPDATED_SUBSCRIPTION = gql`
+  subscription ClimbStatsUpdated($boardType: String!, $climbUuid: ID!, $angle: Int!) {
+    climbStatsUpdated(boardType: $boardType, climbUuid: $climbUuid, angle: $angle) {
+      boardType
+      climbUuid
+      angle
+      ascensionistCount
+      qualityAverage
+      difficultyAverage
+      displayDifficulty
+    }
+  }
+`;
+
+export type ClimbStatsUpdatedSubscriptionVariables = {
+  boardType: string;
+  climbUuid: string;
+  angle: number;
+};
+
+export type ClimbStatsUpdatedSubscriptionResponse = {
+  climbStatsUpdated: {
+    boardType: string;
+    climbUuid: string;
+    angle: number;
+    ascensionistCount: number;
+    qualityAverage: number | null;
+    difficultyAverage: number | null;
+    displayDifficulty: number | null;
+  };
+};

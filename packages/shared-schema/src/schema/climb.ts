@@ -184,4 +184,20 @@ export const climbTypeDefs = /* GraphQL */ `
     "Whether there are more results available"
     hasMore: Boolean!
   }
+
+  """
+  Live update for a single (climb, angle) pair. Pushed from the backend after
+  the debounced climb-stats recompute finishes — clients subscribed to the
+  matching channel use it to replace optimistically-bumped values with the
+  canonical numbers.
+  """
+  type ClimbStatsEvent {
+    boardType: String!
+    climbUuid: ID!
+    angle: Int!
+    ascensionistCount: Int!
+    qualityAverage: Float
+    difficultyAverage: Float
+    displayDifficulty: Float
+  }
 `;

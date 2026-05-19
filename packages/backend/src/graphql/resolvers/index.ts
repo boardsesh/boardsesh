@@ -5,6 +5,7 @@ import GraphQLJSON from 'graphql-type-json';
 import { boardQueries } from './board/queries';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
+import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
 import { userQueries } from './users/queries';
 import { userMutations } from './users/mutations';
 import { climbQueries } from './climbs/queries';
@@ -117,6 +118,7 @@ export const resolvers = {
     ...socialNotificationSubscriptions,
     ...socialCommentSubscriptions,
     ...newClimbFeedSubscription,
+    ...climbStatsSubscriptions,
   },
 
   // Field-level resolvers

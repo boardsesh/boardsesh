@@ -11,29 +11,47 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { formatSends } from '@/app/lib/format-climb-stats';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
-import type { Climb } from '@/app/lib/types';
+import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
+import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import type { BoardName, Climb } from '@/app/lib/types';
+
+const SUPPORTED_BOARD_SET = new Set<string>(SUPPORTED_BOARDS);
+
+function asBoardName(s: string | undefined | null): BoardName | undefined {
+  return s != null && SUPPORTED_BOARD_SET.has(s) ? (s as BoardName) : undefined;
+}
 
 type ClimbDetailHeaderProps = {
   climb: Climb;
   /** Community-voted grade override, fetched separately from climb_community_status table */
   communityGrade?: string | null;
+  /** Board name. Falls back to climb.boardType when not provided. Required for live stat subscription. */
+  boardName?: string;
 };
 
 /**
  * Header component for climb detail view.
  * Layout: Grade (left) | Name + details (center) | Spacer (right, balances grade)
  */
-export default function ClimbDetailHeader({ climb, communityGrade }: ClimbDetailHeaderProps) {
+export default function ClimbDetailHeader({ climb, communityGrade, boardName }: ClimbDetailHeaderProps) {
   const { t } = useTranslation('climbs');
   const isDark = useIsDarkMode();
   const { formatGrade, getGradeColor, loaded: gradeFormatLoaded } = useGradeFormat();
+
+  const subscriptionBoard = asBoardName(boardName ?? climb.boardType);
+  useSubscribeClimbStatsUpdates(subscriptionBoard, climb.uuid, climb.angle);
+  const effectiveStats = useEffectiveClimbStats(subscriptionBoard, climb.uuid, climb.angle, {
+    ascensionist_count: climb.ascensionist_count,
+    quality_average: climb.quality_average,
+  });
 
   // Use community grade when available, otherwise fall back to original difficulty
   const displayDifficulty = communityGrade || climb.difficulty;
   const formattedGrade = formatGrade(displayDifficulty);
   const gradeColor = formattedGrade ? getGradeColor(displayDifficulty, isDark) : undefined;
 
-  const hasQuality = climb.quality_average && climb.quality_average !== '0';
+  const hasQuality = effectiveStats.qualityAverage && effectiveStats.qualityAverage !== '0';
 
   const renderGradeContent = () => {
     if (!gradeFormatLoaded && displayDifficulty) {
@@ -132,8 +150,8 @@ export default function ClimbDetailHeader({ climb, communityGrade }: ClimbDetail
           }}
         >
           {[
-            hasQuality ? `${climb.quality_average}★` : null,
-            climb.ascensionist_count ? formatSends(climb.ascensionist_count) : null,
+            hasQuality ? `${effectiveStats.qualityAverage}★` : null,
+            effectiveStats.ascensionistCount ? formatSends(effectiveStats.ascensionistCount) : null,
             climb.setter_username,
           ]
             .filter(Boolean)

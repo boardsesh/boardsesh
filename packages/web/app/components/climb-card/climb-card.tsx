@@ -90,7 +90,13 @@ function ClimbCardWithActions({
       preferImageLayers={preferImageLayers}
     />
   );
-  const cardTitle = <ClimbTitle climb={climb} layout="horizontal" showSetterInfo />;
+  const cardTitle = (
+    <ClimbTitle
+      climb={{ ...climb, boardType: climb.boardType ?? boardDetails.board_name }}
+      layout="horizontal"
+      showSetterInfo
+    />
+  );
 
   const excludeActions = getExcludedClimbActions(boardDetails.board_name, 'card');
 
@@ -163,7 +169,15 @@ const ClimbCardStatic = React.memo(
         preferImageLayers={preferImageLayers}
       />
     );
-    const cardTitle = climb ? <ClimbTitle climb={climb} layout="horizontal" showSetterInfo /> : 'Loading...';
+    const cardTitle = climb ? (
+      <ClimbTitle
+        climb={{ ...climb, boardType: climb.boardType ?? boardDetails.board_name }}
+        layout="horizontal"
+        showSetterInfo
+      />
+    ) : (
+      'Loading...'
+    );
 
     return (
       <div data-testid="climb-card">

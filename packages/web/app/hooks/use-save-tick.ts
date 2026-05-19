@@ -14,6 +14,12 @@ import {
   type LogbookEntry,
 } from './use-logbook';
 import { clearTickDraft } from '@/app/lib/tick-draft-db';
+import { bumpAscentDelta, climbStatsLiveKey, type ClimbStatsLive } from './use-climb-stats-live';
+
+// Backstop in case the live stats WS event never lands (backend down,
+// Redis hiccup, recompute failed). Slightly longer than the server-side
+// 2s debounce so the live event has a clear shot to arrive first.
+const ASCENT_DELTA_SAFETY_MS = 5_000;
 
 // Options for saving a tick (local storage, no Aurora required)
 export type SaveTickOptions = {
@@ -83,6 +89,18 @@ export function useSaveTick(boardName: BoardName) {
       // latest accumulated cache entry instead of racing the optimistic write.
       await queryClient.cancelQueries({ queryKey: fetchLogbookQueryKeyPrefix(boardName) });
 
+      // Snapshot the user's prior flash/send state at this (climb, angle)
+      // *before* we insert the optimistic entry, so the "first ascent"
+      // check below mirrors the server's COUNT(DISTINCT user_id) rule.
+      const isAscent = options.status === 'flash' || options.status === 'send';
+      const priorAccumulated = queryClient.getQueryData<LogbookEntry[]>(accumulatedKey) ?? [];
+      const hadPriorAscent = priorAccumulated.some(
+        (entry) =>
+          entry.climb_uuid === options.climbUuid &&
+          entry.angle === options.angle &&
+          (entry.status === 'flash' || entry.status === 'send'),
+      );
+
       // Create optimistic entry
       const tempUuid = `temp-${Date.now()}`;
       const optimisticEntry: LogbookEntry = {
@@ -104,7 +122,17 @@ export function useSaveTick(boardName: BoardName) {
 
       queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) => [optimisticEntry, ...existing]);
 
-      return { tempUuid };
+      // Optimistically bump the ascensionist_count shown in the UI. The
+      // recompute is debounced ~2s on the backend; a live WS event will
+      // later replace this delta with the canonical number. We only bump
+      // when this is the user's first send/flash at this (climb, angle)
+      // — repeat sends by the same user don't move the distinct-user count.
+      const bumpedAscent = isAscent && !hadPriorAscent;
+      if (bumpedAscent) {
+        bumpAscentDelta(queryClient, boardName, options.climbUuid, options.angle, 1);
+      }
+
+      return { tempUuid, bumpedAscent };
     },
     onSuccess: (savedTick, options, context) => {
       const savedEntry = toLogbookEntry(savedTick);
@@ -148,8 +176,24 @@ export function useSaveTick(boardName: BoardName) {
           queryKey: ['betaLinks', boardName, options.climbUuid],
         });
       }
+
+      // Safety net for the optimistic ascent bump: if the live-stats WS
+      // event never arrives (backend down, Redis hiccup, recompute crashed)
+      // the delta would persist and double-count after the next page-level
+      // refetch. Zero it after a buffer that comfortably outruns the 2s
+      // debounce + publish — but only if the live event hasn't already
+      // arrived and reset the delta. In the happy path this is a no-op.
+      if (context?.bumpedAscent) {
+        setTimeout(() => {
+          const current = queryClient.getQueryData<ClimbStatsLive>(
+            climbStatsLiveKey(boardName, options.climbUuid, options.angle),
+          );
+          if (current?.live) return; // Live event already reconciled.
+          bumpAscentDelta(queryClient, boardName, options.climbUuid, options.angle, -1);
+        }, ASCENT_DELTA_SAFETY_MS);
+      }
     },
-    onError: (_err, _options, context) => {
+    onError: (_err, options, context) => {
       // Rollback optimistic update. User-facing error feedback is handled by
       // the caller (e.g. QuickTickBar's .catch → onError callback) to avoid
       // duplicate snackbars.
@@ -157,6 +201,9 @@ export function useSaveTick(boardName: BoardName) {
         queryClient.setQueriesData<LogbookEntry[]>({ queryKey: accumulatedKey, exact: true }, (existing = []) =>
           existing.filter((entry) => entry.uuid !== context.tempUuid),
         );
+      }
+      if (context?.bumpedAscent) {
+        bumpAscentDelta(queryClient, boardName, options.climbUuid, options.angle, -1);
       }
     },
   });

@@ -4,6 +4,7 @@ import type {
   NotificationEvent,
   CommentEvent,
   NewClimbCreatedEvent,
+  ClimbStatsEvent,
 } from '@boardsesh/shared-schema';
 import { redisClientManager } from '../redis/client';
 import { createRedisPubSubAdapter, type RedisPubSubAdapter } from './redis-adapter';
@@ -14,6 +15,7 @@ type SessionSubscriber = (event: SessionEvent) => void;
 type NotificationSubscriber = (event: NotificationEvent) => void;
 type CommentSubscriber = (event: CommentEvent) => void;
 type NewClimbSubscriber = (event: NewClimbCreatedEvent) => void;
+type ClimbStatsSubscriber = (event: ClimbStatsEvent) => void;
 
 /** External hook called after every queue event publish. Fire-and-forget. */
 type QueueEventHook = (sessionId: string, event: QueueEvent) => void;
@@ -40,6 +42,7 @@ class PubSub {
   private notificationSubscribers = new Map<string, Set<NotificationSubscriber>>();
   private commentSubscribers = new Map<string, Set<CommentSubscriber>>();
   private newClimbSubscribers = new Map<string, Set<NewClimbSubscriber>>();
+  private climbStatsSubscribers = new Map<string, Set<ClimbStatsSubscriber>>();
   private redisAdapter: RedisPubSubAdapter | null = null;
   private initialized = false;
   private redisRequired = false;
@@ -144,6 +147,10 @@ class PubSub {
 
     this.redisAdapter.onNewClimbMessage((channelKey, event) => {
       this.dispatchToLocalNewClimbSubscribers(channelKey, event);
+    });
+
+    this.redisAdapter.onClimbStatsMessage((channelKey, event) => {
+      this.dispatchToLocalClimbStatsSubscribers(channelKey, event);
     });
   }
 
@@ -603,6 +610,75 @@ class PubSub {
           callback(event);
         } catch (error) {
           logger.error('Error in new climb subscriber:', error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Subscribe to climb-stats events for a single (boardType, climbUuid, angle).
+   * @param channelKey format: `${boardType}:${climbUuid}:${angle}`
+   */
+  async subscribeClimbStats(channelKey: string, callback: ClimbStatsSubscriber): Promise<() => void> {
+    this.ensureRedisIfRequired();
+
+    const isFirstSubscriber = !this.climbStatsSubscribers.has(channelKey);
+
+    if (!this.climbStatsSubscribers.has(channelKey)) {
+      this.climbStatsSubscribers.set(channelKey, new Set());
+    }
+    this.climbStatsSubscribers.get(channelKey)!.add(callback);
+
+    if (isFirstSubscriber && this.redisAdapter) {
+      try {
+        await this.redisAdapter.subscribeClimbStatsChannel(channelKey);
+      } catch (error) {
+        logger.error(`[PubSub] Failed to subscribe to Redis climb-stats channel: ${String(error)}`);
+        this.climbStatsSubscribers.get(channelKey)?.delete(callback);
+        if (this.climbStatsSubscribers.get(channelKey)?.size === 0) {
+          this.climbStatsSubscribers.delete(channelKey);
+        }
+        if (this.redisRequired) {
+          throw error;
+        }
+      }
+    }
+
+    return () => {
+      this.climbStatsSubscribers.get(channelKey)?.delete(callback);
+      if (this.climbStatsSubscribers.get(channelKey)?.size === 0) {
+        this.climbStatsSubscribers.delete(channelKey);
+        if (this.redisAdapter) {
+          this.redisAdapter.unsubscribeClimbStatsChannel(channelKey).catch((error) => {
+            logger.error(`[PubSub] Failed to unsubscribe from Redis climb-stats channel: ${String(error)}`);
+          });
+        }
+      }
+    };
+  }
+
+  /**
+   * Publish a climb-stats event after the debounced recompute finishes.
+   * Dispatches locally first, then fans out via Redis to other instances.
+   */
+  publishClimbStatsEvent(channelKey: string, event: ClimbStatsEvent): void {
+    this.dispatchToLocalClimbStatsSubscribers(channelKey, event);
+
+    if (this.redisAdapter) {
+      this.redisAdapter.publishClimbStatsEvent(channelKey, event).catch((error) => {
+        logger.error('[PubSub] Redis climb-stats publish failed:', error);
+      });
+    }
+  }
+
+  private dispatchToLocalClimbStatsSubscribers(channelKey: string, event: ClimbStatsEvent): void {
+    const subscribers = this.climbStatsSubscribers.get(channelKey);
+    if (subscribers) {
+      for (const callback of subscribers) {
+        try {
+          callback(event);
+        } catch (error) {
+          logger.error('Error in climb-stats subscriber:', error);
         }
       }
     }

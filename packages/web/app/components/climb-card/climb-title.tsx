@@ -11,6 +11,16 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
+import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
+import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import type { BoardName } from '@/app/lib/types';
+
+const SUPPORTED_BOARD_SET = new Set<string>(SUPPORTED_BOARDS);
+
+function asBoardName(s: string | undefined | null): BoardName | undefined {
+  return s != null && SUPPORTED_BOARD_SET.has(s) ? (s as BoardName) : undefined;
+}
 
 export type ClimbTitleData = {
   name?: string;
@@ -23,6 +33,12 @@ export type ClimbTitleData = {
   is_draft?: boolean;
   communityGrade?: string | null;
   is_no_match?: boolean;
+  /** Climb identity. When `uuid` + `boardType` + a numeric `angle` are all
+   *  present, ClimbTitle subscribes to live stat updates for this climb
+   *  and reflects optimistic / WS-pushed values. Legacy callers that don't
+   *  pass these stay on the raw `ascensionist_count` / `quality_average`. */
+  uuid?: string;
+  boardType?: string;
 };
 
 export type ClimbTitleProps = {
@@ -239,6 +255,20 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       [nameFontSize],
     );
 
+    // Live-stats hooks must run unconditionally. When `uuid`/`boardType`/
+    // numeric `angle` aren't all present (older callers, project rows),
+    // both hooks short-circuit and the displayed values fall back to the
+    // raw props.
+    const numericAngle = typeof climb?.angle === 'string' ? Number(climb.angle) : climb?.angle;
+    const subscriptionAngle =
+      typeof numericAngle === 'number' && Number.isFinite(numericAngle) ? numericAngle : undefined;
+    const subscriptionBoard = asBoardName(climb?.boardType);
+    useSubscribeClimbStatsUpdates(subscriptionBoard, climb?.uuid, subscriptionAngle);
+    const effectiveStats = useEffectiveClimbStats(subscriptionBoard, climb?.uuid, subscriptionAngle, {
+      ascensionist_count: climb?.ascensionist_count,
+      quality_average: climb?.quality_average,
+    });
+
     if (!climb) {
       return (
         <Typography variant="body2" component="span" sx={noClimbSx}>
@@ -247,12 +277,14 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       );
     }
 
-    const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
+    const displayQualityAverage = effectiveStats.qualityAverage;
+    const displayAscensionistCount = effectiveStats.ascensionistCount;
+    const hasGrade = displayDifficulty && displayQualityAverage && displayQualityAverage !== '0';
     const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
 
     const renderDifficultyText = () => {
       if (hasGrade) {
-        const baseText = `${displayDifficulty} ${formatQuality(climb.quality_average!)}★`;
+        const baseText = `${displayDifficulty} ${formatQuality(displayQualityAverage!)}★`;
         return showAngle ? `${baseText} @ ${climb.angle}°` : baseText;
       }
       const projectText = showAngle ? t('card.title.projectAtAngle', { angle: climb.angle }) : t('card.title.project');
@@ -294,7 +326,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
 
     const setterText = climb.is_draft
       ? `Draft by ${climb.setter_username}`
-      : `By ${climb.setter_username}${climb.ascensionist_count ? ` - ${formatSends(climb.ascensionist_count)}` : ''}`;
+      : `By ${climb.setter_username}${displayAscensionistCount ? ` - ${formatSends(displayAscensionistCount)}` : ''}`;
 
     const setterElement = showSetterInfo && climb.setter_username && (
       <Typography variant="body2" component="span" color="text.secondary" sx={setterSx}>
@@ -307,11 +339,11 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       if (climb.is_draft) {
         subtitleParts.push('Draft');
       }
-      if (!climb.is_draft && climb.ascensionist_count) {
-        subtitleParts.push(formatSends(climb.ascensionist_count));
+      if (!climb.is_draft && displayAscensionistCount) {
+        subtitleParts.push(formatSends(displayAscensionistCount));
       }
       if (hasGrade) {
-        subtitleParts.push(`${formatQuality(climb.quality_average!)}\u2605`);
+        subtitleParts.push(`${formatQuality(displayQualityAverage!)}\u2605`);
       }
       if (showSetterInfo && climb.setter_username) {
         subtitleParts.push(climb.setter_username);
@@ -365,13 +397,13 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
         secondLineContent.push('Draft');
       }
       if (hasGrade) {
-        secondLineContent.push(`${displayDifficulty} ${formatQuality(climb.quality_average!)}★`);
+        secondLineContent.push(`${displayDifficulty} ${formatQuality(displayQualityAverage!)}★`);
       }
       if (showSetterInfo && climb.setter_username) {
         secondLineContent.push(`${climb.setter_username}`);
       }
-      if (!climb.is_draft && climb.ascensionist_count) {
-        secondLineContent.push(formatSends(climb.ascensionist_count));
+      if (!climb.is_draft && displayAscensionistCount) {
+        secondLineContent.push(formatSends(displayAscensionistCount));
       }
 
       return (
@@ -454,6 +486,8 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       prevClimb.is_draft === nextClimb.is_draft &&
       prevClimb.communityGrade === nextClimb.communityGrade &&
       prevClimb.is_no_match === nextClimb.is_no_match &&
+      prevClimb.uuid === nextClimb.uuid &&
+      prevClimb.boardType === nextClimb.boardType &&
       prev.showAngle === next.showAngle &&
       prev.showSetterInfo === next.showSetterInfo &&
       prev.nameAddon === next.nameAddon &&

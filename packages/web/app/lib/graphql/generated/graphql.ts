@@ -656,6 +656,23 @@ export type ClimbSearchResult = {
 };
 
 /**
+ * Live update for a single (climb, angle) pair. Pushed from the backend after
+ * the debounced climb-stats recompute finishes — clients subscribed to the
+ * matching channel use it to replace optimistically-bumped values with the
+ * canonical numbers.
+ */
+export type ClimbStatsEvent = {
+  __typename?: 'ClimbStatsEvent';
+  angle: Scalars['Int']['output'];
+  ascensionistCount: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  climbUuid: Scalars['ID']['output'];
+  difficultyAverage?: Maybe<Scalars['Float']['output']>;
+  displayDifficulty?: Maybe<Scalars['Float']['output']>;
+  qualityAverage?: Maybe<Scalars['Float']['output']>;
+};
+
+/**
  * A single snapshot of climb statistics from the history table.
  * Captured during shared sync to track trends over time.
  */
@@ -4484,6 +4501,12 @@ export type SubmitAppFeedbackInput = {
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
+  /**
+   * Subscribe to live climb stat updates for a single (climb, angle) pair.
+   * Fires after the debounced recompute finishes (~2s after a tick), so
+   * clients can replace optimistically-bumped values with canonical numbers.
+   */
+  climbStatsUpdated: ClimbStatsEvent;
   /** Subscribe to real-time comment updates on an entity. */
   commentUpdates: CommentEvent;
   controllerEvents: ControllerEvent;
@@ -4498,6 +4521,13 @@ export type Subscription = {
   queueUpdates: QueueEvent;
   /** Subscribe to real-time session events (membership, lifecycle, and live stats). */
   sessionUpdates: SessionEvent;
+};
+
+/** Root subscription type for real-time updates. */
+export type SubscriptionClimbStatsUpdatedArgs = {
+  angle: Scalars['Int']['input'];
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
 };
 
 /** Root subscription type for real-time updates. */
@@ -7096,6 +7126,26 @@ export type UpdateTickMutation = {
     isBenchmark: boolean;
     comment: string;
     updatedAt: string;
+  };
+};
+
+export type ClimbStatsUpdatedSubscriptionVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
+  angle: Scalars['Int']['input'];
+}>;
+
+export type ClimbStatsUpdatedSubscription = {
+  __typename?: 'Subscription';
+  climbStatsUpdated: {
+    __typename?: 'ClimbStatsEvent';
+    boardType: string;
+    climbUuid: string;
+    angle: number;
+    ascensionistCount: number;
+    qualityAverage?: number | null;
+    difficultyAverage?: number | null;
+    displayDifficulty?: number | null;
   };
 };
 
@@ -12657,3 +12707,68 @@ export const UpdateTickDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
+export const ClimbStatsUpdatedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'subscription',
+      name: { kind: 'Name', value: 'ClimbStatsUpdated' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'climbStatsUpdated' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'angle' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ClimbStatsUpdatedSubscription, ClimbStatsUpdatedSubscriptionVariables>;
