@@ -180,16 +180,20 @@ export function useSaveTick(boardName: BoardName) {
       // Safety net for the optimistic ascent bump: if the live-stats WS
       // event never arrives (backend down, Redis hiccup, recompute crashed)
       // the delta would persist and double-count after the next page-level
-      // refetch. Zero it after a buffer that comfortably outruns the 2s
-      // debounce + publish — but only if the live event hasn't already
-      // arrived and reset the delta. In the happy path this is a no-op.
+      // refetch. Roll back after a buffer that outruns the 2s debounce +
+      // publish — but only if the delta is still positive. The live-event
+      // path resets it to 0 when it lands, and the cache may have been
+      // gc'd or cleared from elsewhere; in both cases a blind `-1` would
+      // drive the displayed count below the base value.
       if (context?.bumpedAscent) {
         setTimeout(() => {
-          const current = queryClient.getQueryData<ClimbStatsLive>(
+          queryClient.setQueryData<ClimbStatsLive>(
             climbStatsLiveKey(boardName, options.climbUuid, options.angle),
+            (prev) => {
+              if (!prev || prev.ascentDelta <= 0) return prev;
+              return { ...prev, ascentDelta: prev.ascentDelta - 1 };
+            },
           );
-          if (current?.live) return; // Live event already reconciled.
-          bumpAscentDelta(queryClient, boardName, options.climbUuid, options.angle, -1);
         }, ASCENT_DELTA_SAFETY_MS);
       }
     },

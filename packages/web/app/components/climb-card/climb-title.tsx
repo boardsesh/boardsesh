@@ -13,14 +13,7 @@ import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
 import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import type { BoardName } from '@/app/lib/types';
-
-const SUPPORTED_BOARD_SET = new Set<string>(SUPPORTED_BOARDS);
-
-function asBoardName(s: string | undefined | null): BoardName | undefined {
-  return s != null && SUPPORTED_BOARD_SET.has(s) ? (s as BoardName) : undefined;
-}
+import { asBoardName } from '@/app/lib/board-name';
 
 export type ClimbTitleData = {
   name?: string;

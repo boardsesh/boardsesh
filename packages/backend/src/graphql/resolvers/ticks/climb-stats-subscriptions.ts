@@ -4,9 +4,12 @@ import { createAsyncIterator } from '../shared/async-iterators';
 
 const VALID_BOARD_TYPES = new Set<string>(SUPPORTED_BOARDS);
 
-// UUIDs from Aurora are typically 16 hex chars; our boardsesh-created climbs
-// use 36-char UUIDs. 128 leaves plenty of headroom while bounding channel keys.
-const MAX_CLIMB_UUID_LENGTH = 128;
+// UUIDs from Aurora are 16 hex chars (no dashes); our Boardsesh-created
+// climbs use canonical 36-char UUIDs (hex + dashes). Both fit
+// [A-Za-z0-9-]+ and never contain `:`, which would corrupt the
+// `${boardType}:${climbUuid}:${angle}` channel key parsed back by the
+// Redis adapter.
+const CLIMB_UUID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 // Boards expose angles in 5° increments between 0 and 90.
 const ANGLE_MIN = 0;
@@ -22,7 +25,7 @@ export const climbStatsSubscriptions = {
       if (!VALID_BOARD_TYPES.has(boardType)) {
         throw new Error(`Invalid board type: ${boardType}`);
       }
-      if (!climbUuid || climbUuid.length > MAX_CLIMB_UUID_LENGTH) {
+      if (!climbUuid || !CLIMB_UUID_PATTERN.test(climbUuid)) {
         throw new Error('Invalid climb UUID');
       }
       if (!Number.isInteger(angle) || angle < ANGLE_MIN || angle > ANGLE_MAX) {
