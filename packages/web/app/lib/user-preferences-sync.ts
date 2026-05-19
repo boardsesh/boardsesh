@@ -31,8 +31,8 @@ import {
   registerSyncableKeys,
   removePreferenceFromServer,
   setLastSyncPulledAt,
-  setPreference,
   setPreferenceFromServer,
+  setPreferenceUntyped,
   updateSyncQueueEntryAttempts,
   type SyncQueueSnapshotEntry,
   type UserPreferenceKeyMap,
@@ -167,7 +167,7 @@ export async function pullInitial(authToken: string, signal?: AbortSignal): Prom
       // tell apart a fresh-install local pref from a server-deleted one,
       // so default to "keep + push"), or the local pref was written after
       // the previous pull and the server hasn't seen it yet. Push it up.
-      await setPreference(localEntry.key, localEntry.value as never);
+      await setPreferenceUntyped(localEntry.key, localEntry.value);
     }
   }
 

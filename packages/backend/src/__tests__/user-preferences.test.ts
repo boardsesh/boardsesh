@@ -172,7 +172,13 @@ function setupSelectListMock(rows: Array<{ key: string; value: unknown; updatedA
 
 describe('setUserPreference mutation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // mockReset clears BOTH call history AND the mockReturnValueOnce queue.
+    // vi.clearAllMocks only resets call history — uncomsumed mockReturnValueOnce
+    // values leak into later tests when a previous test threw (e.g. on
+    // validateInput) before consuming its quota-select mock.
+    mockDb.select.mockReset();
+    mockDb.insert.mockReset();
+    mockDb.delete.mockReset();
     capturedCalls.length = 0;
   });
 
@@ -326,7 +332,13 @@ describe('setUserPreference mutation', () => {
 
 describe('deleteUserPreference mutation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // mockReset clears BOTH call history AND the mockReturnValueOnce queue.
+    // vi.clearAllMocks only resets call history — uncomsumed mockReturnValueOnce
+    // values leak into later tests when a previous test threw (e.g. on
+    // validateInput) before consuming its quota-select mock.
+    mockDb.select.mockReset();
+    mockDb.insert.mockReset();
+    mockDb.delete.mockReset();
     capturedCalls.length = 0;
   });
 
@@ -378,7 +390,13 @@ describe('deleteUserPreference mutation', () => {
 
 describe('userPreference query', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // mockReset clears BOTH call history AND the mockReturnValueOnce queue.
+    // vi.clearAllMocks only resets call history — uncomsumed mockReturnValueOnce
+    // values leak into later tests when a previous test threw (e.g. on
+    // validateInput) before consuming its quota-select mock.
+    mockDb.select.mockReset();
+    mockDb.insert.mockReset();
+    mockDb.delete.mockReset();
     capturedCalls.length = 0;
   });
 
@@ -425,7 +443,13 @@ describe('userPreference query', () => {
 
 describe('userPreferences query', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // mockReset clears BOTH call history AND the mockReturnValueOnce queue.
+    // vi.clearAllMocks only resets call history — uncomsumed mockReturnValueOnce
+    // values leak into later tests when a previous test threw (e.g. on
+    // validateInput) before consuming its quota-select mock.
+    mockDb.select.mockReset();
+    mockDb.insert.mockReset();
+    mockDb.delete.mockReset();
     capturedCalls.length = 0;
   });
 

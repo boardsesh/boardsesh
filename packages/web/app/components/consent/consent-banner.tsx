@@ -11,7 +11,13 @@ import Typography from '@mui/material/Typography';
 import { useConsent } from './consent-context';
 import ConsentDialog from './consent-dialog';
 
-const Z_INDEX_CONSENT_BANNER = 1300; // Above Snackbar (1400 is Dialog/Modal — banner sits just below).
+// MUI's z-index scale: Modal/Drawer/Dialog = 1300, Snackbar = 1400, Tooltip = 1500.
+// The banner has to sit above everything that's persistent at the bottom of the
+// viewport (snackbars in particular), otherwise an in-flight toast covers it and
+// the user can't dismiss. 1500 also clears Tooltip so a hovered tooltip can't
+// occlude the choice — the trade-off (banner painting over a Tooltip) is fine
+// because the banner unmounts after a single click.
+const Z_INDEX_CONSENT_BANNER = 1500;
 
 /**
  * Bottom-anchored consent banner. Renders nothing once the user has

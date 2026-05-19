@@ -264,6 +264,18 @@ export const getPreference = async <T = unknown, K extends string = string>(
 };
 
 /**
+ * Sync-engine entry point for writing a preference whose key is only known
+ * at runtime (e.g. when reconciling local-only keys against the server in
+ * `pullInitial`). Same behavior as {@link setPreference} — the only reason
+ * for the split is that `setPreference`'s conditional `value` type does
+ * not unify with `unknown` at a string-keyed call site without forcing a
+ * `as never` cast. Type-correct call sites should prefer `setPreference`.
+ */
+export const setPreferenceUntyped = (key: string, value: unknown): Promise<void> => {
+  return setPreference(key as keyof UserPreferenceKeyMap, value as never);
+};
+
+/**
  * Save a preference value to IndexedDB. Updates the meta store, broadcasts
  * the change to other tabs, and enqueues the op for upstream sync when the
  * key is in the SYNCABLE_KEYS set.

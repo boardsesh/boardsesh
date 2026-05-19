@@ -3427,6 +3427,16 @@ type BetaLink {
   createdAt: String
 }
 
+"""
+A recent beta link enriched with the parent climb's display name. Used
+by the home-page slider where multiple climbs are aggregated together.
+"""
+type RecentBetaLink {
+  betaLink: BetaLink!
+  climbName: String
+  boardType: String!
+}
+
 # ============================================
 # User Preferences Types
 # ============================================
@@ -3469,16 +3479,6 @@ the source surface and a timestamp.
 input RecordConsentRejectionInput {
   "Which surface the rejection came from: 'banner', 'dialog', or 'settings'."
   source: String!
-}
-
-"""
-A recent beta link enriched with the parent climb's display name. Used
-by the home-page slider where multiple climbs are aggregated together.
-"""
-type RecentBetaLink {
-  betaLink: BetaLink!
-  climbName: String
-  boardType: String!
 }
 
 """
