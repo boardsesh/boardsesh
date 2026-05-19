@@ -4,6 +4,7 @@ import type {
   NotificationEvent,
   CommentEvent,
   NewClimbCreatedEvent,
+  BoardHistoryEvent,
 } from '@boardsesh/shared-schema';
 import { redisClientManager } from '../redis/client';
 import { createRedisPubSubAdapter, type RedisPubSubAdapter } from './redis-adapter';
@@ -14,6 +15,7 @@ type SessionSubscriber = (event: SessionEvent) => void;
 type NotificationSubscriber = (event: NotificationEvent) => void;
 type CommentSubscriber = (event: CommentEvent) => void;
 type NewClimbSubscriber = (event: NewClimbCreatedEvent) => void;
+type BoardHistorySubscriber = (event: BoardHistoryEvent) => void;
 
 /** External hook called after every queue event publish. Fire-and-forget. */
 type QueueEventHook = (sessionId: string, event: QueueEvent) => void;
@@ -40,6 +42,7 @@ class PubSub {
   private notificationSubscribers = new Map<string, Set<NotificationSubscriber>>();
   private commentSubscribers = new Map<string, Set<CommentSubscriber>>();
   private newClimbSubscribers = new Map<string, Set<NewClimbSubscriber>>();
+  private boardHistorySubscribers = new Map<string, Set<BoardHistorySubscriber>>();
   private redisAdapter: RedisPubSubAdapter | null = null;
   private initialized = false;
   private redisRequired = false;
@@ -144,6 +147,10 @@ class PubSub {
 
     this.redisAdapter.onNewClimbMessage((channelKey, event) => {
       this.dispatchToLocalNewClimbSubscribers(channelKey, event);
+    });
+
+    this.redisAdapter.onBoardHistoryMessage((serial, event) => {
+      this.dispatchToLocalBoardHistorySubscribers(serial, event);
     });
   }
 
@@ -603,6 +610,77 @@ class PubSub {
           callback(event);
         } catch (error) {
           logger.error('Error in new climb subscriber:', error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Subscribe to board history events for a physical board (keyed by BLE serial).
+   * @returns Promise that resolves to an unsubscribe function
+   */
+  async subscribeBoardHistory(serial: string, callback: BoardHistorySubscriber): Promise<() => void> {
+    this.ensureRedisIfRequired();
+
+    const isFirstSubscriber = !this.boardHistorySubscribers.has(serial);
+
+    if (!this.boardHistorySubscribers.has(serial)) {
+      this.boardHistorySubscribers.set(serial, new Set());
+    }
+    this.boardHistorySubscribers.get(serial)!.add(callback);
+
+    if (isFirstSubscriber && this.redisAdapter) {
+      try {
+        await this.redisAdapter.subscribeBoardHistoryChannel(serial);
+      } catch (error) {
+        logger.error(`[PubSub] Failed to subscribe to Redis board history channel: ${String(error)}`);
+        this.boardHistorySubscribers.get(serial)?.delete(callback);
+        if (this.boardHistorySubscribers.get(serial)?.size === 0) {
+          this.boardHistorySubscribers.delete(serial);
+        }
+        if (this.redisRequired) {
+          throw error;
+        }
+      }
+    }
+
+    return () => {
+      this.boardHistorySubscribers.get(serial)?.delete(callback);
+      if (this.boardHistorySubscribers.get(serial)?.size === 0) {
+        this.boardHistorySubscribers.delete(serial);
+        if (this.redisAdapter) {
+          this.redisAdapter.unsubscribeBoardHistoryChannel(serial).catch((error) => {
+            logger.error(`[PubSub] Failed to unsubscribe from Redis board history channel: ${String(error)}`);
+          });
+        }
+      }
+    };
+  }
+
+  /**
+   * Publish a board history event for a serial.
+   * Mirrors `publishQueueEvent` shape — local dispatch first, then Redis
+   * fan-out for other instances. Errors on the Redis path are logged but
+   * not thrown.
+   */
+  publishBoardHistoryEvent(serial: string, event: BoardHistoryEvent): void {
+    this.dispatchToLocalBoardHistorySubscribers(serial, event);
+
+    if (this.redisAdapter) {
+      this.redisAdapter.publishBoardHistoryEvent(serial, event).catch((error) => {
+        logger.error('[PubSub] Redis board history publish failed:', error);
+      });
+    }
+  }
+
+  private dispatchToLocalBoardHistorySubscribers(serial: string, event: BoardHistoryEvent): void {
+    const subscribers = this.boardHistorySubscribers.get(serial);
+    if (subscribers) {
+      for (const callback of subscribers) {
+        try {
+          callback(event);
+        } catch (error) {
+          logger.error('Error in board history subscriber:', error);
         }
       }
     }

@@ -550,5 +550,25 @@ export const mutationsTypeDefs = /* GraphQL */ `
     associated with the user.
     """
     submitAppFeedback(input: SubmitAppFeedbackInput!): Boolean!
+
+    # ============================================
+    # Board History Mutations (require auth)
+    # ============================================
+
+    """
+    Record that a climb was sent to a physical board. Called by the BLE
+    client after a successful send. The \`uuid\` field is the idempotency key
+    — repeated calls with the same uuid return the previously persisted row
+    and do not emit a second event.
+    """
+    recordBoardSend(input: RecordBoardSendInput!): BoardHistoryEntry!
+
+    """
+    Toggle the shared-playlist queue model for a session. When disabled,
+    queue mutations are rejected server-side and clients fall back to local
+    IDB queues; board history still streams normally. Restricted to the
+    session leader.
+    """
+    setSharedPlaylistEnabled(sessionId: ID!, enabled: Boolean!): BoardSession!
   }
 `;

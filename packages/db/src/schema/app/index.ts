@@ -2,6 +2,7 @@ export * from './gyms';
 export * from './boards';
 export * from './board-serials';
 export * from './sessions';
+export * from './board-climb-history';
 export * from './favorites';
 export * from './inferred-sessions';
 export * from './session-member-overrides';

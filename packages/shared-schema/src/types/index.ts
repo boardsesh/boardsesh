@@ -16,6 +16,7 @@ export * from './comments';
 export * from './activity-feed';
 export * from './proposals';
 export * from './events';
+export * from './board-history';
 export * from './new-climb-feed';
 export * from './controller';
 export * from './device-logging';

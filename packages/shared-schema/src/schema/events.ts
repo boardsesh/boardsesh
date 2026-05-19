@@ -12,6 +12,7 @@ export const eventsTypeDefs = /* GraphQL */ `
     | SessionBoardSerialChanged
     | SessionEnded
     | SessionStatsUpdated
+    | SharedPlaylistToggled
 
   """
   Event when a user joins the session.
@@ -125,6 +126,19 @@ export const eventsTypeDefs = /* GraphQL */ `
     goal: String
     "Current session ticks (latest first)"
     ticks: [SessionDetailTick!]!
+  }
+
+  """
+  Event when the shared-playlist (shared queue) mode is toggled on or off.
+  Sent to all session subscribers so peers can re-route their queue
+  mutations between WS (shared) and local IDB (local-only) without
+  reconnecting.
+  """
+  type SharedPlaylistToggled {
+    "Session ID this toggle belongs to"
+    sessionId: ID!
+    "New value of shared_playlist_enabled"
+    enabled: Boolean!
   }
 
   """

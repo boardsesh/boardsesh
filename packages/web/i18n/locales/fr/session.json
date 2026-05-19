@@ -99,6 +99,17 @@
       "showQrPreview": "Afficher le QR code (aperçu)",
       "inviteCopy": "Embarque ta crew en partageant ce lien ou en scannant le QR code",
       "inviteCopyPreview": "Partage ce lien ou ce QR code avec ta crew et ils apparaîtront en direct."
+    },
+    "sharedPlaylist": {
+      "label": "Shared queue",
+      "description": "Everyone in this sesh sees and edits one shared queue. Off: each climber has their own queue and only board sends are shared.",
+      "confirmTitle": "Switch queue mode?",
+      "confirmDisableBody": "Your shared queue will stop syncing. Each climber will continue with their own local queue from now on.",
+      "confirmEnableBody": "Everyone joins one shared queue. Local queues will not be merged into the shared queue.",
+      "confirmEnable": "Switch to shared",
+      "confirmDisable": "Switch to local",
+      "cancel": "Cancel",
+      "updateFailed": "Couldn't update shared queue setting"
     }
   },
   "creation": {
@@ -211,7 +222,23 @@
     "clearConfirm": "Vider",
     "clear": "Vider",
     "removeItems_one": "Retirer {{count}} élément",
-    "removeItems_other": "Retirer {{count}} éléments"
+    "removeItems_other": "Retirer {{count}} éléments",
+    "currentlyOnBoard": {
+      "label": "Currently on the board",
+      "sentBy": "Sent by {{name}} · {{relativeTime}}",
+      "sentByYou": "You sent this · {{relativeTime}}",
+      "empty": "Nothing's been on the wall yet",
+      "noBoardTitle": "Pair a board to see what's on the wall",
+      "sendYourPick": "Send your pick",
+      "yourPickLabel": "Your pick",
+      "anonymous": "Someone"
+    },
+    "yourQueue": {
+      "label": "Your queue"
+    }
+  },
+  "queueControlBar": {
+    "divergenceDotAria": "Someone else changed the wall"
   },
   "queueList": {
     "editClimb": "Modifier ce bloc",

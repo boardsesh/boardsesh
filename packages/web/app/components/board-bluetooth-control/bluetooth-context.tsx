@@ -15,7 +15,12 @@ import {
   waitForCapacitor,
   CAPACITOR_BRIDGE_TIMEOUT_MS,
 } from '@/app/lib/ble/capacitor-utils';
-import { registerBluetoothConnection } from './bluetooth-status-store';
+import {
+  registerBluetoothConnection,
+  registerManualSender,
+  setActiveBluetoothSerial,
+  type ManualSender,
+} from './bluetooth-status-store';
 import { DevicePickerDialog } from './device-picker-dialog';
 import { BoardConfigMismatchDialog } from './board-config-mismatch-dialog';
 import { AutoConnectHandler } from './auto-connect-handler';
@@ -30,6 +35,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import type { DiscoveredDevice } from '@/app/lib/ble/types';
 import type { PickerState } from './use-board-bluetooth';
 import { useLedColorOverrides, type LedColorOverrides } from '@/app/lib/led-color-overrides-db';
+import { useRecordBoardSend } from '@/app/hooks/use-record-board-send';
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -69,6 +75,10 @@ type BluetoothContextValue = {
   setLedColorOverrides: (next: LedColorOverrides) => void;
   isBluetoothSupported: boolean;
   isIOS: boolean;
+  /** BLE-reported serial of the connected controller — null when no board
+   * is connected or when the controller did not expose a parsable serial
+   * (e.g. MoonBoard). Drives the per-board history room key. */
+  connectedSerial: string | null;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -88,6 +98,9 @@ function BluetoothAutoSender({
   sendFramesToBoard,
   layoutName,
   onWallConfirmed,
+  boardSerial,
+  sessionId,
+  sharedPlaylistMode,
 }: {
   sendFramesToBoard: (
     frames: string,
@@ -104,11 +117,94 @@ function BluetoothAutoSender({
    * means BluetoothAutoSender doesn't need to know whether a session exists.
    */
   onWallConfirmed: (climbUuid: string) => void;
+  /** BLE-reported serial of the connected controller. Null for boards
+   * that don't expose a serial (MoonBoard) — `recordBoardSend` skips
+   * when missing because the per-board room is keyed by serial. */
+  boardSerial: string | null;
+  /** Active party session id, if any. Recorded as context on the history row. */
+  sessionId: string | null;
+  /** Whether the shared-playlist queue was active at send time. */
+  sharedPlaylistMode: boolean;
 }) {
   const { currentClimbQueueItem } = useCurrentClimb();
+  const { recordSend } = useRecordBoardSend();
   // Mirror onWallConfirmed so the send loop doesn't re-run when
   // sessionId-derived callback identity changes mid-send.
   const onWallConfirmedRef = useRef(onWallConfirmed);
+
+  // Latest-wins refs so the send effect doesn't fire purely because the
+  // surrounding session/serial changed; the effect's dep array stays focused
+  // on the climb itself.
+  const recordContextRef = useRef({ boardSerial, sessionId, sharedPlaylistMode, recordSend });
+  recordContextRef.current = { boardSerial, sessionId, sharedPlaylistMode, recordSend };
+
+  // Latest-wins refs for the manual-send path. The "Send your pick" CTA in
+  // the play-view drawer header lives outside this provider's tree (the
+  // queue control bar is mounted at the root), so the only way for it to
+  // drive a send is through the module-level manual-sender registry.
+  const manualSendContextRef = useRef({ currentClimbQueueItem, sendFramesToBoard, layoutName });
+  manualSendContextRef.current = { currentClimbQueueItem, sendFramesToBoard, layoutName };
+
+  // Register a manual-send callback on every render so the closure always
+  // sees the freshest context refs. `registerManualSender` is last-wins —
+  // the latest registration replaces the previous, and unmount releases.
+  useEffect(() => {
+    const sender: ManualSender = async () => {
+      const ctx = manualSendContextRef.current;
+      const queueItem = ctx.currentClimbQueueItem;
+      if (!queueItem) return false;
+      const { climb } = queueItem;
+
+      try {
+        const result = await ctx.sendFramesToBoard(climb.frames, !!climb.mirrored, undefined, climb.uuid);
+        if (result === true) {
+          track('Climb Sent to Board Success', {
+            climbUuid: climb.uuid,
+            boardLayout: ctx.layoutName,
+            source: 'manual-resend',
+          });
+          const recordCtx = recordContextRef.current;
+          if (recordCtx.boardSerial) {
+            void recordCtx.recordSend({
+              boardSerial: recordCtx.boardSerial,
+              boardId: null,
+              climbUuid: climb.uuid,
+              angle: climb.angle,
+              isMirror: !!climb.mirrored,
+              frames: climb.frames,
+              source: 'BLE_SEND',
+              sessionId: recordCtx.sessionId,
+              sharedPlaylistMode: recordCtx.sharedPlaylistMode,
+            });
+          }
+          // Manual re-send also clears any pending wall-confirm fallback
+          // timer and broadcasts to non-BLE peers, mirroring the auto-send
+          // path.
+          onWallConfirmedRef.current(climb.uuid);
+          return true;
+        }
+        if (result === false) {
+          track('Climb Sent to Board Failure', {
+            climbUuid: climb.uuid,
+            boardLayout: ctx.layoutName,
+            source: 'manual-resend',
+          });
+        }
+        return false;
+      } catch (error) {
+        console.error('[BluetoothAutoSender] manual re-send failed:', error);
+        track('Climb Sent to Board Failure', {
+          climbUuid: climb.uuid,
+          boardLayout: ctx.layoutName,
+          source: 'manual-resend',
+        });
+        return false;
+      }
+    };
+    const release = registerManualSender(sender);
+    return release;
+  }, []);
+
   useEffect(() => {
     onWallConfirmedRef.current = onWallConfirmed;
   }, [onWallConfirmed]);
@@ -186,6 +282,26 @@ function BluetoothAutoSender({
                 climbUuid: item.climb?.uuid,
                 boardLayout: layoutName,
               });
+              // Append to the per-board history log. The hook is fire-and-forget
+              // — failures land in console.warn so they don't disrupt the BLE
+              // session. We only fire when a serial is known: MoonBoard sends
+              // (serial=null) cannot key into the per-board room, and unauth'd
+              // users hit the soft pairing gate server-side anyway. Skipping at
+              // the call site keeps the log clean.
+              const recordCtx = recordContextRef.current;
+              if (recordCtx.boardSerial) {
+                void recordCtx.recordSend({
+                  boardSerial: recordCtx.boardSerial,
+                  boardId: null,
+                  climbUuid: item.climb.uuid,
+                  angle: item.climb.angle,
+                  isMirror: !!item.climb.mirrored,
+                  frames: item.climb.frames,
+                  source: 'BLE_SEND',
+                  sessionId: recordCtx.sessionId,
+                  sharedPlaylistMode: recordCtx.sharedPlaylistMode,
+                });
+              }
               // Wall actually received the climb — emit confirmation so the
               // drawer's lightbulb timer dismisses (locally on this phone,
               // and via WS broadcast for other party members).
@@ -259,12 +375,13 @@ export function BluetoothProvider({
     [setSessionBoardSerial],
   );
 
-  const { isConnected, loading, connect, disconnect, sendFramesToBoard, pickerState } = useBoardBluetooth({
-    boardDetails,
-    boardUuid,
-    ledColorOverrides,
-    onConnectSuccess: handleConnectSuccess,
-  });
+  const { isConnected, loading, connect, disconnect, sendFramesToBoard, pickerState, connectedSerial } =
+    useBoardBluetooth({
+      boardDetails,
+      boardUuid,
+      ledColorOverrides,
+      onConnectSuccess: handleConnectSuccess,
+    });
 
   // Always emit on the local wall-confirm bus (so the same phone's drawer
   // dismisses its 2s fallback timer); only fire the WS mutation when a
@@ -281,6 +398,11 @@ export function BluetoothProvider({
   const { token, isAuthenticated } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('settings');
+  // Read activeSession for board-history attribution. The same
+  // persistentSessionState read above (line 358) is reused — both call sites
+  // mount BluetoothProvider inside PersistentSessionProvider (root layout via
+  // PersistentSessionWrapper), so this is safe.
+  const { activeSession } = persistentSessionState;
 
   const [partyMode, setPartyMode] = useState<'off' | 'glyphs' | 'disco'>('off');
   const clearBoard = useCallback(() => sendFramesToBoard(''), [sendFramesToBoard]);
@@ -478,6 +600,18 @@ export function BluetoothProvider({
     return release;
   }, [isConnected, disconnect]);
 
+  // Publish the connected serial into the module-level store so the
+  // BoardHistoryProvider (mounted above BluetoothProvider in the tree) can
+  // pick the right per-board room without subscribing to this context.
+  // Reset on unmount/disconnect so a stale serial doesn't leak between
+  // provider mounts.
+  useEffect(() => {
+    setActiveBluetoothSerial(isConnected ? connectedSerial : null);
+    return () => {
+      setActiveBluetoothSerial(null);
+    };
+  }, [isConnected, connectedSerial]);
+
   const value = useMemo(
     () => ({
       isConnected,
@@ -493,6 +627,7 @@ export function BluetoothProvider({
       setLedColorOverrides,
       isBluetoothSupported,
       isIOS,
+      connectedSerial,
     }),
     [
       isConnected,
@@ -508,6 +643,7 @@ export function BluetoothProvider({
       setLedColorOverrides,
       isBluetoothSupported,
       isIOS,
+      connectedSerial,
     ],
   );
 
@@ -577,6 +713,11 @@ export function BluetoothProvider({
           sendFramesToBoard={sendFramesToBoard}
           layoutName={boardDetails.layout_name ?? ''}
           onWallConfirmed={handleWallConfirmed}
+          boardSerial={connectedSerial}
+          sessionId={activeSession?.sessionId ?? null}
+          // `?? true` mirrors the queue-bridge default for legacy IDB rows
+          // that predate the field — they're treated as shared playlists on.
+          sharedPlaylistMode={activeSession ? (activeSession.sharedPlaylistEnabled ?? true) : false}
         />
       )}
       {activePickerState && (

@@ -67,12 +67,27 @@ import IosShare from '@mui/icons-material/IosShare';
 import { QRCodeSVG } from 'qrcode.react';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+import { useBoardVsLocalDivergence } from '../board-history/use-board-vs-local-divergence';
 import styles from './queue-control-bar.module.css';
 import { PLAY_DRAWER_EVENT, dispatchOpenPlayDrawer } from './play-drawer-event';
 
 export type ActiveDrawer = 'none' | 'play' | 'queue' | 'tick';
 
 const QUEUE_BADGE_SX = { '& .MuiBadge-badge': themeTokens.badge.small } as const;
+
+// Small high-attention dot overlay shown on the queue icon when what the
+// wall is currently showing diverges from the user's local pick. Mirrors
+// the notification-style "unread" dot pattern used elsewhere — purely
+// visual, no count.
+const DIVERGENCE_DOT_SX = {
+  '& .MuiBadge-badge': {
+    backgroundColor: themeTokens.colors.warning,
+    minWidth: 8,
+    height: 8,
+    padding: 0,
+    border: '2px solid transparent',
+  },
+} as const;
 
 const TICK_BADGE_SX = {
   '& .MuiBadge-badge': {
@@ -351,6 +366,14 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // Declared up here (above the `isReconnecting` early return below) so the
   // hook order stays stable across renders.
   const openQueueDrawer = useCallback(() => setActiveDrawer('queue'), []);
+
+  // Surface a small high-attention dot on the queue icon when the wall is
+  // showing something other than the user's local pick — gives users a
+  // glanceable "something changed on the wall" signal without opening the
+  // drawer. Cleared the moment the wall matches the local pick again (e.g.
+  // after a "Send your pick" tap from the drawer header).
+  const { divergent: queueIconDivergent } = useBoardVsLocalDivergence();
+
   const queueIconButton = useMemo(
     () => (
       <div
@@ -371,18 +394,27 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       >
         <IconButton size="small" component="span" tabIndex={-1} sx={{ p: 0.25 }}>
           <Badge
-            badgeContent={queue.length}
-            max={99}
-            color="primary"
-            invisible={queue.length === 0}
-            sx={QUEUE_BADGE_SX}
+            overlap="circular"
+            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            variant="dot"
+            invisible={!queueIconDivergent}
+            sx={DIVERGENCE_DOT_SX}
+            aria-label={queueIconDivergent ? t('queueControlBar.divergenceDotAria') : undefined}
           >
-            <FormatListBulletedOutlined sx={{ fontSize: 18 }} />
+            <Badge
+              badgeContent={queue.length}
+              max={99}
+              color="primary"
+              invisible={queue.length === 0}
+              sx={QUEUE_BADGE_SX}
+            >
+              <FormatListBulletedOutlined sx={{ fontSize: 18 }} />
+            </Badge>
           </Badge>
         </IconButton>
       </div>
     ),
-    [openQueueDrawer, queue.length, t],
+    [openQueueDrawer, queue.length, queueIconDivergent, t],
   );
   const shouldNavigate = isViewPage || isPlayPage;
 

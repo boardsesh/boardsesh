@@ -574,5 +574,17 @@ export const queriesTypeDefs = /* GraphQL */ `
     Returns only rows whose thumbnails are cached in our S3.
     """
     userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+
+    # ============================================
+    # Board History Queries
+    # ============================================
+
+    """
+    Fetch board history entries for a serial in reverse chronological order.
+    Soft-gated on the caller being paired to the board (has a userBoardSerials
+    row for the serial). The optional \`before\` cursor accepts an ISO 8601
+    timestamp.
+    """
+    boardHistory(boardSerial: String!, limit: Int = 50, before: String): [BoardHistoryEntry!]!
   }
 `;

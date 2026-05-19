@@ -31,6 +31,7 @@ import dynamic from 'next/dynamic';
 import { SESH_SETTINGS_DRAWER_EVENT } from '../sesh-settings/sesh-settings-drawer-event';
 import { BoardSwitchConfirmProvider } from '../board-lock/board-switch-confirm-provider';
 import { FeedbackPromptBanner } from '../feedback/feedback-prompt-banner';
+import { BoardHistoryProvider } from '../board-history/board-history-context';
 
 const SeshSettingsDrawer = dynamic(() => import('../sesh-settings/sesh-settings-drawer'), {
   ssr: false,
@@ -55,20 +56,28 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
     <PartyProfileProvider>
       <PersistentSessionProvider>
         <QueueBridgeProvider>
-          <BoardSwitchConfirmProvider>
-            <SearchDrawerBridgeProvider>
-              <StatsFilterBridgeProvider>
-                <ProfileHeaderShareProvider>
-                  <GlobalHeader boardConfigs={boardConfigs} />
-                  {children}
-                  <RootBottomBar boardConfigs={boardConfigs} />
-                  <RootSessionSummaryDialog />
-                  <RootSeshSettingsDrawer />
-                  <SessionWakeLock />
-                </ProfileHeaderShareProvider>
-              </StatsFilterBridgeProvider>
-            </SearchDrawerBridgeProvider>
-          </BoardSwitchConfirmProvider>
+          {/* BoardHistoryProvider sits inside QueueBridgeProvider so every
+              drawer/queue consumer can read `useBoardHistory()` without
+              wiring an extra context. It reads the BLE serial via the
+              module-level bluetooth-status-store (works even though the
+              per-route BluetoothProvider mounts deeper in the tree) and
+              the route fallback via useParams + useMyBoards. */}
+          <BoardHistoryProvider>
+            <BoardSwitchConfirmProvider>
+              <SearchDrawerBridgeProvider>
+                <StatsFilterBridgeProvider>
+                  <ProfileHeaderShareProvider>
+                    <GlobalHeader boardConfigs={boardConfigs} />
+                    {children}
+                    <RootBottomBar boardConfigs={boardConfigs} />
+                    <RootSessionSummaryDialog />
+                    <RootSeshSettingsDrawer />
+                    <SessionWakeLock />
+                  </ProfileHeaderShareProvider>
+                </StatsFilterBridgeProvider>
+              </SearchDrawerBridgeProvider>
+            </BoardSwitchConfirmProvider>
+          </BoardHistoryProvider>
         </QueueBridgeProvider>
       </PersistentSessionProvider>
     </PartyProfileProvider>

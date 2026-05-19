@@ -55,6 +55,7 @@ export const JOIN_SESSION = `
       endedAt
       isPermanent
       color
+      sharedPlaylistEnabled
       users {
         id
         username
@@ -252,6 +253,7 @@ export const CREATE_SESSION = `
       endedAt
       isPermanent
       color
+      sharedPlaylistEnabled
       users {
         id
         username
@@ -369,6 +371,10 @@ export const SESSION_UPDATES = `
           upvotes
           totalAttempts
         }
+      }
+      ... on SharedPlaylistToggled {
+        sessionId
+        enabled
       }
     }
   }

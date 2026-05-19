@@ -34,6 +34,10 @@ const TABLES_TO_RESET = [
   'esp32_controllers',
   'user_climb_percentiles',
   'user_board_mappings',
+  'board_climb_history',
+  'board_history_sequences',
+  'user_board_serials',
+  'user_boards',
   'users',
 ];
 

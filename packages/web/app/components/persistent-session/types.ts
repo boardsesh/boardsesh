@@ -49,6 +49,10 @@ export type Session = {
   endedAt?: string | null;
   isPermanent?: boolean;
   color?: string | null;
+  /** Whether the session's shared playlist queue is active. When false,
+   * queue mutations are rejected server-side and each client falls back
+   * to a local IndexedDB queue. Board history streams independently. */
+  sharedPlaylistEnabled?: boolean;
 };
 
 // Active session info stored at root level
@@ -62,6 +66,13 @@ export type ActiveSessionInfo = {
   namedBoardName?: string;
   /** UUID of the named board (UserBoard) */
   namedBoardUuid?: string;
+  /** Whether the session's shared playlist queue is active. Defaults to
+   * `true` for legacy IDB-persisted sessions written before this field
+   * existed (preserves the historical shared-queue UX); explicit
+   * createSession callers receive `false` server-side and join callers
+   * inherit the persisted value. The queue-bridge reads this to decide
+   * whether to use the WS-backed adapter or the local-IDB adapter. */
+  sharedPlaylistEnabled?: boolean;
 };
 
 // Stable action functions — identity rarely changes
@@ -123,6 +134,12 @@ export type PersistentSessionActionsType = {
   // Surface a session that the backend already auto-ended due to inactivity.
   // Invoked from the queue-storage restore path before activation.
   setAutoFinishedSummary: (summary: SessionSummary, boardType: string | null) => void;
+
+  // Locally patch `activeSession.sharedPlaylistEnabled` and persist to IDB.
+  // Used by `useSetSessionSharedPlaylist` for optimistic UI before the server
+  // mutation lands — and to roll back on failure. No-ops when there is no
+  // active session (or the session id doesn't match).
+  setActiveSessionSharedPlaylistEnabled: (sessionId: string, enabled: boolean) => void;
 };
 
 // Frequently-changing state data
@@ -255,6 +272,14 @@ export type SharedRefs = {
   sessionUnsubscribeRef: MutableRefObject<(() => void) | null>;
   queueEventSubscribersRef: MutableRefObject<Set<(event: SubscriptionQueueEvent) => void>>;
   sessionEventSubscribersRef: MutableRefObject<Set<(event: SessionEvent) => void>>;
+  /**
+   * Late-bound ref to the lifecycle hook's `setActiveSessionSharedPlaylistEnabled`.
+   * Constructed in `useSessionLifecycle` but consumed in `useEventProcessor`,
+   * which is created first; the ref breaks the ordering dependency so the
+   * `SharedPlaylistToggled` broadcast handler can route through the same
+   * optimistic setter the local toggle uses.
+   */
+  setActiveSessionSharedPlaylistEnabledRef: MutableRefObject<((sessionId: string, enabled: boolean) => void) | null>;
 };
 
 // Default backend URL resolved at runtime (supports PR preview domains)

@@ -183,6 +183,10 @@ export const sessionMutations = {
       endedAt: sessionData?.endedAt?.toISOString() || null,
       isPermanent: sessionData?.isPermanent ?? false,
       color: sessionData?.color || null,
+      // Default true on legacy rows where the column existed but
+      // ensureSessionRecordExists couldn't fetch the value (shouldn't happen
+      // post-migration, but guards against an unexpected null read).
+      sharedPlaylistEnabled: sessionData?.sharedPlaylistEnabled ?? true,
     };
   },
 
@@ -307,6 +311,10 @@ export const sessionMutations = {
         endedAt: null,
         isPermanent: input.isPermanent || false,
         color: input.color || null,
+        // Explicit createSession defaults to false (the new shared playlist
+        // gate). Joining peers will inherit this; the creator can flip the
+        // toggle later via setSharedPlaylistEnabled.
+        sharedPlaylistEnabled: false,
       };
     }
 
@@ -333,6 +341,9 @@ export const sessionMutations = {
       endedAt: null,
       isPermanent: input.isPermanent || false,
       color: input.color || null,
+      // HTTP path mirrors the WS path's default; the actual row is created
+      // when the client connects via WebSocket.
+      sharedPlaylistEnabled: false,
     };
   },
 

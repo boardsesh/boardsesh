@@ -43,6 +43,8 @@ function createRefs(offlineBuffer: LocalClimbQueueItem[] = []) {
     queueEventSubscribersRef: { current: new Set<(event: SubscriptionQueueEvent) => void>() },
     sessionEventSubscribersRef: { current: new Set() } as never,
     offlineBufferRef: { current: offlineBuffer },
+    activeSessionRef: { current: null } as never,
+    setActiveSessionSharedPlaylistEnabledRef: { current: null } as never,
   };
 }
 

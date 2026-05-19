@@ -708,6 +708,20 @@
       "when": 1778933722490,
       "tag": "0100_backfill_boardsesh_climb_averages",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1779097277740,
+      "tag": "0101_ordinary_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1779097277741,
+      "tag": "0102_backfill_shared_playlist_enabled",
+      "breakpoints": true
     }
   ]
 }

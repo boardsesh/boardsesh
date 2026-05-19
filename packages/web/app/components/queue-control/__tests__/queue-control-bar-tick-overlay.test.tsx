@@ -75,6 +75,14 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
 
+vi.mock('@/app/components/board-history/use-board-vs-local-divergence', () => ({
+  useBoardVsLocalDivergence: () => ({ boardCurrent: null, localPick: null, divergent: false }),
+}));
+
+vi.mock('@/app/components/board-history/currently-on-board-header', () => ({
+  default: () => null,
+}));
+
 vi.mock('@/app/hooks/use-card-swipe-navigation', () => ({
   useCardSwipeNavigation: () => ({
     swipeHandlers: {},

@@ -16,6 +16,8 @@ type UseEventProcessorArgs = {
     | 'queueEventSubscribersRef'
     | 'sessionEventSubscribersRef'
     | 'offlineBufferRef'
+    | 'activeSessionRef'
+    | 'setActiveSessionSharedPlaylistEnabledRef'
   >;
 };
 
@@ -44,6 +46,8 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
     offlineBufferRef,
+    activeSessionRef,
+    setActiveSessionSharedPlaylistEnabledRef,
   } = refs;
 
   const queryClient = useQueryClient();
@@ -203,7 +207,18 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
   // Handle session events internally
   const handleSessionEvent = useCallback(
     (event: SessionEvent) => {
-      if (event.__typename === 'SessionStatsUpdated') {
+      if (event.__typename === 'SharedPlaylistToggled') {
+        // Defensive: pubsub channels are per-session, but ignore mismatched
+        // ids in case a stale subscription bleeds across sessions. The
+        // setter itself is also a no-op when there's no matching active
+        // session, but bailing here keeps the early-return symmetric with
+        // the rest of the switch.
+        const activeSessionId = activeSessionRef.current?.sessionId ?? null;
+        const setSharedPlaylist = setActiveSessionSharedPlaylistEnabledRef.current;
+        if (activeSessionId && activeSessionId === event.sessionId && setSharedPlaylist) {
+          setSharedPlaylist(event.sessionId, event.enabled);
+        }
+      } else if (event.__typename === 'SessionStatsUpdated') {
         const queryKey = SESSION_DETAIL_QUERY_KEY(event.sessionId);
         queryClient.setQueryData<SessionDetail | null>(queryKey, (prev) => {
           if (!prev) return prev;
@@ -237,7 +252,7 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
       }
       notifySessionSubscribers(event);
     },
-    [queryClient, notifySessionSubscribers],
+    [queryClient, notifySessionSubscribers, activeSessionRef, setActiveSessionSharedPlaylistEnabledRef],
   );
 
   return {

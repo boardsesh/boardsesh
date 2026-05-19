@@ -30,5 +30,13 @@ export const subscriptionsTypeDefs = /* GraphQL */ `
 
     # ESP32 subscribes to receive LED commands - uses API key auth via connectionParams
     controllerEvents(sessionId: ID!): ControllerEvent!
+
+    """
+    Subscribe to board history events for a physical board (keyed by BLE
+    serial). On subscribe, the server yields a BoardHistoryFullSync followed
+    by BoardHistoryEntryAdded for each new send. Soft-gated on the caller
+    having a userBoardSerials row for the serial.
+    """
+    boardHistoryEvents(boardSerial: String!): BoardHistoryEvent!
   }
 `;

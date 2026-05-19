@@ -232,6 +232,7 @@ export type SessionLifecycleActions = {
   setAutoFinishedSummary: (summary: SessionSummary, boardType: string | null) => void;
   dismissSessionSummary: () => void;
   setSession: Dispatch<SetStateAction<Session | null>>;
+  setActiveSessionSharedPlaylistEnabled: (sessionId: string, enabled: boolean) => void;
 };
 
 export function useSessionLifecycle({
@@ -345,6 +346,21 @@ export function useSessionLifecycle({
     setSessionSummaryBoardType(boardType);
     setSessionSummaryHealthKitWorkoutId(null);
     setSessionSummaryAutoFinished(true);
+  }, []);
+
+  // Locally patch the shared-playlist flag on activeSession (IDB-persisted).
+  // Used by the toggle hook for optimistic UI + rollback. Safe no-op when
+  // there's no active session or the sessionId doesn't match.
+  const setActiveSessionSharedPlaylistEnabled = useCallback((sessionId: string, enabled: boolean) => {
+    setActiveSession((prev) => {
+      if (!prev || prev.sessionId !== sessionId) return prev;
+      if (prev.sharedPlaylistEnabled === enabled) return prev;
+      const nextInfo = { ...prev, sharedPlaylistEnabled: enabled };
+      setPreference(ACTIVE_SESSION_KEY, nextInfo).catch((err) =>
+        console.error('[PersistentSession] Failed to persist shared playlist flag:', err),
+      );
+      return nextInfo;
+    });
   }, []);
 
   const endSessionWithSummary = useCallback(() => {
@@ -591,6 +607,20 @@ export function useSessionLifecycle({
         }
 
         setSession(sessionData);
+        // Same hydration as the initial join — keep IDB-persisted activeSession
+        // aligned with the latest server-side shared-playlist flag.
+        if (sessionData.sharedPlaylistEnabled !== undefined) {
+          const flag = sessionData.sharedPlaylistEnabled;
+          setActiveSession((prev) => {
+            if (!prev || prev.sessionId !== sessionId) return prev;
+            if (prev.sharedPlaylistEnabled === flag) return prev;
+            const nextInfo = { ...prev, sharedPlaylistEnabled: flag };
+            setPreference(ACTIVE_SESSION_KEY, nextInfo).catch((err) =>
+              console.error('[PersistentSession] Failed to persist shared playlist flag:', err),
+            );
+            return nextInfo;
+          });
+        }
         startSubscriptions(clientForReconnect);
         if (DEBUG) console.info('[PersistentSession] Reconnection complete, clientId:', sessionData.clientId);
       } finally {
@@ -762,6 +792,23 @@ export function useSessionLifecycle({
         transientRetryCount = 0;
         subscriptionRetryCount = 0;
         setSession(sessionData);
+        // Mirror the server's shared-playlist flag onto the IDB-persisted
+        // activeSession so the queue-bridge sees a stable, restore-survives
+        // value before the WS connects on subsequent loads. `undefined`
+        // from a server that hasn't shipped the field yet leaves the
+        // previous value intact (legacy default = true).
+        if (sessionData.sharedPlaylistEnabled !== undefined) {
+          const flag = sessionData.sharedPlaylistEnabled;
+          setActiveSession((prev) => {
+            if (!prev || prev.sessionId !== sessionId) return prev;
+            if (prev.sharedPlaylistEnabled === flag) return prev;
+            const nextInfo = { ...prev, sharedPlaylistEnabled: flag };
+            setPreference(ACTIVE_SESSION_KEY, nextInfo).catch((err) =>
+              console.error('[PersistentSession] Failed to persist shared playlist flag:', err),
+            );
+            return nextInfo;
+          });
+        }
         setHasConnected(true);
         setIsConnecting(false);
 
@@ -892,5 +939,6 @@ export function useSessionLifecycle({
     setAutoFinishedSummary,
     dismissSessionSummary,
     setSession,
+    setActiveSessionSharedPlaylistEnabled,
   };
 }

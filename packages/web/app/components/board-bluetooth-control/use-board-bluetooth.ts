@@ -127,6 +127,12 @@ export function useBoardBluetooth({
   const { showMessage } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  // BLE-reported serial of the connected controller. Parsed from the device
+  // name during `connect()` (Aurora boards only — moonboard device names
+  // don't carry a serial in this format) and surfaced for downstream wiring
+  // (board-history room key, recordBoardSend payload). Null when no board
+  // is connected or when the controller did not expose a parsable serial.
+  const [connectedSerial, setConnectedSerial] = useState<string | null>(null);
 
   // Prevent device from sleeping while connected to the board
   useWakeLock(isConnected);
@@ -195,6 +201,7 @@ export function useBoardBluetooth({
       });
     }
     setIsConnected(false);
+    setConnectedSerial(null);
     onConnectionChange?.(false);
   }, [onConnectionChange]);
 
@@ -419,12 +426,19 @@ export function useBoardBluetooth({
 
         // Auto-record the (serial, current config) mapping for serial→config lookups.
         // Aurora boards only — moonboard device names don't carry a serial in this format.
+        // The parsed serial also drives `connectedSerial` (board-history room key,
+        // recordBoardSend payload). MoonBoard stays null.
         let parsedSerial: string | null = null;
         if (boardDetails.board_name !== 'moonboard') {
           parsedSerial = parseSerialNumber(connection.deviceName) ?? null;
           if (parsedSerial) {
             recordBoardSerial(parsedSerial, boardDetails, boardUuid);
+            setConnectedSerial(parsedSerial);
+          } else {
+            setConnectedSerial(null);
           }
+        } else {
+          setConnectedSerial(null);
         }
 
         // Send initial frames if provided
@@ -441,6 +455,7 @@ export function useBoardBluetooth({
         console.error('Error connecting to Bluetooth:', error);
         configuredBoardKeyRef.current = null;
         setIsConnected(false);
+        setConnectedSerial(null);
 
         const domError = error instanceof DOMException ? error : null;
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -496,6 +511,7 @@ export function useBoardBluetooth({
     deviceNameRef.current = undefined;
     configuredBoardKeyRef.current = null;
     setIsConnected(false);
+    setConnectedSerial(null);
     onConnectionChange?.(false);
     if (connectedAt !== null) {
       const connectionDurationSec = Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
@@ -545,5 +561,6 @@ export function useBoardBluetooth({
     disconnect,
     sendFramesToBoard,
     pickerState,
+    connectedSerial,
   };
 }

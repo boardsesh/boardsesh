@@ -56,6 +56,19 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => mockAuth,
 }));
 
+// Stub persistent-session — bluetooth-context now reads activeSession to wire
+// session attribution into BluetoothAutoSender (board-history feature). The
+// real provider isn't mounted in this test tree.
+vi.mock('../../persistent-session', () => ({
+  usePersistentSessionState: () => ({ activeSession: null }),
+}));
+
+// Stub the record-board-send hook — these tests verify the BLE side; the
+// fire-and-forget recordSend call is tested separately.
+vi.mock('@/app/hooks/use-record-board-send', () => ({
+  useRecordBoardSend: () => ({ recordSend: vi.fn().mockResolvedValue(undefined) }),
+}));
+
 const mockResolveSerialNumbers = vi.fn().mockResolvedValue(new Map());
 vi.mock('@/app/lib/ble/resolve-serials', () => ({
   resolveSerialNumbers: (...args: unknown[]) => mockResolveSerialNumbers(...args),
@@ -114,6 +127,11 @@ vi.mock('../../providers/snackbar-provider', () => ({
 
 vi.mock('../bluetooth-status-store', () => ({
   registerBluetoothConnection: vi.fn(() => vi.fn()),
+  setActiveBluetoothSerial: vi.fn(),
+  registerManualSender: vi.fn(() => vi.fn()),
+  triggerManualSend: vi.fn(() => Promise.resolve(false)),
+  useBluetoothConnectedStatus: vi.fn(() => false),
+  useBluetoothConnectedSerial: vi.fn(() => null),
 }));
 
 vi.mock('@/app/lib/ble/capacitor-utils', () => ({

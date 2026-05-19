@@ -62,6 +62,10 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
   const queueEventSubscribersRef = useRef<Set<(event: SubscriptionQueueEvent) => void>>(new Set());
   const sessionEventSubscribersRef = useRef<Set<(event: SessionEvent) => void>>(new Set());
+  // Late-bound by the lifecycle effect below so the event processor (created
+  // before lifecycle) can route `SharedPlaylistToggled` broadcasts through
+  // the same optimistic setter the local toggle uses.
+  const setActiveSessionSharedPlaylistEnabledRef = useRef<((sessionId: string, enabled: boolean) => void) | null>(null);
 
   // Keep auth ref in sync. The graphql-ws connectionParams are baked in at
   // connect-time, so when the token loads *after* the lifecycle hook has
@@ -99,6 +103,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     sessionUnsubscribeRef,
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
+    setActiveSessionSharedPlaylistEnabledRef,
   };
 
   // 1. Event processor: queue state + event handling
@@ -120,6 +125,12 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     setLastReceivedStateHash: eventProcessor.setLastReceivedStateHash,
     refs,
   });
+
+  // Publish the lifecycle's setter via the late-bound ref so the event
+  // processor's `SharedPlaylistToggled` handler can call it. `useCallback`
+  // identity is stable across renders, but we still mirror it into the ref
+  // every render to be safe.
+  setActiveSessionSharedPlaylistEnabledRef.current = lifecycle.setActiveSessionSharedPlaylistEnabled;
 
   // Stable wrapper: the queue-storage restore effect lists this in its dep
   // array, so a fresh inline arrow each render would re-fire the effect and
@@ -181,6 +192,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       endSessionWithSummary: lifecycle.endSessionWithSummary,
       dismissSessionSummary: lifecycle.dismissSessionSummary,
       setAutoFinishedSummary: lifecycle.setAutoFinishedSummary,
+      setActiveSessionSharedPlaylistEnabled: lifecycle.setActiveSessionSharedPlaylistEnabled,
     }),
     [
       lifecycle.activateSession,
@@ -189,6 +201,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       lifecycle.endSessionWithSummary,
       lifecycle.dismissSessionSummary,
       lifecycle.setAutoFinishedSummary,
+      lifecycle.setActiveSessionSharedPlaylistEnabled,
       mutations.addQueueItem,
       mutations.removeQueueItem,
       mutations.setCurrentClimb,

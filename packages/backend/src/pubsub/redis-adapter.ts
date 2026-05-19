@@ -4,6 +4,7 @@ import type {
   NotificationEvent,
   CommentEvent,
   NewClimbCreatedEvent,
+  BoardHistoryEvent,
 } from '@boardsesh/shared-schema';
 import type Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,10 +16,11 @@ const SESSION_CHANNEL_PREFIX = 'boardsesh:session:';
 const NOTIFICATION_CHANNEL_PREFIX = 'boardsesh:notifications:';
 const COMMENT_CHANNEL_PREFIX = 'boardsesh:comments:';
 const NEW_CLIMB_CHANNEL_PREFIX = 'boardsesh:new-climbs:';
+const BOARD_HISTORY_CHANNEL_PREFIX = 'boardsesh:board-history:';
 
 type RedisMessage = {
   instanceId: string;
-  event: QueueEvent | SessionEvent | NotificationEvent | CommentEvent | NewClimbCreatedEvent;
+  event: QueueEvent | SessionEvent | NotificationEvent | CommentEvent | NewClimbCreatedEvent | BoardHistoryEvent;
   timestamp: number;
 };
 
@@ -28,21 +30,25 @@ export type RedisPubSubAdapter = {
   publishNotificationEvent(userId: string, event: NotificationEvent): Promise<void>;
   publishCommentEvent(entityKey: string, event: CommentEvent): Promise<void>;
   publishNewClimbEvent(channelKey: string, event: NewClimbCreatedEvent): Promise<void>;
+  publishBoardHistoryEvent(serial: string, event: BoardHistoryEvent): Promise<void>;
   subscribeQueueChannel(sessionId: string): Promise<void>;
   subscribeSessionChannel(sessionId: string): Promise<void>;
   subscribeNotificationChannel(userId: string): Promise<void>;
   subscribeCommentChannel(entityKey: string): Promise<void>;
   subscribeNewClimbChannel(channelKey: string): Promise<void>;
+  subscribeBoardHistoryChannel(serial: string): Promise<void>;
   unsubscribeQueueChannel(sessionId: string): Promise<void>;
   unsubscribeSessionChannel(sessionId: string): Promise<void>;
   unsubscribeNotificationChannel(userId: string): Promise<void>;
   unsubscribeCommentChannel(entityKey: string): Promise<void>;
   unsubscribeNewClimbChannel(channelKey: string): Promise<void>;
+  unsubscribeBoardHistoryChannel(serial: string): Promise<void>;
   onQueueMessage(callback: (sessionId: string, event: QueueEvent) => void): void;
   onSessionMessage(callback: (sessionId: string, event: SessionEvent) => void): void;
   onNotificationMessage(callback: (userId: string, event: NotificationEvent) => void): void;
   onCommentMessage(callback: (entityKey: string, event: CommentEvent) => void): void;
   onNewClimbMessage(callback: (channelKey: string, event: NewClimbCreatedEvent) => void): void;
+  onBoardHistoryMessage(callback: (serial: string, event: BoardHistoryEvent) => void): void;
   getInstanceId(): string;
 };
 
@@ -53,12 +59,14 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
   const subscribedNotificationChannels = new Set<string>();
   const subscribedCommentChannels = new Set<string>();
   const subscribedNewClimbChannels = new Set<string>();
+  const subscribedBoardHistoryChannels = new Set<string>();
 
   let queueMessageCallback: ((sessionId: string, event: QueueEvent) => void) | null = null;
   let sessionMessageCallback: ((sessionId: string, event: SessionEvent) => void) | null = null;
   let notificationMessageCallback: ((userId: string, event: NotificationEvent) => void) | null = null;
   let commentMessageCallback: ((entityKey: string, event: CommentEvent) => void) | null = null;
   let newClimbMessageCallback: ((channelKey: string, event: NewClimbCreatedEvent) => void) | null = null;
+  let boardHistoryMessageCallback: ((serial: string, event: BoardHistoryEvent) => void) | null = null;
 
   // Set up message handler
   subscriber.on('message', (channel: string, message: string) => {
@@ -98,6 +106,11 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         const channelKey = channel.slice(NEW_CLIMB_CHANNEL_PREFIX.length);
         if (newClimbMessageCallback) {
           newClimbMessageCallback(channelKey, parsed.event as NewClimbCreatedEvent);
+        }
+      } else if (channel.startsWith(BOARD_HISTORY_CHANNEL_PREFIX)) {
+        const serial = channel.slice(BOARD_HISTORY_CHANNEL_PREFIX.length);
+        if (boardHistoryMessageCallback) {
+          boardHistoryMessageCallback(serial, parsed.event as BoardHistoryEvent);
         }
       }
     } catch (error) {
@@ -169,6 +182,17 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         event,
         timestamp: Date.now(),
       };
+      await publisher.publish(channel, JSON.stringify(message));
+    },
+
+    async publishBoardHistoryEvent(serial: string, event: BoardHistoryEvent): Promise<void> {
+      const channel = `${BOARD_HISTORY_CHANNEL_PREFIX}${serial}`;
+      const message: RedisMessage = {
+        instanceId,
+        event,
+        timestamp: Date.now(),
+      };
+      logger.info(`[Redis] Publishing board history event to channel: ${serial} (type: ${event.__typename})`);
       await publisher.publish(channel, JSON.stringify(message));
     },
 
@@ -268,6 +292,26 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
       logger.info(`[Redis] Unsubscribed from new climb channel: ${channelKey}`);
     },
 
+    async subscribeBoardHistoryChannel(serial: string): Promise<void> {
+      const channel = `${BOARD_HISTORY_CHANNEL_PREFIX}${serial}`;
+      if (subscribedBoardHistoryChannels.has(channel)) {
+        return;
+      }
+      await subscriber.subscribe(channel);
+      subscribedBoardHistoryChannels.add(channel);
+      logger.info(`[Redis] Subscribed to board history channel: ${serial}`);
+    },
+
+    async unsubscribeBoardHistoryChannel(serial: string): Promise<void> {
+      const channel = `${BOARD_HISTORY_CHANNEL_PREFIX}${serial}`;
+      if (!subscribedBoardHistoryChannels.has(channel)) {
+        return;
+      }
+      await subscriber.unsubscribe(channel);
+      subscribedBoardHistoryChannels.delete(channel);
+      logger.info(`[Redis] Unsubscribed from board history channel: ${serial}`);
+    },
+
     onQueueMessage(callback: (sessionId: string, event: QueueEvent) => void): void {
       queueMessageCallback = callback;
     },
@@ -286,6 +330,10 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
 
     onNewClimbMessage(callback: (channelKey: string, event: NewClimbCreatedEvent) => void): void {
       newClimbMessageCallback = callback;
+    },
+
+    onBoardHistoryMessage(callback: (serial: string, event: BoardHistoryEvent) => void): void {
+      boardHistoryMessageCallback = callback;
     },
 
     getInstanceId(): string {

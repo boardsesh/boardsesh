@@ -104,6 +104,17 @@ const QueueBridgeSetterContext = createContext<QueueBridgeSetters>({
   clear: () => {},
 });
 
+// Shared-playlist-aware "is this session driving the queue?" check. Used by
+// the adapter's action callbacks to pick between the WS-backed mutation path
+// and the local-IDB fallback. The WS session stays connected regardless of
+// the flag — only the queue mutation channel is gated.
+// `?? true` preserves the legacy default for IDB-persisted activeSession
+// rows written before `sharedPlaylistEnabled` existed.
+type WithActiveSession = { activeSession: { sharedPlaylistEnabled?: boolean } | null };
+function isSharedPlaylistActive(ps: WithActiveSession): boolean {
+  return !!ps.activeSession && (ps.activeSession.sharedPlaylistEnabled ?? true);
+}
+
 // -------------------------------------------------------------------
 // usePersistentSessionQueueAdapter — thin adapter over PersistentSession
 // Uses latestRef pattern for stable action callbacks (matches GraphQLQueueProvider).
@@ -138,7 +149,13 @@ function usePersistentSessionQueueAdapter(): {
   // the clear through here too.
   const [playlistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(null);
 
-  const isParty = !!ps.activeSession;
+  // Gate `isParty` on the session's shared-playlist flag — when off, this
+  // adapter falls back to the local IDB queue branches below (read selectors
+  // + action callbacks key off `isParty`). The WS session connection itself
+  // stays live regardless; only the queue subscription/mutation path differs.
+  // `?? true` preserves the legacy behaviour for IDB-persisted activeSession
+  // rows written before this field existed.
+  const isParty = !!ps.activeSession && (ps.activeSession.sharedPlaylistEnabled ?? true);
   const queue = isParty ? ps.queue : ps.localQueue;
   const currentClimbQueueItem = isParty ? ps.currentClimbQueueItem : ps.localCurrentClimbQueueItem;
   const boardDetails = isParty ? ps.activeSession!.boardDetails : ps.localBoardDetails;
@@ -264,7 +281,7 @@ function usePersistentSessionQueueAdapter(): {
         ? { ...buildQueueItem(item.climb), suggested: item.suggested }
         : item;
       const alreadyInQueue = queue.some((q) => q.uuid === item.uuid);
-      if (ps.activeSession) {
+      if (isSharedPlaylistActive(ps)) {
         // Don't bail on the "already current" optimistic state in party mode —
         // a peer may have moved the current climb away and our local view
         // hasn't caught up yet. Always re-send so the server reconciles.
@@ -287,7 +304,7 @@ function usePersistentSessionQueueAdapter(): {
       const { queue, currentClimbQueueItem: current, ps, boardDetails, baseBoardPath } = latestRef.current;
       if (!validateClimbForQueue(climb)) return;
       const newItem = buildQueueItem(climb);
-      if (ps.activeSession) {
+      if (isSharedPlaylistActive(ps)) {
         ps.addQueueItem(newItem).catch((err: unknown) => {
           console.error('Failed to add queue item:', err);
         });
@@ -308,7 +325,7 @@ function usePersistentSessionQueueAdapter(): {
 
   const removeFromQueue = useCallback((item: ClimbQueueItem) => {
     const { queue, currentClimbQueueItem: current, ps, boardDetails, baseBoardPath } = latestRef.current;
-    if (ps.activeSession) {
+    if (isSharedPlaylistActive(ps)) {
       ps.removeQueueItem(item.uuid).catch((err: unknown) => {
         console.error('Failed to remove queue item:', err);
       });
@@ -329,7 +346,7 @@ function usePersistentSessionQueueAdapter(): {
       if (current && newQueue.some((q) => q.uuid === current.uuid)) return current;
       return newQueue[0];
     };
-    if (ps.activeSession) {
+    if (isSharedPlaylistActive(ps)) {
       ps.setQueue(newQueue, pickCurrent()).catch((err: unknown) => {
         console.error('Failed to set queue:', err);
       });
@@ -343,7 +360,7 @@ function usePersistentSessionQueueAdapter(): {
     const { queue, currentClimbQueueItem: current, ps, boardDetails, baseBoardPath } = latestRef.current;
     if (!current?.climb) return;
     const mirrored = !current.climb.mirrored;
-    if (ps.activeSession) {
+    if (isSharedPlaylistActive(ps)) {
       ps.mirrorCurrentClimb(mirrored).catch((err: unknown) => {
         console.error('Failed to mirror current climb:', err);
       });
@@ -374,7 +391,7 @@ function usePersistentSessionQueueAdapter(): {
         setPlaylistSuggestionSourceState(previousPlaylistSuggestionSource);
       };
       setPlaylistSuggestionSourceState(nextPlaylistSuggestionSource);
-      if (ps.activeSession) {
+      if (isSharedPlaylistActive(ps)) {
         const correlationId = ps.clientId ? `${ps.clientId}-${++correlationCounterRef.current}` : undefined;
         // If the climb is already in the queue, reuse the existing item
         // instead of adding a duplicate. This mirrors the natural behavior
@@ -546,7 +563,7 @@ function usePersistentSessionQueueAdapter(): {
     const existing = queue.find((q) => q.uuid === queueItemUuid);
     if (!existing) return;
     const updated: ClimbQueueItem = { ...existing, climb };
-    if (ps.activeSession) {
+    if (isSharedPlaylistActive(ps)) {
       ps.replaceQueueItem(queueItemUuid, updated).catch((err: unknown) => {
         console.error('Failed to replace queue item:', err);
       });

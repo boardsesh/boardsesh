@@ -1,7 +1,11 @@
+import { GraphQLError } from 'graphql';
+import { eq } from 'drizzle-orm';
 import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
+import { boardSessions } from '@boardsesh/db/schema/app';
 import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
+import { db } from '../../../db/client';
 import { requireSession, applyRateLimit, validateInput, MAX_RETRIES } from '../shared/helpers';
 import {
   ClimbQueueItemSchema,
@@ -11,6 +15,36 @@ import {
 } from '../../../validation/schemas';
 import { logMutationMetrics } from './mutation-metrics';
 import { logger } from '../../../utils/logger';
+
+/**
+ * Reject a queue mutation when the session's shared-playlist mode is off.
+ *
+ * The new default for sessions is `shared_playlist_enabled = false`. In that
+ * mode the queue is local per-user; server-side mutations are not allowed.
+ * Returning a typed error lets the client adapter fall back to writing to
+ * IndexedDB without surfacing a generic error to the user.
+ *
+ * Cached as a single `SELECT` per call — adds ~1ms to every queue mutation,
+ * acceptable for the safety guarantee.
+ */
+async function assertSharedPlaylistEnabled(sessionId: string): Promise<void> {
+  const rows = await db
+    .select({ sharedPlaylistEnabled: boardSessions.sharedPlaylistEnabled })
+    .from(boardSessions)
+    .where(eq(boardSessions.id, sessionId))
+    .limit(1);
+  const row = rows[0];
+  // No row → session was never created via createSession (legacy / in-memory
+  // only). We allow the mutation through; the downstream insert will fail
+  // cleanly if persistence is required. This matches the existing behaviour
+  // before this gate was added.
+  if (!row) return;
+  if (!row.sharedPlaylistEnabled) {
+    throw new GraphQLError('Shared playlist is disabled for this session', {
+      extensions: { code: 'SHARED_PLAYLIST_DISABLED' } as const,
+    });
+  }
+}
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -28,6 +62,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx); // Apply default rate limit
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate input
     validateInput(ClimbQueueItemSchema, item, 'item');
@@ -125,6 +160,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx);
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -162,6 +198,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx);
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate inputs
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -218,6 +255,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx);
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate input
     if (item !== null) {
@@ -302,6 +340,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx);
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     const currentState = await roomManager.getQueueState(sessionId);
     let currentClimb = currentState.currentClimbQueueItem;
@@ -352,6 +391,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx);
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -391,6 +431,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, 30); // Lower limit for bulk operations
     const sessionId = requireSession(ctx);
+    await assertSharedPlaylistEnabled(sessionId);
 
     // Validate queue size to prevent memory exhaustion
     validateInput(QueueArraySchema, queue, 'queue');

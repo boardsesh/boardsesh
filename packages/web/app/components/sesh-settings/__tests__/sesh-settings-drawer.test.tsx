@@ -148,6 +148,13 @@ vi.mock('@/app/lib/session-utils', () => ({
   generateSessionName: () => 'Session overview',
 }));
 
+// Stub the shared-playlist toggle — these tests don't exercise it, and
+// rendering the real component would pull in useWsAuthToken/useSession,
+// which requires a SessionProvider these tests don't wire up.
+vi.mock('../shared-playlist-toggle', () => ({
+  default: () => null,
+}));
+
 vi.mock('qrcode.react', () => ({
   QRCodeSVG: () => null,
 }));

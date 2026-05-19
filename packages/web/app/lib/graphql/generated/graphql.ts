@@ -321,6 +321,61 @@ export type BetaLink = {
   thumbnail?: Maybe<Scalars['String']['output']>;
 };
 
+/** A single entry in a board's chronological send log. */
+export type BoardHistoryEntry = {
+  __typename?: 'BoardHistoryEntry';
+  angle: Scalars['Int']['output'];
+  /** Best-effort link to a saved userBoards row; null for unregistered boards */
+  boardId?: Maybe<Scalars['ID']['output']>;
+  /** Canonical room key — BLE serial of the controller the climb was sent to */
+  boardSerial: Scalars['String']['output'];
+  climbUuid: Scalars['ID']['output'];
+  /** Surrogate PK of the underlying row */
+  id: Scalars['ID']['output'];
+  isMirror: Scalars['Boolean']['output'];
+  /** ISO 8601 timestamp when the send occurred */
+  sentAt: Scalars['String']['output'];
+  /** Monotonic per-board_serial sequence (allocated by board_history_sequences) */
+  sequence: Scalars['Int']['output'];
+  /** Party session active at send time, if any */
+  sessionId?: Maybe<Scalars['ID']['output']>;
+  source: BoardHistorySource;
+  /** Stable user ID of the BLE-connected sender */
+  userId: Scalars['ID']['output'];
+  /** Display name of the sender at write time (best-effort lookup from users) */
+  username?: Maybe<Scalars['String']['output']>;
+  /** Client-generated idempotency key; same logical send shares one uuid across retries */
+  uuid: Scalars['ID']['output'];
+};
+
+/** Incremental event emitted whenever a new entry is appended to the log. */
+export type BoardHistoryEntryAdded = {
+  __typename?: 'BoardHistoryEntryAdded';
+  entry: BoardHistoryEntry;
+  sequence: Scalars['Int']['output'];
+};
+
+/** Union of possible board-history events. */
+export type BoardHistoryEvent = BoardHistoryEntryAdded | BoardHistoryFullSync;
+
+/**
+ * Full sync emitted on initial subscription. Carries the most recent N entries
+ * in reverse-chronological order and the highest sequence the client has seen.
+ */
+export type BoardHistoryFullSync = {
+  __typename?: 'BoardHistoryFullSync';
+  entries: Array<BoardHistoryEntry>;
+  sequence: Scalars['Int']['output'];
+};
+
+/**
+ * Source of a board history entry. `BLE_SEND` is the MVP source emitted when
+ * the BLE-connected user successfully sends a climb to the board. The other
+ * variants are reserved for future surfaces (manual log entries, or a relay
+ * of a shared-playlist current-climb change when no BLE user is paired).
+ */
+export type BoardHistorySource = 'BLE_SEND' | 'MANUAL' | 'SHARED_QUEUE_RELAY';
+
 /** Board leaderboard result. */
 export type BoardLeaderboard = {
   __typename?: 'BoardLeaderboard';
@@ -394,6 +449,23 @@ export type BoardSerialConfig = {
   sizeId: Scalars['Int']['output'];
   /** When the recording was last updated */
   updatedAt: Scalars['String']['output'];
+};
+
+/**
+ * Slim view of a board_sessions row returned by setSharedPlaylistEnabled.
+ * Distinct from `Session` — only carries the fields a client needs to react
+ * to a shared-playlist toggle without joining the room state.
+ */
+export type BoardSession = {
+  __typename?: 'BoardSession';
+  boardPath: Scalars['String']['output'];
+  /** ISO 8601 timestamp */
+  endedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  sharedPlaylistEnabled: Scalars['Boolean']['output'];
+  /** ISO 8601 timestamp */
+  startedAt?: Maybe<Scalars['String']['output']>;
 };
 
 export type BrowseProposalsInput = {
@@ -1874,6 +1946,13 @@ export type Mutation = {
    */
   pinPlaylist: Scalars['Boolean']['output'];
   /**
+   * Record that a climb was sent to a physical board. Called by the BLE
+   * client after a successful send. The `uuid` field is the idempotency key
+   * — repeated calls with the same uuid return the previously persisted row
+   * and do not emit a second event.
+   */
+  recordBoardSend: BoardHistoryEntry;
+  /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
    * Upserts: if the token already exists, updates the associated session.
@@ -1944,6 +2023,13 @@ export type Mutation = {
    * resolved from the WebSocket connection context — no `sessionId` argument is required.
    */
   setSessionBoardSerial: Session;
+  /**
+   * Toggle the shared-playlist queue model for a session. When disabled,
+   * queue mutations are rejected server-side and clients fall back to local
+   * IDB queues; board history still streams normally. Restricted to the
+   * session leader.
+   */
+  setSharedPlaylistEnabled: BoardSession;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
   /**
@@ -2236,6 +2322,11 @@ export type MutationPinPlaylistArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRecordBoardSendArgs = {
+  input: RecordBoardSendInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRegisterActivityPushTokenArgs = {
   sessionId: Scalars['ID']['input'];
   token: Scalars['String']['input'];
@@ -2348,6 +2439,12 @@ export type MutationSetQueueArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetSessionBoardSerialArgs = {
   serial: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSharedPlaylistEnabledArgs = {
+  enabled: Scalars['Boolean']['input'];
+  sessionId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -2875,6 +2972,13 @@ export type Query = {
   board?: Maybe<UserBoard>;
   /** Get a board by slug (for URL routing). */
   boardBySlug?: Maybe<UserBoard>;
+  /**
+   * Fetch board history entries for a serial in reverse chronological order.
+   * Soft-gated on the caller being paired to the board (has a userBoardSerials
+   * row for the serial). The optional `before` cursor accepts an ISO 8601
+   * timestamp.
+   */
+  boardHistory: Array<BoardHistoryEntry>;
   /** Get leaderboard for a board. */
   boardLeaderboard: BoardLeaderboard;
   /**
@@ -3215,6 +3319,13 @@ export type QueryBoardArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardBySlugArgs = {
   slug: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardHistoryArgs = {
+  before?: InputMaybe<Scalars['String']['input']>;
+  boardSerial: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -3710,6 +3821,25 @@ export type RecentBetaLink = {
   climbName?: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * Input for the `recordBoardSend` mutation. `uuid` is the idempotency key
+ * (matches the boardsesh_ticks.uuid precedent — server trusts client uuid and
+ * does ON CONFLICT (uuid) DO NOTHING).
+ */
+export type RecordBoardSendInput = {
+  angle: Scalars['Int']['input'];
+  boardId?: InputMaybe<Scalars['ID']['input']>;
+  boardSerial: Scalars['String']['input'];
+  climbUuid: Scalars['ID']['input'];
+  frames?: InputMaybe<Scalars['String']['input']>;
+  isMirror?: InputMaybe<Scalars['Boolean']['input']>;
+  sessionId?: InputMaybe<Scalars['ID']['input']>;
+  /** Was the shared-playlist queue active at send time? Recorded for attribution. */
+  sharedPlaylistMode: Scalars['Boolean']['input'];
+  source: BoardHistorySource;
+  uuid: Scalars['ID']['input'];
+};
+
 export type RegisterControllerInput = {
   boardName: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
@@ -3945,6 +4075,8 @@ export type Session = {
   participantId?: Maybe<Scalars['ID']['output']>;
   /** Current queue state */
   queueState: QueueState;
+  /** Whether the session's shared playlist queue is active. When false, queue mutations are rejected server-side and each client falls back to a local IndexedDB queue. Board history streams independently of this flag. */
+  sharedPlaylistEnabled: Scalars['Boolean']['output'];
   /** When the session was started (ISO 8601) */
   startedAt?: Maybe<Scalars['String']['output']>;
   /** Users currently in the session */
@@ -4037,6 +4169,7 @@ export type SessionEvent =
   | SessionBoardSerialChanged
   | SessionEnded
   | SessionStatsUpdated
+  | SharedPlaylistToggled
   | UserJoined
   | UserLeft
   | UserPresenceChanged
@@ -4331,6 +4464,20 @@ export type SetterSearchResult = {
   username: Scalars['String']['output'];
 };
 
+/**
+ * Event when the shared-playlist (shared queue) mode is toggled on or off.
+ * Sent to all session subscribers so peers can re-route their queue
+ * mutations between WS (shared) and local IDB (local-only) without
+ * reconnecting.
+ */
+export type SharedPlaylistToggled = {
+  __typename?: 'SharedPlaylistToggled';
+  /** New value of shared_playlist_enabled */
+  enabled: Scalars['Boolean']['output'];
+  /** Session ID this toggle belongs to */
+  sessionId: Scalars['ID']['output'];
+};
+
 export type SimilarClimb = {
   __typename?: 'SimilarClimb';
   angle?: Maybe<Scalars['Int']['output']>;
@@ -4484,6 +4631,13 @@ export type SubmitAppFeedbackInput = {
 /** Root subscription type for real-time updates. */
 export type Subscription = {
   __typename?: 'Subscription';
+  /**
+   * Subscribe to board history events for a physical board (keyed by BLE
+   * serial). On subscribe, the server yields a BoardHistoryFullSync followed
+   * by BoardHistoryEntryAdded for each new send. Soft-gated on the caller
+   * having a userBoardSerials row for the serial.
+   */
+  boardHistoryEvents: BoardHistoryEvent;
   /** Subscribe to real-time comment updates on an entity. */
   commentUpdates: CommentEvent;
   controllerEvents: ControllerEvent;
@@ -4498,6 +4652,11 @@ export type Subscription = {
   queueUpdates: QueueEvent;
   /** Subscribe to real-time session events (membership, lifecycle, and live stats). */
   sessionUpdates: SessionEvent;
+};
+
+/** Root subscription type for real-time updates. */
+export type SubscriptionBoardHistoryEventsArgs = {
+  boardSerial: Scalars['String']['input'];
 };
 
 /** Root subscription type for real-time updates. */

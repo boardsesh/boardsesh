@@ -7,6 +7,7 @@ import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/
 import type { SessionEvent, SessionDetail, SessionDetailTick, SubscriptionQueueEvent } from '@boardsesh/shared-schema';
 import type { SessionStatsUpdated } from '@boardsesh/shared-schema/generated';
 import { SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
+import type { ActiveSessionInfo } from '../types';
 
 function createRefs() {
   return {
@@ -17,6 +18,21 @@ function createRefs() {
     queueEventSubscribersRef: { current: new Set<(event: SubscriptionQueueEvent) => void>() },
     sessionEventSubscribersRef: { current: new Set<(event: SessionEvent) => void>() },
     offlineBufferRef: { current: [] as LocalClimbQueueItem[] },
+    activeSessionRef: { current: null as ActiveSessionInfo | null },
+    setActiveSessionSharedPlaylistEnabledRef: {
+      current: null as ((sessionId: string, enabled: boolean) => void) | null,
+    },
+  };
+}
+
+function makeActiveSession(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
+  return {
+    sessionId: 'session-abc',
+    boardPath: 'kilter/1/2/3/40',
+    boardDetails: {} as ActiveSessionInfo['boardDetails'],
+    parsedParams: {} as ActiveSessionInfo['parsedParams'],
+    sharedPlaylistEnabled: true,
+    ...overrides,
   };
 }
 
@@ -291,5 +307,105 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
 
     const cached = queryClient.getQueryData<SessionDetail>(SESSION_DETAIL_QUERY_KEY('session-abc'));
     expect(cached).toBeUndefined();
+  });
+});
+
+describe('useEventProcessor - SharedPlaylistToggled → activeSession setter', () => {
+  let queryClient: QueryClient;
+
+  function createWrapper() {
+    return ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+  }
+
+  beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  it('routes a matching SharedPlaylistToggled event through setActiveSessionSharedPlaylistEnabled', () => {
+    const refs = createRefs();
+    refs.activeSessionRef.current = makeActiveSession({ sharedPlaylistEnabled: true });
+    const setterCalls: Array<[string, boolean]> = [];
+    refs.setActiveSessionSharedPlaylistEnabledRef.current = (sessionId, enabled) => {
+      setterCalls.push([sessionId, enabled]);
+    };
+
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.handleSessionEvent({
+        __typename: 'SharedPlaylistToggled',
+        sessionId: 'session-abc',
+        enabled: false,
+      });
+    });
+
+    expect(setterCalls).toEqual([['session-abc', false]]);
+  });
+
+  it('ignores SharedPlaylistToggled when the event sessionId does not match activeSession', () => {
+    const refs = createRefs();
+    refs.activeSessionRef.current = makeActiveSession({ sharedPlaylistEnabled: true });
+    const setterCalls: Array<[string, boolean]> = [];
+    refs.setActiveSessionSharedPlaylistEnabledRef.current = (sessionId, enabled) => {
+      setterCalls.push([sessionId, enabled]);
+    };
+
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.handleSessionEvent({
+        __typename: 'SharedPlaylistToggled',
+        sessionId: 'session-other',
+        enabled: false,
+      });
+    });
+
+    expect(setterCalls).toHaveLength(0);
+  });
+
+  it('is a no-op when there is no active session', () => {
+    const refs = createRefs();
+    refs.activeSessionRef.current = null;
+    const setterCalls: Array<[string, boolean]> = [];
+    refs.setActiveSessionSharedPlaylistEnabledRef.current = (sessionId, enabled) => {
+      setterCalls.push([sessionId, enabled]);
+    };
+
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.handleSessionEvent({
+        __typename: 'SharedPlaylistToggled',
+        sessionId: 'session-abc',
+        enabled: true,
+      });
+    });
+
+    expect(setterCalls).toHaveLength(0);
+  });
+
+  it('always notifies session event subscribers even for SharedPlaylistToggled', () => {
+    const refs = createRefs();
+    refs.activeSessionRef.current = makeActiveSession({ sharedPlaylistEnabled: true });
+    refs.setActiveSessionSharedPlaylistEnabledRef.current = () => {};
+    const subscriberCalls: SessionEvent[] = [];
+    (refs.sessionEventSubscribersRef as { current: Set<(event: SessionEvent) => void> }).current.add((e) =>
+      subscriberCalls.push(e),
+    );
+
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    const event: SessionEvent = {
+      __typename: 'SharedPlaylistToggled',
+      sessionId: 'session-abc',
+      enabled: false,
+    };
+    act(() => {
+      result.current.handleSessionEvent(event);
+    });
+
+    expect(subscriberCalls).toHaveLength(1);
+    expect(subscriberCalls[0]).toBe(event);
   });
 });

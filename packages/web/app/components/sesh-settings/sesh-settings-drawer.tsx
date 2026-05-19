@@ -29,6 +29,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import type { SessionDetail } from '@boardsesh/shared-schema';
 import { generateSessionName } from '@/app/lib/session-utils';
 import SessionDetailContent from '@/app/session/[sessionId]/session-detail-content';
+import SharedPlaylistToggle from './shared-playlist-toggle';
 
 const getShareUrl = (sessionId: string | null) => {
   try {
@@ -359,6 +360,13 @@ export default function SeshSettingsDrawer({
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pb: 2 }}>
+        {/* Shared playlist toggle — first child of the body so the leader
+            can see and flip the queue mode without scrolling past the
+            session details. Renders nothing when there's no active session
+            (the wrapping drawer is also guarded above). Tour preview skips
+            it to avoid mutating real session state from a demo flow. */}
+        {!tourMockSession && <SharedPlaylistToggle />}
+
         {isLoading && !displaySession && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={28} />

@@ -48,6 +48,7 @@ export const schemaSQL = `
     "is_permanent" boolean DEFAULT false NOT NULL,
     "color" text,
     "health_kit_workout_id" text,
+    "shared_playlist_enabled" boolean DEFAULT false NOT NULL,
     CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended'))
   );
 
@@ -236,6 +237,72 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_board_mapping" ON "user_board_mappings" ("user_id", "board_type");
   CREATE INDEX IF NOT EXISTS "board_user_mapping_idx" ON "user_board_mappings" ("board_type", "board_user_id");
+
+  -- Board history (per-physical-board send log; phase 2 of the shared queue plan).
+  DROP TABLE IF EXISTS "board_climb_history" CASCADE;
+  DROP TABLE IF EXISTS "board_history_sequences" CASCADE;
+  DROP TABLE IF EXISTS "user_board_serials" CASCADE;
+  DROP TABLE IF EXISTS "user_boards" CASCADE;
+
+  CREATE TABLE IF NOT EXISTS "user_boards" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "uuid" text UNIQUE NOT NULL,
+    "owner_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "name" text,
+    "slug" text,
+    "is_owned" boolean DEFAULT true,
+    "deleted_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS "user_board_serials" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "serial_number" text NOT NULL,
+    "board_name" text NOT NULL,
+    "layout_id" bigint NOT NULL,
+    "size_id" bigint NOT NULL,
+    "set_ids" text NOT NULL,
+    "board_uuid" text REFERENCES "user_boards"("uuid") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "user_board_serials_unique_user_serial" ON "user_board_serials" ("user_id", "serial_number");
+  CREATE INDEX IF NOT EXISTS "user_board_serials_serial_idx" ON "user_board_serials" ("serial_number");
+
+  DO $$ BEGIN
+    CREATE TYPE board_history_source AS ENUM ('ble_send', 'manual', 'shared_queue_relay');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS "board_history_sequences" (
+    "board_serial" text PRIMARY KEY,
+    "last_sequence" bigint NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_climb_history" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "uuid" text UNIQUE NOT NULL,
+    "board_serial" text NOT NULL,
+    "board_id" bigint REFERENCES "user_boards"("id") ON DELETE SET NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "climb_uuid" text NOT NULL,
+    "board_type" text NOT NULL,
+    "layout_id" bigint NOT NULL,
+    "angle" integer NOT NULL,
+    "is_mirror" boolean DEFAULT false NOT NULL,
+    "frames" text,
+    "source" board_history_source NOT NULL,
+    "session_id" text REFERENCES "board_sessions"("id") ON DELETE SET NULL,
+    "shared_playlist_mode" boolean DEFAULT false NOT NULL,
+    "tick_id" bigint REFERENCES "boardsesh_ticks"("id") ON DELETE SET NULL,
+    "sequence" bigint NOT NULL,
+    "sent_at" timestamp with time zone DEFAULT now() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climb_history_serial_sequence_unique" ON "board_climb_history" ("board_serial", "sequence");
+  CREATE INDEX IF NOT EXISTS "board_climb_history_serial_sent_at_idx" ON "board_climb_history" ("board_serial", "sent_at" DESC);
+  CREATE INDEX IF NOT EXISTS "board_climb_history_serial_sequence_idx" ON "board_climb_history" ("board_serial", "sequence" DESC);
 
   DROP TABLE IF EXISTS "inferred_sessions" CASCADE;
   CREATE TABLE IF NOT EXISTS "inferred_sessions" (

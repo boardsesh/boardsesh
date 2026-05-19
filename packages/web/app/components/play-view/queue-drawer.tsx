@@ -13,6 +13,7 @@ import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
 import { useQueueActions, useQueueList, useSessionData } from '../graphql-queue';
 import QueueList, { type QueueListHandle } from '../queue-control/queue-list';
+import CurrentlyOnBoardHeader from '../board-history/currently-on-board-header';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { usePullToClose } from '@/app/lib/hooks/pull-to-close';
 import { useDrawerDragResize } from '@/app/hooks/use-drawer-drag-resize';
@@ -235,6 +236,35 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
           onTouchMove={handleQueueSwipeMove}
           onTouchEnd={handleQueueSwipeEnd}
         >
+          {/* Read-only "Currently on the board" header pinned at the top of
+              the scroll container. Stays visible as the queue list scrolls
+              so users can always see what the wall is actually showing. */}
+          <Box
+            sx={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+              backgroundColor: 'background.paper',
+            }}
+          >
+            <CurrentlyOnBoardHeader />
+          </Box>
+          {/* Small label so the distinction between "what's on the board"
+              and "your queue" is unambiguous. */}
+          <Typography
+            variant="overline"
+            component="div"
+            sx={{
+              px: `${themeTokens.spacing[3]}px`,
+              pt: 1,
+              pb: 0.25,
+              color: 'text.secondary',
+              fontWeight: themeTokens.typography.fontWeight.medium,
+              lineHeight: themeTokens.typography.lineHeight.tight,
+            }}
+          >
+            {t('queueDrawer.yourQueue.label')}
+          </Typography>
           <QueueList
             ref={queueListRef}
             boardDetails={boardDetails}

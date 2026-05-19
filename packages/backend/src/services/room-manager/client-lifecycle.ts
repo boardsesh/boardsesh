@@ -824,6 +824,13 @@ function localParticipantToSessionUser(participant: LocalSessionParticipant): Se
 
 /**
  * Ensure a session record exists in Postgres for durable history/summary reads.
+ *
+ * Implicit sessions (created on-the-fly by `joinSession` for legacy clients
+ * that don't go through the explicit `createSession` mutation) opt INTO
+ * shared-playlist mode by default. The new `shared_playlist_enabled = false`
+ * default in the schema gates the explicit `createSession` path; legacy
+ * joinSession callers preserve the old shared-queue UX without requiring
+ * a separate toggle call.
  */
 async function ensureSessionRecordExists(
   sessionId: string,
@@ -845,6 +852,7 @@ async function ensureSessionRecordExists(
       createdByUserId: userId,
       name: sessionName || null,
       startedAt: now,
+      sharedPlaylistEnabled: true,
     })
     .onConflictDoNothing();
 }

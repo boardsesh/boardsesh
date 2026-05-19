@@ -328,6 +328,8 @@ type Session {
   isPermanent: Boolean!
   "Hex color for multi-session display"
   color: String
+  "Whether the session's shared playlist queue is active. When false, queue mutations are rejected server-side and each client falls back to a local IndexedDB queue. Board history streams independently of this flag."
+  sharedPlaylistEnabled: Boolean!
 }
 
 """
@@ -3438,6 +3440,103 @@ type RecentBetaLink {
 }
 
 """
+Source of a board history entry. `BLE_SEND` is the MVP source emitted when
+the BLE-connected user successfully sends a climb to the board. The other
+variants are reserved for future surfaces (manual log entries, or a relay
+of a shared-playlist current-climb change when no BLE user is paired).
+"""
+enum BoardHistorySource {
+  BLE_SEND
+  MANUAL
+  SHARED_QUEUE_RELAY
+}
+
+"""
+A single entry in a board's chronological send log.
+"""
+type BoardHistoryEntry {
+  "Surrogate PK of the underlying row"
+  id: ID!
+  "Client-generated idempotency key; same logical send shares one uuid across retries"
+  uuid: ID!
+  "Canonical room key — BLE serial of the controller the climb was sent to"
+  boardSerial: String!
+  "Best-effort link to a saved userBoards row; null for unregistered boards"
+  boardId: ID
+  climbUuid: ID!
+  angle: Int!
+  isMirror: Boolean!
+  source: BoardHistorySource!
+  "Stable user ID of the BLE-connected sender"
+  userId: ID!
+  "Display name of the sender at write time (best-effort lookup from users)"
+  username: String
+  "Party session active at send time, if any"
+  sessionId: ID
+  "ISO 8601 timestamp when the send occurred"
+  sentAt: String!
+  "Monotonic per-board_serial sequence (allocated by board_history_sequences)"
+  sequence: Int!
+}
+
+"""
+Full sync emitted on initial subscription. Carries the most recent N entries
+in reverse-chronological order and the highest sequence the client has seen.
+"""
+type BoardHistoryFullSync {
+  sequence: Int!
+  entries: [BoardHistoryEntry!]!
+}
+
+"""
+Incremental event emitted whenever a new entry is appended to the log.
+"""
+type BoardHistoryEntryAdded {
+  sequence: Int!
+  entry: BoardHistoryEntry!
+}
+
+"""
+Union of possible board-history events.
+"""
+union BoardHistoryEvent = BoardHistoryFullSync | BoardHistoryEntryAdded
+
+"""
+Input for the `recordBoardSend` mutation. `uuid` is the idempotency key
+(matches the boardsesh_ticks.uuid precedent — server trusts client uuid and
+does ON CONFLICT (uuid) DO NOTHING).
+"""
+input RecordBoardSendInput {
+  uuid: ID!
+  boardSerial: String!
+  boardId: ID
+  climbUuid: ID!
+  angle: Int!
+  isMirror: Boolean
+  frames: String
+  source: BoardHistorySource!
+  sessionId: ID
+  "Was the shared-playlist queue active at send time? Recorded for attribution."
+  sharedPlaylistMode: Boolean!
+}
+
+"""
+Slim view of a board_sessions row returned by setSharedPlaylistEnabled.
+Distinct from `Session` — only carries the fields a client needs to react
+to a shared-playlist toggle without joining the room state.
+"""
+type BoardSession {
+  id: ID!
+  boardPath: String!
+  name: String
+  sharedPlaylistEnabled: Boolean!
+  "ISO 8601 timestamp"
+  startedAt: String
+  "ISO 8601 timestamp"
+  endedAt: String
+}
+
+"""
 Root query type for all read operations.
 """
 type Query {
@@ -4012,6 +4111,18 @@ type Query {
   Returns only rows whose thumbnails are cached in our S3.
   """
   userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+
+  # ============================================
+  # Board History Queries
+  # ============================================
+
+  """
+  Fetch board history entries for a serial in reverse chronological order.
+  Soft-gated on the caller being paired to the board (has a userBoardSerials
+  row for the serial). The optional `before` cursor accepts an ISO 8601
+  timestamp.
+  """
+  boardHistory(boardSerial: String!, limit: Int = 50, before: String): [BoardHistoryEntry!]!
 }
 
 """
@@ -4565,6 +4676,26 @@ type Mutation {
   associated with the user.
   """
   submitAppFeedback(input: SubmitAppFeedbackInput!): Boolean!
+
+  # ============================================
+  # Board History Mutations (require auth)
+  # ============================================
+
+  """
+  Record that a climb was sent to a physical board. Called by the BLE
+  client after a successful send. The `uuid` field is the idempotency key
+  — repeated calls with the same uuid return the previously persisted row
+  and do not emit a second event.
+  """
+  recordBoardSend(input: RecordBoardSendInput!): BoardHistoryEntry!
+
+  """
+  Toggle the shared-playlist queue model for a session. When disabled,
+  queue mutations are rejected server-side and clients fall back to local
+  IDB queues; board history still streams normally. Restricted to the
+  session leader.
+  """
+  setSharedPlaylistEnabled(sessionId: ID!, enabled: Boolean!): BoardSession!
 }
 
 """
@@ -4598,6 +4729,14 @@ type Subscription {
 
   # ESP32 subscribes to receive LED commands - uses API key auth via connectionParams
   controllerEvents(sessionId: ID!): ControllerEvent!
+
+  """
+  Subscribe to board history events for a physical board (keyed by BLE
+  serial). On subscribe, the server yields a BoardHistoryFullSync followed
+  by BoardHistoryEntryAdded for each new send. Soft-gated on the caller
+  having a userBoardSerials row for the serial.
+  """
+  boardHistoryEvents(boardSerial: String!): BoardHistoryEvent!
 }
 
 """
@@ -4613,6 +4752,7 @@ union SessionEvent =
   | SessionBoardSerialChanged
   | SessionEnded
   | SessionStatsUpdated
+  | SharedPlaylistToggled
 
 """
 Event when a user joins the session.
@@ -4726,6 +4866,19 @@ type SessionStatsUpdated {
   goal: String
   "Current session ticks (latest first)"
   ticks: [SessionDetailTick!]!
+}
+
+"""
+Event when the shared-playlist (shared queue) mode is toggled on or off.
+Sent to all session subscribers so peers can re-route their queue
+mutations between WS (shared) and local IDB (local-only) without
+reconnecting.
+"""
+type SharedPlaylistToggled {
+  "Session ID this toggle belongs to"
+  sessionId: ID!
+  "New value of shared_playlist_enabled"
+  enabled: Boolean!
 }
 
 """

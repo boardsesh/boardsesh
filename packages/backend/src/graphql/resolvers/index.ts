@@ -51,6 +51,12 @@ import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { feedbackMutations } from './feedback/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { isNoMatchClimb } from './shared/helpers';
+import {
+  boardHistoryMutations,
+  boardHistoryQueries,
+  boardHistorySubscriptions,
+  boardHistoryEventResolver,
+} from './board-history';
 
 export const resolvers = {
   // Scalar types
@@ -83,6 +89,7 @@ export const resolvers = {
     ...socialCommunitySettingsQueries,
     ...newClimbSubscriptionResolvers.Query,
     ...betaLinkQueries,
+    ...boardHistoryQueries,
   },
 
   Mutation: {
@@ -108,6 +115,7 @@ export const resolvers = {
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
     ...feedbackMutations,
+    ...boardHistoryMutations,
   },
 
   Subscription: {
@@ -117,6 +125,7 @@ export const resolvers = {
     ...socialNotificationSubscriptions,
     ...socialCommentSubscriptions,
     ...newClimbFeedSubscription,
+    ...boardHistorySubscriptions,
   },
 
   // Field-level resolvers
@@ -131,6 +140,7 @@ export const resolvers = {
   QueueEvent: queueEventResolver,
   SessionEvent: sessionEventResolver,
   ControllerEvent: controllerEventResolver,
+  BoardHistoryEvent: boardHistoryEventResolver,
   CommentEvent: {
     __resolveType(obj: { __typename: string }) {
       return obj.__typename;

@@ -61,6 +61,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     isPermanent: Boolean!
     "Hex color for multi-session display"
     color: String
+    "Whether the session's shared playlist queue is active. When false, queue mutations are rejected server-side and each client falls back to a local IndexedDB queue. Board history streams independently of this flag."
+    sharedPlaylistEnabled: Boolean!
   }
 
   """

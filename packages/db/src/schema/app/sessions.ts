@@ -55,6 +55,11 @@ export const boardSessions = pgTable(
     color: text('color'),
     // Apple HealthKit workout UUID once the session has been mirrored to HealthKit.
     healthKitWorkoutId: text('health_kit_workout_id'),
+    // Opt-in to the shared-playlist queue model. When false (default for new
+    // sessions), queue mutations are rejected server-side and each member runs
+    // a local-only queue; only board history is broadcast. Backfilled to true
+    // for sessions that existed at the cutover so live users don't lose state.
+    sharedPlaylistEnabled: boolean('shared_playlist_enabled').default(false).notNull(),
   },
   (table) => ({
     locationIdx: index('board_sessions_location_idx').on(table.latitude, table.longitude),
