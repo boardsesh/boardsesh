@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useRef } from 'react';
 import MuiButton from '@mui/material/Button';
-import { useSearchParams } from 'next/navigation';
 import { track } from '@/app/lib/analytics';
 import { useTranslation } from 'react-i18next';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
@@ -26,7 +25,6 @@ type PlayViewClientProps = {
 const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialClimb, angle }) => {
   const { t } = useTranslation('session');
   const router = useLocaleRouter();
-  const searchParams = useSearchParams();
   const { currentClimb } = useCurrentClimb();
   const { queue } = useQueueList();
   const { setCurrentClimbQueueItem, getNextClimbQueueItem, getPreviousClimbQueueItem } = useQueueActions();
@@ -70,12 +68,15 @@ const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialCl
       baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
     }
 
-    const queryString = searchParams.toString();
+    // Read live query string from window.location — QueueContext mirrors filter
+    // state via history.replaceState, which Next.js's useSearchParams() does not
+    // observe, so it would otherwise be stale.
+    const queryString = window.location.search.slice(1);
     if (queryString) {
       return `${baseUrl}?${queryString}`;
     }
     return baseUrl;
-  }, [boardDetails, angle, searchParams]);
+  }, [boardDetails, angle]);
 
   const navigateToClimb = useCallback(
     (climb: Climb) => {
@@ -97,13 +98,13 @@ const PlayViewClient: React.FC<PlayViewClientProps> = ({ boardDetails, initialCl
         url = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/play/${climb.uuid}`;
       }
 
-      const queryString = searchParams.toString();
+      const queryString = window.location.search.slice(1);
       if (queryString) {
         url = `${url}?${queryString}`;
       }
       window.history.pushState(null, '', url);
     },
-    [boardDetails, angle, searchParams],
+    [boardDetails, angle],
   );
 
   const handleNext = useCallback(() => {

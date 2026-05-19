@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import IconButton from '@mui/material/IconButton';
 import Box from '@mui/material/Box';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import CircularProgress from '@mui/material/CircularProgress';
 import MuiButton from '@mui/material/Button';
@@ -45,7 +45,6 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
   const { currentClimb } = useCurrentClimb();
   const { totalSearchResultCount, isFetchingClimbs } = useSearchData();
   const { uiSearchParams, clearClimbSearchParams, updateFilters } = useUISearchParams();
-  const searchParams = useSearchParams();
   const router = useLocaleRouter();
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const isCreatePage = pathname.includes('/create');
@@ -89,8 +88,10 @@ export default function BoardSeshHeader({ boardDetails, angle, isAngleAdjustable
       baseUrl = `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
     }
 
-    // Preserve search params when going back
-    const queryString = searchParams.toString();
+    // Read live query string from window.location — QueueContext mirrors filter
+    // state via history.replaceState, which Next.js's useSearchParams() does not
+    // observe, so it would otherwise be stale.
+    const queryString = window.location.search.slice(1);
     if (queryString) {
       return `${baseUrl}?${queryString}`;
     }

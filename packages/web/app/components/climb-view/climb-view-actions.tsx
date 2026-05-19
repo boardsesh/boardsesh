@@ -21,13 +21,16 @@ const ClimbViewActions = ({ climb, boardDetails, auroraAppUrl, angle }: ClimbVie
   const getBackToListUrl = () => {
     const { board_name, layout_name, size_name, size_description, set_names } = boardDetails;
 
-    // Use slug-based URL construction if slug names are available
-    if (layout_name && size_name && set_names) {
-      return constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle);
-    }
+    const baseUrl =
+      layout_name && size_name && set_names
+        ? constructClimbListWithSlugs(board_name, layout_name, size_name, size_description, set_names, angle)
+        : `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
 
-    // Fallback to numeric format
-    return `/${board_name}/${boardDetails.layout_id}/${boardDetails.size_id}/${boardDetails.set_ids.join(',')}/${angle}/list`;
+    // Read live query string from window.location — QueueContext mirrors filter
+    // state via history.replaceState, which Next.js's useSearchParams() does not
+    // observe, so it would otherwise be stale.
+    const queryString = typeof window === 'undefined' ? '' : window.location.search.slice(1);
+    return queryString ? `${baseUrl}?${queryString}` : baseUrl;
   };
 
   return (
