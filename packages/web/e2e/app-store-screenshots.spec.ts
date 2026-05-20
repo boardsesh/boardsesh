@@ -140,12 +140,12 @@ test.describe('App Store Screenshots', () => {
       maxAttempts: 6,
     });
 
-    // The play drawer's queue toggle can be in the DOM but not interactive
-    // until the drawer's open animation settles. Without an explicit
-    // visibility wait, the click fired on slow CI runners before the button
-    // was hittable, producing the recurring 04-queue flake.
+    // The play drawer's queue toggle renders after the drawer animates in
+    // and the in-drawer content loads — on slow CI runners this can take
+    // longer than the default 15s actionTimeout that `.click()` waits.
+    // Wait explicitly with a generous budget before clicking.
     const openQueueButton = page.getByRole('button', { name: 'Open queue' });
-    await expect(openQueueButton).toBeVisible();
+    await openQueueButton.waitFor({ state: 'visible', timeout: 30_000 });
     await openQueueButton.click();
     // The queue drawer is the second swipeable drawer (stacked above play).
     await waitForDrawerOpen(page, 1);
