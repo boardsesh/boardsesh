@@ -140,7 +140,8 @@ test.describe('App Store Screenshots', () => {
       maxAttempts: 6,
     });
 
-    await page.getByRole('button', { name: 'Open queue' }).click();
+    // Renamed from "Open queue" → "Open up next" in d133ea8eb (main).
+    await page.getByRole('button', { name: 'Open up next' }).click();
     // The queue drawer is the second swipeable drawer (stacked above play).
     await waitForDrawerOpen(page, 1);
     // Toggle history so previously-played climbs are listed alongside the
