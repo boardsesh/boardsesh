@@ -3830,9 +3830,13 @@ export type RecordBoardSendInput = {
   angle: Scalars['Int']['input'];
   boardId?: InputMaybe<Scalars['ID']['input']>;
   boardSerial: Scalars['String']['input'];
+  /** Board family the climb belongs to (e.g. 'kilter', 'tension'). Denormalised onto the history row so per-board-type filters don't need to join userBoards. */
+  boardType: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
   frames?: InputMaybe<Scalars['String']['input']>;
   isMirror?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Aurora layout id the climb belongs to. Denormalised for the same reason as boardType. */
+  layoutId: Scalars['Int']['input'];
   sessionId?: InputMaybe<Scalars['ID']['input']>;
   /** Was the shared-playlist queue active at send time? Recorded for attribution. */
   sharedPlaylistMode: Scalars['Boolean']['input'];

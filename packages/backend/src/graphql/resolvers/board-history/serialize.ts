@@ -40,8 +40,12 @@ export function serializeBoardHistoryEntry(row: BoardClimbHistory, username: str
     username,
     sessionId: row.sessionId,
     sentAt: row.sentAt.toISOString(),
-    // `sequence` is bigint in the DB. The GraphQL Int is 32-bit, which is
-    // adequate (>2.1B sends per board is fictional). Coerce here.
+    // `sequence` is bigint in the DB. The GraphQL Int is 32-bit (signed,
+    // ~2.1B max). At a steady 10 sends/minute every minute that's ~400 years
+    // before the wrap, so the coercion is safe for the foreseeable future.
+    // If a single board's sequence ever approaches the ceiling, the fix is
+    // to widen the GraphQL scalar (Int → custom Long/String) — both the DB
+    // and the Redis hot-buffer already store as strings/bigint.
     sequence: Number(row.sequence),
   };
 }

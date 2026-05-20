@@ -97,6 +97,8 @@ function countClimbHolds(frames: string | undefined | null): number {
 function BluetoothAutoSender({
   sendFramesToBoard,
   layoutName,
+  boardType,
+  layoutId,
   onWallConfirmed,
   boardSerial,
   sessionId,
@@ -109,6 +111,10 @@ function BluetoothAutoSender({
     climbUuid?: string,
   ) => Promise<boolean | undefined>;
   layoutName: string;
+  /** Board family ('kilter' / 'tension' / ...). Denormalised onto board_climb_history rows. */
+  boardType: string;
+  /** Aurora layout id. Denormalised onto board_climb_history rows. */
+  layoutId: number;
   /**
    * Fires after a successful BLE write. Always emits onto the local
    * wall-confirm bus (so the same phone's drawer timer dismisses); in party
@@ -135,8 +141,8 @@ function BluetoothAutoSender({
   // Latest-wins refs so the send effect doesn't fire purely because the
   // surrounding session/serial changed; the effect's dep array stays focused
   // on the climb itself.
-  const recordContextRef = useRef({ boardSerial, sessionId, sharedPlaylistMode, recordSend });
-  recordContextRef.current = { boardSerial, sessionId, sharedPlaylistMode, recordSend };
+  const recordContextRef = useRef({ boardSerial, boardType, layoutId, sessionId, sharedPlaylistMode, recordSend });
+  recordContextRef.current = { boardSerial, boardType, layoutId, sessionId, sharedPlaylistMode, recordSend };
 
   // Latest-wins refs for the manual-send path. The "Send your pick" CTA in
   // the play-view drawer header lives outside this provider's tree (the
@@ -168,6 +174,8 @@ function BluetoothAutoSender({
             void recordCtx.recordSend({
               boardSerial: recordCtx.boardSerial,
               boardId: null,
+              boardType: recordCtx.boardType,
+              layoutId: recordCtx.layoutId,
               climbUuid: climb.uuid,
               angle: climb.angle,
               isMirror: !!climb.mirrored,
@@ -293,6 +301,8 @@ function BluetoothAutoSender({
                 void recordCtx.recordSend({
                   boardSerial: recordCtx.boardSerial,
                   boardId: null,
+                  boardType: recordCtx.boardType,
+                  layoutId: recordCtx.layoutId,
                   climbUuid: item.climb.uuid,
                   angle: item.climb.angle,
                   isMirror: !!item.climb.mirrored,
@@ -712,6 +722,8 @@ export function BluetoothProvider({
         <BluetoothAutoSender
           sendFramesToBoard={sendFramesToBoard}
           layoutName={boardDetails.layout_name ?? ''}
+          boardType={boardDetails.board_name}
+          layoutId={boardDetails.layout_id}
           onWallConfirmed={handleWallConfirmed}
           boardSerial={connectedSerial}
           sessionId={activeSession?.sessionId ?? null}

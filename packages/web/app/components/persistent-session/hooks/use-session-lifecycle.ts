@@ -126,6 +126,15 @@ export function applySessionEvent(prev: Session | null, event: SessionEvent): Se
       // second phone joining a multi-board gym auto-connects to the same
       // physical board the first phone is paired to.
       return { ...prev, lastConnectedBoardSerial: event.lastConnectedBoardSerial ?? null };
+    case 'SharedPlaylistToggled':
+      // Persist the new value into the Session shape so it survives reload —
+      // otherwise the next restore rehydrates the stale flag from IDB and
+      // silently flips activeSession back. The event-processor also flips
+      // activeSession.sharedPlaylistEnabled in parallel for the queue
+      // bridge's adapter routing; this reducer is what keeps the IDB-backed
+      // persistence in sync.
+      if (event.sessionId !== prev.id) return prev;
+      return { ...prev, sharedPlaylistEnabled: event.enabled };
     case 'SessionEnded':
       // The lifecycle effect clears IndexedDB and tears the session down on
       // its own; the reducer just leaves the existing state in place so the

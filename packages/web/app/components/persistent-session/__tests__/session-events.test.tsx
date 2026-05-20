@@ -217,6 +217,33 @@ describe('applySessionEvent reducer', () => {
     ).toBeNull();
   });
 
+  it('SharedPlaylistToggled flips sharedPlaylistEnabled when the sessionId matches', () => {
+    const prev = buildSession({ sharedPlaylistEnabled: true });
+    const next = applySessionEvent(prev, {
+      __typename: 'SharedPlaylistToggled',
+      sessionId: 'session-1',
+      enabled: false,
+    });
+    expect(next?.sharedPlaylistEnabled).toBe(false);
+
+    const back = applySessionEvent(next, {
+      __typename: 'SharedPlaylistToggled',
+      sessionId: 'session-1',
+      enabled: true,
+    });
+    expect(back?.sharedPlaylistEnabled).toBe(true);
+  });
+
+  it('SharedPlaylistToggled is a no-op when the event sessionId mismatches', () => {
+    const prev = buildSession({ sharedPlaylistEnabled: true });
+    const next = applySessionEvent(prev, {
+      __typename: 'SharedPlaylistToggled',
+      sessionId: 'other-session',
+      enabled: false,
+    });
+    expect(next).toBe(prev);
+  });
+
   it('SessionEnded leaves the previous session in place (lifecycle handles teardown)', () => {
     const prev = buildSession({ driverParticipantId: 'participant-end' });
     const next = applySessionEvent(prev, {

@@ -41,6 +41,11 @@ export type RecordBoardSendInput = {
   boardSerial: string;
   boardId?: string | null;
   climbUuid: string;
+  // Board family the climb belongs to (e.g. 'kilter', 'tension'). Denormalised
+  // onto the history row so per-board-type filters don't need to join userBoards.
+  boardType: string;
+  // Aurora layout id the climb belongs to. Denormalised for the same reason.
+  layoutId: number;
   angle: number;
   isMirror?: boolean | null;
   frames?: string | null;

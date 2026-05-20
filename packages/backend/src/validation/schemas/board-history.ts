@@ -18,6 +18,8 @@ export const RecordBoardSendInputSchema = z.object({
   boardSerial: z.string().min(1, 'boardSerial required').max(128, 'boardSerial too long'),
   boardId: z.number().int().positive().nullish(),
   climbUuid: z.string().min(1, 'climbUuid required').max(128, 'climbUuid too long'),
+  boardType: z.string().min(1, 'boardType required').max(32, 'boardType too long'),
+  layoutId: z.number().int().nonnegative('layoutId >= 0'),
   angle: z.number().int().min(0, 'angle >= 0').max(90, 'angle <= 90'),
   isMirror: z.boolean().optional().default(false),
   frames: z.string().max(8192, 'frames too long').nullish(),

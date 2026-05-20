@@ -24,22 +24,43 @@ import { logger } from '../../../utils/logger';
  * Returning a typed error lets the client adapter fall back to writing to
  * IndexedDB without surfacing a generic error to the user.
  *
- * Cached as a single `SELECT` per call — adds ~1ms to every queue mutation,
- * acceptable for the safety guarantee.
+ * Cached per-process with a short TTL (`SHARED_PLAYLIST_CACHE_TTL_MS`) so a
+ * busy session doesn't hit PG on every queue mutation. The same-instance
+ * invalidation path (`invalidateSharedPlaylistCache`) is called from
+ * `setSharedPlaylistEnabled`; cross-instance changes propagate at the next
+ * read after TTL expiry (the toggle event also fans out over Redis pub/sub
+ * to clients, so the user-visible latency is bounded by the TTL).
  */
+const SHARED_PLAYLIST_CACHE_TTL_MS = 5_000;
+const sharedPlaylistCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+export function invalidateSharedPlaylistCache(sessionId: string): void {
+  sharedPlaylistCache.delete(sessionId);
+}
+
 async function assertSharedPlaylistEnabled(sessionId: string): Promise<void> {
-  const rows = await db
-    .select({ sharedPlaylistEnabled: boardSessions.sharedPlaylistEnabled })
-    .from(boardSessions)
-    .where(eq(boardSessions.id, sessionId))
-    .limit(1);
-  const row = rows[0];
-  // No row → session was never created via createSession (legacy / in-memory
-  // only). We allow the mutation through; the downstream insert will fail
-  // cleanly if persistence is required. This matches the existing behaviour
-  // before this gate was added.
-  if (!row) return;
-  if (!row.sharedPlaylistEnabled) {
+  const cached = sharedPlaylistCache.get(sessionId);
+  const now = Date.now();
+  let enabled: boolean | null;
+  if (cached && cached.expiresAt > now) {
+    enabled = cached.value;
+  } else {
+    const rows = await db
+      .select({ sharedPlaylistEnabled: boardSessions.sharedPlaylistEnabled })
+      .from(boardSessions)
+      .where(eq(boardSessions.id, sessionId))
+      .limit(1);
+    const row = rows[0];
+    // No row → session was never created via createSession (legacy / in-memory
+    // only). We allow the mutation through; the downstream insert will fail
+    // cleanly if persistence is required. This matches the existing behaviour
+    // before this gate was added. Don't cache the absence — the row may show
+    // up on the next mutation if joinSession races with the queue write.
+    if (!row) return;
+    enabled = row.sharedPlaylistEnabled;
+    sharedPlaylistCache.set(sessionId, { value: enabled, expiresAt: now + SHARED_PLAYLIST_CACHE_TTL_MS });
+  }
+  if (!enabled) {
     throw new GraphQLError('Shared playlist is disabled for this session', {
       extensions: { code: 'SHARED_PLAYLIST_DISABLED' } as const,
     });

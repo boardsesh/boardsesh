@@ -71,6 +71,10 @@ export const boardHistoryTypeDefs = /* GraphQL */ `
     boardSerial: String!
     boardId: ID
     climbUuid: ID!
+    "Board family the climb belongs to (e.g. 'kilter', 'tension'). Denormalised onto the history row so per-board-type filters don't need to join userBoards."
+    boardType: String!
+    "Aurora layout id the climb belongs to. Denormalised for the same reason as boardType."
+    layoutId: Int!
     angle: Int!
     isMirror: Boolean
     frames: String

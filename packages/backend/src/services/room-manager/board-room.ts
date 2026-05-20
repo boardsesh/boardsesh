@@ -53,6 +53,8 @@ type RedisEventEntry = {
   boardId: number | null;
   userId: string;
   climbUuid: string;
+  boardType: string;
+  layoutId: number;
   angle: number;
   isMirror: boolean;
   source: BoardClimbHistory['source'];
@@ -69,6 +71,8 @@ function serializeForRedis(row: BoardClimbHistory): RedisEventEntry {
     boardId: row.boardId,
     userId: row.userId,
     climbUuid: row.climbUuid,
+    boardType: row.boardType,
+    layoutId: row.layoutId,
     angle: row.angle,
     isMirror: row.isMirror,
     source: row.source,
@@ -289,13 +293,12 @@ export async function getRecentHistoryForSync(serial: string, limit = 50): Promi
               boardId: obj.boardId,
               userId: obj.userId,
               climbUuid: obj.climbUuid,
-              // Fields not carried by the hot-buffer get safe defaults — the
-              // UI only renders the columns surfaced via GraphQL anyway, and
-              // missing extras (boardType, layoutId, frames, tickId,
-              // sharedPlaylistMode, createdAt) are not part of
-              // BoardHistoryEntry.
-              boardType: '',
-              layoutId: 0,
+              boardType: obj.boardType,
+              layoutId: obj.layoutId,
+              // Fields not carried by the hot-buffer get safe defaults — they
+              // aren't part of the GraphQL BoardHistoryEntry shape so the UI
+              // never reads them. (frames, tickId, sharedPlaylistMode,
+              // createdAt.)
               angle: obj.angle,
               isMirror: obj.isMirror,
               frames: null,

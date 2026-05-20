@@ -13,6 +13,7 @@ import {
 import { appendBoardHistoryEntry, lookupUsername } from '../../../services/room-manager/board-room';
 import { logger } from '../../../utils/logger';
 import { graphqlSourceToDb, serializeBoardHistoryEntry } from './serialize';
+import { invalidateSharedPlaylistCache } from '../queue/mutations';
 
 /**
  * Throw a GraphQL FORBIDDEN error using a consistent shape clients can
@@ -64,13 +65,8 @@ export const boardHistoryMutations = {
       boardId: parsed.boardId ?? null,
       userId,
       climbUuid: parsed.climbUuid,
-      // boardType + layoutId aren't derivable from the input. We require them
-      // for the table NOT NULL constraint but the client doesn't carry them.
-      // Use empty / 0 placeholders — these columns are denormalised filter
-      // helpers, not relied on for correctness. A follow-up could plumb them
-      // through if a per-board-type filter ships.
-      boardType: '',
-      layoutId: 0,
+      boardType: parsed.boardType,
+      layoutId: parsed.layoutId,
       angle: parsed.angle,
       isMirror: parsed.isMirror ?? false,
       frames: parsed.frames ?? null,
@@ -153,6 +149,13 @@ export const boardHistoryMutations = {
     if (!row) {
       throw new GraphQLError('Session not found', { extensions: { code: 'NOT_FOUND' } });
     }
+
+    // Drop the stale value from this instance's per-process gate cache so the
+    // next queue mutation reflects the toggle immediately. Other backend
+    // instances refresh on their own TTL window (~5s, see
+    // SHARED_PLAYLIST_CACHE_TTL_MS); good enough for a UX-level setting and
+    // saves a Redis fan-out.
+    invalidateSharedPlaylistCache(parsed.sessionId);
 
     // Broadcast the new value to every subscriber on the session channel.
     // Peers use this to switch their queue bridge between WS and local-IDB
