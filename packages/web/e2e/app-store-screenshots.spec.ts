@@ -22,7 +22,7 @@
  *   - 6.9" (iPhone 16 Pro Max): 1320x2868 -- App Store Connect accepts 6.5" for this slot
  *   - 12.9" iPad: 2048x2732 -- optional, not covered here
  */
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import path from 'path';
 import {
   clickWithDomFallback,
@@ -140,7 +140,13 @@ test.describe('App Store Screenshots', () => {
       maxAttempts: 6,
     });
 
-    await page.getByRole('button', { name: 'Open queue' }).click();
+    // The play drawer's queue toggle can be in the DOM but not interactive
+    // until the drawer's open animation settles. Without an explicit
+    // visibility wait, the click fired on slow CI runners before the button
+    // was hittable, producing the recurring 04-queue flake.
+    const openQueueButton = page.getByRole('button', { name: 'Open queue' });
+    await expect(openQueueButton).toBeVisible();
+    await openQueueButton.click();
     // The queue drawer is the second swipeable drawer (stacked above play).
     await waitForDrawerOpen(page, 1);
     // Toggle history so previously-played climbs are listed alongside the

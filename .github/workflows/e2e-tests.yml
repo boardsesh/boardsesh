@@ -229,7 +229,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     container:
       image: mcr.microsoft.com/playwright:v1.58.0-noble
 
@@ -337,7 +337,25 @@ jobs:
           tar -xf built-packages.tar
           rm built-packages.tar
 
+      - name: Check for new migrations vs main
+        id: migrations
+        # On PRs whose drizzle journal matches `origin/main`, the dev DB
+        # image (rebuilt on every journal change by dev-db-docker.yml)
+        # already has every migration applied — so the migrate step is
+        # pure overhead (~20s of bun + drizzle-kit startup). Skip it.
+        # Push events to main run migrations unconditionally because the
+        # image rebuild publishes asynchronously and may still be stale.
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin main
+          if git diff --quiet origin/main HEAD -- packages/db/drizzle/meta/_journal.json; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run database migrations
+        if: github.event_name != 'pull_request' || steps.migrations.outputs.needed == 'true'
         run: bunx drizzle-kit migrate
         working-directory: packages/db
         env:
@@ -356,13 +374,13 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           NEXT_PUBLIC_WS_URL: ws://localhost:8080/graphql
 
-      - name: Run Playwright shard ${{ matrix.shard }}/8
+      - name: Run Playwright shard ${{ matrix.shard }}/6
         # `--project=chromium` keeps screenshot specs (app-store/help/layout)
         # out of the functional shards. Those projects already run in the
         # dedicated `screenshots` job below; without this filter every
         # screenshot test ran twice per PR and contributed double to the
         # flake budget.
-        run: bunx playwright test --project=chromium --shard=${{ matrix.shard }}/8
+        run: bunx playwright test --project=chromium --shard=${{ matrix.shard }}/6
         working-directory: packages/web
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
@@ -401,21 +419,26 @@ jobs:
       # Screenshot capture runs in the dedicated `screenshots` job below.
 
   # ---------------------------------------------------------------------------
-  # Screenshots — like an e2e shard but runs the three screenshot Playwright
-  # projects. `needs: e2e` sequences it after the functional tests so the
-  # two don't fight over shared containers; `if: always()` makes sure a
-  # failing shard doesn't skip the capture (screenshots are informational).
+  # Screenshots — one matrix job per Playwright screenshot project, run in
+  # parallel with the functional `e2e` shards. We don't gate on `e2e` because
+  # the screenshot jobs don't share infra with the functional shards (each
+  # one spins up its own Postgres service and its own web/backend processes)
+  # and are `continue-on-error: true` anyway — they're informational, not a
+  # merge gate. Fanning out across `app-store-screenshots`,
+  # `layout-screenshots`, and `help-screenshots` turns wall-clock from
+  # sum-of-projects into max-of-projects.
   # ---------------------------------------------------------------------------
   screenshots:
-    name: Capture PR screenshots
-    needs: [typecheck, build, e2e]
-    # `always()` so a failing e2e shard doesn't suppress the screenshot
-    # capture — screenshots are informational, not a merge gate. Paired
-    # with `continue-on-error: true` for soft-fail semantics.
+    name: Capture PR screenshots (${{ matrix.project }})
+    needs: [typecheck, build]
     if: always() && github.event_name == 'pull_request'
     continue-on-error: true
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [app-store-screenshots, layout-screenshots, help-screenshots]
     container:
       image: mcr.microsoft.com/playwright:v1.58.0-noble
 
@@ -518,7 +541,25 @@ jobs:
           tar -xf built-packages.tar
           rm built-packages.tar
 
+      - name: Check for new migrations vs main
+        id: migrations
+        # On PRs whose drizzle journal matches `origin/main`, the dev DB
+        # image (rebuilt on every journal change by dev-db-docker.yml)
+        # already has every migration applied — so the migrate step is
+        # pure overhead (~20s of bun + drizzle-kit startup). Skip it.
+        # Push events to main run migrations unconditionally because the
+        # image rebuild publishes asynchronously and may still be stale.
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin main
+          if git diff --quiet origin/main HEAD -- packages/db/drizzle/meta/_journal.json; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run database migrations
+        if: github.event_name != 'pull_request' || steps.migrations.outputs.needed == 'true'
         run: bunx drizzle-kit migrate
         working-directory: packages/db
         env:
@@ -549,11 +590,7 @@ jobs:
                 packages/web/e2e/screenshots/layouts/*.png
 
       - name: Capture screenshots
-        run: |
-          bunx playwright test \
-            --project=app-store-screenshots \
-            --project=layout-screenshots \
-            --project=help-screenshots
+        run: bunx playwright test --project=${{ matrix.project }}
         working-directory: packages/web
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:3000
@@ -574,18 +611,33 @@ jobs:
 
       - name: Stage screenshots for upload
         if: always()
+        # Each matrix job stages only its own project's PNGs into the
+        # subfolder that `report-screenshots` already reads from
+        # (`screenshots-out/{app-store,layouts,help}/`). Per-project
+        # artifacts are merged in the report job via
+        # `download-artifact` + `merge-multiple: true`.
         run: |
-          mkdir -p screenshots-out/app-store screenshots-out/layouts screenshots-out/help
-          cp mobile/screenshots/*.png                     screenshots-out/app-store/ 2>/dev/null || true
-          cp packages/web/e2e/screenshots/layouts/*.png    screenshots-out/layouts/   2>/dev/null || true
-          cp packages/web/public/help/*.png                screenshots-out/help/      2>/dev/null || true
+          case "${{ matrix.project }}" in
+            app-store-screenshots)
+              mkdir -p screenshots-out/app-store
+              cp mobile/screenshots/*.png screenshots-out/app-store/ 2>/dev/null || true
+              ;;
+            layout-screenshots)
+              mkdir -p screenshots-out/layouts
+              cp packages/web/e2e/screenshots/layouts/*.png screenshots-out/layouts/ 2>/dev/null || true
+              ;;
+            help-screenshots)
+              mkdir -p screenshots-out/help
+              cp packages/web/public/help/*.png screenshots-out/help/ 2>/dev/null || true
+              ;;
+          esac
           ls -R screenshots-out || true
 
       - name: Upload screenshots artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-current
+          name: screenshots-current-${{ matrix.project }}
           path: screenshots-out/
           if-no-files-found: warn
           retention-days: 14
@@ -610,7 +662,12 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: screenshots-current
+          # The three screenshot matrix jobs each upload to
+          # `screenshots-current-${{ matrix.project }}`; `merge-multiple`
+          # flattens them back into one tree at `screenshots-out/`, with
+          # the per-project subfolders the gallery script expects.
+          pattern: screenshots-current-*
+          merge-multiple: true
           path: screenshots-out/
 
       - name: Push screenshots to per-PR branch
