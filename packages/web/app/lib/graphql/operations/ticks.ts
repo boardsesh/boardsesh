@@ -474,8 +474,8 @@ export type UpdateTickResponse = {
 // ============================================
 
 export const CLIMB_STATS_UPDATED_SUBSCRIPTION = gql`
-  subscription ClimbStatsUpdated($boardType: String!, $climbUuid: ID!, $angle: Int!) {
-    climbStatsUpdated(boardType: $boardType, climbUuid: $climbUuid, angle: $angle) {
+  subscription ClimbStatsUpdated($boardType: String!, $layoutId: Int!) {
+    climbStatsUpdated(boardType: $boardType, layoutId: $layoutId) {
       boardType
       climbUuid
       angle
@@ -489,8 +489,7 @@ export const CLIMB_STATS_UPDATED_SUBSCRIPTION = gql`
 
 export type ClimbStatsUpdatedSubscriptionVariables = {
   boardType: string;
-  climbUuid: string;
-  angle: number;
+  layoutId: number;
 };
 
 export type ClimbStatsUpdatedSubscriptionResponse = {

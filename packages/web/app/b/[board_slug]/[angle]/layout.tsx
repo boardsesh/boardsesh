@@ -14,6 +14,7 @@ import { UISearchParamsProvider } from '@/app/components/queue-control/ui-search
 import { BoardProvider } from '@/app/components/board-provider/board-provider-context';
 import { QueueBridgeInjector } from '@/app/components/queue-control/queue-bridge-context';
 import LastUsedBoardTracker from '@/app/components/board-page/last-used-board-tracker';
+import { ClimbStatsLayoutSubscriber } from '@/app/components/board-page/climb-stats-layout-subscriber';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 
@@ -80,6 +81,7 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
           angle={angle}
           boardSlug={board.slug}
         />
+        <ClimbStatsLayoutSubscriber boardName={parsedParams.board_name} layoutId={parsedParams.layout_id} />
         <BoardProvider boardName={parsedParams.board_name}>
           <BoardSessionBridge boardDetails={boardDetails} parsedParams={parsedParams}>
             <ConnectionSettingsProvider>

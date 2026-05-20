@@ -4502,9 +4502,13 @@ export type SubmitAppFeedbackInput = {
 export type Subscription = {
   __typename?: 'Subscription';
   /**
-   * Subscribe to live climb stat updates for a single (climb, angle) pair.
-   * Fires after the debounced recompute finishes (~2s after a tick), so
-   * clients can replace optimistically-bumped values with canonical numbers.
+   * Subscribe to live climb stat updates for every climb on a given board
+   * layout. Fires after the debounced recompute finishes (~2s after a tick),
+   * so clients can replace optimistically-bumped values with the canonical
+   * numbers. Authenticated users only — anonymous clients receive an error.
+   *
+   * Each event carries the (climbUuid, angle) it applies to so the client
+   * can route updates into its local cache without a separate fetch.
    */
   climbStatsUpdated: ClimbStatsEvent;
   /** Subscribe to real-time comment updates on an entity. */
@@ -4525,9 +4529,8 @@ export type Subscription = {
 
 /** Root subscription type for real-time updates. */
 export type SubscriptionClimbStatsUpdatedArgs = {
-  angle: Scalars['Int']['input'];
   boardType: Scalars['String']['input'];
-  climbUuid: Scalars['ID']['input'];
+  layoutId: Scalars['Int']['input'];
 };
 
 /** Root subscription type for real-time updates. */
@@ -7131,8 +7134,7 @@ export type UpdateTickMutation = {
 
 export type ClimbStatsUpdatedSubscriptionVariables = Exact<{
   boardType: Scalars['String']['input'];
-  climbUuid: Scalars['ID']['input'];
-  angle: Scalars['Int']['input'];
+  layoutId: Scalars['Int']['input'];
 }>;
 
 export type ClimbStatsUpdatedSubscription = {
@@ -12722,12 +12724,7 @@ export const ClimbStatsUpdatedDocument = {
         },
         {
           kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
-        },
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
           type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
         },
       ],
@@ -12745,13 +12742,8 @@ export const ClimbStatsUpdatedDocument = {
               },
               {
                 kind: 'Argument',
-                name: { kind: 'Name', value: 'climbUuid' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
-              },
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'angle' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
+                name: { kind: 'Name', value: 'layoutId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
               },
             ],
             selectionSet: {

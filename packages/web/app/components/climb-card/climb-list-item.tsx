@@ -690,6 +690,13 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
       prev.climb.frames === next.climb.frames &&
       prev.climb.name === next.climb.name &&
       prev.climb.mirrored === next.climb.mirrored &&
+      // Re-render when the canonical sends count moves (e.g. a server
+      // refetch after the live-stats cache has been gc'd, or a fresh
+      // server-rendered list). Pre-existing gap surfaced by the optimistic-
+      // stats work — without this, a refetched ascensionist_count silently
+      // sits on a stale row.
+      prev.climb.ascensionist_count === next.climb.ascensionist_count &&
+      prev.climb.quality_average === next.climb.quality_average &&
       prev.pathname === next.pathname &&
       prev.isDark === next.isDark &&
       prev.selected === next.selected &&

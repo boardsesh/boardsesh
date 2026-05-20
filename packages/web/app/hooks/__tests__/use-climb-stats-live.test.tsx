@@ -126,14 +126,12 @@ describe('useEffectiveClimbStats', () => {
   });
 
   it('keys deltas per (boardName, climbUuid, angle) — sibling climbs are unaffected', () => {
-    const { result: a } = renderHook(
-      () => useEffectiveClimbStats(BOARD, 'climb-A', 40, { ascensionist_count: 1 }),
-      { wrapper },
-    );
-    const { result: b } = renderHook(
-      () => useEffectiveClimbStats(BOARD, 'climb-B', 40, { ascensionist_count: 1 }),
-      { wrapper },
-    );
+    const { result: a } = renderHook(() => useEffectiveClimbStats(BOARD, 'climb-A', 40, { ascensionist_count: 1 }), {
+      wrapper,
+    });
+    const { result: b } = renderHook(() => useEffectiveClimbStats(BOARD, 'climb-B', 40, { ascensionist_count: 1 }), {
+      wrapper,
+    });
 
     act(() => {
       bumpAscentDelta(queryClient, BOARD, 'climb-A', 40, 1);

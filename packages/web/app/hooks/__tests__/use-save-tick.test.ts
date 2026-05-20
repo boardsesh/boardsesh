@@ -431,6 +431,46 @@ describe('useSaveTick', () => {
     expect(queryClient.getQueryData(accumulatedLogbookQueryKey('kilter'))).toBeUndefined();
   });
 
+  it('does not double-bump the ascent delta on two concurrent send mutations', async () => {
+    // Two surfaces firing mutate() back-to-back in the same tick (e.g. a
+    // double-tap on the tick button) — the cache update is synchronous so
+    // the second updater sees the first updater's write and short-circuits
+    // instead of bumping ascentDelta a second time. The server's distinct-
+    // user count would correct any over-count via the live event, but the
+    // UI should never show +2 in the first place.
+    let resolveFirst: (value: ReturnType<typeof createSavedTick>) => void = () => undefined;
+    let resolveSecond: (value: ReturnType<typeof createSavedTick>) => void = () => undefined;
+    mockRequest
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+
+    const { wrapper, queryClient } = createTestWrapper();
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(createTickOptions());
+      result.current.mutate(createTickOptions());
+    });
+
+    const liveKey = ['climbStatsLive', 'kilter', 'climb-1', 40];
+    const live = queryClient.getQueryData<{ ascentDelta: number }>(liveKey);
+    expect(live?.ascentDelta).toBe(1);
+
+    // Cleanup so the test doesn't leak open promises.
+    await act(async () => {
+      resolveFirst(createSavedTick({ uuid: 'real-1' }));
+      resolveSecond(createSavedTick({ uuid: 'real-2' }));
+    });
+  });
+
   it('propagates GraphQL errors to the caller', async () => {
     const graphqlError: Error & { response?: { errors: { message: string }[] } } = new Error('GraphQL error');
     graphqlError.response = {

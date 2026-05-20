@@ -16,7 +16,13 @@ const SESSION_CHANNEL_PREFIX = 'boardsesh:session:';
 const NOTIFICATION_CHANNEL_PREFIX = 'boardsesh:notifications:';
 const COMMENT_CHANNEL_PREFIX = 'boardsesh:comments:';
 const NEW_CLIMB_CHANNEL_PREFIX = 'boardsesh:new-climbs:';
-const CLIMB_STATS_CHANNEL_PREFIX = 'boardsesh:climb-stats:';
+// Channel prefix is `:climb-stats-layout:` because the channel key is now
+// `${boardType}:${layoutId}` (see climb-stats-subscriptions.ts). The prefix
+// change makes the channel-key shape change obvious during rollout and
+// guarantees a stale instance speaking the old per-(climb, angle) shape
+// cannot accidentally feed events with mismatched payload routing into a
+// new instance.
+const CLIMB_STATS_CHANNEL_PREFIX = 'boardsesh:climb-stats-layout:';
 
 type RedisMessage = {
   instanceId: string;

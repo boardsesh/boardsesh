@@ -89,17 +89,7 @@ export function useSaveTick(boardName: BoardName) {
       // latest accumulated cache entry instead of racing the optimistic write.
       await queryClient.cancelQueries({ queryKey: fetchLogbookQueryKeyPrefix(boardName) });
 
-      // Snapshot the user's prior flash/send state at this (climb, angle)
-      // *before* we insert the optimistic entry, so the "first ascent"
-      // check below mirrors the server's COUNT(DISTINCT user_id) rule.
       const isAscent = options.status === 'flash' || options.status === 'send';
-      const priorAccumulated = queryClient.getQueryData<LogbookEntry[]>(accumulatedKey) ?? [];
-      const hadPriorAscent = priorAccumulated.some(
-        (entry) =>
-          entry.climb_uuid === options.climbUuid &&
-          entry.angle === options.angle &&
-          (entry.status === 'flash' || entry.status === 'send'),
-      );
 
       // Create optimistic entry
       const tempUuid = `temp-${Date.now()}`;
@@ -127,9 +117,34 @@ export function useSaveTick(boardName: BoardName) {
       // later replace this delta with the canonical number. We only bump
       // when this is the user's first send/flash at this (climb, angle)
       // — repeat sends by the same user don't move the distinct-user count.
-      const bumpedAscent = isAscent && !hadPriorAscent;
-      if (bumpedAscent) {
-        bumpAscentDelta(queryClient, boardName, options.climbUuid, options.angle, 1);
+      //
+      // The prior-ascent check + delta write are wrapped in a single
+      // setQueryData updater so two concurrent mutate() calls (double-tap,
+      // two surfaces firing in the same tick) can't both observe
+      // "no prior ascent" and both bump. The cache update is synchronous;
+      // the second updater sees the first updater's write and short-circuits.
+      let bumpedAscent = false;
+      if (isAscent) {
+        queryClient.setQueryData<ClimbStatsLive>(
+          climbStatsLiveKey(boardName, options.climbUuid, options.angle),
+          (prev) => {
+            const cached = prev ?? { ascentDelta: 0, live: null };
+            // Already bumped by an earlier concurrent mutate, or already
+            // reconciled by a live event — don't double-count.
+            if (cached.ascentDelta > 0) return cached;
+            const accumulated = queryClient.getQueryData<LogbookEntry[]>(accumulatedKey) ?? [];
+            const hadPriorAscent = accumulated.some(
+              (entry) =>
+                entry.uuid !== tempUuid &&
+                entry.climb_uuid === options.climbUuid &&
+                entry.angle === options.angle &&
+                (entry.status === 'flash' || entry.status === 'send'),
+            );
+            if (hadPriorAscent) return cached;
+            bumpedAscent = true;
+            return { ...cached, ascentDelta: cached.ascentDelta + 1 };
+          },
+        );
       }
 
       return { tempUuid, bumpedAscent };

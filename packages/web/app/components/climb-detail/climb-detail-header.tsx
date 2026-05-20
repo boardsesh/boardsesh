@@ -12,7 +12,6 @@ import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { formatSends } from '@/app/lib/format-climb-stats';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
-import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
 import { asBoardName } from '@/app/lib/board-name';
 import type { Climb } from '@/app/lib/types';
 
@@ -33,8 +32,9 @@ export default function ClimbDetailHeader({ climb, communityGrade, boardName }: 
   const isDark = useIsDarkMode();
   const { formatGrade, getGradeColor, loaded: gradeFormatLoaded } = useGradeFormat();
 
+  // The WS subscription is mounted page-level in BoardProvider. This hook
+  // just reads the live-stats cache that the page-level subscriber writes.
   const subscriptionBoard = asBoardName(boardName ?? climb.boardType);
-  useSubscribeClimbStatsUpdates(subscriptionBoard, climb.uuid, climb.angle);
   const effectiveStats = useEffectiveClimbStats(subscriptionBoard, climb.uuid, climb.angle, {
     ascensionist_count: climb.ascensionist_count,
     quality_average: climb.quality_average,

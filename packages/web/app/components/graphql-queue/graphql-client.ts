@@ -138,9 +138,15 @@ export function createGraphQLClient(
     retryAttempts: 10, // More attempts with exponential backoff
     shouldRetry: () => true,
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
+    // Plus up to 30% jitter on each delay so N thousands of clients
+    // reconnecting after a rolling deploy don't thunder onto the new
+    // instance in lockstep (TLS handshakes + subscribe-frame replay are
+    // the actual bottleneck — see PR #2218 scalability review).
     retryWait: async (retryCount) => {
-      const delay = Math.min(INITIAL_RETRY_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, retryCount), MAX_RETRY_DELAY_MS);
-      if (DEBUG) console.info(`[GraphQL] Client #${clientId} retry #${retryCount + 1}, waiting ${delay}ms`);
+      const base = Math.min(INITIAL_RETRY_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, retryCount), MAX_RETRY_DELAY_MS);
+      const jitter = base * 0.3 * Math.random();
+      const delay = base + jitter;
+      if (DEBUG) console.info(`[GraphQL] Client #${clientId} retry #${retryCount + 1}, waiting ${delay.toFixed(0)}ms`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     },
     // Lazy connection - only connects when first subscription/mutation is made

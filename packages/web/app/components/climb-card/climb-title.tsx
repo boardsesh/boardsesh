@@ -12,7 +12,6 @@ import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
-import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
 import { asBoardName } from '@/app/lib/board-name';
 
 export type ClimbTitleData = {
@@ -248,15 +247,15 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       [nameFontSize],
     );
 
-    // Live-stats hooks must run unconditionally. When `uuid`/`boardType`/
-    // numeric `angle` aren't all present (older callers, project rows),
-    // both hooks short-circuit and the displayed values fall back to the
-    // raw props.
+    // The live-stats cache reader runs unconditionally. When `uuid` /
+    // `boardType` / numeric `angle` aren't all present, the hook
+    // short-circuits and the displayed values fall back to the raw props.
+    // The actual WS subscription is no longer mounted here — it lives once
+    // at the page level inside `BoardProvider`, scoped to (board, layout).
     const numericAngle = typeof climb?.angle === 'string' ? Number(climb.angle) : climb?.angle;
     const subscriptionAngle =
       typeof numericAngle === 'number' && Number.isFinite(numericAngle) ? numericAngle : undefined;
     const subscriptionBoard = asBoardName(climb?.boardType);
-    useSubscribeClimbStatsUpdates(subscriptionBoard, climb?.uuid, subscriptionAngle);
     const effectiveStats = useEffectiveClimbStats(subscriptionBoard, climb?.uuid, subscriptionAngle, {
       ascensionist_count: climb?.ascensionist_count,
       quality_average: climb?.quality_average,

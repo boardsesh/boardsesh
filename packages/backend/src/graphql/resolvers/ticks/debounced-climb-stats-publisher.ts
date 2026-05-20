@@ -56,21 +56,28 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
     setTimeout(async () => {
       pending.delete(key);
 
-      // Best-effort multi-instance dedup: if we can confirm via Redis that
-      // we still own the latest nonce, clean up the key. If GET throws, the
-      // nonce doesn't match (another instance won OR our SET never landed),
-      // or Redis went away — fall through to the recompute anyway.
-      // recomputeClimbStats is idempotent, so duplicate runs across
-      // instances are harmless; a silent drop is not.
+      // Multi-instance dedup gate. The instance that holds the latest
+      // nonce in Redis owns this debounce window — only it runs the
+      // recompute *and* the publish. Earlier versions only used the nonce
+      // to delete the key and fell through to recompute unconditionally,
+      // which produced 3× publishes (and 3× UI flickers) across a 3-node
+      // cluster even though the DB update was idempotent.
+      //
+      // If Redis isn't connected we run unconditionally — single-instance
+      // mode where there's no one to coordinate with.
+      // If Redis is reachable but the GET errors, we also fall through
+      // (silent drops would be worse than a duplicate publish).
       if (redisClientManager.isRedisConnected()) {
         try {
           const { publisher } = redisClientManager.getClients();
           const current = await publisher.get(redisKey);
-          if (current === nonce) {
-            await publisher.del(redisKey);
+          if (current !== nonce) {
+            // Another instance owns this window — exit and let them publish.
+            return;
           }
+          await publisher.del(redisKey);
         } catch (err) {
-          logger.error(`[debouncedClimbStats] Redis GET failed for ${key}, recomputing anyway:`, err);
+          logger.error(`[debouncedClimbStats] Redis GET failed for ${key}, falling through:`, err);
         }
       }
 
@@ -81,10 +88,10 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
         return;
       }
 
-      // Read back the canonical stats row and push it to any clients
-      // subscribed to this (boardType, climbUuid, angle). The subscription
-      // resolver lives in climb-stats-subscriptions.ts; the channel key
-      // shape mirrors the one used there.
+      // Read back the canonical stats row joined with the climb's layout
+      // so we can publish on the layout-scoped channel. Subscribers are
+      // page-level (one per board layout), so the routed payload still
+      // carries climbUuid + angle for cache routing on the client.
       try {
         const [row] = await db
           .select({
@@ -92,8 +99,16 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
             qualityAverage: dbSchema.boardClimbStats.qualityAverage,
             difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
             displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+            layoutId: dbSchema.boardClimbs.layoutId,
           })
           .from(dbSchema.boardClimbStats)
+          .leftJoin(
+            dbSchema.boardClimbs,
+            and(
+              eq(dbSchema.boardClimbs.boardType, dbSchema.boardClimbStats.boardType),
+              eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbStats.climbUuid),
+            ),
+          )
           .where(
             and(
               eq(dbSchema.boardClimbStats.boardType, boardType),
@@ -103,17 +118,28 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
           )
           .limit(1);
 
-        if (row) {
-          pubsub.publishClimbStatsEvent(`${boardType}:${climbUuid}:${angle}`, {
-            boardType,
-            climbUuid,
-            angle,
-            ascensionistCount: row.ascensionistCount ?? 0,
-            qualityAverage: row.qualityAverage,
-            difficultyAverage: row.difficultyAverage,
-            displayDifficulty: row.displayDifficulty,
-          });
+        if (!row) {
+          // Stats row missing — recompute insert should have seeded it,
+          // but defensively bail rather than publish on a bogus channel.
+          return;
         }
+        if (row.layoutId == null) {
+          // Stats arrived before the board_climbs row (possible during a
+          // mid-Aurora-sync race). Subscribers will pick up the canonical
+          // values on the next render after sync completes.
+          logger.debug(`[debouncedClimbStats] No layout for ${key}; skipping publish`);
+          return;
+        }
+
+        pubsub.publishClimbStatsEvent(`${boardType}:${row.layoutId}`, {
+          boardType,
+          climbUuid,
+          angle,
+          ascensionistCount: row.ascensionistCount ?? 0,
+          qualityAverage: row.qualityAverage,
+          difficultyAverage: row.difficultyAverage,
+          displayDifficulty: row.displayDifficulty,
+        });
       } catch (error) {
         logger.error(`[debouncedClimbStats] Failed to publish stats event for ${key}:`, error);
       }

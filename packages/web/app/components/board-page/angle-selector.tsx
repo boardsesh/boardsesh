@@ -20,13 +20,12 @@ import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import DrawerClimbHeader from '../climb-card/drawer-climb-header';
 import { useTranslation } from 'react-i18next';
 import { useEffectiveClimbStats } from '@/app/hooks/use-climb-stats-live';
-import { useSubscribeClimbStatsUpdates } from '@/app/hooks/use-subscribe-climb-stats-updates';
 import styles from './angle-selector.module.css';
 
 /**
- * One card in the per-angle stats grid. Subscribes to live stat updates
- * for this (climbUuid, angle) so the drawer reflects the user's tick
- * without waiting for a refetch (drawer's own REST query caches for 5min).
+ * One card in the per-angle stats grid. Reads from the live-stats cache
+ * written by the page-level WS subscriber in BoardProvider; no per-row
+ * subscription. The drawer's own 5-min REST query supplies the base values.
  */
 function AngleCard({
   boardName,
@@ -37,7 +36,6 @@ function AngleCard({
   currentClimb,
   isLoading,
   isSelected,
-  isDrawerOpen,
   onClick,
   cardRef,
   t,
@@ -50,18 +48,11 @@ function AngleCard({
   currentClimb: Climb | null;
   isLoading: boolean;
   isSelected: boolean;
-  isDrawerOpen: boolean;
   onClick: () => void;
   cardRef: React.Ref<HTMLDivElement> | null;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
-  // Only subscribe when the drawer is open — avoids N idle WS subscriptions
-  // when the picker is collapsed. The current-climb identity also gates it
-  // so we don't subscribe with an undefined uuid.
-  const subscriptionBoard = climbUuid && isDrawerOpen ? boardName : undefined;
-  useSubscribeClimbStatsUpdates(subscriptionBoard, isDrawerOpen ? climbUuid : undefined, angle);
-
-  const effective = useEffectiveClimbStats(subscriptionBoard, climbUuid, angle, {
+  const effective = useEffectiveClimbStats(boardName, climbUuid, angle, {
     ascensionist_count: stats?.ascensionist_count == null ? 0 : Number(stats.ascensionist_count),
     quality_average: stats?.quality_average == null ? null : String(stats.quality_average),
     difficulty: stats?.difficulty ?? null,
@@ -231,7 +222,6 @@ export default function AngleSelector({
         currentClimb={currentClimb}
         isLoading={isLoading}
         isSelected={isSelected}
-        isDrawerOpen={isDrawerOpen}
         onClick={() => handleAngleChange(angle)}
         cardRef={isSelected ? currentAngleRef : null}
         t={t}
