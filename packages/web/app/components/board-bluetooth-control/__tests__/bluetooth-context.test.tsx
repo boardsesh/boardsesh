@@ -60,7 +60,11 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
 // session attribution into BluetoothAutoSender (board-history feature). The
 // real provider isn't mounted in this test tree.
 vi.mock('../../persistent-session', () => ({
-  usePersistentSessionState: () => ({ activeSession: null }),
+  usePersistentSessionState: () => ({ activeSession: null, session: null }),
+  usePersistentSessionActions: () => ({
+    confirmClimbOnWall: vi.fn(),
+    setSessionBoardSerial: vi.fn(),
+  }),
 }));
 
 // Stub the record-board-send hook — these tests verify the BLE side; the
