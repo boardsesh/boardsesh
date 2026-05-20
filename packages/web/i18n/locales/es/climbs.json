@@ -95,8 +95,6 @@
     },
     "fields": {
       "climbName": "Nombre del bloque",
-      "minGrade": "Mín",
-      "maxGrade": "Máx",
       "gradeRange": "Rango de grado",
       "gradeRangeBetween": "{{min}} a {{max}}",
       "gradeRangeOnly": "Solo {{grade}}",
