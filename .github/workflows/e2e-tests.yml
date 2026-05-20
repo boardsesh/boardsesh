@@ -347,6 +347,11 @@ jobs:
         # image rebuild publishes asynchronously and may still be stale.
         if: github.event_name == 'pull_request'
         run: |
+          # actions/checkout@v6 sets safe.directory inside its own action,
+          # but ad-hoc git commands in subsequent steps don't inherit that
+          # config when the repo is owned by a different uid than the
+          # container user (git 2.35.2+ refuses with "dubious ownership").
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch --depth=1 origin main
           if git diff --quiet origin/main HEAD -- packages/db/drizzle/meta/_journal.json; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
@@ -551,6 +556,11 @@ jobs:
         # image rebuild publishes asynchronously and may still be stale.
         if: github.event_name == 'pull_request'
         run: |
+          # actions/checkout@v6 sets safe.directory inside its own action,
+          # but ad-hoc git commands in subsequent steps don't inherit that
+          # config when the repo is owned by a different uid than the
+          # container user (git 2.35.2+ refuses with "dubious ownership").
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch --depth=1 origin main
           if git diff --quiet origin/main HEAD -- packages/db/drizzle/meta/_journal.json; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
