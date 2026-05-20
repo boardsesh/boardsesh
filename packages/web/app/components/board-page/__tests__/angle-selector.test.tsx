@@ -31,9 +31,18 @@ vi.mock('@/app/hooks/use-is-dark-mode', () => ({
   useIsDarkMode: () => false,
 }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: undefined, isLoading: false }),
-}));
+vi.mock('@tanstack/react-query', async () => {
+  // Partial mock — keep the real `QueryClientContext` export so
+  // `useEffectiveClimbStats` (called by the in-tree `<AngleCard>`) can
+  // safely read it and short-circuit to base values when no provider is
+  // present. Stub `useQuery` so the angle-selector's REST stats query
+  // never runs.
+  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
+  return {
+    ...actual,
+    useQuery: () => ({ data: undefined, isLoading: false }),
+  };
+});
 
 vi.mock('../../swipeable-drawer/swipeable-drawer', () => ({
   default: ({ open, children }: { open: boolean; children: React.ReactNode }) =>

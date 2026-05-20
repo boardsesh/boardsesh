@@ -91,18 +91,19 @@ describe('queueClimbStatsRecompute', () => {
     expect(recomputeClimbStatsMock).toHaveBeenCalledWith('tension', 'CLIMB-2', 35);
   });
 
-  it('recomputes even when the Redis nonce does not match (idempotent fall-through)', async () => {
-    // Nonce mismatch means another instance also queued this climb. Both
-    // instances recompute — that's safe because recomputeClimbStats is
-    // idempotent, and dropping the recompute outright (the previous
-    // behavior) would be unsafe in the SET-failed-but-Redis-reachable
-    // race window. See debounced-climb-stats-publisher.ts comment.
+  it('skips both recompute and publish when the Redis nonce does not match', async () => {
+    // Multi-instance dedup gate: the instance whose nonce is currently in
+    // Redis owns the recompute *and* the publish. The previous design ran
+    // the recompute unconditionally on the basis that it's idempotent at
+    // the DB level — but the *publish* isn't, so 3 instances each pushing
+    // the same event produced visible UI flicker. With the gate moved
+    // upstream, only the winning instance runs both.
     redisGetMock.mockResolvedValue('different-nonce');
 
     queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
     await vi.advanceTimersByTimeAsync(2100);
 
-    expect(recomputeClimbStatsMock).toHaveBeenCalledWith('kilter', 'CLIMB-1', 40);
+    expect(recomputeClimbStatsMock).not.toHaveBeenCalled();
     // We don't own the key, so we don't DEL it.
     expect(redisDelMock).not.toHaveBeenCalled();
   });
