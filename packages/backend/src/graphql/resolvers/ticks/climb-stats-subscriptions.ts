@@ -5,10 +5,10 @@ import { decrementConnectionSubCount, incrementConnectionSubCount } from './conn
 
 const VALID_BOARD_TYPES = new Set<string>(SUPPORTED_BOARDS);
 
-// Layout IDs are positive integers from Aurora (typically <1000) or Boardsesh
-// (assigned at creation, currently <10000). 1M leaves ample headroom while
-// keeping the channel key bounded and rejecting obvious garbage.
-const LAYOUT_ID_MIN = 0;
+// Layout IDs are positive integers — Aurora's IDs start at 1, Boardsesh's
+// auto-increment starts at 1 too. 0 is never a valid layout; treat it as
+// garbage along with anything past the 1M ceiling.
+const LAYOUT_ID_MIN = 1;
 const LAYOUT_ID_MAX = 1_000_000;
 
 export const climbStatsSubscriptions = {

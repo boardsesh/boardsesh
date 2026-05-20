@@ -255,6 +255,34 @@ describe('useSaveTick', () => {
     expect(data?.length).toBe(0);
   });
 
+  it('rolls back the ascent-delta optimistic bump on error', async () => {
+    // onMutate bumps `ascentDelta` to 1 for a first send/flash; onError
+    // must put it back so the UI doesn't keep showing N+1 on a failed
+    // tick. Independent of the logbook rollback above — different cache
+    // entry, different code path.
+    mockRequest.mockRejectedValue(new Error('Server error'));
+
+    const { wrapper, queryClient } = createTestWrapper();
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(createTickOptions());
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    const liveKey = ['climbStatsLive', 'kilter', 'climb-1', 40];
+    const live = queryClient.getQueryData<{ ascentDelta: number }>(liveKey);
+    // 0 (delta zeroed by rollback) or undefined (entry never persisted)
+    // are both acceptable — the displayed count falls back to the prop
+    // base value in either case.
+    expect(live?.ascentDelta ?? 0).toBe(0);
+  });
+
   it('rolls back optimistic entry on failure without showing snackbar', async () => {
     mockRequest.mockRejectedValue(new Error('Save failed'));
 
