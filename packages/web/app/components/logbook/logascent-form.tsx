@@ -32,7 +32,11 @@ type LogType = 'ascent' | 'attempt';
 
 type LogAscentFormValues = {
   date: dayjs.Dayjs;
-  angle: number;
+  // `null` means "user hasn't picked an angle yet" — distinct from 0°, which
+  // is a real selectable angle on vertical-board configs (see `ANGLES` in
+  // board-data.ts). Truthy checks on this field would block legitimate 0°
+  // logs; always compare against `null`/`undefined` explicitly.
+  angle: number | null;
   attempts: number;
   quality: number;
   // `undefined` means "no personal grade override; use the climb's consensus".
@@ -80,7 +84,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
 
   const getInitialValues = (): LogAscentFormValues => ({
     date: dayjs(),
-    angle: effectiveAngle ?? 0,
+    angle: effectiveAngle,
     attempts: 1,
     quality: 0,
     difficulty: grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id,
@@ -160,6 +164,13 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
     if (!currentClimb?.uuid || !isAuthenticated) {
       return;
     }
+    // Guard against a programmatic submit slipping past the disabled
+    // button — never send `angle: null` (would coerce to 0° on the wire
+    // and silently miscredit the climb).
+    if (values.angle == null) {
+      console.error('Validation error: angle is required before logging');
+      return;
+    }
 
     // Client-side validation
     const validationError = validateTickInput(values);
@@ -176,7 +187,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
       const trimmedVideoUrl = values.videoUrl?.trim();
       await saveTick({
         climbUuid: currentClimb.uuid,
-        angle: Number(values.angle),
+        angle: values.angle,
         isMirror: isMirrored,
         status,
         attemptCount: values.attempts,
@@ -283,12 +294,16 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         <Typography sx={{ width: 120, flexShrink: 0 }}>{tProfile('logbook.form.angle')}</Typography>
         <Box sx={{ flex: 1 }}>
           <MuiSelect
-            value={formValues.angle || ''}
+            // `?? ''` not `|| ''` — 0° is a real selectable angle on vertical
+            // boards. Truthy fallthrough here would have rendered the "Pick an
+            // angle" placeholder over a valid 0° selection. Same logic for the
+            // error styling and the submit-button gates below.
+            value={formValues.angle ?? ''}
             onChange={(e) => setFormValues((prev) => ({ ...prev, angle: Number(e.target.value) }))}
             size="small"
             sx={{ width: 100 }}
             displayEmpty
-            error={!formValues.angle}
+            error={formValues.angle == null}
           >
             <MenuItem value="" disabled>
               <em>{tProfile('logbook.form.pickAngle')}</em>
@@ -395,12 +410,12 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         <Button
           variant="contained"
           type="submit"
-          disabled={isSaving || !!videoUrlError || !formValues.angle}
+          disabled={isSaving || !!videoUrlError || formValues.angle == null}
           startIcon={isSaving ? <CircularProgress size={16} /> : undefined}
           fullWidth
           size="large"
         >
-          {formValues.angle
+          {formValues.angle != null
             ? tProfile('logbook.form.submitAtAngle', { angle: formValues.angle })
             : tProfile('logbook.form.submit')}
         </Button>
