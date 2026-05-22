@@ -103,6 +103,7 @@
       "boulder": "Bloque",
       "dateAndTime": "Fecha y hora",
       "angle": "Ángulo",
+      "pickAngle": "Elige un ángulo",
       "attempts": "Intentos",
       "quality": "Calidad",
       "difficulty": "Dificultad",
@@ -113,7 +114,11 @@
       "videoHelper": "Pega un enlace de Instagram o TikTok para que otros vean tu beta. (Opcional)",
       "mirrored": "Reflejado",
       "submit": "Enviar",
-      "cancel": "Cancelar"
+      "submitAtAngle": "Registrar a {{angle}}°",
+      "cancel": "Cancelar",
+      "wallMoved": "El muro pasó a {{wallClimb}}. ¿Sigues registrando {{loggingClimb}}?",
+      "switchClimb": "Cambiar a {{climbName}}",
+      "switchDirtyConfirm": "Tienes notas sin guardar — ¿cambiar y perderlas?"
     },
     "feed": {
       "deleteSwipeLabel": "Eliminar",

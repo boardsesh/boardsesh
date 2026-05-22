@@ -224,6 +224,10 @@
   },
   "playView": {
     "wallViewHeader": "Actualmente en el muro",
+    "wallViewHeaderDriver": "{{username}} está en el muro",
+    "wallViewHint": "Anclado al bloque del muro. Cierra para explorar.",
+    "wallViewBrowseFromHere": "Explorar desde aquí",
+    "previewChip": "Vista previa",
     "yourAscents_one": "Tu ascenso ({{count}})",
     "yourAscents_other": "Tus ascensos ({{count}})",
     "triesCount_one": "{{count}} intento",
