@@ -228,6 +228,7 @@
     "wallViewHint": "Locked to the wall climb. Close to browse.",
     "wallViewBrowseFromHere": "Browse from here",
     "previewChip": "Preview",
+    "previewCoachmark": "Previewing. Tap the lightbulb to send it to the wall.",
     "yourAscents_one": "Your Ascent ({{count}})",
     "yourAscents_other": "Your Ascents ({{count}})",
     "triesCount_one": "{{count}} try",

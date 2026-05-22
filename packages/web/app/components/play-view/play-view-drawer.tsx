@@ -817,6 +817,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     void getPreference<boolean>('swipeHint:lightbulbSeen').then((seen) => {
       if (cancelled) return;
       if (seen) return;
+      // Don't trample an already-armed coachmark (e.g. previewCoachmark
+      // armed on a swipe before the drawer-open effect resolved).
+      if (lightbulbCoachmarkKeyRef.current) return;
+      lightbulbCoachmarkKeyRef.current = 'swipeHint:lightbulbSeen';
       setShowLightbulbCoachmark(true);
     });
     return () => {
@@ -824,10 +828,44 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     };
   }, [isOpen]);
 
+  // Tracks which one-shot pulse is currently armed so the shared
+  // `onLightbulbCoachmarkSeen` handler persists the right IDB key. Two
+  // distinct one-shots ride on the same lightbulb-pulse animation: the
+  // original "Send to the wall" coachmark (first drawer open ever) and
+  // the new partyPreview coachmark (first non-driver swipe in a party
+  // session) speced by the queue-control-bar pivot doc + flagged in the
+  // group-session feedback review.
+  const lightbulbCoachmarkKeyRef = useRef<'swipeHint:lightbulbSeen' | 'swipeHint:partyPreviewSeen' | null>(null);
+  const [lightbulbCoachmarkText, setLightbulbCoachmarkText] = useState<string | null>(null);
   const handleLightbulbCoachmarkSeen = useCallback(() => {
     setShowLightbulbCoachmark(false);
-    void setPreference('swipeHint:lightbulbSeen', true);
+    const key = lightbulbCoachmarkKeyRef.current;
+    lightbulbCoachmarkKeyRef.current = null;
+    setLightbulbCoachmarkText(null);
+    if (key) void setPreference(key, true);
   }, []);
+
+  // Non-driver swipe coachmark (queue-control-bar pivot, rule 5 + group-
+  // session feedback fix). On the first swipe a non-driver in a party
+  // session takes inside the drawer, pulse the lightbulb once with a
+  // tooltip explaining that swipe is preview-only and the lightbulb is
+  // the path to send. Tracked in a ref so a re-render between the swipe
+  // and the read doesn't double-fire.
+  const previewCoachmarkArmedRef = useRef(false);
+  const maybeArmPreviewCoachmark = useCallback(() => {
+    if (previewCoachmarkArmedRef.current) return;
+    if (!swipeSuggestionsOnly) return;
+    previewCoachmarkArmedRef.current = true;
+    void getPreference<boolean>('swipeHint:partyPreviewSeen').then((seen) => {
+      if (seen) return;
+      // Don't trample an already-armed lightbulb coachmark — the first-open
+      // one wins (it's already been visible for at least a beat).
+      if (lightbulbCoachmarkKeyRef.current) return;
+      lightbulbCoachmarkKeyRef.current = 'swipeHint:partyPreviewSeen';
+      setLightbulbCoachmarkText(t('playView.previewCoachmark'));
+      setShowLightbulbCoachmark(true);
+    });
+  }, [swipeSuggestionsOnly, t]);
 
   // Wall-view is "locked" only for non-drivers — the lock semantics
   // (no swipe, no prev/next, no URL push) is the "you can't change the
@@ -897,8 +935,14 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     [getNextClimbQueueItem, getPreviousClimbQueueItem, navigateFromItem, swipeSuggestionsOnly, viewOnlyMode, advanceTo],
   );
 
-  const handleSwipeNext = useCallback(() => navigate('next', 'swipePlayViewDrawer'), [navigate]);
-  const handleSwipePrevious = useCallback(() => navigate('previous', 'swipePlayViewDrawer'), [navigate]);
+  const handleSwipeNext = useCallback(() => {
+    maybeArmPreviewCoachmark();
+    navigate('next', 'swipePlayViewDrawer');
+  }, [navigate, maybeArmPreviewCoachmark]);
+  const handleSwipePrevious = useCallback(() => {
+    maybeArmPreviewCoachmark();
+    navigate('previous', 'swipePlayViewDrawer');
+  }, [navigate, maybeArmPreviewCoachmark]);
 
   // Wall-view mode is a read-only display of the wall climb for non-drivers
   // (locked, no swipe). For drivers it behaves like the normal drawer — they
@@ -1505,7 +1549,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             lightbulbActive={isPersistentSessionActive ? isDriver : isBluetoothConnected}
             lightbulbPending={pendingClimbUuid != null}
             lightbulbCoachmark={showLightbulbCoachmark && !pendingClimbUuid}
-            lightbulbCoachmarkText={t('playView.actionBar.lightbulb.coachmark')}
+            lightbulbCoachmarkText={lightbulbCoachmarkText ?? t('playView.actionBar.lightbulb.coachmark')}
             onLightbulbCoachmarkSeen={handleLightbulbCoachmarkSeen}
             displayedClimbName={currentClimb?.name ?? null}
             onLightbulb={handleLightbulbClick}

@@ -213,6 +213,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     clientId,
     isPersistentSessionActive,
     driverParticipantId,
+    isDriver,
   } = useSessionData();
 
   // Drawer-local "displayed climb" — populated when a browse caller (list
@@ -272,11 +273,15 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const handleThumbnailClick = useCallback(() => {
     if (!currentClimb || viewOnlyMode) return;
     // No-payload dispatch + wallView flag: drawer falls back to the wall
-    // climb (the bar's own thumbnail mirrors the wall) and opens in
-    // wall-view mode — "Currently on the wall" header, no prev/next, no
-    // swipe. Lightbulb + standard climb actions remain (pivot Phase 3).
-    dispatchOpenPlayDrawer(undefined, { wallView: true });
-  }, [currentClimb, viewOnlyMode]);
+    // climb (the bar's own thumbnail mirrors the wall). The wall-view
+    // mode adds the locked "Currently on the wall" treatment for
+    // non-drivers — for drivers there's nothing to lock (they're already
+    // controlling the wall), so they skip wallView entirely and open the
+    // normal browse drawer on the wall climb. Group-session feedback
+    // fix; the prior follow-up commit kept wallView=true for drivers
+    // and the mode paid no rent on top of the normal drawer.
+    dispatchOpenPlayDrawer(undefined, { wallView: !isDriver });
+  }, [currentClimb, viewOnlyMode, isDriver]);
 
   const { showMessage } = useSnackbar();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);

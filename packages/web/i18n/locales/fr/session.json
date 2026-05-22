@@ -228,6 +228,7 @@
     "wallViewHint": "Verrouillé sur le bloc du mur. Ferme pour explorer.",
     "wallViewBrowseFromHere": "Explorer depuis ici",
     "previewChip": "Aperçu",
+    "previewCoachmark": "Aperçu. Touche l'ampoule pour envoyer au mur.",
     "yourAscents_one": "Ton ascension ({{count}})",
     "yourAscents_other": "Tes ascensions ({{count}})",
     "triesCount_one": "{{count}} essai",

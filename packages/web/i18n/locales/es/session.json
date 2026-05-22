@@ -228,6 +228,7 @@
     "wallViewHint": "Anclado al bloque del muro. Cierra para explorar.",
     "wallViewBrowseFromHere": "Explorar desde aquí",
     "previewChip": "Vista previa",
+    "previewCoachmark": "Vista previa. Toca la bombilla para enviar al muro.",
     "yourAscents_one": "Tu ascenso ({{count}})",
     "yourAscents_other": "Tus ascensos ({{count}})",
     "triesCount_one": "{{count}} intento",

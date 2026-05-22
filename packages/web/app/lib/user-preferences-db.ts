@@ -40,6 +40,15 @@ export type UserPreferenceKeyMap = {
    * wall-view drawer and reading the silent no-op as a bug.
    */
   'swipeHint:wallViewSeen': boolean;
+  /**
+   * One-shot lightbulb pulse the first time a non-driver swipes inside a
+   * party-mode drawer. The pivot doc speced this coachmark to teach the
+   * "swipe previews, lightbulb broadcasts" model at the moment of
+   * confusion (group-session feedback fix; the swipe falls through to
+   * suggestions/search but the wall doesn't move, and users need a
+   * pointer to the path that does).
+   */
+  'swipeHint:partyPreviewSeen': boolean;
   tickBarExpanded: boolean;
   'shakeToReport:dismissed': boolean;
   esp32Connections: Esp32Connection[];
