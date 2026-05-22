@@ -224,6 +224,9 @@
   },
   "playView": {
     "wallViewHeader": "Currently on the wall",
+    "wallViewHeaderDriver": "{{username}} is on the wall",
+    "wallViewHint": "Locked to the wall climb. Close to browse.",
+    "wallViewBrowseFromHere": "Browse from here",
     "yourAscents_one": "Your Ascent ({{count}})",
     "yourAscents_other": "Your Ascents ({{count}})",
     "triesCount_one": "{{count}} try",

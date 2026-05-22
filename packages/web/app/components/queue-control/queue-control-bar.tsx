@@ -1427,6 +1427,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
         setDrawerDisplayedItem={setDrawerDisplayedItem}
         initialOpenWithoutAnimation={isViewPage}
         wallView={drawerWallView}
+        onExitWallView={() => setDrawerWallView(false)}
       />
 
       <StartSeshDrawer open={startSeshOpen} onClose={() => setStartSeshOpen(false)} />

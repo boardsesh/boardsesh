@@ -33,6 +33,13 @@ export type UserPreferenceKeyMap = {
    * role is now self-evident from its content + driver avatar).
    */
   'swipeHint:lightbulbSeen': boolean;
+  /**
+   * One-shot hint for wall-view drawer (group-session feedback fix). Shows a
+   * "This is the wall. Close to browse." cue the first time a user opens the
+   * drawer by tapping the bar body — testers were swiping at the locked
+   * wall-view drawer and reading the silent no-op as a bug.
+   */
+  'swipeHint:wallViewSeen': boolean;
   tickBarExpanded: boolean;
   'shakeToReport:dismissed': boolean;
   esp32Connections: Esp32Connection[];

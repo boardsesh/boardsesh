@@ -6,6 +6,8 @@ import { track } from '@/app/lib/analytics';
 import MuiBadge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
+import MuiButton from '@mui/material/Button';
+import MuiAvatar from '@mui/material/Avatar';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -16,6 +18,8 @@ import SkipPreviousOutlined from '@mui/icons-material/SkipPreviousOutlined';
 import SkipNextOutlined from '@mui/icons-material/SkipNextOutlined';
 import LightbulbOutlined from '@mui/icons-material/LightbulbOutlined';
 import Lightbulb from '@mui/icons-material/Lightbulb';
+import LockOutlined from '@mui/icons-material/LockOutlined';
+import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import KeyboardArrowUpOutlined from '@mui/icons-material/KeyboardArrowUpOutlined';
@@ -574,6 +578,11 @@ type PlayViewDrawerProps = {
    *  state: hides prev/next, disables swipe, shows the "Currently on the
    *  wall" header. The lightbulb and standard climb actions remain. */
   wallView?: boolean;
+  /** Drop out of wall-view mode without closing the drawer — wired to the
+   *  "Browse from here" affordance that tester feedback asked for. The drawer
+   *  stays open on the same climb but in the normal browse state (swipe
+   *  enabled, prev/next visible for driver). */
+  onExitWallView?: () => void;
 };
 
 const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
@@ -586,6 +595,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   setDrawerDisplayedItem,
   initialOpenWithoutAnimation = false,
   wallView = false,
+  onExitWallView,
 }) => {
   const { t } = useTranslation('session');
   const isOpen = activeDrawer === 'play';
@@ -678,6 +688,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     lastConnectedBoardSerial,
     connectionState,
     participantId,
+    users: sessionUsers,
+    driverParticipantId,
   } = isOpen ? sessionData : deferredSession;
   const {
     mirrorClimb,
@@ -814,6 +826,53 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     setShowLightbulbCoachmark(false);
     void setPreference('swipeHint:lightbulbSeen', true);
   }, []);
+
+  // Wall-view one-shot hint (group-session feedback fix). The wall-view
+  // drawer is intentionally non-swipeable per the queue-control-bar pivot,
+  // but testers read the silent no-op as a bug. Show a "This is the wall.
+  // Close to browse." cue once per user, then never again.
+  const [showWallViewHint, setShowWallViewHint] = useState(false);
+  useEffect(() => {
+    if (!isOpen || !wallView) {
+      setShowWallViewHint(false);
+      return;
+    }
+    let cancelled = false;
+    void getPreference<boolean>('swipeHint:wallViewSeen').then((seen) => {
+      if (cancelled) return;
+      if (!seen) setShowWallViewHint(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, wallView]);
+  const handleWallViewHintSeen = useCallback(() => {
+    setShowWallViewHint(false);
+    void setPreference('swipeHint:wallViewSeen', true);
+  }, []);
+
+  // Mark the hint seen once the user actually closes the wall-view drawer —
+  // they've encountered the mode at least once. Avoids leaving the cue
+  // pulsing forever for users who never tap "Browse from here".
+  const wallViewHintSeenLatchRef = useRef(false);
+  useEffect(() => {
+    if (showWallViewHint) {
+      wallViewHintSeenLatchRef.current = true;
+    }
+    if (!isOpen && wallViewHintSeenLatchRef.current) {
+      wallViewHintSeenLatchRef.current = false;
+      void setPreference('swipeHint:wallViewSeen', true);
+    }
+  }, [isOpen, showWallViewHint]);
+
+  // Resolve the driver's user record so the wall-view header strip shows
+  // their avatar + name ("X is on the wall"). Falls back gracefully — if
+  // we can't find the user (driver dropped, optimistic-claim race, etc.)
+  // the strip just renders the climb-name + lock without the avatar.
+  const driverUser = useMemo(() => {
+    if (!driverParticipantId) return null;
+    return sessionUsers.find((u) => u.id === driverParticipantId) ?? null;
+  }, [driverParticipantId, sessionUsers]);
 
   const navigate = useCallback(
     (direction: 'next' | 'previous', source: 'swipePlayViewDrawer' | 'playViewDrawer') => {
@@ -1252,19 +1311,74 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     return (
       <>
         {wallView && (
-          // Wall-view banner (pivot Phase 3): makes the mode unambiguous when
-          // the user tapped the bar body.
+          // Wall-view header strip (group-session feedback fix on top of the
+          // pivot's original banner): driver avatar + "X is on the wall",
+          // lock icon, and a "Browse from here →" escape hatch. Distinct
+          // tinted background so the mode is recognisable at a glance.
           <Box
             sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
               px: 2,
               py: 1,
-              fontSize: 13,
-              fontWeight: 500,
-              color: themeTokens.colors.primary,
-              textAlign: 'center',
+              backgroundColor: 'var(--semantic-selected-light, var(--semantic-selected))',
+              borderBottom: '1px solid var(--neutral-200)',
             }}
           >
-            {t('playView.wallViewHeader')}
+            <LockOutlined sx={{ fontSize: 18, color: 'text.secondary' }} />
+            {driverUser ? (
+              <MuiAvatar
+                alt={driverUser.username}
+                src={driverUser.avatarUrl ?? undefined}
+                sx={{ width: 24, height: 24 }}
+              />
+            ) : null}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box
+                component="span"
+                sx={{
+                  display: 'block',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'text.primary',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {driverUser
+                  ? t('playView.wallViewHeaderDriver', { username: driverUser.username })
+                  : t('playView.wallViewHeader')}
+              </Box>
+              {showWallViewHint && (
+                <Box
+                  component="span"
+                  sx={{
+                    display: 'block',
+                    fontSize: 11,
+                    color: 'text.secondary',
+                    mt: 0.25,
+                  }}
+                >
+                  {t('playView.wallViewHint')}
+                </Box>
+              )}
+            </Box>
+            {onExitWallView && (
+              <MuiButton
+                size="small"
+                variant="text"
+                endIcon={<ArrowForwardOutlined sx={{ fontSize: 16 }} />}
+                onClick={() => {
+                  handleWallViewHintSeen();
+                  onExitWallView();
+                }}
+                sx={{ textTransform: 'none', fontSize: 12 }}
+              >
+                {t('playView.wallViewBrowseFromHere')}
+              </MuiButton>
+            )}
           </Box>
         )}
         {/* Header: Grade | Name */}
@@ -1409,6 +1523,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     t,
     isPersistentSessionActive,
     isBluetoothConnected,
+    driverUser,
+    showWallViewHint,
+    handleWallViewHintSeen,
+    onExitWallView,
   ]);
 
   return (
