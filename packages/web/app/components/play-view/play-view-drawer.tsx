@@ -10,7 +10,6 @@ import MuiButton from '@mui/material/Button';
 import MuiAvatar from '@mui/material/Avatar';
 import MuiChip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
-import useMediaQuery from '@mui/material/useMediaQuery';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import SyncOutlined from '@mui/icons-material/SyncOutlined';
@@ -20,8 +19,6 @@ import SkipPreviousOutlined from '@mui/icons-material/SkipPreviousOutlined';
 import SkipNextOutlined from '@mui/icons-material/SkipNextOutlined';
 import LightbulbOutlined from '@mui/icons-material/LightbulbOutlined';
 import Lightbulb from '@mui/icons-material/Lightbulb';
-import LockOutlined from '@mui/icons-material/LockOutlined';
-import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import KeyboardArrowUpOutlined from '@mui/icons-material/KeyboardArrowUpOutlined';
@@ -880,44 +877,23 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   // from session data.
   const wallViewLocked = wallView && !isDriver;
 
-  // Wall-view one-shot hint (group-session feedback fix). Show a
-  // "Locked to the wall climb. Close to browse." cue once per user,
-  // then never again. Gate on `wallViewLocked` rather than `wallView`
-  // so a driver who opens wallView doesn't mark the hint "seen" without
-  // ever seeing it.
-  const [showWallViewHint, setShowWallViewHint] = useState(false);
+  // Wall-view one-shot hint (group-session feedback fix). First time a
+  // non-driver lands in wall-view, fire a snackbar teaching the mode;
+  // subsequent opens are silent. Gated on `wallViewLocked` rather than
+  // `wallView` so a driver who opens wallView doesn't burn the flag
+  // without ever seeing the hint.
   useEffect(() => {
-    if (!isOpen || !wallViewLocked) {
-      setShowWallViewHint(false);
-      return;
-    }
+    if (!isOpen || !wallViewLocked) return;
     let cancelled = false;
     void getPreference<boolean>('swipeHint:wallViewSeen').then((seen) => {
-      if (cancelled) return;
-      if (!seen) setShowWallViewHint(true);
+      if (cancelled || seen) return;
+      showMessage(t('playView.wallViewHint'), 'info');
+      void setPreference('swipeHint:wallViewSeen', true);
     });
     return () => {
       cancelled = true;
     };
-  }, [isOpen, wallViewLocked]);
-  const handleWallViewHintSeen = useCallback(() => {
-    setShowWallViewHint(false);
-    void setPreference('swipeHint:wallViewSeen', true);
-  }, []);
-
-  // Mark the hint seen once the user actually closes the wall-view drawer —
-  // they've encountered the mode at least once. Avoids leaving the cue
-  // pulsing forever for users who never tap "Browse from here".
-  const wallViewHintSeenLatchRef = useRef(false);
-  useEffect(() => {
-    if (showWallViewHint) {
-      wallViewHintSeenLatchRef.current = true;
-    }
-    if (!isOpen && wallViewHintSeenLatchRef.current) {
-      wallViewHintSeenLatchRef.current = false;
-      void setPreference('swipeHint:wallViewSeen', true);
-    }
-  }, [isOpen, showWallViewHint]);
+  }, [isOpen, wallViewLocked, showMessage, t]);
 
   // Resolve the driver's user record so the wall-view header strip shows
   // their avatar + name ("X is on the wall"). Falls back gracefully — if
@@ -927,12 +903,6 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     if (!driverParticipantId) return null;
     return sessionUsers.find((u) => u.id === driverParticipantId) ?? null;
   }, [driverParticipantId, sessionUsers]);
-
-  // The wall-view strip's "Browse from here →" button competes for width
-  // with the driver username on narrow phones (UI review E). Collapse to
-  // an icon-only IconButton below the sm breakpoint so the username
-  // doesn't ellipsis-to-a-letter while the button keeps its label.
-  const isNarrowViewport = useMediaQuery('(max-width: 480px)', { noSsr: true });
 
   const navigate = useCallback(
     (direction: 'next' | 'previous', source: 'swipePlayViewDrawer' | 'playViewDrawer') => {
@@ -1377,92 +1347,41 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     if (!currentClimb) return null;
     return (
       <>
-        {wallView && (
-          // Wall-view header strip: "X is on the wall" for everyone, plus
-          // the lock + hint + "Browse from here →" escape hatch only when
-          // the local user isn't the driver. Drivers keep swipe and the
-          // standard prev/next buttons (Marco's group-session feedback —
-          // the lock is the "you can't change the wall" cue, which doesn't
-          // apply to the driver). Re-renders reactively when driver status
-          // flips mid-drawer: if the user loses the wall while this is open,
-          // the lock + hint slide in on the next render tick.
+        {wallView && driverUser && (
+          // Wall-view presence row: a thin "(◉) Marco · driving" line that
+          // tells the local user who's driving without shouting it. Replaces
+          // the prior banner (lock icon + sentence + escape button). The
+          // escape lives at the bottom of the drawer now, and the one-shot
+          // teach moment fires as a snackbar. Renders for both driver and
+          // non-driver so wall-view always looks the same — the chip is
+          // metadata about the wall, not a permission gate.
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
               gap: 1,
-              px: 2,
-              py: 1,
-              backgroundColor: 'var(--semantic-selected-light, var(--semantic-selected))',
-              borderBottom: '1px solid var(--neutral-200)',
+              pl: 2,
+              pr: 6,
+              py: 0.75,
             }}
           >
-            {wallViewLocked && <LockOutlined aria-hidden="true" sx={{ fontSize: 18, color: 'text.secondary' }} />}
-            {driverUser ? (
-              <MuiAvatar
-                alt={driverUser.username}
-                src={driverUser.avatarUrl ?? undefined}
-                sx={{ width: 24, height: 24 }}
-              />
-            ) : null}
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Box
-                component="span"
-                sx={{
-                  display: 'block',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'text.primary',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {driverUser
-                  ? t('playView.wallViewHeaderDriver', { username: driverUser.username })
-                  : t('playView.wallViewHeader')}
-              </Box>
-              {wallViewLocked && showWallViewHint && (
-                <Box
-                  component="span"
-                  sx={{
-                    display: 'block',
-                    fontSize: 11,
-                    color: 'text.secondary',
-                    mt: 0.25,
-                  }}
-                >
-                  {t('playView.wallViewHint')}
-                </Box>
-              )}
+            <MuiAvatar
+              alt={driverUser.username}
+              src={driverUser.avatarUrl ?? undefined}
+              sx={{ width: 24, height: 24 }}
+            />
+            <Box
+              component="span"
+              sx={{
+                fontSize: 13,
+                color: 'text.secondary',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('playView.wallViewHeaderDriver', { username: driverUser.username })}
             </Box>
-            {wallViewLocked &&
-              onExitWallView &&
-              (isNarrowViewport ? (
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    handleWallViewHintSeen();
-                    onExitWallView();
-                  }}
-                  aria-label={t('playView.wallViewBrowseFromHere')}
-                >
-                  <ArrowForwardOutlined sx={{ fontSize: 18 }} />
-                </IconButton>
-              ) : (
-                <MuiButton
-                  size="medium"
-                  variant="text"
-                  endIcon={<ArrowForwardOutlined sx={{ fontSize: 16 }} />}
-                  onClick={() => {
-                    handleWallViewHintSeen();
-                    onExitWallView();
-                  }}
-                  sx={{ textTransform: 'none', fontSize: 12 }}
-                >
-                  {t('playView.wallViewBrowseFromHere')}
-                </MuiButton>
-              ))}
           </Box>
         )}
         {/* Header: Grade | Name */}
@@ -1550,6 +1469,23 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
           )}
         </div>
 
+        {/* Wall-view escape: a quiet inline link for the non-driver to drop
+            out of wall-view without closing the drawer. Replaces the prior
+            top-right "Browse from here →" banner button. */}
+        {wallViewLocked && onExitWallView && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 0.5 }}>
+            <MuiButton
+              size="small"
+              variant="text"
+              endIcon={<KeyboardArrowDownOutlined sx={{ fontSize: 16 }} />}
+              onClick={onExitWallView}
+              sx={{ textTransform: 'none', fontSize: 12, color: 'text.secondary' }}
+            >
+              {t('playView.wallViewBrowseFromHere')}
+            </MuiButton>
+          </Box>
+        )}
+
         {/* Action bar */}
         {isOpen && (
           <PlayViewActionBar
@@ -1628,12 +1564,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     isPersistentSessionActive,
     isBluetoothConnected,
     driverUser,
-    showWallViewHint,
-    handleWallViewHintSeen,
     onExitWallView,
     swipeSuggestionsOnly,
     wallViewLocked,
-    isNarrowViewport,
     lightbulbCoachmarkText,
   ]);
 

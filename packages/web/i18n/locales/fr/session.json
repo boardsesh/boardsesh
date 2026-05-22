@@ -223,10 +223,10 @@
     "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs."
   },
   "playView": {
-    "wallViewHeader": "Actuellement sur le mur",
-    "wallViewHeaderDriver": "{{username}} est sur le mur",
-    "wallViewHint": "Verrouillé sur le bloc du mur. Ferme pour explorer.",
-    "wallViewBrowseFromHere": "Explorer depuis ici",
+    "wallViewHeader": "Sur le mur",
+    "wallViewHeaderDriver": "{{username}} · au contrôle",
+    "wallViewHint": "Verrouillé sur le bloc du mur. Touche explorer ci-dessous pour regarder ailleurs.",
+    "wallViewBrowseFromHere": "explorer sans changer le mur",
     "previewChip": "Aperçu",
     "previewCoachmark": "Aperçu. Touche l'ampoule pour envoyer au mur.",
     "yourAscents_one": "Ton ascension ({{count}})",

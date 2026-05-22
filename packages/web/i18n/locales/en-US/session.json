@@ -223,10 +223,10 @@
     "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs."
   },
   "playView": {
-    "wallViewHeader": "Currently on the wall",
-    "wallViewHeaderDriver": "{{username}} is on the wall",
-    "wallViewHint": "Locked to the wall climb. Close to browse.",
-    "wallViewBrowseFromHere": "Browse from here",
+    "wallViewHeader": "On the wall",
+    "wallViewHeaderDriver": "{{username}} · driving",
+    "wallViewHint": "Locked to the wall climb. Tap browse below to look around.",
+    "wallViewBrowseFromHere": "browse without moving the wall",
     "previewChip": "Preview",
     "previewCoachmark": "Previewing. Tap the lightbulb to send it to the wall.",
     "yourAscents_one": "Your Ascent ({{count}})",

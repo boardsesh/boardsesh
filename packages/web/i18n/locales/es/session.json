@@ -223,10 +223,10 @@
     "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías."
   },
   "playView": {
-    "wallViewHeader": "Actualmente en el muro",
-    "wallViewHeaderDriver": "{{username}} está en el muro",
-    "wallViewHint": "Anclado al bloque del muro. Cierra para explorar.",
-    "wallViewBrowseFromHere": "Explorar desde aquí",
+    "wallViewHeader": "En el muro",
+    "wallViewHeaderDriver": "{{username}} · al mando",
+    "wallViewHint": "Anclado al bloque del muro. Toca explorar abajo para mirar otros.",
+    "wallViewBrowseFromHere": "explorar sin mover el muro",
     "previewChip": "Vista previa",
     "previewCoachmark": "Vista previa. Toca la bombilla para enviar al muro.",
     "yourAscents_one": "Tu ascenso ({{count}})",
