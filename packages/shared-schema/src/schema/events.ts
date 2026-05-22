@@ -10,6 +10,7 @@ export const eventsTypeDefs = /* GraphQL */ `
     | DriverChanged
     | WallConfirmedClimb
     | SessionBoardSerialChanged
+    | SessionBoardPathChanged
     | SessionEnded
     | SessionStatsUpdated
 
@@ -85,6 +86,21 @@ export const eventsTypeDefs = /* GraphQL */ `
   type SessionBoardSerialChanged {
     "Most recently observed BLE board serial, or null when cleared/never set"
     lastConnectedBoardSerial: String
+  }
+
+  """
+  Event when the session's stored boardPath changes — today carries angle
+  changes from any participant's angle selector. Recipients update their
+  local URL (\`router.replace\`) so all members stay on the same angle
+  view. Skipped when the originating client's own participant id matches
+  \`changedByParticipantId\` (the optimistic URL push already happened
+  locally). \`boardPath\` is the full route string (\`/<board>/<layout>/<size>/<sets>/<angle>/...\`).
+  """
+  type SessionBoardPathChanged {
+    "New full boardPath for the session"
+    boardPath: String!
+    "Participant id of the member who triggered the change, or null for system-initiated updates"
+    changedByParticipantId: ID
   }
 
   """

@@ -669,6 +669,74 @@ export const sessionMutations = {
   },
 
   /**
+   * Broadcast a boardPath update (today: angle changes) to every session
+   * participant. Any participant may call — angle is presentational and
+   * doesn't drive BLE (hold positions ride on the climb, not the
+   * boardPath), so the queue-control-bar pivot's "only driver moves the
+   * wall" rule doesn't apply. Idempotent: if the stored boardPath already
+   * matches, no event fires. Publishes `SessionBoardPathChanged` on
+   * change. Returns the resolved Session for optimistic-UI symmetry with
+   * takeControl / releaseControl. Session identity is resolved from the
+   * WebSocket connection context — no `sessionId` argument.
+   */
+  setSessionBoardPath: async (_: unknown, { boardPath }: { boardPath: string }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx);
+    const sessionId = requireSession(ctx);
+    validateInput(BoardPathSchema, boardPath, 'boardPath');
+    await requireSessionMember(ctx, sessionId);
+
+    if (!ctx.participantId) {
+      throw new Error('setSessionBoardPath requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+    const participantId = ctx.participantId;
+
+    const previousBoardPath = await roomManager.updateSessionBoardPathIfChanged(sessionId, boardPath);
+    if (previousBoardPath !== null) {
+      pubsub.publishSessionEvent(sessionId, {
+        __typename: 'SessionBoardPathChanged',
+        boardPath,
+        changedByParticipantId: participantId,
+      });
+    }
+
+    // Return the resolved Session. Fan independent reads in parallel —
+    // matches setSessionBoardSerial's shape.
+    const [users, sessionData, queueState, driverParticipantId, lastConnectedBoardSerial, leaderConnectionId] =
+      await Promise.all([
+        roomManager.getSessionUsers(sessionId),
+        roomManager.getSessionById(sessionId),
+        roomManager.getQueueState(sessionId),
+        roomManager.getSessionDriverParticipantId(sessionId),
+        roomManager.getSessionBoardSerial(sessionId),
+        roomManager.getSessionLeaderConnectionId(sessionId),
+      ]);
+
+    return {
+      id: sessionId,
+      name: sessionData?.name || null,
+      boardPath: sessionData?.boardPath || '',
+      users,
+      queueState: {
+        sequence: queueState.sequence,
+        stateHash: queueState.stateHash,
+        queue: queueState.queue,
+        currentClimbQueueItem: queueState.currentClimbQueueItem,
+      },
+      isLeader: leaderConnectionId === ctx.connectionId,
+      driverParticipantId,
+      lastConnectedBoardSerial,
+      clientId: ctx.connectionId,
+      participantId,
+      goal: sessionData?.goal || null,
+      isPublic: sessionData?.isPublic ?? true,
+      startedAt: sessionData?.startedAt?.toISOString() || null,
+      endedAt: sessionData?.endedAt?.toISOString() || null,
+      isPermanent: sessionData?.isPermanent ?? false,
+      color: sessionData?.color || null,
+    };
+  },
+
+  /**
    * Release wall-control authority. Idempotent — when the caller is not the
    * current driver, the mutation is a no-op (returns the current session state
    * with `driverParticipantId` unchanged). Publishes `DriverChanged { null }`

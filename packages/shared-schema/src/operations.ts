@@ -220,6 +220,21 @@ export const SET_SESSION_BOARD_SERIAL = `
   }
 `;
 
+// Session board path — broadcasts angle (and any presentational route
+// changes) across all session participants. Optimistic-UI symmetry with
+// takeControl / releaseControl: the angle selector pushes the URL locally
+// for instant feedback, then fires this mutation so the backend persists
+// the new boardPath and broadcasts SessionBoardPathChanged to other
+// members, who then router.replace into the new angle.
+export const SET_SESSION_BOARD_PATH = `
+  mutation SetSessionBoardPath($boardPath: String!) {
+    setSessionBoardPath(boardPath: $boardPath) {
+      id
+      boardPath
+    }
+  }
+`;
+
 export const SET_QUEUE = `
   mutation SetQueue($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput) {
     setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem) {

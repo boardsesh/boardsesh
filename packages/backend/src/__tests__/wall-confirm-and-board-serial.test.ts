@@ -49,6 +49,9 @@ vi.mock('../services/room-manager', () => ({
     // Individual tests override per-call when they want a different
     // authoritative answer.
     getSessionBoardSerial: vi.fn().mockResolvedValue(null),
+    // Used by the setSessionBoardPath mutation. Returns the previous
+    // boardPath when the value changed; null on no-op writes.
+    updateSessionBoardPathIfChanged: vi.fn(),
     // Recent-climbs ring buffer used by confirmClimbOnWall.
     pushRecentClimb: vi.fn().mockResolvedValue(undefined),
     isRecentClimb: vi.fn().mockResolvedValue(true),
@@ -123,6 +126,8 @@ const roomManagerMock = roomManager as unknown as {
   getQueueState: ReturnType<typeof vi.fn>;
   pushRecentClimb: ReturnType<typeof vi.fn>;
   isRecentClimb: ReturnType<typeof vi.fn>;
+  updateSessionBoardPathIfChanged: ReturnType<typeof vi.fn>;
+  getSessionById: ReturnType<typeof vi.fn>;
 };
 const pubsubMock = pubsub as unknown as { publishSessionEvent: ReturnType<typeof vi.fn> };
 const requireSessionMemberMock = sharedHelpers.requireSessionMember as unknown as ReturnType<typeof vi.fn>;
@@ -358,6 +363,74 @@ describe('setSessionBoardSerial mutation', () => {
       /serial/i,
     );
     expect(roomManagerMock.setSessionBoardSerialAndReturnPrevious).not.toHaveBeenCalled();
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('setSessionBoardPath mutation', () => {
+  const newPath = '/kilter/1/1/1/35/play/abc-123';
+  const oldPath = '/kilter/1/1/1/40/play/abc-123';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireSessionMemberMock.mockResolvedValue(undefined);
+    // Default: the read-back returns the new boardPath that the test wrote.
+    roomManagerMock.getSessionById.mockResolvedValue({
+      name: 'Test Session',
+      boardPath: newPath,
+      goal: null,
+      isPublic: true,
+      startedAt: new Date('2026-01-01T00:00:00Z'),
+      endedAt: null,
+      isPermanent: false,
+      color: null,
+    });
+  });
+
+  it('persists the boardPath and publishes SessionBoardPathChanged when it changes, returning a Session', async () => {
+    roomManagerMock.updateSessionBoardPathIfChanged.mockResolvedValueOnce(oldPath);
+    const ctx = makeCtx({ participantId: 'participant-1' });
+
+    const result = await sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx);
+
+    expect(result).toMatchObject({ id: 'session-1', boardPath: newPath });
+    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath);
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith('session-1', {
+      __typename: 'SessionBoardPathChanged',
+      boardPath: newPath,
+      changedByParticipantId: 'participant-1',
+    });
+  });
+
+  it('is idempotent — no event fires when the stored boardPath already matches', async () => {
+    // Room manager reports null = no change.
+    roomManagerMock.updateSessionBoardPathIfChanged.mockResolvedValueOnce(null);
+    const ctx = makeCtx({ participantId: 'participant-1' });
+
+    await sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx);
+
+    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-members and does not write to the room manager', async () => {
+    requireSessionMemberMock.mockRejectedValueOnce(new Error('Not a member of session'));
+    const ctx = makeCtx({ participantId: 'participant-1' });
+
+    await expect(sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx)).rejects.toThrow(
+      /Not a member of session/,
+    );
+    expect(roomManagerMock.updateSessionBoardPathIfChanged).not.toHaveBeenCalled();
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('hard-errors when ctx.participantId is missing (refuses to fall back to connectionId)', async () => {
+    const ctx = makeCtx({ participantId: undefined });
+    roomManagerMock.updateSessionBoardPathIfChanged.mockResolvedValueOnce(oldPath);
+
+    await expect(sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx)).rejects.toThrow(
+      /requires ctx.participantId/,
+    );
     expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
   });
 });

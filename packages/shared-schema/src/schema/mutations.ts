@@ -114,6 +114,21 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     setSessionBoardSerial(serial: String!): Session!
 
+    """
+    Update the session's stored boardPath so every participant follows the same
+    angle (and any future presentational route-segment changes). Today the
+    angle is the only route-level dimension that members observe as a group;
+    climb URLs are managed by setCurrentClimb. Any participant may call —
+    angle is presentational and doesn't drive BLE (hold positions are sent
+    per-climb), so the queue-control-bar pivot's "only driver moves the wall"
+    rule doesn't apply. Idempotent: when the stored boardPath already matches,
+    no event fires. Publishes \`SessionBoardPathChanged\` on change. Returns
+    the resolved Session for optimistic-UI symmetry with takeControl /
+    releaseControl. Session identity is resolved from the WebSocket connection
+    context — no \`sessionId\` argument is required.
+    """
+    setSessionBoardPath(boardPath: String!): Session!
+
     # ============================================
     # User Management Mutations (require auth)
     # ============================================

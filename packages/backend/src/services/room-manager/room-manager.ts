@@ -36,6 +36,7 @@ import {
   getUserSessions as getUserSessionsFn,
   endSession as endSessionFn,
   endStaleInactiveSessions,
+  updateSessionBoardPathIfChanged as updateSessionBoardPathIfChangedFn,
 } from './session-discovery';
 
 const INACTIVITY_THRESHOLD_MS = 60 * 60 * 1000;
@@ -673,6 +674,16 @@ class RoomManager {
 
   async getSessionById(sessionId: string): Promise<Session | null> {
     return getSessionByIdFn(sessionId);
+  }
+
+  /**
+   * Update the session's stored boardPath, returning the previous value when
+   * a change actually occurred, or `null` for no-op writes (idempotent).
+   * Used by the `setSessionBoardPath` mutation to gate the
+   * `SessionBoardPathChanged` event.
+   */
+  async updateSessionBoardPathIfChanged(sessionId: string, boardPath: string): Promise<string | null> {
+    return updateSessionBoardPathIfChangedFn(sessionId, boardPath);
   }
 
   async createDiscoverableSession(

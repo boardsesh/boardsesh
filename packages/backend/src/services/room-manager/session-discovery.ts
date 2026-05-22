@@ -18,6 +18,34 @@ export async function getSessionById(sessionId: string): Promise<Session | null>
 }
 
 /**
+ * Update the session's stored boardPath and return the previous value.
+ * Returns `null` when the session row didn't exist, or when the value was
+ * unchanged (idempotent — same boardPath). Returns the prior string when
+ * the update actually mutated state. Lets the caller skip publishing a
+ * SessionBoardPathChanged event on no-op writes.
+ *
+ * Uses a single-statement update with a conditional WHERE so concurrent
+ * writers can't both observe the same "previous" value and double-publish.
+ */
+export async function updateSessionBoardPathIfChanged(sessionId: string, boardPath: string): Promise<string | null> {
+  // Read-then-write — simpler than a CTE and matches the
+  // setSessionBoardSerialAndReturnPrevious shape elsewhere. Concurrent
+  // writers under the same sessionId are rare (one angle-selector tap at a
+  // time per device), and the event is idempotent on the client anyway:
+  // `router.replace` to the same URL is a no-op.
+  const existing = await db
+    .select({ boardPath: sessions.boardPath })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1);
+  if (existing.length === 0) return null;
+  const previous = existing[0].boardPath;
+  if (previous === boardPath) return null;
+  await db.update(sessions).set({ boardPath, lastActivity: new Date() }).where(eq(sessions.id, sessionId));
+  return previous;
+}
+
+/**
  * Create a discoverable session with GPS coordinates.
  */
 export async function createDiscoverableSession(
