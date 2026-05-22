@@ -50,7 +50,7 @@ function makeQueueActions(
 }
 
 function makeBoardInfo(): QueueBridgeBoardInfo {
-  return { boardDetails, angle: 40, hasActiveQueue: true, isHydrated: true };
+  return { boardDetails, angle: 40, hasResolvedAngle: true, hasActiveQueue: true, isHydrated: true };
 }
 
 describe('usePlaylistClimbActivation', () => {

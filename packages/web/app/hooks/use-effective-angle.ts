@@ -15,8 +15,9 @@ import type { Climb } from '@/app/lib/types';
  *      group-session feedback fix this prefers the live route angle,
  *      falling back to the active party session's angle (parsed from
  *      `Session.boardPath`) for off-board surfaces, then the local
- *      current-climb's angle for solo. Gated on `hasActiveQueue` so the
- *      default-zero context value doesn't masquerade as a real 0°.
+ *      current-climb's angle for solo. Gated on `hasResolvedAngle` so
+ *      the bridge's `?? 0` solo fallback doesn't masquerade as a real
+ *      0° on degenerate states (no route, no current climb).
  *   2. The opening climb's own `angle` field when present (`!= null`).
  *      Handles log paths fired from surfaces where the bridge has no
  *      active queue yet (cold start on /you, ticking a public profile
@@ -27,13 +28,10 @@ import type { Climb } from '@/app/lib/types';
  */
 export function useEffectiveAngle(climb?: Climb | null): number | null {
   // Read the bridge context directly via useContext so this hook works on
-  // surfaces that don't sit beneath a GraphQLQueueProvider. The default
-  // context value has `hasActiveQueue: false` (with angle: 0 as a
-  // placeholder), so the flag — not the angle value — is the source of
-  // truth for "is there a real angle here."
+  // surfaces that don't sit beneath a GraphQLQueueProvider.
   const bridge = useContext(QueueBridgeBoardInfoContext);
 
-  if (bridge.hasActiveQueue) {
+  if (bridge.hasResolvedAngle) {
     return bridge.angle;
   }
 

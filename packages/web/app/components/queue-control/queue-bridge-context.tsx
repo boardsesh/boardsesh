@@ -115,6 +115,7 @@ function usePersistentSessionQueueAdapter(): {
   dataValue: GraphQLQueueDataType;
   boardDetails: BoardDetails | null;
   angle: Angle;
+  hasResolvedAngle: boolean;
   hasActiveQueue: boolean;
   isHydrated: boolean;
   syncFromInjected: (q: ClimbQueueItem[], current: ClimbQueueItem | null, boardPath: string, bd: BoardDetails) => void;
@@ -151,11 +152,21 @@ function usePersistentSessionQueueAdapter(): {
   // pivot — group-session feedback fix). Off-board surfaces (home, /you,
   // /playlists) get no route angle, so they still fall through to the
   // session angle (party) or the current local climb's angle (solo).
+  //
+  // `resolvedAngle` is null when nothing in the chain produced a value —
+  // distinct from numeric 0 (a real angle on vertical-board configs).
+  // `angle` keeps the existing `Angle` (number) contract for consumers
+  // that pass it down to components needing a numeric prop; we only
+  // surface the null vs 0 distinction through `hasResolvedAngle`, which
+  // `useEffectiveAngle` (the log paths) gates on. This keeps the bridge
+  // type backward-compatible across the 8+ existing consumers.
   const pathnameForAngle = usePathname();
   const routeAngle = extractAngleFromPathname(pathnameForAngle ?? '');
-  const angle: Angle = isParty
+  const resolvedAngle: Angle | null = isParty
     ? (routeAngle ?? ps.activeSession!.parsedParams.angle)
-    : (routeAngle ?? ps.localCurrentClimbQueueItem?.climb?.angle ?? 0);
+    : (routeAngle ?? ps.localCurrentClimbQueueItem?.climb?.angle ?? null);
+  const hasResolvedAngle = resolvedAngle != null;
+  const angle: Angle = resolvedAngle ?? 0;
 
   const baseBoardPath = useMemo(() => {
     if (isParty && ps.activeSession?.boardPath) {
@@ -720,6 +731,7 @@ function usePersistentSessionQueueAdapter(): {
     dataValue,
     boardDetails,
     angle,
+    hasResolvedAngle,
     hasActiveQueue,
     isHydrated: ps.isLocalQueueLoaded,
     syncFromInjected,
@@ -780,6 +792,9 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
 
   const effectiveBoardDetails = isInjected ? injectedBoardDetails : adapter.boardDetails;
   const effectiveAngle = isInjected ? injectedAngle : adapter.angle;
+  // The injector path passes a fully-resolved angle from the board route
+  // segment, so injected => resolved by definition.
+  const effectiveHasResolvedAngle = isInjected ? true : adapter.hasResolvedAngle;
   const effectiveHasActiveQueue = isInjected
     ? true // If injected, a board route is active — always show bar
     : adapter.hasActiveQueue;
@@ -791,10 +806,11 @@ export function QueueBridgeProvider({ children }: { children: React.ReactNode })
     () => ({
       boardDetails: effectiveBoardDetails,
       angle: effectiveAngle,
+      hasResolvedAngle: effectiveHasResolvedAngle,
       hasActiveQueue: effectiveHasActiveQueue,
       isHydrated: effectiveIsHydrated,
     }),
-    [effectiveBoardDetails, effectiveAngle, effectiveHasActiveQueue, effectiveIsHydrated],
+    [effectiveBoardDetails, effectiveAngle, effectiveHasResolvedAngle, effectiveHasActiveQueue, effectiveIsHydrated],
   );
 
   const inject = useCallback(
