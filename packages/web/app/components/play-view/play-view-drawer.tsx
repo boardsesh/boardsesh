@@ -8,7 +8,9 @@ import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import MuiButton from '@mui/material/Button';
 import MuiAvatar from '@mui/material/Avatar';
+import MuiChip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import SyncOutlined from '@mui/icons-material/SyncOutlined';
@@ -157,10 +159,11 @@ type PlayViewActionBarProps = {
   /** Fired when the coachmark animation runs once — the parent persists
    *  the seen flag and clears `lightbulbCoachmark`. */
   onLightbulbCoachmarkSeen?: () => void;
-  /** Wall-view mode: drawer opened from the bar body to inspect the wall
-   *  climb. Hide prev/next entirely (controls live on the bar; this view is
-   *  anchored to the wall). The lightbulb stays. */
-  wallView?: boolean;
+  /** Wall-view *locked* — non-driver opened the drawer from the bar body
+   *  in a party session. Hides prev/next; the lightbulb stays. Drivers
+   *  in wall-view don't reach this branch (the parent never passes true
+   *  for them — they get a normal browse drawer on the wall climb). */
+  wallViewLocked?: boolean;
   /** Name of the currently displayed climb. Used in the lightbulb's aria
    *  label so screen-reader users hear what they're sending. */
   displayedClimbName: string | null;
@@ -196,7 +199,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   displayedClimbName,
   onLightbulb,
   onLightbulbLongPress,
-  wallView = false,
+  wallViewLocked = false,
   angleSelector,
 }: PlayViewActionBarProps) {
   const { t } = useTranslation('session');
@@ -222,7 +225,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   }, [consumeLongPress, onLightbulb]);
   return (
     <div className={styles.actionBar}>
-      {!wallView && (
+      {!wallViewLocked && (
         <IconButton disabled={!canSwipePrevious} onClick={onPrevClick}>
           <SkipPreviousOutlined />
         </IconButton>
@@ -303,7 +306,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
           <FormatListBulletedOutlined />
         </IconButton>
       </MuiBadge>
-      {!wallView && (
+      {!wallViewLocked && (
         <IconButton disabled={!canSwipeNext} onClick={onNextClick}>
           <SkipNextOutlined />
         </IconButton>
@@ -925,6 +928,12 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     return sessionUsers.find((u) => u.id === driverParticipantId) ?? null;
   }, [driverParticipantId, sessionUsers]);
 
+  // The wall-view strip's "Browse from here →" button competes for width
+  // with the driver username on narrow phones (UI review E). Collapse to
+  // an icon-only IconButton below the sm breakpoint so the username
+  // doesn't ellipsis-to-a-letter while the button keeps its label.
+  const isNarrowViewport = useMediaQuery('(max-width: 480px)', { noSsr: true });
+
   const navigate = useCallback(
     (direction: 'next' | 'previous', source: 'swipePlayViewDrawer' | 'playViewDrawer') => {
       const getter = direction === 'next' ? getNextClimbQueueItem : getPreviousClimbQueueItem;
@@ -1388,7 +1397,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
               borderBottom: '1px solid var(--neutral-200)',
             }}
           >
-            {wallViewLocked && <LockOutlined sx={{ fontSize: 18, color: 'text.secondary' }} />}
+            {wallViewLocked && <LockOutlined aria-hidden="true" sx={{ fontSize: 18, color: 'text.secondary' }} />}
             {driverUser ? (
               <MuiAvatar
                 alt={driverUser.username}
@@ -1427,20 +1436,33 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
                 </Box>
               )}
             </Box>
-            {wallViewLocked && onExitWallView && (
-              <MuiButton
-                size="small"
-                variant="text"
-                endIcon={<ArrowForwardOutlined sx={{ fontSize: 16 }} />}
-                onClick={() => {
-                  handleWallViewHintSeen();
-                  onExitWallView();
-                }}
-                sx={{ textTransform: 'none', fontSize: 12 }}
-              >
-                {t('playView.wallViewBrowseFromHere')}
-              </MuiButton>
-            )}
+            {wallViewLocked &&
+              onExitWallView &&
+              (isNarrowViewport ? (
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    handleWallViewHintSeen();
+                    onExitWallView();
+                  }}
+                  aria-label={t('playView.wallViewBrowseFromHere')}
+                >
+                  <ArrowForwardOutlined sx={{ fontSize: 18 }} />
+                </IconButton>
+              ) : (
+                <MuiButton
+                  size="medium"
+                  variant="text"
+                  endIcon={<ArrowForwardOutlined sx={{ fontSize: 16 }} />}
+                  onClick={() => {
+                    handleWallViewHintSeen();
+                    onExitWallView();
+                  }}
+                  sx={{ textTransform: 'none', fontSize: 12 }}
+                >
+                  {t('playView.wallViewBrowseFromHere')}
+                </MuiButton>
+              ))}
           </Box>
         )}
         {/* Header: Grade | Name */}
@@ -1451,23 +1473,20 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             // their swipe is previewing only — the wall hasn't moved and
             // nobody else sees this navigation. Sits next to the climb name
             // so it's hard to miss without competing with the lightbulb cue.
-            <Box
-              component="span"
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                ml: 1,
-                px: 1,
-                py: 0.25,
-                fontSize: 11,
-                fontWeight: 500,
-                color: themeTokens.colors.primary,
-                backgroundColor: 'var(--semantic-info-light, var(--semantic-selected))',
-                borderRadius: 1,
-              }}
-            >
-              {t('playView.previewChip')}
-            </Box>
+            // MUI `Chip` so design tokens + a11y semantics ride for free
+            // (the UI review caught that the prior `<Box component="span">`
+            // shipped a CSS-var fallback to `--semantic-selected` — the
+            // same rose tint the wall-view header strip uses — because
+            // `--semantic-info-light` is never defined).
+            <MuiChip
+              size="small"
+              variant="outlined"
+              color="info"
+              role="status"
+              aria-label={t('playView.previewChip')}
+              label={t('playView.previewChip')}
+              sx={{ ml: 1, fontSize: 11, fontWeight: 500 }}
+            />
           )}
         </div>
 
@@ -1554,7 +1573,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             displayedClimbName={currentClimb?.name ?? null}
             onLightbulb={handleLightbulbClick}
             onLightbulbLongPress={handleOpenLightDrawer}
-            wallView={wallViewLocked}
+            wallViewLocked={wallViewLocked}
             angleSelector={
               <AngleSelector
                 boardName={boardDetails.board_name}
@@ -1614,6 +1633,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     onExitWallView,
     swipeSuggestionsOnly,
     wallViewLocked,
+    isNarrowViewport,
+    lightbulbCoachmarkText,
   ]);
 
   return (

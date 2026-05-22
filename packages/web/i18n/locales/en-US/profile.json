@@ -118,7 +118,7 @@
       "cancel": "Cancel",
       "wallMoved": "Wall moved to {{wallClimb}}. Still logging {{loggingClimb}}?",
       "switchClimb": "Switch to {{climbName}}",
-      "switchDirtyConfirm": "You have unsaved notes — switch and lose them?"
+      "switchDirtyConfirm": "You'll lose what you typed. Switch anyway?"
     },
     "feed": {
       "deleteSwipeLabel": "Delete",

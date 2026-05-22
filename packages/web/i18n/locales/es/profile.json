@@ -118,7 +118,7 @@
       "cancel": "Cancelar",
       "wallMoved": "El muro pasó a {{wallClimb}}. ¿Sigues registrando {{loggingClimb}}?",
       "switchClimb": "Cambiar a {{climbName}}",
-      "switchDirtyConfirm": "Tienes notas sin guardar — ¿cambiar y perderlas?"
+      "switchDirtyConfirm": "Perderás lo que escribiste. ¿Cambiar igual?"
     },
     "feed": {
       "deleteSwipeLabel": "Eliminar",

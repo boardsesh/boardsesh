@@ -14,6 +14,8 @@ import Box from '@mui/material/Box';
 import MuiAlert from '@mui/material/Alert';
 import MuiSelect from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import FormHelperText from '@mui/material/FormHelperText';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
@@ -23,7 +25,7 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 import { type TickStatus, useBoardProvider } from '../board-provider/board-provider-context';
 import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
 import { isBetaVideoUrl, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@/app/lib/beta-video-url';
-import { useEffectiveAngle } from '@/app/lib/hooks/use-effective-angle';
+import { useEffectiveAngle } from '@/app/hooks/use-effective-angle';
 import { useOptionalCurrentClimb } from '../graphql-queue/QueueContext';
 
 import dayjs from 'dayjs';
@@ -229,22 +231,25 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
       }}
     >
       {showDriftBanner && wallClimb && (
-        <MuiAlert
-          severity="info"
-          sx={{ mb: 2 }}
-          onClose={() => setBannerDismissed(true)}
-          action={
-            onSwitchClimb && (
-              <Button color="inherit" size="small" onClick={handleSwitch}>
+        // severity="warning" — wall-drift is a decide-what-to-do event,
+        // not ambient FYI. The Switch button renders under the body so
+        // long climb names (Aurora's "Tortured Soul on Sloping Crystal"
+        // shape) don't wrap awkwardly inside MuiAlert's right-aligned
+        // action slot on narrow phones (UI review E).
+        <MuiAlert severity="warning" sx={{ mb: 2 }} onClose={() => setBannerDismissed(true)}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+            <Box component="span">
+              {tProfile('logbook.form.wallMoved', {
+                wallClimb: wallClimb.name,
+                loggingClimb: currentClimb.name,
+              })}
+            </Box>
+            {onSwitchClimb && (
+              <Button color="inherit" size="small" variant="outlined" onClick={handleSwitch}>
                 {tProfile('logbook.form.switchClimb', { climbName: wallClimb.name })}
               </Button>
-            )
-          }
-        >
-          {tProfile('logbook.form.wallMoved', {
-            wallClimb: wallClimb.name,
-            loggingClimb: currentClimb.name,
-          })}
+            )}
+          </Box>
         </MuiAlert>
       )}
 
@@ -290,30 +295,33 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-        <Typography sx={{ width: 120, flexShrink: 0 }}>{tProfile('logbook.form.angle')}</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
+        <Typography sx={{ width: 120, flexShrink: 0, pt: 1 }}>{tProfile('logbook.form.angle')}</Typography>
         <Box sx={{ flex: 1 }}>
-          <MuiSelect
-            // `?? ''` not `|| ''` — 0° is a real selectable angle on vertical
-            // boards. Truthy fallthrough here would have rendered the "Pick an
-            // angle" placeholder over a valid 0° selection. Same logic for the
-            // error styling and the submit-button gates below.
-            value={formValues.angle ?? ''}
-            onChange={(e) => setFormValues((prev) => ({ ...prev, angle: Number(e.target.value) }))}
-            size="small"
-            sx={{ width: 100 }}
-            displayEmpty
-            error={formValues.angle == null}
-          >
-            <MenuItem value="" disabled>
-              <em>{tProfile('logbook.form.pickAngle')}</em>
-            </MenuItem>
-            {angleOptions.map((angle) => (
-              <MenuItem key={angle} value={angle}>
-                {angle}°
+          {/* FormControl + FormHelperText so screen readers hear *why* the
+              Select is in an error state ("Pick an angle") rather than only
+              "field is invalid" (UI review C). */}
+          <FormControl error={formValues.angle == null} size="small">
+            <MuiSelect
+              // `?? ''` not `|| ''` — 0° is a real selectable angle on
+              // vertical boards. Truthy fallthrough here would have rendered
+              // the "Pick an angle" placeholder over a valid 0° selection.
+              value={formValues.angle ?? ''}
+              onChange={(e) => setFormValues((prev) => ({ ...prev, angle: Number(e.target.value) }))}
+              sx={{ width: 100 }}
+              displayEmpty
+            >
+              <MenuItem value="" disabled>
+                <em>{tProfile('logbook.form.pickAngle')}</em>
               </MenuItem>
-            ))}
-          </MuiSelect>
+              {angleOptions.map((angle) => (
+                <MenuItem key={angle} value={angle}>
+                  {angle}°
+                </MenuItem>
+              ))}
+            </MuiSelect>
+            {formValues.angle == null && <FormHelperText>{tProfile('logbook.form.pickAngle')}</FormHelperText>}
+          </FormControl>
         </Box>
       </Box>
 

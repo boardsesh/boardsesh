@@ -95,38 +95,30 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
 }));
 
-vi.mock('@/app/lib/url-utils', () => ({
-  getBaseBoardPath: (p: string) => p.replace(/\/\d+$/, ''),
-  // Mirror real /b/{slug}/{angle}/... and /{board}/{layout}/{size}/{sets}/{angle}/...
-  // shape detection so the live route-angle read in usePersistentSessionQueueAdapter
-  // works under tests.
-  extractAngleFromPathname: (pathname: string): number | null => {
-    const slugMatch = pathname.match(/^\/b\/[^/]+\/(-?\d+)(?:\/|$)/);
-    if (slugMatch) {
-      const angle = Number(slugMatch[1]);
-      return Number.isFinite(angle) ? angle : null;
-    }
-    const fullMatch = pathname.match(/^\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/(-?\d+)(?:\/|$)/);
-    if (fullMatch) {
-      const angle = Number(fullMatch[1]);
-      return Number.isFinite(angle) ? angle : null;
-    }
-    return null;
-  },
-  DEFAULT_SEARCH_PARAMS: {
-    gradeAccuracy: 0,
-    maxGrade: 0,
-    minGrade: 0,
-    minRating: 0,
-    minAscents: 0,
-    sortBy: 'ascents',
-    sortOrder: 'desc',
-    name: '',
-    onlyClassics: false,
-    onlyTallClimbs: false,
-    onlyWideClimbs: false,
-  },
-}));
+vi.mock('@/app/lib/url-utils', async () => {
+  // Pull the real `extractAngleFromPathname` through — duplicating its
+  // implementation drifted from the source when the helper grew negative-
+  // angle support. The other url-utils helpers we mock here are heavy
+  // SSR-y functions; we just want to keep the parser honest.
+  const actual = await vi.importActual<typeof import('@/app/lib/url-utils')>('@/app/lib/url-utils');
+  return {
+    getBaseBoardPath: (p: string) => p.replace(/\/\d+$/, ''),
+    extractAngleFromPathname: actual.extractAngleFromPathname,
+    DEFAULT_SEARCH_PARAMS: {
+      gradeAccuracy: 0,
+      maxGrade: 0,
+      minGrade: 0,
+      minRating: 0,
+      minAscents: 0,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      name: '',
+      onlyClassics: false,
+      onlyTallClimbs: false,
+      onlyWideClimbs: false,
+    },
+  };
+});
 
 // Mock playlist board-config helper so cold-start seeding tests don't pull in
 // the real board constants data. Returns a simple, deterministic BoardDetails
