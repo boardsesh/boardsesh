@@ -223,7 +223,6 @@
     "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías."
   },
   "playView": {
-    "wallViewHeader": "En el muro",
     "wallViewHeaderDriver": "{{username}} · al mando",
     "wallViewHint": "Anclado al bloque del muro. Toca explorar abajo para mirar otros.",
     "wallViewBrowseFromHere": "explorar sin mover el muro",

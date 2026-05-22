@@ -223,7 +223,6 @@
     "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs."
   },
   "playView": {
-    "wallViewHeader": "On the wall",
     "wallViewHeaderDriver": "{{username}} · driving",
     "wallViewHint": "Locked to the wall climb. Tap browse below to look around.",
     "wallViewBrowseFromHere": "browse without moving the wall",
