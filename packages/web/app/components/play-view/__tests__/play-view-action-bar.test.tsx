@@ -167,4 +167,31 @@ describe('PlayViewActionBar', () => {
     // MUI Badge renders the count as text
     expect(screen.getByText('5')).toBeTruthy();
   });
+
+  // ---------------------------------------------------------------------
+  // wallViewLocked behaviour — non-drivers (locked) hide prev/next,
+  // drivers see the full bar. Pins the role-based gate Marco asked for
+  // in the group-session feedback round.
+  // ---------------------------------------------------------------------
+
+  it('hides prev/next when wallViewLocked=true (non-driver in wall-view)', () => {
+    render(<PlayViewActionBar {...buildProps({ wallViewLocked: true })} />);
+    expect(screen.queryByTestId('icon-skip-prev')).toBeNull();
+    expect(screen.queryByTestId('icon-skip-next')).toBeNull();
+  });
+
+  it('shows prev/next when wallViewLocked=false (driver, or plain non-wallView drawer)', () => {
+    render(<PlayViewActionBar {...buildProps({ wallViewLocked: false })} />);
+    expect(screen.getByTestId('icon-skip-prev')).toBeTruthy();
+    expect(screen.getByTestId('icon-skip-next')).toBeTruthy();
+  });
+
+  it('keeps prev/next visible by default (the locked semantic must be opt-in)', () => {
+    // The prop defaults to false at the component level. Regression
+    // guard: a future refactor that flipped the default would silently
+    // hide prev/next on every drawer until callers opted out.
+    render(<PlayViewActionBar {...buildProps()} />);
+    expect(screen.getByTestId('icon-skip-prev')).toBeTruthy();
+    expect(screen.getByTestId('icon-skip-next')).toBeTruthy();
+  });
 });
