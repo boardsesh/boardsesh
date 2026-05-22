@@ -35,6 +35,16 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: undefined, isLoading: false }),
 }));
 
+const mockSetSessionBoardPath = vi.fn();
+const mockActiveSession: { current: unknown | null } = { current: null };
+
+vi.mock('../../persistent-session', () => ({
+  usePersistentSession: () => ({
+    activeSession: mockActiveSession.current,
+    setSessionBoardPath: mockSetSessionBoardPath,
+  }),
+}));
+
 vi.mock('../../swipeable-drawer/swipeable-drawer', () => ({
   default: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? <div data-testid="angle-drawer">{children}</div> : null,
@@ -63,6 +73,7 @@ describe('AngleSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname = '/kilter/1/10/1,2/40/list';
+    mockActiveSession.current = null;
     window.history.replaceState({}, '', '/');
   });
 
@@ -123,5 +134,33 @@ describe('AngleSelector', () => {
     fireEvent.click(screen.getByText('45°'));
 
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // Session-shared angle broadcast — pins the A3 wiring on PR #2238.
+  // ---------------------------------------------------------------------
+
+  it('broadcasts the new boardPath via setSessionBoardPath when in party mode', () => {
+    mockActiveSession.current = { sessionId: 'session-1', boardPath: '/kilter/1/10/1,2/40/list' };
+
+    render(<AngleSelector boardName="kilter" boardDetails={boardDetails} currentAngle={40} currentClimb={null} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /40/ }));
+    fireEvent.click(screen.getByText('45°'));
+
+    expect(mockPush).toHaveBeenCalledWith('/kilter/1/10/1,2/45/list');
+    expect(mockSetSessionBoardPath).toHaveBeenCalledWith('/kilter/1/10/1,2/45/list');
+  });
+
+  it('does not call setSessionBoardPath in solo mode (no active session)', () => {
+    mockActiveSession.current = null;
+
+    render(<AngleSelector boardName="kilter" boardDetails={boardDetails} currentAngle={40} currentClimb={null} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /40/ }));
+    fireEvent.click(screen.getByText('45°'));
+
+    expect(mockPush).toHaveBeenCalled();
+    expect(mockSetSessionBoardPath).not.toHaveBeenCalled();
   });
 });
