@@ -929,12 +929,29 @@ export const GraphQLQueueProvider = ({
       // each tap advances one step. Mirrors the backward branch below — using
       // `find(c => c.uuid !== anchorClimbUuid)` was position-blind and made
       // the non-driver oscillate between suggestions[0] and suggestions[1].
-      if (!latest.suggestedClimbs || latest.suggestedClimbs.length === 0) return null;
-      const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
-      // If the anchor isn't in suggestedClimbs (e.g. anchor is a queue item or
-      // the wall climb chosen by the driver), start from the top of the feed.
-      const nextClimb = anchorIdx < 0 ? latest.suggestedClimbs[0] : (latest.suggestedClimbs[anchorIdx + 1] ?? null);
-      return nextClimb ? buildSuggestedQueueItem(nextClimb) : null;
+      if (latest.suggestedClimbs && latest.suggestedClimbs.length > 0) {
+        const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
+        // If the anchor isn't in suggestedClimbs (e.g. anchor is a queue item
+        // or the wall climb chosen by the driver), start from the top of the
+        // feed.
+        const nextClimb = anchorIdx < 0 ? latest.suggestedClimbs[0] : (latest.suggestedClimbs[anchorIdx + 1] ?? null);
+        if (nextClimb) return buildSuggestedQueueItem(nextClimb);
+      }
+      // Suggestions feed empty (no playlist active, no recent search anchor
+      // populated yet). Group-session feedback fix: instead of letting the
+      // non-driver swipe silently die, walk the current `climbSearchResults`
+      // from the anchor's position — still preview, still skips the shared
+      // queue (the helper filters queued climbs). The pivot rule "non-driver
+      // swipe doesn't navigate the shared queue" is preserved; we're only
+      // extending the source of climbs to peek at.
+      const fromSearch = findUnqueuedNeighborInSearchResults(
+        latest.climbSearchResults,
+        anchorClimbUuid,
+        latest.state.queue,
+        1,
+        buildSuggestedQueueItem,
+      );
+      return fromSearch;
     }
     const queue = latest.state.queue;
     // With no anchor at all (no current climb, no `from`), Next surfaces queue[0]
@@ -986,13 +1003,22 @@ export const GraphQLQueueProvider = ({
         // Non-driver previous: walk the suggestedClimbs array backwards.
         // No fall-through into the queue — that would let a non-driver scrub
         // backwards through someone else's committed plan.
-        if (!latest.suggestedClimbs || latest.suggestedClimbs.length === 0) return null;
-        const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
-        // If the anchor isn't in suggestedClimbs (e.g. anchor is a queue
-        // item, not a suggestion), there's no meaningful "previous suggestion."
-        if (anchorIdx <= 0) return null;
-        const prevClimb = latest.suggestedClimbs[anchorIdx - 1];
-        return prevClimb ? buildSuggestedQueueItem(prevClimb) : null;
+        if (latest.suggestedClimbs && latest.suggestedClimbs.length > 0) {
+          const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
+          if (anchorIdx > 0) {
+            const prevClimb = latest.suggestedClimbs[anchorIdx - 1];
+            return prevClimb ? buildSuggestedQueueItem(prevClimb) : null;
+          }
+        }
+        // Empty / no-anchor case: fall through to climbSearchResults (mirrors
+        // the forward branch). Still preview, still skips the shared queue.
+        return findUnqueuedNeighborInSearchResults(
+          latest.climbSearchResults,
+          anchorClimbUuid,
+          latest.state.queue,
+          -1,
+          buildSuggestedQueueItem,
+        );
       }
       // No anchor (no current climb, no `from`): backward navigation has no
       // semantic answer — don't fabricate one from suggestions. Forward

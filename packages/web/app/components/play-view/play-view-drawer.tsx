@@ -1384,6 +1384,29 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
         {/* Header: Grade | Name */}
         <div className={styles.headerSection}>
           <ClimbDetailHeader climb={currentClimb} />
+          {swipeSuggestionsOnly && !wallView && (
+            // Preview chip (group-session feedback fix): tells a non-driver
+            // their swipe is previewing only — the wall hasn't moved and
+            // nobody else sees this navigation. Sits next to the climb name
+            // so it's hard to miss without competing with the lightbulb cue.
+            <Box
+              component="span"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                ml: 1,
+                px: 1,
+                py: 0.25,
+                fontSize: 11,
+                fontWeight: 500,
+                color: themeTokens.colors.primary,
+                backgroundColor: 'var(--semantic-info-light, var(--semantic-selected))',
+                borderRadius: 1,
+              }}
+            >
+              {t('playView.previewChip')}
+            </Box>
+          )}
         </div>
 
         {/* Board renderer with card-swipe and floating Tick FAB */}
@@ -1527,6 +1550,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     showWallViewHint,
     handleWallViewHintSeen,
     onExitWallView,
+    swipeSuggestionsOnly,
   ]);
 
   return (
