@@ -22,6 +22,7 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 import { type TickStatus, useBoardProvider } from '../board-provider/board-provider-context';
 import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
 import { isBetaVideoUrl, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@/app/lib/beta-video-url';
+import { useEffectiveAngle } from '@/app/lib/hooks/use-effective-angle';
 
 import dayjs from 'dayjs';
 
@@ -64,10 +65,14 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   const { saveTick, isAuthenticated } = useBoardProvider();
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
   const angleOptions = ANGLES[boardDetails.board_name];
+  // Resolve the wall's current angle (route → party session → climb record).
+  // Never `|| 0` here — group-session feedback fix. If nothing resolves the
+  // submit button is disabled until the user picks one in the angle Select.
+  const effectiveAngle = useEffectiveAngle(currentClimb);
 
   const getInitialValues = (): LogAscentFormValues => ({
     date: dayjs(),
-    angle: currentClimb?.angle || 0,
+    angle: effectiveAngle ?? 0,
     attempts: 1,
     quality: 0,
     difficulty: grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id,
@@ -85,13 +90,13 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
     setFormValues((prev) => ({
       ...prev,
       date: dayjs(),
-      angle: currentClimb?.angle || prev.angle,
+      angle: effectiveAngle ?? prev.angle,
       difficulty:
         grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id ?? prev.difficulty,
       attempts: 1,
     }));
     setIsMirrored(!!currentClimb?.mirrored);
-  }, [currentClimb, grades]);
+  }, [currentClimb, grades, effectiveAngle]);
 
   const handleMirrorToggle = () => {
     setIsMirrored((prev) => !prev);
@@ -235,14 +240,19 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         <Typography sx={{ width: 120, flexShrink: 0 }}>{tProfile('logbook.form.angle')}</Typography>
         <Box sx={{ flex: 1 }}>
           <MuiSelect
-            value={formValues.angle}
+            value={formValues.angle || ''}
             onChange={(e) => setFormValues((prev) => ({ ...prev, angle: Number(e.target.value) }))}
             size="small"
-            sx={{ width: 80 }}
+            sx={{ width: 100 }}
+            displayEmpty
+            error={!formValues.angle}
           >
+            <MenuItem value="" disabled>
+              <em>{tProfile('logbook.form.pickAngle')}</em>
+            </MenuItem>
             {angleOptions.map((angle) => (
               <MenuItem key={angle} value={angle}>
-                {angle}
+                {angle}°
               </MenuItem>
             ))}
           </MuiSelect>
@@ -342,12 +352,14 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         <Button
           variant="contained"
           type="submit"
-          disabled={isSaving || !!videoUrlError}
+          disabled={isSaving || !!videoUrlError || !formValues.angle}
           startIcon={isSaving ? <CircularProgress size={16} /> : undefined}
           fullWidth
           size="large"
         >
-          {tProfile('logbook.form.submit')}
+          {formValues.angle
+            ? tProfile('logbook.form.submitAtAngle', { angle: formValues.angle })
+            : tProfile('logbook.form.submit')}
         </Button>
       </Box>
 

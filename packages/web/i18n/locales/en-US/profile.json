@@ -103,6 +103,7 @@
       "boulder": "Boulder",
       "dateAndTime": "Date and Time",
       "angle": "Angle",
+      "pickAngle": "Pick an angle",
       "attempts": "Attempts",
       "quality": "Quality",
       "difficulty": "Difficulty",
@@ -113,6 +114,7 @@
       "videoHelper": "Paste an Instagram or TikTok link so others can see your beta. (Optional)",
       "mirrored": "Mirrored",
       "submit": "Submit",
+      "submitAtAngle": "Log at {{angle}}°",
       "cancel": "Cancel"
     },
     "feed": {
