@@ -752,7 +752,9 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     onClose: handleUrlSyncClose,
     // Wall-view mode is a peek gesture at the wall climb, not a shareable
     // /view/{uuid} surface — skip the URL push so the address bar stays put.
-    enabled: !wallView,
+    // Drivers can still navigate in wall-view (their swipes broadcast), so
+    // they need the URL to follow normally.
+    enabled: !wallView || isDriver,
   });
   const filteredLogbook = useMemo(() => {
     if (!logbook || !currentClimb) return [];
@@ -827,13 +829,24 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     void setPreference('swipeHint:lightbulbSeen', true);
   }, []);
 
-  // Wall-view one-shot hint (group-session feedback fix). The wall-view
-  // drawer is intentionally non-swipeable per the queue-control-bar pivot,
-  // but testers read the silent no-op as a bug. Show a "This is the wall.
-  // Close to browse." cue once per user, then never again.
+  // Wall-view is "locked" only for non-drivers — the lock semantics
+  // (no swipe, no prev/next, no URL push) is the "you can't change the
+  // wall right now" cue. Drivers in wall-view get full nav: swipe walks
+  // queue → search → suggestions and broadcasts. Marco's group-session
+  // feedback — the blanket lock confused drivers who tapped the bar
+  // body. If driver status flips while the drawer is open, the lock UI
+  // appears/disappears reactively because `isDriver` is derived live
+  // from session data.
+  const wallViewLocked = wallView && !isDriver;
+
+  // Wall-view one-shot hint (group-session feedback fix). Show a
+  // "Locked to the wall climb. Close to browse." cue once per user,
+  // then never again. Gate on `wallViewLocked` rather than `wallView`
+  // so a driver who opens wallView doesn't mark the hint "seen" without
+  // ever seeing it.
   const [showWallViewHint, setShowWallViewHint] = useState(false);
   useEffect(() => {
-    if (!isOpen || !wallView) {
+    if (!isOpen || !wallViewLocked) {
       setShowWallViewHint(false);
       return;
     }
@@ -845,7 +858,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, wallView]);
+  }, [isOpen, wallViewLocked]);
   const handleWallViewHintSeen = useCallback(() => {
     setShowWallViewHint(false);
     void setPreference('swipeHint:wallViewSeen', true);
@@ -887,11 +900,12 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const handleSwipeNext = useCallback(() => navigate('next', 'swipePlayViewDrawer'), [navigate]);
   const handleSwipePrevious = useCallback(() => navigate('previous', 'swipePlayViewDrawer'), [navigate]);
 
-  // Wall-view mode is a read-only display of the wall climb — disable swipe
-  // navigation entirely. The drawer is anchored to whatever is on the wall;
-  // to browse other climbs the user closes the drawer and uses the list.
-  const canSwipeNext = !viewOnlyMode && !wallView && !!nextItem;
-  const canSwipePrevious = !viewOnlyMode && !wallView && !!prevItem;
+  // Wall-view mode is a read-only display of the wall climb for non-drivers
+  // (locked, no swipe). For drivers it behaves like the normal drawer — they
+  // can swipe and the queue/search/suggestions fall-through navigates as
+  // usual. See `wallViewLocked` above for the role-based gate.
+  const canSwipeNext = !viewOnlyMode && !wallViewLocked && !!nextItem;
+  const canSwipePrevious = !viewOnlyMode && !wallViewLocked && !!prevItem;
 
   // Tick FAB → inline tick bar
   const handleTickFabClick = useCallback(() => {
@@ -1311,10 +1325,14 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     return (
       <>
         {wallView && (
-          // Wall-view header strip (group-session feedback fix on top of the
-          // pivot's original banner): driver avatar + "X is on the wall",
-          // lock icon, and a "Browse from here →" escape hatch. Distinct
-          // tinted background so the mode is recognisable at a glance.
+          // Wall-view header strip: "X is on the wall" for everyone, plus
+          // the lock + hint + "Browse from here →" escape hatch only when
+          // the local user isn't the driver. Drivers keep swipe and the
+          // standard prev/next buttons (Marco's group-session feedback —
+          // the lock is the "you can't change the wall" cue, which doesn't
+          // apply to the driver). Re-renders reactively when driver status
+          // flips mid-drawer: if the user loses the wall while this is open,
+          // the lock + hint slide in on the next render tick.
           <Box
             sx={{
               display: 'flex',
@@ -1326,7 +1344,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
               borderBottom: '1px solid var(--neutral-200)',
             }}
           >
-            <LockOutlined sx={{ fontSize: 18, color: 'text.secondary' }} />
+            {wallViewLocked && <LockOutlined sx={{ fontSize: 18, color: 'text.secondary' }} />}
             {driverUser ? (
               <MuiAvatar
                 alt={driverUser.username}
@@ -1351,7 +1369,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
                   ? t('playView.wallViewHeaderDriver', { username: driverUser.username })
                   : t('playView.wallViewHeader')}
               </Box>
-              {showWallViewHint && (
+              {wallViewLocked && showWallViewHint && (
                 <Box
                   component="span"
                   sx={{
@@ -1365,7 +1383,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
                 </Box>
               )}
             </Box>
-            {onExitWallView && (
+            {wallViewLocked && onExitWallView && (
               <MuiButton
                 size="small"
                 variant="text"
@@ -1492,7 +1510,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             displayedClimbName={currentClimb?.name ?? null}
             onLightbulb={handleLightbulbClick}
             onLightbulbLongPress={handleOpenLightDrawer}
-            wallView={wallView}
+            wallView={wallViewLocked}
             angleSelector={
               <AngleSelector
                 boardName={boardDetails.board_name}
@@ -1551,6 +1569,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     handleWallViewHintSeen,
     onExitWallView,
     swipeSuggestionsOnly,
+    wallViewLocked,
   ]);
 
   return (
