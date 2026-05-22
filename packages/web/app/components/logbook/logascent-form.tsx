@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MuiRating from '@mui/material/Rating';
 import Chip from '@mui/material/Chip';
@@ -11,6 +11,7 @@ import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
+import MuiAlert from '@mui/material/Alert';
 import MuiSelect from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -23,6 +24,7 @@ import { type TickStatus, useBoardProvider } from '../board-provider/board-provi
 import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
 import { isBetaVideoUrl, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@/app/lib/beta-video-url';
 import { useEffectiveAngle } from '@/app/lib/hooks/use-effective-angle';
+import { useOptionalCurrentClimb } from '../graphql-queue/QueueContext';
 
 import dayjs from 'dayjs';
 
@@ -57,9 +59,15 @@ type LogAscentFormProps = {
   currentClimb: Climb;
   boardDetails: BoardDetails;
   onClose: () => void;
+  /**
+   * Called when the user accepts the "wall moved" banner's offer to switch
+   * to logging the new wall climb. The drawer re-snapshots and re-keys this
+   * form, which remounts with the new climb's initial values.
+   */
+  onSwitchClimb?: (climb: Climb) => void;
 };
 
-export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boardDetails, onClose }) => {
+export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boardDetails, onClose, onSwitchClimb }) => {
   const { t } = useTranslation('climbs');
   const { t: tProfile } = useTranslation('profile');
   const { saveTick, isAuthenticated } = useBoardProvider();
@@ -82,21 +90,36 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   const [isMirrored, setIsMirrored] = useState(!!currentClimb?.mirrored);
   const [isSaving, setIsSaving] = useState(false);
   const [logType, setLogType] = useState<LogType>('ascent');
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // TODO: Tension spray doesnt support mirroring
   const showMirrorTag = boardDetails.supportsMirroring;
 
-  useEffect(() => {
-    setFormValues((prev) => ({
-      ...prev,
-      date: dayjs(),
-      angle: effectiveAngle ?? prev.angle,
-      difficulty:
-        grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id ?? prev.difficulty,
-      attempts: 1,
-    }));
-    setIsMirrored(!!currentClimb?.mirrored);
-  }, [currentClimb, grades, effectiveAngle]);
+  // Detect wall drift — the form is locked to the climb the user opened it
+  // on (see LogAscentDrawer), but the party's wall may have moved on while
+  // they typed. Read the live wall climb from the queue context and show a
+  // banner offering to switch when it diverges. Optional context so the form
+  // still renders fine outside of a queue provider.
+  const liveCurrentClimb = useOptionalCurrentClimb();
+  const wallClimb = liveCurrentClimb?.currentClimbQueueItem?.climb ?? null;
+  const wallHasMoved = !!wallClimb && wallClimb.uuid !== currentClimb.uuid;
+  const showDriftBanner = wallHasMoved && !bannerDismissed;
+
+  const isFormDirty = formValues.notes != null && formValues.notes.length > 0;
+
+  const handleSwitch = () => {
+    if (!wallClimb || !onSwitchClimb) return;
+    if (isFormDirty) {
+      // We intentionally use window.confirm here — the form is inside a
+      // SwipeableDrawer and MUI Dialog stacks awkwardly above it; a native
+      // confirm gives the user the same "are you sure?" beat without that
+      // visual jank. If we add a custom modal stack later this can graduate.
+      if (typeof window !== 'undefined' && !window.confirm(tProfile('logbook.form.switchDirtyConfirm'))) {
+        return;
+      }
+    }
+    onSwitchClimb(wallClimb);
+  };
 
   const handleMirrorToggle = () => {
     setIsMirrored((prev) => !prev);
@@ -194,6 +217,26 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         void handleSubmit(formValues);
       }}
     >
+      {showDriftBanner && wallClimb && (
+        <MuiAlert
+          severity="info"
+          sx={{ mb: 2 }}
+          onClose={() => setBannerDismissed(true)}
+          action={
+            onSwitchClimb && (
+              <Button color="inherit" size="small" onClick={handleSwitch}>
+                {tProfile('logbook.form.switchClimb', { climbName: wallClimb.name })}
+              </Button>
+            )
+          }
+        >
+          {tProfile('logbook.form.wallMoved', {
+            wallClimb: wallClimb.name,
+            loggingClimb: currentClimb.name,
+          })}
+        </MuiAlert>
+      )}
+
       <Box sx={{ mb: 2 }}>
         <ToggleButtonGroup exclusive fullWidth value={logType} onChange={(_, val) => val && setLogType(val as LogType)}>
           <ToggleButton value="ascent">{tProfile('logbook.form.ascent')}</ToggleButton>

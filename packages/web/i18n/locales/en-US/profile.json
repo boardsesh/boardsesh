@@ -115,7 +115,10 @@
       "mirrored": "Mirrored",
       "submit": "Submit",
       "submitAtAngle": "Log at {{angle}}°",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "wallMoved": "Wall moved to {{wallClimb}}. Still logging {{loggingClimb}}?",
+      "switchClimb": "Switch to {{climbName}}",
+      "switchDirtyConfirm": "You have unsaved notes — switch and lose them?"
     },
     "feed": {
       "deleteSwipeLabel": "Delete",
