@@ -20,6 +20,7 @@ import {
   isNumericId,
   hasOnlyNumericBoardRouteSegments,
   getBaseBoardPath,
+  extractAngleFromPathname,
   getPlaylistsBasePath,
   getContextAwarePlaylistUrl,
   getContextAwareClimbViewUrl,
@@ -1710,5 +1711,44 @@ describe('constructCreateClimbUrl', () => {
       name: 'Fork',
     });
     expect(url).not.toContain('editClimbUuid');
+  });
+});
+
+describe('extractAngleFromPathname', () => {
+  it('reads the angle from /{board}/{layout}/{size}/{sets}/{angle}/play/{uuid}', () => {
+    expect(extractAngleFromPathname('/kilter/8/25/28,29,26,27/35/play/abc-123')).toBe(35);
+  });
+
+  it('reads the angle from /{board}/{layout}/{size}/{sets}/{angle}/list', () => {
+    expect(extractAngleFromPathname('/kilter/original/12x12/default/45/list')).toBe(45);
+  });
+
+  it('reads the angle from /b/{slug}/{angle}/...', () => {
+    expect(extractAngleFromPathname('/b/marcos-wall/40/list')).toBe(40);
+    expect(extractAngleFromPathname('/b/marcos-wall/35/play/xyz-789')).toBe(35);
+  });
+
+  it('handles slug-form paths terminating at the angle', () => {
+    expect(extractAngleFromPathname('/b/marcos-wall/30')).toBe(30);
+  });
+
+  it('returns null for non-board routes', () => {
+    expect(extractAngleFromPathname('/')).toBeNull();
+    expect(extractAngleFromPathname('/you')).toBeNull();
+    expect(extractAngleFromPathname('/playlists')).toBeNull();
+    expect(extractAngleFromPathname('/playlists/abc-uuid')).toBeNull();
+    expect(extractAngleFromPathname('/profile/marco')).toBeNull();
+  });
+
+  it('returns null when the angle segment is missing or non-numeric', () => {
+    expect(extractAngleFromPathname('/kilter/8/25/28,29,26,27')).toBeNull();
+    expect(extractAngleFromPathname('/kilter/8/25/28,29,26,27/notanangle/list')).toBeNull();
+    expect(extractAngleFromPathname('/b/marcos-wall')).toBeNull();
+    expect(extractAngleFromPathname('/b/marcos-wall/notanangle/list')).toBeNull();
+  });
+
+  it('handles negative angles (Aurora supports negative tilt readings on some boards)', () => {
+    expect(extractAngleFromPathname('/kilter/8/25/28,29,26,27/-5/list')).toBe(-5);
+    expect(extractAngleFromPathname('/b/marcos-wall/-5/list')).toBe(-5);
   });
 });

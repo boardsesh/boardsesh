@@ -27,7 +27,7 @@ import {
 import type { CurrentClimbDataType, QueueListDataType, SearchDataType, SessionDataType } from '../graphql-queue/types';
 import { usePersistentSession } from '../persistent-session';
 import { usePartyProfile } from '../party-manager/party-profile-context';
-import { getBaseBoardPath, DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
+import { getBaseBoardPath, extractAngleFromPathname, DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import type { BoardDetails, Angle, Climb, SearchRequestPagination } from '@/app/lib/types';
 import type { ClimbQueueItem, QueueItemUser, PlaylistSuggestionSource, SetCurrentClimbOptions } from './types';
 import { usePathname } from 'next/navigation';
@@ -142,9 +142,20 @@ function usePersistentSessionQueueAdapter(): {
   const queue = isParty ? ps.queue : ps.localQueue;
   const currentClimbQueueItem = isParty ? ps.currentClimbQueueItem : ps.localCurrentClimbQueueItem;
   const boardDetails = isParty ? ps.activeSession!.boardDetails : ps.localBoardDetails;
+
+  // Read angle live from the URL when the user is on a board route. The
+  // session's `parsedParams.angle` is parsed from `Session.boardPath` at
+  // activate-time and doesn't follow subsequent URL changes — using it
+  // directly was making the angle revert to whatever the session started
+  // with whenever `useDrawerUrlSync` rewrote the URL (see queue-control-bar
+  // pivot — group-session feedback fix). Off-board surfaces (home, /you,
+  // /playlists) get no route angle, so they still fall through to the
+  // session angle (party) or the current local climb's angle (solo).
+  const pathnameForAngle = usePathname();
+  const routeAngle = extractAngleFromPathname(pathnameForAngle ?? '');
   const angle: Angle = isParty
-    ? ps.activeSession!.parsedParams.angle
-    : (ps.localCurrentClimbQueueItem?.climb?.angle ?? 0);
+    ? (routeAngle ?? ps.activeSession!.parsedParams.angle)
+    : (routeAngle ?? ps.localCurrentClimbQueueItem?.climb?.angle ?? 0);
 
   const baseBoardPath = useMemo(() => {
     if (isParty && ps.activeSession?.boardPath) {

@@ -97,6 +97,22 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/app/lib/url-utils', () => ({
   getBaseBoardPath: (p: string) => p.replace(/\/\d+$/, ''),
+  // Mirror real /b/{slug}/{angle}/... and /{board}/{layout}/{size}/{sets}/{angle}/...
+  // shape detection so the live route-angle read in usePersistentSessionQueueAdapter
+  // works under tests.
+  extractAngleFromPathname: (pathname: string): number | null => {
+    const slugMatch = pathname.match(/^\/b\/[^/]+\/(-?\d+)(?:\/|$)/);
+    if (slugMatch) {
+      const angle = Number(slugMatch[1]);
+      return Number.isFinite(angle) ? angle : null;
+    }
+    const fullMatch = pathname.match(/^\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/(-?\d+)(?:\/|$)/);
+    if (fullMatch) {
+      const angle = Number(fullMatch[1]);
+      return Number.isFinite(angle) ? angle : null;
+    }
+    return null;
+  },
   DEFAULT_SEARCH_PARAMS: {
     gradeAccuracy: 0,
     maxGrade: 0,

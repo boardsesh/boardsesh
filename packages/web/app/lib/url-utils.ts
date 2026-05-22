@@ -879,6 +879,34 @@ export function getBaseBoardPath(pathname: string): string {
   return path;
 }
 
+/**
+ * Extract the angle segment from a board route pathname. Returns null when the
+ * path isn't a board route (home, /you, /playlists, etc.). Used to read the
+ * user's live angle off the URL, since party-mode state holds a session-creation
+ * angle that doesn't follow URL changes — see queue-bridge-context.
+ *
+ * Supports both URL shapes:
+ *   /{board}/{layout}/{size}/{sets}/{angle}/...
+ *   /b/{slug}/{angle}/...
+ */
+export function extractAngleFromPathname(pathname: string): number | null {
+  // /b/{slug}/{angle}/... — angle is the third segment.
+  const slugMatch = pathname.match(/^\/b\/[^/]+\/(-?\d+)(?:\/|$)/);
+  if (slugMatch) {
+    const angle = Number(slugMatch[1]);
+    return Number.isFinite(angle) ? angle : null;
+  }
+
+  // /{board}/{layout}/{size}/{sets}/{angle}/... — angle is the fifth segment.
+  const fullMatch = pathname.match(/^\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/(-?\d+)(?:\/|$)/);
+  if (fullMatch) {
+    const angle = Number(fullMatch[1]);
+    return Number.isFinite(angle) ? angle : null;
+  }
+
+  return null;
+}
+
 // ============================================
 // Board Entity Slug URL Constructors
 // ============================================
