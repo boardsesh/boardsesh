@@ -11,6 +11,7 @@ import {
   RELEASE_CONTROL,
   CONFIRM_CLIMB_ON_WALL,
   SET_SESSION_BOARD_SERIAL,
+  SET_SESSION_BOARD_PATH,
 } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import { type Session, toClimbQueueItemInput } from '../types';
@@ -58,6 +59,14 @@ export type QueueMutationsActions = {
    * physical board. No-op in solo.
    */
   setSessionBoardSerial: (serial: string) => Promise<void>;
+  /**
+   * Update the session's stored boardPath so every member follows the
+   * same angle (and any future presentational route-segment changes).
+   * The local caller is expected to have already pushed the URL
+   * optimistically via `router.push` for instant feedback; this
+   * broadcasts the change to the rest of the session. No-op in solo.
+   */
+  setSessionBoardPath: (boardPath: string) => Promise<void>;
 };
 
 /**
@@ -256,6 +265,22 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
     }
   }, []);
 
+  const setSessionBoardPath = useCallback(async (boardPath: string) => {
+    const session = sessionRef.current;
+    if (!clientRef.current || !session?.id) return;
+    try {
+      // WS-implicit pattern. Best-effort: the local router.push has already
+      // happened for instant feedback; this only affects other members.
+      // Swallow errors rather than disrupting the user's local navigation.
+      await execute(clientRef.current, {
+        query: SET_SESSION_BOARD_PATH,
+        variables: { boardPath },
+      });
+    } catch (error) {
+      console.error('Failed to set session board path:', error);
+    }
+  }, []);
+
   return {
     addQueueItem,
     removeQueueItem,
@@ -267,5 +292,6 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
     releaseControl,
     confirmClimbOnWall,
     setSessionBoardSerial,
+    setSessionBoardPath,
   };
 }

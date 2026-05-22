@@ -126,6 +126,15 @@ export function applySessionEvent(prev: Session | null, event: SessionEvent): Se
       // second phone joining a multi-board gym auto-connects to the same
       // physical board the first phone is paired to.
       return { ...prev, lastConnectedBoardSerial: event.lastConnectedBoardSerial ?? null };
+    case 'SessionBoardPathChanged':
+      // Update the stored boardPath so every consumer that reads
+      // `Session.boardPath` (queue-bridge fallback, off-board surfaces, the
+      // session-lifecycle's restore path) sees the new value. The URL
+      // follow-up — `router.replace(newPath)` for remote-originated changes
+      // — lives in the React-side event subscriber, not this reducer; we
+      // intentionally keep `applySessionEvent` pure so the rule stays
+      // unit-testable.
+      return { ...prev, boardPath: event.boardPath };
     case 'SessionEnded':
       // The lifecycle effect clears IndexedDB and tears the session down on
       // its own; the reducer just leaves the existing state in place so the

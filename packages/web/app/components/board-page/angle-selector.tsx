@@ -19,6 +19,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import DrawerClimbHeader from '../climb-card/drawer-climb-header';
 import { useTranslation } from 'react-i18next';
+import { usePersistentSession } from '../persistent-session';
 import styles from './angle-selector.module.css';
 
 type AngleSelectorProps = {
@@ -44,6 +45,7 @@ export default function AngleSelector({
   const pathname = usePathname();
   const currentAngleRef = useRef<HTMLDivElement>(null);
   const isDark = useIsDarkMode();
+  const { activeSession, setSessionBoardPath } = usePersistentSession();
 
   // Fetch climb stats for all angles when there's a current climb
   const { data: climbStats, isLoading } = useQuery<ClimbStatsForAngle[]>({
@@ -97,7 +99,16 @@ export default function AngleSelector({
         if (queryString) {
           newPath = `${newPath}?${queryString}`;
         }
+        // Optimistic local URL push for instant feedback.
         router.push(newPath);
+        // In party mode, broadcast the boardPath so every member's URL follows
+        // (group-session feedback fix — angle is now truly session-shared).
+        // No-op in solo: setSessionBoardPath bails when there's no active
+        // session. Strip the query string for the broadcast — the boardPath
+        // canonically describes the board, not filter state.
+        if (activeSession) {
+          void setSessionBoardPath(pathSegments.join('/'));
+        }
       }
     }
 

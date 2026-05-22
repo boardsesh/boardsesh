@@ -6,6 +6,7 @@ import { usePersistentSessionState, usePersistentSessionActions } from './persis
 import type { BoardDetails, ParsedBoardRouteParameters } from '@/app/lib/types';
 import { getBaseBoardPath } from '@/app/lib/url-utils';
 import { getClimbSessionCookie } from '@/app/lib/climb-session-cookie';
+import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { track } from '@/app/lib/analytics';
 import { registerSessionStart } from '@/app/lib/session-lifecycle-tracking';
 
@@ -22,9 +23,10 @@ type BoardSessionBridgeProps = {
 const BoardSessionBridge: React.FC<BoardSessionBridgeProps> = ({ boardDetails, parsedParams, children }) => {
   const pathname = usePathname();
   const sessionIdFromCookie = getClimbSessionCookie();
+  const router = useLocaleRouter();
 
-  const { activeSession } = usePersistentSessionState();
-  const { activateSession } = usePersistentSessionActions();
+  const { activeSession, participantId } = usePersistentSessionState();
+  const { activateSession, subscribeToSessionEvents } = usePersistentSessionActions();
 
   // Compute the base board path (without /play/[uuid] or /list segments)
   // This ensures navigation between climbs doesn't trigger session reconnection
@@ -86,6 +88,30 @@ const BoardSessionBridge: React.FC<BoardSessionBridgeProps> = ({ boardDetails, p
     activeSession?.boardPath,
     activateSession,
   ]);
+
+  // Follow remote angle / boardPath changes (group-session feedback fix —
+  // angle is now session-shared via `setSessionBoardPath`). When another
+  // member updates the session's boardPath, mirror their angle locally by
+  // replacing the URL. The pathname-watching effect above will then pick
+  // the new pathname up, call activateSession, and re-thread the session
+  // state through everything that depends on it (queue bridge, log paths,
+  // bar mirror). Local-originator events suppress the replace via
+  // `changedByParticipantId` — the angle-selector already pushed the URL
+  // for instant feedback before firing the mutation, so a replace from
+  // the echo would be a no-op anyway, but the suppression keeps it clean.
+  useEffect(() => {
+    const unsubscribe = subscribeToSessionEvents((event) => {
+      if (event.__typename !== 'SessionBoardPathChanged') return;
+      if (event.changedByParticipantId && event.changedByParticipantId === participantId) return;
+      const queryString = window.location.search.slice(1);
+      const target = queryString ? `${event.boardPath}?${queryString}` : event.boardPath;
+      // `router.replace` not `push` — this is a remote-driven sync, not a
+      // user-initiated navigation, so back-button shouldn't return to the
+      // pre-event angle.
+      router.replace(target);
+    });
+    return unsubscribe;
+  }, [subscribeToSessionEvents, participantId, router]);
 
   return children;
 };

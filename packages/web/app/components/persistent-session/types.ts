@@ -108,6 +108,11 @@ export type PersistentSessionActionsType = {
   // `if (sessionId)` guard at the call site.
   confirmClimbOnWall: (climbUuid: string) => Promise<void>;
   setSessionBoardSerial: (serial: string) => Promise<void>;
+  // Broadcast a boardPath change (today: angle changes) to every session
+  // member. Caller is expected to have already pushed the URL locally
+  // via `router.push` for instant feedback; this only propagates to the
+  // rest of the session. No-op in solo.
+  setSessionBoardPath: (boardPath: string) => Promise<void>;
 
   // Event subscription for board-level components
   subscribeToQueueEvents: (callback: (event: SubscriptionQueueEvent) => void) => () => void;
