@@ -93,7 +93,12 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
     difficulty: grades.find((grade) => grade.difficulty_name === currentClimb?.difficulty)?.difficulty_id,
   });
 
-  const [formValues, setFormValues] = useState<LogAscentFormValues>(getInitialValues);
+  // Snapshot the values the form opened on so `isFormDirty` can compare
+  // every editable field against the original — not just notes. Without
+  // this snapshot we'd silently discard attempts/quality/difficulty/video
+  // edits whenever the wall-drift banner's "Switch" path fires.
+  const [initialValues] = useState<LogAscentFormValues>(getInitialValues);
+  const [formValues, setFormValues] = useState<LogAscentFormValues>(initialValues);
   const [isMirrored, setIsMirrored] = useState(!!currentClimb?.mirrored);
   const [isSaving, setIsSaving] = useState(false);
   const [logType, setLogType] = useState<LogType>('ascent');
@@ -112,7 +117,20 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   const wallHasMoved = !!wallClimb && wallClimb.uuid !== currentClimb.uuid;
   const showDriftBanner = wallHasMoved && !bannerDismissed;
 
-  const isFormDirty = formValues.notes != null && formValues.notes.length > 0;
+  // Compare every editable field against the mount-time snapshot. Notes
+  // and videoUrl are coalesced to '' so "typed then cleared" reads as
+  // pristine rather than `undefined !== ''`. `date` uses dayjs `.isSame`
+  // (ms precision) — the DateTimePicker only mutates on user interaction.
+  const isFormDirty =
+    !formValues.date.isSame(initialValues.date) ||
+    formValues.angle !== initialValues.angle ||
+    formValues.attempts !== initialValues.attempts ||
+    formValues.quality !== initialValues.quality ||
+    formValues.difficulty !== initialValues.difficulty ||
+    (formValues.notes ?? '') !== (initialValues.notes ?? '') ||
+    (formValues.videoUrl ?? '') !== (initialValues.videoUrl ?? '') ||
+    isMirrored !== !!currentClimb?.mirrored ||
+    logType !== 'ascent';
 
   const handleSwitch = () => {
     if (!wallClimb || !onSwitchClimb) return;

@@ -239,6 +239,108 @@ describe('LogAscentForm — wall-drift banner', () => {
     expect(screen.getByText(/Wall moved to.*New Wall Climb B/i)).toBeTruthy();
   });
 
+  // Dirty-detection regression tests — `isFormDirty` used to only check
+  // notes, so editing any other field would silently slip past the
+  // confirm prompt and lose the user's work when they hit Switch.
+  // Each case below mutates exactly one non-notes field, then asserts
+  // that the Switch button triggers `window.confirm`.
+
+  it('prompts window.confirm when attempts is changed (dirty attempts path)', () => {
+    mockWallClimbItem.current = { climb: newWallClimb };
+    const onSwitchClimb = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderForm({
+      currentClimb: lockedClimb,
+      boardDetails: makeBoardDetails(),
+      onClose: vi.fn(),
+      onSwitchClimb,
+    });
+
+    // The attempts field is the only `type="number"` TextField in the
+    // form right now — pick it by selector rather than by label, which
+    // isn't `htmlFor`-associated with the input.
+    const attemptsField = document.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(attemptsField).toBeTruthy();
+    fireEvent.change(attemptsField, { target: { value: '3' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch to New Wall Climb B/i }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onSwitchClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('prompts window.confirm when quality is rated (dirty quality path)', () => {
+    mockWallClimbItem.current = { climb: newWallClimb };
+    const onSwitchClimb = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderForm({
+      currentClimb: lockedClimb,
+      boardDetails: makeBoardDetails(),
+      onClose: vi.fn(),
+      onSwitchClimb,
+    });
+
+    // MUI Rating renders one radio per star labelled "<n> Stars" — pick
+    // the 4-star one and click it to bump quality from 0 → 4.
+    const fourStar = screen.getByRole('radio', { name: /4 Stars/i });
+    fireEvent.click(fourStar);
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch to New Wall Climb B/i }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onSwitchClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('prompts window.confirm when video URL is entered (dirty videoUrl path)', () => {
+    mockWallClimbItem.current = { climb: newWallClimb };
+    const onSwitchClimb = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderForm({
+      currentClimb: lockedClimb,
+      boardDetails: makeBoardDetails(),
+      onClose: vi.fn(),
+      onSwitchClimb,
+    });
+
+    // The video field is the only single-line TextField with a URL
+    // placeholder. Use the placeholder copy to locate it without
+    // wiring up label associations. Boardsesh accepts Instagram /
+    // TikTok beta links — value just needs to differ from '' to count
+    // as dirty; URL validity isn't gating the Switch path.
+    const videoField = screen.getByPlaceholderText(/instagram|tiktok/i) as HTMLInputElement;
+    fireEvent.change(videoField, { target: { value: 'https://www.instagram.com/reel/abc123/' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch to New Wall Climb B/i }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onSwitchClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('prompts window.confirm when logType is switched to attempt (dirty logType path)', () => {
+    mockWallClimbItem.current = { climb: newWallClimb };
+    const onSwitchClimb = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderForm({
+      currentClimb: lockedClimb,
+      boardDetails: makeBoardDetails(),
+      onClose: vi.fn(),
+      onSwitchClimb,
+    });
+
+    // Toggle from the default 'ascent' to 'attempt'. The
+    // ToggleButtonGroup renders the labels as button text.
+    fireEvent.click(screen.getByRole('button', { name: /^Attempt$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch to New Wall Climb B/i }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onSwitchClimb).toHaveBeenCalledTimes(1);
+  });
+
   it('does not render the Switch button when onSwitchClimb is not provided (graceful fallback)', () => {
     mockWallClimbItem.current = { climb: newWallClimb };
 
