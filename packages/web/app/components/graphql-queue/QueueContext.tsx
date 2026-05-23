@@ -342,24 +342,30 @@ export const GraphQLQueueProvider = ({
           // "Someone" keeps the toast firing — losing the wall to an
           // unnamed peer is still better than the local user silently
           // discovering it on their next interaction.
-          const newDriverName =
-            latest.users.find((user) => user.id === newDriverId)?.username ?? latest.t('driverToast.unknownDriver');
+          const newDriverUser = latest.users.find((user) => user.id === newDriverId);
+          const newDriverName = newDriverUser?.username ?? latest.t('driverToast.unknownDriver');
           const previousDriverId = event.previousDriverParticipantId ?? null;
           if (!previousDriverId) {
             latest.showMessage(latest.t('driverToast.firstDriver', { newDriver: newDriverName }), 'info');
           } else if (previousDriverId === localParticipantId) {
             latest.showMessage(latest.t('driverToast.tookFromYou', { newDriver: newDriverName }), 'info');
           } else {
-            const previousDriverName =
-              latest.users.find((user) => user.id === previousDriverId)?.username ??
-              latest.t('driverToast.unknownDriver');
-            latest.showMessage(
-              latest.t('driverToast.tookFromOther', {
-                newDriver: newDriverName,
-                previousDriver: previousDriverName,
-              }),
-              'info',
-            );
+            const previousDriverUser = latest.users.find((user) => user.id === previousDriverId);
+            // When both peers are unresolved, "Someone took the wall from
+            // Someone." reads degenerate — fall back to the firstDriver copy
+            // so the toast still names the action without two anonymous slots.
+            if (!newDriverUser && !previousDriverUser) {
+              latest.showMessage(latest.t('driverToast.firstDriver', { newDriver: newDriverName }), 'info');
+            } else {
+              const previousDriverName = previousDriverUser?.username ?? latest.t('driverToast.unknownDriver');
+              latest.showMessage(
+                latest.t('driverToast.tookFromOther', {
+                  newDriver: newDriverName,
+                  previousDriver: previousDriverName,
+                }),
+                'info',
+              );
+            }
           }
         }
       }

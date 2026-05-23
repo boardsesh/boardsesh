@@ -248,6 +248,7 @@ const QueueDrawer: React.FC<QueueDrawerProps> = ({
             selectedItems={selectedItems}
             onToggleSelect={handleToggleSelect}
             scrollContainer={queueScrollEl}
+            active={open}
           />
         </div>
         {isEditMode && selectedItems.size > 0 && (

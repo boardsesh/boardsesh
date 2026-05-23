@@ -278,6 +278,27 @@ describe('QueueList history collapse', () => {
     expect(screen.queryByRole('button', { name: /show full history/i })).toBeNull();
   });
 
+  it('collapses an expanded history back to 5 items when active transitions to false', () => {
+    const { rerender } = render(<QueueList boardDetails={makeBoardDetails()} active showHistory />);
+
+    // Expand history by clicking the show-all button.
+    fireEvent.click(screen.getByRole('button', { name: /show full history.*3 more/i }));
+    expect(
+      screen.getAllByTestId('queue-climb-list-item').filter((n) => n.getAttribute('data-history') === 'true'),
+    ).toHaveLength(8);
+
+    // Simulate the drawer closing — without unmounting, as would happen with
+    // keepMounted. The reset effect must restore the 5-item view so the next
+    // open of the drawer doesn't stick on the expanded state.
+    rerender(<QueueList boardDetails={makeBoardDetails()} active={false} showHistory />);
+
+    const historyItemsAfter = screen
+      .getAllByTestId('queue-climb-list-item')
+      .filter((n) => n.getAttribute('data-history') === 'true');
+    expect(historyItemsAfter).toHaveLength(5);
+    expect(screen.getByRole('button', { name: /show full history.*3 more/i })).toBeTruthy();
+  });
+
   it('scrollToCurrentClimb centers the current item in the viewport', () => {
     const handle = React.createRef<QueueListHandle>();
     render(<QueueList ref={handle} boardDetails={makeBoardDetails()} active={false} showHistory />);

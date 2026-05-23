@@ -328,6 +328,30 @@ describe('driver hand-off toast', () => {
     );
   });
 
+  it('uses firstDriver copy when BOTH peers are unresolved, avoiding "Someone took the wall from Someone."', () => {
+    renderHook(() => useQueueContext(), { wrapper: createWrapper() });
+
+    // Pathological case: neither the new nor the previous driver has
+    // propagated into the users list. Two anonymous slots in tookFromOther
+    // reads degenerate — fall back to the simpler firstDriver phrasing.
+    act(() => {
+      emitSessionEvent({
+        __typename: 'DriverChanged',
+        driverParticipantId: 'participant-ghost-new',
+        previousDriverParticipantId: 'participant-ghost-old',
+      });
+    });
+
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      expect.stringContaining('driverToast.firstDriver|newDriver=driverToast.unknownDriver'),
+      'info',
+    );
+    expect(mockShowMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('driverToast.tookFromOther'),
+      expect.anything(),
+    );
+  });
+
   it('still fires tookFromYou when the new driver has not propagated into the users list yet', () => {
     renderHook(() => useQueueContext(), { wrapper: createWrapper() });
 
