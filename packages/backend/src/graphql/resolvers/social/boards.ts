@@ -616,10 +616,15 @@ export const socialBoardQueries = {
   board: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext) => {
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
 
+    const baseConditions = [eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)];
+    if (!ctx.isAuthenticated) {
+      baseConditions.push(eq(dbSchema.userBoards.isPublic, true), eq(dbSchema.userBoards.isUnlisted, false));
+    }
+
     const [board] = await db
       .select()
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+      .where(and(...baseConditions))
       .limit(1);
 
     if (!board) return null;
@@ -635,10 +640,15 @@ export const socialBoardQueries = {
       return null;
     }
 
+    const baseConditions = [eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)];
+    if (!ctx.isAuthenticated) {
+      baseConditions.push(eq(dbSchema.userBoards.isPublic, true), eq(dbSchema.userBoards.isUnlisted, false));
+    }
+
     const [board] = await db
       .select()
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
+      .where(and(...baseConditions))
       .limit(1);
 
     if (!board) return null;
@@ -1110,7 +1120,7 @@ export const socialBoardQueries = {
    * Get the user's default board
    */
   defaultBoard: async (_: unknown, _args: unknown, ctx: ConnectionContext) => {
-    requireAuthenticated(ctx);
+    if (!ctx.isAuthenticated) return null;
     const userId = ctx.userId!;
 
     // First: try to find an owned board

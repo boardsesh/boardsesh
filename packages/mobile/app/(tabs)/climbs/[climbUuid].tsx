@@ -11,12 +11,16 @@ import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { BoardRenderer } from '../../../src/components/board-renderer';
 import { LogAscentSheet } from '../../../src/components/LogAscentSheet';
+import { SignInPromptSheet } from '../../../src/components/SignInPromptSheet';
 import { useClimb, useToggleFavorite } from '../../../src/lib/graphql/hooks';
 import { useQueue } from '../../../src/providers/queue-provider';
+import { useAuth } from '../../../src/providers/auth-provider';
 import { getBoardRenderData } from '../../../src/lib/board-details';
 import { hapticSuccess } from '../../../src/lib/haptics';
 import { brandColors } from '../../../src/theme/colors';
 import { spacing } from '../../../src/theme/tokens';
+
+type AuthGate = 'favorite' | 'logAscent' | null;
 
 type ClimbDetailParams = {
   climbUuid: string;
@@ -31,6 +35,9 @@ export default function ClimbDetail() {
   const params = useLocalSearchParams<ClimbDetailParams>();
   const { climbUuid, boardName, layoutId, sizeId, setIds, angle } = params;
   const { t } = useTranslation('climbs');
+  const { t: tAuth } = useTranslation('auth');
+  const { isAuthenticated } = useAuth();
+  const [authGate, setAuthGate] = useState<AuthGate>(null);
 
   const hasRequiredParams = boardName && layoutId && sizeId && setIds && angle;
 
@@ -79,6 +86,10 @@ export default function ClimbDetail() {
 
   const handleToggleFavorite = useCallback(() => {
     if (!climb || !boardName) return;
+    if (!isAuthenticated) {
+      setAuthGate('favorite');
+      return;
+    }
     hapticSuccess();
     toggleFavorite.mutate({
       input: {
@@ -87,7 +98,15 @@ export default function ClimbDetail() {
         angle: Number(angle),
       },
     });
-  }, [climb, boardName, angle, toggleFavorite]);
+  }, [climb, boardName, angle, toggleFavorite, isAuthenticated]);
+
+  const handleLogAscentPress = useCallback(() => {
+    if (!isAuthenticated) {
+      setAuthGate('logAscent');
+      return;
+    }
+    setShowLogAscent(true);
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -237,7 +256,7 @@ export default function ClimbDetail() {
               icon="tick.outline"
               variant="outlined"
               size="medium"
-              onPress={() => setShowLogAscent(true)}
+              onPress={handleLogAscentPress}
               style={styles.secondaryButton}
             />
           </View>
@@ -245,7 +264,7 @@ export default function ClimbDetail() {
       </ScrollView>
 
       {/* Log Ascent sheet */}
-      {boardName && (
+      {boardName && isAuthenticated && (
         <LogAscentSheet
           visible={showLogAscent}
           onDismiss={() => setShowLogAscent(false)}
@@ -261,6 +280,21 @@ export default function ClimbDetail() {
           sessionId={sessionId}
         />
       )}
+
+      <SignInPromptSheet
+        visible={authGate !== null}
+        onDismiss={() => setAuthGate(null)}
+        title={
+          authGate === 'favorite'
+            ? tAuth('nativeStart.prompt.favoriteTitle')
+            : tAuth('nativeStart.prompt.logAscentTitle')
+        }
+        description={
+          authGate === 'favorite'
+            ? tAuth('nativeStart.prompt.favoriteDescription')
+            : tAuth('nativeStart.prompt.logAscentDescription')
+        }
+      />
     </>
   );
 }

@@ -561,30 +561,30 @@ The explicit goal: a user picking up the iOS app says "this feels like it was ma
 
 ## Key libraries
 
-| Capability      | Library / Approach                               | Notes                                                                |
-| --------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
-| Navigation      | `expo-router` + `@react-navigation/native-stack` | Native `UINavigationController` on iOS, large titles, swipe-back     |
-| Tab bar         | `@react-navigation/bottom-tabs` + custom tab bar | iOS-style blur tab bar, SF Symbol icons                              |
-| Modal sheets    | `react-native-bottom-sheet` (Gorhom)             | Snap points, gesture-driven, matches iOS sheet behavior              |
-| BLE             | `react-native-ble-plx`                           | Mature, direct CoreBluetooth/Android BLE                             |
-| Board rendering | Expo native module (SwiftUI / Compose)           | SwiftUI `Canvas` on iOS, Compose `Canvas` on Android. Fallback: Skia |
-| Lists           | `@shopify/flash-list`                            | Drop-in FlatList replacement, 60fps+ scrolling                       |
-| Storage (KV)    | `react-native-mmkv`                              | Fastest KV store on mobile, JSI-based                                |
+| Capability      | Library / Approach                               | Notes                                                                                                  |
+| --------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Navigation      | `expo-router` + `@react-navigation/native-stack` | Native `UINavigationController` on iOS, large titles, swipe-back                                       |
+| Tab bar         | `@react-navigation/bottom-tabs` + custom tab bar | iOS-style blur tab bar, SF Symbol icons                                                                |
+| Modal sheets    | `react-native-bottom-sheet` (Gorhom)             | Snap points, gesture-driven, matches iOS sheet behavior                                                |
+| BLE             | `react-native-ble-plx`                           | Mature, direct CoreBluetooth/Android BLE                                                               |
+| Board rendering | Expo native module (SwiftUI / Compose)           | SwiftUI `Canvas` on iOS, Compose `Canvas` on Android. Fallback: Skia                                   |
+| Lists           | `@shopify/flash-list`                            | Drop-in FlatList replacement, 60fps+ scrolling                                                         |
+| Storage (KV)    | `react-native-mmkv`                              | Fastest KV store on mobile, JSI-based                                                                  |
 | Storage (SQL)   | `expo-sqlite`                                    | Offline climb database + user data, full SQL with JOINs. See [offline sync plan](offline-sync-plan.md) |
-| Auth            | `expo-auth-session`                              | Standard OAuth flows                                                 |
-| Secure storage  | `expo-secure-store`                              | iOS Keychain, Android Keystore                                       |
-| Live Activity   | Expo native module (SwiftUI ActivityKit)         | iOS lock screen widgets, no Android equivalent                       |
-| HealthKit       | Expo native module (SwiftUI HealthKit)           | iOS; Android uses Health Connect via same module                     |
-| Push            | `expo-notifications`                             | APNs + FCM                                                           |
-| Icons           | `expo-symbols` (SF Symbols)                      | Native Apple iconography on iOS, Material fallback on Android        |
-| Haptics         | `expo-haptics`                                   | Taptic Engine feedback on all interactive elements                   |
-| Animations      | `react-native-reanimated` v3                     | Spring-based animations matching iOS system dynamics                 |
-| Gestures        | `react-native-gesture-handler`                   | Native gesture recognizers, swipe actions, drag-to-reorder           |
-| Context menus   | `react-native-context-menu-view`                 | Native `UIContextMenuInteraction` with blur preview                  |
-| Blur effects    | `@react-native-community/blur`                   | Tab bar vibrancy, navigation bar blur, overlay blur                  |
-| GraphQL         | `@tanstack/react-query` + `graphql-request`      | Same pattern as web                                                  |
-| Error tracking  | `@sentry/react-native`                           | Crash reporting + performance                                        |
-| Native modules  | `expo-modules-core`                              | SwiftUI (iOS) + Kotlin/Compose (Android) bridge                      |
+| Auth            | `expo-auth-session`                              | Standard OAuth flows                                                                                   |
+| Secure storage  | `expo-secure-store`                              | iOS Keychain, Android Keystore                                                                         |
+| Live Activity   | Expo native module (SwiftUI ActivityKit)         | iOS lock screen widgets, no Android equivalent                                                         |
+| HealthKit       | Expo native module (SwiftUI HealthKit)           | iOS; Android uses Health Connect via same module                                                       |
+| Push            | `expo-notifications`                             | APNs + FCM                                                                                             |
+| Icons           | `expo-symbols` (SF Symbols)                      | Native Apple iconography on iOS, Material fallback on Android                                          |
+| Haptics         | `expo-haptics`                                   | Taptic Engine feedback on all interactive elements                                                     |
+| Animations      | `react-native-reanimated` v3                     | Spring-based animations matching iOS system dynamics                                                   |
+| Gestures        | `react-native-gesture-handler`                   | Native gesture recognizers, swipe actions, drag-to-reorder                                             |
+| Context menus   | `react-native-context-menu-view`                 | Native `UIContextMenuInteraction` with blur preview                                                    |
+| Blur effects    | `@react-native-community/blur`                   | Tab bar vibrancy, navigation bar blur, overlay blur                                                    |
+| GraphQL         | `@tanstack/react-query` + `graphql-request`      | Same pattern as web                                                                                    |
+| Error tracking  | `@sentry/react-native`                           | Crash reporting + performance                                                                          |
+| Native modules  | `expo-modules-core`                              | SwiftUI (iOS) + Kotlin/Compose (Android) bridge                                                        |
 
 ## Auth design
 
@@ -682,7 +682,7 @@ This is much less likely with a genuinely native app using SwiftUI modules, but 
 | Metro bundler + monorepo friction                          | Medium     | Medium | Shared packages use raw TypeScript (`"main": "src/index.ts"`). Metro needs `watchFolders` + `nodeModulesPaths` config. Set up and verify in Phase 1 week 1.                                                    |
 | No CI/CD for native builds                                 | Certain    | Medium | EAS Build setup, TestFlight distribution, GitHub Actions integration. Budget 1 week in Phase 1.                                                                                                                |
 | Expo ecosystem churn                                       | Low        | Medium | Pin SDK versions. Expo's continuous native generation (CNG) handles native project updates.                                                                                                                    |
-| Pre-warmed DB > 200 MB in app bundle                       | Medium     | Medium | Use Play Asset Delivery on Android. App Store allows 200MB cellular. Fallback: per-layout split or lazy-fetch frames on first view.                                                                             |
+| Pre-warmed DB > 200 MB in app bundle                       | Medium     | Medium | Use Play Asset Delivery on Android. App Store allows 200MB cellular. Fallback: per-layout split or lazy-fetch frames on first view.                                                                            |
 | Bearer token refresh edge cases                            | Medium     | High   | Dedicated test suite. Failed refresh triggers re-auth, not silent failure.                                                                                                                                     |
 | Live Activity reimplementation complexity                  | Medium     | Medium | Defer to Phase 5. Existing Swift widget logic serves as reference. SwiftUI Expo module.                                                                                                                        |
 | Phase 5 scope overload                                     | High       | Medium | Phase 5 packs offline sync + Live Activity + HealthKit into 3 weeks. Ship v1 without Live Activity and HealthKit to de-risk. Add them in a fast-follow.                                                        |
@@ -728,7 +728,7 @@ This is much less likely with a genuinely native app using SwiftUI modules, but 
 | Core experience   | Climb browsing, search, board visualization, queue management work end-to-end on iOS + Android. Context menus and swipe actions functional on iOS.                                                                |
 | BLE               | Connect to physical Kilter/Tension/MoonBoard, send climbs, LEDs light up correctly.                                                                                                                               |
 | Social            | Party mode, notifications, feed work via WebSocket subscriptions.                                                                                                                                                 |
-| Platform          | Live Activity, HealthKit, offline sync (expo-sqlite + mutation queue), pre-warmed DB pipeline, per-board sync UI, push notifications all functional.                                                               |
+| Platform          | Live Activity, HealthKit, offline sync (expo-sqlite + mutation queue), pre-warmed DB pipeline, per-board sync UI, push notifications all functional.                                                              |
 | iOS quality       | Dynamic Type works at all 7 sizes. Haptics fire on all interactive elements. Context menus on long press. 120fps on ProMotion in board renderer and lists. Swipe-back on all screens. VoiceOver reads all labels. |
 | Android parity    | All features work on Android. Material 3 visual treatment. Context menus via long-press fallback.                                                                                                                 |
 | App Store         | Accepted on iOS App Store and Google Play Store. TestFlight beta with 10+ testers.                                                                                                                                |

@@ -11,7 +11,7 @@ import { I18nProvider } from '../src/providers/i18n-provider';
 import { BluetoothProvider } from '../src/providers/bluetooth-provider';
 import { ToastProvider } from '../src/providers/toast-provider';
 import { QueueProvider } from '../src/providers/queue-provider';
-import { useDefaultBoard } from '../src/lib/graphql/hooks';
+import { useEffectiveDefaultBoard } from '../src/lib/hooks/use-effective-default-board';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,10 +20,9 @@ const styles = StyleSheet.create({
 });
 
 function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: defaultBoard } = useDefaultBoard();
+  const { data: defaultBoard } = useEffectiveDefaultBoard();
 
   if (!defaultBoard) {
-    // No board selected yet — BLE only makes sense with a board
     return <>{children}</>;
   }
 

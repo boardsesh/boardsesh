@@ -17,14 +17,14 @@ import { Button } from '../../../src/components/Button';
 import { LogAscentSheet } from '../../../src/components/LogAscentSheet';
 import { hapticSelection } from '../../../src/lib/haptics';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { useDefaultBoard } from '../../../src/lib/graphql/hooks';
+import { useEffectiveDefaultBoard } from '../../../src/lib/hooks/use-effective-default-board';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
 const TAB_BAR_HEIGHT = 49;
 
 export default function QueueScreen() {
   const { state, sessionId, removeFromQueue, setCurrentClimb, nextClimb, previousClimb, endSession } = useQueue();
-  const { data: defaultBoard } = useDefaultBoard();
+  const { data: defaultBoard } = useEffectiveDefaultBoard();
   const { systemColors, brandColors } = useTheme();
   const [showLogAscent, setShowLogAscent] = useState(false);
   const [showEndSession, setShowEndSession] = useState(false);

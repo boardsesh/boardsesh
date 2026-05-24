@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
-import { useSegments, Redirect } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { getAuthToken, isTokenExpiringSoon } from '../lib/auth-store';
 import {
   startSignIn,
@@ -39,6 +39,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const segments = useSegments();
+  const router = useRouter();
 
   const checkAuth = useCallback(async () => {
     const token = await getAuthToken();
@@ -94,17 +95,20 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     }
   }, [isLoading]);
 
+  // Bounce signed-in users out of the auth stack once auth resolves. We
+  // intentionally do NOT redirect unauthenticated users away from (tabs):
+  // the app should be browseable without an account, and each tab renders
+  // its own SignInPrompt for auth-gated features.
+  useEffect(() => {
+    if (isLoading) return;
+    const inAuthGroup = segments[0] === 'auth';
+    if (isAuthenticated && inAuthGroup) {
+      router.replace('/(tabs)/boards');
+    }
+  }, [isLoading, isAuthenticated, segments, router]);
+
   if (isLoading) {
     return null;
-  }
-
-  const inAuthGroup = segments[0] === 'auth';
-
-  if (!isAuthenticated && !inAuthGroup) {
-    return <Redirect href="/auth/login" />;
-  }
-  if (isAuthenticated && inAuthGroup) {
-    return <Redirect href="/(tabs)/boards" />;
   }
 
   return (

@@ -9,13 +9,15 @@ import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
+import { Button } from '../../../src/components/Button';
 import {
   ClimbFilterSheet,
   hasActiveFilters,
   DEFAULT_FILTERS,
   type ClimbFilters,
 } from '../../../src/components/ClimbFilterSheet';
-import { useDefaultBoard, useSearchClimbs } from '../../../src/lib/graphql/hooks';
+import { useSearchClimbs } from '../../../src/lib/graphql/hooks';
+import { useEffectiveDefaultBoard } from '../../../src/lib/hooks/use-effective-default-board';
 import { accumulateClimbs } from '../../../src/lib/climb-pagination';
 import { getBoardRenderData } from '../../../src/lib/board-details';
 import { brandColors } from '../../../src/theme/colors';
@@ -28,6 +30,7 @@ export default function ClimbList() {
   const router = useRouter();
   const navigation = useNavigation();
   const { t } = useTranslation('climbs');
+  const { t: tAuth } = useTranslation('auth');
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,7 +84,7 @@ export default function ClimbList() {
     };
   }, [navigation, t, filtersActive, handleOpenFilters]);
 
-  const { data: defaultBoard, isLoading: isBoardLoading } = useDefaultBoard();
+  const { data: defaultBoard, isLoading: isBoardLoading } = useEffectiveDefaultBoard();
 
   const boardName = defaultBoard?.boardType ?? '';
   const layoutId = defaultBoard?.layoutId ?? 0;
@@ -214,6 +217,14 @@ export default function ClimbList() {
         <Text variant="subheadline" style={styles.emptySubtitle}>
           {t('mobile.emptyState.noBoard.subtitle')}
         </Text>
+        <Button
+          title={tAuth('nativeStart.prompt.climbsNoBoardCTA')}
+          variant="filled"
+          size="medium"
+          icon="boards"
+          onPress={() => router.navigate('/(tabs)/boards')}
+          style={styles.emptyCTA}
+        />
       </View>
     );
   }
@@ -309,5 +320,8 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 20,
     alignItems: 'center',
+  },
+  emptyCTA: {
+    marginTop: 16,
   },
 });

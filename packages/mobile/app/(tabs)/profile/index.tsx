@@ -3,8 +3,33 @@ import { useTranslation } from 'react-i18next';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { SignInPrompt } from '../../../src/components/SignInPrompt';
 
 export default function Profile() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { t } = useTranslation('auth');
+
+  if (authLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <SignInPrompt
+        title={t('nativeStart.prompt.profileTitle')}
+        description={t('nativeStart.prompt.profileDescription')}
+      />
+    );
+  }
+
+  return <ProfileAuthenticated />;
+}
+
+function ProfileAuthenticated() {
   const { data: profile, isLoading } = useProfile();
   const { signOut } = useAuth();
   const { systemColors } = useTheme();

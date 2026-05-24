@@ -39,15 +39,15 @@ The original plan from [mobile-app-plan.md](mobile-app-plan.md) Phase 5. After e
 
 **Why it wins:**
 
-| Concern | expo-sqlite + mutation queue |
-|---|---|
-| Climb search | Full SQL with JOINs, proper column indexes, < 100ms |
-| Infrastructure cost | $0 — client-only, uses existing GraphQL API |
-| Pre-warmed database | Just a SQLite file. No internal metadata, no LSN alignment, no RxDB format. Copy to disk and open. |
-| Backend changes | Sync pull queries (10 resolvers) + `sync_deletions` table + idempotent mutations |
-| Delete handling | `sync_deletions` table + triggers. Existing queries untouched. |
-| Maintenance risk | `expo-sqlite` is a first-party Expo module. Guaranteed New Architecture support. |
-| Custom code | Mutation queue (~800-1200 lines including error handling, retry logic, cache invalidation), sync pull client (~200 lines). Well-understood pattern. |
+| Concern             | expo-sqlite + mutation queue                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Climb search        | Full SQL with JOINs, proper column indexes, < 100ms                                                                                                 |
+| Infrastructure cost | $0 — client-only, uses existing GraphQL API                                                                                                         |
+| Pre-warmed database | Just a SQLite file. No internal metadata, no LSN alignment, no RxDB format. Copy to disk and open.                                                  |
+| Backend changes     | Sync pull queries (10 resolvers) + `sync_deletions` table + idempotent mutations                                                                    |
+| Delete handling     | `sync_deletions` table + triggers. Existing queries untouched.                                                                                      |
+| Maintenance risk    | `expo-sqlite` is a first-party Expo module. Guaranteed New Architecture support.                                                                    |
+| Custom code         | Mutation queue (~800-1200 lines including error handling, retry logic, cache invalidation), sync pull client (~200 lines). Well-understood pattern. |
 
 ## Architecture
 
@@ -102,11 +102,11 @@ This is just a SQLite file — no RxDB internal format, no PowerSync metadata, n
 
 ### App size
 
-| Content | Compressed size |
-|---|---|
-| App binary (RN + native modules) | ~30 MB |
-| Pre-warmed database (all boards) | ~150-200 MB |
-| **Total** | **~180-230 MB** |
+| Content                          | Compressed size |
+| -------------------------------- | --------------- |
+| App binary (RN + native modules) | ~30 MB          |
+| Pre-warmed database (all boards) | ~150-200 MB     |
+| **Total**                        | **~180-230 MB** |
 
 Use Play Asset Delivery on Android (APK limit is 150MB).
 
@@ -207,23 +207,24 @@ async function drainMutationQueue(db: SQLiteDatabase) {
         if (isRetryable(error)) {
           const newRetryCount = mutation.retry_count + 1;
           if (newRetryCount >= MAX_RETRY_COUNT) {
-            await db.runAsync(
-              `UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`,
-              [error.message, mutation.id],
-            );
+            await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [
+              error.message,
+              mutation.id,
+            ]);
           } else {
-            await db.runAsync(
-              `UPDATE pending_mutations SET retry_count = ?, last_error = ? WHERE id = ?`,
-              [newRetryCount, error.message, mutation.id],
-            );
+            await db.runAsync(`UPDATE pending_mutations SET retry_count = ?, last_error = ? WHERE id = ?`, [
+              newRetryCount,
+              error.message,
+              mutation.id,
+            ]);
           }
           break; // stop processing, retry later
         }
         // Non-retryable (validation error, 404, 409): move to dead letter
-        await db.runAsync(
-          `UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`,
-          [error.message, mutation.id],
-        );
+        await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [
+          error.message,
+          mutation.id,
+        ]);
       }
     }
   } finally {
@@ -236,7 +237,7 @@ function isRetryable(error: unknown): boolean {
   if (error instanceof GraphQLError) {
     const status = error.extensions?.status;
     if (status === 401) return true; // auth expired, will refresh and retry
-    if (status >= 500) return true;  // server error, transient
+    if (status >= 500) return true; // server error, transient
     return false; // 4xx validation, 409 conflict — non-retryable
   }
   return false;
@@ -313,12 +314,12 @@ async function processMutation(mutation: PendingMutation) {
 
 ### Queue trigger points
 
-| Trigger | When |
-|---|---|
-| App foreground | `AppState` listener, debounced |
+| Trigger           | When                                    |
+| ----------------- | --------------------------------------- |
+| App foreground    | `AppState` listener, debounced          |
 | After local write | Immediate attempt, then debounced retry |
-| Network restored | `NetInfo` listener |
-| Pull-to-refresh | User-initiated |
+| Network restored  | `NetInfo` listener                      |
+| Pull-to-refresh   | User-initiated                          |
 
 ### Idempotency
 
@@ -351,7 +352,7 @@ This guarantees no rows are skipped regardless of timestamp collisions. For tabl
 ```graphql
 type SyncCursor {
   updatedAt: DateTime!
-  syncSeq: String!  # stringified bigint for the sequential cursor component
+  syncSeq: String! # stringified bigint for the sequential cursor component
 }
 
 type SyncResult {
@@ -425,9 +426,7 @@ async function syncTable(
   queryName: string,
   extraVars?: Record<string, unknown>,
 ) {
-  const checkpointKey = extraVars?.boardType
-    ? `${tableName}:${extraVars.boardType}`
-    : tableName;
+  const checkpointKey = extraVars?.boardType ? `${tableName}:${extraVars.boardType}` : tableName;
   let cursor = await getCheckpoint(db, checkpointKey);
   let hasMore = true;
 
@@ -446,10 +445,7 @@ async function syncTable(
     for (const batch of chunk(documents, 50)) {
       await db.withExclusiveTransactionAsync(async (tx) => {
         for (const doc of batch) {
-          await tx.runAsync(
-            `INSERT OR REPLACE INTO ${tableName} (...) VALUES (...)`,
-            mapDocToColumns(tableName, doc),
-          );
+          await tx.runAsync(`INSERT OR REPLACE INTO ${tableName} (...) VALUES (...)`, mapDocToColumns(tableName, doc));
         }
       });
     }
@@ -578,16 +574,16 @@ Periodic cleanup: `DELETE FROM sync_deletions WHERE deleted_at < NOW() - INTERVA
 
    Tables and their writers:
 
-   | Table | Writers | Backfill from |
-   |---|---|---|
-   | `user_favorites` | `toggleFavorite` mutation only | `created_at` |
-   | `user_follows` | `followUser`/`unfollowUser` only | `created_at` |
-   | `setter_follows` | `followSetter`/`unfollowSetter` only | `created_at` |
-   | `playlist_follows` | `followPlaylist`/`unfollowPlaylist` only | `created_at` |
-   | `user_playlist_pins` | `pinPlaylist`/`unpinPlaylist` only | `created_at` |
-   | `playlist_climbs` | `addClimbToPlaylist` + FK cascade | `added_at` |
-   | `board_climbs` | Aurora sync, Kilter sync, climb mutations | `created_at` (text → timestamp parse) |
-   | `board_climb_stats` | Aurora sync, Kilter sync, `recomputeClimbStats` (3 concurrent writers with raw SQL) | `NOW()` |
+   | Table                | Writers                                                                             | Backfill from                         |
+   | -------------------- | ----------------------------------------------------------------------------------- | ------------------------------------- |
+   | `user_favorites`     | `toggleFavorite` mutation only                                                      | `created_at`                          |
+   | `user_follows`       | `followUser`/`unfollowUser` only                                                    | `created_at`                          |
+   | `setter_follows`     | `followSetter`/`unfollowSetter` only                                                | `created_at`                          |
+   | `playlist_follows`   | `followPlaylist`/`unfollowPlaylist` only                                            | `created_at`                          |
+   | `user_playlist_pins` | `pinPlaylist`/`unpinPlaylist` only                                                  | `created_at`                          |
+   | `playlist_climbs`    | `addClimbToPlaylist` + FK cascade                                                   | `added_at`                            |
+   | `board_climbs`       | Aurora sync, Kilter sync, climb mutations                                           | `created_at` (text → timestamp parse) |
+   | `board_climb_stats`  | Aurora sync, Kilter sync, `recomputeClimbStats` (3 concurrent writers with raw SQL) | `NOW()`                               |
 
    The `BEFORE UPDATE` trigger ensures all writers (including raw SQL) set `updated_at` automatically:
 
@@ -628,10 +624,11 @@ function useTicksForClimb(climbUuid: string, boardType: string) {
   const db = useSQLiteDatabase();
   return useQuery({
     queryKey: ['ticks', climbUuid, boardType],
-    queryFn: () => db.getAllAsync(
-      'SELECT * FROM boardsesh_ticks WHERE climb_uuid = ? AND board_type = ? ORDER BY climbed_at DESC',
-      [climbUuid, boardType],
-    ),
+    queryFn: () =>
+      db.getAllAsync('SELECT * FROM boardsesh_ticks WHERE climb_uuid = ? AND board_type = ? ORDER BY climbed_at DESC', [
+        climbUuid,
+        boardType,
+      ]),
     staleTime: Infinity, // local data, never stale — invalidate explicitly
   });
 }
@@ -640,16 +637,17 @@ function useClimbSearch(boardType: string, angle: number, filters: SearchFilters
   const db = useSQLiteDatabase();
   return useQuery({
     queryKey: ['climb-search', boardType, angle, filters],
-    queryFn: () => db.getAllAsync(
-      `SELECT c.*, cs.display_difficulty, cs.quality_average, cs.ascensionist_count
+    queryFn: () =>
+      db.getAllAsync(
+        `SELECT c.*, cs.display_difficulty, cs.quality_average, cs.ascensionist_count
        FROM board_climbs c
        LEFT JOIN board_climb_stats cs ON c.uuid = cs.climb_uuid AND cs.angle = ?
        WHERE c.board_type = ? AND c.is_listed = 1
        AND (? IS NULL OR cs.display_difficulty BETWEEN ? AND ?)
        ORDER BY cs.quality_average DESC NULLS LAST
        LIMIT 50`,
-      [angle, boardType, filters.minGrade, filters.minGrade, filters.maxGrade],
-    ),
+        [angle, boardType, filters.minGrade, filters.minGrade, filters.maxGrade],
+      ),
     staleTime: Infinity,
   });
 }
@@ -692,10 +690,20 @@ async function saveTick(db: SQLiteDatabase, tickData: TickInput) {
      attempt_count, quality, difficulty, comment, climbed_at, is_mirror, is_benchmark,
      created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-    [tickUuid, tickData.boardType, tickData.climbUuid, tickData.angle,
-     tickData.status, tickData.attemptCount, tickData.quality, tickData.difficulty,
-     tickData.comment ?? '', new Date().toISOString(),
-     tickData.isMirror ? 1 : 0, tickData.isBenchmark ? 1 : 0],
+    [
+      tickUuid,
+      tickData.boardType,
+      tickData.climbUuid,
+      tickData.angle,
+      tickData.status,
+      tickData.attemptCount,
+      tickData.quality,
+      tickData.difficulty,
+      tickData.comment ?? '',
+      new Date().toISOString(),
+      tickData.isMirror ? 1 : 0,
+      tickData.isBenchmark ? 1 : 0,
+    ],
   );
 
   // 2. Queue the mutation for server sync
@@ -716,14 +724,14 @@ async function saveTick(db: SQLiteDatabase, tickData: TickInput) {
 
 ## What stays the same
 
-| Component | Status |
-|---|---|
-| `react-native-mmkv` | KV preferences: active board, theme, onboarding, enabled boards list |
-| TanStack Query | Data fetching + cache for both local SQLite and network-only data |
-| GraphQL subscriptions | Real-time party mode: queue sync, session events, driver control |
-| `expo-secure-store` | Auth tokens in iOS Keychain / Android Keystore |
-| Backend GraphQL API | Mostly unchanged. New sync pull queries + sync_deletions + idempotent mutations + addFavorite/removeFavorite. |
-| Aurora sync daemon | Unchanged. Picks up ticks without `aurora_id` and pushes to Aurora API. |
+| Component             | Status                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `react-native-mmkv`   | KV preferences: active board, theme, onboarding, enabled boards list                                          |
+| TanStack Query        | Data fetching + cache for both local SQLite and network-only data                                             |
+| GraphQL subscriptions | Real-time party mode: queue sync, session events, driver control                                              |
+| `expo-secure-store`   | Auth tokens in iOS Keychain / Android Keystore                                                                |
+| Backend GraphQL API   | Mostly unchanged. New sync pull queries + sync_deletions + idempotent mutations + addFavorite/removeFavorite. |
+| Aurora sync daemon    | Unchanged. Picks up ticks without `aurora_id` and pushes to Aurora API.                                       |
 
 ## Account lifecycle
 
@@ -736,24 +744,24 @@ On logout or account switch:
 
 ## Performance targets
 
-| Metric | Target | Notes |
-|---|---|---|
-| Climb search (local SQL) | < 100ms p95 | Full SQL with JOINs, covering indexes |
-| Tick write (offline) | < 10ms | SQLite INSERT + mutation queue entry |
-| Incremental sync | < 2s typical | GraphQL pull, paginated, composite cursor |
-| App launch (pre-warmed) | < 1s to first content | Database already populated |
-| Memory (idle) | < 5MB for SQLite | On disk, not in memory |
+| Metric                   | Target                | Notes                                     |
+| ------------------------ | --------------------- | ----------------------------------------- |
+| Climb search (local SQL) | < 100ms p95           | Full SQL with JOINs, covering indexes     |
+| Tick write (offline)     | < 10ms                | SQLite INSERT + mutation queue entry      |
+| Incremental sync         | < 2s typical          | GraphQL pull, paginated, composite cursor |
+| App launch (pre-warmed)  | < 1s to first content | Database already populated                |
+| Memory (idle)            | < 5MB for SQLite      | On disk, not in memory                    |
 
 ## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Mutation queue complexity higher than estimated | Certain | Medium | Budget 800-1200 lines. Well-understood pattern, no architectural risk. |
-| Pre-warmed DB too large for app stores | Medium | Medium | Use Play Asset Delivery on Android. App Store allows 200MB cellular. Fallback: lazy-fetch `frames` column. |
-| `updated_at` on multi-writer tables (`board_climb_stats`) | Certain | Low | Postgres `BEFORE UPDATE` trigger handles all writers transparently, including raw SQL. |
-| Schema migration drift (Postgres vs on-device SQLite) | Medium | Medium | On-device migration system runs on app startup. Pre-warmed DB rebuild triggered on schema changes. |
-| Dead-letter mutations accumulate | Low | Low | UI indicator + user action (retry/discard). Telemetry to track frequency. |
-| Sync pull misses data | Low | Low | Composite cursor `(updated_at, sync_seq)` eliminates timestamp collision bugs. |
+| Risk                                                      | Likelihood | Impact | Mitigation                                                                                                 |
+| --------------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| Mutation queue complexity higher than estimated           | Certain    | Medium | Budget 800-1200 lines. Well-understood pattern, no architectural risk.                                     |
+| Pre-warmed DB too large for app stores                    | Medium     | Medium | Use Play Asset Delivery on Android. App Store allows 200MB cellular. Fallback: lazy-fetch `frames` column. |
+| `updated_at` on multi-writer tables (`board_climb_stats`) | Certain    | Low    | Postgres `BEFORE UPDATE` trigger handles all writers transparently, including raw SQL.                     |
+| Schema migration drift (Postgres vs on-device SQLite)     | Medium     | Medium | On-device migration system runs on app startup. Pre-warmed DB rebuild triggered on schema changes.         |
+| Dead-letter mutations accumulate                          | Low        | Low    | UI indicator + user action (retry/discard). Telemetry to track frequency.                                  |
+| Sync pull misses data                                     | Low        | Low    | Composite cursor `(updated_at, sync_seq)` eliminates timestamp collision bugs.                             |
 
 ## Implementation timeline
 
@@ -780,6 +788,7 @@ On logout or account switch:
 ## Verification
 
 ### Offline tick flow
+
 1. Put device in airplane mode.
 2. Open a climb, record a tick.
 3. Verify tick appears immediately in the logbook (TanStack Query invalidation).
@@ -787,16 +796,19 @@ On logout or account switch:
 5. Verify tick appears in the web app's logbook.
 
 ### Server-to-mobile sync
+
 1. Log a tick on the web app.
 2. Trigger sync pull on mobile (pull-to-refresh or app foreground).
 3. Verify the tick appears in the mobile logbook.
 
 ### Climb search performance
+
 1. Pre-warm database with 200K Kilter climbs + stats.
 2. Run climb search with difficulty filter + quality sort.
 3. Verify < 100ms on iPhone 13.
 
 ### Board selective sync
+
 1. Enable Kilter for incremental sync. Verify checkpoint key is `board_climbs:kilter`.
 2. Add a new climb on web. Trigger sync. Verify it appears on mobile.
 3. Enable Tension. Verify Tension sync starts from pre-warmed timestamp, not Kilter's checkpoint.
@@ -804,6 +816,7 @@ On logout or account switch:
 5. Browse Kilter climbs in airplane mode — pre-warmed data still available.
 
 ### Mutation queue resilience
+
 1. Create 10 ticks offline. Verify all appear in local SQLite.
 2. Reconnect. Verify all 10 are pushed via GraphQL mutations.
 3. Kill the app mid-push (after tick #5). Relaunch. Verify ticks #6-10 are pushed on retry (idempotent — #1-5 deduplicated via UUID).
@@ -811,16 +824,19 @@ On logout or account switch:
 5. Verify dead-letter indicator appears in the UI.
 
 ### Timestamp collision (composite cursor)
+
 1. Bulk-update 1000 `board_climb_stats` rows with the same timestamp (simulate Aurora sync).
 2. Run sync pull with limit 500. Verify all 1000 rows are eventually fetched across two pages.
 3. Verify no rows are silently skipped.
 
 ### Delete sync
+
 1. Delete a tick on web. Verify `sync_deletions` trigger fires with correct `record_id` and `user_id`.
 2. Delete a playlist (cascades to `playlist_climbs`). Verify both the playlist and its climbs appear in `sync_deletions`.
 3. Sync pull on mobile. Verify both are removed from local SQLite.
 
 ### Schema migration
+
 1. Add a column to `boardsesh_ticks` via Drizzle migration.
 2. Deploy to Postgres. Pre-warmed DB is NOT rebuilt yet (simulates weekly lag).
 3. Launch the app. Verify on-device migration adds the new column.
