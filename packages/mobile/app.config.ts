@@ -1,6 +1,7 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 
-const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? null;
+const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
+const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PROJECT_ID;
 
 function resolveDevMetadata(): {
   branchName: string | null;
