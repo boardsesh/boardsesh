@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
-import { useSegments, Redirect } from 'expo-router';
 import { getAuthToken, isTokenExpiringSoon } from '../lib/auth-store';
 import {
   startSignIn,
@@ -38,7 +37,6 @@ type AuthProviderProps = {
 export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const segments = useSegments();
 
   const checkAuth = useCallback(async () => {
     const token = await getAuthToken();
@@ -96,15 +94,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   if (isLoading) {
     return null;
-  }
-
-  const inAuthGroup = segments[0] === 'auth';
-
-  if (!isAuthenticated && !inAuthGroup) {
-    return <Redirect href="/auth/login" />;
-  }
-  if (isAuthenticated && inAuthGroup) {
-    return <Redirect href="/(tabs)/boards" />;
   }
 
   return (

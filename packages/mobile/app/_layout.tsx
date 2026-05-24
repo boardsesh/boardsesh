@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider } from '../src/providers/theme-provider';
-import { AuthProvider } from '../src/providers/auth-provider';
+import { AuthProvider, useAuth } from '../src/providers/auth-provider';
 import { I18nProvider } from '../src/providers/i18n-provider';
 import { BluetoothProvider } from '../src/providers/bluetooth-provider';
 import { ToastProvider } from '../src/providers/toast-provider';
@@ -23,7 +23,6 @@ function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: defaultBoard } = useDefaultBoard();
 
   if (!defaultBoard) {
-    // No board selected yet — BLE only makes sense with a board
     return <>{children}</>;
   }
 
@@ -31,6 +30,25 @@ function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
     <BluetoothProvider boardName={defaultBoard.boardType} layoutId={defaultBoard.layoutId} sizeId={defaultBoard.sizeId}>
       {children}
     </BluetoothProvider>
+  );
+}
+
+function RootNavigator() {
+  const { isAuthenticated } = useAuth();
+
+  return (
+    <ToastProvider>
+      <BottomSheetModalProvider>
+        <QueueProvider>
+          <BluetoothProviderWrapper>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" redirect={!isAuthenticated} />
+              <Stack.Screen name="auth" redirect={isAuthenticated} options={{ gestureEnabled: false }} />
+            </Stack>
+          </BluetoothProviderWrapper>
+        </QueueProvider>
+      </BottomSheetModalProvider>
+    </ToastProvider>
   );
 }
 
@@ -46,18 +64,7 @@ export default function RootLayout() {
         <QueryProvider>
           <ThemeProvider>
             <AuthProvider onReady={onAuthReady}>
-              <ToastProvider>
-                <BottomSheetModalProvider>
-                  <QueueProvider>
-                    <BluetoothProviderWrapper>
-                      <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                        <Stack.Screen name="(tabs)" />
-                        <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
-                      </Stack>
-                    </BluetoothProviderWrapper>
-                  </QueueProvider>
-                </BottomSheetModalProvider>
-              </ToastProvider>
+              <RootNavigator />
             </AuthProvider>
           </ThemeProvider>
         </QueryProvider>

@@ -54,6 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       permissions: ['BLUETOOTH_SCAN', 'BLUETOOTH_CONNECT', 'ACCESS_FINE_LOCATION'],
     },
     plugins: [
+      './plugins/fix-rns-snapshot-crash',
       'expo-router',
       'expo-secure-store',
       'expo-localization',
