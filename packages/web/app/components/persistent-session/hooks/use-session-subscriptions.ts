@@ -10,6 +10,10 @@ import { type Session, type SharedRefs, CORRUPTION_RESYNC_COOLDOWN_MS, DEBUG } f
 // and server agree on the hash but the client's local computation keeps
 // disagreeing with itself. Surface it to Sentry so we have something to
 // investigate instead of an invisible per-minute resync loop.
+// The watchdog also skips verification entirely while the offline buffer has
+// pending items, since the FullSync handler intentionally merges those items
+// into the local queue (creating an expected hash divergence) until
+// reconciliation pushes them to the server and clears the buffer.
 const RESYNC_LOOP_THRESHOLD = 3;
 
 type UseSessionSubscriptionsArgs = {
@@ -25,6 +29,7 @@ type UseSessionSubscriptionsArgs = {
     | 'isFilteringCorruptedItemsRef'
     | 'queueEventSubscribersRef'
     | 'sessionEventSubscribersRef'
+    | 'offlineBufferRef'
   >;
 };
 
@@ -48,6 +53,7 @@ export function useSessionSubscriptions({
     isFilteringCorruptedItemsRef,
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
+    offlineBufferRef,
   } = refs;
 
   // Keep state hash in sync with local state after delta events
@@ -117,6 +123,14 @@ export function useSessionSubscriptions({
     }
 
     const verifyInterval = setInterval(() => {
+      // The FullSync handler merges offline-buffered items into the local
+      // queue for visual continuity, but the server hash doesn't include
+      // them. Skip verification until reconciliation clears the buffer.
+      if (offlineBufferRef.current.length > 0) {
+        if (DEBUG) console.info('[PersistentSession] Skipping hash verification: offline buffer has pending items');
+        return;
+      }
+
       const localHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
 
       if (localHash !== lastReceivedStateHash) {
@@ -153,6 +167,7 @@ export function useSessionSubscriptions({
               consecutiveResyncs: consecutiveResyncCountRef.current,
               queueLength: queue.length,
               currentClimbUuid: currentClimbQueueItem?.uuid ?? null,
+              offlineBufferLength: offlineBufferRef.current.length,
             },
           });
         }
