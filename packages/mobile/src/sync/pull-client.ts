@@ -160,15 +160,25 @@ async function processDeletions(
       const config = TABLE_CONFIGS[deletion.tableName];
       if (!config) continue;
 
-      const recordIdParts = deletion.recordId.split(':');
       const pkColumns = config.primaryKeyColumns;
 
       if (pkColumns.length === 1) {
         await db.runAsync(`DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?`, [deletion.recordId]);
       } else {
+        // Backend encodes composite PKs as exactly N colon-separated segments
+        // matching primaryKeyColumns order (e.g. "kilter:uuid:40" for
+        // board_climb_stats with PK [climb_uuid, angle]). The split must
+        // produce exactly pkColumns.length parts — if not, skip the deletion
+        // rather than silently deleting the wrong row.
+        const recordIdParts = deletion.recordId.split(':');
+        if (recordIdParts.length !== pkColumns.length) {
+          console.warn(
+            `[Sync] Skipping deletion: expected ${pkColumns.length} PK parts for ${deletion.tableName}, got ${recordIdParts.length} from "${deletion.recordId}"`,
+          );
+          continue;
+        }
         const whereClause = pkColumns.map((col) => `${col} = ?`).join(' AND ');
-        const whereValues = pkColumns.map((_, index) => recordIdParts[index] ?? '');
-        await db.runAsync(`DELETE FROM ${deletion.tableName} WHERE ${whereClause}`, whereValues);
+        await db.runAsync(`DELETE FROM ${deletion.tableName} WHERE ${whereClause}`, recordIdParts);
       }
 
       for (const key of config.invalidateKeys) {

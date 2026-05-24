@@ -9,6 +9,11 @@ const FOREGROUND_DEBOUNCE_MS = 2000;
 let isSyncing = false;
 let pendingTrigger = false;
 
+export function __resetSyncSchedulerStateForTests(): void {
+  isSyncing = false;
+  pendingTrigger = false;
+}
+
 async function runSync(
   db: SQLiteDatabase,
   queryClient: QueryClient,

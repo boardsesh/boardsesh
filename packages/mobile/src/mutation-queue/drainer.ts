@@ -75,3 +75,7 @@ export async function drainMutationQueue(
 export function isDraining(): boolean {
   return _isDraining;
 }
+
+export function __resetDrainerStateForTests(): void {
+  _isDraining = false;
+}

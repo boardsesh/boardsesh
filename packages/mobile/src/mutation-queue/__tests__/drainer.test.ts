@@ -17,7 +17,7 @@ vi.mock('../error-classification', () => ({
   isRetryable: vi.fn().mockReturnValue(false),
 }));
 
-import { drainMutationQueue } from '../drainer';
+import { drainMutationQueue, __resetDrainerStateForTests } from '../drainer';
 import { peekPending, markCompleted, incrementRetry, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
 import { isRetryable } from '../error-classification';
@@ -58,6 +58,7 @@ const mockGraphqlFetch = vi.fn().mockResolvedValue({});
 describe('drainMutationQueue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetDrainerStateForTests();
     mockPeekPending.mockResolvedValue([]);
   });
 
