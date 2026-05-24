@@ -31,7 +31,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'automatic',
-    newArchEnabled: true,
     ios: {
       bundleIdentifier: 'com.boardsesh.app',
       supportsTablet: false,

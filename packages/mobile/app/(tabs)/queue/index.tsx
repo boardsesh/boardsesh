@@ -198,7 +198,6 @@ export default function QueueScreen() {
         data={queue}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        estimatedItemSize={64}
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl

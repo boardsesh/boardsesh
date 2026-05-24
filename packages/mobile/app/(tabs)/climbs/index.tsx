@@ -245,7 +245,6 @@ export default function ClimbList() {
         data={accumulatedClimbs}
         renderItem={renderClimbItem}
         keyExtractor={keyExtractor}
-        estimatedItemSize={68}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         contentInsetAdjustmentBehavior="automatic"

@@ -2,7 +2,7 @@ import { View, Text, Pressable, StyleSheet, Platform, useColorScheme } from 'rea
 import { BlurView } from '@react-native-community/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 import { iosSystemColors, iosDarkColors, iosLightColors } from '../theme/ios-colors';
 import { useBluetoothConnectedStatus } from '../lib/ble/bluetooth-status-store';
 import { brandColors } from '../theme/colors';

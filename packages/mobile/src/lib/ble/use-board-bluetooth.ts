@@ -131,8 +131,8 @@ export function useBoardBluetooth({
       try {
         if (boardName === 'moonboard') {
           if (!frames) return;
-          const bluetoothPacket = getMoonboardBluetoothPacket(frames);
-          await adapterRef.current.write(bluetoothPacket, signal);
+          const moonboardResult = getMoonboardBluetoothPacket(frames);
+          await adapterRef.current.write(moonboardResult.packet, signal);
           // TODO: analytics (Phase 6)
           return true;
         }
