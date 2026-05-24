@@ -12,6 +12,7 @@ import {
   type ClimbSearchCountResponse,
 } from '@boardsesh/graphql/operations/climb-search';
 import { normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
+import { isAbortError } from '@/app/lib/is-abort-error';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { USER_SPECIFIC_SEARCH_PARAMS } from '@boardsesh/shared-schema';
 
@@ -124,7 +125,7 @@ export const useQueueDataFetching = ({
     error: searchError,
   } = useInfiniteQuery({
     queryKey,
-    queryFn: async ({ pageParam }): Promise<SearchClimbsResult> => {
+    queryFn: async ({ pageParam, signal }): Promise<SearchClimbsResult> => {
       const input = {
         ...baseInput,
         page: pageParam,
@@ -134,13 +135,18 @@ export const useQueueDataFetching = ({
       const client = createGraphQLHttpClient(wsAuthToken);
 
       try {
-        const result = await client.request<ClimbSearchResponse>(SEARCH_CLIMBS, { input });
+        const result = await client.request<ClimbSearchResponse>({
+          document: SEARCH_CLIMBS,
+          variables: { input },
+          signal,
+        });
         return {
           climbs: result.searchClimbs.climbs,
           totalCount: result.searchClimbs.totalCount,
           hasMore: result.searchClimbs.hasMore,
         };
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[GraphQL] Search climbs error for ${parsedParams.board_name}:`, error);
         throw new Error(`Failed to fetch climbs: ${errorMessage}`);
@@ -229,10 +235,12 @@ export const useQueueDataFetching = ({
 
   const { data: countData } = useQuery({
     queryKey: countQueryKey,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const client = createGraphQLHttpClient(wsAuthToken);
-      const result = await client.request<ClimbSearchCountResponse>(SEARCH_CLIMBS_COUNT, {
-        input: countInput,
+      const result = await client.request<ClimbSearchCountResponse>({
+        document: SEARCH_CLIMBS_COUNT,
+        variables: { input: countInput },
+        signal,
       });
       return result.searchClimbs.totalCount;
     },

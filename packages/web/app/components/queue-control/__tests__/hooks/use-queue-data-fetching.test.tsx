@@ -195,9 +195,10 @@ describe('useQueueDataFetching', () => {
       error: null,
     });
 
-    // Mock GraphQL client requests
-    mockGraphQLRequest.mockImplementation(async (document) => {
-      const query = String(document);
+    // Mock GraphQL client requests (options-object overload: { document, variables, signal }).
+    // graphql-request's `gql` tag returns a string, so document is the query text.
+    mockGraphQLRequest.mockImplementation(async (options: { document?: string; variables?: unknown }) => {
+      const query = options.document ?? '';
 
       // Check which query is being made
       if (query.includes('searchClimbs')) {
@@ -355,7 +356,7 @@ describe('useQueueDataFetching', () => {
 
     await waitFor(() => {
       const requestInputs = mockGraphQLRequest.mock.calls
-        .map((call) => (call[1] as { input?: { minRating?: number } } | undefined)?.input)
+        .map((call) => (call[0] as { variables?: { input?: { minRating?: number } } })?.variables?.input)
         .filter((input): input is { minRating?: number } => input !== undefined);
 
       expect(requestInputs.length).toBeGreaterThan(0);
@@ -385,7 +386,7 @@ describe('useQueueDataFetching', () => {
 
     await waitFor(() => {
       const requestInputs = mockGraphQLRequest.mock.calls
-        .map((call) => (call[1] as { input?: { zoneMode?: string } } | undefined)?.input)
+        .map((call) => (call[0] as { variables?: { input?: { zoneMode?: string } } })?.variables?.input)
         .filter((input): input is { zoneMode?: string } => input !== undefined);
 
       expect(requestInputs.length).toBeGreaterThan(0);
@@ -414,7 +415,7 @@ describe('useQueueDataFetching', () => {
 
     await waitFor(() => {
       const requestInputs = mockGraphQLRequest.mock.calls
-        .map((call) => (call[1] as { input?: { onlyWideClimbs?: boolean } } | undefined)?.input)
+        .map((call) => (call[0] as { variables?: { input?: { onlyWideClimbs?: boolean } } })?.variables?.input)
         .filter((input): input is { onlyWideClimbs?: boolean } => input !== undefined);
 
       expect(requestInputs.length).toBeGreaterThan(0);
@@ -465,7 +466,7 @@ describe('useQueueDataFetching', () => {
     });
 
     const requestInputs = mockGraphQLRequest.mock.calls
-      .map((call) => (call[1] as { input?: { showOnlyAttempted?: boolean } } | undefined)?.input)
+      .map((call) => (call[0] as { variables?: { input?: { showOnlyAttempted?: boolean } } })?.variables?.input)
       .filter((input): input is { showOnlyAttempted?: boolean } => input !== undefined);
 
     expect(requestInputs.length).toBeGreaterThan(0);
