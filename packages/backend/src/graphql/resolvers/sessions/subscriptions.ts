@@ -2,6 +2,7 @@ import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { requireSessionMember } from '../shared/helpers';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { logger } from '../../../utils/logger';
 
 export const sessionSubscriptions = {
   /**
@@ -13,7 +14,17 @@ export const sessionSubscriptions = {
     subscribe: async function* (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) {
       // Verify user is a member of the session they're subscribing to
       // Uses retry logic to handle race conditions with joinSession
-      await requireSessionMember(ctx, sessionId);
+      try {
+        await requireSessionMember(ctx, sessionId);
+      } catch (error) {
+        // Only swallow the expected reconnection-race auth failure. Real
+        // infrastructure errors (Redis, network) must still propagate.
+        if (error instanceof Error && error.message.startsWith('Unauthorized')) {
+          logger.warn(`[Session] Subscription ended: connection ${ctx.connectionId} not in session ${sessionId}`);
+          return;
+        }
+        throw error;
+      }
 
       // Create async iterator for subscription
       // NOTE: We await here to ensure Redis subscription is established

@@ -3,6 +3,7 @@ import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { requireSessionMember } from '../shared/helpers';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { logger } from '../../../utils/logger';
 
 export const queueSubscriptions = {
   /**
@@ -14,7 +15,17 @@ export const queueSubscriptions = {
     subscribe: async function* (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) {
       // Verify user is a member of the session they're subscribing to
       // Uses retry logic to handle race conditions with joinSession
-      await requireSessionMember(ctx, sessionId);
+      try {
+        await requireSessionMember(ctx, sessionId);
+      } catch (error) {
+        // Only swallow the expected reconnection-race auth failure. Real
+        // infrastructure errors (Redis, network) must still propagate.
+        if (error instanceof Error && error.message.startsWith('Unauthorized')) {
+          logger.warn(`[Queue] Subscription ended: connection ${ctx.connectionId} not in session ${sessionId}`);
+          return;
+        }
+        throw error;
+      }
 
       // IMPORTANT: Subscribe to pubsub FIRST, before fetching state.
       // This prevents a race condition where events could be published

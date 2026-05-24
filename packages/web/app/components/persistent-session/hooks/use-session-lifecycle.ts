@@ -509,6 +509,10 @@ export function useSessionLifecycle({
       }
 
       isReconnectingRef.current = true;
+      if (subscriptionRestartTimeout) {
+        clearTimeout(subscriptionRestartTimeout);
+        subscriptionRestartTimeout = null;
+      }
       try {
         if (DEBUG) console.info('[PersistentSession] Reconnecting...');
 
@@ -615,6 +619,7 @@ export function useSessionLifecycle({
       if (isCleaningUp || !mountedRef.current) return;
       if (connectionGenerationRef.current !== connectionGeneration) return;
       if (subscriptionRestartTimeout) return;
+      if (isReconnectingRef.current) return;
 
       subscriptionRetryCount++;
       if (subscriptionRetryCount > MAX_TRANSIENT_RETRIES) {
@@ -732,6 +737,16 @@ export function useSessionLifecycle({
           url: backendUrl!,
           authToken: wsAuthTokenRef.current,
           onReconnect: () => void handleReconnect(),
+          onDisconnect: () => {
+            // Tear down subscriptions BEFORE graphql-ws retries them on the new
+            // connection. Without this, the library re-sends subscription operations
+            // that fail requireSessionMember because joinSession hasn't been called
+            // on the new connection yet.
+            queueUnsubscribeRef.current?.();
+            queueUnsubscribeRef.current = null;
+            sessionUnsubscribeRef.current?.();
+            sessionUnsubscribeRef.current = null;
+          },
           connectionName: 'session',
         });
         // Capture a non-null local reference. The outer `graphqlClient` (a

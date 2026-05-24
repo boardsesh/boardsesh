@@ -51,4 +51,22 @@ describe('createGraphQLClient', () => {
     createGraphQLClient({ url: 'ws://localhost/graphql' });
     expect(mocks.capturedOptions.current.connectionParams).toBeUndefined();
   });
+
+  it('invokes onDisconnect from the graphql-ws closed handler', () => {
+    const onDisconnect = vi.fn();
+    createGraphQLClient({ url: 'ws://localhost/graphql', onDisconnect });
+
+    const handlers = mocks.capturedOptions.current.on as { closed?: () => void };
+    expect(handlers.closed).toBeTypeOf('function');
+    expect(onDisconnect).not.toHaveBeenCalled();
+
+    handlers.closed?.();
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('tolerates a missing onDisconnect when the connection closes', () => {
+    createGraphQLClient({ url: 'ws://localhost/graphql' });
+    const handlers = mocks.capturedOptions.current.on as { closed?: () => void };
+    expect(() => handlers.closed?.()).not.toThrow();
+  });
 });

@@ -9,6 +9,14 @@ export type BaseClientOptions = {
   url: string;
   /** Called once after the second `connected` event (i.e. on every reconnect). */
   onReconnect?: () => void;
+  /**
+   * Called on every `closed` event. Web uses this to tear down active
+   * subscriptions before graphql-ws retries them on the new connection —
+   * otherwise the library re-sends subscription operations that fail
+   * `requireSessionMember` because `joinSession` hasn't run on the new
+   * connection yet.
+   */
+  onDisconnect?: () => void;
   /** Debug tag used in console logs. */
   connectionName?: string;
   /**
@@ -54,6 +62,7 @@ export function createGraphQLClient(options: CreateGraphQLClientOptions): Extend
     authToken,
     connectionParams: connectionParamsProvider,
     onReconnect: onReconnectCallback,
+    onDisconnect: onDisconnectCallback,
     webSocketImpl,
     shouldRetry,
     onClientCreated,
@@ -85,6 +94,9 @@ export function createGraphQLClient(options: CreateGraphQLClientOptions): Extend
           onReconnectCallback();
         }
         hasConnectedOnce = true;
+      },
+      closed: () => {
+        onDisconnectCallback?.();
       },
     },
   }) as ExtendedClient;

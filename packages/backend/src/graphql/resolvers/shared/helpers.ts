@@ -109,13 +109,13 @@ export async function requireSessionMember(
   }
 
   if (!finalCtx?.sessionId) {
-    logger.error(
+    logger.warn(
       `[Auth] requireSessionMember failed after ${maxRetries} retries: not in any session. connectionId=${ctx.connectionId}, requested=${sessionId}`,
     );
     throw new Error(`Unauthorized: not in any session (connectionId: ${ctx.connectionId}, requested: ${sessionId})`);
   }
   if (finalCtx.sessionId !== sessionId) {
-    logger.error(
+    logger.warn(
       `[Auth] requireSessionMember failed: session mismatch. connectionId=${ctx.connectionId}, have=${finalCtx.sessionId}, requested=${sessionId}`,
     );
     throw new Error(`Unauthorized: session mismatch (have: ${finalCtx.sessionId}, requested: ${sessionId})`);
