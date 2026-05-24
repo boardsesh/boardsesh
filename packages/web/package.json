@@ -92,7 +92,7 @@
     "sharp": "^0.34.5",
     "swagger-ui-react": "^5.32.0",
     "undici": "^7.22.0",
-    "use-debounce": "^10.1.0",
+    "use-debounce": "^10.1.1",
     "uuid": "^13.0.0",
     "web-vitals": "^4.2.4",
     "ws": "^8.19.0",
