@@ -155,6 +155,14 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       'expo-updates',
       'expo-web-browser',
       'react-native-ble-plx',
+      // Brand tint #8C4A52 matches brandColors.tint — kept as a literal here
+      // because app.config.ts runs at build time, before any theme provider.
+      [
+        'expo-notifications',
+        {
+          color: '#8C4A52',
+        },
+      ],
       // Register this before @bacons/apple-targets so Expo's mod chain runs it
       // after the widget target has been created, while keeping the provider last.
       './plugins/with-boardsesh-widget-build-settings',

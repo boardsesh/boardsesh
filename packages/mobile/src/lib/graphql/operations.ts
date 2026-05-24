@@ -889,3 +889,339 @@ export const NOTIFICATION_RECEIVED_SUBSCRIPTION = `
     }
   }
 `;
+
+// ============================================
+// Sync Pull Queries
+// ============================================
+
+export type SyncCursorInput = {
+  updatedAt: string;
+  syncSeq: string;
+};
+
+export type SyncCursor = {
+  updatedAt: string;
+  syncSeq: string;
+};
+
+export type SyncResult = {
+  documents: Record<string, unknown>[];
+  cursor: SyncCursor;
+  hasMore: boolean;
+};
+
+export type SyncDeletionRecord = {
+  tableName: string;
+  recordId: string;
+  deletedAt: string;
+};
+
+export type SyncDeletionsResult = {
+  deletions: SyncDeletionRecord[];
+  cursor: SyncCursor;
+  hasMore: boolean;
+};
+
+export const SYNC_TICKS = gql`
+  query SyncTicks($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncTicks(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncTicksQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncTicksQueryResponse = {
+  syncTicks: SyncResult;
+};
+
+export const SYNC_PLAYLISTS = gql`
+  query SyncPlaylists($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncPlaylists(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncPlaylistsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncPlaylistsQueryResponse = {
+  syncPlaylists: SyncResult;
+};
+
+export const SYNC_PLAYLIST_CLIMBS = gql`
+  query SyncPlaylistClimbs($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncPlaylistClimbs(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncPlaylistClimbsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncPlaylistClimbsQueryResponse = {
+  syncPlaylistClimbs: SyncResult;
+};
+
+export const SYNC_FAVORITES = gql`
+  query SyncFavorites($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncFavorites(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncFavoritesQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncFavoritesQueryResponse = {
+  syncFavorites: SyncResult;
+};
+
+export const SYNC_USER_FOLLOWS = gql`
+  query SyncUserFollows($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncUserFollows(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncUserFollowsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncUserFollowsQueryResponse = {
+  syncUserFollows: SyncResult;
+};
+
+export const SYNC_SETTER_FOLLOWS = gql`
+  query SyncSetterFollows($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncSetterFollows(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncSetterFollowsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncSetterFollowsQueryResponse = {
+  syncSetterFollows: SyncResult;
+};
+
+export const SYNC_PLAYLIST_FOLLOWS = gql`
+  query SyncPlaylistFollows($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncPlaylistFollows(cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncPlaylistFollowsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncPlaylistFollowsQueryResponse = {
+  syncPlaylistFollows: SyncResult;
+};
+
+export const SYNC_CLIMBS = gql`
+  query SyncClimbs($boardType: String!, $cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncClimbs(boardType: $boardType, cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncClimbsQueryVariables = {
+  boardType: string;
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncClimbsQueryResponse = {
+  syncClimbs: SyncResult;
+};
+
+export const SYNC_CLIMB_STATS = gql`
+  query SyncClimbStats($boardType: String!, $cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncClimbStats(boardType: $boardType, cursor: $cursor, limit: $limit) {
+      documents
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncClimbStatsQueryVariables = {
+  boardType: string;
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncClimbStatsQueryResponse = {
+  syncClimbStats: SyncResult;
+};
+
+export const SYNC_DELETIONS = gql`
+  query SyncDeletions($cursor: SyncCursorInput, $limit: Int! = 500) {
+    syncDeletions(cursor: $cursor, limit: $limit) {
+      deletions {
+        tableName
+        recordId
+        deletedAt
+      }
+      cursor {
+        updatedAt
+        syncSeq
+      }
+      hasMore
+    }
+  }
+`;
+
+export type SyncDeletionsQueryVariables = {
+  cursor?: SyncCursorInput;
+  limit?: number;
+};
+
+export type SyncDeletionsQueryResponse = {
+  syncDeletions: SyncDeletionsResult;
+};
+
+// ============================================
+// Push Token Mutations
+// ============================================
+
+export const REGISTER_ACTIVITY_PUSH_TOKEN = gql`
+  mutation RegisterActivityPushToken($sessionId: ID!, $token: String!) {
+    registerActivityPushToken(sessionId: $sessionId, token: $token)
+  }
+`;
+
+export type RegisterActivityPushTokenMutationVariables = {
+  sessionId: string;
+  token: string;
+};
+
+export type RegisterActivityPushTokenMutationResponse = {
+  registerActivityPushToken: boolean;
+};
+
+export const UNREGISTER_ACTIVITY_PUSH_TOKEN = gql`
+  mutation UnregisterActivityPushToken($sessionId: ID!, $token: String!) {
+    unregisterActivityPushToken(sessionId: $sessionId, token: $token)
+  }
+`;
+
+export type UnregisterActivityPushTokenMutationVariables = {
+  sessionId: string;
+  token: string;
+};
+
+export type UnregisterActivityPushTokenMutationResponse = {
+  unregisterActivityPushToken: boolean;
+};
+
+// ============================================
+// Favorite Mutations (Idempotent)
+// ============================================
+
+export type AddFavoriteInput = {
+  boardName: string;
+  climbUuid: string;
+  angle: number;
+};
+
+export type RemoveFavoriteInput = {
+  boardName: string;
+  climbUuid: string;
+  angle: number;
+};
+
+export const ADD_FAVORITE = gql`
+  mutation AddFavorite($input: AddFavoriteInput!) {
+    addFavorite(input: $input)
+  }
+`;
+
+export type AddFavoriteMutationVariables = {
+  input: AddFavoriteInput;
+};
+
+export type AddFavoriteMutationResponse = {
+  addFavorite: boolean;
+};
+
+export const REMOVE_FAVORITE = gql`
+  mutation RemoveFavorite($input: RemoveFavoriteInput!) {
+    removeFavorite(input: $input)
+  }
+`;
+
+export type RemoveFavoriteMutationVariables = {
+  input: RemoveFavoriteInput;
+};
+
+export type RemoveFavoriteMutationResponse = {
+  removeFavorite: boolean;
+};
