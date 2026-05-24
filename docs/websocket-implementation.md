@@ -946,19 +946,34 @@ sequenceDiagram
 
     Note over C: Every 60 seconds
 
-    C->>C: Compute local hash
-    C->>C: Compare to last server hash
+    C->>C: Check offline buffer
+    alt Offline items pending
+        C->>C: Skip verification (expected mismatch)
+    else No offline items
+        C->>C: Compute local hash
+        C->>C: Compare to last server hash
 
-    alt Hashes match
-        C->>C: State verified ✓
-    else Hashes differ
-        C->>C: Log "State drift detected"
-        C->>S: Trigger resync
-        S->>S: Re-join session
-        S->>C: FullSync event
-        C->>C: Apply full state
+        alt Hashes match
+            C->>C: State verified ✓
+            C->>C: Reset consecutive resync counter
+        else Hashes differ (attempt ≤ RESYNC_LOOP_THRESHOLD)
+            C->>C: Log "State drift detected"
+            C->>S: Trigger resync
+            S->>S: Re-join session
+            S->>C: FullSync event
+            C->>C: Apply full state
+        else Hashes differ (attempt > RESYNC_LOOP_THRESHOLD)
+            C->>C: Report to Sentry (once per hash)
+            C->>C: Suppress further resyncs
+            Note over C: Counter resets when hashes match
+        end
     end
 ```
+
+**Guard conditions:**
+
+- **Offline buffer skip:** The FullSync handler merges offline-buffered items into the local queue for visual continuity, but the server hash doesn't include them. The watchdog skips verification while `offlineBufferRef.current` is non-empty. Reconciliation will push the items to the server and clear the buffer, at which point normal verification resumes.
+- **Resync loop cap:** After `RESYNC_LOOP_THRESHOLD` (3) consecutive resyncs for the same server hash, the watchdog stops triggering resyncs and reports to Sentry. Repeating the same resync won't fix the underlying issue. The counter resets when hashes eventually match.
 
 **Additional checks:**
 
