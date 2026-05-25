@@ -27,6 +27,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: 'Boardsesh',
     slug: 'boardsesh',
+    owner: 'boardsesh',
     version: '2.0.0',
     scheme: 'com.boardsesh.app',
     orientation: 'portrait',
