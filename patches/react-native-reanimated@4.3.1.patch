@@ -1,0 +1,15 @@
+diff --git a/apple/reanimated/apple/REANodesManager.mm b/apple/reanimated/apple/REANodesManager.mm
+index cc8445548b8e698fb149764402ffa8a15b1ead0c..ad7b5087fbc0d9216a0e04c5b6b86e56db21f1b0 100644
+--- a/apple/reanimated/apple/REANodesManager.mm
++++ b/apple/reanimated/apple/REANodesManager.mm
+@@ -124,7 +124,9 @@ using namespace facebook::react;
+ - (void)performOperations
+ {
+   RCTAssertMainQueue();
+-  _performOperations(); // calls ReanimatedModuleProxy::performOperations
++  if (_performOperations) {
++    _performOperations(); // calls ReanimatedModuleProxy::performOperations
++  }
+ }
+ 
+ - (void)dispatchEvent:(id<RCTEvent>)event
