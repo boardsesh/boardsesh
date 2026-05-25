@@ -51,7 +51,7 @@
     "react-native-ble-plx": "^3.2.0",
     "react-native-context-menu-view": "^1.16.0",
     "react-native-gesture-handler": "~2.31.1",
-    "react-native-reanimated": "4.3.1",
+    "react-native-reanimated": "4.4.0-nightly-20260524-7c5580346",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4"
