@@ -7,14 +7,7 @@
     <key>teamID</key>
     <string>9L3HKPZBH3</string>
     <key>signingStyle</key>
-    <string>manual</string>
-    <key>provisioningProfiles</key>
-    <dict>
-        <key>com.boardsesh.app</key>
-        <string>Boardsesh App Store Distribution Second</string>
-        <key>com.boardsesh.app.widgets</key>
-        <string>Boardsesh Widgets App Store Distribution</string>
-    </dict>
+    <string>automatic</string>
     <key>uploadBitcode</key>
     <false/>
     <key>uploadSymbols</key>

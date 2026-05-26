@@ -81,24 +81,21 @@ jobs:
           require 'xcodeproj'
           project = Xcodeproj::Project.open('packages/mobile/ios/Boardsesh.xcodeproj')
 
-          profiles = {
-            'Boardsesh'        => 'Boardsesh App Store Distribution Second',
-            'BoardseshWidgets' => 'Boardsesh Widgets App Store Distribution',
-          }
+          signing_targets = ['Boardsesh', 'BoardseshWidgets']
 
           project.targets.each do |target|
-            next unless profiles.key?(target.name)
+            next unless signing_targets.include?(target.name)
             target.build_configurations.each do |config|
               next unless config.name == 'Release'
-              config.build_settings['CODE_SIGN_STYLE']                = 'Manual'
-              config.build_settings['DEVELOPMENT_TEAM']               = '9L3HKPZBH3'
-              config.build_settings['CODE_SIGN_IDENTITY']             = 'Apple Distribution'
-              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = profiles[target.name]
+              config.build_settings['CODE_SIGN_STYLE']  = 'Automatic'
+              config.build_settings['DEVELOPMENT_TEAM']  = '9L3HKPZBH3'
+              config.build_settings.delete('PROVISIONING_PROFILE_SPECIFIER')
+              config.build_settings.delete('CODE_SIGN_IDENTITY')
             end
           end
 
           project.save
-          puts 'Per-target code signing configured for: ' + profiles.keys.join(', ')
+          puts 'Automatic code signing configured for: ' + signing_targets.join(', ')
           RUBY
 
       - name: Compute build number
@@ -140,10 +137,22 @@ jobs:
           WIDGET_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
           echo "$APP_PROFILE_BASE64" | base64 --decode \
             > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
-          echo "$WIDGET_PROFILE_BASE64" | base64 --decode \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+
+          if [ -n "$WIDGET_PROFILE_BASE64" ]; then
+            echo "$WIDGET_PROFILE_BASE64" | base64 --decode \
+              > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+            if ! /usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin \
+                 < <(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision 2>/dev/null) \
+                 >/dev/null 2>&1; then
+              echo "::warning::Widget provisioning profile is invalid — automatic signing will download the correct profile from App Store Connect"
+              rm -f ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+            fi
+          else
+            echo "::notice::IOS_WIDGET_PROVISIONING_PROFILE_BASE64 not set — automatic signing will download the profile from App Store Connect"
+          fi
 
       - name: Setup App Store Connect API key
         env:
