@@ -21,6 +21,7 @@ import { computePeekOffset, getGradeTintColor } from '@boardsesh/play-view';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { shadowColor } from '../../theme/tokens';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -328,7 +329,7 @@ const styles = StyleSheet.create({
     // rounded (Spotify mini-player style).
     borderRadius: 10,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 10,

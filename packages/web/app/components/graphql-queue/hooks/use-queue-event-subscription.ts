@@ -6,14 +6,53 @@ import { track } from '@/app/lib/analytics';
 
 /**
  * Adapt a wire-format `SubscriptionQueueEvent` (from `@boardsesh/shared-schema`)
- * to the coordinator's `SyncQueueEvent`. The two unions are structurally
- * compatible — they share `addedItem` / `currentItem` field names and the same
- * `__typename` set — but their `ClimbQueueItem` types come from different
- * packages so TS can't infer assignability directly. Runtime shapes match
- * because both flow from the same GraphQL schema codegen.
+ * to the coordinator's `SyncQueueEvent` (from `@boardsesh/queue`). Both unions
+ * share the same `__typename` set and the same aliased item field names, but
+ * each declares its own `ClimbQueueItem` type so direct assignment isn't
+ * possible without help. We do an explicit per-variant rebuild rather than an
+ * `as unknown as` cast so the TypeScript compiler — not runtime — surfaces any
+ * schema drift between the two unions (new variant, renamed field, narrowed
+ * field type, etc.). Mirrors the mobile mapper in `queue-provider.tsx`.
  */
 function toSyncQueueEvent(event: SubscriptionQueueEvent): SyncQueueEvent {
-  return event as unknown as SyncQueueEvent;
+  switch (event.__typename) {
+    case 'FullSync':
+      return {
+        __typename: 'FullSync',
+        state: {
+          queue: event.state.queue,
+          currentClimbQueueItem: event.state.currentClimbQueueItem,
+        },
+      };
+    case 'QueueItemAdded':
+      return {
+        __typename: 'QueueItemAdded',
+        addedItem: event.addedItem,
+        position: event.position,
+      };
+    case 'QueueItemRemoved':
+      return { __typename: 'QueueItemRemoved', uuid: event.uuid };
+    case 'QueueReordered':
+      return {
+        __typename: 'QueueReordered',
+        uuid: event.uuid,
+        oldIndex: event.oldIndex,
+        newIndex: event.newIndex,
+      };
+    case 'CurrentClimbChanged':
+      return {
+        __typename: 'CurrentClimbChanged',
+        currentItem: event.currentItem,
+        clientId: event.clientId,
+        correlationId: event.correlationId,
+      };
+    case 'ClimbMirrored':
+      return {
+        __typename: 'ClimbMirrored',
+        mirrored: event.mirrored,
+        mirroredUuid: event.mirroredUuid,
+      };
+  }
 }
 
 type UseQueueEventSubscriptionParams = {

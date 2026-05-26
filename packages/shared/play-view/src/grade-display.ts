@@ -240,6 +240,9 @@ export function getSoftGradeColorByFormat(
   darkMode?: boolean,
 ): string | undefined {
   if (format === 'font') {
+    // extractFontGrade returns uppercase (e.g. "7A+"); getFontGradeColor
+    // normalizes via .toLowerCase() before the lookup, so no caller-side
+    // case conversion is needed.
     return getSoftFontGradeColor(extractFontGrade(difficulty), darkMode);
   }
   return getSoftVGradeColor(extractVGrade(difficulty), darkMode);

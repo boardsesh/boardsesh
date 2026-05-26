@@ -104,6 +104,9 @@ type QueueReorderedEvent = {
   __typename: 'QueueReordered';
   sequence: number;
   stateHash: string;
+  // Non-null per the schema — reorder always targets an existing queue item.
+  // See packages/shared-schema/src/types/events.ts QueueReordered. Contrast
+  // with ClimbMirroredEvent.uuid below, which is nullable.
   uuid: string;
   oldIndex: number;
   newIndex: number;
