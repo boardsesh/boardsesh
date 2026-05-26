@@ -13,9 +13,6 @@ import { formatGrade, type GradeDisplayFormat, DEFAULT_GRADE_DISPLAY_FORMAT } fr
 export function useGradeFormat() {
   // TODO: persist via AsyncStorage and surface a toggle in More tab.
   const gradeFormat: GradeDisplayFormat = DEFAULT_GRADE_DISPLAY_FORMAT;
-  // Empty deps: gradeFormat is a module-stable constant today, so the memoized
-  // object never needs to rebuild. When AsyncStorage backing lands, replace
-  // with [gradeFormat] and flip `loaded` to the actual hydration flag.
   return useMemo(
     () => ({
       gradeFormat,

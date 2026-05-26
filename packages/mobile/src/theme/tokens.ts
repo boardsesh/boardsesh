@@ -31,10 +31,6 @@ export const borderRadius = {
   full: 9999,
 } as const;
 
-// Single source of truth for the shadow colour used by every elevation preset
-// and any one-off shadow styles (e.g. PersistentQueueBar). Keeping this as a
-// named export lets components import it directly when they don't fit one of
-// the `shadows.*` presets.
 export const shadowColor = '#000' as const;
 
 export const shadows = {

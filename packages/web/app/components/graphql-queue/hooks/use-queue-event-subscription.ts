@@ -14,7 +14,7 @@ import { track } from '@/app/lib/analytics';
  * schema drift between the two unions (new variant, renamed field, narrowed
  * field type, etc.). Mirrors the mobile mapper in `queue-provider.tsx`.
  */
-function toSyncQueueEvent(event: SubscriptionQueueEvent): SyncQueueEvent {
+export function toSyncQueueEvent(event: SubscriptionQueueEvent): SyncQueueEvent {
   switch (event.__typename) {
     case 'FullSync':
       return {
@@ -52,7 +52,13 @@ function toSyncQueueEvent(event: SubscriptionQueueEvent): SyncQueueEvent {
         mirrored: event.mirrored,
         mirroredUuid: event.mirroredUuid,
       };
+    default:
+      return assertNever(event);
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled SubscriptionQueueEvent variant: ${JSON.stringify(value)}`);
 }
 
 type UseQueueEventSubscriptionParams = {
