@@ -22,9 +22,9 @@ const DB_NAME = 'boardsesh-led-colors';
 const STORE_NAME = 'overrides';
 const RECORD_KEY = 'current';
 
-let dbPromise: Promise<IDBPDatabase> | null = null;
+let dbPromise: Promise<IDBPDatabase | null> | null = null;
 
-function getDb(): Promise<IDBPDatabase> | null {
+function getDb(): Promise<IDBPDatabase | null> | null {
   // jsdom-based test environments expose `window` but lack `indexedDB`, so a
   // bare `typeof window` check would still let `openDB` blow up. The narrower
   // guard keeps SSR + tests + private-mode browsers all on the no-op path.
@@ -36,14 +36,12 @@ function getDb(): Promise<IDBPDatabase> | null {
           db.createObjectStore(STORE_NAME);
         }
       },
-    }).catch((error) => {
-      console.error('Failed to open LED color overrides DB:', error);
-      // Reset so a later call can retry — but return a never-resolving stub
-      // for this call so the caller's awaits don't reject. The reset must
-      // happen *after* returning the rejected promise, so callers above
-      // see a single rejection and we stop retrying within the same tick.
+      terminated() {
+        dbPromise = null;
+      },
+    }).catch(() => {
       dbPromise = null;
-      throw error;
+      return null;
     });
   }
   return dbPromise;
@@ -54,6 +52,7 @@ export async function getLedColorOverrides(): Promise<LedColorOverrides> {
   if (!dbReq) return {};
   try {
     const db = await dbReq;
+    if (!db) return {};
     const value = await db.get(STORE_NAME, RECORD_KEY);
     return (value as LedColorOverrides | undefined) ?? {};
   } catch (error) {
@@ -67,6 +66,7 @@ export async function setLedColorOverrides(overrides: LedColorOverrides): Promis
   if (!dbReq) return;
   try {
     const db = await dbReq;
+    if (!db) return;
     await db.put(STORE_NAME, overrides, RECORD_KEY);
     notify(overrides);
   } catch (error) {

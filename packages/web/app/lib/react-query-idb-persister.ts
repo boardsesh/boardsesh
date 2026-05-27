@@ -16,18 +16,18 @@ const getDB = createIndexedDBStore(DB_NAME, STORE_NAME);
 export function createIdbPersister(): Persister {
   return {
     persistClient: async (client: PersistedClient) => {
-      const db = await getDB();
-      if (!db) return;
       try {
+        const db = await getDB();
+        if (!db) return;
         await db.put(STORE_NAME, client, CLIENT_KEY);
       } catch (error) {
         console.error('Failed to persist react-query cache to IndexedDB:', error);
       }
     },
     restoreClient: async () => {
-      const db = await getDB();
-      if (!db) return undefined;
       try {
+        const db = await getDB();
+        if (!db) return undefined;
         const restored = (await db.get(STORE_NAME, CLIENT_KEY)) as PersistedClient | undefined;
         return restored;
       } catch (error) {
@@ -36,9 +36,9 @@ export function createIdbPersister(): Persister {
       }
     },
     removeClient: async () => {
-      const db = await getDB();
-      if (!db) return;
       try {
+        const db = await getDB();
+        if (!db) return;
         await db.delete(STORE_NAME, CLIENT_KEY);
       } catch (error) {
         console.error('Failed to remove react-query cache from IndexedDB:', error);

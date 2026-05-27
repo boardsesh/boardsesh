@@ -12,7 +12,7 @@ export function createIndexedDBStore(
   version: number = 1,
   upgradeCallback?: UpgradeCallback,
 ): () => Promise<IDBPDatabase | null> {
-  let dbPromise: Promise<IDBPDatabase> | null = null;
+  let dbPromise: Promise<IDBPDatabase | null> | null = null;
 
   return async (): Promise<IDBPDatabase | null> => {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -27,6 +27,17 @@ export function createIndexedDBStore(
             db.createObjectStore(storeName);
           }
         },
+        terminated() {
+          // Browser deleted the database (storage pressure, user cleared data,
+          // in-app browser eviction). Reset so the next call re-opens a fresh
+          // connection instead of reusing the dead handle.
+          dbPromise = null;
+        },
+      }).catch(() => {
+        // openDB rejected (database already deleted, quota exceeded, etc.).
+        // Reset so a subsequent call retries instead of caching the rejection.
+        dbPromise = null;
+        return null;
       });
     }
     return dbPromise;

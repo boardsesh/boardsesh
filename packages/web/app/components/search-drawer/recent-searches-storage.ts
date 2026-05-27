@@ -116,7 +116,7 @@ function sanitizeFilters(filters: Partial<SearchRequestPagination>): {
   return { filters: cleaned, changed };
 }
 
-let dbPromise: Promise<IDBPDatabase> | null = null;
+let dbPromise: Promise<IDBPDatabase | null> | null = null;
 
 const initDB = async (): Promise<IDBPDatabase | null> => {
   if (typeof window === 'undefined' || !window.indexedDB) {
@@ -129,6 +129,12 @@ const initDB = async (): Promise<IDBPDatabase | null> => {
           db.createObjectStore(STORE_NAME);
         }
       },
+      terminated() {
+        dbPromise = null;
+      },
+    }).catch(() => {
+      dbPromise = null;
+      return null;
     });
   }
   return dbPromise;
