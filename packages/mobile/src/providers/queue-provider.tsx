@@ -19,6 +19,8 @@ import {
 } from '@boardsesh/queue';
 import type { QueueState, QueueAction, QueueSearchParams, ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionSummary } from '@boardsesh/shared-schema';
+import { execute } from '@boardsesh/graphql-client';
+import { JOIN_SESSION } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
 import {
@@ -189,6 +191,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const sessionCreationRef = useRef<Promise<string | null> | null>(null);
+  // Tracks the in-flight (or completed) joinSession mutation for the current
+  // WS connection. Queue mutations gate on this so a swipe issued right after
+  // CREATE_SESSION still goes out *after* the WS-side joinSession has bound
+  // sessionId into the backend's per-connection context. Stored alongside the
+  // sessionId it was issued for so a session-switch invalidates it.
+  const joinPromiseRef = useRef<{ sessionId: string; promise: Promise<unknown> } | null>(null);
   const { showToast } = useToast();
   const { t } = useTranslation('session');
 
@@ -229,14 +237,58 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const tRef = useRef(t);
   tRef.current = t;
 
+  // Lazily fire JOIN_SESSION over the WS so the backend binds sessionId into
+  // the per-connection ConnectionContext. After this resolves, all WS-routed
+  // queue mutations on the same connection have ctx.sessionId set, which
+  // `requireSession(ctx)` in the queue resolvers checks before allowing the
+  // operation. Idempotent on the server (re-joining the same session is a
+  // no-op for the room manager); we cache the in-flight promise so concurrent
+  // callers share one mutation per (sessionId, connection) pair.
+  const ensureJoined = useCallback(async (sessionIdToJoin: string): Promise<void> => {
+    const current = joinPromiseRef.current;
+    if (current && current.sessionId === sessionIdToJoin) {
+      await current.promise;
+      return;
+    }
+    const boardConfig = await getStoredBoardConfig();
+    if (!boardConfig) return;
+    const boardPath = `${boardConfig.boardName}/${boardConfig.layoutId}/${boardConfig.sizeId}/${boardConfig.setIds}/${boardConfig.angle}`;
+    const promise = execute(getWsClient(), {
+      query: JOIN_SESSION,
+      variables: { sessionId: sessionIdToJoin, boardPath },
+    });
+    joinPromiseRef.current = { sessionId: sessionIdToJoin, promise };
+    await promise;
+  }, []);
+
   useEffect(() => {
     if (!sessionId) {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
+      joinPromiseRef.current = null;
       return;
     }
 
     const wsClient = getWsClient();
+
+    // graphql-ws auto-reconnects, and every reconnect gives us a fresh
+    // per-connection ConnectionContext on the backend. The first `connected`
+    // event matches the initial connection — we fire joinSession explicitly
+    // below to set up `joinPromiseRef`. Subsequent `connected` events are
+    // reconnects: invalidate the stale join and refire over the new connection.
+    let isFirstConnect = true;
+    const unsubConnected = wsClient.on('connected', () => {
+      if (isFirstConnect) {
+        isFirstConnect = false;
+        return;
+      }
+      joinPromiseRef.current = null;
+      void ensureJoined(sessionId);
+    });
+
+    // Fire the initial join eagerly so mutations issued before the first user
+    // interaction still find a resolved promise in joinPromiseRef.
+    void ensureJoined(sessionId);
 
     const cleanup = wsClient.subscribe<{ queueUpdates: QueueUpdateEvent }>(
       {
@@ -264,9 +316,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cleanup();
+      unsubConnected();
       unsubscribeRef.current = null;
+      joinPromiseRef.current = null;
     };
-  }, [sessionId, coordinator]);
+  }, [sessionId, coordinator, ensureJoined]);
 
   const ensureSession = useCallback(async (): Promise<string | null> => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -306,44 +360,63 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // deduplicates by item.uuid, so the echo is a no-op.
       dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
 
-      ensureSession().then((activeSessionId) => {
-        if (activeSessionId) {
-          getHttpClient()
-            .request<AddQueueItemMutationResponse>(ADD_QUEUE_ITEM, {
-              item: { uuid: item.uuid, climb: item.climb },
-            })
-            .catch(() => showToast(t('mobile.queue.actionFailed'), 'error'));
+      ensureSession().then(async (activeSessionId) => {
+        if (!activeSessionId) return;
+        try {
+          await ensureJoined(activeSessionId);
+          await execute<AddQueueItemMutationResponse>(getWsClient(), {
+            query: ADD_QUEUE_ITEM,
+            variables: { item: { uuid: item.uuid, climb: item.climb } },
+          });
+        } catch {
+          showToast(t('mobile.queue.actionFailed'), 'error');
         }
       });
     },
-    [ensureSession],
+    [ensureSession, ensureJoined, showToast, t],
   );
 
   const removeFromQueue = useCallback(
     (uuid: string) => {
       dispatch({ type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid } });
 
-      if (sessionIdRef.current) {
-        getHttpClient()
-          .request<RemoveQueueItemMutationResponse>(REMOVE_QUEUE_ITEM, { uuid })
-          .catch(() => showToast(t('mobile.queue.actionFailed'), 'error'));
-      }
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId) return;
+      (async () => {
+        try {
+          await ensureJoined(activeSessionId);
+          await execute<RemoveQueueItemMutationResponse>(getWsClient(), {
+            query: REMOVE_QUEUE_ITEM,
+            variables: { uuid },
+          });
+        } catch {
+          showToast(t('mobile.queue.actionFailed'), 'error');
+        }
+      })();
     },
-    [showToast, t],
+    [ensureJoined, showToast, t],
   );
 
   const clearQueue = useCallback(() => {
     const itemsToRemove = stateRef.current.queue;
     dispatch({ type: 'CLEAR_QUEUE' });
 
-    if (sessionIdRef.current) {
-      for (const item of itemsToRemove) {
-        getHttpClient()
-          .request<RemoveQueueItemMutationResponse>(REMOVE_QUEUE_ITEM, { uuid: item.uuid })
-          .catch(() => showToast(t('mobile.queue.actionFailed'), 'error'));
+    const activeSessionId = sessionIdRef.current;
+    if (!activeSessionId) return;
+    (async () => {
+      try {
+        await ensureJoined(activeSessionId);
+        for (const item of itemsToRemove) {
+          execute<RemoveQueueItemMutationResponse>(getWsClient(), {
+            query: REMOVE_QUEUE_ITEM,
+            variables: { uuid: item.uuid },
+          }).catch(() => showToast(t('mobile.queue.actionFailed'), 'error'));
+        }
+      } catch {
+        showToast(t('mobile.queue.actionFailed'), 'error');
       }
-    }
-  }, []);
+    })();
+  }, [ensureJoined, showToast, t]);
 
   // Optimistic local dispatch + correlated SET_CURRENT_CLIMB mutation.
   // The reducer stores `correlationId` in pendingCurrentClimbUpdates so the
@@ -357,18 +430,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         payload: { item, shouldAddToQueue, isServerEvent: false, correlationId },
       });
       coordinator.trackPendingMutation(correlationId);
-      ensureSession().then((activeSessionId) => {
+      ensureSession().then(async (activeSessionId) => {
         if (!activeSessionId) return;
-        getHttpClient()
-          .request<SetCurrentClimbMutationResponse>(SET_CURRENT_CLIMB, {
-            item: { uuid: item.uuid, climb: item.climb },
-            shouldAddToQueue,
-            correlationId,
-          })
-          .catch(() => showToast(t('mobile.queue.actionFailed'), 'error'));
+        try {
+          await ensureJoined(activeSessionId);
+          await execute<SetCurrentClimbMutationResponse>(getWsClient(), {
+            query: SET_CURRENT_CLIMB,
+            variables: {
+              item: { uuid: item.uuid, climb: item.climb },
+              shouldAddToQueue,
+              correlationId,
+            },
+          });
+        } catch {
+          showToast(t('mobile.queue.actionFailed'), 'error');
+        }
       });
     },
-    [coordinator, ensureSession, showToast, t],
+    [coordinator, ensureSession, ensureJoined, showToast, t],
   );
 
   const setCurrentClimb = useCallback((item: ClimbQueueItem) => dispatchSetCurrent(item, true), [dispatchSetCurrent]);

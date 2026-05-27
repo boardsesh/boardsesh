@@ -15,6 +15,7 @@
     "@boardsesh/board-constants": "*",
     "@boardsesh/climb-filters": "*",
     "@boardsesh/graphql": "*",
+    "@boardsesh/graphql-client": "*",
     "@boardsesh/play-view": "*",
     "@boardsesh/queue": "*",
     "@boardsesh/shared-schema": "*",

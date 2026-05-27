@@ -148,6 +148,7 @@
         "@boardsesh/board-constants": "*",
         "@boardsesh/climb-filters": "*",
         "@boardsesh/graphql": "*",
+        "@boardsesh/graphql-client": "*",
         "@boardsesh/play-view": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
@@ -271,6 +272,16 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/graphql-client": {
+      "name": "@boardsesh/graphql-client",
+      "version": "1.0.0",
+      "dependencies": {
+        "graphql-ws": "^6.0.8",
+      },
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/shared/play-view": {
       "name": "@boardsesh/play-view",
       "version": "1.0.0",
@@ -308,6 +319,7 @@
         "@boardsesh/crypto": "*",
         "@boardsesh/db": "*",
         "@boardsesh/graphql": "*",
+        "@boardsesh/graphql-client": "*",
         "@boardsesh/play-view": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
@@ -716,6 +728,8 @@
     "@boardsesh/db": ["@boardsesh/db@workspace:packages/db"],
 
     "@boardsesh/graphql": ["@boardsesh/graphql@workspace:packages/shared/graphql"],
+
+    "@boardsesh/graphql-client": ["@boardsesh/graphql-client@workspace:packages/shared/graphql-client"],
 
     "@boardsesh/mobile": ["@boardsesh/mobile@workspace:packages/mobile"],
 
