@@ -1780,7 +1780,8 @@ A GraphQL mutation would require either the JS GraphQL client (not available in 
 ### Frontend
 
 - `packages/web/app/lib/backend-url.ts` - Runtime backend URL resolver (preview deploys, dev overrides)
-- `packages/web/app/components/graphql-queue/graphql-client.ts` - Browser-based `graphql-ws` client used on web, Android, and iOS Capacitor
+- `packages/shared/graphql-client/` - Platform-agnostic `graphql-ws` helpers (`execute`, `subscribe`, `createGraphQLClient`, `GraphQLOperationError`). Web and the React Native mobile app both consume this; web passes its `SafeWebSocket` wrapper + `connectionManager` registration via the `webSocketImpl` / `onClientCreated` hooks.
+- `packages/web/app/components/graphql-queue/graphql-client.ts` - Thin web wrapper around `@boardsesh/graphql-client` that adds the `SafeWebSocket` DOM-error suppression and `connectionManager` registration. Also re-exports the shared primitives for legacy relative imports.
 - `packages/web/app/components/connection-manager/websocket-connection-manager.ts` - Connection state tracking
 - `packages/web/app/components/persistent-session/hooks/use-session-lifecycle.ts` - Session lifecycle
 - `packages/web/app/components/persistent-session/hooks/use-queue-mutations.ts` - Queue mutations

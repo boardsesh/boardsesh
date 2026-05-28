@@ -253,12 +253,25 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     const boardConfig = await getStoredBoardConfig();
     if (!boardConfig) return;
     const boardPath = `${boardConfig.boardName}/${boardConfig.layoutId}/${boardConfig.sizeId}/${boardConfig.setIds}/${boardConfig.angle}`;
+    // Clear the ref if THIS join rejects so the next mutation retries instead
+    // of re-awaiting a stuck-rejected promise. A transient join failure (a
+    // flaky packet, a server hiccup) doesn't trigger a socket reconnect, so
+    // without this every queue action for the rest of the session would
+    // surface the toast.
     const promise = execute(getWsClient(), {
       query: JOIN_SESSION,
       variables: { sessionId: sessionIdToJoin, boardPath },
     });
-    joinPromiseRef.current = { sessionId: sessionIdToJoin, promise };
-    await promise;
+    const entry = { sessionId: sessionIdToJoin, promise };
+    joinPromiseRef.current = entry;
+    try {
+      await promise;
+    } catch (err) {
+      if (joinPromiseRef.current === entry) {
+        joinPromiseRef.current = null;
+      }
+      throw err;
+    }
   }, []);
 
   useEffect(() => {

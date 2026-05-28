@@ -87,4 +87,15 @@ describe('execute', () => {
     vi.advanceTimersByTime(150);
     await expect(promise).rejects.toThrow(/timed out after 100ms/);
   });
+
+  it('clears the timeout once the operation settles so timers do not pile up', async () => {
+    const client = makeFakeClient();
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const promise = execute<{ ok: boolean }>(client, { query: 'mutation Foo { ok }' }, 30_000);
+    client.emit({ data: { ok: true } });
+    client.emitComplete();
+    await expect(promise).resolves.toEqual({ ok: true });
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
 });
