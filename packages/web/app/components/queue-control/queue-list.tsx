@@ -15,7 +15,7 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { buildQueueListModel, type QueueFlatRow } from '@boardsesh/play-view';
+import { buildQueueListModel } from '@boardsesh/play-view';
 import { usePathname, useParams } from 'next/navigation';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useSession } from 'next-auth/react';

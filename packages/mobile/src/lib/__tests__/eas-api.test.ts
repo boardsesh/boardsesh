@@ -166,9 +166,7 @@ describe('updateChannelBranchMapping', () => {
       },
     } as unknown as Response);
 
-    await expect(updateChannelBranchMapping('ch1', 'b1', 'token-x')).rejects.toThrow(
-      /500.*Internal Server Error/,
-    );
+    await expect(updateChannelBranchMapping('ch1', 'b1', 'token-x')).rejects.toThrow(/500.*Internal Server Error/);
   });
 
   it('throws when GraphQL returns errors despite 200', async () => {

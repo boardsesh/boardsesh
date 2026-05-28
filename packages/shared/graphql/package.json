@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@boardsesh/shared-schema": "*",
+    "@graphql-typed-document-node/core": "^3.2.0",
     "graphql": "^16.13.0",
     "graphql-request": "^7.4.0"
   },

@@ -120,10 +120,7 @@ export function BranchSwitcherScreen() {
       setSwitchingBranchId(null);
       hapticError();
       // i18n-ignore-next-line
-      Alert.alert(
-        'Switch Failed',
-        mutationError instanceof Error ? mutationError.message : 'Unknown error',
-      );
+      Alert.alert('Switch Failed', mutationError instanceof Error ? mutationError.message : 'Unknown error');
     },
   });
   const handleRefresh = useCallback(async () => {
@@ -139,16 +136,12 @@ export function BranchSwitcherScreen() {
     (branch: EASBranch) => {
       hapticLight();
       // i18n-ignore-next-line
-      Alert.alert(
-        'Switch Branch',
-        `Switch to "${branch.name}"? The app will download the update and restart.`,
-        [
-          // i18n-ignore-next-line
-          { text: 'Cancel', style: 'cancel' },
-          // i18n-ignore-next-line
-          { text: 'Switch', onPress: () => switchMutation.mutate(branch) },
-        ],
-      );
+      Alert.alert('Switch Branch', `Switch to "${branch.name}"? The app will download the update and restart.`, [
+        // i18n-ignore-next-line
+        { text: 'Cancel', style: 'cancel' },
+        // i18n-ignore-next-line
+        { text: 'Switch', onPress: () => switchMutation.mutate(branch) },
+      ]);
     },
     [switchMutation],
   );
@@ -162,15 +155,12 @@ export function BranchSwitcherScreen() {
   const currentCreatedAt = Updates.createdAt ? Updates.createdAt.toISOString() : null;
   const isEmbedded = Updates.isEmbeddedLaunch;
 
-
   const isSwitching = switchingBranchId !== null;
 
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      refreshControl={
-        <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
-      }
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
     >
       {/* ---- Current Update Info ---- */}
       {/* i18n-ignore-next-line */}
@@ -220,9 +210,7 @@ export function BranchSwitcherScreen() {
         <View style={[styles.errorContainer, { marginHorizontal: spacing[4] }]}>
           {/* i18n-ignore-next-line */}
           <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {branchesQuery.error instanceof Error
-              ? branchesQuery.error.message
-              : 'Failed to load branches'}
+            {branchesQuery.error instanceof Error ? branchesQuery.error.message : 'Failed to load branches'}
           </Text>
           <Pressable
             onPress={() => {
@@ -262,12 +250,7 @@ export function BranchSwitcherScreen() {
             const isDisabled = isSwitching && !isThisSwitching;
 
             const subtitle = latestUpdate
-              ? [
-                  latestUpdate.message,
-                  formatRelativeTime(latestUpdate.createdAt),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
+              ? [latestUpdate.message, formatRelativeTime(latestUpdate.createdAt)].filter(Boolean).join(' · ')
               : undefined;
 
             const trailing = isThisSwitching ? (
@@ -282,11 +265,7 @@ export function BranchSwitcherScreen() {
                 title={branch.name}
                 subtitle={subtitle}
                 trailing={trailing}
-                onPress={
-                  isActive || isDisabled
-                    ? undefined
-                    : () => handleSwitchBranch(branch)
-                }
+                onPress={isActive || isDisabled ? undefined : () => handleSwitchBranch(branch)}
                 haptic={false}
                 showSeparator={index < branchesQuery.data.length - 1}
                 style={isDisabled ? styles.disabledRow : undefined}

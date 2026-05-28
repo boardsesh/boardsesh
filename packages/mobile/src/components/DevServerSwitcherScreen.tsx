@@ -1,13 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import {
-  View,
-  ScrollView,
-  RefreshControl,
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-} from 'react-native';
+import { View, ScrollView, RefreshControl, ActivityIndicator, Alert, Pressable, StyleSheet } from 'react-native';
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -59,10 +51,7 @@ export function DevServerSwitcherScreen() {
       setSwitchingUrl(null);
       hapticError();
       // i18n-ignore-next-line
-      Alert.alert(
-        'Switch Failed',
-        mutationError instanceof Error ? mutationError.message : 'Unknown error',
-      );
+      Alert.alert('Switch Failed', mutationError instanceof Error ? mutationError.message : 'Unknown error');
     },
   });
 
@@ -76,16 +65,12 @@ export function DevServerSwitcherScreen() {
     (bundler: DiscoveredBundler) => {
       hapticLight();
       // i18n-ignore-next-line
-      Alert.alert(
-        'Switch Metro Server',
-        `Load JS bundle from ${bundler.host}:${bundler.port}? The app will reload.`,
-        [
-          // i18n-ignore-next-line
-          { text: 'Cancel', style: 'cancel' },
-          // i18n-ignore-next-line
-          { text: 'Switch', onPress: () => switchMutation.mutate(bundler) },
-        ],
-      );
+      Alert.alert('Switch Metro Server', `Load JS bundle from ${bundler.host}:${bundler.port}? The app will reload.`, [
+        // i18n-ignore-next-line
+        { text: 'Cancel', style: 'cancel' },
+        // i18n-ignore-next-line
+        { text: 'Switch', onPress: () => switchMutation.mutate(bundler) },
+      ]);
     },
     [switchMutation],
   );
@@ -149,9 +134,7 @@ export function DevServerSwitcherScreen() {
         <View style={[styles.errorContainer, { marginHorizontal: spacing[4] }]}>
           {/* i18n-ignore-next-line */}
           <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {bundlersQuery.error instanceof Error
-              ? bundlersQuery.error.message
-              : 'Failed to probe bundlers'}
+            {bundlersQuery.error instanceof Error ? bundlersQuery.error.message : 'Failed to probe bundlers'}
           </Text>
           <Pressable
             onPress={() => {

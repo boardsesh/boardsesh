@@ -166,10 +166,7 @@ export default function LibraryPageContent({
 
   // Pinned playlists — server first, IndexedDB recents fallback. Re-derives on
   // every playlists/board/recents change.
-  const {
-    pinned: pinnedPlaylists,
-    isLoading: pinnedLoading,
-  } = usePinnedPlaylists({
+  const { pinned: pinnedPlaylists, isLoading: pinnedLoading } = usePinnedPlaylists({
     token: isAuthenticated ? token : null,
     boardType: selectedBoard?.boardType,
     layoutId: selectedBoard?.layoutId,

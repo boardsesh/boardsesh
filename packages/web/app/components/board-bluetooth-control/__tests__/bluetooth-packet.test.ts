@@ -196,12 +196,12 @@ describe('§6 Message Framing Protocol', () => {
     });
 
     it('returns empty array when payload exceeds 255 bytes', () => {
-      const oversized = new Array(256).fill(0);
+      const oversized = Array.from({ length: 256 }, () => 0);
       expect(wrapBytes(oversized)).toEqual([]);
     });
 
     it('accepts exactly 255 bytes (max payload)', () => {
-      const maxPayload = new Array(255).fill(0);
+      const maxPayload = Array.from({ length: 255 }, () => 0);
       const frame = wrapBytes(maxPayload);
       expect(frame.length).toBe(260); // 255 + 5
       expect(frame[1]).toBe(255); // LENGTH

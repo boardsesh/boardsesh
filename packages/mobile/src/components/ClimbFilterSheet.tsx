@@ -428,9 +428,18 @@ export function ClimbFilterSheet({ visible, onDismiss, boardConfig, currentFilte
           </Pressable>
         </View>
 
-        <BottomSheetScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <BottomSheetScrollView
+          ref={scrollRef}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
           <View style={styles.sectionsContainer}>
-            <CollapsibleSection title={t('mobile.filter.section.climb')} summary={climbSummary} defaultExpanded resetKey={sectionResetKey}>
+            <CollapsibleSection
+              title={t('mobile.filter.section.climb')}
+              summary={climbSummary}
+              defaultExpanded
+              resetKey={sectionResetKey}
+            >
               {grades && grades.length > 0 ? (
                 <View>
                   <Text variant="footnote" style={styles.subsectionLabel}>
@@ -523,7 +532,11 @@ export function ClimbFilterSheet({ visible, onDismiss, boardConfig, currentFilte
               />
             </CollapsibleSection>
 
-            <CollapsibleSection title={t('mobile.filter.section.quality')} summary={qualitySummary} resetKey={sectionResetKey}>
+            <CollapsibleSection
+              title={t('mobile.filter.section.quality')}
+              summary={qualitySummary}
+              resetKey={sectionResetKey}
+            >
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.minAscents')}
               </Text>
@@ -576,11 +589,19 @@ export function ClimbFilterSheet({ visible, onDismiss, boardConfig, currentFilte
               <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
             </CollapsibleSection>
 
-            <CollapsibleSection title={t('mobile.filter.section.status')} summary={statusSummary} resetKey={sectionResetKey}>
+            <CollapsibleSection
+              title={t('mobile.filter.section.status')}
+              summary={statusSummary}
+              resetKey={sectionResetKey}
+            >
               <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
             </CollapsibleSection>
 
-            <CollapsibleSection title={t('mobile.filter.section.progress')} summary={progressSummary} resetKey={sectionResetKey}>
+            <CollapsibleSection
+              title={t('mobile.filter.section.progress')}
+              summary={progressSummary}
+              resetKey={sectionResetKey}
+            >
               {isAuthenticated ? (
                 <>
                   <SwitchRow
@@ -613,15 +634,15 @@ export function ClimbFilterSheet({ visible, onDismiss, boardConfig, currentFilte
           </View>
         </BottomSheetScrollView>
 
-          <View style={styles.footer}>
-            <Button
-              title={t('mobile.filter.apply')}
-              onPress={handleApply}
-              variant="filled"
-              size="large"
-              style={styles.applyButton}
-            />
-          </View>
+        <View style={styles.footer}>
+          <Button
+            title={t('mobile.filter.apply')}
+            onPress={handleApply}
+            variant="filled"
+            size="large"
+            style={styles.applyButton}
+          />
+        </View>
       </BottomSheetView>
     </BottomSheet>
   );

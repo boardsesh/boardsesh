@@ -11,7 +11,7 @@ export default defineConfig({
     ignore: ['design/**', '**/generated/**'],
   },
   lint: {
-    ignorePatterns: ['**/board-controller/**', 'mobile/**', 'packages/mobile/**'],
+    ignorePatterns: ['**/board-controller/**', 'mobile/**', 'packages/mobile/**', 'scripts/**'],
     options: {
       typeAware: true,
       typeCheck: true,

@@ -21,9 +21,7 @@ export function InfoRow({ label, value, showSeparator = true }: InfoRowProps) {
           {value}
         </Text>
       </View>
-      {showSeparator && (
-        <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
-      )}
+      {showSeparator && <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />}
     </View>
   );
 }

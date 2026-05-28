@@ -40467,7 +40467,8 @@ const hu = (e, t, n = 3) => {
       ge.asap(() => e(...t)),
   nA = gr.hasStandardBrowserEnv
     ? ((e, t) => (n) => (
-        (n = new URL(n, gr.origin)), e.protocol === n.protocol && e.host === n.host && (t || e.port === n.port)
+        (n = new URL(n, gr.origin)),
+        e.protocol === n.protocol && e.host === n.host && (t || e.port === n.port)
       ))(new URL(gr.origin), gr.navigator && /(msie|trident)/i.test(gr.navigator.userAgent))
     : () => !0,
   rA = gr.hasStandardBrowserEnv

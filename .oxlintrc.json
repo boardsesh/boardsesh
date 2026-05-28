@@ -98,6 +98,7 @@
     "build/**",
     "**/board-controller/**",
     "embedded/**",
+    "scripts/**",
     "packages/board-renderer/wasm/pkg/**",
     "packages/db/drizzle/**",
     "design/**",

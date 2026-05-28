@@ -5,6 +5,7 @@
  * Move keys out of this file once their consumers move to a
  * mobile-specific i18n catalog.
  */
+export {};
 
 // i18n-keep climbs.mobile.emptyState.noBoard.title
 // i18n-keep climbs.mobile.emptyState.noBoard.subtitle

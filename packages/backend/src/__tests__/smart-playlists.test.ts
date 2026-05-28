@@ -451,7 +451,6 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(result).toContainEqual({ type: 'LIKED_CLIMBS', count: 12 });
   });
 
-
   it('CTE scopes the sent-climbs check by both board_type and climb_uuid', async () => {
     // Pin the joint-scoping fix: a kilter send must NOT exclude a tension
     // climb sharing the same UUID from the projects count. The pure SQL of

@@ -48,11 +48,7 @@ function authHeaders(token: string): Record<string, string> {
 
 export type EASPlatform = 'ios' | 'android';
 
-export async function fetchBranches(
-  projectId: string,
-  token: string,
-  platform: EASPlatform,
-): Promise<EASBranch[]> {
+export async function fetchBranches(projectId: string, token: string, platform: EASPlatform): Promise<EASBranch[]> {
   const url = `${EAS_API_BASE}/${projectId}/updates/branches?limit=50`;
   const response = await fetch(url, {
     headers: {
@@ -83,11 +79,7 @@ export async function fetchChannels(projectId: string, token: string): Promise<E
   return json.data;
 }
 
-export async function updateChannelBranchMapping(
-  channelId: string,
-  branchId: string,
-  token: string,
-): Promise<void> {
+export async function updateChannelBranchMapping(channelId: string, branchId: string, token: string): Promise<void> {
   const query = `
     mutation UpdateChannel($channelId: ID!, $branchMapping: String!) {
       updateChannel(channelId: $channelId, branchMapping: $branchMapping) {

@@ -97,7 +97,7 @@ class AuroraClimbingClient {
         ...fetchOptions,
         headers: {
           ...this.createHeaders(contentType),
-          ...((fetchOptions.headers as Record<string, string> | undefined) ?? {}),
+          ...(fetchOptions.headers as Record<string, string> | undefined),
         },
         // Add timeout to prevent hanging requests
         signal: AbortSignal.timeout(30000), // 30 second timeout

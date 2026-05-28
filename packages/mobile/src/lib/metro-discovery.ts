@@ -9,11 +9,7 @@ export type DiscoveredBundler = {
 const PROBE_TIMEOUT_MS = 500;
 const METRO_STATUS_BODY = 'packager-status:running';
 
-export async function probeMetro(
-  host: string,
-  port: number,
-  timeoutMs: number = PROBE_TIMEOUT_MS,
-): Promise<boolean> {
+export async function probeMetro(host: string, port: number, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<boolean> {
   try {
     const response = await fetch(`http://${host}:${port}/status`, {
       signal: AbortSignal.timeout(timeoutMs),

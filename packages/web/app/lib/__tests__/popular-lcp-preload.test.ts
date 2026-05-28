@@ -15,7 +15,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 
 import { buildPopularLcpImageUrl } from '../popular-lcp-preload';
 
-function makeConfig(overrides: Partial<PopularBoardConfig> = {}): PopularBoardConfig {
+function makeConfig(_overrides: Partial<PopularBoardConfig> = {}): PopularBoardConfig {
   return {
     boardType: 'kilter',
     layoutId: 1,
