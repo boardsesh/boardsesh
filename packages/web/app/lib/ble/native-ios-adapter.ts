@@ -5,6 +5,14 @@ import {
 } from '@/app/components/board-bluetooth-control/bluetooth-aurora';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from './scan-constants';
 
+// Opt-in BLE tracing for on-device debugging. Append `?bleDebug` to the URL and
+// watch the WebView console (Safari Web Inspector) to see whether native
+// disconnect events arrive and whether their deviceId matches the connected one.
+// Silent in normal use; loads live via the web app so no app rebuild is needed.
+function bleDebugEnabled(): boolean {
+  return typeof window !== 'undefined' && window.location.search.includes('bleDebug');
+}
+
 type NativeBoardBlePlugin = NonNullable<NonNullable<Window['Capacitor']>['Plugins']['BoardBle']>;
 type NativeBoardBleListenerHandle = Awaited<ReturnType<NativeBoardBlePlugin['addListener']>>;
 
@@ -166,6 +174,13 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
 
     this.disconnectListenerHandle = await normalizeListenerHandle(
       plugin.addListener('disconnected', (data) => {
+        if (bleDebugEnabled()) {
+          console.debug('[ble] native disconnected event', {
+            received: data.deviceId,
+            expected: this.deviceId,
+            willFire: data.deviceId === this.deviceId,
+          });
+        }
         if (data.deviceId === this.deviceId) {
           this.deviceId = null;
           this.disconnectListenerHandle = null;

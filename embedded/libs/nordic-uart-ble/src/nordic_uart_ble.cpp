@@ -32,10 +32,18 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
 
     pService->start();
 
-    // Always configure advertising data (even if not starting yet)
+    // Always configure advertising data (even if not starting yet).
+    //
+    // Advertise ONLY the Aurora service UUID. The iOS/web/Capacitor apps scan
+    // with a hard filter on this UUID, and a central only sees UUIDs present in
+    // the advertising/scan-response packet. A single 128-bit UUID (18 bytes) plus
+    // the Flags structure (3 bytes) fits the 31-byte legacy advertising limit;
+    // the device name goes in the scan response. We deliberately do NOT advertise
+    // the Nordic UART service — it's discovered via GATT after connect, and adding
+    // a second 128-bit UUID overflowed the 31-byte packet, so NimBLE dropped the
+    // advert (or failed to start it) and the board never showed up in the scan.
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
-    pAdvertising->addServiceUUID(NUS_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06);
     pAdvertising->setMaxPreferred(0x12);
@@ -47,10 +55,17 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     pServer->start();
 
     if (startAdv) {
-        pAdvertising->start();
-        advertising = true;
+        bool started = pAdvertising->start();
+        advertising = started;
         advertisingEnabled = true;
-        Logger.logln("BLE: Advertising started");
+        if (started) {
+            Logger.logln("BLE: Advertising started");
+        } else {
+            // A false return almost always means the advertising payload didn't
+            // fit (see the single-UUID note above) — surface it instead of
+            // logging success unconditionally and hiding a dark radio.
+            Logger.logln("BLE: ERROR advertising failed to start");
+        }
     }
 
     Logger.logln("BLE: Server started as '%s'", deviceName);
@@ -107,6 +122,14 @@ void NordicUartBLE::onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) {
     connectedDeviceAddress = NimBLEAddress(desc->peer_ota_addr).toString().c_str();
     connectedDeviceHandle = desc->conn_handle;
     Logger.logln("BLE: Device connected: %s (total: %d)", connectedDeviceAddress.c_str(), pServer->getConnectedCount());
+
+    // Request a bounded supervision timeout so the central detects an abrupt
+    // power-off within ~2s instead of waiting out its long default (which made a
+    // powered-off board look "still connected" indefinitely). Args:
+    // (handle, minInterval, maxInterval, latency, timeout) — intervals in 1.25ms
+    // units, timeout in 10ms units, so 200 = 2000ms. Satisfies the BLE rule
+    // timeout > (1 + latency) * maxInterval * 2. The central may renegotiate.
+    pServer->updateConnParams(desc->conn_handle, 6, 18, 0, 200);
 
     // Flash green to indicate connection
     LEDs.blink(0, 255, 0, 2, 100);
@@ -223,9 +246,14 @@ void NordicUartBLE::startAdvertising() {
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
 
     // Start advertising (UUIDs and settings already configured in begin())
-    pAdvertising->start();
-    advertising = true;
+    bool started = pAdvertising->start();
+    advertising = started;
     advertisingEnabled = true;  // Enable for future restarts in loop()
 
-    Logger.logln("BLE: Advertising started");
+    if (started) {
+        Logger.logln("BLE: Advertising started");
+    } else {
+        // Leave `advertising` false so loop() retries on the next tick.
+        Logger.logln("BLE: ERROR advertising failed to start");
+    }
 }

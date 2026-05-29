@@ -114,17 +114,15 @@ void test_begin_registers_aurora_service_uuid(void) {
     TEST_ASSERT_TRUE(found);
 }
 
-void test_begin_registers_nus_service_uuid(void) {
+void test_begin_does_not_advertise_nus_service_uuid(void) {
+    // The Nordic UART service must NOT be advertised: two 128-bit UUIDs overflow
+    // the 31-byte advertising packet, which dropped the Aurora UUID and hid the
+    // board from the scan. UART is discovered via GATT after connect instead.
     ble->begin("Test Device");
     const auto& uuids = NimBLEDevice::getAdvertising()->getServiceUUIDs();
-    bool found = false;
     for (const auto& uuid : uuids) {
-        if (uuid == NUS_SERVICE_UUID) {
-            found = true;
-            break;
-        }
+        TEST_ASSERT_TRUE(uuid != NUS_SERVICE_UUID);
     }
-    TEST_ASSERT_TRUE(found);
 }
 
 // =============================================================================
@@ -223,6 +221,21 @@ void test_connection_callback_called_on_disconnect(void) {
     TEST_ASSERT_FALSE(ble->isConnected());
     TEST_ASSERT_EQUAL(1, connectCallbackCount);
     TEST_ASSERT_FALSE(lastConnectState);
+}
+
+void test_connect_requests_bounded_supervision_timeout(void) {
+    ble->begin("Test Device");
+
+    ble_gap_conn_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.conn_handle = 7;
+
+    NimBLEDevice::getServer()->mockConnect(&desc);
+
+    // onConnect requests a short supervision timeout (200 * 10ms = 2s) so the
+    // central detects an abrupt power-off in seconds instead of its long default.
+    TEST_ASSERT_EQUAL(7, NimBLEDevice::getServer()->getLastConnParamsHandle());
+    TEST_ASSERT_EQUAL(200, NimBLEDevice::getServer()->getLastConnParamsTimeout());
 }
 
 // =============================================================================
@@ -520,7 +533,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_creates_server);
     RUN_TEST(test_begin_starts_advertising);
     RUN_TEST(test_begin_registers_aurora_service_uuid);
-    RUN_TEST(test_begin_registers_nus_service_uuid);
+    RUN_TEST(test_begin_does_not_advertise_nus_service_uuid);
 
     // Callback registration tests
     RUN_TEST(test_set_connect_callback_and_verify_invocation);
@@ -530,6 +543,7 @@ int main(int argc, char** argv) {
     // Connection lifecycle tests
     RUN_TEST(test_connection_callback_called_on_connect);
     RUN_TEST(test_connection_callback_called_on_disconnect);
+    RUN_TEST(test_connect_requests_bounded_supervision_timeout);
 
     // Device address tests
     RUN_TEST(test_connected_device_address_set_on_connect);

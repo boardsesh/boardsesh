@@ -199,9 +199,10 @@ class NimBLEAdvertising {
 
     void setMaxPreferred(uint8_t maxInterval) { maxInterval_ = maxInterval; }
 
-    void start() {
+    bool start() {
         advertising_ = true;
         startCount_++;
+        return true;
     }
 
     void stop() { advertising_ = false; }
@@ -255,9 +256,17 @@ class NimBLEServer {
             connectedCount_--;
     }
 
+    void updateConnParams(uint16_t connHandle, uint16_t minInterval, uint16_t maxInterval, uint16_t latency,
+                          uint16_t timeout) {
+        lastConnParamsHandle_ = connHandle;
+        lastConnParamsTimeout_ = timeout;
+    }
+
     // Test helpers
     NimBLEServerCallbacks* getCallbacks() const { return callbacks_; }
     uint16_t getDisconnectedHandle() const { return disconnectedHandle_; }
+    uint16_t getLastConnParamsHandle() const { return lastConnParamsHandle_; }
+    uint16_t getLastConnParamsTimeout() const { return lastConnParamsTimeout_; }
 
     void mockConnect(ble_gap_conn_desc* desc) {
         connectedCount_++;
@@ -283,6 +292,8 @@ class NimBLEServer {
     int connectedCount_;
     bool started_;
     uint16_t disconnectedHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    uint16_t lastConnParamsHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    uint16_t lastConnParamsTimeout_ = 0;
 };
 
 // =============================================================================
