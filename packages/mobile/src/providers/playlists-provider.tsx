@@ -27,8 +27,16 @@ const EMPTY_PLAYLISTS: Playlist[] = [];
 const EMPTY_MEMBERSHIPS: Map<string, Set<string>> = new Map();
 const EMPTY_SET = new Set<string>();
 
-const notImplemented = async (): Promise<never> => {
-  throw new Error('PlaylistsProvider mutations not wired yet — port useClimbActionsData first.');
+// Default mutation implementations throw with an actionable message so a
+// screen that calls them before the data hook lands gets a fix-it diagnostic
+// rather than a silent no-op or a vague crash. The error is surfaced
+// twice — once as a console.error in __DEV__ (so it shows up in the Metro
+// log even if the call site swallows the throw), once as the thrown Error
+// itself.
+const notWired = (method: string) => async (): Promise<never> => {
+  const message = `[PlaylistsProvider] ${method}() called but PlaylistsProvider was mounted with default props. Wire a mobile equivalent of useClimbActionsData and pass its result in before invoking mutations.`;
+  if (__DEV__) console.error(message);
+  throw new Error(message);
 };
 
 type PlaylistsProviderProps = {
@@ -46,9 +54,9 @@ type PlaylistsProviderProps = {
 export function PlaylistsProvider({
   playlists = EMPTY_PLAYLISTS,
   playlistMemberships = EMPTY_MEMBERSHIPS,
-  addToPlaylist = notImplemented,
-  removeFromPlaylist = notImplemented,
-  createPlaylist = notImplemented,
+  addToPlaylist = notWired('addToPlaylist'),
+  removeFromPlaylist = notWired('removeFromPlaylist'),
+  createPlaylist = notWired('createPlaylist'),
   isLoading = false,
   isAuthenticated = false,
   refreshPlaylists = async () => undefined,

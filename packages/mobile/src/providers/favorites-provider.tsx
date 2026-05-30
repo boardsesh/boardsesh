@@ -47,10 +47,20 @@ export function FavoritesProvider({
 }: FavoritesProviderProps) {
   useLayoutEffect(() => {
     favoritesStore.setFavorites(favorites ?? (EMPTY_FAVORITES as Set<string>));
+    // Reset on unmount so a remount or a conditionally-mounted second
+    // provider doesn't see stale data from the previous instance. Today the
+    // provider sits at the root and never unmounts; this is a guard for
+    // future repositioning, not a current bug.
+    return () => {
+      favoritesStore.setFavorites(EMPTY_FAVORITES as Set<string>);
+    };
   }, [favorites]);
 
   useLayoutEffect(() => {
     favoritesStore.setMeta(isLoading, isAuthenticated);
+    return () => {
+      favoritesStore.setMeta(false, false);
+    };
   }, [isLoading, isAuthenticated]);
 
   const value = useMemo<FavoritesContextValue>(() => ({ toggleFavorite }), [toggleFavorite]);

@@ -161,6 +161,13 @@ The `useQueueReducer` React hook wrapper stays in each platform's code. The redu
 
 - `packages/shared-schema/` — GraphQL schema, TypeScript types (Climb, ClimbQueueItem, SessionUser, etc.)
 - `packages/board-constants/` — Product sizes, LED placements, hold state maps, grade colors
+- `packages/shared/queue/` — Pure-TS queue state machine: reducer, sync coordinator, event-to-action mapper, playlist suggestion helpers
+- `packages/shared/queue-runtime/` — Transport-wiring helpers around the queue state machine: `mapSubscriptionEnvelopeToAction` (wire-envelope normaliser used by both web and mobile subscription handlers), `createSetCurrentClimbCoalescer` (serialize-and-supersede so rapid swipes don't stack SET_CURRENT_CLIMB mutations), `createJoinSessionTracker` (`(sessionId, epoch)`-keyed JOIN_SESSION promise cache with reconnect invalidation)
+- `packages/shared/party-profile/` — `{ id: UUID }` party profile type + `ensureProfile(storage)` helper. Web injects an IndexedDB storage adapter; mobile injects an `expo-secure-store` adapter
+- `packages/shared/climb-actions/` — `FavoritesStore` singleton (`useSyncExternalStore`-compatible) backing per-uuid favorite subscriptions on both platforms
+- `packages/shared/play-view/` — Play-drawer logic (queue navigation, tick utilities, grade display)
+- `packages/shared/board-config/` — Board metadata, hold maps, angle tables, `buildBoardPath`
+- `packages/shared/ble-protocol/` — Bluetooth LED control protocol (Aurora + MoonBoard)
 
 ## iOS-first with SwiftUI native modules
 

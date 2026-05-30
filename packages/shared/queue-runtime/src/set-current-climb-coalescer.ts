@@ -73,7 +73,6 @@ export function createSetCurrentClimbCoalescer(
           state.pending !== null &&
           state.pending.shouldAddToQueue &&
           state.pending.item !== null &&
-          state.pending.item !== undefined &&
           options.sendSupersededQueueAdd !== undefined
         ) {
           options.sendSupersededQueueAdd(state.pending.item).catch(onSupersededQueueAddError);

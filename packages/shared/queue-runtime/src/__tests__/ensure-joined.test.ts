@@ -65,7 +65,7 @@ describe('createJoinSessionTracker', () => {
   });
 
   it('fires a fresh execute when sessionId changes', async () => {
-    const execute = vi.fn(async () => {});
+    const execute = vi.fn(async (_vars: { sessionId: string; boardPath: string }) => {});
     const tracker = createJoinSessionTracker({
       execute,
       getBoardPath: async () => '/kilter/1/2/3/40',
@@ -75,8 +75,8 @@ describe('createJoinSessionTracker', () => {
     await tracker.ensureJoined('s2');
 
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute.mock.calls[0][0].sessionId).toBe('s1');
-    expect(execute.mock.calls[1][0].sessionId).toBe('s2');
+    expect(execute.mock.calls[0]?.[0]?.sessionId).toBe('s1');
+    expect(execute.mock.calls[1]?.[0]?.sessionId).toBe('s2');
   });
 
   it('clears the cache on failure so the next call retries', async () => {

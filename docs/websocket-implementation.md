@@ -117,6 +117,16 @@ Targeted hooks: `useQueueActions()`, `useQueueData()`, `usePersistentSessionActi
 | Stream Consumer    | Redis (streamConsumer connection) | Dedicated connection for blocking `XREADGROUP` in EventBroker |
 | Persistent Storage | PostgreSQL                        | Durable session & queue history                               |
 
+### Shared client primitives
+
+The web and mobile queue providers are thin wrappers around two pure-TS packages — neither imports React, DOM, or React Native:
+
+- **`@boardsesh/queue`** — the state machine: `queueReducer`, `mapQueueEventToAction`, `createQueueSyncCoordinator` (correlation-ID tracking + echo suppression), playlist suggestion helpers.
+- **`@boardsesh/queue-runtime`** — the transport-wiring helpers around it. Both web (`packages/web/app/components/graphql-queue/hooks/use-queue-event-subscription.ts` and `packages/web/app/components/persistent-session/hooks/use-queue-mutations.ts`) and mobile (`packages/mobile/src/providers/queue-provider.tsx`) call into:
+    - **`mapSubscriptionEnvelopeToAction`** — wire-envelope normaliser. Each platform's subscription returns its own `ClimbQueueItem` shape (web: full `@boardsesh/shared-schema` type; mobile: slim `SubscriptionQueueItem`) and aliases (`addedItem`/`item`, `currentItem`/`item`, `mirroredUuid`/`uuid`); this helper takes an optional per-platform item lifter and emits a single `EventMappingResult`.
+    - **`createSetCurrentClimbCoalescer`** — serialize-and-supersede. At most one `SET_CURRENT_CLIMB` in flight at a time; a newer call while one is pending overwrites the queued args. A superseded args that carried `shouldAddToQueue:true` still fires its `ADD_QUEUE_ITEM` (so the queue mutation reaches the server even when the setCurrent gets dropped). Prevents rapid swipes from stacking requests.
+    - **`createJoinSessionTracker`** — `(sessionId, epoch)`-keyed `JOIN_SESSION` promise cache. Callers bump the epoch from the socket's `closed` handler so a mutation racing between `closed` and `connected` doesn't await a stale-resolved promise from the dead connection and fire over the new socket before its own `JOIN_SESSION` lands. Mobile uses the tracker; web's `use-session-lifecycle.ts` has a parallel implementation that hasn't yet been migrated.
+
 **Redis Connection Architecture:** The backend maintains 3 Redis connections:
 
 1. **Publisher** — shared by RoomManager, RedisSessionStore, DistributedState, EventBroker (non-blocking ops like `xadd`, `xack`)

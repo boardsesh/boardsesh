@@ -179,7 +179,7 @@ describe('createSetCurrentClimbCoalescer', () => {
     await firstEnqueue; // does not throw — drain error swallowed
 
     expect(onDrainError).toHaveBeenCalledTimes(1);
-    expect(onDrainError.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(onDrainError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 
   it('returns to idle state after drain so a later enqueue starts fresh', async () => {
