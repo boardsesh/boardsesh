@@ -152,11 +152,14 @@
         "@boardsesh/ble-protocol": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/climb-actions": "*",
         "@boardsesh/climb-filters": "*",
         "@boardsesh/graphql": "*",
         "@boardsesh/graphql-client": "*",
+        "@boardsesh/party-profile": "*",
         "@boardsesh/play-view": "*",
         "@boardsesh/queue": "*",
+        "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
         "@expo/vector-icons": "^15.0.2",
         "@gorhom/bottom-sheet": "^5.1.0",
@@ -259,6 +262,13 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/climb-actions": {
+      "name": "@boardsesh/climb-actions",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/shared/climb-filters": {
       "name": "@boardsesh/climb-filters",
       "version": "1.0.0",
@@ -292,6 +302,13 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/party-profile": {
+      "name": "@boardsesh/party-profile",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/shared/play-view": {
       "name": "@boardsesh/play-view",
       "version": "1.0.0",
@@ -311,6 +328,16 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/queue-runtime": {
+      "name": "@boardsesh/queue-runtime",
+      "version": "1.0.0",
+      "dependencies": {
+        "@boardsesh/queue": "*",
+      },
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/web": {
       "name": "@boardsesh/web",
       "version": "0.1.0",
@@ -326,14 +353,17 @@
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
         "@boardsesh/board-renderer-wasm": "*",
+        "@boardsesh/climb-actions": "*",
         "@boardsesh/climb-filters": "*",
         "@boardsesh/crypto": "*",
         "@boardsesh/db": "*",
         "@boardsesh/graphql": "*",
         "@boardsesh/graphql-client": "*",
         "@boardsesh/moonboard-ocr": "*",
+        "@boardsesh/party-profile": "*",
         "@boardsesh/play-view": "*",
         "@boardsesh/queue": "*",
+        "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
         "@emoji-mart/data": "^1.2.1",
         "@emoji-mart/react": "^1.1.1",
@@ -719,6 +749,8 @@
 
     "@boardsesh/board-renderer-wasm": ["@boardsesh/board-renderer-wasm@workspace:packages/board-renderer/wasm"],
 
+    "@boardsesh/climb-actions": ["@boardsesh/climb-actions@workspace:packages/shared/climb-actions"],
+
     "@boardsesh/climb-filters": ["@boardsesh/climb-filters@workspace:packages/shared/climb-filters"],
 
     "@boardsesh/crypto": ["@boardsesh/crypto@workspace:packages/crypto"],
@@ -733,9 +765,13 @@
 
     "@boardsesh/moonboard-ocr": ["@boardsesh/moonboard-ocr@workspace:packages/moonboard-ocr"],
 
+    "@boardsesh/party-profile": ["@boardsesh/party-profile@workspace:packages/shared/party-profile"],
+
     "@boardsesh/play-view": ["@boardsesh/play-view@workspace:packages/shared/play-view"],
 
     "@boardsesh/queue": ["@boardsesh/queue@workspace:packages/shared/queue"],
+
+    "@boardsesh/queue-runtime": ["@boardsesh/queue-runtime@workspace:packages/shared/queue-runtime"],
 
     "@boardsesh/shared-schema": ["@boardsesh/shared-schema@workspace:packages/shared-schema"],
 

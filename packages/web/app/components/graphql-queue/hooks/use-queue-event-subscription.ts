@@ -1,19 +1,19 @@
 import { type Dispatch, type RefObject, useEffect } from 'react';
 import type { SubscriptionQueueEvent } from '@boardsesh/shared-schema';
-import { mapQueueEventToAction, type SyncQueueEvent } from '@boardsesh/queue';
+import type { ClimbQueueItem } from '@boardsesh/queue';
+import { mapSubscriptionEnvelopeToAction, type SubscriptionWireEnvelope } from '@boardsesh/queue-runtime';
 import type { QueueAction } from '../../queue-control/types';
 import { track } from '@/app/lib/analytics';
 
 /**
- * Adapt a wire-format `SubscriptionQueueEvent` (from `@boardsesh/shared-schema`)
- * to the coordinator's `SyncQueueEvent`. The two unions are structurally
- * compatible — they share `addedItem` / `currentItem` field names and the same
- * `__typename` set — but their `ClimbQueueItem` types come from different
- * packages so TS can't infer assignability directly. Runtime shapes match
- * because both flow from the same GraphQL schema codegen.
+ * Adapt the wire-format `SubscriptionQueueEvent` from `@boardsesh/shared-schema`
+ * to the runtime's structural wire envelope. The two unions share field names
+ * and `__typename` set; their `ClimbQueueItem` types come from different
+ * packages so TS can't infer assignability directly, hence the cast. Web's
+ * wire items already match `ClimbQueueItem` so no per-item lift is needed.
  */
-function toSyncQueueEvent(event: SubscriptionQueueEvent): SyncQueueEvent {
-  return event as unknown as SyncQueueEvent;
+function toWireEnvelope(event: SubscriptionQueueEvent): SubscriptionWireEnvelope<ClimbQueueItem> {
+  return event as unknown as SubscriptionWireEnvelope<ClimbQueueItem>;
 }
 
 type UseQueueEventSubscriptionParams = {
@@ -53,11 +53,11 @@ export function useQueueEventSubscription({
     if (!isPersistentSessionActive) return;
 
     const unsubscribe = persistentSession.subscribeToQueueEvents((event: SubscriptionQueueEvent) => {
-      // Wire-format → reducer-action mapping lives in @boardsesh/queue so web and
-      // mobile share one source of truth (incl. the echo-suppression hints on
-      // DELTA_UPDATE_CURRENT_CLIMB). Analytics + side effects stay here.
-      const result = mapQueueEventToAction(toSyncQueueEvent(event), {
-        myClientId: persistentSession.clientId ?? undefined,
+      // Wire-format → reducer-action mapping lives in @boardsesh/queue-runtime
+      // so web and mobile share one source of truth (incl. the echo-suppression
+      // hints on DELTA_UPDATE_CURRENT_CLIMB). Analytics + side effects stay here.
+      const result = mapSubscriptionEnvelopeToAction(toWireEnvelope(event), {
+        context: { myClientId: persistentSession.clientId ?? undefined },
       });
       if (result.kind !== 'dispatch') return;
       dispatch(result.action as QueueAction);

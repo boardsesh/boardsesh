@@ -1,4 +1,5 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
+import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
 import { type Client, execute } from '../../graphql-queue/graphql-client';
 import {
   ADD_QUEUE_ITEM,
@@ -69,26 +70,12 @@ export type QueueMutationsActions = {
   setSessionBoardPath: (boardPath: string) => Promise<void>;
 };
 
-type SetCurrentClimbArgs = {
-  item: LocalClimbQueueItem | null;
-  shouldAddToQueue?: boolean;
-  correlationId?: string;
-};
-
 export function useQueueMutations({ client, session }: UseQueueMutationsArgs): QueueMutationsActions {
   // Use refs so callbacks have stable identity (never recreate)
   const clientRef = useRef(client);
   const sessionRef = useRef(session);
   clientRef.current = client;
   sessionRef.current = session;
-
-  // Serialize-and-supersede: at most one setCurrentClimb in-flight at a time.
-  // A newer call while one is in-flight overwrites any previously queued args.
-  // When the in-flight call completes, the latest pending one fires.
-  const setCurrentClimbState = useRef<{ inFlight: boolean; pending: SetCurrentClimbArgs | null }>({
-    inFlight: false,
-    pending: null,
-  });
 
   const addQueueItem = useCallback(async (item: LocalClimbQueueItem, position?: number) => {
     if (!clientRef.current || !sessionRef.current?.id) throw new Error('Not connected to session');
@@ -106,56 +93,40 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
     });
   }, []);
 
+  // Coalescer is stable for the hook's lifetime; it reads clientRef/sessionRef
+  // at send time so locale changes (or any other rerender) don't reset the
+  // inFlight/pending state mid-session.
+  const setCurrentClimbCoalescer = useMemo(
+    () =>
+      createSetCurrentClimbCoalescer({
+        sendArgs: async (args) => {
+          if (!clientRef.current || !sessionRef.current?.id) throw new Error('Not connected to session');
+          await execute(clientRef.current, {
+            query: SET_CURRENT_CLIMB,
+            variables: {
+              item: args.item ? toClimbQueueItemInput(args.item) : null,
+              shouldAddToQueue: args.shouldAddToQueue,
+              correlationId: args.correlationId,
+            },
+          });
+        },
+        sendSupersededQueueAdd: async (item) => {
+          if (!clientRef.current) return;
+          await execute(clientRef.current, {
+            query: ADD_QUEUE_ITEM,
+            variables: { item: toClimbQueueItemInput(item) },
+          });
+        },
+      }),
+    [],
+  );
+
   const setCurrentClimb = useCallback(
     async (item: LocalClimbQueueItem | null, shouldAddToQueue?: boolean, correlationId?: string) => {
       if (!clientRef.current || !sessionRef.current?.id) throw new Error('Not connected to session');
-
-      const sendArgs = async (args: SetCurrentClimbArgs) => {
-        if (!clientRef.current || !sessionRef.current?.id) throw new Error('Not connected to session');
-        await execute(clientRef.current, {
-          query: SET_CURRENT_CLIMB,
-          variables: {
-            item: args.item ? toClimbQueueItemInput(args.item) : null,
-            shouldAddToQueue: args.shouldAddToQueue,
-            correlationId: args.correlationId,
-          },
-        });
-      };
-
-      const state = setCurrentClimbState.current;
-      const args: SetCurrentClimbArgs = { item, shouldAddToQueue, correlationId };
-
-      if (state.inFlight) {
-        // The setCurrentClimb is correctly dropped (only latest matters), but
-        // if a queued arg carried shouldAddToQueue, the queue-add must still
-        // reach the server.
-        if (state.pending !== null && state.pending.shouldAddToQueue && state.pending.item && clientRef.current) {
-          execute(clientRef.current, {
-            query: ADD_QUEUE_ITEM,
-            variables: { item: toClimbQueueItemInput(state.pending.item) },
-          }).catch((err: unknown) => console.error('Failed to add superseded queue item:', err));
-        }
-        state.pending = args;
-        return;
-      }
-
-      state.inFlight = true;
-      try {
-        await sendArgs(args);
-      } finally {
-        while (state.pending !== null) {
-          const next = state.pending;
-          state.pending = null;
-          try {
-            await sendArgs(next);
-          } catch (error) {
-            console.error('Failed to send coalesced mutation:', error);
-          }
-        }
-        state.inFlight = false;
-      }
+      await setCurrentClimbCoalescer.enqueue({ item, shouldAddToQueue, correlationId });
     },
-    [],
+    [setCurrentClimbCoalescer],
   );
 
   const mirrorCurrentClimb = useCallback(async (mirrored: boolean) => {
