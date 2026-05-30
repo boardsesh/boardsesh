@@ -1,77 +1,33 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { getPreference, setPreference, removePreference } from '@/app/lib/user-preferences-db';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
+import { removePreference } from '@/app/lib/user-preferences-db';
 import { getBackendWsUrl } from '@/app/lib/backend-url';
-
-const PARTY_MODE_PREFERENCE_KEY = 'boardsesh:partyMode';
 
 // Backend URL resolved at runtime (supports PR preview domains)
 const BACKEND_URL = getBackendWsUrl();
 
-export type PartyMode = 'direct' | 'backend';
-
 type ConnectionSettingsContextType = {
   // Backend URL (from env var only)
   backendUrl: string | null;
-
-  // Party Mode
-  partyMode: PartyMode;
-  setPartyMode: (mode: PartyMode) => void;
-
-  // Loading state
-  isLoaded: boolean;
 };
 
 const ConnectionSettingsContext = createContext<ConnectionSettingsContextType | undefined>(undefined);
 
 export const ConnectionSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [storedPartyMode, setStoredPartyMode] = useState<PartyMode>('direct');
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Load party mode from IndexedDB on mount
+  // Best-effort cleanup of legacy preference keys. `partyMode` used to toggle
+  // between a direct peer-to-peer transport and the backend WS; the direct
+  // path was removed (all party sessions now flow through ws.boardsesh.com),
+  // so the stored value is orphan. `backendUrl` was a stored override from an
+  // older iteration. Cleaning here keeps existing devices from carrying dead
+  // IDB entries forever.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    getPreference<PartyMode>(PARTY_MODE_PREFERENCE_KEY)
-      .then((storedMode) => {
-        if (storedMode === 'direct' || storedMode === 'backend') {
-          setStoredPartyMode(storedMode);
-        }
-
-        // Clean up old preference keys if they exist
-        removePreference('boardsesh:backendUrl').catch(() => {});
-      })
-      .catch(() => {})
-      .finally(() => {
-        setIsLoaded(true);
-      });
+    removePreference('boardsesh:partyMode').catch(() => {});
+    removePreference('boardsesh:backendUrl').catch(() => {});
   }, []);
 
-  // Effective party mode - env var forces backend mode
-  const partyMode = useMemo<PartyMode>(() => {
-    if (BACKEND_URL) {
-      return 'backend';
-    }
-    return storedPartyMode;
-  }, [storedPartyMode]);
-
-  const setPartyMode = useCallback((mode: PartyMode) => {
-    if (typeof window !== 'undefined') {
-      setPreference(PARTY_MODE_PREFERENCE_KEY, mode).catch(() => {});
-      setStoredPartyMode(mode);
-    }
-  }, []);
-
-  const value = useMemo<ConnectionSettingsContextType>(
-    () => ({
-      backendUrl: BACKEND_URL,
-      partyMode,
-      setPartyMode,
-      isLoaded,
-    }),
-    [partyMode, setPartyMode, isLoaded],
-  );
+  const value = useMemo<ConnectionSettingsContextType>(() => ({ backendUrl: BACKEND_URL }), []);
 
   return <ConnectionSettingsContext.Provider value={value}>{children}</ConnectionSettingsContext.Provider>;
 };
@@ -84,13 +40,7 @@ export function useConnectionSettings() {
   return context;
 }
 
-// Convenience hook for backwards compatibility
 export function useBackendUrl() {
-  const { backendUrl, isLoaded } = useConnectionSettings();
-  return { backendUrl, isLoaded };
-}
-
-export function usePartyMode() {
-  const { partyMode, setPartyMode, isLoaded } = useConnectionSettings();
-  return { partyMode, setPartyMode, isLoaded };
+  const { backendUrl } = useConnectionSettings();
+  return { backendUrl };
 }

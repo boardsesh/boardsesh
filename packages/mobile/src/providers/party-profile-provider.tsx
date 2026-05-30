@@ -5,7 +5,12 @@
 // The party profile itself is just `{ id: UUID }` — used as a stable peer
 // identity for the WebSocket party session. username/avatarUrl are surfaced
 // for API parity but resolve to undefined until mobile fetches the user's
-// profile from the backend (separate follow-up).
+// profile from the backend.
+//
+// Consolidation with the authenticated user-profile fetch is tracked in
+// https://github.com/boardsesh/boardsesh/issues/2392 — both web and mobile
+// currently mix the party-UUID identity and the authenticated user profile
+// in this single provider; the issue lays out the cleaner split.
 
 import {
   createContext,

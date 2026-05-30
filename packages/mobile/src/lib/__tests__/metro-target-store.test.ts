@@ -1,5 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('@react-native-async-storage/async-storage', () => {
+  let storage: Record<string, string> = {};
+  return {
+    default: {
+      getItem: vi.fn(async (key: string) => storage[key] ?? null),
+      setItem: vi.fn(async (key: string, value: string) => {
+        storage[key] = value;
+      }),
+      removeItem: vi.fn(async (key: string) => {
+        delete storage[key];
+      }),
+      // Test-only helpers (not part of the real AsyncStorage API).
+      __reset: () => {
+        storage = {};
+      },
+      __setRaw: (key: string, value: string) => {
+        storage[key] = value;
+      },
+      __getRaw: (key: string) => storage[key],
+    },
+  };
+});
+
 vi.mock('expo-secure-store', () => {
   let storage: Record<string, string> = {};
   return {
@@ -23,8 +46,12 @@ vi.mock('expo-secure-store', () => {
 describe('metro-target-store', () => {
   beforeEach(async () => {
     vi.resetModules();
-    const store = await import('expo-secure-store');
-    (store as unknown as { __reset: () => void }).__reset();
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __reset: () => void;
+    };
+    const secureStore = (await import('expo-secure-store')) as unknown as { __reset: () => void };
+    asyncStorage.__reset();
+    secureStore.__reset();
   });
 
   it('normalizes and deduplicates saved targets', async () => {
@@ -112,26 +139,64 @@ describe('metro-target-store', () => {
   });
 
   it('refuses to overwrite a corrupted stored value', async () => {
-    const store = (await import('expo-secure-store')) as unknown as {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __setRaw: (key: string, value: string) => void;
       __getRaw: (key: string) => string;
     };
-    store.__setRaw('boardsesh_dev_metro_hosts', '{not json');
+    asyncStorage.__setRaw('boardsesh_dev_metro_hosts', '{not json');
 
     const { addSavedMetroTarget } = await import('../metro-target-store');
     await expect(addSavedMetroTarget('host-a.example')).rejects.toThrow(/corrupted/i);
-    expect(store.__getRaw('boardsesh_dev_metro_hosts')).toBe('{not json');
+    expect(asyncStorage.__getRaw('boardsesh_dev_metro_hosts')).toBe('{not json');
   });
 
   it('returns an empty list (without wiping storage) when stored value is non-array', async () => {
-    const store = (await import('expo-secure-store')) as unknown as {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __setRaw: (key: string, value: string) => void;
       __getRaw: (key: string) => string;
     };
-    store.__setRaw('boardsesh_dev_metro_hosts', '"a string"');
+    asyncStorage.__setRaw('boardsesh_dev_metro_hosts', '"a string"');
 
     const { getSavedMetroTargets } = await import('../metro-target-store');
     await expect(getSavedMetroTargets()).resolves.toEqual([]);
-    expect(store.__getRaw('boardsesh_dev_metro_hosts')).toBe('"a string"');
+    expect(asyncStorage.__getRaw('boardsesh_dev_metro_hosts')).toBe('"a string"');
+  });
+
+  it('migrates legacy SecureStore value to AsyncStorage on first read', async () => {
+    const secureStore = (await import('expo-secure-store')) as unknown as {
+      __setRaw: (key: string, value: string) => void;
+      __getRaw: (key: string) => string | undefined;
+    };
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __getRaw: (key: string) => string | undefined;
+    };
+    secureStore.__setRaw('boardsesh_dev_metro_hosts', JSON.stringify(['host-legacy.example']));
+
+    const { getSavedMetroTargets } = await import('../metro-target-store');
+    await expect(getSavedMetroTargets()).resolves.toEqual(['host-legacy.example']);
+
+    // AsyncStorage now holds the migrated value; SecureStore is cleared.
+    expect(asyncStorage.__getRaw('boardsesh_dev_metro_hosts')).toBe(JSON.stringify(['host-legacy.example']));
+    expect(secureStore.__getRaw('boardsesh_dev_metro_hosts')).toBeUndefined();
+  });
+
+  it('does not overwrite an existing AsyncStorage value during migration', async () => {
+    const secureStore = (await import('expo-secure-store')) as unknown as {
+      __setRaw: (key: string, value: string) => void;
+      __getRaw: (key: string) => string | undefined;
+    };
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __setRaw: (key: string, value: string) => void;
+      __getRaw: (key: string) => string | undefined;
+    };
+    secureStore.__setRaw('boardsesh_dev_metro_hosts', JSON.stringify(['host-legacy.example']));
+    asyncStorage.__setRaw('boardsesh_dev_metro_hosts', JSON.stringify(['host-current.example']));
+
+    const { getSavedMetroTargets } = await import('../metro-target-store');
+    await expect(getSavedMetroTargets()).resolves.toEqual(['host-current.example']);
+
+    // Migration is skipped when AsyncStorage already has data; legacy stays
+    // untouched (will get cleaned up on a subsequent install or manual reset).
+    expect(secureStore.__getRaw('boardsesh_dev_metro_hosts')).toBe(JSON.stringify(['host-legacy.example']));
   });
 });
