@@ -25,6 +25,10 @@ COPY packages/board-renderer/wasm/package.json ./packages/board-renderer/wasm/
 COPY packages/board-renderer/wasm/pkg/ ./packages/board-renderer/wasm/pkg/
 COPY packages/shared/ble-protocol/package.json ./packages/shared/ble-protocol/
 COPY packages/shared/board-config/package.json ./packages/shared/board-config/
+COPY packages/shared/climb-filters/package.json ./packages/shared/climb-filters/
+COPY packages/shared/graphql/package.json ./packages/shared/graphql/
+COPY packages/shared/graphql-client/package.json ./packages/shared/graphql-client/
+COPY packages/shared/play-view/package.json ./packages/shared/play-view/
 COPY packages/shared/queue/package.json ./packages/shared/queue/
 
 # Install all dependencies (need devDependencies for the build)

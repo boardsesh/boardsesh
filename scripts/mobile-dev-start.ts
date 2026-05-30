@@ -42,7 +42,12 @@ async function isPortAvailable(port: number): Promise<boolean> {
     server.once('listening', () => {
       server.close(() => resolveAvailable(true));
     });
-    server.listen(port);
+    // Bind to loopback only — `server.listen(port)` listens on 0.0.0.0,
+    // briefly exposing the probe externally. Note there's still a small
+    // TOCTOU window between this close() and Metro's subsequent bind:
+    // Metro auto-bumps to the next free port on collision, so the URL we
+    // print is advisory.
+    server.listen(port, '127.0.0.1');
   });
 }
 

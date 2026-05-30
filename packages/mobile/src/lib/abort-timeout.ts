@@ -30,11 +30,18 @@ export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): Ab
 // time. Preserves input order in the returned array. Used to keep the Metro
 // discovery scan from saturating the network stack on multi-host tailnets.
 //
-// If any `fn` call rejects, the worker keeps draining (so siblings already
-// in flight finish cleanly) and the first error is re-thrown once all
-// workers have settled. This matches Promise.all's "first error wins"
-// semantics without leaving uninitialized holes in a partially-completed
-// result array that a caller could read by mistake.
+// Error semantics: if any `fn` call rejects, sibling workers keep draining
+// so in-flight calls finish cleanly, and the first error is re-thrown once
+// all workers have settled. This matches `Promise.all`'s "first error wins"
+// shape.
+//
+// CAVEAT: on the throw path the returned `results` is internal-only — slots
+// for rejected items were never assigned, so the array is sparse (`R[]`
+// with `undefined` holes). The function throws before any caller can
+// observe it, but callers must not catch and then read `results` from a
+// caller-side reference: there isn't one, the variable is local. If you
+// ever expose partial results, return a tagged `{ values, errors }` shape
+// instead.
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,

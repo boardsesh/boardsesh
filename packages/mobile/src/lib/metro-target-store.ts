@@ -81,13 +81,18 @@ export async function addSavedMetroTarget(value: string): Promise<string> {
 }
 
 export async function removeSavedMetroTarget(value: string): Promise<void> {
+  // Stored entries are normalized on write (see addSavedMetroTarget +
+  // readStoredTargets), so we have to normalize the incoming value too —
+  // otherwise a caller passing the raw user-typed form ('HOST-A.example')
+  // would silently no-op against a stored entry ('host-a.example').
+  const normalizedValue = normalizeMetroTarget(value) ?? value;
   return enqueue(async () => {
     const stored = await readStoredTargets();
     // Same rule as add: don't overwrite an unparseable stored value.
     if (!stored.ok) {
       throw new Error('Saved Metro server list is corrupted — clear it from app data and retry');
     }
-    const updatedTargets = stored.targets.filter((target) => target !== value);
+    const updatedTargets = stored.targets.filter((target) => target !== normalizedValue);
     await SecureStore.setItemAsync(METRO_TARGETS_KEY, JSON.stringify(updatedTargets));
   });
 }

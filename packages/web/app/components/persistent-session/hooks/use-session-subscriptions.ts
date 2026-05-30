@@ -157,7 +157,14 @@ export function useSessionSubscriptions({
           });
         }
 
-        if (triggerResyncRef.current) {
+        // Stop auto-resyncing once we've hit the loop threshold for this exact
+        // server hash. Repeated resyncs against an unchanging server hash are
+        // no-ops on the server (issue #2359) — the resync isn't fixing the
+        // disagreement, so refiring every minute just spams the session. Keep
+        // the Sentry alert above, but back off here. The counter resets when
+        // the hashes finally agree or the server hash changes, so genuine new
+        // drift still resyncs.
+        if (consecutiveResyncCountRef.current <= RESYNC_LOOP_THRESHOLD && triggerResyncRef.current) {
           triggerResyncRef.current();
         }
       } else {

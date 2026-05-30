@@ -4,6 +4,8 @@
 
 export { queueReducer, initialState } from './reducer';
 
+export { fnv1aHash, computeQueueStateHash } from './state-hash';
+
 export type {
   QueueState,
   QueueAction,

@@ -47,6 +47,28 @@ describe('metro-target-store', () => {
     await expect(getSavedMetroTargets()).resolves.toEqual(['host-b.example']);
   });
 
+  it('normalizes the input on remove so non-normalized callers still match', async () => {
+    const { addSavedMetroTarget, getSavedMetroTargets, removeSavedMetroTarget } = await import('../metro-target-store');
+
+    // Add via the canonical form
+    await addSavedMetroTarget('host-a.example');
+    // Remove via a non-normalized form (uppercase, trailing slash, URL path).
+    // Without normalization the predicate would compare raw against stored
+    // and silently no-op.
+    await removeSavedMetroTarget('HOST-A.example');
+
+    await expect(getSavedMetroTargets()).resolves.toEqual([]);
+  });
+
+  it('also accepts URL-form remove values that normalize to a stored URL', async () => {
+    const { addSavedMetroTarget, getSavedMetroTargets, removeSavedMetroTarget } = await import('../metro-target-store');
+
+    await addSavedMetroTarget('http://host-a.example:8084');
+    await removeSavedMetroTarget('http://host-a.example:8084/foo');
+
+    await expect(getSavedMetroTargets()).resolves.toEqual([]);
+  });
+
   it('throws for invalid targets', async () => {
     const { addSavedMetroTarget } = await import('../metro-target-store');
 

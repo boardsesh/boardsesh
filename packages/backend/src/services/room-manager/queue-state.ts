@@ -4,7 +4,7 @@ import { sessionQueues } from '../../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import type { RedisSessionStore } from '../redis-session-store';
 import type { DistributedStateManager } from '../distributed-state';
-import { computeQueueStateHash } from '../../utils/hash';
+import { computeQueueStateHash } from '@boardsesh/queue';
 import { VersionConflictError, type QueueState } from './types';
 import { type WriteScheduler, writeQueueStateToPostgres } from './write-scheduler';
 
