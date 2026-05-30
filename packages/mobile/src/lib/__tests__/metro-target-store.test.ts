@@ -180,6 +180,39 @@ describe('metro-target-store', () => {
     expect(secureStore.__getRaw('boardsesh_dev_metro_hosts')).toBeUndefined();
   });
 
+  it('retries migration on the next read after a transient AsyncStorage failure', async () => {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      getItem: ReturnType<typeof vi.fn>;
+      setItem: ReturnType<typeof vi.fn>;
+      __getRaw: (key: string) => string | undefined;
+      __setRaw: (key: string, value: string) => void;
+    };
+    const secureStore = (await import('expo-secure-store')) as unknown as {
+      __setRaw: (key: string, value: string) => void;
+      __getRaw: (key: string) => string | undefined;
+    };
+    secureStore.__setRaw('boardsesh_dev_metro_hosts', JSON.stringify(['host-legacy.example']));
+
+    // First read: AsyncStorage.getItem throws once during migration.
+    const originalGetItem = asyncStorage.getItem.getMockImplementation();
+    asyncStorage.getItem.mockImplementationOnce(async () => {
+      throw new Error('transient storage error');
+    });
+
+    const { getSavedMetroTargets } = await import('../metro-target-store');
+    const firstResult = await getSavedMetroTargets();
+    // Migration failed — legacy still in SecureStore, AsyncStorage empty.
+    expect(firstResult).toEqual([]);
+    expect(secureStore.__getRaw('boardsesh_dev_metro_hosts')).toBe(JSON.stringify(['host-legacy.example']));
+    expect(asyncStorage.__getRaw('boardsesh_dev_metro_hosts')).toBeUndefined();
+
+    // Restore normal behavior, retry: migration should now succeed.
+    asyncStorage.getItem.mockImplementation(originalGetItem!);
+    const secondResult = await getSavedMetroTargets();
+    expect(secondResult).toEqual(['host-legacy.example']);
+    expect(secureStore.__getRaw('boardsesh_dev_metro_hosts')).toBeUndefined();
+  });
+
   it('does not overwrite an existing AsyncStorage value during migration', async () => {
     const secureStore = (await import('expo-secure-store')) as unknown as {
       __setRaw: (key: string, value: string) => void;

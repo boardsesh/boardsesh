@@ -15,26 +15,43 @@ type StoredTargets = { ok: true; targets: string[] } | { ok: false };
 // Non-secret data shouldn't live in the Keychain/Keystore, so on first read
 // we hoist any legacy value into AsyncStorage and delete the SecureStore
 // copy. Idempotent — running on a device that already migrated is a no-op.
-let migrationPromise: Promise<void> | null = null;
+//
+// On transient failure (storage error, native module not ready) we DON'T
+// cache the failed attempt — a subsequent read retries. Caching only on
+// success means a flaky first read can't permanently strand a user's
+// legacy SecureStore value.
+let migrationCompleted = false;
+let migrationInFlight: Promise<void> | null = null;
 async function migrateFromSecureStore(): Promise<void> {
-  if (migrationPromise !== null) return migrationPromise;
-  migrationPromise = (async () => {
+  if (migrationCompleted) return;
+  if (migrationInFlight !== null) return migrationInFlight;
+  migrationInFlight = (async () => {
     try {
       const asyncValue = await AsyncStorage.getItem(METRO_TARGETS_KEY);
-      if (asyncValue !== null) return; // AsyncStorage already has data; nothing to migrate.
+      if (asyncValue !== null) {
+        migrationCompleted = true;
+        return;
+      }
 
       const legacyValue = await SecureStore.getItemAsync(METRO_TARGETS_KEY);
-      if (legacyValue === null) return; // No legacy value either.
+      if (legacyValue === null) {
+        migrationCompleted = true;
+        return;
+      }
 
       await AsyncStorage.setItem(METRO_TARGETS_KEY, legacyValue);
       await SecureStore.deleteItemAsync(METRO_TARGETS_KEY);
+      migrationCompleted = true;
     } catch (err) {
       if (__DEV__) {
-        console.warn('[metro-target-store] migration from SecureStore failed', err);
+        console.warn('[metro-target-store] migration from SecureStore failed; will retry on next read', err);
       }
+      // Leave migrationCompleted=false so a future call retries.
+    } finally {
+      migrationInFlight = null;
     }
   })();
-  return migrationPromise;
+  return migrationInFlight;
 }
 
 async function readStoredTargets(): Promise<StoredTargets> {

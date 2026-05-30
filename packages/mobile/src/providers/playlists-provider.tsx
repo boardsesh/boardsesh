@@ -59,7 +59,7 @@ export function PlaylistsProvider({
   createPlaylist = notWired('createPlaylist'),
   isLoading = false,
   isAuthenticated = false,
-  refreshPlaylists = async () => undefined,
+  refreshPlaylists = notWired('refreshPlaylists'),
   children,
 }: PlaylistsProviderProps) {
   const getPlaylistsForClimb = useMemo(

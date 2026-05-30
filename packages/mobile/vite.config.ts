@@ -11,6 +11,9 @@ export default defineConfig({
     name: 'mobile',
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // .tsx test files can opt into a jsdom environment per file via the
+    // `// @vitest-environment jsdom` pragma — needed to render React
+    // providers in tests. Pure-logic tests stay node-env (faster).
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

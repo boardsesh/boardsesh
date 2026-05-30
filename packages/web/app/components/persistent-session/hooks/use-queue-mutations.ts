@@ -111,7 +111,13 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
           });
         },
         sendSupersededQueueAdd: async (item) => {
-          if (!clientRef.current) return;
+          // Same session guard as sendArgs / addQueueItem / removeQueueItem —
+          // if the session ended (or never started) between the original
+          // setCurrentClimb call and this fire-and-forget queue-add, the
+          // backend would reject the mutation with "no active session".
+          // Drop silently rather than throwing, since the caller's catch is
+          // the coalescer's onSupersededQueueAddError sink.
+          if (!clientRef.current || !sessionRef.current?.id) return;
           await execute(clientRef.current, {
             query: ADD_QUEUE_ITEM,
             variables: { item: toClimbQueueItemInput(item) },
