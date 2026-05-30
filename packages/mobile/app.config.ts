@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { networkInterfaces } from 'node:os';
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 
 const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
@@ -26,6 +27,28 @@ function normalizeHost(host: string): string {
 
 function normalizeHostValues(hostValues: readonly string[]): string[] {
   return hostValues.map(normalizeHost).filter((host) => host.length > 0);
+}
+
+function resolveLanHosts(): string[] {
+  // Cloud builders don't have a useful LAN identity for an on-device dev
+  // client to reach back to. Skip the lookup to keep extras deterministic.
+  if (process.env.CI || process.env.EAS_BUILD || process.env.EAS_BUILD_RUNNER) {
+    return [];
+  }
+
+  const interfaces = networkInterfaces();
+  const addresses: string[] = [];
+  for (const ifaceAddrs of Object.values(interfaces)) {
+    if (!ifaceAddrs) continue;
+    for (const addr of ifaceAddrs) {
+      if (addr.family !== 'IPv4') continue;
+      if (addr.internal) continue;
+      // 169.254/16 link-local addresses aren't routable from another device.
+      if (addr.address.startsWith('169.254.')) continue;
+      addresses.push(addr.address);
+    }
+  }
+  return Array.from(new Set(addresses));
 }
 
 function resolveTailscaleHosts(): string[] {
@@ -76,7 +99,12 @@ function isDevBuildProfile(): boolean {
 export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: boolean } => {
   const devMetadata = resolveDevMetadata();
   const hasDevMetadata = devMetadata.branchName || devMetadata.qaNotes || devMetadata.qaNotesFilePath;
-  const tailscaleHosts = resolveTailscaleHosts();
+  // Hosts the in-app dev-server switcher will probe for live Metro bundlers.
+  // localhost covers the simulator, LAN IPs cover same-Wi-Fi devices, tailnet
+  // names cover off-LAN devices on the same tailnet.
+  const devBundlerHosts = Array.from(
+    new Set(normalizeHostValues(['localhost', ...resolveLanHosts(), ...resolveTailscaleHosts()])),
+  );
   const isDevBuild = isDevBuildProfile();
 
   return {
@@ -181,7 +209,7 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
             },
           }
         : {}),
-      ...(tailscaleHosts.length > 0 ? { tailscaleHosts } : {}),
+      ...(devBundlerHosts.length > 0 ? { devBundlerHosts } : {}),
     },
   };
 };

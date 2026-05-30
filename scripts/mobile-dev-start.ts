@@ -63,13 +63,19 @@ const DEFAULT_QA_NOTES_PATH = join(BOARDSESH_DIR, 'qa-notes.md');
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
-function parseArgs(args: string[]): { qaNotesFilePath: string | null; passthroughArgs: string[] } {
+function parseArgs(args: string[]): { qaNotesFilePath: string | null; simulator: boolean; passthroughArgs: string[] } {
   let qaNotesFilePath: string | null = null;
+  let simulator = process.env.BOARDSESH_DEV_SIMULATOR === '1';
   const passthroughArgs: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--') continue;
+
+    if (argument === '--simulator') {
+      simulator = true;
+      continue;
+    }
 
     if (argument === '--qa-notes-file' || argument === '--qa-plan-file') {
       const nextArgument = args[index + 1];
@@ -99,7 +105,7 @@ function parseArgs(args: string[]): { qaNotesFilePath: string | null; passthroug
     passthroughArgs.push(argument);
   }
 
-  return { qaNotesFilePath, passthroughArgs };
+  return { qaNotesFilePath, simulator, passthroughArgs };
 }
 
 // ---------------------------------------------------------------------------
@@ -149,11 +155,15 @@ function resolveQaNotes(explicitPath: string | null): { contents: string | null;
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { qaNotesFilePath: cliQaNotesPath, passthroughArgs } = parseArgs(process.argv.slice(2));
+  const { qaNotesFilePath: cliQaNotesPath, simulator, passthroughArgs } = parseArgs(process.argv.slice(2));
   const branchName = resolveCurrentBranchName();
   const commitSha = runGitCommand(['rev-parse', '--short', 'HEAD']);
   const qaNotes = resolveQaNotes(cliQaNotesPath);
-  const tailscale = resolveTailscaleHostname();
+  // Simulator mode skips the tailnet probe entirely. The iOS Simulator's
+  // CFNetwork sandbox can't reach the host's Tailscale MagicDNS hostname
+  // reliably, so pinning REACT_NATIVE_PACKAGER_HOSTNAME to the tailnet name
+  // makes the initial bundle load fail with "could not connect".
+  const tailscale = simulator ? null : resolveTailscaleHostname();
   const metroPort = await resolveMetroPort(passthroughArgs);
   const metroPassthroughArgs = withMetroPort(passthroughArgs, metroPort);
   const startedAt = new Date().toISOString();
@@ -167,12 +177,16 @@ async function main() {
     console.log(`[dev:mobile] QA notes: ${qaNotes.filePath}`);
   }
   console.log(`[dev:mobile] Worktree: ${worktreeLabel}`);
-  console.log(`[dev:mobile] Hostname: ${tailscale.hostname} (${tailscale.source})`);
-  if (tailscale.reason) {
-    console.log(`[dev:mobile] ${tailscale.reason}`);
-  }
-  if (tailscale.source !== 'fallback') {
-    console.log(`[dev:mobile] Metro: http://${tailscale.hostname}:${metroPort}`);
+  if (simulator) {
+    console.log(`[dev:mobile] Simulator mode: serving bundles at http://localhost:${metroPort}`);
+  } else if (tailscale) {
+    console.log(`[dev:mobile] Hostname: ${tailscale.hostname} (${tailscale.source})`);
+    if (tailscale.reason) {
+      console.log(`[dev:mobile] ${tailscale.reason}`);
+    }
+    if (tailscale.source !== 'fallback') {
+      console.log(`[dev:mobile] Metro: http://${tailscale.hostname}:${metroPort}`);
+    }
   }
   console.log(`[dev:mobile] Metro log: .boardsesh/mobile-metro.log`);
 
@@ -188,12 +202,13 @@ async function main() {
   childEnv.BOARDSESH_DEV_WORKTREE_LABEL = worktreeLabel;
   childEnv.BOARDSESH_DEV_STARTED_AT = startedAt;
   childEnv.BOARDSESH_METRO_PORT = String(metroPort);
-  if (tailscale.source !== 'fallback') {
+  if (tailscale && tailscale.source !== 'fallback') {
     childEnv.REACT_NATIVE_PACKAGER_HOSTNAME = tailscale.hostname;
   }
 
-  // Bind Metro on 0.0.0.0 (Expo's --host lan) so devices on the same Tailnet can
-  // reach the bundler. Respect a user-supplied --host so manual overrides win.
+  // Default to --host lan so devices on the same Tailnet/LAN can reach the
+  // bundler. Simulator mode skips this so Expo's auto-detect advertises
+  // localhost for the simulator client. Respect a user-supplied --host either way.
   const userPassedHost = metroPassthroughArgs.some((arg) => arg === '--host' || arg.startsWith('--host='));
   // We ship a custom dev client (EAS preview-build flow); Metro must serve the
   // dev-client bundle, not the Expo Go one. Opt out by passing --go.
@@ -203,7 +218,7 @@ async function main() {
   const expoArgs = [
     'expo',
     'start',
-    ...(userPassedHost ? [] : ['--host', 'lan']),
+    ...(userPassedHost || simulator ? [] : ['--host', 'lan']),
     ...(userPickedClient ? [] : ['--dev-client']),
     ...metroPassthroughArgs,
   ];

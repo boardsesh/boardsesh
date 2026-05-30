@@ -34,8 +34,8 @@ type ExpoDevLauncherModule = {
 
 const ExpoDevLauncher = requireOptionalNativeModule<ExpoDevLauncherModule>('ExpoDevLauncher');
 
-function getTailscaleHosts(): string[] {
-  const hosts = Constants.expoConfig?.extra?.tailscaleHosts;
+function getDevBundlerHosts(): string[] {
+  const hosts = Constants.expoConfig?.extra?.devBundlerHosts;
   if (!Array.isArray(hosts)) return [];
   return hosts.filter((host): host is string => typeof host === 'string' && host.length > 0);
 }
@@ -67,7 +67,7 @@ export function DevServerSwitcherScreen() {
   const [isAddPromptOpen, setIsAddPromptOpen] = useState(false);
   const [addInputValue, setAddInputValue] = useState('');
 
-  const tailscaleHosts = useMemo(getTailscaleHosts, []);
+  const bundlerHosts = useMemo(getDevBundlerHosts, []);
   const savedTargetsQuery = useQuery({
     queryKey: ['saved-metro-targets'],
     queryFn: getSavedMetroTargets,
@@ -76,11 +76,11 @@ export function DevServerSwitcherScreen() {
   const savedTargets = savedTargetsQuery.data ?? [];
 
   const bundlersQuery = useQuery({
-    queryKey: ['dev-bundlers', tailscaleHosts, savedTargets],
+    queryKey: ['dev-bundlers', bundlerHosts, savedTargets],
     // React Query passes its own AbortSignal — propagate so invalidations
     // (pull-to-refresh, savedTargets change) cancel in-flight port probes
     // instead of leaving them running to completion.
-    queryFn: ({ signal }) => discoverBundlers({ hosts: tailscaleHosts, savedTargets, signal }),
+    queryFn: ({ signal }) => discoverBundlers({ hosts: bundlerHosts, savedTargets, signal }),
     staleTime: 30_000,
     enabled: savedTargetsQuery.isSuccess,
   });
@@ -221,9 +221,9 @@ export function DevServerSwitcherScreen() {
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
       >
-        {/* ---- Tailnet status ---- */}
+        {/* ---- Dev bundlers status ---- */}
         {/* i18n-ignore-next-line */}
-        <SectionHeader title="Tailnet" />
+        <SectionHeader title="Dev bundlers" />
         <View
           style={[
             styles.card,
@@ -235,7 +235,7 @@ export function DevServerSwitcherScreen() {
           ]}
         >
           {/* i18n-ignore-next-line */}
-          <InfoRow label="Hosts embedded" value={String(tailscaleHosts.length)} />
+          <InfoRow label="Hosts probed" value={String(bundlerHosts.length)} />
           {/* i18n-ignore-next-line */}
           <InfoRow label="Saved targets" value={String(savedTargets.length)} />
           {/* i18n-ignore-next-line */}
@@ -278,7 +278,7 @@ export function DevServerSwitcherScreen() {
           <View style={styles.centered}>
             <ActivityIndicator />
           </View>
-        ) : tailscaleHosts.length === 0 && savedTargets.length === 0 ? (
+        ) : bundlerHosts.length === 0 && savedTargets.length === 0 ? (
           <View style={[styles.errorContainer, { marginHorizontal: spacing[4] }]}>
             {/* i18n-ignore-next-line */}
             <Text variant="footnote" color={systemColors.secondaryLabel}>
