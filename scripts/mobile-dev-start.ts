@@ -207,18 +207,24 @@ async function main() {
   }
 
   // Default to --host lan so devices on the same Tailnet/LAN can reach the
-  // bundler. Simulator mode skips this so Expo's auto-detect advertises
-  // localhost for the simulator client. Respect a user-supplied --host either way.
-  const userPassedHost = metroPassthroughArgs.some((arg) => arg === '--host' || arg.startsWith('--host='));
+  // bundler. Simulator mode pins --host localhost — Expo's default is `lan`
+  // and the LAN auto-detect can pick a Tailscale/utun interface the simulator
+  // can't reach, which would re-trigger the original "could not connect" bug.
+  // Respect a user-supplied --host either way.
+  const userPassedHost = metroPassthroughArgs.some(
+    (arg) =>
+      arg === '--host' || arg.startsWith('--host=') || arg === '--localhost' || arg === '--lan' || arg === '--tunnel',
+  );
   // We ship a custom dev client (EAS preview-build flow); Metro must serve the
   // dev-client bundle, not the Expo Go one. Opt out by passing --go.
   const userPickedClient = passthroughArgs.some(
     (arg) => arg === '--dev-client' || arg === '--go' || arg.startsWith('--dev-client=') || arg.startsWith('--go='),
   );
+  const defaultHostArgs = userPassedHost ? [] : simulator ? ['--host', 'localhost'] : ['--host', 'lan'];
   const expoArgs = [
     'expo',
     'start',
-    ...(userPassedHost || simulator ? [] : ['--host', 'lan']),
+    ...defaultHostArgs,
     ...(userPickedClient ? [] : ['--dev-client']),
     ...metroPassthroughArgs,
   ];
