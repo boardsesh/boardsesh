@@ -19,6 +19,6 @@ export function useGradeFormat() {
       loaded: true,
       formatGrade: (difficulty: string | null | undefined) => formatGrade(difficulty, gradeFormat),
     }),
-    [gradeFormat],
+    [],
   );
 }

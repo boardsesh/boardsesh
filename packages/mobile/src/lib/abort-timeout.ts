@@ -29,6 +29,12 @@ export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): Ab
 // Maps `items` through `fn` with at most `concurrency` calls in flight at a
 // time. Preserves input order in the returned array. Used to keep the Metro
 // discovery scan from saturating the network stack on multi-host tailnets.
+//
+// If any `fn` call rejects, the worker keeps draining (so siblings already
+// in flight finish cleanly) and the first error is re-thrown once all
+// workers have settled. This matches Promise.all's "first error wins"
+// semantics without leaving uninitialized holes in a partially-completed
+// result array that a caller could read by mistake.
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
@@ -36,16 +42,25 @@ export async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let nextIndex = 0;
+  // Array (not a `let`) so TS doesn't narrow the value past the closure
+  // mutation — and so we can distinguish "no error" from "first error was
+  // literally undefined".
+  const collectedErrors: unknown[] = [];
 
   async function worker(): Promise<void> {
     while (true) {
       const index = nextIndex++;
       if (index >= items.length) return;
-      results[index] = await fn(items[index]);
+      try {
+        results[index] = await fn(items[index]);
+      } catch (err) {
+        if (collectedErrors.length === 0) collectedErrors.push(err);
+      }
     }
   }
 
   const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker);
   await Promise.all(workers);
+  if (collectedErrors.length > 0) throw collectedErrors[0];
   return results;
 }

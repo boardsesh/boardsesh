@@ -19,6 +19,6 @@
     "graphql-ws": "^6.0.8"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "~6.0.3"
   }
 }

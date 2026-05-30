@@ -12,12 +12,21 @@ Boardsesh is a monorepo with three deployable services:
 | **Backend** (`packages/backend`) | Railway (Node.js)   | Docker container at `{PRID}.ws.preview.boardsesh.com` |
 | **Database** (`packages/db`)     | Neon PostgreSQL     | `boardsesh-dev-db` Docker image (per PR)              |
 
+### Vercel project settings (production)
+
+The web project deploys from `packages/web`, not the repo root. Two dashboard settings under **Settings → Build & Deployment** are hard prerequisites — `packages/web/vercel.json` does nothing without them (and `vercel.json` is strict JSON, so this can't be a comment in the file):
+
+1. **Root Directory = `packages/web`.** This is how Vercel finds `next` (it lives only in `packages/web/package.json`, not the root). Without it the build fails with `No Next.js version detected`.
+2. **"Include source files outside of the Root Directory in the Build Step" = on.** The build reaches outside `packages/web`: `bun.lock` lives at the repo root (so `bun install --frozen-lockfile` walks up to find it), Next transpiles sibling workspace packages from source, and `outputFileTracingIncludes` pulls the board-renderer WASM from the hoisted root `node_modules`. With the toggle off, Vercel clones only `packages/web` and the install regenerates or rejects the lockfile.
+
+Keep the larger build machine — `bun install` builds `sharp` plus the Expo/React Native native tree and OOMs on the default size.
+
 ### What Broke
 
 Branch deploys stopped working after migrating from Vercel Postgres (which was a managed Neon account under Vercel) to a direct Neon paid account. Specifically:
 
 1. **Neon branching integration is broken** - The Vercel-Neon integration that automatically created database branches per preview deployment no longer functions. Neon support has not resolved this.
-2. **Migrations are skipped on preview** - `vercel.json` explicitly skips migrations for preview deploys:
+2. **Migrations are skipped on preview** - `packages/web/vercel.json` explicitly skips migrations for preview deploys:
    ```json
    "buildCommand": "if [ \"$VERCEL_ENV\" != \"preview\" ]; then npm run db:migrate; fi && npm run build --workspace=@boardsesh/web"
    ```
@@ -45,7 +54,7 @@ Branch deploys stopped working after migrating from Vercel Postgres (which was a
 
 Drizzle migrations are idempotent - running them against the development database is safe. The current skip was a workaround for the broken Neon branching (to avoid running migrations against a non-existent branch DB). Since branch deploys use the pre-built `boardsesh-dev-db` Docker image (not the production database), migrations should run unconditionally.
 
-**Change in `vercel.json`:**
+**Change in `packages/web/vercel.json`:**
 
 ```json
 {
@@ -1172,7 +1181,7 @@ After API consolidation:
 
 Sync runs in two places:
 
-1. **Vercel crons** (`vercel.json:6-22`):
+1. **Vercel crons** (`packages/web/vercel.json`):
    - `/api/internal/shared-sync/tension` - every 2 hours
    - `/api/internal/shared-sync/kilter` - every 2 hours
    - `/api/internal/user-sync-cron` - every 2 hours
@@ -1209,7 +1218,7 @@ Sync runs in two places:
                -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
    ```
 
-4. **Remove Vercel crons** - Delete the `crons` array from `vercel.json` and remove the corresponding API route handlers.
+4. **Remove Vercel crons** - Delete the `crons` array from `packages/web/vercel.json` and remove the corresponding API route handlers.
 
 ### Branch Deploy Sync Strategy
 
@@ -1287,7 +1296,7 @@ What changed → what gets deployed:
 
 | Item                   | Cost                        | Complexity                         |
 | ---------------------- | --------------------------- | ---------------------------------- |
-| Vercel preview deploys | Free (included in plan)     | Minimal - one `vercel.json` change |
+| Vercel preview deploys | Free (included in plan)     | Minimal - one `packages/web/vercel.json` change |
 | GitHub Actions minutes | Free tier (~2000 min/month) | Low - simple workflow              |
 | **Total**              | **$0/month**                | **~1-2 days**                      |
 
@@ -1360,7 +1369,7 @@ What changed → what gets deployed:
 
 ### Phase 1: Frontend-Only Previews
 
-- [ ] Re-enable migrations in `vercel.json` build command
+- [ ] Re-enable migrations in `packages/web/vercel.json` build command
 - [ ] Set `NEXT_PUBLIC_WS_URL` in Vercel Preview environment scope
 - [ ] Create change detection workflow (`.github/workflows/branch-deploy.yml`)
 - [ ] Verify preview deployments connect to production backend
@@ -1487,7 +1496,7 @@ Backend-affecting paths are defined in two places that must stay in sync:
 | `packages/backend/src/server.ts`              | All backend HTTP routes, session cleanup                                      |
 | `packages/backend/Dockerfile`                 | Backend container build                                                       |
 | `packages/aurora-sync/`                       | Shared sync library used by both web and backend                              |
-| `vercel.json`                                 | Build command (migration skip), cron definitions                              |
+| `packages/web/vercel.json`                    | Build command (migration skip), cron definitions                              |
 | `.github/workflows/branch-deploy.yml`         | Build images + trigger Ansible deploy on PR open/sync                         |
 | `.github/workflows/branch-deploy-cleanup.yml` | Trigger Ansible cleanup + GHCR delete on PR close                             |
 | `.github/workflows/branch-deploy-sweep.yml`   | Trigger Ansible sweep on push to main / daily                                 |

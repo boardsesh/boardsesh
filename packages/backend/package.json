@@ -63,7 +63,7 @@
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "postgres": "^3.4.8",
-    "typescript": "^5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.5"
   }
 }

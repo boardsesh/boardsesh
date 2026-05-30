@@ -77,7 +77,7 @@
     "dotenv": "^17.3.1",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "~6.0.3"
   },
   "peerDependencies": {
     "next-auth": "^4.24.13"

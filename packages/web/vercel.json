@@ -1,7 +1,6 @@
 {
   "installCommand": "bun install --frozen-lockfile",
   "buildCommand": "if [ \"$VERCEL_ENV\" != \"preview\" ]; then bun run --filter=@boardsesh/db db:migrate; fi && bun run --filter=@boardsesh/web build",
-  "outputDirectory": "packages/web/.next",
   "framework": "nextjs",
   "crons": [
     {

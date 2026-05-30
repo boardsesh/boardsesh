@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Text, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
@@ -56,8 +56,6 @@ export default function MoreScreen() {
           />
         </>
       ) : null}
-
-      <Text style={[styles.text, { color: systemColors.secondaryLabel }]}>{t('mobile.more.title')}</Text>
     </ScrollView>
   );
 }
@@ -74,9 +72,5 @@ const styles = StyleSheet.create({
   },
   card: {
     overflow: 'hidden',
-  },
-  text: {
-    fontSize: 17,
-    textAlign: 'center',
   },
 });

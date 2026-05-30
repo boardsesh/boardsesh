@@ -90,7 +90,7 @@
         "@types/ws": "^8.18.1",
         "drizzle-kit": "^0.31.10",
         "postgres": "^3.4.8",
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
         "vitest": "^4.1.5",
       },
     },
@@ -104,7 +104,7 @@
         "@types/node": "^25.3.3",
         "dotenv": "^17.3.1",
         "tsx": "^4.21.0",
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
         "vitest": "*",
       },
     },
@@ -117,7 +117,7 @@
       "version": "1.0.0",
       "devDependencies": {
         "@types/node": "^25",
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/db": {
@@ -136,7 +136,7 @@
         "dotenv": "^17.3.1",
         "drizzle-kit": "^0.31.10",
         "tsx": "^4.21.0",
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
       "peerDependencies": {
         "next-auth": "^4.24.13",
@@ -248,7 +248,7 @@
         "@boardsesh/board-constants": "*",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/board-config": {
@@ -259,14 +259,14 @@
         "@boardsesh/shared-schema": "*",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/climb-actions": {
       "name": "@boardsesh/climb-actions",
       "version": "1.0.0",
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/climb-filters": {
@@ -276,7 +276,7 @@
         "@boardsesh/shared-schema": "*",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/graphql": {
@@ -289,7 +289,7 @@
         "graphql-request": "^7.4.0",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/graphql-client": {
@@ -299,14 +299,14 @@
         "graphql-ws": "^6.0.8",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/party-profile": {
       "name": "@boardsesh/party-profile",
       "version": "1.0.0",
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/play-view": {
@@ -318,14 +318,14 @@
         "@boardsesh/shared-schema": "*",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/queue": {
       "name": "@boardsesh/queue",
       "version": "1.0.0",
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/shared/queue-runtime": {
@@ -335,7 +335,7 @@
         "@boardsesh/queue": "*",
       },
       "devDependencies": {
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
       },
     },
     "packages/web": {
@@ -452,7 +452,7 @@
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "tsx": "^4.21.0",
-        "typescript": "^5.9.3",
+        "typescript": "~6.0.3",
         "vitest": "^4.1.5",
       },
       "optionalDependencies": {
@@ -4149,9 +4149,37 @@
 
     "@bacons/xcode/uuid": ["uuid@8.3.2", "", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg=="],
 
+    "@boardsesh/ble-protocol/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/board-config/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/board-constants/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/climb-actions/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/climb-filters/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/crypto/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/db/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/graphql/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/graphql-client/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
     "@boardsesh/mobile/react": ["react@19.2.3", "", {}, "sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA=="],
 
     "@boardsesh/mobile/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/party-profile/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/play-view/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/queue/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/queue-runtime/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/web/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@bramus/specificity/css-tree": ["css-tree@3.2.1", "", { "dependencies": { "mdn-data": "2.27.1", "source-map-js": "^1.2.1" } }, "sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA=="],
 
@@ -4602,6 +4630,8 @@
     "babel-plugin-polyfill-corejs2/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "bl/buffer": ["buffer@5.7.1", "", { "dependencies": { "base64-js": "^1.3.1", "ieee754": "^1.1.13" } }, "sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ=="],
+
+    "boardsesh-backend/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "camel-case/tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
