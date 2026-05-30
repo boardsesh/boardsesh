@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { resolve, dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseMobileDevArgs } from './lib/parse-mobile-dev-args';
 import { resolveTailscaleHostname } from './lib/tailscale-hostname';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -60,55 +61,6 @@ const METRO_LOG_PATH = join(BOARDSESH_DIR, 'mobile-metro.log');
 const DEFAULT_QA_NOTES_PATH = join(BOARDSESH_DIR, 'qa-notes.md');
 
 // ---------------------------------------------------------------------------
-// CLI argument parsing
-// ---------------------------------------------------------------------------
-
-function parseArgs(args: string[]): { qaNotesFilePath: string | null; simulator: boolean; passthroughArgs: string[] } {
-  let qaNotesFilePath: string | null = null;
-  let simulator = process.env.BOARDSESH_DEV_SIMULATOR === '1';
-  const passthroughArgs: string[] = [];
-
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
-    if (argument === '--') continue;
-
-    if (argument === '--simulator') {
-      simulator = true;
-      continue;
-    }
-
-    if (argument === '--qa-notes-file' || argument === '--qa-plan-file') {
-      const nextArgument = args[index + 1];
-      if (!nextArgument || nextArgument.startsWith('--')) {
-        throw new Error(`${argument} requires a file path`);
-      }
-      qaNotesFilePath = nextArgument;
-      index++;
-      continue;
-    }
-
-    for (const prefix of ['--qa-notes-file=', '--qa-plan-file=']) {
-      if (argument.startsWith(prefix)) {
-        const pathValue = argument.slice(prefix.length).trim();
-        if (!pathValue) {
-          throw new Error(`${prefix.slice(0, -1)} requires a file path`);
-        }
-        qaNotesFilePath = pathValue;
-        break;
-      }
-    }
-
-    if (argument.startsWith('--qa-notes-file=') || argument.startsWith('--qa-plan-file=')) {
-      continue;
-    }
-
-    passthroughArgs.push(argument);
-  }
-
-  return { qaNotesFilePath, simulator, passthroughArgs };
-}
-
-// ---------------------------------------------------------------------------
 // Resolve dev metadata (branch name, QA notes)
 // ---------------------------------------------------------------------------
 
@@ -155,7 +107,7 @@ function resolveQaNotes(explicitPath: string | null): { contents: string | null;
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { qaNotesFilePath: cliQaNotesPath, simulator, passthroughArgs } = parseArgs(process.argv.slice(2));
+  const { qaNotesFilePath: cliQaNotesPath, simulator, passthroughArgs } = parseMobileDevArgs(process.argv.slice(2));
   const branchName = resolveCurrentBranchName();
   const commitSha = runGitCommand(['rev-parse', '--short', 'HEAD']);
   const qaNotes = resolveQaNotes(cliQaNotesPath);
@@ -211,9 +163,12 @@ async function main() {
   // and the LAN auto-detect can pick a Tailscale/utun interface the simulator
   // can't reach, which would re-trigger the original "could not connect" bug.
   // Respect a user-supplied --host either way.
+  // --local is Expo CLI's localhost alias (SDK 50+). --lan / --tunnel are the
+  // other two host modes. Any of these means the user already opted in, so we
+  // don't add a default --host.
   const userPassedHost = metroPassthroughArgs.some(
     (arg) =>
-      arg === '--host' || arg.startsWith('--host=') || arg === '--localhost' || arg === '--lan' || arg === '--tunnel',
+      arg === '--host' || arg.startsWith('--host=') || arg === '--local' || arg === '--lan' || arg === '--tunnel',
   );
   // We ship a custom dev client (EAS preview-build flow); Metro must serve the
   // dev-client bundle, not the Expo Go one. Opt out by passing --go.

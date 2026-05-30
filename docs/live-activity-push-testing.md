@@ -241,6 +241,15 @@ at your machine over Tailscale:
 EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:3000 vp run dev:mobile
 ```
 
+For iOS Simulator runs, append `-- --simulator` (or set
+`BOARDSESH_DEV_SIMULATOR=1`) so Expo pins the bundler to `localhost` and
+skips the Tailscale probe — the simulator's CFNetwork sandbox can't
+reach the host's tailnet hostname:
+
+```bash
+vp run dev:mobile -- --simulator
+```
+
 The dev server picks up `.boardsesh/qa-notes.md` automatically and exposes
 it under the More tab via `DevMetadataPanel`.
 

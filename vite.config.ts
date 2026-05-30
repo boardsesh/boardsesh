@@ -48,6 +48,7 @@ export default defineConfig({
       './packages/shared/graphql-client/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
+      './scripts/vite.config.ts',
     ],
   },
   staged: {
