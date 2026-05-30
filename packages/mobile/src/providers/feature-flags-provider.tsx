@@ -3,10 +3,16 @@
 // so the provider accepts an optional `flags` prop (used by tests) and falls
 // back to an empty bag. When real flags arrive we can either fetch them at
 // boot or move the type into a shared package and converge with web.
+//
+// Typed as `Record<string, boolean>` (vs web's `Record<string, never>` which
+// makes `useFeatureFlag` resolve to `never` and is therefore unusable). Mobile
+// uses this as an actually-usable placeholder: consumers can call
+// `useFeatureFlag('foo')` and get a `boolean` back; the live value is
+// undefined until a flag source is wired up.
 
 import { createContext, useContext, type ReactNode } from 'react';
 
-export type FeatureFlags = Record<string, never>;
+export type FeatureFlags = Record<string, boolean>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
 
