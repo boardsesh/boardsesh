@@ -11,8 +11,53 @@ import { bleManager } from './ble-manager';
 import type { BluetoothAdapter, BleConnection, DevicePickerFn, DiscoveredDevice } from './types';
 
 const SCAN_TIMEOUT_MS = 30_000;
+const BLE_STATE_SETTLE_TIMEOUT_MS = 2_500;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function isPendingBleState(state: State): boolean {
+  return state === State.Unknown || state === State.Resetting;
+}
+
+function waitForBlePoweredOn(): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let subscription: { remove: () => void } | null = null;
+    let removeAfterSubscribe = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (available: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (subscription) {
+        subscription.remove();
+      } else {
+        removeAfterSubscribe = true;
+      }
+      resolve(available);
+    };
+
+    timeoutId = setTimeout(() => {
+      finish(false);
+    }, BLE_STATE_SETTLE_TIMEOUT_MS);
+
+    subscription = bleManager.onStateChange((newState) => {
+      if (newState === State.PoweredOn) {
+        finish(true);
+        return;
+      }
+
+      if (!isPendingBleState(newState)) {
+        finish(false);
+      }
+    }, true);
+
+    if (removeAfterSubscribe) {
+      subscription.remove();
+    }
+  });
+}
 
 export class RNBleAdapter implements BluetoothAdapter {
   private connectedDevice: Device | null = null;
@@ -25,7 +70,9 @@ export class RNBleAdapter implements BluetoothAdapter {
   async isAvailable(): Promise<boolean> {
     try {
       const state = await bleManager.state();
-      return state === State.PoweredOn;
+      if (state === State.PoweredOn) return true;
+      if (!isPendingBleState(state)) return false;
+      return waitForBlePoweredOn();
     } catch {
       return false;
     }
@@ -42,6 +89,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     // turned up yet — pre-fix the picker UI would hang forever after the 30s
     // scan window stopped scanning. Same shape used by NativeIosBleAdapter.
     let pickerTimeoutReject: ((error: Error) => void) | null = null;
+    let rejectPickerWithCleanup: ((error: Error) => void) | null = null;
 
     let selectionPromise: Promise<string>;
     if (targetSerial) {
@@ -52,16 +100,23 @@ export class RNBleAdapter implements BluetoothAdapter {
     } else {
       selectionPromise = new Promise<string>((resolve, reject) => {
         pickerTimeoutReject = reject;
-        this.devicePicker((onUpdate) => {
-          updateListener = onUpdate;
-          pushDevices();
-        }).then(
+        this.devicePicker(
+          (onUpdate) => {
+            updateListener = onUpdate;
+            pushDevices();
+          },
+          (rejectPicker) => {
+            rejectPickerWithCleanup = rejectPicker;
+          },
+        ).then(
           (deviceId) => {
             pickerTimeoutReject = null;
+            rejectPickerWithCleanup = null;
             resolve(deviceId);
           },
           (error) => {
             pickerTimeoutReject = null;
+            rejectPickerWithCleanup = null;
             reject(error);
           },
         );
@@ -99,7 +154,13 @@ export class RNBleAdapter implements BluetoothAdapter {
         return;
       }
       if (pickerTimeoutReject && devices.size === 0) {
-        pickerTimeoutReject(new Error('No boards found within scan window'));
+        const error = new Error('No boards found within scan window');
+        if (rejectPickerWithCleanup) {
+          rejectPickerWithCleanup(error);
+          rejectPickerWithCleanup = null;
+        } else {
+          pickerTimeoutReject(error);
+        }
         pickerTimeoutReject = null;
       }
     }, SCAN_TIMEOUT_MS);

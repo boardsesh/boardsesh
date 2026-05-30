@@ -53,6 +53,15 @@ vi.mock('../../../../modules/live-activity/src/index', () => ({
 
 import { NativeIosBleAdapter } from '../native-ios-adapter';
 
+const RESCAN_DISCONNECT_SETTLE_MS = 350;
+
+async function settleRescanReset() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(RESCAN_DISCONNECT_SETTLE_MS);
+  await Promise.resolve();
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   Object.values(nativeMock).forEach((fn) => {
@@ -72,9 +81,7 @@ describe('NativeIosBleAdapter scan timeout', () => {
     // staring at an empty picker.
     const adapter = new NativeIosBleAdapter(() => new Promise(() => {}));
     const connectPromise = adapter.requestAndConnect().catch((error: Error) => error);
-    // Let microtasks settle (startScan is async).
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleRescanReset();
 
     vi.advanceTimersByTime(30_000);
     // Advance past any chained promise resolutions in the timeout handler.
@@ -97,7 +104,7 @@ describe('NativeIosBleAdapter scan timeout', () => {
         }),
     );
     const connectPromise = adapter.requestAndConnect();
-    await Promise.resolve();
+    await settleRescanReset();
 
     // Emit a scan result before the timeout fires.
     scanListeners[0]?.({
@@ -120,7 +127,7 @@ describe('NativeIosBleAdapter scan timeout', () => {
   it('rejects with "target not found" when targetSerial auto-select times out', async () => {
     const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
     const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL').catch((error: Error) => error);
-    await Promise.resolve();
+    await settleRescanReset();
 
     vi.advanceTimersByTime(30_000);
     await vi.runAllTimersAsync();
@@ -135,7 +142,7 @@ describe('NativeIosBleAdapter connect flow', () => {
   it('auto-selects a discovered device matching targetSerial', async () => {
     const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
     const connectPromise = adapter.requestAndConnect('Kilter A1B2C3');
-    await Promise.resolve();
+    await settleRescanReset();
 
     scanListeners[0]?.({
       device: { deviceId: 'dev-9', name: 'Kilter A1B2C3' },
@@ -146,6 +153,20 @@ describe('NativeIosBleAdapter connect flow', () => {
     await connectPromise;
 
     expect(nativeMock.connect).toHaveBeenCalledWith('dev-9');
+    expect(nativeMock.startScan).toHaveBeenCalledWith(['AURORA-UUID', 'UART-UUID']);
+  });
+
+  it('clears any native iOS connection before scanning so boards advertise after a JS reload', async () => {
+    const adapter = new NativeIosBleAdapter(() => new Promise(() => {}));
+    void adapter.requestAndConnect().catch(() => {});
+    await Promise.resolve();
+
+    expect(nativeMock.stopScan).toHaveBeenCalledTimes(1);
+    expect(nativeMock.disconnect).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(RESCAN_DISCONNECT_SETTLE_MS);
+    await Promise.resolve();
+
     expect(nativeMock.startScan).toHaveBeenCalledWith(['AURORA-UUID', 'UART-UUID']);
   });
 });

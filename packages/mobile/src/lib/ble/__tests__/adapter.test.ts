@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DevicePickerFn } from '../types';
 
 // ── Hoisted mocks (available inside vi.mock factories) ──────────────────
@@ -10,6 +10,7 @@ const mockBleManager = vi.hoisted(() => ({
   connectToDevice: vi.fn(),
   cancelDeviceConnection: vi.fn(),
   onDeviceDisconnected: vi.fn(),
+  onStateChange: vi.fn(),
 }));
 
 // ── Module mocks ────────────────────────────────────────────────────────
@@ -56,6 +57,11 @@ function createMockDevicePicker(): DevicePickerFn {
 describe('RNBleAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('isAvailable', () => {
@@ -78,11 +84,35 @@ describe('RNBleAdapter', () => {
       expect(available).toBe(false);
     });
 
-    it('returns false when bluetooth state is Unknown', async () => {
+    it('waits briefly when state is Unknown and resolves true if bluetooth powers on', async () => {
+      vi.useFakeTimers();
+      const stateListenerRef: { current: ((state: State) => void) | null } = { current: null };
+      const remove = vi.fn();
+      mockBleManager.onStateChange.mockImplementation((listener: (state: State) => void) => {
+        stateListenerRef.current = listener;
+        return { remove };
+      });
       mockBleManager.state.mockResolvedValue(State.Unknown);
       const adapter = new RNBleAdapter(createMockDevicePicker());
 
-      const available = await adapter.isAvailable();
+      const availablePromise = adapter.isAvailable();
+      await Promise.resolve();
+      stateListenerRef.current?.(State.PoweredOn);
+      const available = await availablePromise;
+
+      expect(available).toBe(true);
+      expect(remove).toHaveBeenCalledOnce();
+    });
+
+    it('returns false when bluetooth state is Unknown and never settles', async () => {
+      vi.useFakeTimers();
+      mockBleManager.state.mockResolvedValue(State.Unknown);
+      const adapter = new RNBleAdapter(createMockDevicePicker());
+
+      const availablePromise = adapter.isAvailable();
+      await Promise.resolve();
+      vi.advanceTimersByTime(2_500);
+      const available = await availablePromise;
 
       expect(available).toBe(false);
     });

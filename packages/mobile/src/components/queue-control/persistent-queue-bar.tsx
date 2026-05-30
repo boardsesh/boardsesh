@@ -24,7 +24,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { BluetoothStatusIcon } from '../ble/BluetoothStatusIcon';
+import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { EndSessionSheet } from '../EndSessionSheet';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueue } from '../../providers/queue-provider';
@@ -84,6 +84,8 @@ export function PersistentQueueBar() {
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const { formatGrade: format } = useGradeFormat();
   const isDark = useColorScheme() === 'dark';
@@ -287,10 +289,13 @@ export function PersistentQueueBar() {
           </Pressable>
 
           {bluetooth ? (
-            <BluetoothStatusIcon
+            <BleLightbulbButton
               isConnected={bluetooth.isConnected}
               isScanning={bluetooth.loading}
               onPress={handleBluetoothPress}
+              accessibilityLabel={
+                bluetooth.isConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')
+              }
             />
           ) : null}
 

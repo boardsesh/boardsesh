@@ -193,13 +193,9 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
 
   const handleLightbulb = useCallback(() => {
     if (!bluetooth) return;
-    if (!bluetooth.isConnected) {
-      void bluetooth.connect();
-      return;
-    }
-    if (!displayedClimb) return;
-    setCurrentClimb(climbToQueueItem(displayedClimb));
-  }, [bluetooth, displayedClimb, setCurrentClimb]);
+    if (bluetooth.isConnected) void bluetooth.disconnect();
+    else void bluetooth.connect();
+  }, [bluetooth]);
 
   const handleOpenActions = useCallback(() => {
     setActiveSubDrawer('actions');
@@ -350,6 +346,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
                 isFavorited={isFavorited}
                 remainingQueueCount={navigationState.remainingCount}
                 lightbulbActive={bluetooth?.isConnected ?? false}
+                lightbulbPending={bluetooth?.loading ?? false}
                 onPrevClick={handlePrev}
                 onNextClick={handleNext}
                 onMirror={handleMirror}

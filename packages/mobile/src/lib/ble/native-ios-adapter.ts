@@ -7,6 +7,9 @@ import {
 import type { BluetoothAdapter, BleConnection, DevicePickerFn, DiscoveredDevice } from './types';
 
 const SCAN_TIMEOUT_MS = 30_000;
+const RESCAN_DISCONNECT_SETTLE_MS = 350;
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function uint8ArrayToHex(bytes: Uint8Array): string {
   let hex = '';
@@ -53,6 +56,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     // turned up yet. Without this, the picker UI hangs forever after the 30s
     // scan window stops scanning. Same fix needed for RNBleAdapter.
     let pickerTimeoutReject: ((error: Error) => void) | null = null;
+    let rejectPickerWithCleanup: ((error: Error) => void) | null = null;
 
     let selectionPromise: Promise<string>;
     if (targetSerial) {
@@ -63,21 +67,36 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     } else {
       selectionPromise = new Promise<string>((resolve, reject) => {
         pickerTimeoutReject = reject;
-        this.devicePicker((onUpdate) => {
-          updateListener = onUpdate;
-          pushDevices();
-        }).then(
+        this.devicePicker(
+          (onUpdate) => {
+            updateListener = onUpdate;
+            pushDevices();
+          },
+          (rejectPicker) => {
+            rejectPickerWithCleanup = rejectPicker;
+          },
+        ).then(
           (deviceId) => {
             pickerTimeoutReject = null;
+            rejectPickerWithCleanup = null;
             resolve(deviceId);
           },
           (error) => {
             pickerTimeoutReject = null;
+            rejectPickerWithCleanup = null;
             reject(error);
           },
         );
       });
     }
+
+    // Native CoreBluetooth can survive a Metro reload while JS state resets
+    // to "disconnected". In that state the board may still be connected and
+    // therefore no longer advertising, so a fresh picker scan shows nothing.
+    // Clear any native connection before a user/auto reconnect scan.
+    await native.stopScan();
+    await native.disconnect();
+    await delay(RESCAN_DISCONNECT_SETTLE_MS);
 
     const scanSubscription = native.addListener('scanResult', (payload: NativeBleScanEvent) => {
       const device: DiscoveredDevice = {
@@ -110,7 +129,13 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       // devices yet, surface the timeout — otherwise leave the picker open
       // so they can still tap a discovered board.
       if (pickerTimeoutReject && devices.size === 0) {
-        pickerTimeoutReject(new Error('No boards found within scan window'));
+        const error = new Error('No boards found within scan window');
+        if (rejectPickerWithCleanup) {
+          rejectPickerWithCleanup(error);
+          rejectPickerWithCleanup = null;
+        } else {
+          pickerTimeoutReject(error);
+        }
         pickerTimeoutReject = null;
       }
     }, SCAN_TIMEOUT_MS);

@@ -5,6 +5,21 @@ import type { HoldPlacement } from '../../../components/board-renderer/types';
 
 vi.mock('react-native', () => ({
   Alert: { alert: vi.fn() },
+  PermissionsAndroid: {
+    PERMISSIONS: {
+      BLUETOOTH_SCAN: 'android.permission.BLUETOOTH_SCAN',
+      BLUETOOTH_CONNECT: 'android.permission.BLUETOOTH_CONNECT',
+      ACCESS_FINE_LOCATION: 'android.permission.ACCESS_FINE_LOCATION',
+    },
+    RESULTS: {
+      GRANTED: 'granted',
+    },
+    requestMultiple: vi.fn().mockResolvedValue({}),
+  },
+  Platform: {
+    OS: 'ios',
+    Version: '17.0',
+  },
 }));
 
 vi.mock('expo-keep-awake', () => ({

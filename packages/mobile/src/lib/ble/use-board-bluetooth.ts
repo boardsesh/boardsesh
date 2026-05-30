@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, PermissionsAndroid, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
@@ -72,6 +72,21 @@ type UseBoardBluetoothOptions = {
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
 
+async function requestAndroidBlePermissions(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+
+  const permissions: Array<(typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS]> = [];
+
+  if (typeof Platform.Version === 'number' && Platform.Version >= 31) {
+    permissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+  } else {
+    permissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+  }
+
+  const results = await PermissionsAndroid.requestMultiple(permissions);
+  return Object.values(results).every((result) => result === PermissionsAndroid.RESULTS.GRANTED);
+}
+
 export function useBoardBluetooth({
   boardName,
   layoutId,
@@ -104,14 +119,24 @@ export function useBoardBluetooth({
     };
   }, [isConnected]);
 
-  const devicePicker = useCallback<DevicePickerFn>((subscribe) => {
+  const devicePicker = useCallback<DevicePickerFn>((subscribe, registerExternalReject) => {
     return new Promise<string>((resolve, reject) => {
-      pickerRejectRef.current = reject;
+      if (__DEV__) {
+        console.info('[BLE] opening device picker');
+      }
 
       const cleanup = () => {
         pickerRejectRef.current = null;
         setPickerState(null);
       };
+
+      const rejectWithCleanup = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      pickerRejectRef.current = rejectWithCleanup;
+      registerExternalReject?.(rejectWithCleanup);
 
       const handleSelect = (deviceId: string) => {
         cleanup();
@@ -119,13 +144,15 @@ export function useBoardBluetooth({
       };
 
       const handleCancel = () => {
-        cleanup();
-        reject(new Error('Device selection cancelled'));
+        rejectWithCleanup(new Error('Device selection cancelled'));
       };
 
       setPickerState({ devices: [], isScanning: true, handleSelect, handleCancel });
 
       subscribe((devices) => {
+        if (__DEV__) {
+          console.info(`[BLE] picker devices updated: ${devices.length}`);
+        }
         setPickerState((prev) => (prev ? { ...prev, devices } : null));
       });
     });
@@ -216,11 +243,33 @@ export function useBoardBluetooth({
       }
 
       setLoading(true);
+      if (__DEV__) {
+        console.info(
+          `[BLE] connect requested board=${boardName} layout=${layoutId ?? 'unknown'} size=${
+            sizeId ?? 'unknown'
+          } target=${targetSerial ?? 'manual'}`,
+        );
+      }
 
       try {
         const adapter = createBluetoothAdapter(devicePicker);
+        if (__DEV__) {
+          console.info(`[BLE] adapter=${adapter.constructor.name}`);
+        }
+
+        const permissionsGranted = await requestAndroidBlePermissions();
+        if (__DEV__) {
+          console.info(`[BLE] permissionsGranted=${permissionsGranted}`);
+        }
+        if (!permissionsGranted) {
+          Alert.alert(t('settings.ble.notAvailable'), t('settings.ble.notAvailable'));
+          return false;
+        }
 
         const available = await adapter.isAvailable();
+        if (__DEV__) {
+          console.info(`[BLE] available=${available}`);
+        }
         if (!available) {
           Alert.alert(t('settings.ble.notAvailable'), t('settings.ble.notAvailable'));
           return false;

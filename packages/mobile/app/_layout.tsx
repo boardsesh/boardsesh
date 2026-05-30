@@ -58,15 +58,15 @@ export default function RootLayout() {
               <ToastProvider>
                 <BottomSheetModalProvider>
                   <QueueProvider>
-                    <DrawerHostProvider>
-                      <BluetoothProviderWrapper>
+                    <BluetoothProviderWrapper>
+                      <DrawerHostProvider>
                         <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
                           <Stack.Screen name="(tabs)" />
                           <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
                         </Stack>
                         <PersistentQueueBar />
-                      </BluetoothProviderWrapper>
-                    </DrawerHostProvider>
+                      </DrawerHostProvider>
+                    </BluetoothProviderWrapper>
                   </QueueProvider>
                 </BottomSheetModalProvider>
               </ToastProvider>

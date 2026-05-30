@@ -72,6 +72,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var connectedPeripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var pendingConnectCompletion: ((Result<Void, Error>) -> Void)?
+    private var pendingDisconnectCompletion: (() -> Void)?
     private var connectTimeoutWorkItem: DispatchWorkItem?
     private var scanRequested = false
     private var scanServices: [CBUUID] = []
@@ -282,7 +283,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectionGeneration += 1
         let generation = connectionGeneration
         automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
-        intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
         connectedPeripheral = peripheral
         writeCharacteristic = nil
@@ -326,10 +326,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
         intentionalDisconnectGenerations[peripheral.identifier] = connectionGeneration
         peripheralGenerations[peripheral.identifier] = connectionGeneration
+        pendingDisconnectCompletion = completion
         centralManager.cancelPeripheralConnection(peripheral)
         writeCharacteristic = nil
         connectedPeripheral = nil
-        completion?()
     }
 
     private func writeOnBleQueue(data: Data, completion: ((Error?) -> Void)? = nil) {
@@ -538,6 +538,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 peripheralGenerations.removeValue(forKey: peripheral.identifier)
             }
             automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
+            if connectedPeripheral?.identifier == peripheral.identifier {
+                connectedPeripheral = nil
+                writeCharacteristic = nil
+            }
+            let completion = pendingDisconnectCompletion
+            pendingDisconnectCompletion = nil
+            completion?()
             return
         }
 

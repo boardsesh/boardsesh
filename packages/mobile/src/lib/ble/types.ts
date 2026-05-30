@@ -9,7 +9,10 @@ export type DiscoveredDevice = {
   rssi: number;
 };
 
-export type DevicePickerFn = (subscribe: (onUpdate: (devices: DiscoveredDevice[]) => void) => void) => Promise<string>;
+export type DevicePickerFn = (
+  subscribe: (onUpdate: (devices: DiscoveredDevice[]) => void) => void,
+  registerExternalReject?: (reject: (error: Error) => void) => void,
+) => Promise<string>;
 
 export type BluetoothAdapter = {
   isAvailable(): Promise<boolean>;

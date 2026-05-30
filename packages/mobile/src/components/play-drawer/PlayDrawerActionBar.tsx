@@ -5,6 +5,7 @@ import type { ActionBarContract } from '@boardsesh/play-view';
 import { Icon } from '../Icon';
 import { Badge } from '../Badge';
 import { Text } from '../Text';
+import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -23,6 +24,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   isFavorited,
   remainingQueueCount,
   lightbulbActive,
+  lightbulbPending = false,
   onPrevClick,
   onNextClick,
   onMirror,
@@ -34,6 +36,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onOpenAngleSelector,
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
 
   const handlePrev = useCallback(() => {
     hapticMedium();
@@ -54,11 +58,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     hapticMedium();
     onToggleFavorite();
   }, [onToggleFavorite]);
-
-  const handleLightbulb = useCallback(() => {
-    hapticMedium();
-    onLightbulb();
-  }, [onLightbulb]);
 
   const handleAngleSelector = useCallback(() => {
     hapticMedium();
@@ -97,11 +96,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
       />
 
       {/* Lightbulb */}
-      <ActionButton
-        iconName={lightbulbActive ? 'lightbulb.fill' : 'lightbulb'}
-        onPress={handleLightbulb}
-        iconColor={lightbulbActive ? brandColors.warning : undefined}
-        accessibilityLabel={t('playView.actionBar.sendToBoardAria')}
+      <BleLightbulbButton
+        isConnected={lightbulbActive}
+        isScanning={lightbulbPending}
+        onPress={onLightbulb}
+        accessibilityLabel={lightbulbActive ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
       />
 
       {/* Angle pill */}

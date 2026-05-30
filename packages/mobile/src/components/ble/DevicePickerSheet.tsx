@@ -1,11 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, type ViewStyle } from 'react-native';
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetFlatList,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import { useCallback, useMemo } from 'react';
+import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol';
 import type { DiscoveredDevice } from '../../lib/ble/types';
@@ -27,33 +21,8 @@ type DevicePickerSheetProps = {
 export function DevicePickerSheet({ visible, devices, onSelect, onDismiss, isScanning }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
-  const sheetRef = useRef<BottomSheet>(null);
-
-  const snapPoints = useMemo(() => ['55%'], []);
-
-  useEffect(() => {
-    if (visible) {
-      sheetRef.current?.expand();
-    }
-  }, [visible]);
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index === -1) {
-        onDismiss();
-      }
-    },
-    [onDismiss],
-  );
-
-  const renderBackdrop = useCallback(
-    (backdropProps: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
-    ),
-    [],
-  );
 
   const renderDeviceItem = useCallback(
     ({ item }: { item: DiscoveredDevice }) => {
@@ -69,79 +38,99 @@ export function DevicePickerSheet({ visible, devices, onSelect, onDismiss, isSca
 
   const { systemColors } = theme;
 
-  const backgroundStyle: ViewStyle = {
-    backgroundColor: systemColors.secondaryBackground as string,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  };
-
-  if (!visible) return null;
-
   const showScanningState = isScanning && devices.length === 0;
   const showEmptyState = !isScanning && devices.length === 0;
 
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      backdropComponent={renderBackdrop}
-      onChange={handleSheetChange}
-      handleIndicatorStyle={styles.indicator}
-      backgroundStyle={backgroundStyle}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      presentationStyle="overFullScreen"
+      onRequestClose={onDismiss}
     >
-      <BottomSheetView style={styles.header}>
-        <Text variant="title3" color={systemColors.label}>
-          {t('settings.ble.selectBoard')}
-        </Text>
-        {devices.length > 0 && (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('settings.ble.devicesFound', { count: devices.length })}
-          </Text>
-        )}
-      </BottomSheetView>
-
-      {showScanningState && (
-        <View style={styles.scanningContainer}>
-          <ActivityIndicator size="small" color={theme.brandColors.primary} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('settings.ble.scanning')}
-          </Text>
-        </View>
-      )}
-
-      {showEmptyState && (
-        <View style={styles.scanningContainer}>
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('settings.ble.noDevicesFound')}
-          </Text>
-        </View>
-      )}
-
-      {devices.length > 0 && (
-        <BottomSheetFlatList
-          data={sortedDevices}
-          keyExtractor={keyExtractor}
-          renderItem={renderDeviceItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
+      <View style={styles.modalRoot}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.ble.cancel')}
+          style={styles.backdrop}
+          onPress={onDismiss}
         />
-      )}
 
-      <View style={styles.footer}>
-        <Button title={t('settings.ble.cancel')} onPress={onDismiss} variant="text" size="medium" />
+        <View style={[styles.sheet, { backgroundColor: systemColors.secondaryBackground as string }]}>
+          <View style={styles.indicator} />
+
+          <View style={styles.header}>
+            <Text variant="title3" color={systemColors.label}>
+              {t('settings.ble.selectBoard')}
+            </Text>
+            {devices.length > 0 && (
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('settings.ble.devicesFound', { count: devices.length })}
+              </Text>
+            )}
+          </View>
+
+          {showScanningState && (
+            <View style={styles.scanningContainer}>
+              <ActivityIndicator size="small" color={theme.brandColors.primary} />
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {t('settings.ble.scanning')}
+              </Text>
+            </View>
+          )}
+
+          {showEmptyState && (
+            <View style={styles.scanningContainer}>
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {t('settings.ble.noDevicesFound')}
+              </Text>
+            </View>
+          )}
+
+          {devices.length > 0 && (
+            <FlatList
+              data={sortedDevices}
+              keyExtractor={keyExtractor}
+              renderItem={renderDeviceItem}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+
+          <View style={styles.footer}>
+            <Button title={t('settings.ble.cancel')} onPress={onDismiss} variant="text" size="medium" />
+          </View>
+        </View>
       </View>
-    </BottomSheet>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  sheet: {
+    minHeight: '45%',
+    maxHeight: '70%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
   indicator: {
+    alignSelf: 'center',
     backgroundColor: iosSystemColors.separator,
     width: 36,
     height: 5,
     borderRadius: 3,
+    marginTop: spacing[2],
+    marginBottom: spacing[3],
   },
   header: {
     paddingHorizontal: spacing[4],
@@ -151,6 +140,7 @@ const styles = StyleSheet.create({
   },
   scanningContainer: {
     flex: 1,
+    minHeight: 180,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[3],
