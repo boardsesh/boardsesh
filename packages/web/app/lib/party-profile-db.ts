@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { ensureProfile, type PartyProfile as SharedPartyProfile } from '@boardsesh/party-profile';
 import { createIndexedDBStore, migrateFromLocalStorage } from './idb-helper';
 
 const STORE_NAME = 'profile';
@@ -7,9 +8,9 @@ const PROFILE_KEY = 'party-profile';
 // Legacy localStorage keys to migrate from
 const LEGACY_USER_ID_KEY = 'boardsesh:userId';
 
-export type PartyProfile = {
-  id: string; // UUID, auto-generated
-};
+// Re-exported under the local name so the dozens of `import type { PartyProfile }
+// from '@/app/lib/party-profile-db'` callsites don't need to change.
+export type PartyProfile = SharedPartyProfile;
 
 const getDB = createIndexedDBStore('boardsesh-party', STORE_NAME);
 
@@ -93,33 +94,24 @@ const migrateFromLegacyStorage = async (): Promise<boolean> => {
 };
 
 /**
- * Ensure a user ID exists, creating a new profile if needed
- * This will migrate from localStorage if data exists there
- * Returns the profile with just an id
+ * Ensure a user ID exists, creating a new profile if needed.
+ * Migrates from legacy localStorage and delegates the get/create logic to the
+ * shared `@boardsesh/party-profile` package so mobile and web share the same
+ * contract.
  */
 export const ensurePartyProfile = async (): Promise<PartyProfile> => {
   try {
-    // First, try to migrate from localStorage
     await migrateFromLegacyStorage();
-
-    // Check for existing profile
-    const existingProfile = await getPartyProfile();
-    if (existingProfile) {
-      return existingProfile;
-    }
-
-    // Create a new profile with just an ID
-    const newProfile: PartyProfile = {
-      id: uuidv4(),
-    };
-
-    await savePartyProfile(newProfile);
-    return newProfile;
+    return await ensureProfile(
+      {
+        get: () => getPartyProfile(),
+        set: (profile) => savePartyProfile(profile),
+      },
+      uuidv4,
+    );
   } catch (error) {
     console.error('Failed to ensure party profile:', error);
-    // Return a fallback in-memory profile
-    return {
-      id: uuidv4(),
-    };
+    // In-memory fallback so the rest of the UI doesn't crash on IDB failures.
+    return { id: uuidv4() };
   }
 };

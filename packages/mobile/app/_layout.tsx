@@ -12,6 +12,11 @@ import { BluetoothProvider } from '../src/providers/bluetooth-provider';
 import { ToastProvider } from '../src/providers/toast-provider';
 import { QueueProvider } from '../src/providers/queue-provider';
 import { DrawerHostProvider } from '../src/providers/drawer-host-provider';
+import { FeatureFlagsProvider } from '../src/providers/feature-flags-provider';
+import { PartyProfileProvider } from '../src/providers/party-profile-provider';
+import { ConnectionSettingsProvider } from '../src/providers/connection-settings-provider';
+import { FavoritesProvider } from '../src/providers/favorites-provider';
+import { PlaylistsProvider } from '../src/providers/playlists-provider';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
 import { useDefaultBoard } from '../src/lib/graphql/hooks';
 import { LiveActivityBridge } from '../src/lib/live-activity/live-activity-bridge';
@@ -54,23 +59,36 @@ export default function RootLayout() {
       <I18nProvider>
         <QueryProvider>
           <ThemeProvider>
-            <AuthProvider onReady={onAuthReady}>
-              <ToastProvider>
-                <BottomSheetModalProvider>
-                  <QueueProvider>
-                    <BluetoothProviderWrapper>
-                      <DrawerHostProvider>
-                        <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                          <Stack.Screen name="(tabs)" />
-                          <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
-                        </Stack>
-                        <PersistentQueueBar />
-                      </DrawerHostProvider>
-                    </BluetoothProviderWrapper>
-                  </QueueProvider>
-                </BottomSheetModalProvider>
-              </ToastProvider>
-            </AuthProvider>
+            <FeatureFlagsProvider>
+              <AuthProvider onReady={onAuthReady}>
+                <PartyProfileProvider>
+                  <ConnectionSettingsProvider>
+                    <ToastProvider>
+                      <BottomSheetModalProvider>
+                        <FavoritesProvider>
+                          <PlaylistsProvider>
+                            <QueueProvider>
+                              <BluetoothProviderWrapper>
+                                <DrawerHostProvider>
+                                  <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+                                    <Stack.Screen name="(tabs)" />
+                                    <Stack.Screen
+                                      name="auth"
+                                      options={{ headerShown: false, gestureEnabled: false }}
+                                    />
+                                  </Stack>
+                                  <PersistentQueueBar />
+                                </DrawerHostProvider>
+                              </BluetoothProviderWrapper>
+                            </QueueProvider>
+                          </PlaylistsProvider>
+                        </FavoritesProvider>
+                      </BottomSheetModalProvider>
+                    </ToastProvider>
+                  </ConnectionSettingsProvider>
+                </PartyProfileProvider>
+              </AuthProvider>
+            </FeatureFlagsProvider>
           </ThemeProvider>
         </QueryProvider>
       </I18nProvider>
