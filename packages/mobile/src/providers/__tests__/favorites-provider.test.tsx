@@ -27,7 +27,7 @@ describe('FavoritesProvider', () => {
     expect(favoritesStore.getIsLoading()).toBe(false);
   });
 
-  it('resets the store on unmount so a stale provider does not leak data', () => {
+  it('does not wipe the store on unmount (a sibling mount writing first would lose data)', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <FavoritesProvider favorites={new Set(['a'])} isAuthenticated>
         {children}
@@ -36,10 +36,31 @@ describe('FavoritesProvider', () => {
     const { unmount } = renderHook(() => useFavoritesContext(), { wrapper });
     expect(favoritesStore.getIsFavorited('a')).toBe(true);
 
+    // Unmount intentionally does NOT clear the store — a future remount will
+    // overwrite via its own setFavorites. See the no-cleanup comment in
+    // favorites-provider.tsx for why we don't unconditionally wipe.
     unmount();
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+    expect(favoritesStore.getIsAuthenticated()).toBe(true);
+  });
+
+  it('a new provider mount cleanly overwrites the previous instance’s data', () => {
+    const first = ({ children }: { children: ReactNode }) => (
+      <FavoritesProvider favorites={new Set(['a'])}>{children}</FavoritesProvider>
+    );
+    const { unmount } = renderHook(() => useFavoritesContext(), { wrapper: first });
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+    unmount();
+
+    const second = ({ children }: { children: ReactNode }) => (
+      <FavoritesProvider favorites={new Set(['b'])} isAuthenticated>
+        {children}
+      </FavoritesProvider>
+    );
+    renderHook(() => useFavoritesContext(), { wrapper: second });
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
-    expect(favoritesStore.getIsAuthenticated()).toBe(false);
-    expect(favoritesStore.getIsLoading()).toBe(false);
+    expect(favoritesStore.getIsFavorited('b')).toBe(true);
+    expect(favoritesStore.getIsAuthenticated()).toBe(true);
   });
 
   it('toggleFavorite from context calls the prop function', async () => {

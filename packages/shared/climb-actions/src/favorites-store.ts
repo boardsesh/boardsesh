@@ -24,7 +24,13 @@ export class FavoritesStore {
 
   /** Check if a specific UUID is favorited. Returns a primitive boolean
    *  so `Object.is` comparison in useSyncExternalStore works correctly —
-   *  components only re-render when their specific value flips. */
+   *  components only re-render when their specific value flips.
+   *
+   *  Callers wire as `useSyncExternalStore(store.subscribe, () => store.getIsFavorited(uuid))`.
+   *  The arrow closure is rebuilt every render — that's fine and does NOT
+   *  need useMemo. React's docs guarantee snapshot-fn identity doesn't
+   *  matter as long as the returned value is Object.is-stable, which
+   *  primitives always are. Defensive memoization just adds noise here. */
   getIsFavorited = (uuid: string): boolean => {
     return this.favorites.has(uuid);
   };

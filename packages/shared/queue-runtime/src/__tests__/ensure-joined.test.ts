@@ -122,6 +122,55 @@ describe('createJoinSessionTracker', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('caller A awaiting in-flight + bumpEpoch + caller B starts fresh — A’s resolution does not poison B', async () => {
+    // Race the reviewer flagged: caller A is awaiting an in-flight join,
+    // bumpEpoch fires (socket closed), then caller B starts a fresh join on
+    // the new epoch. B's promise must resolve from its own execute() call,
+    // independent of A's resolution (which targets the dead epoch).
+    let resolveA!: () => void;
+    let resolveB!: () => void;
+    let executeCallCount = 0;
+    const execute = vi.fn(async () => {
+      executeCallCount += 1;
+      if (executeCallCount === 1) {
+        await new Promise<void>((resolve) => {
+          resolveA = resolve;
+        });
+      } else {
+        await new Promise<void>((resolve) => {
+          resolveB = resolve;
+        });
+      }
+    });
+    const tracker = createJoinSessionTracker({
+      execute,
+      getBoardPath: async () => '/kilter/1/2/3/40',
+    });
+
+    // Caller A enters and suspends on its execute().
+    const callerA = tracker.ensureJoined('s1');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    // Socket closes mid-flight.
+    tracker.bumpEpoch();
+
+    // Caller B starts a fresh join on the new epoch.
+    const callerB = tracker.ensureJoined('s1');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledTimes(2);
+
+    // Resolve B first to prove its resolution doesn't wait on A.
+    resolveB();
+    await callerB;
+
+    // A still resolves cleanly when its own execute completes.
+    resolveA();
+    await callerA;
+  });
+
   it('bumpEpoch mid-flight does not double-clear a cache entry the failure path also tries to clear', async () => {
     // Race: ensureJoined kicks off, mid-flight bumpEpoch nulls cached, then
     // execute rejects. The catch block must not try to clear a stale entry.

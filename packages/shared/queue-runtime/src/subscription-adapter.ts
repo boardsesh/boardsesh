@@ -14,7 +14,6 @@ import {
   type ClimbQueueItem,
   type EventMappingResult,
   type MapEventContext,
-  type QueueSearchParams,
   type SyncQueueEvent,
 } from '@boardsesh/queue';
 
@@ -63,7 +62,7 @@ export type SubscriptionWireEnvelope<TWireItem> =
       uuid?: string | null;
     };
 
-export type MapEnvelopeOptions<TWireItem, TSearchParams extends QueueSearchParams = QueueSearchParams> = {
+export type MapEnvelopeOptions<TWireItem> = {
   /** Lift the wire item shape to the reducer's `ClimbQueueItem`. Defaults
    *  to identity — web's wire items already match. Mobile passes
    *  `toClimbQueueItem` from `packages/mobile/src/lib/queue-conversion.ts`. */
@@ -77,16 +76,13 @@ export type MapEnvelopeOptions<TWireItem, TSearchParams extends QueueSearchParam
  * Combines the per-platform item lift with the shared
  * `mapQueueEventToAction` so callers only carry their reducer dispatch.
  */
-export function mapSubscriptionEnvelopeToAction<
-  TWireItem,
-  TSearchParams extends QueueSearchParams = QueueSearchParams,
->(
+export function mapSubscriptionEnvelopeToAction<TWireItem>(
   envelope: SubscriptionWireEnvelope<TWireItem>,
-  options: MapEnvelopeOptions<TWireItem, TSearchParams> = {},
-): EventMappingResult<TSearchParams> {
+  options: MapEnvelopeOptions<TWireItem> = {},
+): EventMappingResult {
   const lift = options.mapItem ?? ((item: TWireItem) => item as unknown as ClimbQueueItem);
   const syncEvent = liftEnvelopeToSyncEvent(envelope, lift);
-  return mapQueueEventToAction<TSearchParams>(syncEvent, options.context);
+  return mapQueueEventToAction(syncEvent, options.context);
 }
 
 function liftEnvelopeToSyncEvent<TWireItem>(

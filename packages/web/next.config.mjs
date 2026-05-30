@@ -21,10 +21,13 @@ const nextConfig = {
     '@boardsesh/ble-protocol',
     '@boardsesh/board-config',
     '@boardsesh/graphql',
+    '@boardsesh/graphql-client',
     '@boardsesh/queue',
     '@boardsesh/queue-runtime',
     '@boardsesh/party-profile',
     '@boardsesh/climb-actions',
+    '@boardsesh/play-view',
+    '@boardsesh/climb-filters',
   ],
   // Empty turbopack config to silence warning about webpack config
   turbopack: {},

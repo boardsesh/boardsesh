@@ -42,7 +42,7 @@ describe('createSetCurrentClimbCoalescer', () => {
     await coalescer.enqueue({ item: makeItem('a'), shouldAddToQueue: true });
 
     expect(sendArgs).toHaveBeenCalledTimes(1);
-    expect(sendArgs).toHaveBeenCalledWith({ item: makeItem('a'), shouldAddToQueue: true });
+    expect(sendArgs).toHaveBeenCalledWith({ item: makeItem('a'), shouldAddToQueue: true }, undefined);
   });
 
   it('serializes two rapid calls: second is sent after first completes', async () => {
@@ -113,7 +113,7 @@ describe('createSetCurrentClimbCoalescer', () => {
     await firstEnqueue;
 
     expect(sendSupersededQueueAdd).toHaveBeenCalledTimes(1);
-    expect(sendSupersededQueueAdd).toHaveBeenCalledWith(makeItem('b'));
+    expect(sendSupersededQueueAdd).toHaveBeenCalledWith(makeItem('b'), undefined);
   });
 
   it('omits sendSupersededQueueAdd when the superseded args had no shouldAddToQueue', async () => {
@@ -190,5 +190,83 @@ describe('createSetCurrentClimbCoalescer', () => {
     await coalescer.enqueue({ item: makeItem('b') });
 
     expect(sendArgs).toHaveBeenCalledTimes(2);
+  });
+
+  it('captures getContext() at enqueue time and threads it to sendArgs (drain uses captured, not current)', async () => {
+    const first = deferred();
+    let currentSession = 'sess-A';
+    const sendCalls: Array<{ uuid: string; ctx: string }> = [];
+    const sendArgs = vi.fn(async (args: SetCurrentClimbArgs, ctx: string) => {
+      sendCalls.push({ uuid: args.item?.uuid ?? '', ctx });
+      if (sendCalls.length === 1) await first.promise;
+    });
+    const coalescer = createSetCurrentClimbCoalescer<string>({
+      getContext: () => currentSession,
+      sendArgs,
+    });
+
+    // First enqueue captures sess-A; the call is in-flight.
+    const firstEnqueue = coalescer.enqueue({ item: makeItem('a') });
+    await Promise.resolve();
+
+    // Second enqueue: still in sess-A.
+    await coalescer.enqueue({ item: makeItem('b') });
+
+    // Session flips before the drain runs.
+    currentSession = 'sess-B';
+
+    first.resolve();
+    await firstEnqueue;
+
+    // First call captured sess-A; the drained second call ALSO carries
+    // sess-A — the context the enqueue happened in, not the current one.
+    expect(sendCalls).toEqual([
+      { uuid: 'a', ctx: 'sess-A' },
+      { uuid: 'b', ctx: 'sess-A' },
+    ]);
+  });
+
+  it('sendSupersededQueueAdd receives the captured context of the superseded args (not the current)', async () => {
+    const first = deferred();
+    let currentSession = 'sess-A';
+    const sendArgs = vi.fn(async (_args: SetCurrentClimbArgs, _ctx: string) => {
+      if (sendArgs.mock.calls.length === 1) await first.promise;
+    });
+    const supersedeCalls: Array<{ uuid: string; ctx: string }> = [];
+    const sendSupersededQueueAdd = vi.fn(async (item: ClimbQueueItem, ctx: string) => {
+      supersedeCalls.push({ uuid: item.uuid, ctx });
+    });
+    const coalescer = createSetCurrentClimbCoalescer<string>({
+      getContext: () => currentSession,
+      sendArgs,
+      sendSupersededQueueAdd,
+    });
+
+    const firstEnqueue = coalescer.enqueue({ item: makeItem('a') });
+    await Promise.resolve();
+
+    // 'b' enqueued under sess-A with shouldAddToQueue.
+    await coalescer.enqueue({ item: makeItem('b'), shouldAddToQueue: true });
+
+    // Session flips to B before 'c' supersedes 'b'.
+    currentSession = 'sess-B';
+    await coalescer.enqueue({ item: makeItem('c') });
+
+    first.resolve();
+    await firstEnqueue;
+
+    // Supersede fired against the SUPERSEDED entry's captured session (A),
+    // not the current (B) — even though sess-B is what's active when the
+    // supersede event happens.
+    expect(supersedeCalls).toEqual([{ uuid: 'b', ctx: 'sess-A' }]);
+  });
+
+  it('defaults context to undefined when getContext is omitted', async () => {
+    const sendArgs = vi.fn(async (_args: SetCurrentClimbArgs, _ctx: void) => {});
+    const coalescer = createSetCurrentClimbCoalescer({ sendArgs });
+
+    await coalescer.enqueue({ item: makeItem('a') });
+
+    expect(sendArgs).toHaveBeenCalledWith({ item: makeItem('a') }, undefined);
   });
 });

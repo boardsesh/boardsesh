@@ -96,11 +96,24 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
   // Coalescer is stable for the hook's lifetime; it reads clientRef/sessionRef
   // at send time so locale changes (or any other rerender) don't reset the
   // inFlight/pending state mid-session.
+  //
+  // `getContext` snapshots the session id at enqueue. If the session swaps
+  // between enqueue and either the drain dispatch or the supersede ADD,
+  // sendArgs/sendSupersededQueueAdd see the snapshot — and bail if it no
+  // longer matches the active session. Closes the cross-session leak the
+  // reviewer flagged on `sendSupersededQueueAdd`.
   const setCurrentClimbCoalescer = useMemo(
     () =>
-      createSetCurrentClimbCoalescer({
-        sendArgs: async (args) => {
-          if (!clientRef.current || !sessionRef.current?.id) throw new Error('Not connected to session');
+      createSetCurrentClimbCoalescer<string | null>({
+        getContext: () => sessionRef.current?.id ?? null,
+        sendArgs: async (args, capturedSessionId) => {
+          if (!clientRef.current) throw new Error('Not connected to session');
+          if (!capturedSessionId || sessionRef.current?.id !== capturedSessionId) {
+            // Session was alive at enqueue but has since flipped (or ended).
+            // Dropping the dispatch is the right call — applying a stale
+            // setCurrent to the new session would resurrect a stale climb.
+            throw new Error('Not connected to session');
+          }
           await execute(clientRef.current, {
             query: SET_CURRENT_CLIMB,
             variables: {
@@ -110,14 +123,12 @@ export function useQueueMutations({ client, session }: UseQueueMutationsArgs): Q
             },
           });
         },
-        sendSupersededQueueAdd: async (item) => {
-          // Same session guard as sendArgs / addQueueItem / removeQueueItem —
-          // if the session ended (or never started) between the original
-          // setCurrentClimb call and this fire-and-forget queue-add, the
-          // backend would reject the mutation with "no active session".
-          // Drop silently rather than throwing, since the caller's catch is
-          // the coalescer's onSupersededQueueAddError sink.
-          if (!clientRef.current || !sessionRef.current?.id) return;
+        sendSupersededQueueAdd: async (item, capturedSessionId) => {
+          // Use the session captured when the now-superseded args were
+          // enqueued. If that session is no longer active, drop — firing
+          // the queue-add against a different session is worse than losing
+          // it (it'd surface an unrelated climb to other party members).
+          if (!clientRef.current || !capturedSessionId || sessionRef.current?.id !== capturedSessionId) return;
           await execute(clientRef.current, {
             query: ADD_QUEUE_ITEM,
             variables: { item: toClimbQueueItemInput(item) },

@@ -43,4 +43,16 @@ describe('ensureProfile', () => {
     expect(typeof profile.id).toBe('string');
     expect(profile.id.length).toBeGreaterThan(0);
   });
+
+  it('throws when crypto.randomUUID is missing rather than handing out a non-UUID id', async () => {
+    const storage = memoryStorage(null);
+    const originalCrypto = (globalThis as { crypto?: unknown }).crypto;
+    // Strip the global so the default generator fails loud.
+    Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true });
+    try {
+      await expect(ensureProfile(storage)).rejects.toThrow(/crypto\.randomUUID unavailable/);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { value: originalCrypto, configurable: true });
+    }
+  });
 });

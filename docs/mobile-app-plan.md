@@ -169,6 +169,15 @@ The `useQueueReducer` React hook wrapper stays in each platform's code. The redu
 - `packages/shared/board-config/` — Board metadata, hold maps, angle tables, `buildBoardPath`
 - `packages/shared/ble-protocol/` — Bluetooth LED control protocol (Aurora + MoonBoard)
 
+### Storage on mobile
+
+Mobile uses two persistence layers, picked deliberately per data class:
+
+- **`expo-secure-store`** — credentials and anything encrypted at rest. Auth tokens, session ids, party profile UUID. Hardware-backed Keychain/Keystore, 2 KB per-value limit.
+- **`@react-native-async-storage/async-storage`** — non-secret UI preferences. Metro target list, future feature gates, last-selected values. No encryption, larger per-value limit, the React Native community standard. Use `packages/mobile/src/lib/preference-store.ts` for a typed JSON wrapper.
+
+AsyncStorage is a **native module** (autolinked via Expo). Adding or upgrading it requires a fresh preview build via `vp run mobile:preview-build` — existing testers on `preview-1..4` will see `Native module RNCAsyncStorage is null` after an OTA-only update until they reinstall.
+
 ## iOS-first with SwiftUI native modules
 
 75% of Boardsesh users are on iOS. The app uses Expo's native modules API to write performance-critical and platform-defining iOS views in SwiftUI, with Kotlin/Jetpack Compose equivalents for Android. Most screens (climb lists, queue, search, profiles) are standard React Native — shared across both platforms.

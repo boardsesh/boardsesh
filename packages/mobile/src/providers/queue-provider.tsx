@@ -326,19 +326,31 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Serialize-and-supersede SET_CURRENT_CLIMB. Rapid swipes used to stack
   // up requests; the coalescer keeps at most one in flight and drops all but
   // the latest pending args. Built once per mount (stable) — sendArgs reads
-  // from refs so locale changes don't reset the inFlight/pending state. A
-  // superseded args that carried shouldAddToQueue still fires its ADD_QUEUE_ITEM
-  // so the queue mutation reaches the server.
+  // from refs so locale changes don't reset the inFlight/pending state.
+  //
+  // `getContext` snapshots the session id at enqueue. The captured value
+  // (string | null) flows through sendArgs and sendSupersededQueueAdd. If
+  // null at enqueue (no session yet — common when ensureSession is still
+  // creating the session), sendArgs awaits ensureSession to create one,
+  // and the supersede ADD waits for the same promise so it doesn't race
+  // ahead of session creation.
   const ensureSessionRef = useRef(ensureSession);
   ensureSessionRef.current = ensureSession;
   const setCurrentClimbCoalescer = useMemo(
     () =>
-      createSetCurrentClimbCoalescer({
-        sendArgs: async (args) => {
+      createSetCurrentClimbCoalescer<string | null>({
+        getContext: () => sessionIdRef.current,
+        sendArgs: async (args, capturedSessionId) => {
           if (!args.item) return;
-          const activeSessionId = await ensureSessionRef.current();
-          if (!activeSessionId) return;
-          await ensureJoined(activeSessionId);
+          // If no session was captured at enqueue, create one now (and use
+          // it for any drained pending args from the same enqueue batch).
+          // If a session was captured but has since flipped, drop — same
+          // reasoning as web: applying a stale setCurrent to a new session
+          // would surface a stale climb.
+          const sessionId = capturedSessionId ?? (await ensureSessionRef.current());
+          if (!sessionId) return;
+          if (capturedSessionId !== null && sessionIdRef.current !== capturedSessionId) return;
+          await ensureJoined(sessionId);
           await execute<SetCurrentClimbMutationResponse>(getWsClient(), {
             query: SET_CURRENT_CLIMB,
             variables: {
@@ -348,10 +360,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             },
           });
         },
-        sendSupersededQueueAdd: async (item) => {
-          const activeSessionId = sessionIdRef.current;
-          if (!activeSessionId) return;
-          await ensureJoined(activeSessionId);
+        sendSupersededQueueAdd: async (item, capturedSessionId) => {
+          // Fire the ADD_QUEUE_ITEM against the session that was active when
+          // the now-superseded args were enqueued, not the current one. If
+          // no session was captured (enqueued before ensureSession resolved)
+          // or the captured session has since flipped, drop.
+          if (!capturedSessionId || sessionIdRef.current !== capturedSessionId) return;
+          await ensureJoined(capturedSessionId);
           await execute<AddQueueItemMutationResponse>(getWsClient(), {
             query: ADD_QUEUE_ITEM,
             variables: { item: { uuid: item.uuid, climb: item.climb } },

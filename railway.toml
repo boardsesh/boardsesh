@@ -3,6 +3,9 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile.backend"
 watchPaths = [
   "packages/backend/**",
+  # `packages/shared-schema/**` is intentionally listed first among the
+  # shared packages — backend imports `@boardsesh/shared-schema` and its
+  # generated types everywhere; a schema change must trigger a rebuild.
   "packages/shared-schema/**",
   "packages/crypto/**",
   "packages/db/**",

@@ -30,6 +30,12 @@ COPY packages/shared/graphql/package.json ./packages/shared/graphql/
 COPY packages/shared/graphql-client/package.json ./packages/shared/graphql-client/
 COPY packages/shared/play-view/package.json ./packages/shared/play-view/
 COPY packages/shared/queue/package.json ./packages/shared/queue/
+# queue-runtime / party-profile / climb-actions: package.json only, no src.
+# `bun install --frozen-lockfile` needs the package.json so the workspace
+# graph resolves (the lockfile lists them as workspace members because web
+# depends on them). The backend itself doesn't import them, so omitting
+# `src/` keeps the image smaller. Don't add COPYs for `src/` "for symmetry"
+# — verify with `grep -rE "from '@boardsesh/" packages/backend/src/`.
 COPY packages/shared/queue-runtime/package.json ./packages/shared/queue-runtime/
 COPY packages/shared/party-profile/package.json ./packages/shared/party-profile/
 COPY packages/shared/climb-actions/package.json ./packages/shared/climb-actions/

@@ -160,4 +160,32 @@ describe('web wire envelope pipeline (toWireEnvelope → mapSubscriptionEnvelope
     const bogus = { __typename: 'NotARealVariant' } as unknown as SubscriptionQueueEvent;
     expect(() => toWireEnvelope(bogus)).toThrow(/Unhandled SubscriptionQueueEvent variant/);
   });
+
+  it('normalises undefined echo hints to undefined in the action payload (drift guard on CurrentClimbChanged)', () => {
+    // If the server schema ever changes from sending `clientId` /
+    // `correlationId: null` to omitting them entirely, the pipeline must
+    // not regress: the action payload should still surface them as
+    // `undefined` (not `null`), because the reducer's echo-suppression
+    // check is `eventClientId === myClientId` and silently changing the
+    // sentinel between releases (e.g. `null` → `undefined`) could break
+    // suppression for clients that haven't yet redeployed.
+    //
+    // Today the chain is: wire undefined → SubscriptionWireEnvelope
+    // coerces to null → mapQueueEventToAction coerces back to undefined.
+    // That round-trip is the contract this test locks in.
+    const envelope = {
+      __typename: 'CurrentClimbChanged',
+      sequence: 5,
+      stateHash: 'h',
+      currentItem: item,
+      clientId: undefined as unknown as string,
+      correlationId: undefined as unknown as string,
+    } as unknown as SubscriptionQueueEvent;
+    const result = dispatch(envelope, 'self');
+    if (result.kind !== 'dispatch' || result.action.type !== 'DELTA_UPDATE_CURRENT_CLIMB') {
+      throw new Error('expected DELTA_UPDATE_CURRENT_CLIMB');
+    }
+    expect(result.action.payload.eventClientId).toBeUndefined();
+    expect(result.action.payload.serverCorrelationId).toBeUndefined();
+  });
 });

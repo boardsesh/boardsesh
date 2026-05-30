@@ -13,12 +13,13 @@ export async function ensureProfile(
 }
 
 function defaultGenerateId(): string {
-  const cryptoObj: { randomUUID?: () => string } | undefined =
-    typeof globalThis !== 'undefined' && (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
-      ? (globalThis as { crypto: { randomUUID?: () => string } }).crypto
-      : undefined;
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return cryptoObj.randomUUID();
+  // All targeted runtimes provide `crypto.randomUUID`: browsers since 2020,
+  // Node ≥14.17, Hermes ≥RN 0.74. A silent fallback to `Date.now() + Math.random()`
+  // would mask real provisioning bugs (missing polyfill, wrong globalThis,
+  // unexpected sandbox) by handing out non-UUID strings — fail loud instead.
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (!cryptoObj || typeof cryptoObj.randomUUID !== 'function') {
+    throw new Error('crypto.randomUUID unavailable — party profile cannot generate an id');
   }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+  return cryptoObj.randomUUID();
 }

@@ -56,6 +56,13 @@ describe('PlaylistsProvider', () => {
     await expect(result.current.refreshPlaylists()).rejects.toThrow(/refreshPlaylists.*useClimbActionsData/s);
   });
 
+  it('defaults isLoading to true when not supplied — so [] + loading=false is not mistaken for "user has no playlists"', () => {
+    const wrapper = ({ children }: { children: ReactNode }) => <PlaylistsProvider>{children}</PlaylistsProvider>;
+    const { result } = renderHook(() => usePlaylistsContext(), { wrapper });
+    expect(result.current.playlists).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+  });
+
   it('supplied mutations are invoked when called', async () => {
     const addToPlaylist = vi.fn(async (_playlistId: string, _climbUuid: string, _angle: number) => undefined);
     const wrapper = ({ children }: { children: ReactNode }) => (

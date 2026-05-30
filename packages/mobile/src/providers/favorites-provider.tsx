@@ -45,22 +45,21 @@ export function FavoritesProvider({
   isAuthenticated = false,
   children,
 }: FavoritesProviderProps) {
+  // No unmount cleanup: an unconditional `setFavorites(EMPTY)` on unmount
+  // races a sibling provider that just mounted (e.g., during a parent
+  // re-render that briefly mounts two FavoritesProviders). The new instance's
+  // mount runs first, writes its data; the old instance's cleanup runs next
+  // and wipes it. Without a per-instance ownership token in the store we
+  // can't safely scope the cleanup, and the only stale-data window this
+  // guards is "provider unmounts with no replacement" — in which case no
+  // subscriber is in the tree to observe the leftover data either. A future
+  // remount will overwrite via `setFavorites` on its own mount.
   useLayoutEffect(() => {
     favoritesStore.setFavorites(favorites ?? (EMPTY_FAVORITES as Set<string>));
-    // Reset on unmount so a remount or a conditionally-mounted second
-    // provider doesn't see stale data from the previous instance. Today the
-    // provider sits at the root and never unmounts; this is a guard for
-    // future repositioning, not a current bug.
-    return () => {
-      favoritesStore.setFavorites(EMPTY_FAVORITES as Set<string>);
-    };
   }, [favorites]);
 
   useLayoutEffect(() => {
     favoritesStore.setMeta(isLoading, isAuthenticated);
-    return () => {
-      favoritesStore.setMeta(false, false);
-    };
   }, [isLoading, isAuthenticated]);
 
   const value = useMemo<FavoritesContextValue>(() => ({ toggleFavorite }), [toggleFavorite]);

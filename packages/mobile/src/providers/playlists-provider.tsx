@@ -57,7 +57,13 @@ export function PlaylistsProvider({
   addToPlaylist = notWired('addToPlaylist'),
   removeFromPlaylist = notWired('removeFromPlaylist'),
   createPlaylist = notWired('createPlaylist'),
-  isLoading = false,
+  // Default `true` (not `false`) so a consumer reading `isLoading` to gate a
+  // spinner doesn't mistake "data hook not wired yet" for "user has no
+  // playlists". The combination of `playlists=[]` + `isLoading=true` is the
+  // accurate state until a real data hook lands and overrides both. Pairs
+  // with the `notWired()` mutation defaults — both signal "this is the
+  // unwired baseline" rather than masquerading as real data.
+  isLoading = true,
   isAuthenticated = false,
   refreshPlaylists = notWired('refreshPlaylists'),
   children,
