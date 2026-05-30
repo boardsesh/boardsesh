@@ -99,6 +99,8 @@
     "**/board-controller/**",
     "embedded/**",
     "scripts/**",
+    "mobile/**",
+    "packages/mobile/**",
     "packages/board-renderer/wasm/pkg/**",
     "packages/db/drizzle/**",
     "design/**",
