@@ -7,6 +7,7 @@ import { stabilizeClimbArrayRef } from './climb-list-utils';
 import RecentSearchPills from '../search-drawer/recent-search-pills';
 import AngleSelector from './angle-selector';
 import { dispatchOpenPlayDrawer } from '../queue-control/play-drawer-event';
+import { useOptionalBoardProvider } from '../board-provider/board-provider-context';
 
 type BoardPageClimbsListProps = ParsedBoardRouteParameters & {
   boardDetails: BoardDetails;
@@ -35,6 +36,7 @@ const BoardPageClimbsList = ({
   const { currentClimb } = useCurrentClimb();
   const { climbSearchResults, hasMoreResults, hasDoneFirstFetch, isFetchingClimbs } = useSearchData();
   const { addToQueue, fetchMoreClimbs } = useQueueActions();
+  const getLogbook = useOptionalBoardProvider()?.getLogbook;
 
   // Queue Context provider uses React Query infinite to fetch results, which can only happen clientside.
   // That data equals null at the start, so when its null we use the initialClimbs array which we
@@ -59,6 +61,20 @@ const BoardPageClimbsList = ({
     prevClimbsRef.current = deduped;
     return deduped;
   }, [hasDoneFirstFetch, initialClimbs, climbSearchResults]);
+
+  const climbUuidsForLogbookKey = useMemo(
+    () =>
+      climbs
+        .map((climb) => climb.uuid)
+        .sort()
+        .join(','),
+    [climbs],
+  );
+
+  useEffect(() => {
+    if (!getLogbook || climbUuidsForLogbookKey.length === 0) return;
+    void getLogbook(climbUuidsForLogbookKey.split(','));
+  }, [getLogbook, climbUuidsForLogbookKey]);
 
   // Open the play drawer on the requested climb when this component mounts
   // on a /view/{climb_uuid} route. The dispatch is deferred to the next

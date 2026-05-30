@@ -32,7 +32,10 @@ export const useQueueDataFetching = ({
   hasDoneFirstFetch,
   setHasDoneFirstFetch,
 }: UseQueueDataFetchingProps) => {
-  const getLogbook = useOptionalBoardProvider()?.getLogbook;
+  const boardProvider = useOptionalBoardProvider();
+  const getLogbook = boardProvider?.getLogbook;
+  const isBoardAuthLoading = boardProvider?.isLoading ?? false;
+  const isBoardAuthenticated = boardProvider?.isAuthenticated ?? false;
   // Use wsAuthToken for GraphQL backend auth (NextAuth session token)
   const { token: wsAuthToken } = useWsAuthToken();
   const fetchedUuidsRef = useRef<string>('');
@@ -48,6 +51,8 @@ export const useQueueDataFetching = ({
     () => USER_SPECIFIC_SEARCH_PARAMS.some((key) => Boolean((searchParams as Record<string, unknown>)[key])),
     [searchParams],
   );
+  const shouldWaitForSearchAuth =
+    usesUserSpecificFilters && (isBoardAuthLoading || isBoardAuthenticated) && !wsAuthToken;
 
   // Create a stable query key with flattened primitive values to avoid object reference changes.
   // The auth token is included only when user-specific filters are active so the cached
@@ -150,6 +155,7 @@ export const useQueueDataFetching = ({
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
+    enabled: !shouldWaitForSearchAuth,
   });
 
   // Count query uses instant (un-debounced) params so the count updates
@@ -198,6 +204,8 @@ export const useQueueDataFetching = ({
     () => USER_SPECIFIC_SEARCH_PARAMS.some((key) => Boolean((countSearchParams as Record<string, unknown>)[key])),
     [countSearchParams],
   );
+  const shouldWaitForCountAuth =
+    countUsesUserSpecificFilters && (isBoardAuthLoading || isBoardAuthenticated) && !wsAuthToken;
 
   const countQueryKey = useMemo(() => {
     const { page: _, ...paramsWithoutPage } = countSearchParams;
@@ -224,6 +232,7 @@ export const useQueueDataFetching = ({
     },
     staleTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+    enabled: !shouldWaitForCountAuth,
   });
 
   const totalSearchResultCount = countData ?? null;
@@ -300,7 +309,7 @@ export const useQueueDataFetching = ({
     suggestedClimbs,
     totalSearchResultCount,
     hasMoreResults,
-    isFetchingClimbs: isFetching,
+    isFetchingClimbs: isFetching || shouldWaitForSearchAuth,
     isFetchingNextPage,
     fetchMoreClimbs,
     // Combined climb UUIDs for use by useClimbActionsData

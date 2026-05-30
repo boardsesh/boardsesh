@@ -1,5 +1,5 @@
 {
-  "installCommand": "bun install --frozen-lockfile",
+  "installCommand": "bunx bun@1.3.14 install --frozen-lockfile",
   "buildCommand": "if [ \"$VERCEL_ENV\" != \"preview\" ]; then bun run --filter=@boardsesh/db db:migrate; fi && bun run --filter=@boardsesh/web build",
   "framework": "nextjs",
   "crons": [

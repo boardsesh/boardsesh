@@ -109,6 +109,9 @@
 // i18n-keep boards.mobile.emptyTitle
 // i18n-keep boards.mobile.emptySubtitle
 // i18n-keep common.mobile.more.title
+// i18n-keep common.mobile.more.development
+// i18n-keep common.mobile.more.metroServersTitle
+// i18n-keep common.mobile.more.metroServersSubtitle
 // i18n-keep common.mobile.nav.boards
 // i18n-keep common.mobile.nav.climbs
 // i18n-keep common.mobile.nav.climb

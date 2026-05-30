@@ -5,6 +5,7 @@ import { useQueueDataFetching } from '../../hooks/use-queue-data-fetching';
 import type { ParsedBoardRouteParameters, SearchRequestPagination, Climb } from '@/app/lib/types';
 import type { ClimbQueue } from '../../types';
 import { useBoardProvider, useOptionalBoardProvider } from '../../../board-provider/board-provider-context';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import React from 'react';
 
 // Mock dependencies
@@ -62,6 +63,7 @@ Object.defineProperty(window, 'location', {
 
 const mockUseBoardProvider = vi.mocked(useBoardProvider);
 const mockUseOptionalBoardProvider = vi.mocked(useOptionalBoardProvider);
+const mockUseWsAuthToken = vi.mocked(useWsAuthToken);
 
 const mockClimb: Climb = {
   uuid: 'climb-1',
@@ -178,6 +180,13 @@ describe('useQueueDataFetching', () => {
       saveClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
+    });
+
+    mockUseWsAuthToken.mockReturnValue({
+      token: 'mock-token',
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
     });
 
     // Mock GraphQL client requests
@@ -405,6 +414,56 @@ describe('useQueueDataFetching', () => {
       expect(requestInputs.length).toBeGreaterThan(0);
       expect(requestInputs.every((input) => input.onlyWideClimbs === true)).toBe(true);
     });
+  });
+
+  it('waits for an auth token before running progress-filtered search and count requests', async () => {
+    mockUseWsAuthToken.mockReturnValue({
+      token: null,
+      isAuthenticated: false,
+      isLoading: true,
+      error: null,
+    });
+    const searchParamsWithProgressFilter = {
+      ...mockSearchParams,
+      showOnlyAttempted: true,
+    };
+
+    const { result, rerender } = renderHook(
+      () =>
+        useQueueDataFetching({
+          searchParams: searchParamsWithProgressFilter,
+          countSearchParams: searchParamsWithProgressFilter,
+          queue: mockQueue,
+          parsedParams: mockParsedParams,
+          hasDoneFirstFetch: false,
+          setHasDoneFirstFetch: mockSetHasDoneFirstFetch,
+        }),
+      { wrapper: createWrapper() },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mockGraphQLRequest).not.toHaveBeenCalled();
+    expect(result.current.isFetchingClimbs).toBe(true);
+
+    mockUseWsAuthToken.mockReturnValue({
+      token: 'mock-token',
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+    rerender();
+
+    await waitFor(() => {
+      expect(mockGraphQLRequest).toHaveBeenCalled();
+    });
+
+    const requestInputs = mockGraphQLRequest.mock.calls
+      .map((call) => (call[1] as { input?: { showOnlyAttempted?: boolean } } | undefined)?.input)
+      .filter((input): input is { showOnlyAttempted?: boolean } => input !== undefined);
+
+    expect(requestInputs.length).toBeGreaterThan(0);
+    expect(requestInputs.every((input) => input.showOnlyAttempted === true)).toBe(true);
   });
 
   it('should handle empty search results', async () => {
