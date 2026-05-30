@@ -1,8 +1,12 @@
 import type { ConnectionContext, CommentEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { SocialEntityTypeSchema } from '../../../validation/schemas';
 
-const VALID_ENTITY_TYPES = new Set(['playlist_climb', 'climb', 'tick', 'comment', 'proposal', 'board']);
+// Derive the allow-list from the shared Zod enum so it can never drift from
+// SocialEntityType. A hand-rolled list here previously dropped 'session' and
+// 'gym', breaking realtime comments on those pages (issue #2357).
+const VALID_ENTITY_TYPES = new Set<string>(SocialEntityTypeSchema.options);
 
 // Composite entity IDs (e.g. "playlist_uuid:climb_uuid") can be long but
 // should never exceed a reasonable bound. UUIDs are 36 chars, so a composite

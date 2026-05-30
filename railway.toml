@@ -7,6 +7,11 @@ watchPaths = [
   "packages/crypto/**",
   "packages/db/**",
   "packages/aurora-sync/**",
+  # Backend imports these at runtime via @boardsesh/* — keep the rebuild
+  # trigger list in sync with Dockerfile.backend's COPY paths.
+  "packages/shared/board-config/**",
+  "packages/shared/graphql/**",
+  "packages/shared/queue/**",
   "package.json",
   "bun.lock",
   "Dockerfile.backend",

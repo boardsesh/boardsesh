@@ -30,13 +30,25 @@ COPY packages/shared/graphql/package.json ./packages/shared/graphql/
 COPY packages/shared/graphql-client/package.json ./packages/shared/graphql-client/
 COPY packages/shared/play-view/package.json ./packages/shared/play-view/
 COPY packages/shared/queue/package.json ./packages/shared/queue/
+COPY packages/shared/queue-runtime/package.json ./packages/shared/queue-runtime/
+COPY packages/shared/party-profile/package.json ./packages/shared/party-profile/
+COPY packages/shared/climb-actions/package.json ./packages/shared/climb-actions/
 
-# Copy source code for all shared packages and backend
+# Copy source code for all shared packages backend imports at runtime, plus
+# backend itself. The CMD runs `bunx tsx src/index.ts` which resolves
+# `@boardsesh/*` imports through the workspace symlink to `packages/shared/*/src/index.ts`
+# — without these source dirs in the image, the symlink targets are partial
+# and the import crashes at startup. board-config, graphql, and queue are
+# imported from `packages/backend/src/{graphql/resolvers/controller/subscriptions.ts,
+# __tests__/operations-schema-validation.test.ts, services/room-manager/queue-state.ts}`.
 COPY packages/shared-schema/src ./packages/shared-schema/src
 COPY packages/board-constants/src ./packages/board-constants/src
 COPY packages/crypto/src ./packages/crypto/src
 COPY packages/db/src ./packages/db/src
 COPY packages/aurora-sync/src ./packages/aurora-sync/src
+COPY packages/shared/board-config/src ./packages/shared/board-config/src
+COPY packages/shared/graphql/src ./packages/shared/graphql/src
+COPY packages/shared/queue/src ./packages/shared/queue/src
 COPY packages/backend/src ./packages/backend/src
 
 # Install dependencies (--production is incompatible with --frozen-lockfile in Bun)

@@ -30,6 +30,9 @@ COPY packages/shared/graphql/package.json ./packages/shared/graphql/
 COPY packages/shared/graphql-client/package.json ./packages/shared/graphql-client/
 COPY packages/shared/play-view/package.json ./packages/shared/play-view/
 COPY packages/shared/queue/package.json ./packages/shared/queue/
+COPY packages/shared/queue-runtime/package.json ./packages/shared/queue-runtime/
+COPY packages/shared/party-profile/package.json ./packages/shared/party-profile/
+COPY packages/shared/climb-actions/package.json ./packages/shared/climb-actions/
 
 # Install all dependencies (need devDependencies for the build)
 RUN bun install --frozen-lockfile
