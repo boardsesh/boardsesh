@@ -1,23 +1,15 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { randomUUID } from 'expo-crypto';
 import { enqueue } from '../mutation-queue';
 import { drainMutationQueue } from '../mutation-queue';
 import type { GraphQLFetch } from '../mutation-queue/handlers';
+import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
-export type SaveTickInput = {
-  boardType: string;
-  climbUuid: string;
-  angle: number;
-  status: string;
-  attemptCount: number;
-  quality: number | null;
-  difficulty: number | null;
-  comment: string;
-  isMirror: boolean;
-  isBenchmark: boolean;
-};
+// The full SaveTickInput the UI builds (QuickTickBar / LogAscentSheet). Carries
+// climbedAt + the optional sessionId/board-path fields, so the payload we enqueue
+// is exactly what the backend's `input SaveTickInput` requires — no narrowing.
+export type SaveTickInput = SaveTickMutationVariables['input'];
 
 export type FavoriteInput = {
   boardName: string;
@@ -25,113 +17,103 @@ export type FavoriteInput = {
   angle: number;
 };
 
-export function useOfflineSaveTick(db: SQLiteDatabase, graphqlFetch: GraphQLFetch) {
-  const queryClient = useQueryClient();
+/**
+ * Local write + queue entry for a tick, committed in ONE exclusive transaction.
+ * A partial failure that leaves a local row without its queue entry (or vice
+ * versa) would never reach the server / would orphan the row, so both land
+ * together or neither does.
+ *
+ * `tickUuid` is the row identity AND the idempotency key — a fresh random uuid
+ * per call is correct because each tick is a distinct record. The full `input`
+ * (including climbedAt, sessionId, and the board-path fields the backend needs)
+ * is enqueued verbatim; the drainer folds `tickUuid` in as `input.uuid` for the
+ * `ON CONFLICT (uuid) DO NOTHING` replay guard.
+ *
+ * Local columns are a subset of the payload (boardsesh_ticks has no
+ * layout/size/set columns); the extra fields ride along only in the queued
+ * payload, which is what reaches the backend.
+ */
+export async function writeTickLocal(db: SQLiteDatabase, input: SaveTickInput, tickUuid: string): Promise<void> {
+  const now = new Date().toISOString();
+  // climbedAt is required on the input; fall back to now only defensively.
+  const climbedAt = input.climbedAt ?? now;
+  const sessionId = input.sessionId ?? null;
 
-  return useCallback(
-    async (tickData: SaveTickInput) => {
-      // The tick uuid IS the row identity and the idempotency key, so a fresh
-      // random uuid per call is correct — each tick is a distinct record.
-      const tickUuid = randomUUID();
-      const now = new Date().toISOString();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(
+      `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
+       attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
+       created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tickUuid,
+        input.boardType,
+        input.climbUuid,
+        input.angle,
+        input.status,
+        input.attemptCount,
+        input.quality ?? null,
+        input.difficulty ?? null,
+        input.comment,
+        climbedAt,
+        sessionId,
+        input.isMirror ? 1 : 0,
+        input.isBenchmark ? 1 : 0,
+        now,
+        now,
+      ],
+    );
 
-      // Local write + queue entry must commit together: a partial failure that
-      // leaves a local row without its queue entry (or vice-versa) would never
-      // reach the server / would orphan the row.
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await txn.runAsync(
-          `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
-           attempt_count, quality, difficulty, comment, climbed_at, is_mirror, is_benchmark,
-           created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            tickUuid,
-            tickData.boardType,
-            tickData.climbUuid,
-            tickData.angle,
-            tickData.status,
-            tickData.attemptCount,
-            tickData.quality,
-            tickData.difficulty,
-            tickData.comment,
-            now,
-            tickData.isMirror ? 1 : 0,
-            tickData.isBenchmark ? 1 : 0,
-            now,
-            now,
-          ],
-        );
-
-        await enqueue(txn, 'boardsesh_ticks', 'create', tickData, tickUuid);
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['ticks'] });
-      queryClient.invalidateQueries({ queryKey: ['logbook'] });
-
-      drainMutationQueue(db, queryClient, graphqlFetch);
-
-      return tickUuid;
-    },
-    [db, queryClient, graphqlFetch],
-  );
+    await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
+  });
 }
 
-export function useOfflineAddFavorite(db: SQLiteDatabase, graphqlFetch: GraphQLFetch) {
-  const queryClient = useQueryClient();
-
-  return useCallback(
-    async (input: FavoriteInput) => {
-      const now = new Date().toISOString();
-      // Favorites are natural-keyed locally (PK omits the server id), so the
-      // idempotency key is derived from the target. A double-tap "add" dedupes to
-      // a single queue row via enqueue's INSERT OR IGNORE on idempotency_key.
-      const idempotencyKey = `add:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
-
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await txn.runAsync(
-          `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
-          [input.boardName, input.climbUuid, input.angle, now, now],
-        );
-
-        await enqueue(txn, 'user_favorites', 'create', input, idempotencyKey);
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['favorites'] });
-      queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
-
-      drainMutationQueue(db, queryClient, graphqlFetch);
-    },
-    [db, queryClient, graphqlFetch],
-  );
+/**
+ * Deterministic idempotency keys for favorites: the row is natural-keyed locally
+ * (the PK omits the server id), so the key is derived from the target. Repeated
+ * "add"/"remove" taps dedupe to a single queue row via enqueue's
+ * INSERT OR IGNORE on idempotency_key.
+ */
+export function favoriteAddKey(input: FavoriteInput): string {
+  return `add:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
 }
 
-export function useOfflineRemoveFavorite(db: SQLiteDatabase, graphqlFetch: GraphQLFetch) {
-  const queryClient = useQueryClient();
-
-  return useCallback(
-    async (input: FavoriteInput) => {
-      // Deterministic key so repeated taps don't pile up duplicate delete rows.
-      const idempotencyKey = `del:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
-
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
-          input.boardName,
-          input.climbUuid,
-          input.angle,
-        ]);
-
-        await enqueue(txn, 'user_favorites', 'delete', input, idempotencyKey);
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['favorites'] });
-      queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
-
-      drainMutationQueue(db, queryClient, graphqlFetch);
-    },
-    [db, queryClient, graphqlFetch],
-  );
+export function favoriteRemoveKey(input: FavoriteInput): string {
+  return `del:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
 }
+
+/** Local INSERT OR IGNORE + enqueue('create') for a favorite, in one transaction. */
+export async function addFavoriteLocal(db: SQLiteDatabase, input: FavoriteInput): Promise<void> {
+  const now = new Date().toISOString();
+
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(
+      `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [input.boardName, input.climbUuid, input.angle, now, now],
+    );
+
+    await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input));
+  });
+}
+
+/** Local DELETE + enqueue('delete') for a favorite, in one transaction. */
+export async function removeFavoriteLocal(db: SQLiteDatabase, input: FavoriteInput): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
+      input.boardName,
+      input.climbUuid,
+      input.angle,
+    ]);
+
+    await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input));
+  });
+}
+
+// ── Follow hooks ──────────────────────────────────────────────────────────────
+// Kept as standalone dual-write hooks: there is no mobile follow UI yet, so these
+// stay un-wired (covered by tests, not call sites). When a follow UI lands they
+// can be consumed directly, mirroring the tick/favorite consolidation in hooks.ts.
 
 export function useOfflineFollowUser(db: SQLiteDatabase, graphqlFetch: GraphQLFetch) {
   const queryClient = useQueryClient();

@@ -28,8 +28,11 @@ export async function enqueue(
 }
 
 export async function peekPending(db: SQLiteDatabase, limit: number = 10): Promise<PendingMutation[]> {
+  // created_at is 1-second resolution (datetime('now')), so two writes in the
+  // same second tie on created_at. The `id` (AUTOINCREMENT) tiebreak gives true
+  // FIFO for same-second writes — the order a user actually performed them.
   return db.getAllAsync<PendingMutation>(
-    `SELECT * FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`,
+    `SELECT * FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC, id ASC LIMIT ?`,
     [limit],
   );
 }
@@ -38,13 +41,29 @@ export async function markCompleted(db: SQLiteDatabase, id: number): Promise<voi
   await db.runAsync('DELETE FROM pending_mutations WHERE id = ?', [id]);
 }
 
-export async function incrementRetry(db: SQLiteDatabase, id: number, error: string): Promise<void> {
-  await db.runAsync('UPDATE pending_mutations SET retry_count = retry_count + 1, last_error = ? WHERE id = ?', [
-    error,
-    id,
-  ]);
+/**
+ * Atomically records a failed push attempt: bumps retry_count, stores the error,
+ * and flips status to dead_letter in the SAME statement once the bumped count
+ * reaches max_retries. Folding the bump and the dead-letter transition into one
+ * UPDATE means a crash between them can't leave a mutation with retry_count
+ * exhausted but status still 'pending' (which the old two-write
+ * incrementRetry + markDeadLetter pair could).
+ */
+export async function recordFailure(db: SQLiteDatabase, id: number, error: string): Promise<void> {
+  await db.runAsync(
+    `UPDATE pending_mutations
+     SET retry_count = retry_count + 1,
+         last_error = ?,
+         status = CASE WHEN retry_count + 1 >= max_retries THEN 'dead_letter' ELSE status END
+     WHERE id = ?`,
+    [error, id],
+  );
 }
 
+/**
+ * Force-dead-letters a mutation regardless of retry_count — used for
+ * non-retryable failures (validation/4xx) where retrying is pointless.
+ */
 export async function markDeadLetter(db: SQLiteDatabase, id: number, error: string): Promise<void> {
   await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [error, id]);
 }

@@ -12,7 +12,17 @@ import type {
   UserProfile,
   SessionSummary,
 } from '@boardsesh/shared-schema';
+import { randomUUID } from 'expo-crypto';
 import { getHttpClient } from './client';
+import { getDatabaseHandle } from '../../db';
+import { drainMutationQueue } from '../../mutation-queue';
+import type { GraphQLFetch } from '../../mutation-queue/handlers';
+import {
+  writeTickLocal,
+  addFavoriteLocal,
+  removeFavoriteLocal,
+  type FavoriteInput,
+} from '../../hooks/use-offline-mutations';
 import {
   GET_PROFILE,
   GET_MY_BOARDS,
@@ -206,12 +216,48 @@ export function useEndSession() {
 // Mutations
 // ============================================
 
+// Bind the live HTTP client into the GraphQLFetch shape the drainer expects.
+// The drainer pushes the queue 1-by-1, immediately when online.
+function graphqlFetchFromClient(): GraphQLFetch {
+  return (query, variables) => getHttpClient().request(query, variables);
+}
+
+// `currentlyFavorited` is supplied by every call site (they all render the heart
+// state), so the dual-write path can pick add vs. remove deterministically
+// instead of inferring direction from a possibly-empty local table.
+export type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
+  currentlyFavorited: boolean;
+};
+
 export function useToggleFavorite() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: ToggleFavoriteMutationVariables) =>
-      getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, variables),
+    mutationFn: async ({ input, currentlyFavorited }: ToggleFavoriteVariables) => {
+      const db = getDatabaseHandle();
+
+      // No local DB (init failed this session): keep the online-only behaviour.
+      if (!db) {
+        return getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, { input });
+      }
+
+      // Dual-write: local SQLite + the backend, via the 1-by-1 sync runner.
+      const favoriteInput: FavoriteInput = {
+        boardName: input.boardName,
+        climbUuid: input.climbUuid,
+        angle: input.angle,
+      };
+
+      if (currentlyFavorited) {
+        await removeFavoriteLocal(db, favoriteInput);
+      } else {
+        await addFavoriteLocal(db, favoriteInput);
+      }
+
+      // Non-awaited: the runner pushes the just-enqueued mutation immediately
+      // when online, but the optimistic write has already succeeded locally.
+      drainMutationQueue(db, queryClient, graphqlFetchFromClient());
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
     },
@@ -222,11 +268,29 @@ export function useSaveTick() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: SaveTickMutationVariables) =>
-      getHttpClient().request<SaveTickMutationResponse>(SAVE_TICK, variables),
+    mutationFn: async (variables: SaveTickMutationVariables) => {
+      const db = getDatabaseHandle();
+
+      // No local DB (init failed this session): keep the online-only behaviour.
+      if (!db) {
+        return getHttpClient().request<SaveTickMutationResponse>(SAVE_TICK, variables);
+      }
+
+      // Dual-write: the FULL input (carrying climbedAt + sessionId from the UI)
+      // lands in local SQLite and is enqueued verbatim, keyed by a fresh uuid
+      // that is both the row identity and the idempotency key. Enqueuing the
+      // complete SaveTickInput is what closes the climbedAt gap.
+      const tickUuid = randomUUID();
+      await writeTickLocal(db, variables.input, tickUuid);
+
+      // Non-awaited: push 1-by-1, immediately when online. The local write has
+      // already succeeded, so the UI resolves optimistically.
+      drainMutationQueue(db, queryClient, graphqlFetchFromClient());
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['climb'] });
       queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      queryClient.invalidateQueries({ queryKey: ['localTicks'] });
     },
   });
 }

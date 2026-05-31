@@ -516,10 +516,10 @@ describe('sync layer — real-DDL integration', () => {
 
   describe('offline tick mutation dispatch — SaveTickInput conformance', () => {
     it('dispatches saveTick with variables.input carrying the uuid idempotency key', async () => {
-      // What the offline write hook (use-offline-mutations.ts:useOfflineSaveTick)
-      // enqueues: the SaveTickInput payload, keyed by the freshly-generated tick
-      // uuid. buildDispatch then folds that uuid into variables.input.uuid (the
-      // ON CONFLICT (uuid) DO NOTHING idempotency key) and spreads the payload.
+      // What the dual-write tick path (hooks.ts:useSaveTick → writeTickLocal)
+      // enqueues: the FULL SaveTickInput payload, keyed by the freshly-generated
+      // tick uuid. buildDispatch then folds that uuid into variables.input.uuid
+      // (the ON CONFLICT (uuid) DO NOTHING idempotency key) and spreads the payload.
       const offlinePayload = {
         boardType: 'kilter',
         climbUuid: 'climb-offline-1',
@@ -531,6 +531,7 @@ describe('sync layer — real-DDL integration', () => {
         comment: 'sent it',
         isMirror: false,
         isBenchmark: false,
+        climbedAt: '2024-05-30T10:00:00.000Z',
       };
       const tickUuid = 'offline-tick-uuid-1';
 
@@ -567,18 +568,14 @@ describe('sync layer — real-DDL integration', () => {
       expect(input).toMatchObject(offlinePayload);
     });
 
-    it('DOCUMENTS THE GAP: the dispatched input omits required SaveTickInput field climbedAt', async () => {
-      // This test deliberately ENCODES a known gap rather than hiding it.
-      //
+    it('dispatches every required SaveTickInput field, including climbedAt (gap closed)', async () => {
       // The backend `input SaveTickInput` (packages/shared-schema/src/schema/ticks.ts)
       // requires a non-null `climbedAt: String!` (and the Zod SaveTickInputSchema
-      // mirrors it). The offline hook's SaveTickInput type
-      // (packages/mobile/src/hooks/use-offline-mutations.ts) does NOT include
-      // climbedAt: it writes climbed_at locally (= now) into boardsesh_ticks, but
-      // enqueues only the narrower payload. So the variables.input that
-      // buildDispatch produces — and would POST to the backend — is MISSING
-      // climbedAt and would be rejected. We pin that here by dispatching the real
-      // queued mutation and inspecting the actual input.
+      // mirrors it). The dual-write tick path now enqueues the FULL SaveTickInput
+      // the UI builds — which carries climbedAt (QuickTickBar / LogAscentSheet set
+      // it to new Date().toISOString()) — so the variables.input that buildDispatch
+      // produces and POSTs to the backend is complete and accepted. This pins the
+      // previously-documented gap as CLOSED: missingRequired is now empty.
       const offlinePayload = {
         boardType: 'kilter',
         climbUuid: 'climb-offline-2',
@@ -590,6 +587,7 @@ describe('sync layer — real-DDL integration', () => {
         comment: 'sent it',
         isMirror: false,
         isBenchmark: false,
+        climbedAt: '2024-05-30T10:00:00.000Z',
       };
       const tickUuid = 'offline-tick-uuid-2';
 
@@ -615,19 +613,15 @@ describe('sync layer — real-DDL integration', () => {
 
       await processMutation(queued!, captureFetch);
 
-      // The required field that the offline payload supplies (the rest the backend
-      // requires) is present; climbedAt is the one that is NOT.
+      // Every required SaveTickInput field is present — the dual-write path
+      // enqueues the complete input, so nothing the backend requires is dropped.
       const presentRequired = REQUIRED_SAVE_TICK_INPUT_FIELDS.filter((field) => capturedInput?.[field] !== undefined);
       const missingRequired = REQUIRED_SAVE_TICK_INPUT_FIELDS.filter((field) => capturedInput?.[field] === undefined);
 
-      // Make the gap explicit and load-bearing: climbedAt is the missing field.
-      expect(missingRequired).toEqual(['climbedAt']);
-      expect(presentRequired).toContain('boardType');
-      expect(presentRequired).toContain('status');
-
-      // When the offline SaveTickInput payload is widened to carry climbedAt (the
-      // fix), this expectation flips: missingRequired becomes []. Until then it
-      // documents exactly what the backend would reject.
+      // The gap is closed: nothing missing, and climbedAt specifically is carried.
+      expect(missingRequired).toEqual([]);
+      expect(presentRequired).toEqual([...REQUIRED_SAVE_TICK_INPUT_FIELDS]);
+      expect(capturedInput?.climbedAt).toBe('2024-05-30T10:00:00.000Z');
     });
   });
 });

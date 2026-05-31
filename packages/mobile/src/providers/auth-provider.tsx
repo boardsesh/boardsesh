@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useSegments, Redirect } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { getAuthToken, isTokenExpiringSoon } from '../lib/auth-store';
 import {
   startSignIn,
@@ -13,6 +14,8 @@ import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredBoardConfig } from '../lib/board-store';
 import { getDatabaseHandle, clearUserData } from '../db';
+import { drainMutationQueue, setSigningOut } from '../mutation-queue';
+import { getHttpClient } from '../lib/graphql/client';
 import { stopTokenManagement } from '../notifications';
 
 type AuthState = {
@@ -23,6 +26,11 @@ type AuthState = {
   signOut: () => Promise<void>;
   refreshAuthState: () => Promise<void>;
 };
+
+// Upper bound on the best-effort queue flush during sign-out. Long enough for a
+// healthy backend to drain a handful of mutations, short enough that a flaky
+// network can't stall the user from getting out.
+const SIGN_OUT_DRAIN_TIMEOUT_MS = 3000;
 
 const AuthContext = createContext<AuthState | null>(null);
 
@@ -41,6 +49,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const segments = useSegments();
+  const queryClient = useQueryClient();
 
   const checkAuth = useCallback(async () => {
     const token = await getAuthToken();
@@ -97,23 +106,47 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
     }
 
-    try {
-      // Discards any not-yet-synced pending mutations along with local user data —
-      // documented account-lifecycle behaviour, not a silent data loss.
-      const db = getDatabaseHandle();
-      if (db) {
-        await clearUserData(db);
+    const db = getDatabaseHandle();
+    if (db) {
+      // Last-ditch flush: the backend is usually up, so give the queue one
+      // bounded chance to reach the server before we wipe it. This is purely
+      // best-effort — it must never hang sign-out, so we race it against a short
+      // timeout and swallow any error. Runs BEFORE the signing-out guard so it
+      // isn't blocked by it.
+      try {
+        const graphqlFetch = (query: string, variables?: Record<string, unknown>) =>
+          getHttpClient().request(query, variables);
+        await Promise.race([
+          drainMutationQueue(db, queryClient, graphqlFetch),
+          new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_DRAIN_TIMEOUT_MS)),
+        ]);
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[Auth] best-effort drain during sign-out failed:', error);
+        }
       }
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[Auth] clearUserData during sign-out failed:', error);
+
+      // Block any scheduler-/listener-triggered drain from racing the wipe, then
+      // clear local user data. Anything still queued (offline, or it didn't
+      // flush in time) is discarded with the local rows — documented
+      // account-lifecycle behaviour, not silent data loss. The guard is always
+      // cleared, even on failure, so a later sign-in's drain isn't stuck off.
+      setSigningOut(true);
+      try {
+        await clearUserData(db);
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[Auth] clearUserData during sign-out failed:', error);
+        }
+      } finally {
+        setSigningOut(false);
       }
     }
 
     resetHttpClient();
     disposeWsClient();
     setIsAuthenticated(false);
-  }, []);
+  }, [queryClient]);
 
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;

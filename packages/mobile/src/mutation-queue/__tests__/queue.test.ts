@@ -13,7 +13,7 @@ import {
   enqueue,
   peekPending,
   markCompleted,
-  incrementRetry,
+  recordFailure,
   markDeadLetter,
   getPendingCount,
   getDeadLetterCount,
@@ -42,12 +42,12 @@ describe('mutation queue', () => {
     ]);
   });
 
-  it('peekPending selects pending mutations ordered by created_at', async () => {
+  it('peekPending selects pending mutations ordered by created_at then id (FIFO)', async () => {
     await peekPending(db, 5);
 
     expect(db.getAllAsync).toHaveBeenCalledWith(
       expect.stringMatching(
-        /SELECT \* FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC LIMIT \?/,
+        /SELECT \* FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC, id ASC LIMIT \?/,
       ),
       [5],
     );
@@ -65,13 +65,16 @@ describe('mutation queue', () => {
     expect(db.runAsync).toHaveBeenCalledWith('DELETE FROM pending_mutations WHERE id = ?', [42]);
   });
 
-  it('incrementRetry updates retry_count and last_error', async () => {
-    await incrementRetry(db, 7, 'Connection timeout');
+  it('recordFailure bumps retry_count, stores the error, and conditionally dead-letters in one UPDATE', async () => {
+    await recordFailure(db, 7, 'Connection timeout');
 
-    expect(db.runAsync).toHaveBeenCalledWith(
-      'UPDATE pending_mutations SET retry_count = retry_count + 1, last_error = ? WHERE id = ?',
-      ['Connection timeout', 7],
-    );
+    const [sql, params] = (db.runAsync as ReturnType<typeof vi.fn>).mock.calls[0];
+    // Single atomic statement: the retry bump and the dead-letter transition
+    // are in the same UPDATE (CASE on retry_count + 1 >= max_retries).
+    expect(sql).toMatch(/retry_count = retry_count \+ 1/);
+    expect(sql).toMatch(/last_error = \?/);
+    expect(sql).toMatch(/status = CASE WHEN retry_count \+ 1 >= max_retries THEN 'dead_letter' ELSE status END/);
+    expect(params).toEqual(['Connection timeout', 7]);
   });
 
   it('markDeadLetter sets status to dead_letter with error', async () => {

@@ -3,10 +3,22 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
-import { peekPending, markCompleted, incrementRetry, markDeadLetter } from './queue';
+import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
 import { isRetryable } from './error-classification';
 
 let _isDraining = false;
+
+// Sign-out guard (account lifecycle): while sign-out is wiping local user data,
+// a scheduler- or listener-triggered drain must not run concurrently — it could
+// race clearUserData's DELETEs (reading half-cleared rows) or re-touch the DB
+// mid-wipe. Sign-out sets this before clearUserData and clears it after; any
+// drain entered while it's set early-returns. The one bounded drain sign-out
+// itself performs runs BEFORE the flag is set, so it isn't blocked.
+let _isSigningOut = false;
+
+export function setSigningOut(value: boolean): void {
+  _isSigningOut = value;
+}
 
 // Bounded exponential backoff between drain attempts within a single cycle
 // (I7). A transient failure (network blip, 5xx) recovers on its own instead of
@@ -71,6 +83,8 @@ export async function drainMutationQueue(
   graphqlFetch: GraphQLFetch,
   options?: DrainOptions,
 ): Promise<void> {
+  // Don't start (or re-enter) a drain while sign-out is wiping local data.
+  if (_isSigningOut) return;
   if (_isDraining) return;
   _isDraining = true;
 
@@ -99,13 +113,15 @@ export async function drainMutationQueue(
           const errorMessage = formatError(error);
 
           if (isRetryable(error)) {
-            await incrementRetry(db, mutation.id, errorMessage);
-            if (mutation.retry_count + 1 >= mutation.max_retries) {
-              await markDeadLetter(db, mutation.id, errorMessage);
-            }
+            // One atomic UPDATE bumps the retry and, when the bumped count hits
+            // max_retries, flips to dead_letter — no window where the row is
+            // exhausted-but-still-pending.
+            await recordFailure(db, mutation.id, errorMessage);
             retryableHit = true;
             break;
           } else {
+            // Non-retryable (validation / 4xx): retrying can't help, so
+            // dead-letter immediately regardless of retry_count.
             await markDeadLetter(db, mutation.id, errorMessage);
           }
         }
@@ -135,4 +151,5 @@ export function isDraining(): boolean {
 
 export function __resetDrainerStateForTests(): void {
   _isDraining = false;
+  _isSigningOut = false;
 }

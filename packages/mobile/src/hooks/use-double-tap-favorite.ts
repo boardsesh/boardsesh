@@ -31,7 +31,9 @@ export function useDoubleTapFavorite({
   const handleDoubleTap = useCallback(() => {
     if (!isFavoritedRef.current) {
       setIsFavorited(true);
-      toggleFavorite({ input: { boardName, climbUuid, angle } });
+      // Double-tap only ever adds (it's gated on not-yet-favorited), so the
+      // pre-toggle state is always false → the dual-write takes the add path.
+      toggleFavorite({ input: { boardName, climbUuid, angle }, currentlyFavorited: false });
     }
     setShowHeart(true);
   }, [toggleFavorite, boardName, climbUuid, angle]);

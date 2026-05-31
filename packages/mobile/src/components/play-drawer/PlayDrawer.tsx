@@ -197,6 +197,9 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
     hapticSuccess();
+    // Capture the pre-toggle state so the mutation knows whether to add or
+    // remove, then flip the heart optimistically.
+    const currentlyFavorited = isFavorited;
     setIsFavorited((prev) => !prev);
     toggleFavoriteMutate({
       input: {
@@ -204,8 +207,9 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
         climbUuid: displayedClimb.uuid,
         angle,
       },
+      currentlyFavorited,
     });
-  }, [displayedClimb, boardName, angle, toggleFavoriteMutate]);
+  }, [displayedClimb, boardName, angle, isFavorited, toggleFavoriteMutate]);
 
   const handleLightbulb = useCallback(() => {
     if (!bluetooth) return;

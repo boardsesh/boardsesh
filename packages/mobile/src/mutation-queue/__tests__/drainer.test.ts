@@ -5,7 +5,7 @@ import type { PendingMutation } from '../queue';
 vi.mock('../queue', () => ({
   peekPending: vi.fn(),
   markCompleted: vi.fn().mockResolvedValue(undefined),
-  incrementRetry: vi.fn().mockResolvedValue(undefined),
+  recordFailure: vi.fn().mockResolvedValue(undefined),
   markDeadLetter: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -17,14 +17,14 @@ vi.mock('../error-classification', () => ({
   isRetryable: vi.fn().mockReturnValue(false),
 }));
 
-import { drainMutationQueue, __resetDrainerStateForTests } from '../drainer';
-import { peekPending, markCompleted, incrementRetry, markDeadLetter } from '../queue';
+import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut } from '../drainer';
+import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
 import { isRetryable } from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
 const mockMarkCompleted = markCompleted as ReturnType<typeof vi.fn>;
-const mockIncrementRetry = incrementRetry as ReturnType<typeof vi.fn>;
+const mockRecordFailure = recordFailure as ReturnType<typeof vi.fn>;
 const mockMarkDeadLetter = markDeadLetter as ReturnType<typeof vi.fn>;
 const mockProcessMutation = processMutation as ReturnType<typeof vi.fn>;
 const mockIsRetryable = isRetryable as ReturnType<typeof vi.fn>;
@@ -99,7 +99,7 @@ describe('drainMutationQueue', () => {
 
     expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
     expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 1);
-    expect(mockIncrementRetry).toHaveBeenCalledWith(mockDb, 2, 'Server unavailable');
+    expect(mockRecordFailure).toHaveBeenCalledWith(mockDb, 2, 'Server unavailable');
     expect(mockProcessMutation).toHaveBeenCalledTimes(2);
   });
 
@@ -122,7 +122,7 @@ describe('drainMutationQueue', () => {
     expect(mockProcessMutation).toHaveBeenCalledTimes(2);
   });
 
-  it('dead-letters mutation when max retries reached', async () => {
+  it('records the failure atomically when a retryable error hits (dead-letter folded into recordFailure)', async () => {
     const mutation = makeMutation({ id: 5, retry_count: 9, max_retries: 10 });
 
     mockPeekPending.mockResolvedValueOnce([mutation]);
@@ -135,8 +135,11 @@ describe('drainMutationQueue', () => {
 
     await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { maxCycleAttempts: 0 });
 
-    expect(mockIncrementRetry).toHaveBeenCalledWith(mockDb, 5, 'Timeout');
-    expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 5, 'Timeout');
+    // recordFailure does the retry bump AND the dead-letter transition in one
+    // UPDATE; the drainer no longer issues a separate markDeadLetter for the
+    // retryable-at-max case (that's the atomicity fix).
+    expect(mockRecordFailure).toHaveBeenCalledWith(mockDb, 5, 'Timeout');
+    expect(mockMarkDeadLetter).not.toHaveBeenCalled();
   });
 
   it('prevents concurrent drains', async () => {
@@ -159,6 +162,26 @@ describe('drainMutationQueue', () => {
     await Promise.all([drainPromiseA, drainPromiseB]);
 
     expect(mockPeekPending).toHaveBeenCalledTimes(2);
+    expect(mockProcessMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it('early-returns without touching the queue while sign-out is in progress', async () => {
+    const mutation = makeMutation({ id: 1 });
+    mockPeekPending.mockResolvedValue([mutation]);
+
+    const queryClient = createMockQueryClient();
+
+    // Sign-out is wiping local data — a scheduler/listener drain must not run.
+    setSigningOut(true);
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch);
+
+    expect(mockPeekPending).not.toHaveBeenCalled();
+    expect(mockProcessMutation).not.toHaveBeenCalled();
+
+    // Once sign-out clears the guard, draining resumes normally.
+    setSigningOut(false);
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch);
     expect(mockProcessMutation).toHaveBeenCalledTimes(1);
   });
 
@@ -249,7 +272,7 @@ describe('drainMutationQueue', () => {
     await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { sleep, baseDelayMs: 10, maxDelayMs: 100 });
 
     expect(sleep).toHaveBeenCalledTimes(1);
-    expect(mockIncrementRetry).toHaveBeenCalledWith(mockDb, 1, 'transient 503');
+    expect(mockRecordFailure).toHaveBeenCalledWith(mockDb, 1, 'transient 503');
     expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 1);
     expect(mockProcessMutation).toHaveBeenCalledTimes(2);
   });

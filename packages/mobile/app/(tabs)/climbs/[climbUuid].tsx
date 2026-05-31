@@ -71,12 +71,16 @@ export default function ClimbDetail() {
   const handleToggleFavorite = useCallback(() => {
     if (!climb || !boardName) return;
     hapticSuccess();
+    // This screen has no favorited indicator (the climb detail query doesn't
+    // return favorite state), so the "Favorite" action always adds. enqueue's
+    // INSERT OR IGNORE on the deterministic add key makes a repeat tap a no-op.
     toggleFavorite.mutate({
       input: {
         boardName,
         climbUuid: climb.uuid,
         angle: Number(angle),
       },
+      currentlyFavorited: false,
     });
   }, [climb, boardName, angle, toggleFavorite]);
 
