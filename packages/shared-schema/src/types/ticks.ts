@@ -42,6 +42,8 @@ export type Tick = {
 };
 
 export type SaveTickInput = {
+  // Optional client-supplied idempotency key for offline replay (Phase 2).
+  uuid?: string;
   boardType: string;
   climbUuid: string;
   angle: number;

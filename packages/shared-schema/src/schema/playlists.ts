@@ -75,6 +75,8 @@ export const playlistsTypeDefs = /* GraphQL */ `
   Input for creating a playlist.
   """
   input CreatePlaylistInput {
+    "Optional client-supplied UUID for idempotent offline replay (ON CONFLICT (uuid) DO NOTHING). When omitted, the server generates one."
+    uuid: ID
     "Board type"
     boardType: String!
     "Layout ID"

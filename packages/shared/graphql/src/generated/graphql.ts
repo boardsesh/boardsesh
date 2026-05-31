@@ -126,6 +126,16 @@ export type AddCommentInput = {
   parentCommentUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
+/** Input for adding a climb to favorites (idempotent, sync-safe). */
+export type AddFavoriteInput = {
+  /** Board angle */
+  angle: Scalars['Int']['input'];
+  /** Board type */
+  boardName: Scalars['String']['input'];
+  /** Climb UUID to favorite */
+  climbUuid: Scalars['String']['input'];
+};
+
 /** Input for adding a member to a gym. */
 export type AddGymMemberInput = {
   /** Gym UUID */
@@ -924,6 +934,8 @@ export type CreatePlaylistInput = {
   layoutId: Scalars['Int']['input'];
   /** Playlist name */
   name: Scalars['String']['input'];
+  /** Optional client-supplied UUID for idempotent offline replay (ON CONFLICT (uuid) DO NOTHING). When omitted, the server generates one. */
+  uuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type CreateProposalInput = {
@@ -1761,6 +1773,11 @@ export type Mutation = {
   addClimbToPlaylist: PlaylistClimb;
   /** Add a comment to an entity. */
   addComment: Comment;
+  /**
+   * Add a climb to favorites. Idempotent (ON CONFLICT DO NOTHING) so the offline
+   * mutation queue can safely retry. Always returns true.
+   */
+  addFavorite: Scalars['Boolean']['output'];
   /** Add a member to a gym. */
   addGymMember: Scalars['Boolean']['output'];
   /**
@@ -1887,6 +1904,11 @@ export type Mutation = {
   releaseControl: Session;
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
+  /**
+   * Remove a climb from favorites. Idempotent (deleting a nonexistent row is a
+   * no-op) so the offline mutation queue can safely retry. Always returns true.
+   */
+  removeFavorite: Scalars['Boolean']['output'];
   /** Remove a member from a gym. */
   removeGymMember: Scalars['Boolean']['output'];
   /** Remove a climb from the queue by its queue item UUID. */
@@ -2046,6 +2068,11 @@ export type MutationAddClimbToPlaylistArgs = {
 /** Root mutation type for all write operations. */
 export type MutationAddCommentArgs = {
   input: AddCommentInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationAddFavoriteArgs = {
+  input: AddFavoriteInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -2263,6 +2290,11 @@ export type MutationRegisterControllerArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRemoveFavoriteArgs = {
+  input: RemoveFavoriteInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -3143,6 +3175,26 @@ export type Query = {
    * Public — no authentication required.
    */
   smartPlaylist: SmartPlaylistResult;
+  /** Pull board climb stats for a board type, changed since the cursor (reference data). */
+  syncClimbStats: SyncResult;
+  /** Pull board climbs for a board type, changed since the cursor (reference data). */
+  syncClimbs: SyncResult;
+  /** Pull hard deletions (user-scoped + reference data) since the cursor. */
+  syncDeletions: SyncDeletionsResult;
+  /** Pull the authenticated user's favorites changed since the cursor. */
+  syncFavorites: SyncResult;
+  /** Pull playlist-climb rows for the user's owned playlists, changed since the cursor. */
+  syncPlaylistClimbs: SyncResult;
+  /** Pull the authenticated user's playlist-follows changed since the cursor. */
+  syncPlaylistFollows: SyncResult;
+  /** Pull the authenticated user's owned playlists changed since the cursor. */
+  syncPlaylists: SyncResult;
+  /** Pull the authenticated user's setter-follows changed since the cursor. */
+  syncSetterFollows: SyncResult;
+  /** Pull the authenticated user's ticks changed since the cursor. */
+  syncTicks: SyncResult;
+  /** Pull the authenticated user's user-follows changed since the cursor. */
+  syncUserFollows: SyncResult;
   /**
    * Get current user's ticks (recorded climb attempts).
    * Requires authentication.
@@ -3563,6 +3615,68 @@ export type QuerySmartPlaylistArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySyncClimbStatsArgs = {
+  boardType: Scalars['String']['input'];
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncClimbsArgs = {
+  boardType: Scalars['String']['input'];
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncDeletionsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncFavoritesArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncPlaylistClimbsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncPlaylistFollowsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncPlaylistsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncSetterFollowsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncTicksArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncUserFollowsArgs = {
+  cursor?: InputMaybe<SyncCursorInput>;
+  limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryTicksArgs = {
   input: GetTicksInput;
 };
@@ -3756,6 +3870,16 @@ export type RemoveClimbFromPlaylistInput = {
   playlistId: Scalars['ID']['input'];
 };
 
+/** Input for removing a climb from favorites (idempotent, sync-safe). */
+export type RemoveFavoriteInput = {
+  /** Board angle */
+  angle: Scalars['Int']['input'];
+  /** Board type */
+  boardName: Scalars['String']['input'];
+  /** Climb UUID to unfavorite */
+  climbUuid: Scalars['String']['input'];
+};
+
 /** Input for removing a member from a gym. */
 export type RemoveGymMemberInput = {
   /** Gym UUID */
@@ -3861,6 +3985,8 @@ export type SaveTickInput = {
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /** Result of the attempt */
   status: TickStatus;
+  /** Optional client-supplied UUID for idempotent offline replay (ON CONFLICT (uuid) DO NOTHING). When omitted, the server generates one. */
+  uuid?: InputMaybe<Scalars['ID']['input']>;
   /** Optional Instagram post or reel URL to attach as beta for the climb */
   videoUrl?: InputMaybe<Scalars['String']['input']>;
 };
@@ -4604,6 +4730,66 @@ export type SubscriptionQueueUpdatesArgs = {
 /** Root subscription type for real-time updates. */
 export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
+};
+
+/**
+ * Composite sync cursor returned by a pull. Feed it back as SyncCursorInput on
+ * the next page.
+ */
+export type SyncCursor = {
+  __typename?: 'SyncCursor';
+  /** Sequence component of the last row, stringified bigint. */
+  syncSeq: Scalars['String']['output'];
+  /** updated_at of the last row in this page (ISO 8601). */
+  updatedAt: Scalars['String']['output'];
+};
+
+/**
+ * Composite sync cursor sent by the client to resume a pull. Both fields come
+ * from a previous SyncResult.cursor. Omit (null) on the first pull to start from
+ * the beginning.
+ */
+export type SyncCursorInput = {
+  /** Last seen sequence component, stringified bigint. Null on first pull. */
+  syncSeq?: InputMaybe<Scalars['String']['input']>;
+  /** Last seen updated_at (ISO 8601). Null on first pull. */
+  updatedAt?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** A single hard-deleted record the client should remove locally. */
+export type SyncDeletion = {
+  __typename?: 'SyncDeletion';
+  /** When the row was deleted (ISO 8601). */
+  deletedAt: Scalars['String']['output'];
+  /** Natural-key encoding of the deleted row (see docs/sync-table-manifest.md). */
+  recordId: Scalars['String']['output'];
+  /** Postgres table the row was deleted from. */
+  tableName: Scalars['String']['output'];
+};
+
+/** One page of deletions for the client to apply. */
+export type SyncDeletionsResult = {
+  __typename?: 'SyncDeletionsResult';
+  /** Cursor to resume from. Pass back as SyncCursorInput. */
+  cursor: SyncCursor;
+  /** Deletions in this page. */
+  deletions: Array<SyncDeletion>;
+  /** Whether more deletions remain after this page. */
+  hasMore: Scalars['Boolean']['output'];
+};
+
+/**
+ * One page of synced rows. `documents` are snake_case JSON objects whose keys
+ * match the mobile local columns.
+ */
+export type SyncResult = {
+  __typename?: 'SyncResult';
+  /** Cursor to resume from. Pass back as SyncCursorInput. */
+  cursor: SyncCursor;
+  /** Rows in this page as snake_case JSON documents. */
+  documents: Array<Scalars['JSON']['output']>;
+  /** Whether more rows remain after this page. */
+  hasMore: Scalars['Boolean']['output'];
 };
 
 /** A recorded climb attempt or completion. */

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boardsesh/shared-schema';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 
 /**
  * Tick status validation schema
@@ -14,6 +14,10 @@ export const TickStatusSchema = z.enum(['flash', 'send', 'attempt'], {
  */
 export const SaveTickInputSchema = z
   .object({
+    // Optional client-supplied UUID for idempotent offline replay. When present,
+    // saveTick inserts with ON CONFLICT (uuid) DO NOTHING and returns the
+    // existing row on conflict. When absent, the server generates a uuidv4.
+    uuid: UUIDSchema.optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
     angle: z.number().int().min(0).max(90),

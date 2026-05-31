@@ -70,6 +70,9 @@ export const playlistClimbs = pgTable(
 
     // Timestamps
     addedAt: timestamp('added_at').defaultNow().notNull(),
+    // Phase 2 sync: maintained by a BEFORE UPDATE trigger (migration 0109).
+    // Cursor component for syncPlaylistClimbs (backfilled from added_at).
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     // Ensure unique climb per playlist
@@ -127,6 +130,9 @@ export const userPlaylistPins = pgTable(
       .notNull()
       .references(() => playlists.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Phase 2 sync: maintained by a BEFORE UPDATE trigger (migration 0109).
+    // Not currently synced — added for consistency with the other user tables.
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniquePin: uniqueIndex('unique_user_playlist_pin').on(table.userId, table.playlistId),

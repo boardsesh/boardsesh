@@ -580,5 +580,44 @@ export const queriesTypeDefs = /* GraphQL */ `
     Returns only rows whose thumbnails are cached in our S3.
     """
     userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+
+    # ============================================
+    # Offline Sync Pull Queries (Phase 2, require auth)
+    # ============================================
+    #
+    # Incremental pull with a composite (updatedAt, syncSeq) cursor. Each returns
+    # snake_case JSON documents (keys = mobile local columns). User-data queries
+    # are scoped to the authenticated user; board-data queries are scoped by
+    # boardType. See docs/sync-table-manifest.md.
+
+    "Pull the authenticated user's ticks changed since the cursor."
+    syncTicks(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull the authenticated user's owned playlists changed since the cursor."
+    syncPlaylists(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull playlist-climb rows for the user's owned playlists, changed since the cursor."
+    syncPlaylistClimbs(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull the authenticated user's favorites changed since the cursor."
+    syncFavorites(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull the authenticated user's user-follows changed since the cursor."
+    syncUserFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull the authenticated user's setter-follows changed since the cursor."
+    syncSetterFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull the authenticated user's playlist-follows changed since the cursor."
+    syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull board climbs for a board type, changed since the cursor (reference data)."
+    syncClimbs(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull board climb stats for a board type, changed since the cursor (reference data)."
+    syncClimbStats(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+    "Pull hard deletions (user-scoped + reference data) since the cursor."
+    syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
   }
 `;

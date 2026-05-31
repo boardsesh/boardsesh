@@ -13,6 +13,9 @@ export const userFavorites = pgTable(
     climbUuid: text('climb_uuid').notNull(),
     angle: integer('angle').notNull(), // The angle at which the climb was favorited
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Phase 2 sync: bumped on every write by a BEFORE UPDATE trigger (migration
+    // 0109). Cursor component for syncFavorites.
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     // Ensure unique favorite per user per climb per angle

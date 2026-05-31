@@ -639,6 +639,30 @@ type ToggleFavoriteResult {
   favorited: Boolean!
 }
 
+"""
+Input for adding a climb to favorites (idempotent, sync-safe).
+"""
+input AddFavoriteInput {
+  "Board type"
+  boardName: String!
+  "Climb UUID to favorite"
+  climbUuid: String!
+  "Board angle"
+  angle: Int!
+}
+
+"""
+Input for removing a climb from favorites (idempotent, sync-safe).
+"""
+input RemoveFavoriteInput {
+  "Board type"
+  boardName: String!
+  "Climb UUID to unfavorite"
+  climbUuid: String!
+  "Board angle"
+  angle: Int!
+}
+
 # ============================================
 # Ticks Types (Local Ascent Tracking)
 # ============================================
@@ -719,6 +743,8 @@ type Tick {
 Input for recording a climb attempt.
 """
 input SaveTickInput {
+  "Optional client-supplied UUID for idempotent offline replay (ON CONFLICT (uuid) DO NOTHING). When omitted, the server generates one."
+  uuid: ID
   "Board type"
   boardType: String!
   "Climb UUID"
@@ -1419,6 +1445,8 @@ type PlaylistClimb {
 Input for creating a playlist.
 """
 input CreatePlaylistInput {
+  "Optional client-supplied UUID for idempotent offline replay (ON CONFLICT (uuid) DO NOTHING). When omitted, the server generates one."
+  uuid: ID
   "Board type"
   boardType: String!
   "Layout ID"
@@ -3470,6 +3498,76 @@ type RecentBetaLink {
   layoutId: Int
 }
 
+# ============================================
+# Offline Sync Types (Phase 2)
+# ============================================
+#
+# The sync pull resolvers return opaque snake_case JSON documents (the keys are
+# the mobile SQLite column names — see docs/sync-table-manifest.md). The cursor
+# is a composite (updatedAt, syncSeq) so timestamp collisions during Aurora bulk
+# updates never skip rows. Timestamps are ISO-8601 String, never a DateTime
+# scalar (the codebase has none).
+
+"""
+Composite sync cursor sent by the client to resume a pull. Both fields come
+from a previous SyncResult.cursor. Omit (null) on the first pull to start from
+the beginning.
+"""
+input SyncCursorInput {
+  "Last seen updated_at (ISO 8601). Null on first pull."
+  updatedAt: String
+  "Last seen sequence component, stringified bigint. Null on first pull."
+  syncSeq: String
+}
+
+"""
+Composite sync cursor returned by a pull. Feed it back as SyncCursorInput on
+the next page.
+"""
+type SyncCursor {
+  "updated_at of the last row in this page (ISO 8601)."
+  updatedAt: String!
+  "Sequence component of the last row, stringified bigint."
+  syncSeq: String!
+}
+
+"""
+One page of synced rows. `documents` are snake_case JSON objects whose keys
+match the mobile local columns.
+"""
+type SyncResult {
+  "Rows in this page as snake_case JSON documents."
+  documents: [JSON!]!
+  "Cursor to resume from. Pass back as SyncCursorInput."
+  cursor: SyncCursor!
+  "Whether more rows remain after this page."
+  hasMore: Boolean!
+}
+
+"""
+A single hard-deleted record the client should remove locally.
+"""
+type SyncDeletion {
+  "Postgres table the row was deleted from."
+  tableName: String!
+  "Natural-key encoding of the deleted row (see docs/sync-table-manifest.md)."
+  recordId: String!
+  "When the row was deleted (ISO 8601)."
+  deletedAt: String!
+}
+
+"""
+One page of deletions for the client to apply.
+"""
+type SyncDeletionsResult {
+  "Deletions in this page."
+  deletions: [SyncDeletion!]!
+  "Cursor to resume from. Pass back as SyncCursorInput."
+  cursor: SyncCursor!
+  "Whether more deletions remain after this page."
+  hasMore: Boolean!
+}
+
 """
 Root query type for all read operations.
 """
@@ -4051,6 +4149,45 @@ type Query {
   Returns only rows whose thumbnails are cached in our S3.
   """
   userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+
+  # ============================================
+  # Offline Sync Pull Queries (Phase 2, require auth)
+  # ============================================
+  #
+  # Incremental pull with a composite (updatedAt, syncSeq) cursor. Each returns
+  # snake_case JSON documents (keys = mobile local columns). User-data queries
+  # are scoped to the authenticated user; board-data queries are scoped by
+  # boardType. See docs/sync-table-manifest.md.
+
+  "Pull the authenticated user's ticks changed since the cursor."
+  syncTicks(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull the authenticated user's owned playlists changed since the cursor."
+  syncPlaylists(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull playlist-climb rows for the user's owned playlists, changed since the cursor."
+  syncPlaylistClimbs(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull the authenticated user's favorites changed since the cursor."
+  syncFavorites(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull the authenticated user's user-follows changed since the cursor."
+  syncUserFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull the authenticated user's setter-follows changed since the cursor."
+  syncSetterFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull the authenticated user's playlist-follows changed since the cursor."
+  syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull board climbs for a board type, changed since the cursor (reference data)."
+  syncClimbs(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull board climb stats for a board type, changed since the cursor (reference data)."
+  syncClimbStats(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+
+  "Pull hard deletions (user-scoped + reference data) since the cursor."
+  syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
 }
 
 """
@@ -4225,6 +4362,18 @@ type Mutation {
   Returns new favorite state.
   """
   toggleFavorite(input: ToggleFavoriteInput!): ToggleFavoriteResult!
+
+  """
+  Add a climb to favorites. Idempotent (ON CONFLICT DO NOTHING) so the offline
+  mutation queue can safely retry. Always returns true.
+  """
+  addFavorite(input: AddFavoriteInput!): Boolean!
+
+  """
+  Remove a climb from favorites. Idempotent (deleting a nonexistent row is a
+  no-op) so the offline mutation queue can safely retry. Always returns true.
+  """
+  removeFavorite(input: RemoveFavoriteInput!): Boolean!
 
   # ============================================
   # Ticks Mutations (require auth)

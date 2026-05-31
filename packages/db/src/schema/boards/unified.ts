@@ -339,9 +339,18 @@ export const boardClimbs = pgTable(
     // are duplicates; the dedup path in kilter-sync writes one canonical
     // board_climbs row and routes additional UUIDs through board_climb_aliases.
     holdFingerprint: text('hold_fingerprint'),
+    // Phase 2 sync: bumped on every write by a BEFORE UPDATE trigger (migration
+    // 0109). created_at is an Aurora text column, so it can't serve as a
+    // freshness signal — this is the column syncClimbs filters on.
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    // Sequential cursor component for syncClimbs. board_climbs has a text uuid
+    // PK, no bigserial, so the composite cursor needs this monotonic column.
+    syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
     boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),
+    // Composite-cursor index for syncClimbs: (updated_at, sync_seq) row-value scan.
+    syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
     // Dedup hot path: look up an existing canonical row for an incoming climb
     // by (board_type, layout_id, fingerprint) before deciding whether to
     // insert as canonical or upsert as an alias.
@@ -450,9 +459,18 @@ export const boardClimbStats = pgTable(
     qualityAverage: doublePrecision('quality_average'),
     faUsername: text('fa_username'),
     faAt: timestamp('fa_at', { mode: 'string' }),
+    // Phase 2 sync: bumped on every write by a BEFORE UPDATE trigger (migration
+    // 0109). The three concurrent stat writers (Aurora, Kilter, recompute) all
+    // go through UPDATE, so the trigger keeps this fresh transparently.
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    // Sequential cursor component for syncClimbStats. Composite PK
+    // (board_type, climb_uuid, angle) has no monotonic column on its own.
+    syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.angle] }),
+    // Composite-cursor index for syncClimbStats: (updated_at, sync_seq) row-value scan.
+    syncCursorIdx: index('board_climb_stats_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
     // Note: board_climb_stats_ascents_covering_idx is created in custom migration 0067
     // with DESC NULLS LAST and INCLUDE columns that Drizzle can't express.
     // Do NOT add an ascents index here — it would conflict with the custom migration.

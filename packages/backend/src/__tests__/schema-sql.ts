@@ -169,10 +169,13 @@ export const schemaSQL = `
     "required_set_ids" integer[],
     "compatible_size_ids" integer[],
     "published_at" text,
-    "hold_fingerprint" text
+    "hold_fingerprint" text,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "sync_seq" bigserial NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
+  CREATE INDEX IF NOT EXISTS "board_climbs_sync_cursor_idx" ON "board_climbs" ("updated_at", "sync_seq");
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,
@@ -201,8 +204,11 @@ export const schemaSQL = `
     "quality_average" double precision,
     "fa_username" text,
     "fa_at" timestamp,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle")
   );
+  CREATE INDEX IF NOT EXISTS "board_climb_stats_sync_cursor_idx" ON "board_climb_stats" ("updated_at", "sync_seq");
 
   DO $$ BEGIN
     CREATE TYPE tick_status AS ENUM ('flash', 'send', 'attempt');
@@ -292,4 +298,188 @@ export const schemaSQL = `
     "health_kit_workout_id" text,
     "created_at" timestamp DEFAULT now() NOT NULL
   );
+
+  -- ==========================================================================
+  -- Phase 2 offline sync tables + triggers (mirrors migrations 0108/0109).
+  -- Integration tests don't run migrations, so the parts of the sync surface we
+  -- exercise (favorites/follows/playlists CRUD, deletion log, updated_at bumps)
+  -- are recreated here by hand. record_id encodings match docs/sync-table-manifest.md.
+  -- ==========================================================================
+
+  DROP TABLE IF EXISTS "user_favorites" CASCADE;
+  CREATE TABLE IF NOT EXISTS "user_favorites" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_name" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "angle" integer NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "board_name", "climb_uuid", "angle");
+  CREATE INDEX IF NOT EXISTS "user_favorites_user_idx" ON "user_favorites" ("user_id");
+
+  DROP TABLE IF EXISTS "user_follows" CASCADE;
+  CREATE TABLE IF NOT EXISTS "user_follows" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "follower_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "following_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_follow" ON "user_follows" ("follower_id", "following_id");
+
+  DROP TABLE IF EXISTS "setter_follows" CASCADE;
+  CREATE TABLE IF NOT EXISTS "setter_follows" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "follower_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "setter_username" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_setter_follow" ON "setter_follows" ("follower_id", "setter_username");
+
+  DROP TABLE IF EXISTS "playlist_follows" CASCADE;
+  DROP TABLE IF EXISTS "playlist_climbs" CASCADE;
+  DROP TABLE IF EXISTS "playlist_ownership" CASCADE;
+  DROP TABLE IF EXISTS "playlists" CASCADE;
+  CREATE TABLE IF NOT EXISTS "playlists" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "uuid" text NOT NULL UNIQUE,
+    "board_type" text NOT NULL,
+    "layout_id" integer,
+    "name" text NOT NULL,
+    "description" text,
+    "is_public" boolean DEFAULT false NOT NULL,
+    "color" text,
+    "icon" text,
+    "aurora_type" text,
+    "aurora_id" text,
+    "aurora_synced_at" timestamp,
+    "kilter_type" text,
+    "kilter_id" text,
+    "kilter_synced_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "last_accessed_at" timestamp
+  );
+
+  CREATE TABLE IF NOT EXISTS "playlist_ownership" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "playlist_id" bigint NOT NULL REFERENCES "playlists"("id") ON DELETE CASCADE,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "role" text DEFAULT 'owner' NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_playlist_ownership" ON "playlist_ownership" ("playlist_id", "user_id");
+
+  CREATE TABLE IF NOT EXISTS "playlist_climbs" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "playlist_id" bigint NOT NULL REFERENCES "playlists"("id") ON DELETE CASCADE,
+    "climb_uuid" text NOT NULL,
+    "angle" integer,
+    "position" integer DEFAULT 0 NOT NULL,
+    "added_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_playlist_climb" ON "playlist_climbs" ("playlist_id", "climb_uuid");
+
+  CREATE TABLE IF NOT EXISTS "playlist_follows" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "follower_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "playlist_uuid" text NOT NULL REFERENCES "playlists"("uuid") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "unique_playlist_follow" ON "playlist_follows" ("follower_id", "playlist_uuid");
+
+  DROP TABLE IF EXISTS "sync_deletions" CASCADE;
+  CREATE TABLE IF NOT EXISTS "sync_deletions" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "table_name" text NOT NULL,
+    "record_id" text NOT NULL,
+    "user_id" text,
+    "deleted_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "sync_deletions_user_since_idx" ON "sync_deletions" ("user_id", "deleted_at", "id");
+
+  -- Shared updated_at trigger (subset of tables the tests touch).
+  CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $set_updated_at$
+  BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+  END;
+  $set_updated_at$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_user_favorites_set_updated_at ON user_favorites;
+  CREATE TRIGGER trg_user_favorites_set_updated_at BEFORE UPDATE ON user_favorites
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  DROP TRIGGER IF EXISTS trg_board_climb_stats_set_updated_at ON board_climb_stats;
+  CREATE TRIGGER trg_board_climb_stats_set_updated_at BEFORE UPDATE ON board_climb_stats
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+  -- Deletion-log triggers exercised by the deletion-encoding tests.
+  CREATE OR REPLACE FUNCTION log_deletion_favorites() RETURNS TRIGGER AS $log_deletion_favorites$
+  BEGIN
+    INSERT INTO sync_deletions (table_name, record_id, user_id)
+    VALUES (TG_TABLE_NAME, OLD.board_name || ':' || OLD.climb_uuid || ':' || OLD.angle::text, OLD.user_id);
+    RETURN OLD;
+  END;
+  $log_deletion_favorites$ LANGUAGE plpgsql;
+  DROP TRIGGER IF EXISTS trg_favorites_delete ON user_favorites;
+  CREATE TRIGGER trg_favorites_delete AFTER DELETE ON user_favorites
+    FOR EACH ROW EXECUTE FUNCTION log_deletion_favorites();
+
+  CREATE OR REPLACE FUNCTION log_deletion_board_climb_stats() RETURNS TRIGGER AS $log_deletion_board_climb_stats$
+  BEGIN
+    INSERT INTO sync_deletions (table_name, record_id, user_id)
+    VALUES (TG_TABLE_NAME, OLD.board_type || ':' || OLD.climb_uuid || ':' || OLD.angle::text, NULL);
+    RETURN OLD;
+  END;
+  $log_deletion_board_climb_stats$ LANGUAGE plpgsql;
+  DROP TRIGGER IF EXISTS trg_board_climb_stats_delete ON board_climb_stats;
+  CREATE TRIGGER trg_board_climb_stats_delete AFTER DELETE ON board_climb_stats
+    FOR EACH ROW EXECUTE FUNCTION log_deletion_board_climb_stats();
+
+  -- playlists: BEFORE DELETE so the owner is captured before playlist_ownership cascades.
+  CREATE OR REPLACE FUNCTION log_deletion_playlists() RETURNS TRIGGER AS $log_deletion_playlists$
+  DECLARE
+    owner_id text;
+  BEGIN
+    SELECT po.user_id INTO owner_id
+    FROM playlist_ownership po
+    WHERE po.playlist_id = OLD.id AND po.role = 'owner'
+    LIMIT 1;
+    INSERT INTO sync_deletions (table_name, record_id, user_id)
+    VALUES (TG_TABLE_NAME, OLD.uuid, owner_id);
+    RETURN OLD;
+  END;
+  $log_deletion_playlists$ LANGUAGE plpgsql;
+  DROP TRIGGER IF EXISTS trg_playlists_delete ON playlists;
+  CREATE TRIGGER trg_playlists_delete BEFORE DELETE ON playlists
+    FOR EACH ROW EXECUTE FUNCTION log_deletion_playlists();
+
+  -- playlist_climbs: AFTER DELETE; skip when the parent playlist is already gone
+  -- (whole-playlist cascade) to avoid a NULL record_id NOT NULL violation.
+  CREATE OR REPLACE FUNCTION log_deletion_playlist_climbs() RETURNS TRIGGER AS $log_deletion_playlist_climbs$
+  DECLARE
+    v_playlist_uuid text;
+    owner_id text;
+  BEGIN
+    SELECT p.uuid INTO v_playlist_uuid FROM playlists p WHERE p.id = OLD.playlist_id LIMIT 1;
+    IF v_playlist_uuid IS NULL THEN
+      RETURN OLD;
+    END IF;
+    SELECT po.user_id INTO owner_id
+    FROM playlist_ownership po
+    WHERE po.playlist_id = OLD.playlist_id AND po.role = 'owner'
+    LIMIT 1;
+    INSERT INTO sync_deletions (table_name, record_id, user_id)
+    VALUES (TG_TABLE_NAME, v_playlist_uuid || ':' || OLD.climb_uuid, owner_id);
+    RETURN OLD;
+  END;
+  $log_deletion_playlist_climbs$ LANGUAGE plpgsql;
+  DROP TRIGGER IF EXISTS trg_playlist_climbs_delete ON playlist_climbs;
+  CREATE TRIGGER trg_playlist_climbs_delete AFTER DELETE ON playlist_climbs
+    FOR EACH ROW EXECUTE FUNCTION log_deletion_playlist_climbs();
 `;

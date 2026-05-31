@@ -35,6 +35,15 @@ const TABLES_TO_RESET = [
   'user_climb_percentiles',
   'user_board_mappings',
   'mobile_refresh_tokens',
+  // Phase 2 offline sync tables.
+  'sync_deletions',
+  'playlist_follows',
+  'playlist_climbs',
+  'playlist_ownership',
+  'playlists',
+  'user_favorites',
+  'user_follows',
+  'setter_follows',
   'users',
 ];
 

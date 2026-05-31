@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 
 export const PlaylistNameSchema = z.string().min(1, 'Playlist name cannot be empty').max(100, 'Playlist name too long');
 
@@ -13,6 +13,10 @@ export const PlaylistColorSchema = z
 export const PlaylistIconSchema = z.string().max(50, 'Icon name too long').optional();
 
 export const CreatePlaylistInputSchema = z.object({
+  // Optional client-supplied UUID for idempotent offline replay. When present,
+  // createPlaylist inserts with ON CONFLICT (uuid) DO NOTHING and returns the
+  // existing playlist on conflict. When absent, the server generates a uuidv4.
+  uuid: UUIDSchema.optional(),
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive(),
   name: PlaylistNameSchema,

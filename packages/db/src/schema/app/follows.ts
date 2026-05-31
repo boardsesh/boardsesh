@@ -14,6 +14,8 @@ export const userFollows = pgTable(
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Phase 2 sync: maintained by a BEFORE UPDATE trigger (migration 0109).
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_user_follow').on(table.followerId, table.followingId),
@@ -35,6 +37,8 @@ export const setterFollows = pgTable(
       .notNull(),
     setterUsername: text('setter_username').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Phase 2 sync: maintained by a BEFORE UPDATE trigger (migration 0109).
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_setter_follow').on(table.followerId, table.setterUsername),
@@ -57,6 +61,8 @@ export const playlistFollows = pgTable(
       .references(() => playlists.uuid, { onDelete: 'cascade' })
       .notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Phase 2 sync: maintained by a BEFORE UPDATE trigger (migration 0109).
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_playlist_follow').on(table.followerId, table.playlistUuid),

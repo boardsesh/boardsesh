@@ -290,7 +290,11 @@ export const tickMutations = {
     const validatedInput = validateInput(SaveTickInputSchema, input, 'input');
 
     const userId = ctx.userId!;
-    const uuid = uuidv4();
+    // Use the client-supplied UUID (offline idempotency key) when present,
+    // otherwise generate one as before. On replay the (unique) uuid collides and
+    // the insert below is a no-op; we then return the original row without
+    // re-firing any side effects.
+    const uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date().toISOString();
     const climbedAt = new Date(validatedInput.climbedAt).toISOString();
 
@@ -331,7 +335,9 @@ export const tickMutations = {
         )
       : { action: 'no-url' };
 
-    // Insert into database
+    // Insert into database. When the client supplied a uuid that already exists
+    // (offline replay), the insert is a no-op and `createdTick` is undefined —
+    // we detect that, return the original row, and skip every side effect below.
     const [tick] = await db.transaction(async (tx) => {
       const [createdTick] = await tx
         .insert(dbSchema.boardseshTicks)
@@ -359,7 +365,14 @@ export const tickMutations = {
           auroraSyncedAt: null,
           auroraSyncError: null,
         })
+        .onConflictDoNothing({ target: dbSchema.boardseshTicks.uuid })
         .returning();
+
+      // Conflict no-op: the tick already exists from a prior (online) save of
+      // this same idempotency key. Don't touch session activity or beta links.
+      if (!createdTick) {
+        return [undefined];
+      }
 
       if (validatedInput.sessionId) {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, validatedInput.sessionId));
@@ -389,6 +402,48 @@ export const tickMutations = {
 
       return [createdTick];
     });
+
+    // Idempotent replay: the insert was a no-op because this uuid already exists.
+    // Return the stored row verbatim and fire no side effects (the original save
+    // already did). This is what makes the offline mutation queue safe to retry.
+    if (!tick) {
+      const [existing] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.uuid, uuid))
+        .limit(1);
+
+      // Defensive: a conflict means the row exists, but guard against a racing
+      // delete between the failed insert and this read.
+      if (!existing) {
+        throw new GraphQLError('Tick conflict resolved to a missing row', {
+          extensions: { code: 'INTERNAL_SERVER_ERROR' },
+        });
+      }
+
+      return {
+        uuid: existing.uuid,
+        userId: existing.userId,
+        boardType: existing.boardType,
+        climbUuid: existing.climbUuid,
+        angle: existing.angle,
+        isMirror: existing.isMirror,
+        status: existing.status,
+        attemptCount: existing.attemptCount,
+        quality: existing.quality,
+        difficulty: existing.difficulty,
+        isBenchmark: existing.isBenchmark,
+        comment: existing.comment,
+        climbedAt: existing.climbedAt,
+        createdAt: existing.createdAt,
+        updatedAt: existing.updatedAt,
+        sessionId: existing.sessionId,
+        boardId: existing.boardId,
+        auroraType: existing.auroraType,
+        auroraId: existing.auroraId,
+        auroraSyncedAt: existing.auroraSyncedAt,
+      };
+    }
 
     // Bust the home-strip cache so newly-attached beta links surface on the
     // next read. Skip when the tick path didn't insert (no video URL, or

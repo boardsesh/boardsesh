@@ -24,10 +24,13 @@ export const playlistMutations = {
     const validatedInput = validateInput(CreatePlaylistInputSchema, input, 'input');
 
     const userId = ctx.userId!;
-    const uuid = uuidv4();
+    // Use the client-supplied UUID (offline idempotency key) when present,
+    // otherwise generate one. On replay the unique uuid collides, the insert is
+    // a no-op, and we return the existing playlist without re-inserting ownership.
+    const uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date();
 
-    // Create playlist
+    // Create playlist. ON CONFLICT (uuid) DO NOTHING makes offline replay safe.
     const [playlist] = await db
       .insert(dbSchema.playlists)
       .values({
@@ -42,7 +45,51 @@ export const playlistMutations = {
         createdAt: now,
         updatedAt: now,
       })
+      .onConflictDoNothing({ target: dbSchema.playlists.uuid })
       .returning();
+
+    // Conflict no-op: the playlist already exists from a prior save of this same
+    // idempotency key. Return it as-is and skip the ownership insert (it already
+    // exists too). Climb count and follow/pin stats are re-derived for accuracy.
+    if (!playlist) {
+      const [existing] = await db.select().from(dbSchema.playlists).where(eq(dbSchema.playlists.uuid, uuid)).limit(1);
+
+      if (!existing) {
+        throw new Error('Playlist conflict resolved to a missing row');
+      }
+
+      const [climbCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(dbSchema.playlistClimbs)
+        .where(eq(dbSchema.playlistClimbs.playlistId, existing.id));
+
+      const [ownerRow] = await db
+        .select({ role: dbSchema.playlistOwnership.role })
+        .from(dbSchema.playlistOwnership)
+        .where(
+          and(eq(dbSchema.playlistOwnership.playlistId, existing.id), eq(dbSchema.playlistOwnership.userId, userId)),
+        )
+        .limit(1);
+
+      return {
+        id: existing.id.toString(),
+        uuid: existing.uuid,
+        boardType: existing.boardType,
+        layoutId: existing.layoutId,
+        name: existing.name,
+        description: existing.description,
+        isPublic: existing.isPublic,
+        color: existing.color,
+        icon: existing.icon,
+        createdAt: existing.createdAt.toISOString(),
+        updatedAt: existing.updatedAt.toISOString(),
+        climbCount: climbCount?.count ?? 0,
+        userRole: ownerRow?.role ?? null,
+        followerCount: 0,
+        isFollowedByMe: false,
+        isPinnedByMe: false,
+      };
+    }
 
     // Create ownership
     await db.insert(dbSchema.playlistOwnership).values({

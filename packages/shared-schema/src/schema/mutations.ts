@@ -172,6 +172,18 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     toggleFavorite(input: ToggleFavoriteInput!): ToggleFavoriteResult!
 
+    """
+    Add a climb to favorites. Idempotent (ON CONFLICT DO NOTHING) so the offline
+    mutation queue can safely retry. Always returns true.
+    """
+    addFavorite(input: AddFavoriteInput!): Boolean!
+
+    """
+    Remove a climb from favorites. Idempotent (deleting a nonexistent row is a
+    no-op) so the offline mutation queue can safely retry. Always returns true.
+    """
+    removeFavorite(input: RemoveFavoriteInput!): Boolean!
+
     # ============================================
     # Ticks Mutations (require auth)
     # ============================================
