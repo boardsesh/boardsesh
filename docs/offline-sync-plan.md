@@ -1,8 +1,25 @@
 # Offline Sync Plan
 
-Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the local database with a custom GraphQL mutation queue for offline writes. Ships a pre-warmed SQLite database as an app asset for instant offline access to all ~10 boards.
+Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the local database with a custom GraphQL mutation queue for offline writes. Can optionally ship a pre-warmed SQLite database as an app asset for instant offline browsing of a board's climbs — but the asset is optional and default builds omit it (see status below).
 
 This document records the evaluation of four approaches and why `expo-sqlite` + custom mutation queue is the recommendation. The plan was refined through 4 rounds of review by paired Opus agents (8 review agents total, 100+ findings).
+
+## Status — shipped vs deferred (PR #2277)
+
+PR #2277 lands the offline write path and the opt-in board-sync machinery. The pre-warmed seed asset is wired as an **optional** code path, not shipped as a bundled file.
+
+**Shipped:**
+
+- **Phase 2 backend sync resolvers** — per-table cursor-paginated `sync*` queries + `syncDeletions`, with the composite cursor indexes the resolvers range-scan.
+- **On-device write-through queue** — `pending_mutations` table, FIFO drainer with backoff, atomic dead-letter transition, dead-letter retry/discard.
+- **Dual-write user writes** — ticks and favorites land in both local SQLite and the backend; the 1-by-1 sync runner pushes the queue immediately when online.
+- **Optional seed asset (code path only)** — `initializeDatabase` attempts to load a bundled `boardsesh-seed.db` and, if present and the board tables are empty, copies its board reference rows in (via SQLite `ATTACH`) and stamps each board's checkpoint from the seed's build cursor. With no asset, the app runs online-only. There is **no seed asset file in the repo** — only the load path. Default builds resolve "no seed" through `src/db/seed-asset.ts`, which keeps a `require('…seed.db')` literal out of the default Metro graph (a literal `require` of a missing file fails `expo export`).
+- **Per-board opt-in sync + status UI** — a "Board data (offline)" section in Settings toggles `syncEnabledBoards` per board (with a download-size warning before enabling), and a live status row shows sync progress + "last synced …" threaded from `pullSync`'s `onProgress` callback through a module-level `sync-status` store.
+
+**Deferred (tracked follow-ups):**
+
+- **The actual pre-warmed asset build pipeline** — a reproducible job that snapshots the board tables into `boardsesh-seed.db` (plus its `seed_checkpoints` cursor table) and an EAS build profile / Play Asset Delivery package that bundles it. The seed remains **optional**: it is a first-launch head start, never a requirement.
+- **Local-SQLite climb-search repoint** — climb search still queries GraphQL; pointing the search JOINs at the local board tables (so a downloaded board searches fully offline) is the tracked next step.
 
 ## Alternatives evaluated
 

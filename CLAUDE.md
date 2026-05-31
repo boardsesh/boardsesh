@@ -231,6 +231,8 @@ CI: `mobile-eas-update.yml` auto-publishes on every push to a non-main branch to
 
 A new preview build is only needed when native deps change (new Expo plugin, new native module, SDK bump). JS/TS changes ride OTA.
 
+**Offline board seed is optional.** The app can pre-warm its on-device SQLite from a bundled `assets/boardsesh-seed.db` (board climbs + stats) for instant offline board browsing, but the seed asset is opt-in and **default builds omit it** — smaller app, online climb search. There is no seed file in the repo; `src/db/seed-asset.ts` returns "no seed" by default, which deliberately keeps a `require('…seed.db')` literal out of the Metro graph (a literal `require` of a missing file fails `expo export`). To ship the seed, an opt-in build profile (or Play Asset Delivery package) provides the asset file and swaps `resolveSeedAssetModuleId` to `require` it; `initializeDatabase` then imports it on first launch when the board tables are empty. The seed only changes board *reference data*, so it does not gate OTA updates — a JS/TS change still rides OTA regardless of which profile built the installed app.
+
 ### Agent workflow for mobile changes
 
 **Always ask which preview channel to publish to** before pushing a test update:

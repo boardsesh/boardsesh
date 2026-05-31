@@ -1,11 +1,39 @@
 // Exercises clearUserData against the REAL v1 DDL (via node:sqlite): every
 // user-data table plus the mutation queue and sync checkpoints must be wiped on
 // sign-out, while the expensive board reference cache is left untouched.
+//
+// Also exercises the optional bundled-seed path in initializeDatabase: it must be
+// a true no-op when no asset is bundled (the default), and copy board reference
+// rows + stamp checkpoints when one is.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { clearUserData } from '../connection';
+// The seed module and expo-asset are mocked per-test so the default path resolves
+// to "no asset" and the with-asset path points at a temp file we build below.
+const resolveSeedAssetModuleId = vi.fn<() => number | null>(() => null);
+vi.mock('../seed-asset', () => ({
+  resolveSeedAssetModuleId: () => resolveSeedAssetModuleId(),
+}));
+
+const assetLocalUri = { current: null as string | null };
+vi.mock('expo-asset', () => ({
+  Asset: {
+    fromModule: () => ({
+      downloadAsync: async () => undefined,
+      get localUri() {
+        return assetLocalUri.current;
+      },
+    }),
+  },
+}));
+
+import { clearUserData, initializeDatabase } from '../connection';
 import { runMigrations } from '../migrations';
+import { SCHEMA_STATEMENTS } from '../schema';
 import { setCheckpoint, getCheckpoint, getCheckpointKey } from '../../sync/checkpoints';
 import { enqueue, getPendingCount } from '../../mutation-queue/queue';
 import { createTestDatabase, type TestSqliteDb } from './sqlite-test-db';
@@ -20,6 +48,12 @@ async function countRows(table: string): Promise<number> {
 beforeEach(async () => {
   db = createTestDatabase();
   await runMigrations(db);
+  resolveSeedAssetModuleId.mockReturnValue(null);
+  assetLocalUri.current = null;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('clearUserData', () => {
@@ -74,5 +108,85 @@ describe('clearUserData', () => {
 
     expect(await countRows('boardsesh_ticks')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
+  });
+});
+
+describe('initializeDatabase optional seed', () => {
+  let seedDir: string;
+
+  beforeEach(() => {
+    seedDir = mkdtempSync(join(tmpdir(), 'bs-seed-'));
+  });
+
+  afterEach(() => {
+    rmSync(seedDir, { recursive: true, force: true });
+  });
+
+  // Builds a real on-disk seed DB carrying the v1 schema, a couple of board
+  // reference rows, and (optionally) the seed_checkpoints cursor table.
+  function buildSeedFile(withCheckpoints: boolean): string {
+    const seedPath = join(seedDir, 'seed.db');
+    const seed = new DatabaseSync(seedPath);
+    for (const statement of SCHEMA_STATEMENTS) seed.exec(statement);
+    seed.prepare(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`).run('seed-climb-1', 'kilter');
+    seed.prepare(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`).run('seed-climb-2', 'tension');
+    seed
+      .prepare(`INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`)
+      .run('kilter', 'seed-climb-1', 40, 99);
+    if (withCheckpoints) {
+      seed.exec(`CREATE TABLE seed_checkpoints (board_type TEXT, table_name TEXT, updated_at TEXT, sync_seq TEXT)`);
+      seed
+        .prepare(`INSERT INTO seed_checkpoints (board_type, table_name, updated_at, sync_seq) VALUES (?, ?, ?, ?)`)
+        .run('kilter', 'board_climbs', '2024-01-01T00:00:00Z', '42');
+    }
+    seed.close();
+    return seedPath;
+  }
+
+  it('leaves board tables empty when no asset is bundled (default build)', async () => {
+    resolveSeedAssetModuleId.mockReturnValue(null);
+
+    await initializeDatabase(db);
+
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await countRows('board_climb_stats')).toBe(0);
+  });
+
+  it('copies board reference rows and stamps checkpoints from a bundled seed', async () => {
+    resolveSeedAssetModuleId.mockReturnValue(1);
+    assetLocalUri.current = buildSeedFile(true);
+
+    await initializeDatabase(db);
+
+    expect(await countRows('board_climbs')).toBe(2);
+    expect(await countRows('board_climb_stats')).toBe(1);
+    expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter'))).toEqual({
+      updatedAt: '2024-01-01T00:00:00Z',
+      syncSeq: '42',
+    });
+  });
+
+  it('imports without a checkpoint table (cursor stamping is optional)', async () => {
+    resolveSeedAssetModuleId.mockReturnValue(1);
+    assetLocalUri.current = buildSeedFile(false);
+
+    await initializeDatabase(db);
+
+    expect(await countRows('board_climbs')).toBe(2);
+    expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter'))).toBeNull();
+  });
+
+  it('does not overwrite board rows that a prior sync already populated', async () => {
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['existing', 'kilter']);
+    resolveSeedAssetModuleId.mockReturnValue(1);
+    assetLocalUri.current = buildSeedFile(true);
+
+    await initializeDatabase(db);
+
+    // The non-empty board_climbs table is left untouched (the per-table guard
+    // only fills empty tables); the pre-existing row survives.
+    expect(await countRows('board_climbs')).toBe(1);
+    const remaining = await db.getFirstAsync<{ uuid: string }>(`SELECT uuid FROM board_climbs`);
+    expect(remaining?.uuid).toBe('existing');
   });
 });

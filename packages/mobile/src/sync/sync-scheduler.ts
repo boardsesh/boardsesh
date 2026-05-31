@@ -2,7 +2,14 @@ import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { QueryClient } from '@tanstack/react-query';
-import { pullSync } from './pull-client';
+import { pullSync, type SyncProgress } from './pull-client';
+
+/**
+ * Optional progress sink for the pull phase. The bridge passes the sync-status
+ * store's `setSyncProgress` so the Settings screen can show live progress; when
+ * omitted (tests, headless callers) the pull just runs silently.
+ */
+export type SyncProgressSink = (progress: SyncProgress) => void;
 
 const FOREGROUND_DEBOUNCE_MS = 2000;
 
@@ -35,6 +42,7 @@ async function runSync(
   graphqlFetch: GraphqlFetch,
   getEnabledBoards: () => string[],
   drainQueue: DrainQueue,
+  onProgress?: SyncProgressSink,
 ): Promise<void> {
   if (isSyncing) {
     pendingTrigger = true;
@@ -47,9 +55,15 @@ async function runSync(
     await drainQueue();
     await pullSync(db, queryClient, graphqlFetch, {
       enabledBoards: getEnabledBoards(),
+      onProgress,
     });
   } catch (error) {
     console.warn('[Sync] Sync cycle failed:', error instanceof Error ? error.message : 'unknown');
+    // pullSync only emits its terminal `idle` frame on success, so a throw mid-pull
+    // would leave the Settings status row stuck on "Downloading…". Emit idle here so
+    // the in-flight flag always clears (user-data tables sync before board tables, so
+    // a typical mid-pull failure is past the user data — "last synced" is still apt).
+    onProgress?.({ phase: 'idle', currentTable: null, documentsProcessed: 0 });
   } finally {
     isSyncing = false;
     // I1: a trigger that arrived mid-run must still produce exactly one
@@ -58,7 +72,7 @@ async function runSync(
     // re-run once. (runSync is async, so it can't throw synchronously here.)
     if (pendingTrigger) {
       pendingTrigger = false;
-      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue);
+      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, onProgress);
     }
   }
 }
@@ -69,8 +83,9 @@ export function triggerSync(
   graphqlFetch: GraphqlFetch,
   getEnabledBoards: () => string[],
   drainQueue: DrainQueue,
+  onProgress?: SyncProgressSink,
 ): void {
-  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue);
+  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, onProgress);
 }
 
 export function startSyncScheduler(
@@ -79,6 +94,7 @@ export function startSyncScheduler(
   graphqlFetch: GraphqlFetch,
   getEnabledBoards: () => string[],
   drainQueue: DrainQueue,
+  onProgress?: SyncProgressSink,
 ): () => void {
   let foregroundTimeout: ReturnType<typeof setTimeout> | null = null;
   let wasConnected = true;
@@ -88,7 +104,7 @@ export function startSyncScheduler(
       if (foregroundTimeout) clearTimeout(foregroundTimeout);
       foregroundTimeout = setTimeout(() => {
         foregroundTimeout = null;
-        void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue);
+        void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, onProgress);
       }, FOREGROUND_DEBOUNCE_MS);
     }
   });
@@ -96,13 +112,13 @@ export function startSyncScheduler(
   const netInfoUnsubscribe = NetInfo.addEventListener((state) => {
     const isConnected = state.isConnected ?? false;
     if (!wasConnected && isConnected) {
-      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue);
+      void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, onProgress);
     }
     wasConnected = isConnected;
   });
 
   // Run initial sync immediately
-  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue);
+  void runSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, onProgress);
 
   return () => {
     if (foregroundTimeout) clearTimeout(foregroundTimeout);

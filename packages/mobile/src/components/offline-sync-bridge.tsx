@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { startSyncScheduler } from '../sync';
+import { startSyncScheduler, setSyncProgress } from '../sync';
 import { drainMutationQueue } from '../mutation-queue';
 import type { GraphQLFetch } from '../mutation-queue/handlers';
 import { getSetting } from '../settings';
@@ -37,6 +37,9 @@ export function OfflineSyncBridge() {
         graphqlFetch,
         () => getSetting('syncEnabledBoards'),
         () => drainMutationQueue(db, queryClient, graphqlFetch),
+        // Publish pull progress to the module-level store so the Settings screen
+        // can render "last synced" + live progress without prop-drilling.
+        setSyncProgress,
       );
       return stop;
     } catch (error) {
