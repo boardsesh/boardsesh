@@ -17,6 +17,7 @@ import { PartyProfileProvider } from '../src/providers/party-profile-provider';
 import { ConnectionSettingsProvider } from '../src/providers/connection-settings-provider';
 import { FavoritesProvider } from '../src/providers/favorites-provider';
 import { PlaylistsProvider } from '../src/providers/playlists-provider';
+import { BoardProvider } from '../src/providers/board-provider';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
 import { useDefaultBoard } from '../src/lib/graphql/hooks';
 import { LiveActivityBridge } from '../src/lib/live-activity/live-activity-bridge';
@@ -141,15 +142,20 @@ function RootLayout() {
                         <FavoritesProvider>
                           <PlaylistsProvider>
                             <QueueProvider>
-                              <BluetoothProviderWrapper>
-                                <DrawerHostProvider>
-                                  <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                                    <Stack.Screen name="(tabs)" />
-                                    <Stack.Screen name="auth" options={{ headerShown: false, gestureEnabled: false }} />
-                                  </Stack>
-                                  <PersistentQueueBar />
-                                </DrawerHostProvider>
-                              </BluetoothProviderWrapper>
+                              <BoardProvider>
+                                <BluetoothProviderWrapper>
+                                  <DrawerHostProvider>
+                                    <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+                                      <Stack.Screen name="(tabs)" />
+                                      <Stack.Screen
+                                        name="auth"
+                                        options={{ headerShown: false, gestureEnabled: false }}
+                                      />
+                                    </Stack>
+                                    <PersistentQueueBar />
+                                  </DrawerHostProvider>
+                                </BluetoothProviderWrapper>
+                              </BoardProvider>
                             </QueueProvider>
                           </PlaylistsProvider>
                         </FavoritesProvider>
