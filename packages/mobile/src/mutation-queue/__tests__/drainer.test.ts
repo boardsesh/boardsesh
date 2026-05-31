@@ -66,9 +66,7 @@ describe('drainMutationQueue', () => {
     const mutationA = makeMutation({ id: 1, idempotency_key: 'key-a' });
     const mutationB = makeMutation({ id: 2, idempotency_key: 'key-b' });
 
-    mockPeekPending
-      .mockResolvedValueOnce([mutationA, mutationB])
-      .mockResolvedValueOnce([]);
+    mockPeekPending.mockResolvedValueOnce([mutationA, mutationB]).mockResolvedValueOnce([]);
 
     const queryClient = createMockQueryClient();
 
@@ -90,9 +88,7 @@ describe('drainMutationQueue', () => {
     mockPeekPending.mockResolvedValueOnce([mutationA, mutationB, mutationC]);
 
     const retryableError = new Error('Server unavailable');
-    mockProcessMutation
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(retryableError);
+    mockProcessMutation.mockResolvedValueOnce(undefined).mockRejectedValueOnce(retryableError);
     mockIsRetryable.mockReturnValue(true);
 
     const queryClient = createMockQueryClient();
@@ -109,14 +105,10 @@ describe('drainMutationQueue', () => {
     const mutationA = makeMutation({ id: 1 });
     const mutationB = makeMutation({ id: 2 });
 
-    mockPeekPending
-      .mockResolvedValueOnce([mutationA, mutationB])
-      .mockResolvedValueOnce([]);
+    mockPeekPending.mockResolvedValueOnce([mutationA, mutationB]).mockResolvedValueOnce([]);
 
     const nonRetryableError = new Error('Validation failed');
-    mockProcessMutation
-      .mockRejectedValueOnce(nonRetryableError)
-      .mockResolvedValueOnce(undefined);
+    mockProcessMutation.mockRejectedValueOnce(nonRetryableError).mockResolvedValueOnce(undefined);
     mockIsRetryable.mockReturnValue(false);
 
     const queryClient = createMockQueryClient();
@@ -171,9 +163,7 @@ describe('drainMutationQueue', () => {
   it('invalidates correct query keys for boardsesh_ticks', async () => {
     const mutation = makeMutation({ id: 1, table_name: 'boardsesh_ticks' });
 
-    mockPeekPending
-      .mockResolvedValueOnce([mutation])
-      .mockResolvedValueOnce([]);
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
 
     const queryClient = createMockQueryClient();
 
@@ -186,9 +176,7 @@ describe('drainMutationQueue', () => {
   it('invalidates correct query keys for user_favorites', async () => {
     const mutation = makeMutation({ id: 1, table_name: 'user_favorites' });
 
-    mockPeekPending
-      .mockResolvedValueOnce([mutation])
-      .mockResolvedValueOnce([]);
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
 
     const queryClient = createMockQueryClient();
 
@@ -201,9 +189,7 @@ describe('drainMutationQueue', () => {
   it('does not invalidate queries for unknown tables', async () => {
     const mutation = makeMutation({ id: 1, table_name: 'unknown_table' });
 
-    mockPeekPending
-      .mockResolvedValueOnce([mutation])
-      .mockResolvedValueOnce([]);
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
 
     const queryClient = createMockQueryClient();
 

@@ -64,12 +64,15 @@ function makeDeletionsResult(
   return { syncDeletions: { deletions, cursor, hasMore } };
 }
 
+type GraphqlFetchMock = ReturnType<typeof vi.fn> &
+  (<T>(query: string, variables?: Record<string, unknown>) => Promise<T>);
+
 describe('pullSync', () => {
   let db: SQLiteDatabase;
   let sqlCalls: SqlCall[];
   let mockTxn: ReturnType<typeof createMockDb>['mockTxn'];
   let queryClient: QueryClient;
-  let graphqlFetch: ReturnType<typeof vi.fn>;
+  let graphqlFetch: GraphqlFetchMock;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,7 +81,7 @@ describe('pullSync', () => {
     sqlCalls = mock.sqlCalls;
     mockTxn = mock.mockTxn;
     queryClient = createMockQueryClient();
-    graphqlFetch = vi.fn();
+    graphqlFetch = vi.fn() as unknown as GraphqlFetchMock;
   });
 
   function setupGraphqlFetchForAllTables(enabledBoards: string[] = []) {
@@ -101,7 +104,7 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
 
-    const callQueries = graphqlFetch.mock.calls.map(([query]: [string]) => query);
+    const callQueries = graphqlFetch.mock.calls.map((args: unknown[]) => args[0] as string);
 
     const userTableQueryNames = USER_DATA_TABLES.map((t) => TABLE_CONFIGS[t].queryName);
     const boardTableQueryNames = BOARD_DATA_TABLES.map((t) => TABLE_CONFIGS[t].queryName);
@@ -148,7 +151,7 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    const ticksCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncTicks'));
+    const ticksCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncTicks'));
     expect(ticksCalls).toHaveLength(2);
     expect(ticksCalls[0][1]).toEqual(expect.objectContaining({ cursor: undefined }));
     expect(ticksCalls[1][1]).toEqual(
@@ -179,9 +182,7 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    const ticksInsertCalls = sqlCalls.filter(
-      (call) => call.sql.includes('INSERT OR REPLACE INTO boardsesh_ticks'),
-    );
+    const ticksInsertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO boardsesh_ticks'));
     expect(ticksInsertCalls).toHaveLength(120);
 
     const transactionCalls = (db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls;
@@ -225,7 +226,7 @@ describe('pullSync', () => {
 
     const setCheckpointCalls = (setCheckpoint as ReturnType<typeof vi.fn>).mock.calls;
     const ticksCheckpoints = setCheckpointCalls.filter(
-      ([, key]: [unknown, string]) => key === 'checkpoint:boardsesh_ticks',
+      (args: unknown[]) => (args[1] as string) === 'checkpoint:boardsesh_ticks',
     );
     expect(ticksCheckpoints).toHaveLength(2);
     expect(ticksCheckpoints[0][2]).toEqual(cursor1);
@@ -256,17 +257,15 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
 
-    const climbsCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncClimbs'));
+    const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(
-      expect.objectContaining({ boardType: 'kilter' }),
-    );
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
 
-    const statsCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncClimbStats'));
-    expect(statsCalls).toHaveLength(1);
-    expect(statsCalls[0][1]).toEqual(
-      expect.objectContaining({ boardType: 'kilter' }),
+    const statsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) =>
+      (args[0] as string).includes('syncClimbStats'),
     );
+    expect(statsCalls).toHaveLength(1);
+    expect(statsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
   });
 
   it('only syncs enabled boards', async () => {
@@ -284,14 +283,12 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
 
-    const climbsCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncClimbs'));
+    const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(
-      expect.objectContaining({ boardType: 'kilter' }),
-    );
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
 
     const allBoardTypeVars = graphqlFetch.mock.calls
-      .map(([, vars]: [string, Record<string, unknown>]) => vars?.boardType)
+      .map((args: unknown[]) => (args[1] as Record<string, unknown> | undefined)?.boardType)
       .filter(Boolean);
     for (const boardType of allBoardTypeVars) {
       expect(boardType).toBe('kilter');
@@ -394,7 +391,7 @@ describe('pullSync', () => {
     await pullSync(db, queryClient, graphqlFetch);
 
     const invalidateCalls = (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mock.calls;
-    const invalidatedKeys = invalidateCalls.map(([arg]: [{ queryKey: string[] }]) => arg.queryKey);
+    const invalidatedKeys = invalidateCalls.map((args: unknown[]) => (args[0] as { queryKey: string[] }).queryKey);
 
     expect(invalidatedKeys).toContainEqual(['ticks']);
     expect(invalidatedKeys).toContainEqual(['logbook']);
@@ -520,7 +517,7 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    const ticksCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncTicks'));
+    const ticksCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncTicks'));
     expect(ticksCalls[0][1]).toEqual(
       expect.objectContaining({
         cursor: { updatedAt: existingCheckpoint.updatedAt, syncSeq: existingCheckpoint.syncSeq },
@@ -543,7 +540,7 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter', 'tension'] });
 
-    const climbsCalls = graphqlFetch.mock.calls.filter(([query]: [string]) => query.includes('syncClimbs'));
+    const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(2);
     expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
     expect(climbsCalls[1][1]).toEqual(expect.objectContaining({ boardType: 'tension' }));
@@ -554,9 +551,10 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: [] });
 
-    const boardCalls = graphqlFetch.mock.calls.filter(
-      ([query]: [string]) => query.includes('syncClimbs') || query.includes('syncClimbStats'),
-    );
+    const boardCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => {
+      const q = args[0] as string;
+      return q.includes('syncClimbs') || q.includes('syncClimbStats');
+    });
     expect(boardCalls).toHaveLength(0);
   });
 
@@ -606,8 +604,10 @@ describe('pullSync', () => {
     await pullSync(db, queryClient, graphqlFetch);
 
     const invalidateCalls = (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mock.calls;
-    const keysFromDeletionPhase = invalidateCalls
-      .map(([arg]: [{ queryKey: string[] }]) => JSON.stringify(arg.queryKey));
+    const keysFromDeletionPhase = invalidateCalls.map((args: unknown[]) => {
+      const first = args[0] as { queryKey: string[] };
+      return JSON.stringify(first.queryKey);
+    });
 
     const ticksKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["ticks"]').length;
     const logbookKeyCount = keysFromDeletionPhase.filter((k: string) => k === '["logbook"]').length;

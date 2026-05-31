@@ -20,10 +20,7 @@ export async function getCheckpoint(db: SQLiteDatabase, key: string): Promise<Sy
 }
 
 export async function setCheckpoint(db: SQLiteDatabase, key: string, checkpoint: SyncCheckpoint): Promise<void> {
-  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-    key,
-    JSON.stringify(checkpoint),
-  ]);
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, JSON.stringify(checkpoint)]);
 }
 
 export async function deleteCheckpoint(db: SQLiteDatabase, key: string): Promise<void> {

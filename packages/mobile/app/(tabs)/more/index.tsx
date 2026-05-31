@@ -83,11 +83,7 @@ export default function MoreScreen() {
       <View style={styles.section}>
         <SectionHeader title={t('mobile.settings.accountSection')} />
         <View style={cardStyle}>
-          <ListRow
-            title={t('mobile.settings.signOut')}
-            onPress={handleSignOut}
-            showSeparator={false}
-          />
+          <ListRow title={t('mobile.settings.signOut')} onPress={handleSignOut} showSeparator={false} />
         </View>
       </View>
 
@@ -96,7 +92,11 @@ export default function MoreScreen() {
         <View style={cardStyle}>
           <ListRow
             title={t('mobile.settings.version')}
-            trailing={<Text variant="body" style={{ color: systemColors.secondaryLabel }}>{appVersion}</Text>}
+            trailing={
+              <Text variant="body" style={{ color: systemColors.secondaryLabel }}>
+                {appVersion}
+              </Text>
+            }
             showSeparator={false}
             haptic={false}
           />

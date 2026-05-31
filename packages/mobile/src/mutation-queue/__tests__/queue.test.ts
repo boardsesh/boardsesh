@@ -34,17 +34,21 @@ describe('mutation queue', () => {
 
     await enqueue(db, 'boardsesh_ticks', 'create', payload, 'idem-key-1');
 
-    expect(db.runAsync).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR IGNORE INTO pending_mutations'),
-      ['boardsesh_ticks', 'create', JSON.stringify(payload), 'idem-key-1'],
-    );
+    expect(db.runAsync).toHaveBeenCalledWith(expect.stringContaining('INSERT OR IGNORE INTO pending_mutations'), [
+      'boardsesh_ticks',
+      'create',
+      JSON.stringify(payload),
+      'idem-key-1',
+    ]);
   });
 
   it('peekPending selects pending mutations ordered by created_at', async () => {
     await peekPending(db, 5);
 
     expect(db.getAllAsync).toHaveBeenCalledWith(
-      expect.stringMatching(/SELECT \* FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC LIMIT \?/),
+      expect.stringMatching(
+        /SELECT \* FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC LIMIT \?/,
+      ),
       [5],
     );
   });
@@ -73,10 +77,7 @@ describe('mutation queue', () => {
   it('markDeadLetter sets status to dead_letter with error', async () => {
     await markDeadLetter(db, 15, 'Bad request');
 
-    expect(db.runAsync).toHaveBeenCalledWith(
-      expect.stringContaining("status = 'dead_letter'"),
-      ['Bad request', 15],
-    );
+    expect(db.runAsync).toHaveBeenCalledWith(expect.stringContaining("status = 'dead_letter'"), ['Bad request', 15]);
   });
 
   it('getPendingCount queries count of pending mutations', async () => {
@@ -85,9 +86,7 @@ describe('mutation queue', () => {
     const count = await getPendingCount(db);
 
     expect(count).toBe(3);
-    expect(db.getFirstAsync).toHaveBeenCalledWith(
-      expect.stringMatching(/COUNT\(\*\).*status = 'pending'/),
-    );
+    expect(db.getFirstAsync).toHaveBeenCalledWith(expect.stringMatching(/COUNT\(\*\).*status = 'pending'/));
   });
 
   it('getPendingCount returns 0 when no row', async () => {
@@ -104,9 +103,7 @@ describe('mutation queue', () => {
     const count = await getDeadLetterCount(db);
 
     expect(count).toBe(2);
-    expect(db.getFirstAsync).toHaveBeenCalledWith(
-      expect.stringMatching(/COUNT\(\*\).*status = 'dead_letter'/),
-    );
+    expect(db.getFirstAsync).toHaveBeenCalledWith(expect.stringMatching(/COUNT\(\*\).*status = 'dead_letter'/));
   });
 
   it('retryDeadLetter resets status to pending and clears retry_count', async () => {

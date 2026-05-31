@@ -39,17 +39,14 @@ export async function markCompleted(db: SQLiteDatabase, id: number): Promise<voi
 }
 
 export async function incrementRetry(db: SQLiteDatabase, id: number, error: string): Promise<void> {
-  await db.runAsync(
-    'UPDATE pending_mutations SET retry_count = retry_count + 1, last_error = ? WHERE id = ?',
-    [error, id],
-  );
+  await db.runAsync('UPDATE pending_mutations SET retry_count = retry_count + 1, last_error = ? WHERE id = ?', [
+    error,
+    id,
+  ]);
 }
 
 export async function markDeadLetter(db: SQLiteDatabase, id: number, error: string): Promise<void> {
-  await db.runAsync(
-    `UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`,
-    [error, id],
-  );
+  await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [error, id]);
 }
 
 export async function getPendingCount(db: SQLiteDatabase): Promise<number> {

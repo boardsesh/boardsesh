@@ -3,18 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockStorage = new Map<string, string>();
 
 vi.mock('react-native-mmkv', () => {
-  class MockMMKV {
+  const createMockInstance = () => ({
     getString(key: string) {
       return mockStorage.get(key);
-    }
+    },
     set(key: string, value: string) {
       mockStorage.set(key, value);
-    }
-    delete(key: string) {
+    },
+    remove(key: string) {
       mockStorage.delete(key);
-    }
-  }
-  return { MMKV: MockMMKV };
+    },
+  });
+  return { createMMKV: vi.fn(() => createMockInstance()) };
 });
 
 import { getSetting, setSetting, getAllSettings, resetAllSettings } from '../hooks';

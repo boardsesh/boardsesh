@@ -10,11 +10,7 @@ let currentToken: string | null = null;
 let currentSessionId: string | null = null;
 let tokenRefreshSubscription: Subscription | null = null;
 
-async function registerWithRetry(
-  register: TokenRegistrationFn,
-  sessionId: string,
-  token: string,
-): Promise<boolean> {
+async function registerWithRetry(register: TokenRegistrationFn, sessionId: string, token: string): Promise<boolean> {
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
     const delay = RETRY_DELAYS[attempt];
     if (delay > 0) {
@@ -31,10 +27,7 @@ async function registerWithRetry(
   return false;
 }
 
-export async function startTokenManagement(
-  sessionId: string,
-  register: TokenRegistrationFn,
-): Promise<void> {
+export async function startTokenManagement(sessionId: string, register: TokenRegistrationFn): Promise<void> {
   currentSessionId = sessionId;
 
   const token = await getDevicePushToken();
@@ -51,9 +44,7 @@ export async function startTokenManagement(
   });
 }
 
-export async function stopTokenManagement(
-  unregister: TokenUnregistrationFn,
-): Promise<void> {
+export async function stopTokenManagement(unregister: TokenUnregistrationFn): Promise<void> {
   tokenRefreshSubscription?.remove();
   tokenRefreshSubscription = null;
 

@@ -1,9 +1,9 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import type { AppSettings, SettingsKey } from './types';
 import { DEFAULT_SETTINGS } from './defaults';
 
-const storage = new MMKV({ id: 'boardsesh-settings' });
+const storage = createMMKV({ id: 'boardsesh-settings' });
 
 const listeners = new Set<() => void>();
 
@@ -52,14 +52,12 @@ export function getAllSettings(): AppSettings {
 
 export function resetAllSettings(): void {
   for (const key of Object.keys(DEFAULT_SETTINGS)) {
-    storage.delete(key);
+    storage.remove(key);
   }
   emitChange();
 }
 
-export function useSetting<K extends SettingsKey>(
-  key: K,
-): [AppSettings[K], (value: AppSettings[K]) => void] {
+export function useSetting<K extends SettingsKey>(key: K): [AppSettings[K], (value: AppSettings[K]) => void] {
   const value = useSyncExternalStore(
     subscribe,
     () => readSetting(key),

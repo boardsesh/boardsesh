@@ -1,13 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import {
-  getCheckpointKey,
-  getCheckpoint,
-  setCheckpoint,
-  deleteCheckpoint,
-  deleteAllCheckpoints,
-} from '../checkpoints';
+import { getCheckpointKey, getCheckpoint, setCheckpoint, deleteCheckpoint, deleteAllCheckpoints } from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
 
 function createMockDb() {

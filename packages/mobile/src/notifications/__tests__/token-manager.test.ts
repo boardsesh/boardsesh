@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type {
-  TokenRegistrationFn,
-  TokenUnregistrationFn,
-} from '../token-manager';
+import type { TokenRegistrationFn, TokenUnregistrationFn } from '../token-manager';
 
 const mockGetDevicePushToken = vi.fn<() => Promise<string | null>>();
 const mockRemove = vi.fn();
@@ -19,13 +16,8 @@ async function loadModule() {
 }
 
 describe('token-manager', () => {
-  let startTokenManagement: (
-    sessionId: string,
-    register: TokenRegistrationFn,
-  ) => Promise<void>;
-  let stopTokenManagement: (
-    unregister: TokenUnregistrationFn,
-  ) => Promise<void>;
+  let startTokenManagement: (sessionId: string, register: TokenRegistrationFn) => Promise<void>;
+  let stopTokenManagement: (unregister: TokenUnregistrationFn) => Promise<void>;
   let getCurrentToken: () => string | null;
 
   beforeEach(async () => {
@@ -80,9 +72,7 @@ describe('token-manager', () => {
 
   it('gives up after all retry attempts fail', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
-    const register = vi
-      .fn<TokenRegistrationFn>()
-      .mockRejectedValue(new Error('always fails'));
+    const register = vi.fn<TokenRegistrationFn>().mockRejectedValue(new Error('always fails'));
 
     const promise = startTokenManagement('session-1', register);
     await vi.runAllTimersAsync();
@@ -97,7 +87,7 @@ describe('token-manager', () => {
 
     await startTokenManagement('session-1', register);
 
-    const refreshCallback = mockAddPushTokenListener.mock.calls[0][0] as (
+    const refreshCallback = (mockAddPushTokenListener.mock.calls[0] as unknown[])[0] as (
       token: string,
     ) => Promise<void>;
     const refreshPromise = refreshCallback('new-token-456');
@@ -111,9 +101,7 @@ describe('token-manager', () => {
   it('unregisters on stop', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
     const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);
-    const unregister = vi
-      .fn<TokenUnregistrationFn>()
-      .mockResolvedValue(undefined);
+    const unregister = vi.fn<TokenUnregistrationFn>().mockResolvedValue(undefined);
 
     await startTokenManagement('session-1', register);
     await stopTokenManagement(unregister);
@@ -124,9 +112,7 @@ describe('token-manager', () => {
   it('stop is best-effort', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
     const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);
-    const unregister = vi
-      .fn<TokenUnregistrationFn>()
-      .mockRejectedValue(new Error('network error'));
+    const unregister = vi.fn<TokenUnregistrationFn>().mockRejectedValue(new Error('network error'));
 
     await startTokenManagement('session-1', register);
     await expect(stopTokenManagement(unregister)).resolves.toBeUndefined();
@@ -144,9 +130,7 @@ describe('token-manager', () => {
   it('getCurrentToken returns null after stop', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
     const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);
-    const unregister = vi
-      .fn<TokenUnregistrationFn>()
-      .mockResolvedValue(undefined);
+    const unregister = vi.fn<TokenUnregistrationFn>().mockResolvedValue(undefined);
 
     await startTokenManagement('session-1', register);
     await stopTokenManagement(unregister);
@@ -157,9 +141,7 @@ describe('token-manager', () => {
   it('removes listener on stop', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
     const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);
-    const unregister = vi
-      .fn<TokenUnregistrationFn>()
-      .mockResolvedValue(undefined);
+    const unregister = vi.fn<TokenUnregistrationFn>().mockResolvedValue(undefined);
 
     await startTokenManagement('session-1', register);
     await stopTokenManagement(unregister);
