@@ -1,12 +1,22 @@
 #include "wifi_utils.h"
 
+#ifndef UNIT_TEST
+#include <ESPmDNS.h>
+#endif
+#include <ctype.h>
+
+#ifndef FIRMWARE_BUILD_ENV
+#define FIRMWARE_BUILD_ENV "unknown"
+#endif
+
 WiFiUtils WiFiMgr;
 
 const char* WiFiUtils::KEY_SSID = "wifi_ssid";
 const char* WiFiUtils::KEY_PASSWORD = "wifi_pass";
 
 WiFiUtils::WiFiUtils()
-    : state(WiFiConnectionState::DISCONNECTED), stateCallback(nullptr), connectStartTime(0), lastReconnectAttempt(0), dnsRunning(false) {}
+    : state(WiFiConnectionState::DISCONNECTED), stateCallback(nullptr), connectStartTime(0), lastReconnectAttempt(0),
+      mdnsServicePort(0), mdnsRunning(false), dnsRunning(false) {}
 
 void WiFiUtils::begin() {
     WiFi.mode(WIFI_STA);
@@ -48,11 +58,14 @@ bool WiFiUtils::connectSaved() {
 }
 
 void WiFiUtils::disconnect() {
+    stopMdns();
     WiFi.disconnect();
     setState(WiFiConnectionState::DISCONNECTED);
 }
 
 bool WiFiUtils::startAP(const char* apName) {
+    stopMdns();
+
     // Stop any existing connection first
     WiFi.disconnect();
 
@@ -77,6 +90,7 @@ bool WiFiUtils::startAP(const char* apName) {
 }
 
 void WiFiUtils::stopAP() {
+    stopMdns();
     if (dnsRunning) {
         dnsServer.stop();
         dnsRunning = false;
@@ -120,17 +134,139 @@ int8_t WiFiUtils::getRSSI() {
     return WiFi.RSSI();
 }
 
+void WiFiUtils::configureMdns(const char* deviceName, const char* serviceType, uint16_t servicePort, const char* role) {
+    mdnsDeviceName = deviceName ? deviceName : "";
+    mdnsServiceType = serviceType ? serviceType : "boardsesh";
+    mdnsServicePort = servicePort;
+    mdnsRole = role ? role : "";
+    restartMdns();
+}
+
+void WiFiUtils::setMdnsDeviceName(const char* deviceName) {
+    mdnsDeviceName = deviceName ? deviceName : "";
+    restartMdns();
+}
+
+void WiFiUtils::restartMdns() {
+    stopMdns();
+    if (WiFi.status() == WL_CONNECTED) {
+        startMdns();
+    }
+}
+
+void WiFiUtils::stopMdns() {
+    bool wasRunning = mdnsRunning;
+#ifndef UNIT_TEST
+    if (wasRunning) {
+        MDNS.end();
+    }
+#endif
+    mdnsRunning = false;
+    mdnsHostName = "";
+}
+
+String WiFiUtils::getMdnsHostName() {
+    return mdnsHostName;
+}
+
 void WiFiUtils::setStateCallback(WiFiStateCallback callback) {
     stateCallback = callback;
 }
 
+String WiFiUtils::buildMdnsHostName(const String& deviceName, const String& macAddress) {
+    String base;
+    bool lastWasDash = false;
+
+    for (size_t i = 0; i < deviceName.length(); i++) {
+        char c = static_cast<char>(tolower(deviceName[i]));
+        bool isAlphaNumeric = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+        if (isAlphaNumeric) {
+            base += c;
+            lastWasDash = false;
+        } else if (!lastWasDash && base.length() > 0) {
+            base += '-';
+            lastWasDash = true;
+        }
+    }
+
+    while (base.endsWith("-")) {
+        base.remove(base.length() - 1);
+    }
+
+    String macSuffix;
+    for (size_t i = 0; i < macAddress.length(); i++) {
+        char c = static_cast<char>(tolower(macAddress[i]));
+        if ((c >= 'a' && c <= 'f') || (c >= '0' && c <= '9')) {
+            macSuffix += c;
+        }
+    }
+    if (macSuffix.length() > 6) {
+        macSuffix = macSuffix.substring(macSuffix.length() - 6);
+    }
+
+    if (base.length() == 0) {
+        base = "boardsesh-esp32";
+    }
+
+    const size_t suffixLength = macSuffix.length() > 0 ? macSuffix.length() + 1 : 0;
+    const size_t maxBaseLength = 63 - suffixLength;
+    if (base.length() > maxBaseLength) {
+        base = base.substring(0, maxBaseLength);
+        while (base.endsWith("-")) {
+            base.remove(base.length() - 1);
+        }
+    }
+
+    if (macSuffix.length() > 0) {
+        base += "-";
+        base += macSuffix;
+    }
+
+    return base;
+}
+
 void WiFiUtils::setState(WiFiConnectionState newState) {
     if (state != newState) {
+        if (newState != WiFiConnectionState::CONNECTED) {
+            stopMdns();
+        }
         state = newState;
+        if (state == WiFiConnectionState::CONNECTED) {
+            startMdns();
+        }
         if (stateCallback) {
             stateCallback(state);
         }
     }
+}
+
+void WiFiUtils::startMdns() {
+    if (mdnsServicePort == 0) {
+        return;
+    }
+
+    mdnsHostName = buildMdnsHostName(mdnsDeviceName, WiFi.macAddress());
+
+#ifndef UNIT_TEST
+    if (!MDNS.begin(mdnsHostName.c_str())) {
+        Serial.printf("mDNS failed for %s.local\n", mdnsHostName.c_str());
+        mdnsHostName = "";
+        mdnsRunning = false;
+        return;
+    }
+
+    MDNS.addService(mdnsServiceType.c_str(), "tcp", mdnsServicePort);
+    MDNS.addServiceTxt(mdnsServiceType.c_str(), "tcp", "role", mdnsRole.c_str());
+    MDNS.addServiceTxt(mdnsServiceType.c_str(), "tcp", "build", FIRMWARE_BUILD_ENV);
+
+    if (mdnsServicePort == 80) {
+        MDNS.addService("http", "tcp", mdnsServicePort);
+        MDNS.addServiceTxt("http", "tcp", "role", mdnsRole.c_str());
+    }
+#endif
+
+    mdnsRunning = true;
+    Serial.printf("mDNS: %s.local\n", mdnsHostName.c_str());
 }
 
 void WiFiUtils::checkConnection() {

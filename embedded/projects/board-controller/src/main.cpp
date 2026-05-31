@@ -315,6 +315,8 @@ void setup() {
 
     // Initialize config manager
     Config.begin();
+    WiFiMgr.configureMdns(Config.getString("device_name", DEVICE_NAME).c_str(), "boardsesh", WEB_SERVER_PORT,
+                          "controller");
 
 #ifdef HAS_DISPLAY
     // Initialize display first (before LEDs for visual feedback)

@@ -151,18 +151,19 @@ Cost is roughly £5 / $5 for the ESP32. Nothing else is needed — no LEDs, no l
    ```
    [WiFi] Connected. IP: 192.168.20.38
    [BLE] Advertising as: Kilter Board#751737@3
+   [mDNS] kilter-board-751737-3-db2a80.local
    [WS] Listening on port 81
    ```
-   Note the IP — the web UI needs it.
+   Note the `.local` hostname or IP. The hostname stays useful when DHCP gives the ESP32 a new IP.
 
 ### Use it from the web app
 
-> **The debug page only works from `http://localhost:3000`.** It opens a plain `ws://<esp32-ip>:81` socket, and browsers block plain WebSockets from HTTPS origins as mixed content. Vercel preview URLs and any other `https://` origin will load the page but the sockets will silently fail. Use a local dev server.
+> **The debug page only works from `http://localhost:3000`.** It opens a plain `ws://<esp32-host>:81` socket, and browsers block plain WebSockets from HTTPS origins as mixed content. Vercel preview URLs and any other `https://` origin will load the page but the sockets will silently fail. Use a local dev server.
 
 1. Run `vp run dev` and open `http://localhost:3000`.
 2. Click your avatar (top-left) → **Development**. The menu entry only appears in development builds.
 3. Click the **+** tab and fill in:
-   - **IP address**: the one the firmware printed.
+   - **Host or IP address**: the `.local` hostname or IP the firmware printed.
    - **Board / Layout / Size / Hold sets / Angle**: same cascading dropdowns as the "Custom Board" flow. Pick whichever board you're testing.
    - **Serial / API level**: any value; they only affect the BLE advertised name (e.g. `Tension Board#480221@3`).
 4. Save. The tab opens a WebSocket to the ESP32 and pushes your config so it re-advertises with the right protocol and name.

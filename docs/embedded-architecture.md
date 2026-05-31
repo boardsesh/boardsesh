@@ -102,6 +102,8 @@ The web server (`esp-web-server`) provides these endpoints in both AP and statio
 | `/api/firmware/version` | GET      | Current firmware version   |
 | `/api/firmware/upload`  | POST     | OTA firmware update        |
 
+In station mode, the firmware advertises an mDNS hostname based on the configured device or BLE name plus the last 6 characters of the station MAC address. Examples include `boardsesh-controller-db2a80.local` and `kilter-board-751737-3-db2a80.local`. Controller firmware advertises `_http._tcp` on port 80 and all firmware advertises `_boardsesh._tcp` on its local service port.
+
 ## Settings Screen (Waveshare Display)
 
 The Waveshare 7" touch display includes an interactive settings screen accessible via a touch gesture from the main climb view. The settings screen displays:

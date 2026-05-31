@@ -10,6 +10,7 @@ const STORE_NAME = 'preferences';
 export type Esp32Connection = {
   id: string;
   label: string;
+  // Hostname or IP address. Kept as `ip` to preserve existing IndexedDB rows.
   ip: string;
   board: BoardName;
   serial: string;

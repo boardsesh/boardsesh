@@ -26,6 +26,8 @@ public:
     // current state). Includes the current config.
     void broadcastHello(const EmulatorConfig& cfg);
 
+    void setMdnsHost(const String& host) { mdnsHost = host; }
+
     void setOnConfigChange(ConfigChangeCallback cb) { onConfig = std::move(cb); }
 
     // Internal — called by the file-scope WS callback in ws_server.cpp.
@@ -34,6 +36,7 @@ public:
 
 private:
     ConfigChangeCallback onConfig;
+    String mdnsHost;
 };
 
 extern EmulatorWsServer wsServer;

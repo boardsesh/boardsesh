@@ -10,6 +10,7 @@ export type Esp32Hello = {
   board: string;
   serial: string;
   apiLevel: number;
+  mdnsHost?: string;
 };
 
 export type Esp32BleWrite = { type: 'ble-write'; ts: number; hex: string };

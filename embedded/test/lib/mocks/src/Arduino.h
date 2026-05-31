@@ -163,6 +163,8 @@ class String {
         return 0;
     }
 
+    char operator[](unsigned int index) const { return charAt(index); }
+
     int indexOf(char c) const {
         size_t pos = data_.find(c);
         return pos == std::string::npos ? -1 : (int)pos;
@@ -198,6 +200,27 @@ class String {
         if (prefixLen > data_.length())
             return false;
         return data_.compare(0, prefixLen, prefix) == 0;
+    }
+
+    bool endsWith(const String& suffix) const {
+        if (suffix.length() > data_.length())
+            return false;
+        return data_.compare(data_.length() - suffix.length(), suffix.length(), suffix.c_str()) == 0;
+    }
+
+    bool endsWith(const char* suffix) const {
+        if (!suffix)
+            return false;
+        size_t suffixLen = strlen(suffix);
+        if (suffixLen > data_.length())
+            return false;
+        return data_.compare(data_.length() - suffixLen, suffixLen, suffix) == 0;
+    }
+
+    void remove(unsigned int index) {
+        if (index < data_.length()) {
+            data_.erase(index);
+        }
     }
 
     void toCharArray(char* buf, size_t bufsize) const {

@@ -42,7 +42,15 @@ class WiFiUtils {
     String getIP();
     int8_t getRSSI();
 
+    void configureMdns(const char* deviceName, const char* serviceType, uint16_t servicePort, const char* role);
+    void setMdnsDeviceName(const char* deviceName);
+    void restartMdns();
+    void stopMdns();
+    String getMdnsHostName();
+
     void setStateCallback(WiFiStateCallback callback);
+
+    static String buildMdnsHostName(const String& deviceName, const String& macAddress);
 
     // Config keys
     static const char* KEY_SSID;
@@ -55,12 +63,19 @@ class WiFiUtils {
     unsigned long lastReconnectAttempt;
     String currentSSID;
     String currentPassword;
+    String mdnsDeviceName;
+    String mdnsHostName;
+    String mdnsServiceType;
+    String mdnsRole;
+    uint16_t mdnsServicePort;
+    bool mdnsRunning;
 
     DNSServer dnsServer;
     bool dnsRunning;
 
     void setState(WiFiConnectionState newState);
     void checkConnection();
+    void startMdns();
 };
 
 extern WiFiUtils WiFiMgr;

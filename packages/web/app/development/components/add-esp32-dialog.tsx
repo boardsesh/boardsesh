@@ -95,8 +95,8 @@ export default function AddEsp32Dialog({ open, boardConfigs, initial, onClose, o
     onSubmit({
       ...form,
       id,
-      // Strip any scheme/path the user might have pasted.
-      ip: form.ip.replace(/^wss?:\/\//, '').replace(/[/:].*$/, ''),
+      // Strip any scheme, port, or path the user might have pasted.
+      ip: form.ip.replace(/^(?:https?|wss?):\/\//, '').replace(/[/:].*$/, ''),
     });
   };
 
@@ -122,10 +122,11 @@ export default function AddEsp32Dialog({ open, boardConfigs, initial, onClose, o
           />
           <TextField
             // i18n-ignore-next-line -- internal dev tool, English only
-            label="IP address"
+            label="Host or IP address"
             value={form.ip}
             onChange={(e) => setForm({ ...form, ip: e.target.value })}
-            placeholder="192.168.1.100"
+            // i18n-ignore-next-line -- internal dev tool, English only
+            placeholder="kilter-board-751737-3-db2a80.local"
             fullWidth
             size="small"
           />

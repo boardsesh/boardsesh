@@ -137,6 +137,7 @@ export default function Esp32Tab({ connection, active, onEdit, onRemove }: Esp32
             variant="outlined"
           />
         )}
+        {socket.hello?.mdnsHost && <Chip label={socket.hello.mdnsHost} size="small" variant="outlined" />}
         <Box flexGrow={1} />
         {/* i18n-ignore-next-line -- internal dev tool, English only */}
         <Tooltip title="Reconnect">

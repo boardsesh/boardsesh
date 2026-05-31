@@ -25,13 +25,16 @@ String bytesToHex(const uint8_t* data, size_t length) {
     return out;
 }
 
-String configToHelloJson(const EmulatorConfig& cfg) {
+String configToHelloJson(const EmulatorConfig& cfg, const String& mdnsHost) {
     JsonDocument doc;
     doc["type"]      = "hello";
     doc["fwVersion"] = FW_VERSION;
     doc["board"]     = BleEmulator::boardToString(cfg.board);
     doc["serial"]    = cfg.serial;
     doc["apiLevel"]  = cfg.apiLevel;
+    if (mdnsHost.length() > 0) {
+        doc["mdnsHost"] = mdnsHost;
+    }
     String out;
     serializeJson(doc, out);
     return out;
@@ -101,12 +104,12 @@ void EmulatorWsServer::broadcastBleConnection(bool connected) {
 }
 
 void EmulatorWsServer::broadcastHello(const EmulatorConfig& cfg) {
-    String out = configToHelloJson(cfg);
+    String out = configToHelloJson(cfg, mdnsHost);
     if (gWs) gWs->broadcastTXT(out);
 }
 
 void EmulatorWsServer::handleClientConnected(uint8_t clientId) {
-    String hello = configToHelloJson(bleEmulator.getConfig());
+    String hello = configToHelloJson(bleEmulator.getConfig(), mdnsHost);
     if (gWs) gWs->sendTXT(clientId, hello);
 }
 

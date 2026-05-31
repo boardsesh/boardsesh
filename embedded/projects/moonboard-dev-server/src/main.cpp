@@ -416,10 +416,11 @@ void handleMoonBoardPage(WebServer& server) {
       bleStatus.textContent = currentState.ble_connected ? 'BLE connected' : 'BLE disconnected';
       bleStatus.className = `pill ${currentState.ble_connected ? 'on' : 'off'}`;
 
+      const mdnsHost = currentState.mdns_hostname ? `${currentState.mdns_hostname}.local` : null;
       const wifiText = currentState.ap_mode
         ? `AP mode · ${currentState.ip || '192.168.4.1'}`
         : currentState.wifi_connected
-          ? `WiFi connected · ${currentState.ip || 'no IP'}`
+          ? `WiFi connected · ${mdnsHost || currentState.ip || 'no IP'}`
           : 'WiFi disconnected';
       wifiStatus.textContent = wifiText;
       wifiStatus.className = `pill ${(currentState.ap_mode || currentState.wifi_connected) ? 'on' : 'off'}`;
@@ -577,6 +578,7 @@ void handleSetMoonBoardConfig(WebServer& server) {
     }
 
     storeMoonBoardConfig(config);
+    WiFiMgr.configureMdns(config.deviceName.c_str(), "boardsesh", WEB_SERVER_PORT, "moonboard-dev");
     server.send(200, "application/json", "{\"success\":true}");
 }
 
@@ -604,6 +606,7 @@ void handleGetMoonBoardState(WebServer& server) {
     doc["wifi_connected"] = g_wifiConnected;
     doc["ap_mode"] = WiFiMgr.isAPMode();
     doc["ip"] = WiFiMgr.isAPMode() ? WiFiMgr.getAPIP() : WiFiMgr.getIP();
+    doc["mdns_hostname"] = WiFiMgr.getMdnsHostName();
     doc["revision"] = static_cast<uint32_t>(g_problemRevision);
     doc["last_update_ms"] = static_cast<uint32_t>(g_lastProblemUpdateMs);
     doc["frames"] = g_lastProblem.frames;
@@ -647,6 +650,7 @@ void setup() {
     MoonBLE.setConnectCallback(onBleConnect);
     MoonBLE.setProblemCallback(onMoonBoardProblem);
 
+    WiFiMgr.configureMdns(config.deviceName.c_str(), "boardsesh", WEB_SERVER_PORT, "moonboard-dev");
     WiFiMgr.begin();
     WiFiMgr.setStateCallback(onWiFiStateChange);
     if (!WiFiMgr.connectSaved()) {

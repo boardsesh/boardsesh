@@ -133,7 +133,7 @@ export default function DevelopmentContent({ boardConfigs }: DevelopmentContentP
               Click the <strong>+</strong> tab to add one. Flash the firmware from
               {/* i18n-ignore-next-line -- internal dev tool, English only */}
               <code> packages/board-controller/esp32/ </code> with <code>pio run -e esp32-emulator -t upload</code> and
-              enter the IP it logs at boot.
+              enter the hostname or IP it logs at boot.
             </Typography>
           </Box>
         ) : (

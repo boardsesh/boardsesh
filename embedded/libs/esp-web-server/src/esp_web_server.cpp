@@ -281,8 +281,9 @@ void ESPWebServer::handleRoot() {
                 const status = await res.json();
                 const el = document.getElementById('wifiStatus');
                 if (status.connected) {
+                    const mdnsHostLine = status.mdns_hostname ? '<br>Host: ' + status.mdns_hostname + '.local' : '';
                     el.className = 'status connected';
-                    el.innerHTML = 'Connected to <strong>' + status.ssid + '</strong><br>IP: ' + status.ip + ' | Signal: ' + status.rssi + ' dBm';
+                    el.innerHTML = 'Connected to <strong>' + status.ssid + '</strong><br>IP: ' + status.ip + mdnsHostLine + '<br>Signal: ' + status.rssi + ' dBm';
                 } else if (status.ap_mode) {
                     el.className = 'status disconnected';
                     el.innerHTML = 'Access Point Mode<br>IP: ' + status.ip + '<br><small>Connect to a WiFi network below</small>';
@@ -568,6 +569,8 @@ void ESPWebServer::handleSetConfig() {
         Config.setString("proxy_mac", doc["proxy_mac"]);
     }
 
+    WiFiMgr.setMdnsDeviceName(Config.getString("device_name", "Boardsesh Controller").c_str());
+
     sendJson(200, "{\"success\":true}");
 }
 
@@ -632,6 +635,7 @@ void ESPWebServer::handleWiFiStatus() {
     doc["ssid"] = WiFiMgr.isAPMode() ? "" : WiFiMgr.getSSID();
     doc["ip"] = WiFiMgr.isAPMode() ? WiFiMgr.getAPIP() : WiFiMgr.getIP();
     doc["rssi"] = WiFiMgr.isAPMode() ? 0 : WiFiMgr.getRSSI();
+    doc["mdns_hostname"] = WiFiMgr.getMdnsHostName();
 
     sendJson(200, doc);
 }

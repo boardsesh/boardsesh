@@ -52,6 +52,37 @@ void test_begin_enables_auto_reconnect(void) {
 }
 
 // =============================================================================
+// mDNS Hostname Tests
+// =============================================================================
+
+void test_buildMdnsHostName_uses_device_name_and_mac_suffix(void) {
+    String hostname = WiFiUtils::buildMdnsHostName("Kilter Board#751737@3", "FC:B4:67:DB:2A:80");
+
+    TEST_ASSERT_EQUAL_STRING("kilter-board-751737-3-db2a80", hostname.c_str());
+}
+
+void test_buildMdnsHostName_collapses_invalid_characters(void) {
+    String hostname = WiFiUtils::buildMdnsHostName("  MoonBoard   A!!!", "AA:BB:CC:12:34:56");
+
+    TEST_ASSERT_EQUAL_STRING("moonboard-a-123456", hostname.c_str());
+}
+
+void test_buildMdnsHostName_falls_back_for_empty_name(void) {
+    String hostname = WiFiUtils::buildMdnsHostName("!!!", "AA:BB:CC:12:34:56");
+
+    TEST_ASSERT_EQUAL_STRING("boardsesh-esp32-123456", hostname.c_str());
+}
+
+void test_buildMdnsHostName_keeps_dns_label_under_sixty_three_chars(void) {
+    String hostname =
+        WiFiUtils::buildMdnsHostName("Very Long Boardsesh Controller Name That Exceeds The DNS Label Limit",
+                                     "AA:BB:CC:12:34:56");
+
+    TEST_ASSERT_TRUE(hostname.length() <= 63);
+    TEST_ASSERT_TRUE(hostname.endsWith("-123456"));
+}
+
+// =============================================================================
 // Connect Tests
 // =============================================================================
 
@@ -398,6 +429,12 @@ int main(int argc, char** argv) {
     // Begin tests
     RUN_TEST(test_begin_sets_sta_mode);
     RUN_TEST(test_begin_enables_auto_reconnect);
+
+    // mDNS hostname tests
+    RUN_TEST(test_buildMdnsHostName_uses_device_name_and_mac_suffix);
+    RUN_TEST(test_buildMdnsHostName_collapses_invalid_characters);
+    RUN_TEST(test_buildMdnsHostName_falls_back_for_empty_name);
+    RUN_TEST(test_buildMdnsHostName_keeps_dns_label_under_sixty_three_chars);
 
     // Connect tests
     RUN_TEST(test_connect_starts_connection);
