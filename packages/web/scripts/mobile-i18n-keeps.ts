@@ -88,6 +88,8 @@
 // i18n-keep session.mobile.queue.sessionCreateError
 // i18n-keep session.mobile.queue.syncError
 // i18n-keep session.mobile.toast.sessionEnded
+// i18n-keep session.mobile.logbook.pendingSync_one
+// i18n-keep session.mobile.logbook.pendingSync_other
 // i18n-keep settings.ble.scanning
 // i18n-keep settings.ble.selectBoard
 // i18n-keep settings.ble.devicesFound_one

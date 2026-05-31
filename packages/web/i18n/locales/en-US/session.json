@@ -241,7 +241,9 @@
       "noEntries": "No ascents yet",
       "sendsAndAttempts": "{{sends}} sends, {{attempts}} attempts",
       "sendsOnly": "{{sends}} sends",
-      "attemptsOnly": "{{attempts}} attempts"
+      "attemptsOnly": "{{attempts}} attempts",
+      "pendingSync_one": "{{count}} waiting to sync",
+      "pendingSync_other": "{{count}} waiting to sync"
     },
     "similarClimbs": {
       "title": "Similar Climbs",

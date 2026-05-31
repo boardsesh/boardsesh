@@ -40,7 +40,9 @@ function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
 
 function invalidateForTable(queryClient: QueryClient, tableName: string): void {
   const keyMap: Record<string, string[][]> = {
-    boardsesh_ticks: [['ticks'], ['logbook']],
+    // ['climb'] + ['localTicks'] so the climb detail's server counts refetch and
+    // the "waiting to sync" badge clears once a tick actually reaches the server.
+    boardsesh_ticks: [['ticks'], ['logbook'], ['climb'], ['localTicks']],
     user_favorites: [['favorites'], ['searchClimbs']],
     playlists: [['playlists']],
     playlist_climbs: [['playlists']],
@@ -48,6 +50,10 @@ function invalidateForTable(queryClient: QueryClient, tableName: string): void {
     setter_follows: [['setterFollows']],
     playlist_follows: [['playlistFollows']],
     user_playlist_pins: [['playlists']],
+    // Board tables aren't mutation-driven today, but if a board-table write ever
+    // drains, point it at the keys real readers use (mirrors table-config.ts).
+    board_climbs: [['searchClimbs'], ['searchClimbsCount'], ['climb']],
+    board_climb_stats: [['searchClimbs'], ['searchClimbsCount'], ['climb']],
   };
   for (const key of keyMap[tableName] ?? []) {
     queryClient.invalidateQueries({ queryKey: key });

@@ -241,7 +241,9 @@
       "noEntries": "Sin ascensiones todavía",
       "sendsAndAttempts": "{{sends}} envios, {{attempts}} intentos",
       "sendsOnly": "{{sends}} envios",
-      "attemptsOnly": "{{attempts}} intentos"
+      "attemptsOnly": "{{attempts}} intentos",
+      "pendingSync_one": "{{count}} pendiente de sincronizar",
+      "pendingSync_other": "{{count}} pendientes de sincronizar"
     },
     "similarClimbs": {
       "title": "Escaladas similares",

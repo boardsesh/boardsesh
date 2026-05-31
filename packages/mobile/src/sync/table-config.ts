@@ -60,14 +60,17 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     queryName: 'syncClimbs',
     operationKey: 'SYNC_CLIMBS',
     isPerBoard: true,
-    invalidateKeys: [['climb-search'], ['climb']],
+    // Match the keys real readers use: the climb list reads ['searchClimbs', input]
+    // + ['searchClimbsCount', input], the detail reads ['climb', variables]. The
+    // old ['climb-search'] key had no reader, so a board pull never refreshed the UI.
+    invalidateKeys: [['searchClimbs'], ['searchClimbsCount'], ['climb']],
     primaryKeyColumns: ['uuid'],
   },
   board_climb_stats: {
     queryName: 'syncClimbStats',
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
-    invalidateKeys: [['climb-search'], ['climb']],
+    invalidateKeys: [['searchClimbs'], ['searchClimbsCount'], ['climb']],
     primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],
   },
 };

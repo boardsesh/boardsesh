@@ -12,6 +12,8 @@ import { resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredBoardConfig } from '../lib/board-store';
+import { getDatabaseHandle, clearUserData } from '../db';
+import { stopTokenManagement } from '../notifications';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -80,6 +82,34 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const signOut = useCallback(async () => {
     await authSignOut();
     await Promise.all([clearStoredSessionId(), clearStoredBoardConfig()]);
+
+    // Account lifecycle (I11): tear down the APNs token-refresh listener so it
+    // can't re-register against the now-stale session, and wipe this user's local
+    // data so the next account on the device starts clean. Both are best-effort —
+    // a failure here must not block sign-out (the user still needs to get out).
+    // No session-scoped unregister exists at this layer, so pass a no-op; the
+    // point is cancelling the listener, not a server-side token delete.
+    try {
+      await stopTokenManagement(async () => {});
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[Auth] stopTokenManagement during sign-out failed:', error);
+      }
+    }
+
+    try {
+      // Discards any not-yet-synced pending mutations along with local user data —
+      // documented account-lifecycle behaviour, not a silent data loss.
+      const db = getDatabaseHandle();
+      if (db) {
+        await clearUserData(db);
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[Auth] clearUserData during sign-out failed:', error);
+      }
+    }
+
     resetHttpClient();
     disposeWsClient();
     setIsAuthenticated(false);
