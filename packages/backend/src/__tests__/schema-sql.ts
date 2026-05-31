@@ -251,6 +251,7 @@ export const schemaSQL = `
     "kilter_synced_at" timestamp,
     "kilter_sync_error" text
   );
+  CREATE INDEX IF NOT EXISTS "boardsesh_ticks_sync_cursor_idx" ON "boardsesh_ticks" ("user_id", "updated_at", "id");
 
   DROP TABLE IF EXISTS "board_placements" CASCADE;
   CREATE TABLE IF NOT EXISTS "board_placements" (
@@ -318,6 +319,7 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "board_name", "climb_uuid", "angle");
   CREATE INDEX IF NOT EXISTS "user_favorites_user_idx" ON "user_favorites" ("user_id");
+  CREATE INDEX IF NOT EXISTS "user_favorites_sync_cursor_idx" ON "user_favorites" ("user_id", "updated_at", "id");
 
   DROP TABLE IF EXISTS "user_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_follows" (
@@ -328,6 +330,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_follow" ON "user_follows" ("follower_id", "following_id");
+  CREATE INDEX IF NOT EXISTS "user_follows_sync_cursor_idx" ON "user_follows" ("follower_id", "updated_at", "id");
 
   DROP TABLE IF EXISTS "setter_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "setter_follows" (
@@ -338,6 +341,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_setter_follow" ON "setter_follows" ("follower_id", "setter_username");
+  CREATE INDEX IF NOT EXISTS "setter_follows_sync_cursor_idx" ON "setter_follows" ("follower_id", "updated_at", "id");
 
   DROP TABLE IF EXISTS "playlist_follows" CASCADE;
   DROP TABLE IF EXISTS "playlist_climbs" CASCADE;
@@ -363,6 +367,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "last_accessed_at" timestamp
   );
+  CREATE INDEX IF NOT EXISTS "playlists_sync_cursor_idx" ON "playlists" ("updated_at", "id");
 
   CREATE TABLE IF NOT EXISTS "playlist_ownership" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -383,6 +388,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_playlist_climb" ON "playlist_climbs" ("playlist_id", "climb_uuid");
+  CREATE INDEX IF NOT EXISTS "playlist_climbs_sync_cursor_idx" ON "playlist_climbs" ("updated_at", "id");
 
   CREATE TABLE IF NOT EXISTS "playlist_follows" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -392,6 +398,7 @@ export const schemaSQL = `
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_playlist_follow" ON "playlist_follows" ("follower_id", "playlist_uuid");
+  CREATE INDEX IF NOT EXISTS "playlist_follows_sync_cursor_idx" ON "playlist_follows" ("follower_id", "updated_at", "id");
 
   DROP TABLE IF EXISTS "sync_deletions" CASCADE;
   CREATE TABLE IF NOT EXISTS "sync_deletions" (

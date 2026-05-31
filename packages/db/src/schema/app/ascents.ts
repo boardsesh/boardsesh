@@ -132,6 +132,11 @@ export const boardseshTicks = pgTable(
       table.angle,
       table.climbUuid,
     ),
+    // Composite-cursor index for syncTicks (offline sync pull). The resolver
+    // filters `user_id = $userId` then walks (updated_at, id) row-value pairs, so
+    // a leading user_id keeps each user's pull index-only — no per-page filter +
+    // in-memory sort. Seq component is the bigserial id.
+    syncCursorIdx: index('boardsesh_ticks_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
   }),
 );
 

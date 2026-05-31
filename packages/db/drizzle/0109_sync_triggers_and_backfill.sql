@@ -52,9 +52,12 @@ CREATE TRIGGER trg_board_climb_stats_set_updated_at BEFORE UPDATE ON board_climb
 --> statement-breakpoint
 
 -- ============================================================================
--- 2. Backfill updated_at for existing rows
---    (created_at for favorites/follows/pins; added_at for playlist_climbs;
---    NOW() for board tables — board_climbs.created_at is an Aurora text column.)
+-- 2. Backfill updated_at for existing rows (small user-data tables only).
+--    created_at for favorites/follows/pins; added_at for playlist_climbs.
+--    The board tables' updated_at is backfilled inside 0108's BATCHED loop —
+--    deliberately NOT re-done here, so this migration never issues an unbatched
+--    full-table UPDATE that would rewrite the 200k–1M-row board catalog under a
+--    long lock (the exact prod-deploy hazard 0108 was reworked to avoid).
 -- ============================================================================
 
 UPDATE user_favorites     SET updated_at = created_at;
@@ -68,10 +71,6 @@ UPDATE playlist_follows   SET updated_at = created_at;
 UPDATE user_playlist_pins SET updated_at = created_at;
 --> statement-breakpoint
 UPDATE playlist_climbs    SET updated_at = added_at;
---> statement-breakpoint
-UPDATE board_climbs       SET updated_at = NOW();
---> statement-breakpoint
-UPDATE board_climb_stats  SET updated_at = NOW();
 --> statement-breakpoint
 
 -- ============================================================================

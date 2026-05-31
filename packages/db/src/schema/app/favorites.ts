@@ -24,5 +24,9 @@ export const userFavorites = pgTable(
     userFavoritesIdx: index('user_favorites_user_idx').on(table.userId),
     // Index for checking if a climb is favorited
     climbFavoriteIdx: index('user_favorites_climb_idx').on(table.boardName, table.climbUuid, table.angle),
+    // Composite-cursor index for syncFavorites (offline sync pull). Resolver
+    // filters `user_id = $userId`, orders (updated_at, id). Leading user_id keeps
+    // the pull index-only.
+    syncCursorIdx: index('user_favorites_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
   }),
 );
