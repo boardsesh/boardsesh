@@ -59,16 +59,22 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName; c
     setClimbUuids(uuids);
   }, []);
 
-  // Wrapper to maintain backward-compatible API
-  // Refs for stable callback identity — mutation objects change reference every render
+  // Wrapper to maintain backward-compatible API.
+  // Refs for stable callback identity — mutation objects change reference every
+  // render, and the active session id should be read at call time. Synced in an
+  // effect (not the render body) so concurrent/Strict-Mode double renders never
+  // write through a half-rendered value; the refs are only read inside the
+  // async useCallback handlers below, which run after commit.
   const saveTickMutateRef = useRef(saveTickMutation.mutateAsync);
-  saveTickMutateRef.current = saveTickMutation.mutateAsync;
   const saveClimbMutateRef = useRef(saveClimbMutation.mutateAsync);
-  saveClimbMutateRef.current = saveClimbMutation.mutateAsync;
   const updateClimbMutateRef = useRef(updateClimbMutation.mutateAsync);
-  updateClimbMutateRef.current = updateClimbMutation.mutateAsync;
   const activeSessionIdRef = useRef(activeSession?.sessionId);
-  activeSessionIdRef.current = activeSession?.sessionId;
+  useEffect(() => {
+    saveTickMutateRef.current = saveTickMutation.mutateAsync;
+    saveClimbMutateRef.current = saveClimbMutation.mutateAsync;
+    updateClimbMutateRef.current = updateClimbMutation.mutateAsync;
+    activeSessionIdRef.current = activeSession?.sessionId;
+  });
 
   const saveTick = useCallback(async (options: SaveTickOptions): Promise<void> => {
     const sessionId = options.sessionId ?? activeSessionIdRef.current;

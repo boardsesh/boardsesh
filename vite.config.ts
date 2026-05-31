@@ -51,6 +51,7 @@ export default defineConfig({
       './packages/shared/graphql/vite.config.ts',
       './packages/shared/graphql-client/vite.config.ts',
       './packages/shared-schema/vite.config.ts',
+      './packages/shared/board-react/vite.config.ts',
       './packages/mobile/vite.config.ts',
       './scripts/vite.config.ts',
     ],
@@ -222,6 +223,10 @@ export default defineConfig({
       'typecheck:graphql-client': {
         command: 'bun run --filter=@boardsesh/graphql-client typecheck',
       },
+      'typecheck:board-react': {
+        command: 'bun run --filter=@boardsesh/board-react typecheck',
+        dependsOn: ['build:shared'],
+      },
       'typecheck:mobile': {
         command: 'bun run --filter=@boardsesh/mobile typecheck',
         dependsOn: ['build:shared', 'build:constants'],
@@ -244,6 +249,7 @@ export default defineConfig({
           'typecheck:climb-filters',
           'typecheck:graphql',
           'typecheck:graphql-client',
+          'typecheck:board-react',
           'typecheck:mobile',
         ],
       },

@@ -13,6 +13,7 @@
     "@boardsesh/ble-protocol": "*",
     "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
+    "@boardsesh/board-react": "*",
     "@boardsesh/climb-actions": "*",
     "@boardsesh/climb-filters": "*",
     "@boardsesh/graphql": "*",

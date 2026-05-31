@@ -157,6 +157,7 @@
         "@boardsesh/ble-protocol": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-react": "*",
         "@boardsesh/climb-actions": "*",
         "@boardsesh/climb-filters": "*",
         "@boardsesh/graphql": "*",
@@ -275,6 +276,24 @@
         "typescript": "~6.0.3",
       },
     },
+    "packages/shared/board-react": {
+      "name": "@boardsesh/board-react",
+      "version": "1.0.0",
+      "dependencies": {
+        "@boardsesh/graphql": "*",
+        "@boardsesh/graphql-client": "*",
+        "@boardsesh/shared-schema": "*",
+        "@tanstack/react-query": "^5.0.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19",
+        "react": "^19.2.4",
+        "typescript": "~6.0.3",
+      },
+      "peerDependencies": {
+        "react": "^19.2.0",
+      },
+    },
     "packages/shared/climb-actions": {
       "name": "@boardsesh/climb-actions",
       "version": "1.0.0",
@@ -387,6 +406,7 @@
         "@boardsesh/ble-protocol": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-react": "*",
         "@boardsesh/board-renderer-wasm": "*",
         "@boardsesh/climb-actions": "*",
         "@boardsesh/climb-filters": "*",
@@ -782,6 +802,8 @@
     "@boardsesh/board-config": ["@boardsesh/board-config@workspace:packages/shared/board-config"],
 
     "@boardsesh/board-constants": ["@boardsesh/board-constants@workspace:packages/board-constants"],
+
+    "@boardsesh/board-react": ["@boardsesh/board-react@workspace:packages/shared/board-react"],
 
     "@boardsesh/board-renderer-wasm": ["@boardsesh/board-renderer-wasm@workspace:packages/board-renderer/wasm"],
 
@@ -4200,6 +4222,8 @@
     "@boardsesh/board-config/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@boardsesh/board-constants/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "@boardsesh/board-react/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "@boardsesh/climb-filters/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 

@@ -31,6 +31,7 @@
     "@boardsesh/ble-protocol": "*",
     "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
+    "@boardsesh/board-react": "*",
     "@boardsesh/board-renderer-wasm": "*",
     "@boardsesh/climb-actions": "*",
     "@boardsesh/climb-filters": "*",
