@@ -13,6 +13,9 @@ vi.mock('react-native-mmkv', () => {
     remove(key: string) {
       mockStorage.delete(key);
     },
+    clearAll() {
+      mockStorage.clear();
+    },
   });
   return { createMMKV: vi.fn(() => createMockInstance()) };
 });
@@ -23,6 +26,9 @@ import { DEFAULT_SETTINGS } from '../defaults';
 describe('settings', () => {
   beforeEach(() => {
     mockStorage.clear();
+    // getAllSettings() memoises its snapshot at module level; tests below poke
+    // mockStorage directly (bypassing setSetting/emitChange), so bust the cache.
+    resetAllSettings();
   });
 
   describe('getSetting', () => {
@@ -117,6 +123,27 @@ describe('settings', () => {
       expect(settings.theme).toBe(DEFAULT_SETTINGS.theme);
       expect(settings.autoConnectBle).toBe(false);
     });
+
+    it('returns the same reference on consecutive calls (cached snapshot)', () => {
+      const first = getAllSettings();
+      const second = getAllSettings();
+      expect(second).toBe(first);
+    });
+
+    it('returns a new reference after a setSetting (cache busted)', () => {
+      const before = getAllSettings();
+      setSetting('theme', 'dark');
+      const after = getAllSettings();
+      expect(after).not.toBe(before);
+      expect(after.theme).toBe('dark');
+    });
+
+    it('returns a new reference after resetAllSettings (cache busted)', () => {
+      const before = getAllSettings();
+      resetAllSettings();
+      const after = getAllSettings();
+      expect(after).not.toBe(before);
+    });
   });
 
   describe('resetAllSettings', () => {
@@ -148,6 +175,17 @@ describe('settings', () => {
       resetAllSettings();
 
       expect(getAllSettings()).toEqual(DEFAULT_SETTINGS);
+    });
+
+    it('wipes keys that are not part of DEFAULT_SETTINGS', () => {
+      setSetting('theme', 'dark');
+      // A stale key left over from a previous app version, not in DEFAULT_SETTINGS.
+      mockStorage.set('legacyOrphanKey', '"stale"');
+
+      resetAllSettings();
+
+      expect(mockStorage.has('legacyOrphanKey')).toBe(false);
+      expect(mockStorage.size).toBe(0);
     });
   });
 

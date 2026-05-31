@@ -81,6 +81,47 @@ describe('token-manager', () => {
     expect(register).toHaveBeenCalledTimes(5);
   });
 
+  it('applies jitter to retry delays (no thundering herd)', async () => {
+    mockGetDevicePushToken.mockResolvedValue('abc123');
+    // First call fails so we schedule the second attempt (base delay 2000ms),
+    // then succeeds.
+    const register = vi
+      .fn<TokenRegistrationFn>()
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockResolvedValueOnce(undefined);
+
+    // Math.random() === 1 maps to the top of the ±20% band: 2000 * 1.2 = 2400.
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(1);
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    const promise = startTokenManagement('session-1', register);
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const scheduledDelays = setTimeoutSpy.mock.calls.map((call) => call[1]);
+    // The 2000ms retry must have been jittered above its base, never left bare.
+    expect(scheduledDelays).toContain(2400);
+    expect(scheduledDelays).not.toContain(2000);
+
+    randomSpy.mockRestore();
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('keeps the first attempt immediate (zero base stays zero under jitter)', async () => {
+    mockGetDevicePushToken.mockResolvedValue('abc123');
+    const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);
+
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    await startTokenManagement('session-1', register);
+
+    // First attempt has base delay 0 — it must not schedule any timer.
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    expect(register).toHaveBeenCalledTimes(1);
+
+    setTimeoutSpy.mockRestore();
+  });
+
   it('re-registers on token refresh', async () => {
     mockGetDevicePushToken.mockResolvedValue('abc123');
     const register = vi.fn<TokenRegistrationFn>().mockResolvedValue(undefined);

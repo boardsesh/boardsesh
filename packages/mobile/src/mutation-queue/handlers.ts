@@ -10,17 +10,17 @@ const MUTATIONS: Record<string, string> = {
   RemoveFavorite: `mutation RemoveFavorite($input: RemoveFavoriteInput!) { removeFavorite(input: $input) }`,
   CreatePlaylist: `mutation CreatePlaylist($input: CreatePlaylistInput!) { createPlaylist(input: $input) { uuid } }`,
   UpdatePlaylist: `mutation UpdatePlaylist($input: UpdatePlaylistInput!) { updatePlaylist(input: $input) { uuid } }`,
-  DeletePlaylist: `mutation DeletePlaylist($playlistUuid: ID!) { deletePlaylist(playlistUuid: $playlistUuid) }`,
-  AddClimbToPlaylist: `mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) { addClimbToPlaylist(input: $input) }`,
+  DeletePlaylist: `mutation DeletePlaylist($playlistId: ID!) { deletePlaylist(playlistId: $playlistId) }`,
+  AddClimbToPlaylist: `mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) { addClimbToPlaylist(input: $input) { id } }`,
   RemoveClimbFromPlaylist: `mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) { removeClimbFromPlaylist(input: $input) }`,
   FollowUser: `mutation FollowUser($input: FollowInput!) { followUser(input: $input) }`,
   UnfollowUser: `mutation UnfollowUser($input: FollowInput!) { unfollowUser(input: $input) }`,
   FollowSetter: `mutation FollowSetter($input: FollowSetterInput!) { followSetter(input: $input) }`,
-  UnfollowSetter: `mutation UnfollowSetter($input: UnfollowSetterInput!) { unfollowSetter(input: $input) }`,
+  UnfollowSetter: `mutation UnfollowSetter($input: FollowSetterInput!) { unfollowSetter(input: $input) }`,
   FollowPlaylist: `mutation FollowPlaylist($input: FollowPlaylistInput!) { followPlaylist(input: $input) }`,
-  UnfollowPlaylist: `mutation UnfollowPlaylist($input: UnfollowPlaylistInput!) { unfollowPlaylist(input: $input) }`,
+  UnfollowPlaylist: `mutation UnfollowPlaylist($input: FollowPlaylistInput!) { unfollowPlaylist(input: $input) }`,
   PinPlaylist: `mutation PinPlaylist($input: PinPlaylistInput!) { pinPlaylist(input: $input) }`,
-  UnpinPlaylist: `mutation UnpinPlaylist($input: UnpinPlaylistInput!) { unpinPlaylist(input: $input) }`,
+  UnpinPlaylist: `mutation UnpinPlaylist($input: PinPlaylistInput!) { unpinPlaylist(input: $input) }`,
 };
 
 type MutationDispatch = {
@@ -84,7 +84,7 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
         case 'delete':
           return {
             mutationName: 'DeletePlaylist',
-            variables: { playlistUuid: payload.uuid },
+            variables: { playlistId: payload.uuid },
           };
         default:
           throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);

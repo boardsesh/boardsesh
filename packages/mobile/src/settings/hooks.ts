@@ -7,7 +7,13 @@ const storage = createMMKV({ id: 'boardsesh-settings' });
 
 const listeners = new Set<() => void>();
 
+// useSyncExternalStore bails out of re-rendering only when getSnapshot returns
+// the same reference as last time. getAllSettings() builds a fresh object, so we
+// memoise it here and rebuild lazily; emitChange() busts the cache on every write.
+let cachedSnapshot: AppSettings | null = null;
+
 function emitChange() {
+  cachedSnapshot = null;
   for (const listener of listeners) {
     listener();
   }
@@ -43,17 +49,20 @@ export function setSetting<K extends SettingsKey>(key: K, value: AppSettings[K])
 }
 
 export function getAllSettings(): AppSettings {
+  if (cachedSnapshot !== null) return cachedSnapshot;
+
   const settings = { ...DEFAULT_SETTINGS };
   for (const key of Object.keys(DEFAULT_SETTINGS) as SettingsKey[]) {
     settings[key] = readSetting(key) as never;
   }
+  cachedSnapshot = settings;
   return settings;
 }
 
 export function resetAllSettings(): void {
-  for (const key of Object.keys(DEFAULT_SETTINGS)) {
-    storage.remove(key);
-  }
+  // The MMKV instance id is dedicated to settings, so wiping it is safe and also
+  // clears any keys that are no longer in DEFAULT_SETTINGS.
+  storage.clearAll();
   emitChange();
 }
 

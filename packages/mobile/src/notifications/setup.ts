@@ -9,7 +9,8 @@ const canRegisterForPush = Constants.executionEnvironment === 'bare' || Constant
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // shouldShowAlert is deprecated in expo-notifications 56 — shouldShowBanner
+    // and shouldShowList replace it.
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,

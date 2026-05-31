@@ -1,3 +1,21 @@
+type GraphqlErrorEntry = {
+  extensions?: { code?: unknown; status?: unknown };
+};
+
+function statusFromGraphqlErrors(errors: unknown): number | null {
+  if (!Array.isArray(errors)) return null;
+  for (const entry of errors as GraphqlErrorEntry[]) {
+    const extensions = entry?.extensions;
+    if (extensions && typeof extensions.code === 'number') {
+      return extensions.code;
+    }
+    if (extensions && typeof extensions.status === 'number') {
+      return extensions.status;
+    }
+  }
+  return null;
+}
+
 export function getErrorStatus(error: unknown): number | null {
   if (error instanceof Response) {
     return error.status;
@@ -10,21 +28,23 @@ export function getErrorStatus(error: unknown): number | null {
 
     if ('response' in error) {
       const response = (error as Record<string, unknown>).response;
-      if (response && typeof response === 'object' && 'status' in response) {
-        return (response as Record<string, unknown>).status as number;
+      if (response && typeof response === 'object') {
+        // HTTP status surfaced under .response.status
+        if ('status' in response && typeof (response as Record<string, unknown>).status === 'number') {
+          return (response as Record<string, unknown>).status as number;
+        }
+        // graphql-request's ClientError nests GraphQL errors under .response.errors
+        const nestedStatus = statusFromGraphqlErrors((response as Record<string, unknown>).errors);
+        if (nestedStatus !== null) {
+          return nestedStatus;
+        }
       }
     }
 
-    if ('errors' in error && Array.isArray((error as Record<string, unknown>).errors)) {
-      const errors = (error as Record<string, unknown>).errors as Array<Record<string, unknown>>;
-      for (const graphqlError of errors) {
-        const extensions = graphqlError.extensions as Record<string, unknown> | undefined;
-        if (extensions && typeof extensions.code === 'number') {
-          return extensions.code as number;
-        }
-        if (extensions && typeof extensions.status === 'number') {
-          return extensions.status as number;
-        }
+    if ('errors' in error) {
+      const topLevelStatus = statusFromGraphqlErrors((error as Record<string, unknown>).errors);
+      if (topLevelStatus !== null) {
+        return topLevelStatus;
       }
     }
   }
@@ -33,6 +53,8 @@ export function getErrorStatus(error: unknown): number | null {
 }
 
 export function isRetryable(error: unknown): boolean {
+  // Network failures (TypeError with a network/fetch message) always retry —
+  // the request never reached the server, so replaying it is safe.
   if (error instanceof TypeError) {
     const message = error.message.toLowerCase();
     if (message.includes('network') || message.includes('fetch')) {
@@ -41,8 +63,12 @@ export function isRetryable(error: unknown): boolean {
   }
 
   const status = getErrorStatus(error);
+
+  // No resolvable HTTP/GraphQL status and not a recognized network error: most
+  // likely a programmer / validation / parse bug. Dead-letter it (I5) so it's
+  // surfaced to the user instead of silently burning the retry budget.
   if (status === null) {
-    return true;
+    return false;
   }
 
   if (status === 401) return true;

@@ -6,13 +6,24 @@ export type TokenUnregistrationFn = (sessionId: string, token: string) => Promis
 
 const RETRY_DELAYS = [0, 2000, 5000, 15000, 30000];
 
+// Spread out retries so a fleet of devices refreshing at once doesn't stampede
+// the backend in lockstep. Each delay is randomised within ±20% of its base.
+const JITTER_RATIO = 0.2;
+
+function withJitter(baseDelay: number): number {
+  if (baseDelay <= 0) return baseDelay;
+  const spread = baseDelay * JITTER_RATIO;
+  const offset = (Math.random() * 2 - 1) * spread;
+  return Math.max(0, Math.round(baseDelay + offset));
+}
+
 let currentToken: string | null = null;
 let currentSessionId: string | null = null;
 let tokenRefreshSubscription: Subscription | null = null;
 
 async function registerWithRetry(register: TokenRegistrationFn, sessionId: string, token: string): Promise<boolean> {
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
-    const delay = RETRY_DELAYS[attempt];
+    const delay = withJitter(RETRY_DELAYS[attempt]);
     if (delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

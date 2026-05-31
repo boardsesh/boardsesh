@@ -29,7 +29,8 @@ export function setupNotificationHandlers(router: Router): () => void {
   const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
     const route = resolveNotificationRoute(response.notification);
     if (route) {
-      router.push(route.path as never);
+      // Object form preserves deep-link params; router.push(string) would drop them.
+      router.push({ pathname: route.path, params: route.params });
     }
   });
 

@@ -93,7 +93,9 @@ describe('drainMutationQueue', () => {
 
     const queryClient = createMockQueryClient();
 
-    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch);
+    // maxCycleAttempts:0 → give up the cycle on the first retryable hit (no
+    // in-cycle backoff retry), exercising the single-pass stop behavior.
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { maxCycleAttempts: 0 });
 
     expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
     expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 1);
@@ -131,7 +133,7 @@ describe('drainMutationQueue', () => {
 
     const queryClient = createMockQueryClient();
 
-    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch);
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { maxCycleAttempts: 0 });
 
     expect(mockIncrementRetry).toHaveBeenCalledWith(mockDb, 5, 'Timeout');
     expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 5, 'Timeout');
@@ -228,5 +230,94 @@ describe('drainMutationQueue', () => {
     await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch);
 
     expect(mockProcessMutation).toHaveBeenCalledTimes(2);
+  });
+
+  // ── I7: in-cycle exponential backoff ──────────────────────────────────
+
+  it('recovers from a transient retryable failure within the same cycle (backoff)', async () => {
+    const mutation = makeMutation({ id: 1 });
+
+    // First peek returns the mutation; it fails (retryable). After the backoff
+    // sleep, the queue is re-peeked, the same mutation now succeeds, then empty.
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+    mockProcessMutation.mockRejectedValueOnce(new Error('transient 503')).mockResolvedValueOnce(undefined);
+    mockIsRetryable.mockReturnValue(true);
+
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { sleep, baseDelayMs: 10, maxDelayMs: 100 });
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(mockIncrementRetry).toHaveBeenCalledWith(mockDb, 1, 'transient 503');
+    expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 1);
+    expect(mockProcessMutation).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not sleep when the batch drains cleanly', async () => {
+    const mutation = makeMutation({ id: 1 });
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+    mockProcessMutation.mockResolvedValueOnce(undefined);
+
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { sleep });
+
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('gives up after maxCycleAttempts retryable failures (bounded, no busy-loop)', async () => {
+    const mutation = makeMutation({ id: 1, max_retries: 100 });
+
+    // Always returns the same mutation; processMutation always fails (retryable).
+    mockPeekPending.mockResolvedValue([mutation]);
+    mockProcessMutation.mockRejectedValue(new Error('still down'));
+    mockIsRetryable.mockReturnValue(true);
+
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, {
+      sleep,
+      maxCycleAttempts: 3,
+      baseDelayMs: 1,
+      maxDelayMs: 10,
+    });
+
+    // 3 backoff sleeps, then it gives up (the 4th retryable hit breaks the cycle).
+    expect(sleep).toHaveBeenCalledTimes(3);
+    // processMutation ran once per attempt: initial + 3 retries = 4.
+    expect(mockProcessMutation).toHaveBeenCalledTimes(4);
+  });
+
+  it('passes growing delays to sleep on successive retryable failures', async () => {
+    const mutation = makeMutation({ id: 1, max_retries: 100 });
+
+    mockPeekPending.mockResolvedValue([mutation]);
+    mockProcessMutation.mockRejectedValue(new Error('down'));
+    mockIsRetryable.mockReturnValue(true);
+
+    // Force jitter to its max so the delay is deterministic per attempt.
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.999999);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, {
+      sleep,
+      maxCycleAttempts: 4,
+      baseDelayMs: 100,
+      maxDelayMs: 100_000,
+    });
+
+    const delays = sleep.mock.calls.map((call) => call[0] as number);
+    // Full-jitter cap doubles each attempt: ~100, ~200, ~400, ~800 (×0.999999, floored).
+    expect(delays[0]).toBeLessThan(delays[1]);
+    expect(delays[1]).toBeLessThan(delays[2]);
+    expect(delays[2]).toBeLessThan(delays[3]);
+    expect(delays[0]).toBeGreaterThanOrEqual(99);
+    expect(delays[0]).toBeLessThanOrEqual(100);
+
+    randomSpy.mockRestore();
   });
 });

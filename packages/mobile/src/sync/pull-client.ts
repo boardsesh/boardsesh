@@ -118,6 +118,10 @@ async function syncTable(
     const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
     const result = response[config.queryName];
 
+    // An empty page would not advance the cursor; if the backend ever returns
+    // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
+    if (result.documents.length === 0) break;
+
     await upsertDocuments(db, tableName, result.documents);
     await setCheckpoint(db, checkpointKey, result.cursor);
 
@@ -155,6 +159,10 @@ async function processDeletions(
       limit: PAGE_LIMIT,
     });
     const result = response.syncDeletions;
+
+    // Empty page can't advance the cursor; break to avoid an infinite loop if
+    // the backend returns deletions:[] with hasMore:true (I2).
+    if (result.deletions.length === 0) break;
 
     for (const deletion of result.deletions) {
       const config = TABLE_CONFIGS[deletion.tableName];

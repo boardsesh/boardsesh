@@ -32,6 +32,34 @@ function ToggleRow({ title, settingsKey }: { title: string; settingsKey: ToggleS
   );
 }
 
+type ThemeOption = 'system' | 'light' | 'dark';
+
+function ThemePicker() {
+  const { t } = useTranslation('common');
+  const { brandColors } = useTheme();
+  const [theme, setTheme] = useSetting('theme');
+
+  const options: { value: ThemeOption; label: string }[] = [
+    { value: 'system', label: t('mobile.settings.themeSystem') },
+    { value: 'light', label: t('mobile.settings.themeLight') },
+    { value: 'dark', label: t('mobile.settings.themeDark') },
+  ];
+
+  return (
+    <>
+      {options.map((option, index) => (
+        <ListRow
+          key={option.value}
+          title={option.label}
+          onPress={() => setTheme(option.value)}
+          showSeparator={index < options.length - 1}
+          trailing={theme === option.value ? <Icon name="check.small" size={18} color={brandColors.tint} /> : undefined}
+        />
+      ))}
+    </>
+  );
+}
+
 export default function MoreScreen() {
   const { systemColors, spacing, borderRadius } = useTheme();
   const { signOut } = useAuth();
@@ -77,6 +105,13 @@ export default function MoreScreen() {
         <SectionHeader title={t('mobile.settings.appearanceSection')} />
         <View style={cardStyle}>
           <ToggleRow title={t('mobile.settings.hapticFeedback')} settingsKey="hapticFeedbackEnabled" />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.settings.themeSection')} />
+        <View style={cardStyle}>
+          <ThemePicker />
         </View>
       </View>
 

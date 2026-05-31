@@ -9,6 +9,27 @@
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet"
     },
+    "settings": {
+      "sessionSection": "Session",
+      "notificationsSection": "Notifications",
+      "appearanceSection": "Apparence",
+      "themeSection": "Thème",
+      "accountSection": "Compte",
+      "aboutSection": "À propos",
+      "autoConnectBle": "Connexion automatique au board",
+      "keepScreenAwake": "Garder l'écran allumé",
+      "hapticFeedback": "Retour haptique",
+      "sessionInvites": "Invitations aux sessions",
+      "climbComments": "Commentaires sur les blocs",
+      "themeSystem": "Système",
+      "themeLight": "Clair",
+      "themeDark": "Sombre",
+      "version": "Version",
+      "signOut": "Se déconnecter",
+      "cancel": "Annuler",
+      "signOutConfirmTitle": "Se déconnecter ?",
+      "signOutConfirmMessage": "Tu devras te reconnecter pour synchroniser tes sessions et tes envois."
+    },
     "nav": {
       "boards": "Boards",
       "climbs": "Blocs",

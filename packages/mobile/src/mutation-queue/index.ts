@@ -8,6 +8,6 @@ export {
   clearAll,
 } from './queue';
 export type { PendingMutation } from './queue';
-export { drainMutationQueue, isDraining, __resetDrainerStateForTests } from './drainer';
+export { drainMutationQueue, isDraining } from './drainer';
 export { ensureMutationQueueTable } from './schema';
 export { processMutation } from './handlers';

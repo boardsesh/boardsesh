@@ -9,6 +9,27 @@
       "metroServersTitle": "Metro servers",
       "metroServersSubtitle": "Switch between Tailnet bundlers"
     },
+    "settings": {
+      "sessionSection": "Session",
+      "notificationsSection": "Notifications",
+      "appearanceSection": "Appearance",
+      "themeSection": "Theme",
+      "accountSection": "Account",
+      "aboutSection": "About",
+      "autoConnectBle": "Auto-connect to board",
+      "keepScreenAwake": "Keep screen awake",
+      "hapticFeedback": "Haptic feedback",
+      "sessionInvites": "Session invites",
+      "climbComments": "Climb comments",
+      "themeSystem": "System",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "version": "Version",
+      "signOut": "Sign out",
+      "cancel": "Cancel",
+      "signOutConfirmTitle": "Sign out?",
+      "signOutConfirmMessage": "You'll need to sign in again to sync your sessions and ticks."
+    },
     "nav": {
       "boards": "Boards",
       "climbs": "Climbs",

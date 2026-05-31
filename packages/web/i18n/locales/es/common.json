@@ -207,6 +207,27 @@
       "metroServersTitle": "Servidores Metro",
       "metroServersSubtitle": "Cambia entre bundlers de Tailnet"
     },
+    "settings": {
+      "sessionSection": "Sesión",
+      "notificationsSection": "Notificaciones",
+      "appearanceSection": "Apariencia",
+      "themeSection": "Tema",
+      "accountSection": "Cuenta",
+      "aboutSection": "Acerca de",
+      "autoConnectBle": "Conectar a la tabla automáticamente",
+      "keepScreenAwake": "Mantener la pantalla encendida",
+      "hapticFeedback": "Vibración táctil",
+      "sessionInvites": "Invitaciones a sesiones",
+      "climbComments": "Comentarios en bloques",
+      "themeSystem": "Sistema",
+      "themeLight": "Claro",
+      "themeDark": "Oscuro",
+      "version": "Versión",
+      "signOut": "Cerrar sesión",
+      "cancel": "Cancelar",
+      "signOutConfirmTitle": "¿Cerrar sesión?",
+      "signOutConfirmMessage": "Tendrás que volver a iniciar sesión para sincronizar tus sesiones y encadenes."
+    },
     "nav": {
       "boards": "Tablas",
       "climbs": "Bloques",

@@ -33,7 +33,7 @@ import {
   useOfflineUnfollowUser,
 } from '../use-offline-mutations';
 import type { GraphQLFetch } from '../../mutation-queue/handlers';
-import { __resetDrainerStateForTests } from '../../mutation-queue';
+import { __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../db/__tests__/sqlite-test-db';
 

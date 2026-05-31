@@ -4,6 +4,7 @@ import { iosSystemColors, brandColors, androidFallbackColors } from '../theme/co
 import { textStyles, type TextVariant } from '../theme/typography';
 import { spacing, borderRadius, shadows, opacity } from '../theme/tokens';
 import { springs, timing } from '../theme/animations';
+import { useSetting } from '../settings';
 
 type ColorScheme = 'light' | 'dark';
 
@@ -75,7 +76,11 @@ type ThemeProviderProps = {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const deviceColorScheme = useColorScheme();
-  const colorScheme: ColorScheme = deviceColorScheme === 'dark' ? 'dark' : 'light';
+  const [themePreference] = useSetting('theme');
+
+  // 'system' follows the OS; 'light'/'dark' override it.
+  const colorScheme: ColorScheme =
+    themePreference === 'system' ? (deviceColorScheme === 'dark' ? 'dark' : 'light') : themePreference;
 
   const theme = useMemo<Theme>(() => {
     const resolvedSystemColors = resolveSystemColors(colorScheme);
