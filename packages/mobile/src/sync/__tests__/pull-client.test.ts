@@ -323,7 +323,7 @@ describe('pullSync', () => {
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
         return makeDeletionsResult(
-          [{ tableName: 'board_climb_stats', recordId: 'climb-uuid:40', deletedAt: '2024-06-01T00:00:00Z' }],
+          [{ tableName: 'board_climb_stats', recordId: 'kilter:climb-uuid:40', deletedAt: '2024-06-01T00:00:00Z' }],
           false,
         );
       }
@@ -339,8 +339,10 @@ describe('pullSync', () => {
 
     const deleteCalls = sqlCalls.filter((call) => call.sql.includes('DELETE FROM board_climb_stats'));
     expect(deleteCalls).toHaveLength(1);
-    expect(deleteCalls[0].sql).toBe('DELETE FROM board_climb_stats WHERE climb_uuid = ? AND angle = ?');
-    expect(deleteCalls[0].params).toEqual(['climb-uuid', '40']);
+    expect(deleteCalls[0].sql).toBe(
+      'DELETE FROM board_climb_stats WHERE board_type = ? AND climb_uuid = ? AND angle = ?',
+    );
+    expect(deleteCalls[0].params).toEqual(['kilter', 'climb-uuid', '40']);
   });
 
   it('skips deletion when PK part count mismatches', async () => {
@@ -349,7 +351,7 @@ describe('pullSync', () => {
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
         return makeDeletionsResult(
-          [{ tableName: 'board_climb_stats', recordId: 'a:b:c', deletedAt: '2024-06-01T00:00:00Z' }],
+          [{ tableName: 'board_climb_stats', recordId: 'climb-uuid:40', deletedAt: '2024-06-01T00:00:00Z' }],
           false,
         );
       }
@@ -366,7 +368,7 @@ describe('pullSync', () => {
     const deleteCalls = sqlCalls.filter((call) => call.sql.includes('DELETE FROM board_climb_stats'));
     expect(deleteCalls).toHaveLength(0);
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Skipping deletion: expected 2 PK parts for board_climb_stats, got 3'),
+      expect.stringContaining('Skipping deletion: expected 3 PK parts for board_climb_stats, got 2'),
     );
 
     warnSpy.mockRestore();

@@ -33,28 +33,28 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     operationKey: 'SYNC_FAVORITES',
     isPerBoard: false,
     invalidateKeys: [['favorites'], ['searchClimbs']],
-    primaryKeyColumns: ['user_id', 'climb_uuid', 'angle'],
+    primaryKeyColumns: ['board_name', 'climb_uuid', 'angle'],
   },
   user_follows: {
     queryName: 'syncUserFollows',
     operationKey: 'SYNC_USER_FOLLOWS',
     isPerBoard: false,
     invalidateKeys: [['followers'], ['following']],
-    primaryKeyColumns: ['follower_id', 'followed_id'],
+    primaryKeyColumns: ['following_id'],
   },
   setter_follows: {
     queryName: 'syncSetterFollows',
     operationKey: 'SYNC_SETTER_FOLLOWS',
     isPerBoard: false,
     invalidateKeys: [['setterFollows']],
-    primaryKeyColumns: ['user_id', 'setter_username'],
+    primaryKeyColumns: ['setter_username'],
   },
   playlist_follows: {
     queryName: 'syncPlaylistFollows',
     operationKey: 'SYNC_PLAYLIST_FOLLOWS',
     isPerBoard: false,
     invalidateKeys: [['playlistFollows']],
-    primaryKeyColumns: ['user_id', 'playlist_uuid'],
+    primaryKeyColumns: ['playlist_uuid'],
   },
   board_climbs: {
     queryName: 'syncClimbs',
@@ -68,7 +68,7 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
     invalidateKeys: [['climb-search'], ['climb']],
-    primaryKeyColumns: ['climb_uuid', 'angle'],
+    primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],
   },
 };
 

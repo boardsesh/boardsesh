@@ -1,18 +1,10 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { randomUUID } from 'expo-crypto';
 import { enqueue } from '../mutation-queue';
 import { drainMutationQueue } from '../mutation-queue';
 import type { GraphQLFetch } from '../mutation-queue/handlers';
-
-function generateUUID(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x70;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
-}
 
 export type SaveTickInput = {
   boardType: string;
@@ -38,33 +30,40 @@ export function useOfflineSaveTick(db: SQLiteDatabase, graphqlFetch: GraphQLFetc
 
   return useCallback(
     async (tickData: SaveTickInput) => {
-      const tickUuid = generateUUID();
+      // The tick uuid IS the row identity and the idempotency key, so a fresh
+      // random uuid per call is correct — each tick is a distinct record.
+      const tickUuid = randomUUID();
       const now = new Date().toISOString();
 
-      await db.runAsync(
-        `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
-         attempt_count, quality, difficulty, comment, climbed_at, is_mirror, is_benchmark,
-         created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          tickUuid,
-          tickData.boardType,
-          tickData.climbUuid,
-          tickData.angle,
-          tickData.status,
-          tickData.attemptCount,
-          tickData.quality,
-          tickData.difficulty,
-          tickData.comment,
-          now,
-          tickData.isMirror ? 1 : 0,
-          tickData.isBenchmark ? 1 : 0,
-          now,
-          now,
-        ],
-      );
+      // Local write + queue entry must commit together: a partial failure that
+      // leaves a local row without its queue entry (or vice-versa) would never
+      // reach the server / would orphan the row.
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.runAsync(
+          `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
+           attempt_count, quality, difficulty, comment, climbed_at, is_mirror, is_benchmark,
+           created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            tickUuid,
+            tickData.boardType,
+            tickData.climbUuid,
+            tickData.angle,
+            tickData.status,
+            tickData.attemptCount,
+            tickData.quality,
+            tickData.difficulty,
+            tickData.comment,
+            now,
+            tickData.isMirror ? 1 : 0,
+            tickData.isBenchmark ? 1 : 0,
+            now,
+            now,
+          ],
+        );
 
-      await enqueue(db, 'boardsesh_ticks', 'create', tickData, tickUuid);
+        await enqueue(txn, 'boardsesh_ticks', 'create', tickData, tickUuid);
+      });
 
       queryClient.invalidateQueries({ queryKey: ['ticks'] });
       queryClient.invalidateQueries({ queryKey: ['logbook'] });
@@ -82,16 +81,21 @@ export function useOfflineAddFavorite(db: SQLiteDatabase, graphqlFetch: GraphQLF
 
   return useCallback(
     async (input: FavoriteInput) => {
-      const favoriteId = generateUUID();
       const now = new Date().toISOString();
+      // Favorites are natural-keyed locally (PK omits the server id), so the
+      // idempotency key is derived from the target. A double-tap "add" dedupes to
+      // a single queue row via enqueue's INSERT OR IGNORE on idempotency_key.
+      const idempotencyKey = `add:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
 
-      await db.runAsync(
-        `INSERT OR IGNORE INTO user_favorites (id, board_name, climb_uuid, angle, user_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '', ?, ?)`,
-        [favoriteId, input.boardName, input.climbUuid, input.angle, now, now],
-      );
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.runAsync(
+          `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [input.boardName, input.climbUuid, input.angle, now, now],
+        );
 
-      await enqueue(db, 'user_favorites', 'create', input, favoriteId);
+        await enqueue(txn, 'user_favorites', 'create', input, idempotencyKey);
+      });
 
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
       queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
@@ -107,15 +111,18 @@ export function useOfflineRemoveFavorite(db: SQLiteDatabase, graphqlFetch: Graph
 
   return useCallback(
     async (input: FavoriteInput) => {
-      const idempotencyKey = generateUUID();
+      // Deterministic key so repeated taps don't pile up duplicate delete rows.
+      const idempotencyKey = `del:user_favorites:${input.boardName}:${input.climbUuid}:${input.angle}`;
 
-      await db.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
-        input.boardName,
-        input.climbUuid,
-        input.angle,
-      ]);
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
+          input.boardName,
+          input.climbUuid,
+          input.angle,
+        ]);
 
-      await enqueue(db, 'user_favorites', 'delete', input, idempotencyKey);
+        await enqueue(txn, 'user_favorites', 'delete', input, idempotencyKey);
+      });
 
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
       queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
@@ -131,16 +138,18 @@ export function useOfflineFollowUser(db: SQLiteDatabase, graphqlFetch: GraphQLFe
 
   return useCallback(
     async (followingId: string) => {
-      const followId = generateUUID();
       const now = new Date().toISOString();
+      const idempotencyKey = `add:user_follows:${followingId}`;
 
-      await db.runAsync(
-        `INSERT OR IGNORE INTO user_follows (id, follower_id, following_id, created_at, updated_at)
-         VALUES (?, '', ?, ?, ?)`,
-        [followId, followingId, now, now],
-      );
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.runAsync(
+          `INSERT OR IGNORE INTO user_follows (following_id, created_at, updated_at)
+           VALUES (?, ?, ?)`,
+          [followingId, now, now],
+        );
 
-      await enqueue(db, 'user_follows', 'create', { followingId }, followId);
+        await enqueue(txn, 'user_follows', 'create', { followingId }, idempotencyKey);
+      });
 
       queryClient.invalidateQueries({ queryKey: ['followers'] });
       queryClient.invalidateQueries({ queryKey: ['following'] });
@@ -156,11 +165,13 @@ export function useOfflineUnfollowUser(db: SQLiteDatabase, graphqlFetch: GraphQL
 
   return useCallback(
     async (followingId: string) => {
-      const idempotencyKey = generateUUID();
+      const idempotencyKey = `del:user_follows:${followingId}`;
 
-      await db.runAsync(`DELETE FROM user_follows WHERE following_id = ?`, [followingId]);
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await txn.runAsync(`DELETE FROM user_follows WHERE following_id = ?`, [followingId]);
 
-      await enqueue(db, 'user_follows', 'delete', { followingId }, idempotencyKey);
+        await enqueue(txn, 'user_follows', 'delete', { followingId }, idempotencyKey);
+      });
 
       queryClient.invalidateQueries({ queryKey: ['followers'] });
       queryClient.invalidateQueries({ queryKey: ['following'] });

@@ -167,8 +167,8 @@ async function processDeletions(
       } else {
         // Backend encodes composite PKs as exactly N colon-separated segments
         // matching primaryKeyColumns order (e.g. "kilter:uuid:40" for
-        // board_climb_stats with PK [climb_uuid, angle]). The split must
-        // produce exactly pkColumns.length parts — if not, skip the deletion
+        // board_climb_stats with PK [board_type, climb_uuid, angle]). The split
+        // must produce exactly pkColumns.length parts — if not, skip the deletion
         // rather than silently deleting the wrong row.
         const recordIdParts = deletion.recordId.split(':');
         if (recordIdParts.length !== pkColumns.length) {
