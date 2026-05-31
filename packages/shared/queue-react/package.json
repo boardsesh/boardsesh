@@ -9,6 +9,11 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./create-queue-mutations": {
+      "types": "./src/create-queue-mutations.ts",
+      "import": "./src/create-queue-mutations.ts",
+      "default": "./src/create-queue-mutations.ts"
     }
   },
   "scripts": {
