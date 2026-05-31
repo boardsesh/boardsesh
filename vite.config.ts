@@ -43,6 +43,7 @@ export default defineConfig({
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
       './packages/shared/queue-runtime/vite.config.ts',
+      './packages/shared/queue-react/vite.config.ts',
       './packages/shared/party-profile/vite.config.ts',
       './packages/shared/climb-actions/vite.config.ts',
       './packages/shared/play-view/vite.config.ts',
@@ -195,6 +196,9 @@ export default defineConfig({
       'typecheck:queue-runtime': {
         command: 'bun run --filter=@boardsesh/queue-runtime typecheck',
       },
+      'typecheck:queue-react': {
+        command: 'bun run --filter=@boardsesh/queue-react typecheck',
+      },
       'typecheck:party-profile': {
         command: 'bun run --filter=@boardsesh/party-profile typecheck',
       },
@@ -230,6 +234,7 @@ export default defineConfig({
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:queue-runtime',
+          'typecheck:queue-react',
           'typecheck:party-profile',
           'typecheck:climb-actions',
           'typecheck:board-config',

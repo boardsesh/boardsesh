@@ -24,6 +24,7 @@ const nextConfig = {
     '@boardsesh/graphql-client',
     '@boardsesh/queue',
     '@boardsesh/queue-runtime',
+    '@boardsesh/queue-react',
     '@boardsesh/party-profile',
     '@boardsesh/climb-actions',
     '@boardsesh/play-view',
