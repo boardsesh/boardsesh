@@ -150,8 +150,7 @@ describe('useMobileClimbActionsData', () => {
       expect(requestMock).not.toHaveBeenCalled();
     });
 
-    it('sends boardName + angle from the active board and returns the favorited flag', async () => {
-      // First the playlists query, then the favorite mutation.
+    it('sends climbUuid only and returns the favorited flag', async () => {
       requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
       requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
 
@@ -161,32 +160,19 @@ describe('useMobileClimbActionsData', () => {
 
       await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
       expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, {
-        input: { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        input: { climbUuid: 'climb-x' },
       });
     });
 
-    it('rejects with a helpful error when no active board is selected', async () => {
+    it('does not require an active board (favorites are board-agnostic)', async () => {
       withActiveBoard(null);
+      requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
+      requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
+
       const { Wrapper } = makeWrapper();
       const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
 
-      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).rejects.toThrow(/no active board/);
-    });
-
-    it('rejects when the active board has no angle (no silent angle-0 fallback)', async () => {
-      // Active board with angle missing — common during a board switch before
-      // the angle picker has been resolved. Defaulting to 0 would silently
-      // file the favorite under the wrong climb variant.
-      withActiveBoard({ ...kilterBoard, angle: null } as unknown as UserBoard);
-      const { Wrapper } = makeWrapper();
-      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
-
-      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).rejects.toThrow(/no angle/);
-      // Server must not have been called with a fabricated angle.
-      expect(requestMock).not.toHaveBeenCalledWith(
-        TOGGLE_FAVORITE,
-        expect.objectContaining({ input: expect.objectContaining({ angle: 0 }) }),
-      );
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
     });
   });
 

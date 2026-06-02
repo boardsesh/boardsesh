@@ -176,7 +176,7 @@ describe('REST vs GraphQL Parity Tests', () => {
     it('favorites should return empty array for unauthenticated user', async () => {
       const gqlResult = await fetchGraphQL<{ favorites: string[] }>(
         `query {
-          favorites(boardName: "kilter", climbUuids: ["test-uuid"], angle: 40)
+          favorites(climbUuids: ["test-uuid"])
         }`,
       );
 
@@ -204,7 +204,7 @@ describe('REST vs GraphQL Parity Tests', () => {
       try {
         await fetchGraphQL<unknown>(
           `mutation {
-            toggleFavorite(input: { boardName: "kilter", climbUuid: "test-uuid", angle: 40 }) {
+            toggleFavorite(input: { climbUuid: "test-uuid" }) {
               favorited
             }
           }`,

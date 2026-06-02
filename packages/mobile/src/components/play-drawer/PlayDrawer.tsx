@@ -240,12 +240,10 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     setIsFavorited((prev) => !prev);
     toggleFavoriteMutate({
       input: {
-        boardName,
         climbUuid: displayedClimb.uuid,
-        angle,
       },
     });
-  }, [displayedClimb, boardName, angle, toggleFavoriteMutate]);
+  }, [displayedClimb, toggleFavoriteMutate]);
 
   const handleLightbulb = useCallback(() => {
     if (!bluetooth) return;

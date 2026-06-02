@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
+import { UNIFIED_TABLES } from '../../../../db/queries/util/table-select';
 
 type SmartPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
 
@@ -105,18 +106,22 @@ async function selectSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
+    // Favorites no longer carry a board; derive boardType by joining the
+    // unified climbs table. Optional board filter constrains the join.
+    const climbs = UNIFIED_TABLES.climbs;
     const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(climbs.boardType, boardName));
     }
     const rows = await db
       .select({
         climbUuid: dbSchema.userFavorites.climbUuid,
-        boardType: dbSchema.userFavorites.boardName,
+        boardType: climbs.boardType,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(climbs, eq(climbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions))
-      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName)
+      .groupBy(dbSchema.userFavorites.climbUuid, climbs.boardType)
       .orderBy(desc(max(dbSchema.userFavorites.createdAt)))
       .limit(pageSize)
       .offset(offset);
@@ -180,15 +185,17 @@ async function countSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
+    const climbs = UNIFIED_TABLES.climbs;
     const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(climbs.boardType, boardName));
     }
     const [row] = await db
       .select({
-        count: sql<number>`COUNT(DISTINCT (${dbSchema.userFavorites.boardName}, ${dbSchema.userFavorites.climbUuid}))::int`,
+        count: sql<number>`COUNT(DISTINCT (${climbs.boardType}, ${dbSchema.userFavorites.climbUuid}))::int`,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(climbs, eq(climbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions));
     return row?.count ?? 0;
   }

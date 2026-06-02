@@ -39,27 +39,28 @@ export const favoriteClimbsQuery = {
     const pageSize = input.pageSize ?? 20;
     const tables = UNIFIED_TABLES;
 
-    // Get total count of user's favorites for this board
+    // Only count favorites whose climb belongs to the requested board.
     const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(dbSchema.userFavorites)
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)));
+      .innerJoin(
+        tables.climbs,
+        and(eq(tables.climbs.uuid, dbSchema.userFavorites.climbUuid), eq(tables.climbs.boardType, boardName)),
+      )
+      .where(eq(dbSchema.userFavorites.userId, userId));
 
     const totalCount = countResult[0]?.count || 0;
 
-    // Get favorite climbs with full climb data
     const results = await db
       .select({
         climbUuid: dbSchema.userFavorites.climbUuid,
         favoritedAt: dbSchema.userFavorites.createdAt,
-        // Climb data
         uuid: tables.climbs.uuid,
         layoutId: tables.climbs.layoutId,
         setter_username: tables.climbs.setterUsername,
         name: tables.climbs.name,
         description: tables.climbs.description,
         frames: tables.climbs.frames,
-        // Stats data
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
         quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -79,7 +80,7 @@ export const favoriteClimbsQuery = {
           eq(tables.climbStats.angle, input.angle),
         ),
       )
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)))
+      .where(eq(dbSchema.userFavorites.userId, userId))
       .orderBy(desc(dbSchema.userFavorites.createdAt))
       .limit(pageSize + 1)
       .offset(page * pageSize);

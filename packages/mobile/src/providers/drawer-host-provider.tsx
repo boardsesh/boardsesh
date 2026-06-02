@@ -208,9 +208,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     if (!climbActions) return;
     toggleFavoriteMutate({
       input: {
-        boardName: climbActions.boardConfig.boardName,
         climbUuid: climbActions.climb.uuid,
-        angle: climbActions.boardConfig.angle,
       },
     });
   }, [climbActions, toggleFavoriteMutate]);

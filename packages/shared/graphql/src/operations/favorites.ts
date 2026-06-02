@@ -1,8 +1,8 @@
 import { gql } from 'graphql-request';
 
 export const GET_FAVORITES = gql`
-  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {
-    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)
+  query Favorites($climbUuids: [String!]!) {
+    favorites(climbUuids: $climbUuids)
   }
 `;
 
@@ -14,65 +14,26 @@ export const TOGGLE_FAVORITE = gql`
   }
 `;
 
-// Type for the favorites query variables
 export type FavoritesQueryVariables = {
-  boardName: string;
   climbUuids: string[];
-  angle: number;
 };
 
-// Type for the favorites query response
 export type FavoritesQueryResponse = {
   favorites: string[];
 };
 
-// Type for the toggle favorite mutation variables
 export type ToggleFavoriteMutationVariables = {
   input: {
-    boardName: string;
     climbUuid: string;
-    angle: number;
   };
 };
 
-// Type for the toggle favorite mutation response
 export type ToggleFavoriteMutationResponse = {
   toggleFavorite: {
     favorited: boolean;
   };
 };
 
-// Get user favorites counts per board
-export const GET_USER_FAVORITES_COUNTS = gql`
-  query UserFavoritesCounts {
-    userFavoritesCounts {
-      boardName
-      count
-    }
-  }
-`;
-
-export type FavoritesCount = {
-  boardName: string;
-  count: number;
-};
-
-export type UserFavoritesCountsQueryResponse = {
-  userFavoritesCounts: FavoritesCount[];
-};
-
-// Get active boards for the current user
-export const GET_USER_ACTIVE_BOARDS = gql`
-  query UserActiveBoards {
-    userActiveBoards
-  }
-`;
-
-export type UserActiveBoardsQueryResponse = {
-  userActiveBoards: string[];
-};
-
-// Get user's favorite climbs with full data
 export const GET_USER_FAVORITE_CLIMBS = gql`
   query GetUserFavoriteClimbs($input: GetUserFavoriteClimbsInput!) {
     userFavoriteClimbs(input: $input) {

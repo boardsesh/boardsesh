@@ -295,22 +295,19 @@ describe('smartPlaylist resolver', () => {
     expect(pageCalls.limit[0]).toEqual([5]);
     expect(pageCalls.offset[0]).toEqual([5]);
 
-    // Dedup: GROUP BY (climbUuid, boardName)
+    // Dedup: GROUP BY (climbUuid, boardClimbs.boardType) — boardType now derived
+    // by joining the climbs table since favorites are board-agnostic.
     expect(pageCalls.groupBy.length).toBe(1);
-    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName]);
-    // Ordered (by max(createdAt) DESC); we just assert orderBy was called
+    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, 'boardType']);
     expect(pageCalls.orderBy.length).toBe(1);
 
-    // Both page and count must filter by both userId and boardName — a missing
-    // boardName filter on either side would make the count card show all-boards
-    // while the detail page is board-scoped (or vice versa).
+    // userId must be filtered on both page and count.
     const userIdFilters = eqSpy.mock.calls.filter(
       ([col, val]) => col === dbSchema.userFavorites.userId && val === 'user-123',
     );
     expect(userIdFilters.length).toBeGreaterThanOrEqual(2);
-    const boardFilters = eqSpy.mock.calls.filter(
-      ([col, val]) => col === dbSchema.userFavorites.boardName && val === 'kilter',
-    );
+    // Board scoping is now applied via boardClimbs.boardType, not userFavorites.boardName.
+    const boardFilters = eqSpy.mock.calls.filter(([col, val]) => col === 'boardType' && val === 'kilter');
     expect(boardFilters.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -319,9 +316,6 @@ describe('smartPlaylist resolver', () => {
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
     mockDb.select.mockReturnValueOnce(makeChain([]).chain);
     mockDb.select.mockReturnValueOnce(makeChain([{ count: 0 }]).chain);
-    // Defensive: hydrate currently short-circuits on an empty refs[], so this
-    // mock is unused today. Kept so the test doesn't blow up cryptically if
-    // that short-circuit is ever removed.
     mockDb.select.mockReturnValueOnce(makeChain([]).chain);
 
     await playlistQueries.smartPlaylist(
@@ -332,7 +326,7 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === dbSchema.userFavorites.boardName);
+    const boardFilters = eqSpy.mock.calls.filter(([col, val]) => col === 'boardType' && val === 'kilter');
     expect(boardFilters.length).toBe(0);
   });
 

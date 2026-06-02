@@ -6,10 +6,6 @@ import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { ToggleFavoriteInputSchema } from '../../../validation/schemas';
 
 export const favoriteMutations = {
-  /**
-   * Toggle favorite status for a climb
-   * If favorited, removes the favorite; if not favorited, adds it
-   */
   toggleFavorite: async (
     _: unknown,
     { input }: { input: ToggleFavoriteInput },
@@ -19,43 +15,19 @@ export const favoriteMutations = {
     validateInput(ToggleFavoriteInputSchema, input, 'input');
 
     const userId = ctx.userId!;
+    const where = and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.climbUuid, input.climbUuid));
 
-    // Check if favorite exists
-    const existing = await db
-      .select()
-      .from(dbSchema.userFavorites)
-      .where(
-        and(
-          eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, input.boardName),
-          eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-          eq(dbSchema.userFavorites.angle, input.angle),
-        ),
-      )
-      .limit(1);
+    const existing = await db.select().from(dbSchema.userFavorites).where(where).limit(1);
 
     if (existing.length > 0) {
-      // Remove favorite
-      await db
-        .delete(dbSchema.userFavorites)
-        .where(
-          and(
-            eq(dbSchema.userFavorites.userId, userId),
-            eq(dbSchema.userFavorites.boardName, input.boardName),
-            eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-            eq(dbSchema.userFavorites.angle, input.angle),
-          ),
-        );
+      await db.delete(dbSchema.userFavorites).where(where);
       return { favorited: false };
-    } else {
-      // Add favorite
-      await db.insert(dbSchema.userFavorites).values({
-        userId,
-        boardName: input.boardName,
-        climbUuid: input.climbUuid,
-        angle: input.angle,
-      });
-      return { favorited: true };
     }
+
+    await db.insert(dbSchema.userFavorites).values({
+      userId,
+      climbUuid: input.climbUuid,
+    });
+    return { favorited: true };
   },
 };

@@ -69,16 +69,14 @@ export default function ClimbDetail() {
   }, [climb]);
 
   const handleToggleFavorite = useCallback(() => {
-    if (!climb || !boardName) return;
+    if (!climb) return;
     hapticSuccess();
     toggleFavorite.mutate({
       input: {
-        boardName,
         climbUuid: climb.uuid,
-        angle: Number(angle),
       },
     });
-  }, [climb, boardName, angle, toggleFavorite]);
+  }, [climb, toggleFavorite]);
 
   if (isLoading) {
     return (
