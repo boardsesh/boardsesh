@@ -47,6 +47,8 @@ export function FavoriteAction({
     } catch {
       // Silently fail
     }
+    // boardDetails.board_name stays in the dep list — it's no longer sent
+    // to the favorites endpoint but is still emitted in the analytics event.
   }, [boardDetails.board_name, climb.uuid]);
 
   const handleClick = useCallback(

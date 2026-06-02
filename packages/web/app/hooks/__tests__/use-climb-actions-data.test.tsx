@@ -144,6 +144,12 @@ describe('useClimbActionsData', () => {
     });
 
     expect(toggleResult).toBe(true);
+    // Regression guard for #2449: the mutation payload must be { climbUuid }
+    // only — no boardName / angle leaking back in. The backend resolver test
+    // covers the server side; this covers the wire shape from the web client.
+    expect(mockRequest).toHaveBeenCalledWith('TOGGLE_FAVORITE', {
+      input: { climbUuid: 'climb-1' },
+    });
   });
 
   it('optimistic update: adds uuid on toggle', async () => {
