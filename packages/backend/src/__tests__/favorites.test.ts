@@ -17,6 +17,36 @@ const { mockDb } = vi.hoisted(() => {
 
 vi.mock('../db/client', () => ({ db: mockDb }));
 
+vi.mock('../db/queries/util/table-select', () => ({
+  UNIFIED_TABLES: {
+    climbs: {
+      uuid: 'climbs.uuid',
+      layoutId: 'climbs.layoutId',
+      boardType: 'climbs.boardType',
+      setterUsername: 'climbs.setterUsername',
+      name: 'climbs.name',
+      description: 'climbs.description',
+      frames: 'climbs.frames',
+    },
+    climbStats: {
+      climbUuid: 'climbStats.climbUuid',
+      boardType: 'climbStats.boardType',
+      angle: 'climbStats.angle',
+      ascensionistCount: 'climbStats.ascensionistCount',
+      qualityAverage: 'climbStats.qualityAverage',
+      difficultyAverage: 'climbStats.difficultyAverage',
+      displayDifficulty: 'climbStats.displayDifficulty',
+      benchmarkDifficulty: 'climbStats.benchmarkDifficulty',
+    },
+  },
+  isValidBoardName: () => true,
+}));
+
+vi.mock('@boardsesh/db/queries', () => ({
+  getClimbStars: () => 0,
+  getGradeLabel: () => '',
+}));
+
 const eqSpy = vi.fn();
 const inArraySpy = vi.fn();
 vi.mock('drizzle-orm', async () => {
@@ -36,6 +66,7 @@ vi.mock('drizzle-orm', async () => {
 
 import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
 import { favoriteQueries } from '../graphql/resolvers/favorites/queries';
+import { favoriteClimbsQuery } from '../graphql/resolvers/favorites/favorite-climbs-query';
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -51,13 +82,18 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 }
 
 function makeChain(resolveValue: unknown = []) {
+  const calls: Record<string, unknown[][]> = {};
   const chain: Record<string, unknown> = {};
-  const methods = ['select', 'from', 'where', 'limit', 'values'];
+  const methods = ['select', 'from', 'where', 'limit', 'values', 'innerJoin', 'leftJoin', 'orderBy', 'offset'];
   for (const method of methods) {
-    chain[method] = vi.fn(() => chain);
+    calls[method] = [];
+    chain[method] = vi.fn((...args: unknown[]) => {
+      calls[method].push(args);
+      return chain;
+    });
   }
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
-  return chain;
+  return Object.assign(chain, { _calls: calls });
 }
 
 describe('favorites resolvers (UUID-only keying, #2449)', () => {
@@ -117,6 +153,47 @@ describe('favorites resolvers (UUID-only keying, #2449)', () => {
       );
       expect(result).toEqual([]);
       expect(mockDb.select).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('userFavoriteClimbs — board scoping via boardClimbs join', () => {
+    // Drives the /<board>/.../liked page. After #2449 the favorites table is
+    // board-agnostic, so the resolver must restore board scope by joining
+    // boardClimbs on uuid + boardType. A regression that drops that join
+    // would silently show favorites from every board on each board's page.
+
+    it('joins boardClimbs on (uuid, boardType=boardName) for both count + page queries', async () => {
+      // Count query, then the data query.
+      const countChain = makeChain([{ count: 3 }]);
+      const dataChain = makeChain([]);
+      mockDb.select.mockReturnValueOnce(countChain);
+      mockDb.select.mockReturnValueOnce(dataChain);
+
+      await favoriteClimbsQuery.userFavoriteClimbs(
+        null,
+        {
+          input: {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 1,
+            setIds: '1,2',
+            angle: 40,
+            page: 0,
+            pageSize: 20,
+          },
+        },
+        makeCtx(),
+      );
+
+      // Both queries must inner-join boardClimbs — that's how favorites get
+      // scoped to the requested board now that user_favorites has no board.
+      expect((countChain as { _calls: Record<string, unknown[][]> })._calls.innerJoin.length).toBe(1);
+      expect((dataChain as { _calls: Record<string, unknown[][]> })._calls.innerJoin.length).toBe(1);
+
+      // The boardName argument must reach an eq() against boardClimbs.boardType
+      // (the mocked sentinel value `climbs.boardType` from UNIFIED_TABLES).
+      const boardFilters = eqSpy.mock.calls.filter(([col, val]) => col === 'climbs.boardType' && val === 'kilter');
+      expect(boardFilters.length).toBeGreaterThanOrEqual(2);
     });
   });
 });
