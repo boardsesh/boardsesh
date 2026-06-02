@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import MuiSwipeableDrawer from '@mui/material/SwipeableDrawer';
 import Box from '@mui/material/Box';
@@ -10,6 +10,11 @@ import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import { themeTokens } from '@/app/theme/theme-config';
 import { onTransformSettled } from '@/app/lib/hooks/pull-to-close';
 import styles from './swipeable-drawer.module.css';
+
+// Runs before paint in the browser; degrades to useEffect during SSR so it
+// doesn't warn. We need the pre-paint variant so the paper can be hidden in the
+// same frame React `open` flips (see the gesture-close opacity guard below).
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 type Placement = 'left' | 'right' | 'top' | 'bottom';
 
@@ -434,6 +439,24 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
     !!exitPaper &&
     Math.abs(readCurrentTranslate(exitPaper, exitIsHorizontal)) >
       (exitIsHorizontal ? exitPaper.offsetWidth : exitPaper.offsetHeight) * 0.5;
+
+  // Hide the paper the instant `open` flips false on a gesture close. The gesture
+  // has already slid it fully off-screen, so making it invisible is itself
+  // invisible — but it means MUI's Slide exit (which clears + re-measures the
+  // transform and, on iOS WebKit, can paint a single frame at the OPEN position)
+  // can no longer flash the paper back on screen. That stray frame is the "snaps
+  // back up" the exit-duration tweaks alone don't catch on Safari. The opacity is
+  // restored below when `open` returns true (and the play-view open effect
+  // separately clears the leftover transform).
+  useIsomorphicLayoutEffect(() => {
+    const paper = lastPaperRef.current;
+    if (!paper) return;
+    if (!(open ?? false) && gesturePrePositioned) {
+      paper.style.opacity = '0';
+    } else if (open ?? false) {
+      paper.style.opacity = '';
+    }
+  }, [open, gesturePrePositioned]);
 
   const slideProps = useMemo(
     () => ({
