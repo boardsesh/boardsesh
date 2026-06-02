@@ -228,7 +228,9 @@ export default function LikedClimbsList({ boardDetails, angle }: LikedClimbsList
     }
   }, [error, showMessage]);
 
-  // Show all liked climbs regardless of layout (unlike playlists, favorites span all layouts)
+  // Favorites are stored per-climb (board-agnostic), but this page is rendered
+  // for a specific board+layout — the resolver joins boardClimbs to scope the
+  // list to climbs that exist on this board. Angle is stamped on for rendering.
   const visibleClimbs: Climb[] = useMemo(() => {
     return allClimbs.map((climb) => ({ ...climb, angle }));
     // eslint-disable-next-line react-hooks/exhaustive-deps

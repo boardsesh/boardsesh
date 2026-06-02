@@ -35,11 +35,7 @@ export function FavoriteAction({
       const response = await fetch('/api/internal/favorites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardName: boardDetails.board_name,
-          climbUuid: climb.uuid,
-          angle,
-        }),
+        body: JSON.stringify({ climbUuid: climb.uuid }),
       });
       if (response.ok) {
         track('Favorite Toggle', {
@@ -51,7 +47,7 @@ export function FavoriteAction({
     } catch {
       // Silently fail
     }
-  }, [boardDetails.board_name, climb.uuid, angle]);
+  }, [boardDetails.board_name, climb.uuid]);
 
   const handleClick = useCallback(
     async (e?: React.MouseEvent) => {

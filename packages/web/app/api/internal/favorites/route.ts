@@ -6,13 +6,17 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { authOptions } from '@/app/lib/auth/auth-options';
 
-const favoriteSchema = z.object({
-  climbUuid: z.string().min(1),
-});
+const favoriteSchema = z
+  .object({
+    climbUuid: z.string().min(1),
+  })
+  .strict();
 
-const checkFavoriteSchema = z.object({
-  climbUuids: z.array(z.string().min(1)).min(1),
-});
+const checkFavoriteSchema = z
+  .object({
+    climbUuids: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
 
 export async function POST(request: NextRequest) {
   try {
