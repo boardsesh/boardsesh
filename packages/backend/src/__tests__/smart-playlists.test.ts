@@ -326,7 +326,10 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    const boardFilters = eqSpy.mock.calls.filter(([col, val]) => col === 'boardType' && val === 'kilter');
+    // No board scoping at all — the resolver must not eq() boardType against
+    // any value when boardName is omitted from the input. Without the value
+    // guard, this catches an accidental filter on any board, not just kilter.
+    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === 'boardType');
     expect(boardFilters.length).toBe(0);
   });
 

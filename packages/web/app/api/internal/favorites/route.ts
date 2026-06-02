@@ -14,7 +14,9 @@ const favoriteSchema = z
 
 const checkFavoriteSchema = z
   .object({
-    climbUuids: z.array(z.string().min(1)).min(1),
+    // Cap matches packages/backend/src/validation/schemas/favorites.ts so a
+    // caller can't trigger an unbounded inArray() query against the DB.
+    climbUuids: z.array(z.string().min(1)).min(1).max(500),
   })
   .strict();
 
