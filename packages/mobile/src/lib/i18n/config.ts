@@ -1,3 +1,7 @@
+// Hermes ships an incomplete Intl.PluralRules. This side-effect import installs
+// a polyfill so i18next's v4 plural resolver works instead of falling back to
+// v3 handling (which mis-pluralises es/fr). Must run before i18n.init below.
+import 'intl-pluralrules';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getLocales } from 'expo-localization';
