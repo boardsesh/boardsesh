@@ -10,6 +10,7 @@ import {
   timestamp,
   primaryKey,
   index,
+  uniqueIndex,
   check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -427,6 +428,88 @@ export const boardClimbAliases = pgTable(
   }),
 );
 
+// Per-user-per-climb rating, separate from the per-tick quality/difficulty
+// pair on boardsesh_ticks. Kilter exposes ratings as their own first-class
+// resource (POST /api/climb-rating/) and we need a stable home for both
+// the pulled-down rows and the rows we push back, so this is its own
+// table rather than columns on boardsesh_ticks. The aurora-equivalent
+// path could adopt it later; for v1 only kilter-sync writes here.
+//
+// kilter_id and aurora_id are nullable surrogate keys with partial
+// unique indexes (WHERE … IS NOT NULL) — a single row can carry both
+// (e.g. a rating that originated in Aurora and then Kilter mirrored it
+// back), and Boardsesh-originated rows carry neither until a sync
+// adopts them.
+export const boardClimbRatings = pgTable(
+  'board_climb_ratings',
+  {
+    id: bigserial({ mode: 'bigint' }).primaryKey().notNull(),
+    boardType: text('board_type').notNull(),
+    climbUuid: text('climb_uuid').notNull(),
+    angle: integer('angle').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    rating: integer('rating'),
+    // Opaque Kilter `difficulty_grade_id` — no FK to a local grades
+    // table because that mapping is owned upstream and may add new
+    // grade IDs we haven't synced yet. Treat as a pass-through integer
+    // and resolve to a display string at read time via the existing
+    // grade-lookup tables.
+    difficultyGradeId: integer('difficulty_grade_id'),
+    comment: text('comment').default(''),
+    weight: doublePrecision('weight'),
+    kilterId: text('kilter_id'),
+    auroraId: text('aurora_id'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    // No `ON UPDATE` trigger — matches the project-wide convention (see
+    // boardsesh_ticks, playlists, etc.). Every writer is responsible for
+    // explicitly setting `updatedAt: new Date()` in its UPDATE/upsert
+    // SET clause. Drift here is a real risk; centralising it via a
+    // trigger is a follow-up that affects every table at once.
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUserClimbAngle: uniqueIndex('board_climb_ratings_user_climb_angle_idx').on(
+      table.boardType,
+      table.climbUuid,
+      table.angle,
+      table.userId,
+    ),
+    climbIdx: index('board_climb_ratings_climb_idx').on(table.boardType, table.climbUuid),
+    // Note: a standalone user_id index would be redundant — the unique
+    // index on (board_type, climb_uuid, angle, user_id) already covers
+    // user lookups for our queries, which always constrain board_type.
+    // Surrogate-key unique indexes scoped to rows that actually carry
+    // the surrogate (WHERE … IS NOT NULL). Without the partial
+    // predicate the unique constraint only kicks in by accident of
+    // Postgres' "NULLs are distinct" behaviour — relying on that
+    // misleads readers and breaks if we ever tighten the schema.
+    kilterIdUnique: uniqueIndex('board_climb_ratings_kilter_id_unique')
+      .on(table.kilterId)
+      .where(sql`${table.kilterId} IS NOT NULL`),
+    auroraIdUnique: uniqueIndex('board_climb_ratings_aurora_id_unique')
+      .on(table.auroraId)
+      .where(sql`${table.auroraId} IS NOT NULL`),
+    // Compound index on the kilter-sync REMOVE delete path:
+    // `WHERE user_id = $1 AND kilter_id IN (…)`. The partial unique
+    // on kilter_id alone forces Postgres to filter on the surrogate
+    // then re-check user_id row by row — fine at the current scale,
+    // a near-table-scan once we have millions of ratings.
+    userKilterIdx: index('board_climb_ratings_user_kilter_idx')
+      .on(table.userId, table.kilterId)
+      .where(sql`${table.kilterId} IS NOT NULL`),
+    // Kilter's published range is 1–5 (and NULL for "no opinion yet").
+    // Constrain at the DB so a bad PowerSync payload can't poison the
+    // table — the sync writer has no opportunity to validate before the
+    // bulk upsert, so the DB is the right enforcement point.
+    ratingRangeCheck: check(
+      'board_climb_ratings_rating_range',
+      sql`${table.rating} IS NULL OR (${table.rating} >= 1 AND ${table.rating} <= 5)`,
+    ),
+  }),
+);
+
 export const boardClimbStats = pgTable(
   'board_climb_stats',
   {
@@ -816,3 +899,6 @@ export type NewBoardKit = typeof boardKits.$inferInsert;
 
 export type BoardClimbAlias = typeof boardClimbAliases.$inferSelect;
 export type NewBoardClimbAlias = typeof boardClimbAliases.$inferInsert;
+
+export type BoardClimbRating = typeof boardClimbRatings.$inferSelect;
+export type NewBoardClimbRating = typeof boardClimbRatings.$inferInsert;

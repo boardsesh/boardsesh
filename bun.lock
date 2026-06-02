@@ -59,6 +59,7 @@
         "@boardsesh/crypto": "*",
         "@boardsesh/db": "*",
         "@boardsesh/graphql": "*",
+        "@boardsesh/kilter-sync": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
         "@escape.tech/graphql-armor-cost-limit": "^2.4.3",
@@ -149,6 +150,30 @@
       "optionalPeers": [
         "next-auth",
       ],
+    },
+    "packages/kilter-sync": {
+      "name": "@boardsesh/kilter-sync",
+      "version": "1.0.0",
+      "bin": {
+        "kilter-sync": "./dist/cli/index.js",
+      },
+      "dependencies": {
+        "@boardsesh/board-constants": "*",
+        "@boardsesh/crypto": "*",
+        "@boardsesh/db": "*",
+        "@boardsesh/shared-schema": "*",
+        "@boardsesh/sync-runtime": "*",
+        "commander": "^14.0.3",
+        "dotenv": "^17.3.1",
+        "drizzle-orm": "^0.45.1",
+        "jose": "^6.1.3",
+        "postgres": "^3.4.8",
+      },
+      "devDependencies": {
+        "@types/node": "^25.3.3",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3",
+      },
     },
     "packages/mobile": {
       "name": "@boardsesh/mobile",
@@ -448,6 +473,14 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/sync-runtime": {
+      "name": "@boardsesh/sync-runtime",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/node": "^25.3.3",
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/web": {
       "name": "@boardsesh/web",
       "version": "0.1.0",
@@ -471,6 +504,7 @@
         "@boardsesh/graphql": "*",
         "@boardsesh/graphql-client": "*",
         "@boardsesh/i18n": "*",
+        "@boardsesh/kilter-sync": "*",
         "@boardsesh/moonboard-ocr": "*",
         "@boardsesh/party-profile": "*",
         "@boardsesh/play-view": "*",
@@ -882,6 +916,8 @@
 
     "@boardsesh/key-value-storage": ["@boardsesh/key-value-storage@workspace:packages/shared/key-value-storage"],
 
+    "@boardsesh/kilter-sync": ["@boardsesh/kilter-sync@workspace:packages/kilter-sync"],
+
     "@boardsesh/mobile": ["@boardsesh/mobile@workspace:packages/mobile"],
 
     "@boardsesh/moonboard-ocr": ["@boardsesh/moonboard-ocr@workspace:packages/moonboard-ocr"],
@@ -901,6 +937,8 @@
     "@boardsesh/queue-runtime": ["@boardsesh/queue-runtime@workspace:packages/shared/queue-runtime"],
 
     "@boardsesh/shared-schema": ["@boardsesh/shared-schema@workspace:packages/shared-schema"],
+
+    "@boardsesh/sync-runtime": ["@boardsesh/sync-runtime@workspace:packages/sync-runtime"],
 
     "@boardsesh/web": ["@boardsesh/web@workspace:packages/web"],
 

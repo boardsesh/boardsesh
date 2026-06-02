@@ -112,6 +112,13 @@ export type BoardCredentialCardProps = {
   isImporting: boolean;
   userName?: string | null;
   userEmail?: string | null;
+  /**
+   * When true and the user has no Kilter credential yet, render the
+   * "Connect Kilter account" OAuth button instead of the shut-down notice.
+   * Allowlist-gated via KILTER_SYNC_ALLOWED_USER_IDS — see
+   * packages/web/app/lib/kilter-sync/access.ts.
+   */
+  kilterSyncEnabled?: boolean;
 };
 
 export function BoardCredentialCard({
@@ -125,6 +132,7 @@ export function BoardCredentialCard({
   isImporting,
   userName,
   userEmail,
+  kilterSyncEnabled = false,
 }: BoardCredentialCardProps) {
   const { t } = useTranslation('settings');
   const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
@@ -165,7 +173,7 @@ export function BoardCredentialCard({
           </div>
           {isKilter ? (
             <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
-              {t('aurora.card.kilterShutdown')}
+              {kilterSyncEnabled ? t('aurora.card.kilterConnectCopy') : t('aurora.card.kilterShutdown')}
             </Typography>
           ) : (
             <Typography variant="body2" component="span" color="text.secondary" className={styles.notConnectedText}>
@@ -178,15 +186,24 @@ export function BoardCredentialCard({
                 {t('aurora.card.link')}
               </Button>
             )}
+            {isKilter && kilterSyncEnabled && (
+              <Button
+                variant="contained"
+                startIcon={<LinkOutlined />}
+                href="/api/internal/board-credentials/kilter/start"
+              >
+                {t('aurora.card.kilterConnectButton')}
+              </Button>
+            )}
             <Button
-              variant={isKilter ? 'contained' : 'outlined'}
+              variant={isKilter && !kilterSyncEnabled ? 'contained' : 'outlined'}
               startIcon={isImporting ? <CircularProgress size={16} /> : <FileUploadOutlined />}
               onClick={onImportJson}
               disabled={isImporting}
             >
               {t('aurora.card.import')}
             </Button>
-            {isKilter && (
+            {isKilter && !kilterSyncEnabled && (
               <Button
                 variant="outlined"
                 startIcon={<EmailOutlined />}
@@ -323,6 +340,7 @@ export default function AuroraCredentialsSection() {
   const [credentials, setCredentials] = useState<AuroraCredentialStatus[]>([]);
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
   const [loading, setLoading] = useState(true);
+  const [kilterSyncAllowed, setKilterSyncAllowed] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBoard, setSelectedBoard] = useState<AuroraBoardName>('kilter');
   const [isSaving, setIsSaving] = useState(false);
@@ -369,6 +387,19 @@ export default function AuroraCredentialsSection() {
   useEffect(() => {
     void fetchCredentials();
     void fetchUnsyncedCounts();
+    // One-shot check for kilter-sync feature flag. Failures fall back to
+    // false (the Settings card just hides the Connect button), so a
+    // backend hiccup never blocks the page render.
+    void (async () => {
+      try {
+        const response = await fetch('/api/internal/kilter-sync/access');
+        if (!response.ok) return;
+        const data = (await response.json()) as { allowed?: boolean };
+        if (data.allowed === true) setKilterSyncAllowed(true);
+      } catch {
+        // Stay disabled on any failure — fail closed.
+      }
+    })();
   }, []);
 
   const handleAddClick = (boardType: AuroraBoardName) => {
@@ -416,18 +447,42 @@ export default function AuroraCredentialsSection() {
   const handleRemove = async (boardType: AuroraBoardName) => {
     setRemovingBoard(boardType);
     try {
-      const response = await fetch('/api/internal/aurora-credentials', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boardType }),
-      });
+      // Kilter routes through its OAuth-aware disconnect endpoint, which
+      // revokes the refresh token at Keycloak before the local DELETE.
+      // The legacy /api/internal/aurora-credentials DELETE only cleans
+      // up local rows — fine for Aurora (username/password creds with
+      // no remote session) but leaves the Keycloak refresh token live
+      // for its full TTL after a Kilter disconnect.
+      const url =
+        boardType === 'kilter'
+          ? '/api/internal/board-credentials/kilter/disconnect'
+          : '/api/internal/aurora-credentials';
+      const init: RequestInit =
+        boardType === 'kilter'
+          ? { method: 'POST' }
+          : {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ boardType }),
+            };
+      const response = await fetch(url, init);
 
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || t('aurora.unlinkError'));
       }
 
-      showMessage(t('aurora.unlinkSuccess'), 'success');
+      // 207 Multi-Status from the kilter disconnect route means: local
+      // rows ARE gone, but Keycloak token revocation failed. The user
+      // believes they disconnected; warn them the IdP-side session may
+      // still be live so they can manually expire it via the Kilter
+      // portal. Without this, an outage at Keycloak silently leaves a
+      // refresh token usable for its full TTL.
+      if (response.status === 207) {
+        showMessage(t('aurora.unlinkPartial'), 'warning');
+      } else {
+        showMessage(t('aurora.unlinkSuccess'), 'success');
+      }
       await fetchCredentials();
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t('aurora.unlinkError'), 'error');
@@ -616,6 +671,7 @@ export default function AuroraCredentialsSection() {
                 isImporting={isImporting && importingBoard === boardType}
                 userName={boardType === 'kilter' ? session?.user?.name : undefined}
                 userEmail={boardType === 'kilter' ? session?.user?.email : undefined}
+                kilterSyncEnabled={boardType === 'kilter' && kilterSyncAllowed}
               />
             ))}
           </Stack>

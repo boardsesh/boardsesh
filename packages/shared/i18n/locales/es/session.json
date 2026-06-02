@@ -1,19 +1,19 @@
 {
   "metadata": {
     "detail": {
-      "notFoundTitle": "Sesión no encontrada"
+      "notFoundTitle": "Sesi\u00f3n no encontrada"
     },
     "join": {
-      "title": "Únete a la sesión",
-      "description": "Únete a una sesión de escalada en Boardsesh",
-      "headlineWithLeader": "Únete a {{name}} en la pared",
-      "headlineDefault": "Únete al grupo en la pared",
-      "descriptionDefault": "Métete en esta sesión de escalada en Boardsesh. A la pared.",
-      "descriptionLive": "{{sessionName}} está en directo en Boardsesh. A la pared.",
+      "title": "\u00danete a la sesi\u00f3n",
+      "description": "\u00danete a una sesi\u00f3n de escalada en Boardsesh",
+      "headlineWithLeader": "\u00danete a {{name}} en la pared",
+      "headlineDefault": "\u00danete al grupo en la pared",
+      "descriptionDefault": "M\u00e9tete en esta sesi\u00f3n de escalada en Boardsesh. A la pared.",
+      "descriptionLive": "{{sessionName}} est\u00e1 en directo en Boardsesh. A la pared.",
       "descriptionBoardWithSends_one": "{{boardInfo}}. {{count}} encadene hasta ahora{{gradeSummary}}. A la pared.",
       "descriptionBoardWithSends_other": "{{boardInfo}}. {{count}} encadenes hasta ahora{{gradeSummary}}. A la pared.",
-      "descriptionBoardNoSends": "{{boardInfo}}. Sin encadenes todavía. A la pared.",
-      "boardAtAngle": "{{boardLabel}} a {{angle}}°",
+      "descriptionBoardNoSends": "{{boardInfo}}. Sin encadenes todav\u00eda. A la pared.",
+      "boardAtAngle": "{{boardLabel}} a {{angle}}\u00b0",
       "gradeOn": " en {{grade}}",
       "gradeRange": " de {{first}} a {{last}}"
     }
@@ -24,14 +24,14 @@
     "participantsClimbing": "{{names}} escalando en Boardsesh",
     "sessionNameOnBoardsesh": "{{name}} en Boardsesh",
     "climbsCount": "Bloques ({{count}})",
-    "share": "Compartir sesión",
-    "shareTitle": "Sesión de escalada",
-    "shareText": "Mira esta sesión de escalada en Boardsesh",
-    "shareSuccess": "¡Enlace copiado al portapapeles!",
+    "share": "Compartir sesi\u00f3n",
+    "shareTitle": "Sesi\u00f3n de escalada",
+    "shareText": "Mira esta sesi\u00f3n de escalada en Boardsesh",
+    "shareSuccess": "\u00a1Enlace copiado al portapapeles!",
     "shareError": "Error al compartir",
     "comments": "Comentarios",
     "deleteAscent": "Eliminar ascenso",
-    "deleteAscentConfirm": "¿Estás seguro? Esto no se puede deshacer.",
+    "deleteAscentConfirm": "\u00bfEst\u00e1s seguro? Esto no se puede deshacer.",
     "delete": "Eliminar",
     "climberFallback": "Escalador",
     "unknownClimb": "Bloque desconocido",
@@ -39,26 +39,26 @@
     "totalAttempts": "{{count}} en total",
     "attemptCount_one": "{{count}} intento",
     "attemptCount_other": "{{count}} intentos",
-    "ordinalFirst": "{{n}}º",
-    "ordinalSecond": "{{n}}º",
-    "ordinalThird": "{{n}}º",
-    "ordinalDefault": "{{n}}º",
-    "sessionNotesPlaceholder": "Notas de la sesión u objetivo...",
-    "noClimbsYet": "Sin bloques todavía",
+    "ordinalFirst": "{{n}}\u00ba",
+    "ordinalSecond": "{{n}}\u00ba",
+    "ordinalThird": "{{n}}\u00ba",
+    "ordinalDefault": "{{n}}\u00ba",
+    "sessionNotesPlaceholder": "Notas de la sesi\u00f3n u objetivo...",
+    "noClimbsYet": "Sin bloques todav\u00eda",
     "logSomeClimbs": "Registra algunos bloques para ver el desglose por grados",
     "climbsLogged_one": "{{count}} bloque registrado",
     "climbsLogged_other": "{{count}} bloques registrados",
     "gradesCount_one": "{{count}} grado",
     "gradesCount_other": "{{count}} grados",
-    "gradeDistribution": "Distribución de grados",
-    "gradesClimbedThisSession": "Grados escalados en esta sesión",
-    "sessionGradeDistribution": "Distribución de grados de la sesión",
+    "gradeDistribution": "Distribuci\u00f3n de grados",
+    "gradesClimbedThisSession": "Grados escalados en esta sesi\u00f3n",
+    "sessionGradeDistribution": "Distribuci\u00f3n de grados de la sesi\u00f3n",
     "sections": {
       "invite": "Invitar",
       "inviteTitle": "Invita a otros a unirse",
-      "inviteSummary": "Comparte el enlace o el código QR",
+      "inviteSummary": "Comparte el enlace o el c\u00f3digo QR",
       "activity": "Actividad",
-      "analytics": "Estadísticas"
+      "analytics": "Estad\u00edsticas"
     },
     "sendsCount_one": "{{count}} encadene",
     "sendsCount_other": "{{count}} encadenes",
@@ -68,65 +68,65 @@
     "attemptsCount_other": "{{count}} intentos",
     "climbCount_one": "{{count}} bloque",
     "climbCount_other": "{{count}} bloques",
-    "hardestLabel": "Más duro: {{grade}}",
+    "hardestLabel": "M\u00e1s duro: {{grade}}",
     "notFound": {
-      "title": "Sesión no encontrada",
-      "subtitle": "No se pudo encontrar esta sesión. Puede que haya sido eliminada."
+      "title": "Sesi\u00f3n no encontrada",
+      "subtitle": "No se pudo encontrar esta sesi\u00f3n. Puede que haya sido eliminada."
     },
     "userSearch": {
-      "title": "Añadir escalador",
+      "title": "A\u00f1adir escalador",
       "placeholder": "Buscar por nombre...",
       "noUsersFound": "No se encontraron usuarios"
     }
   },
   "join": {
-    "joining": "Uniéndote a la sesión..."
+    "joining": "Uni\u00e9ndote a la sesi\u00f3n..."
   },
   "settings": {
-    "fallbackTitle": "Sesión",
-    "stopSession": "Detener sesión",
+    "fallbackTitle": "Sesi\u00f3n",
+    "stopSession": "Detener sesi\u00f3n",
     "dismiss": "Cerrar",
-    "loadFailed": "No se pudieron cargar todos los detalles de la sesión. Las estadísticas en directo continuarán cuando estén disponibles.",
+    "loadFailed": "No se pudieron cargar todos los detalles de la sesi\u00f3n. Las estad\u00edsticas en directo continuar\u00e1n cuando est\u00e9n disponibles.",
     "share": {
-      "shareTitle": "Únete a mi sesión de escalada",
-      "shareText": "Métete y escala conmigo en Boardsesh",
-      "shareLink": "Compartir enlace de la sesión",
-      "shareLinkPreview": "Compartir enlace de la sesión (vista previa)",
-      "linkCopied": "¡Enlace copiado!",
+      "shareTitle": "\u00danete a mi sesi\u00f3n de escalada",
+      "shareText": "M\u00e9tete y escala conmigo en Boardsesh",
+      "shareLink": "Compartir enlace de la sesi\u00f3n",
+      "shareLinkPreview": "Compartir enlace de la sesi\u00f3n (vista previa)",
+      "linkCopied": "\u00a1Enlace copiado!",
       "shareError": "Error al compartir",
-      "showQr": "Mostrar código QR",
-      "hideQr": "Ocultar código QR",
-      "showQrPreview": "Mostrar código QR (vista previa)",
-      "inviteCopy": "Mete a tu grupo compartiendo este enlace o escaneando el código QR",
-      "inviteCopyPreview": "Comparte este enlace o código QR con tu grupo y aparecerán en directo."
+      "showQr": "Mostrar c\u00f3digo QR",
+      "hideQr": "Ocultar c\u00f3digo QR",
+      "showQrPreview": "Mostrar c\u00f3digo QR (vista previa)",
+      "inviteCopy": "Mete a tu grupo compartiendo este enlace o escaneando el c\u00f3digo QR",
+      "inviteCopyPreview": "Comparte este enlace o c\u00f3digo QR con tu grupo y aparecer\u00e1n en directo."
     }
   },
   "creation": {
-    "drawerTitle": "Empezar sesión",
+    "drawerTitle": "Empezar sesi\u00f3n",
     "submitDefault": "Sesh",
-    "dialogTitle": "Crear sesión",
-    "dialogSubmit": "Crear sesión",
-    "started": "¡Sesión empezada!",
+    "dialogTitle": "Crear sesi\u00f3n",
+    "dialogSubmit": "Crear sesi\u00f3n",
+    "started": "\u00a1Sesi\u00f3n empezada!",
     "selectBoardWarning": "Selecciona un board primero",
     "boardsNearYou": "Boards cerca de ti",
     "loggedInBlurb": "Registra tus bloques e invita a otros a unirse.",
-    "anonymousBlurb": "Métete sin cuenta. Inicia sesión más tarde para guardar tu progreso.",
-    "signInForMore": "Inicia sesión para más funciones",
-    "signInModalTitle": "Inicia sesión para guardar tu sesión",
-    "signInModalDescription": "Tus encadenes no desaparecerán cuando cierres la pestaña.",
+    "anonymousBlurb": "M\u00e9tete sin cuenta. Inicia sesi\u00f3n m\u00e1s tarde para guardar tu progreso.",
+    "signInForMore": "Inicia sesi\u00f3n para m\u00e1s funciones",
+    "signInModalTitle": "Inicia sesi\u00f3n para guardar tu sesi\u00f3n",
+    "signInModalDescription": "Tus encadenes no desaparecer\u00e1n cuando cierres la pesta\u00f1a.",
     "form": {
-      "sessionNameLabel": "Nombre de la sesión",
+      "sessionNameLabel": "Nombre de la sesi\u00f3n",
       "sessionNamePlaceholder": "ej. Proyectando el martes",
-      "sessionGoalLabel": "Objetivo de la sesión",
+      "sessionGoalLabel": "Objetivo de la sesi\u00f3n",
       "sessionGoalPlaceholder": "ej. Encadenar V5 hoy",
       "sessionGoalHelper": "{{count}}/500",
-      "sessionColor": "Color de la sesión",
+      "sessionColor": "Color de la sesi\u00f3n",
       "discoverableLabel": "Visible para escaladores cercanos",
-      "discoverableDescription": "Otros cerca pueden encontrar y unirse a tu sesión",
-      "permanentLabel": "Sesión permanente (no termina sola)"
+      "discoverableDescription": "Otros cerca pueden encontrar y unirse a tu sesi\u00f3n",
+      "permanentLabel": "Sesi\u00f3n permanente (no termina sola)"
     },
     "errors": {
-      "createFailed": "No se pudo empezar la sesión"
+      "createFailed": "No se pudo empezar la sesi\u00f3n"
     },
     "generateQueue": {
       "button": "Generar cola de entrenamiento",
@@ -135,25 +135,25 @@
       "clear": "Limpiar",
       "summary_one": "{{count}} bloque en cola",
       "summary_other": "{{count}} bloques en cola",
-      "addedAll_one": "{{count}} bloque en cola para tu sesión",
-      "addedAll_other": "{{count}} bloques en cola para tu sesión",
-      "addedPartial": "Añadidos {{added}} bloques. No se pudieron rellenar {{failed}} huecos.",
+      "addedAll_one": "{{count}} bloque en cola para tu sesi\u00f3n",
+      "addedAll_other": "{{count}} bloques en cola para tu sesi\u00f3n",
+      "addedPartial": "A\u00f1adidos {{added}} bloques. No se pudieron rellenar {{failed}} huecos.",
       "failed": "No se pudo generar la cola. No se encontraron bloques que coincidan."
     }
   },
   "summary": {
-    "dialogTitle": "Resumen de la sesión",
-    "autoFinishedDialogTitle": "Sesión finalizada",
+    "dialogTitle": "Resumen de la sesi\u00f3n",
+    "autoFinishedDialogTitle": "Sesi\u00f3n finalizada",
     "sends": "Encadenes",
     "attempts": "Intentos",
-    "duration": "Duración",
-    "hardestSend": "Encadene más duro:",
+    "duration": "Duraci\u00f3n",
+    "hardestSend": "Encadene m\u00e1s duro:",
     "goal": "Objetivo:",
-    "gradeDistribution": "Distribución de grados",
+    "gradeDistribution": "Distribuci\u00f3n de grados",
     "participants": "Participantes",
     "done": "Hecho",
     "saveToAppleHealth": "Guardar en Apple Health",
-    "savingToAppleHealth": "Guardando en Apple Health…",
+    "savingToAppleHealth": "Guardando en Apple Health\u2026",
     "savedToAppleHealth": "Guardado en Apple Health",
     "saveToAppleHealthRetry": "Guardar en Apple Health (reintentar)",
     "minutes": "{{count}}min",
@@ -164,19 +164,19 @@
     "goal": "Objetivo: {{goal}}"
   },
   "queueBar": {
-    "cancelReconnectConfirm": "Cancelar te sacará de la sesión. ¿Es lo que quieres?",
+    "cancelReconnectConfirm": "Cancelar te sacar\u00e1 de la sesi\u00f3n. \u00bfEs lo que quieres?",
     "shellMessage": "Sin bloque seleccionado",
     "startSesh": "Empezar sesh",
-    "linkCopied": "¡Enlace copiado!",
+    "linkCopied": "\u00a1Enlace copiado!",
     "shareFailed": "Error al compartir",
-    "leaveFailed": "No se pudo salir de la sesión. Inténtalo de nuevo.",
+    "leaveFailed": "No se pudo salir de la sesi\u00f3n. Int\u00e9ntalo de nuevo.",
     "cancelReconnect": "Cancelar",
-    "tickError": "No se pudo guardar tu marca. Inténtalo otra vez.",
+    "tickError": "No se pudo guardar tu marca. Int\u00e9ntalo otra vez.",
     "tickCommentPlaceholder": "Comentario...",
     "tickAttemptLabel": "intento",
     "reconnect": {
-      "connectionError": "Error de conexión – reintentando…",
-      "reconnecting": "Reconectando…"
+      "connectionError": "Error de conexi\u00f3n \u2013 reintentando\u2026",
+      "reconnecting": "Reconectando\u2026"
     },
     "tickBar": {
       "collapse": "Contraer",
@@ -186,29 +186,29 @@
       "commentAria": "Comentario de marca"
     },
     "ariaLabels": {
-      "leaveSession": "Salir de la sesión",
+      "leaveSession": "Salir de la sesi\u00f3n",
       "keepReconnecting": "Seguir reconectando",
-      "dismissOfflineNotice": "Descartar aviso sin conexión",
-      "shareSessionLink": "Compartir enlace de sesión",
+      "dismissOfflineNotice": "Descartar aviso sin conexi\u00f3n",
+      "shareSessionLink": "Compartir enlace de sesi\u00f3n",
       "closeTickBar": "Cerrar barra de marca",
       "logAttempt": "Registrar intento",
       "showParticipants": "Mostrar participantes",
       "hideParticipants": "Ocultar participantes",
       "openPlayDrawer": "Abrir el bloque del muro",
-      "userIsDriving": "{{username}} está al mando",
+      "userIsDriving": "{{username}} est\u00e1 al mando",
       "returnToWallClimb": "Volver al bloque de {{username}}",
       "returnToWallClimbNoDriver": "Volver al bloque del muro"
     },
     "offline": {
-      "idle": "Sin conexión",
-      "party": "Sin conexión. Las vías encoladas se sincronizarán.",
-      "solo": "Sin conexión. Los cambios se sincronizarán cuando vuelvas."
+      "idle": "Sin conexi\u00f3n",
+      "party": "Sin conexi\u00f3n. Las v\u00edas encoladas se sincronizar\u00e1n.",
+      "solo": "Sin conexi\u00f3n. Los cambios se sincronizar\u00e1n cuando vuelvas."
     }
   },
   "queueDrawer": {
     "title": "Cola",
     "clearTitle": "Vaciar cola",
-    "clearDescription": "¿Seguro que quieres vaciar la cola?",
+    "clearDescription": "\u00bfSeguro que quieres vaciar la cola?",
     "clearConfirm": "Vaciar",
     "clear": "Vaciar",
     "removeItems_one": "Eliminar {{count}} elemento",
@@ -216,28 +216,28 @@
   },
   "queueList": {
     "editClimb": "Editar este bloque",
-    "addedViaBluetooth": "Añadido por Bluetooth",
-    "nextUpHeader": "A continuación",
+    "addedViaBluetooth": "A\u00f1adido por Bluetooth",
+    "nextUpHeader": "A continuaci\u00f3n",
     "endMessage": "Eso es todo por ahora",
-    "showFullHistory_one": "Mostrar historial completo ({{count}} más)",
-    "showFullHistory_other": "Mostrar historial completo ({{count}} más)",
-    "showFullHistoryAria_one": "Mostrar {{count}} elemento más del historial",
-    "showFullHistoryAria_other": "Mostrar {{count}} elementos más del historial",
+    "showFullHistory_one": "Mostrar historial completo ({{count}} m\u00e1s)",
+    "showFullHistory_other": "Mostrar historial completo ({{count}} m\u00e1s)",
+    "showFullHistoryAria_one": "Mostrar {{count}} elemento m\u00e1s del historial",
+    "showFullHistoryAria_other": "Mostrar {{count}} elementos m\u00e1s del historial",
     "tickHistoryClimb": "Registrar un tick para {{name}}"
   },
   "queueProvider": {
-    "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías."
+    "offlineLimitReached": "Has alcanzado el l\u00edmite de la cola sin conexi\u00f3n. Vuelve a conectarte para sincronizar tus v\u00edas."
   },
   "driverToast": {
-    "firstDriver": "{{newDriver}} está manejando la pared.",
-    "tookFromOther": "{{newDriver}} le quitó la pared a {{previousDriver}}.",
-    "tookFromYou": "{{newDriver}} te quitó la pared.",
+    "firstDriver": "{{newDriver}} est\u00e1 manejando la pared.",
+    "tookFromOther": "{{newDriver}} le quit\u00f3 la pared a {{previousDriver}}.",
+    "tookFromYou": "{{newDriver}} te quit\u00f3 la pared.",
     "unknownDriver": "Alguien"
   },
   "mobile": {
     "logbook": {
       "title": "Registro",
-      "noEntries": "Sin ascensiones todavía",
+      "noEntries": "Sin ascensiones todav\u00eda",
       "sendsAndAttempts": "{{sends}} envios, {{attempts}} intentos",
       "sendsOnly": "{{sends}} envios",
       "attemptsOnly": "{{attempts}} intentos",
@@ -249,20 +249,20 @@
       "title": "Escaladas similares",
       "empty": "No se encontraron escaladas similares",
       "retry": "Reintentar",
-      "sends_one": "{{count}} envío",
-      "sends_other": "{{count}} envíos"
+      "sends_one": "{{count}} env\u00edo",
+      "sends_other": "{{count}} env\u00edos"
     },
     "community": {
       "title": "Comunidad",
-      "empty": "Sin datos de la comunidad todavía",
+      "empty": "Sin datos de la comunidad todav\u00eda",
       "ascensionists_one": "{{count}} ascensionista",
       "ascensionists_other": "{{count}} ascensionistas",
       "avgQuality": "Calidad promedio",
-      "gradeByAngle": "Grado por ángulo"
+      "gradeByAngle": "Grado por \u00e1ngulo"
     },
     "betaVideos": {
       "title": "Videos Beta",
-      "empty": "Sin videos beta todavía. ¡Sé el primero en compartir!",
+      "empty": "Sin videos beta todav\u00eda. \u00a1S\u00e9 el primero en compartir!",
       "videoCount_one": "{{count}} video",
       "videoCount_other": "{{count}} videos",
       "addButton": "Adjuntar un video beta",
@@ -280,86 +280,86 @@
       "urlInvalid": "Debe ser una URL de Instagram o TikTok"
     },
     "angleSelector": {
-      "title": "Seleccionar ángulo"
+      "title": "Seleccionar \u00e1ngulo"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",
       "removeClimb": "Eliminar bloque",
-      "positionLabel": "posición {{position}}",
-      "syncError": "Error de sincronización de cola",
-      "sessionCreateError": "No se pudo crear la sesión",
-      "actionFailed": "Acción fallida. Inténtalo de nuevo.",
-      "endSession": "Terminar sesión",
-      "endSessionConfirm": "¿Estás seguro de que quieres terminar esta sesión?",
+      "positionLabel": "posici\u00f3n {{position}}",
+      "syncError": "Error de sincronizaci\u00f3n de cola",
+      "sessionCreateError": "No se pudo crear la sesi\u00f3n",
+      "actionFailed": "Acci\u00f3n fallida. Int\u00e9ntalo de nuevo.",
+      "endSession": "Terminar sesi\u00f3n",
+      "endSessionConfirm": "\u00bfEst\u00e1s seguro de que quieres terminar esta sesi\u00f3n?",
       "climbCount_one": "{{count}} bloque",
       "climbCount_other": "{{count}} bloques",
       "logAscent": "Registrar ascenso"
     },
     "queueSheet": {
-      "emptyQueue": "Tu cola está vacía",
+      "emptyQueue": "Tu cola est\u00e1 vac\u00eda",
       "toggleHistory": "Mostrar historial",
       "editQueue": "Editar cola",
       "doneEditing": "Listo"
     },
     "toast": {
-      "sessionEnded": "Sesión terminada"
+      "sessionEnded": "Sesi\u00f3n terminada"
     },
     "session": {
-      "headerStart": "Empezar sesión",
-      "headerActive": "Sesión",
-      "minimize": "Minimizar sesión",
+      "headerStart": "Empezar sesi\u00f3n",
+      "headerActive": "Sesi\u00f3n",
+      "minimize": "Minimizar sesi\u00f3n",
       "recordTab": "Grabar",
       "preBoardLabel": "Tabla",
       "preGeneratorLabel": "Entrenamiento",
       "preGeneratorOff": "Apagado",
       "preGeneratorVolume": "Volumen",
-      "preGeneratorPyramid": "Pirámide",
+      "preGeneratorPyramid": "Pir\u00e1mide",
       "preGeneratorLadder": "Escalera",
       "preGeneratorGradeFocus": "Grado fijo",
       "preGeneratorTargetGrade": "Grado objetivo",
-      "preStart": "Empezar sesión",
-      "preStarting": "Empezando…",
+      "preStart": "Empezar sesi\u00f3n",
+      "preStarting": "Empezando\u2026",
       "preNoBoard": "Elige una tabla para empezar",
-      "preStartError": "No se pudo iniciar la sesión. Inténtalo de nuevo.",
+      "preStartError": "No se pudo iniciar la sesi\u00f3n. Int\u00e9ntalo de nuevo.",
       "inStatsSends": "Encadenes",
       "inStatsAttempts": "Intentos",
-      "inStatsDuration": "Duración",
-      "inStatsHardest": "Encadene más duro",
-      "inStatsGrades": "Distribución de grados",
+      "inStatsDuration": "Duraci\u00f3n",
+      "inStatsHardest": "Encadene m\u00e1s duro",
+      "inStatsGrades": "Distribuci\u00f3n de grados",
       "inQueueTitle": "Cola",
-      "inQueueEmpty": "Cola vacía — explora vías para añadir.",
-      "inEndSession": "Terminar sesión"
+      "inQueueEmpty": "Cola vac\u00eda \u2014 explora v\u00edas para a\u00f1adir.",
+      "inEndSession": "Terminar sesi\u00f3n"
     }
   },
   "playView": {
-    "onWallChip": "EN EL MURO · {{username}}",
+    "onWallChip": "EN EL MURO \u00b7 {{username}}",
     "onWallChipNoDriver": "EN EL MURO",
     "drivingChip": "AL MANDO",
-    "audienceCount_one": "{{count}} más mirando",
-    "audienceCount_other": "{{count}} más mirando",
-    "returnToWallPill": "{{username}} · {{climbName}}",
+    "audienceCount_one": "{{count}} m\u00e1s mirando",
+    "audienceCount_other": "{{count}} m\u00e1s mirando",
+    "returnToWallPill": "{{username}} \u00b7 {{climbName}}",
     "previewCoachmark": "Vista previa. Toca la bombilla para enviar al muro.",
     "yourAscents_one": "Tu ascenso ({{count}})",
     "yourAscents_other": "Tus ascensos ({{count}})",
     "triesCount_one": "{{count}} intento",
     "triesCount_other": "{{count}} intentos",
-    "tickError": "No se pudo guardar tu marca — guardada como borrador",
-    "shareError": "No se pudo compartir — inténtalo otra vez",
+    "tickError": "No se pudo guardar tu marca \u2014 guardada como borrador",
+    "shareError": "No se pudo compartir \u2014 int\u00e9ntalo otra vez",
     "closeAria": "Cerrar",
     "actionBar": {
       "previousAria": "Bloque anterior",
       "nextAria": "Siguiente bloque",
       "mirrorAria": "Espejear bloque",
       "unmirrorAria": "Quitar espejo",
-      "addFavoriteAria": "Añadir favorito",
+      "addFavoriteAria": "A\u00f1adir favorito",
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
       "openQueueAria": "Abrir cola",
       "queueCountAria": "Cola, {{count}} bloques",
       "lightbulb": {
-        "drivingNamed": "Estás controlando “{{name}}”. Toca para soltar.",
-        "driving": "Estás controlando. Toca para soltar.",
-        "takeNamed": "Tomar el control y enviar “{{name}}”",
+        "drivingNamed": "Est\u00e1s controlando \u201c{{name}}\u201d. Toca para soltar.",
+        "driving": "Est\u00e1s controlando. Toca para soltar.",
+        "takeNamed": "Tomar el control y enviar \u201c{{name}}\u201d",
         "take": "Tomar el control del muro",
         "coachmark": "Enviar al muro"
       }
@@ -382,9 +382,8 @@
       "triesLabel": "Intentos",
       "starsLabel": "Estrellas",
       "noteLabel": "Nota",
-      "cancelLabel": "Cancelar",
       "flashSaveLabel": "Flash",
-      "sendSaveLabel": "Envío",
+      "sendSaveLabel": "Env\u00edo",
       "logAscentAria": "Registrar {{status}}",
       "decreaseTriesAria": "Disminuir intentos",
       "increaseTriesAria": "Aumentar intentos",

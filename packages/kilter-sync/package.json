@@ -1,0 +1,62 @@
+{
+  "name": "@boardsesh/kilter-sync",
+  "version": "1.0.0",
+  "description": "Kilter Grips (Keycloak + PowerSync + REST) sync utility for Boardsesh",
+  "bin": {
+    "kilter-sync": "./dist/cli/index.js"
+  },
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./runner": {
+      "types": "./src/runner/index.ts",
+      "import": "./src/runner/index.ts",
+      "default": "./src/runner/index.ts"
+    },
+    "./api": {
+      "types": "./src/api/index.ts",
+      "import": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "import": "./src/sync/index.ts",
+      "default": "./src/sync/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli/index.ts",
+    "build": "tsc",
+    "start": "node dist/cli/index.js",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit",
+    "lint": "vp lint",
+    "lint-fix": "vp lint --fix",
+    "sync:catalog": "tsx src/cli/index.ts catalog",
+    "sync:daemon": "tsx src/cli/index.ts daemon",
+    "sync:user": "tsx src/cli/index.ts user"
+  },
+  "dependencies": {
+    "@boardsesh/board-constants": "*",
+    "@boardsesh/crypto": "*",
+    "@boardsesh/db": "*",
+    "@boardsesh/shared-schema": "*",
+    "@boardsesh/sync-runtime": "*",
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
+    "jose": "^6.1.3",
+    "postgres": "^3.4.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

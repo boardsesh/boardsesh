@@ -1,8 +1,8 @@
 {
   "metadata": {
     "list": {
-      "title": "{{boardName}} climbs at {{angle}}°",
-      "description": "Browse climbs on {{boardName}} at {{angle}}°",
+      "title": "{{boardName}} climbs at {{angle}}\u00b0",
+      "description": "Browse climbs on {{boardName}} at {{angle}}\u00b0",
       "fallbackTitle": "Climbs",
       "fallbackDescription": "Browse climbs"
     },
@@ -12,7 +12,7 @@
       "imageAlt": "{{climbName}} - {{grade}} on {{boardName}} board",
       "fallbackTitle": "Climb",
       "fallbackDescription": "View climb details and beta videos",
-      "seoHeading": "{{climbName}} — {{grade}}",
+      "seoHeading": "{{climbName}} \u2014 {{grade}}",
       "seoSummary": "{{boardName}} {{layoutName}} climb",
       "seoSetterSuffix": " set by {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} ascents logged"
@@ -311,11 +311,11 @@
     "title": {
       "noClimbSelected": "No climb selected",
       "project": "project",
-      "projectAtAngle": "project @ {{angle}}°"
+      "projectAtAngle": "project @ {{angle}}\u00b0"
     },
     "list": {
       "moreActions": "More actions",
-      "tickError": "Couldn't save your tick — it's saved as a draft"
+      "tickError": "Couldn't save your tick \u2014 it's saved as a draft"
     },
     "detailHeader": {
       "project": "project"
@@ -335,7 +335,7 @@
     "emptyIdentical": "No identical climbs found right now.",
     "untitledClimb": "Untitled climb",
     "openActions": "More actions",
-    "actionsUnavailable": "Can't open actions for this climb — board configuration unavailable."
+    "actionsUnavailable": "Can't open actions for this climb \u2014 board configuration unavailable."
   },
   "multiboardList": {
     "noClimbsFound": "No climbs found",
@@ -501,7 +501,7 @@
       "removeDescription": "This climb will not be imported."
     },
     "bulk": {
-      "title": "Import MoonBoard Climbs - {{layoutName}} @ {{angle}}°",
+      "title": "Import MoonBoard Climbs - {{layoutName}} @ {{angle}}\u00b0",
       "loginRequired": "Please log in to save climbs",
       "loginRequiredTitle": "Login Required",
       "loginRequiredBody": "Please log in to save climbs to the database.",
@@ -525,7 +525,7 @@
     "save": "Save Changes",
     "setter": "Setter: {{setter}}",
     "grade": "Grade: {{grade}}",
-    "angle": "Angle: {{angle}}°",
+    "angle": "Angle: {{angle}}\u00b0",
     "unknown": "Unknown"
   },
   "mobile": {
@@ -557,19 +557,7 @@
       "send_other": "sends"
     },
     "logAscent": {
-      "title": "Log Ascent",
-      "flash": "Flash",
-      "send": "Send",
       "attempt": "Attempt",
-      "attempts": "Attempts",
-      "quality": "Quality",
-      "gradeOpinion": "Grade opinion",
-      "comment": "Notes",
-      "commentPlaceholder": "How did it feel?",
-      "save": "Save",
-      "decreaseAttempts": "Decrease attempts",
-      "increaseAttempts": "Increase attempts",
-      "errorTitle": "Save failed",
       "errorMessage": "Could not save your ascent. Please try again.",
       "savedToast": "Tick saved"
     },
@@ -640,7 +628,7 @@
     "search": {
       "recentFilters": "Recent",
       "clearRecent": "Clear",
-      "gradeRange": "{{min}}–{{max}}",
+      "gradeRange": "{{min}}\u2013{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "Up to {{grade}}",
       "ascents": "{{count}}+ ascents",

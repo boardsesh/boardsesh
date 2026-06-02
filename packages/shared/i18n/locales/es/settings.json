@@ -167,7 +167,9 @@
       "username": "Usuario:",
       "lastSynced": "Última sincronización:",
       "never": "Nunca",
-      "kilterShutdown": "El backend de Kilter ha sido apagado. Puedes importar tus datos con un archivo JSON exportado de Aurora, o escribir a Aurora Climbing por correo para pedir una exportación.",
+      "kilterShutdown": "La sincronización directa con Kilter se está habilitando poco a poco. Mientras tanto, importa una exportación JSON de la app de Kilter, o escribe a Aurora Climbing para pedir tus datos.",
+      "kilterConnectCopy": "Vincula tu cuenta de Kilter para traer tus encadenamientos, intentos, valoraciones y circuitos a Boardsesh. La sincronización en sentido inverso llega pronto.",
+      "kilterConnectButton": "Vincular cuenta de Kilter",
       "notConnected": "No vinculado. Vincula tu cuenta de {{boardName}} para importar tus datos de Aurora, o impórtalos desde un archivo JSON.",
       "link": "Vincular",
       "import": "Importar",
@@ -207,6 +209,7 @@
     },
     "unlinkSuccess": "Cuenta desvinculada",
     "unlinkError": "No se pudo desvincular la cuenta",
+    "unlinkPartial": "Te hemos desvinculado por nuestro lado, pero la app de Kilter puede seguir conectada. Cierra sesión también en Kilter si quieres cortar el vínculo por completo.",
     "import": {
       "steps": {
         "climbs": "Importando borradores de vías",

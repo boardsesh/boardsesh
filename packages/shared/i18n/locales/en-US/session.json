@@ -13,7 +13,7 @@
       "descriptionBoardWithSends_one": "{{boardInfo}}. {{count}} send so far{{gradeSummary}}. Get on the wall.",
       "descriptionBoardWithSends_other": "{{boardInfo}}. {{count}} sends so far{{gradeSummary}}. Get on the wall.",
       "descriptionBoardNoSends": "{{boardInfo}}. No sends yet. Get on the wall.",
-      "boardAtAngle": "{{boardLabel}} at {{angle}}°",
+      "boardAtAngle": "{{boardLabel}} at {{angle}}\u00b0",
       "gradeOn": " on {{grade}}",
       "gradeRange": " from {{first}} to {{last}}"
     }
@@ -153,7 +153,7 @@
     "participants": "Participants",
     "done": "Done",
     "saveToAppleHealth": "Save to Apple Health",
-    "savingToAppleHealth": "Saving to Apple Health…",
+    "savingToAppleHealth": "Saving to Apple Health\u2026",
     "savedToAppleHealth": "Saved to Apple Health",
     "saveToAppleHealthRetry": "Save to Apple Health (retry)",
     "minutes": "{{count}}min",
@@ -175,8 +175,8 @@
     "tickCommentPlaceholder": "Comment...",
     "tickAttemptLabel": "attempt",
     "reconnect": {
-      "connectionError": "Connection error – retrying…",
-      "reconnecting": "Reconnecting…"
+      "connectionError": "Connection error \u2013 retrying\u2026",
+      "reconnecting": "Reconnecting\u2026"
     },
     "tickBar": {
       "collapse": "Collapse",
@@ -318,7 +318,7 @@
       "preGeneratorGradeFocus": "Grade Focus",
       "preGeneratorTargetGrade": "Target grade",
       "preStart": "Start session",
-      "preStarting": "Starting…",
+      "preStarting": "Starting\u2026",
       "preNoBoard": "Pick a board to start",
       "preStartError": "Couldn't start session. Try again.",
       "inStatsSends": "Sends",
@@ -327,24 +327,24 @@
       "inStatsHardest": "Hardest send",
       "inStatsGrades": "Grade distribution",
       "inQueueTitle": "Queue",
-      "inQueueEmpty": "Queue is empty — browse climbs to add.",
+      "inQueueEmpty": "Queue is empty \u2014 browse climbs to add.",
       "inEndSession": "End session"
     }
   },
   "playView": {
-    "onWallChip": "ON WALL · {{username}}",
+    "onWallChip": "ON WALL \u00b7 {{username}}",
     "onWallChipNoDriver": "ON WALL",
     "drivingChip": "DRIVING",
     "audienceCount_one": "{{count}} other watching",
     "audienceCount_other": "{{count}} others watching",
-    "returnToWallPill": "{{username}} · {{climbName}}",
+    "returnToWallPill": "{{username}} \u00b7 {{climbName}}",
     "previewCoachmark": "Previewing. Tap the lightbulb to send it to the wall.",
     "yourAscents_one": "Your Ascent ({{count}})",
     "yourAscents_other": "Your Ascents ({{count}})",
     "triesCount_one": "{{count}} try",
     "triesCount_other": "{{count}} tries",
-    "tickError": "Couldn't save your tick — it's saved as a draft",
-    "shareError": "Couldn't share — try again",
+    "tickError": "Couldn't save your tick \u2014 it's saved as a draft",
+    "shareError": "Couldn't share \u2014 try again",
     "closeAria": "Close",
     "actionBar": {
       "previousAria": "Previous climb",
@@ -357,9 +357,9 @@
       "openQueueAria": "Open up next",
       "queueCountAria": "Queue, {{count}} climbs",
       "lightbulb": {
-        "drivingNamed": "You’re driving “{{name}}”. Tap to release control.",
-        "driving": "You’re driving. Tap to release control.",
-        "takeNamed": "Take wall control and send “{{name}}”",
+        "drivingNamed": "You\u2019re driving \u201c{{name}}\u201d. Tap to release control.",
+        "driving": "You\u2019re driving. Tap to release control.",
+        "takeNamed": "Take wall control and send \u201c{{name}}\u201d",
         "take": "Take wall control",
         "coachmark": "Send to the wall"
       }
@@ -382,7 +382,6 @@
       "triesLabel": "Tries",
       "starsLabel": "Stars",
       "noteLabel": "Note",
-      "cancelLabel": "Cancel",
       "flashSaveLabel": "Flash",
       "sendSaveLabel": "Send",
       "logAscentAria": "Log {{status}}",

@@ -1,4 +1,5 @@
 import { pgTable, bigserial, text, integer, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { users } from './users';
 
 // Links a NextAuth user to a board account. board_user_id holds the Aurora
@@ -50,5 +51,12 @@ export const auroraCredentials = pgTable(
   (table) => ({
     uniqueUserBoardCredential: uniqueIndex('unique_user_board_credential').on(table.userId, table.boardType),
     userCredentialsIdx: index('aurora_credentials_user_idx').on(table.userId),
+    // Partial index for the sync-runner's getNextCredentialToSync hot path.
+    // Without it the daemon seq-scans + sorts auroraCredentials every cycle;
+    // fine at 1k users, painful at 100k. Predicate matches the WHERE clause
+    // in kilter-sync's runner so the optimizer can use the index directly.
+    syncPriorityIdx: index('aurora_credentials_sync_priority_idx')
+      .on(table.boardType, table.syncStatus, table.lastSyncAt)
+      .where(sql`${table.syncStatus} IN ('pending', 'active', 'error')`),
   }),
 );

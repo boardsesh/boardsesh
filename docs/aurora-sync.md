@@ -352,3 +352,11 @@ After Railway sync is working:
 2. Compare sync timestamps between Vercel and Railway
 3. Disable Vercel cron route (`/api/internal/user-sync-cron`)
 4. Remove the route file after confirming Railway works
+
+### Kilter sync allowlist (interim)
+
+While Kilter sync is in early access, the connect endpoint is gated by `KILTER_SYNC_ALLOWED_USER_IDS`. Set it to a comma-separated list of NextAuth user IDs (e.g. `KILTER_SYNC_ALLOWED_USER_IDS=user_abc,user_def`); any user not on the list gets a 403 when they try to connect their Kilter account. The value is read once at module load, so rotating the list (adding a beta tester, removing someone) requires a redeploy of any service that imports the gate — there is no hot reload. The gate goes away when we ship general availability; tracking work to remove it lives in PR 15 of the kilter-sync rollout series.
+
+## See also
+
+- [`kilter-sync.md`](./kilter-sync.md) — Sibling package for the Kilter Grips integration. Same `aurora_credentials` table, same daemon shape, completely different wire (Keycloak OAuth + PowerSync NDJSON + REST).

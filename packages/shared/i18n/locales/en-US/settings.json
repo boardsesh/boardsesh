@@ -167,7 +167,9 @@
       "username": "Username:",
       "lastSynced": "Last synced:",
       "never": "Never",
-      "kilterShutdown": "The Kilter backend has been shut down. You can import your data using an Aurora JSON export file, or email Aurora Climbing to request a data export.",
+      "kilterShutdown": "Direct sync with Kilter is rolling out gradually. In the meantime, import a JSON export from the Kilter app, or email Aurora Climbing to request your data.",
+      "kilterConnectCopy": "Hook up your Kilter account to pull your sends, attempts, ratings and circuits into Boardsesh. Pushing changes back to Kilter is coming soon.",
+      "kilterConnectButton": "Connect Kilter account",
       "notConnected": "Not connected. Link your {{boardName}} account to import your Aurora data, or import from a JSON export file.",
       "link": "Link",
       "import": "Import",
@@ -207,6 +209,7 @@
     },
     "unlinkSuccess": "Account unlinked successfully",
     "unlinkError": "Failed to unlink account",
+    "unlinkPartial": "We disconnected on our side, but the Kilter app may still be signed in. Sign out of Kilter there too if you want to fully cut the link.",
     "import": {
       "steps": {
         "climbs": "Importing draft climbs",

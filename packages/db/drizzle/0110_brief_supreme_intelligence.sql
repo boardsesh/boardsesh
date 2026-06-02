@@ -1,0 +1,1 @@
+CREATE INDEX "aurora_credentials_sync_priority_idx" ON "aurora_credentials" USING btree ("board_type","sync_status","last_sync_at") WHERE "aurora_credentials"."sync_status" IN ('pending', 'active', 'error');

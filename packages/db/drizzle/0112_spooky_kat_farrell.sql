@@ -1,0 +1,1 @@
+ALTER TABLE "board_climb_ratings" ADD CONSTRAINT "board_climb_ratings_rating_range" CHECK ("board_climb_ratings"."rating" IS NULL OR ("board_climb_ratings"."rating" >= 1 AND "board_climb_ratings"."rating" <= 5));

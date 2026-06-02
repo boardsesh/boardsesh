@@ -32,6 +32,7 @@
     "@boardsesh/crypto": "*",
     "@boardsesh/db": "*",
     "@boardsesh/graphql": "*",
+    "@boardsesh/kilter-sync": "*",
     "@boardsesh/queue": "*",
     "@boardsesh/shared-schema": "*",
     "@escape.tech/graphql-armor-cost-limit": "^2.4.3",

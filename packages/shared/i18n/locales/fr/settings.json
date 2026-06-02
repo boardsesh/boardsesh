@@ -167,7 +167,9 @@
       "username": "Identifiant :",
       "lastSynced": "Dernière synchro :",
       "never": "Jamais",
-      "kilterShutdown": "Le backend Kilter a été coupé. Vous pouvez importer vos données depuis un fichier d'export JSON Aurora, ou écrire à Aurora Climbing pour en demander un.",
+      "kilterShutdown": "La synchro directe avec Kilter se déploie progressivement. En attendant, importez un export JSON depuis l'app Kilter, ou écrivez à Aurora Climbing pour demander vos données.",
+      "kilterConnectCopy": "Liez votre compte Kilter pour rapatrier vos enchaînements, essais, notes et circuits dans Boardsesh. La synchro dans l'autre sens arrive bientôt.",
+      "kilterConnectButton": "Lier le compte Kilter",
       "notConnected": "Non lié. Liez votre compte {{boardName}} pour importer vos données Aurora, ou importez depuis un fichier d'export JSON.",
       "link": "Lier",
       "import": "Importer",
@@ -207,6 +209,7 @@
     },
     "unlinkSuccess": "Compte délié",
     "unlinkError": "Déliaison du compte impossible",
+    "unlinkPartial": "Nous avons délié votre compte de notre côté, mais l'app Kilter peut rester connectée. Déconnectez-vous aussi dans Kilter si vous voulez couper le lien complètement.",
     "import": {
       "steps": {
         "climbs": "Importation des brouillons de blocs",

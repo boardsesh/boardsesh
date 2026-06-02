@@ -1,0 +1,1 @@
+CREATE INDEX "board_climb_ratings_user_kilter_idx" ON "board_climb_ratings" USING btree ("user_id","kilter_id") WHERE "board_climb_ratings"."kilter_id" IS NOT NULL;

@@ -2,13 +2,23 @@ import { defineConfig } from 'vite-plus';
 
 const shellQuote = (filePath: string) => `'${filePath.replaceAll("'", "'\\''")}'`;
 const isGeneratedFile = (filePath: string) => filePath.includes('/generated/');
+// board-controller is a vendored minified bundle — re-formatting it
+// in the pre-commit hook produces noisy diffs (Prettier rewraps long
+// minified lines) every time someone stages an unrelated file
+// elsewhere in the repo and the hook walks the working tree. Match
+// the lint + fmt ignore below so the three stay consistent.
+const isVendoredBundle = (filePath: string) => filePath.includes('/board-controller/');
 
 export default defineConfig({
   fmt: {
     singleQuote: true,
     semi: true,
     trailingComma: 'all',
-    ignore: ['design/**', '**/generated/**'],
+    // board-controller is a vendored third-party minified bundle —
+    // formatting it produces noise diffs every time `vp check --fix`
+    // runs without changing what ships, and the linter already ignores
+    // the same path. Keep them in lock-step.
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**'],
   },
   lint: {
     ignorePatterns: ['**/board-controller/**', 'mobile/**', 'packages/mobile/**'],
@@ -38,6 +48,8 @@ export default defineConfig({
       './packages/moonboard-ocr/vite.config.ts',
       './packages/board-constants/vite.config.ts',
       './packages/aurora-sync/vite.config.ts',
+      './packages/kilter-sync/vite.config.ts',
+      './packages/sync-runtime/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
@@ -62,7 +74,9 @@ export default defineConfig({
   },
   staged: {
     '*.{ts,tsx,js,mjs,cjs}': (stagedFileNames) => {
-      const lintableFileNames = stagedFileNames.filter((fileName) => !isGeneratedFile(fileName));
+      const lintableFileNames = stagedFileNames.filter(
+        (fileName) => !isGeneratedFile(fileName) && !isVendoredBundle(fileName),
+      );
       return lintableFileNames.length > 0 ? `vp check --fix ${lintableFileNames.map(shellQuote).join(' ')}` : [];
     },
     'packages/web/app/**/*.{ts,tsx}': () => ['vp run check:i18n', 'vp run check:i18n:orphans'],
@@ -137,13 +151,20 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db build',
         dependsOn: ['build:shared'],
       },
+      'build:sync-runtime': {
+        command: 'bun run --filter=@boardsesh/sync-runtime build',
+      },
       'build:aurora': {
         command: 'bun run --filter=@boardsesh/aurora-sync build',
-        dependsOn: ['build:shared', 'build:crypto', 'build:db'],
+        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:sync-runtime'],
+      },
+      'build:kilter': {
+        command: 'bun run --filter=@boardsesh/kilter-sync build',
+        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:sync-runtime'],
       },
       'build:backend': {
         command: 'bun run --filter=boardsesh-backend build',
-        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants', 'build:aurora'],
+        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants', 'build:aurora', 'build:kilter'],
       },
       'build:web': {
         command: 'bun run --filter=@boardsesh/web build',
@@ -264,6 +285,14 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/mobile typecheck',
         dependsOn: ['build:shared', 'build:constants'],
       },
+      'typecheck:kilter': {
+        command: 'bun run --filter=@boardsesh/kilter-sync typecheck',
+        dependsOn: ['build:kilter'],
+      },
+      'typecheck:sync-runtime': {
+        command: 'bun run --filter=@boardsesh/sync-runtime typecheck',
+        dependsOn: ['build:sync-runtime'],
+      },
       typecheck: {
         command: 'true',
         dependsOn: [
@@ -288,6 +317,8 @@ export default defineConfig({
           'typecheck:graphql',
           'typecheck:graphql-client',
           'typecheck:mobile',
+          'typecheck:kilter',
+          'typecheck:sync-runtime',
         ],
       },
 
