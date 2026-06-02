@@ -333,9 +333,13 @@ export const mySmartPlaylistCounts = async (
       )
     ),
     liked_climbs AS (
-      SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
-      FROM ${dbSchema.userFavorites}
-      WHERE user_id = ${userId}
+      -- Favorites are board-agnostic post-#2449. Derive board via a join
+      -- against the unified climbs table so the count matches the paged
+      -- LIKED_CLIMBS view in selectSmartClimbRefs (which also joins climbs).
+      SELECT COUNT(DISTINCT (c.board_type, uf.climb_uuid))::int AS count
+      FROM ${dbSchema.userFavorites} uf
+      INNER JOIN ${UNIFIED_TABLES.climbs} c ON c.uuid = uf.climb_uuid
+      WHERE uf.user_id = ${userId}
     )
     SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
     UNION ALL
