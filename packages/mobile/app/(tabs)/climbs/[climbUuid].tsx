@@ -237,9 +237,8 @@ export default function ClimbDetail() {
       </ScrollView>
 
       {/* Log Ascent sheet */}
-      {boardName && (
+      {boardName && showLogAscent ? (
         <LogAscentSheet
-          visible={showLogAscent}
           onDismiss={() => setShowLogAscent(false)}
           climbUuid={climb.uuid}
           climbName={climb.name}
@@ -252,7 +251,7 @@ export default function ClimbDetail() {
           setIds={setIds}
           sessionId={sessionId}
         />
-      )}
+      ) : null}
     </>
   );
 }

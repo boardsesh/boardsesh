@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, TextInput, ScrollView, StyleSheet, Alert, type ViewStyle } from 'react-native';
-import BottomSheet, {
+import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { View, Pressable, TextInput, Platform, ScrollView, StyleSheet, Alert, type ViewStyle } from 'react-native';
+import {
   BottomSheetBackdrop,
-  BottomSheetView,
+  BottomSheetModal,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Grade } from '@boardsesh/shared-schema';
@@ -26,7 +27,6 @@ import { spacing } from '../theme/tokens';
 type TickStatus = 'flash' | 'send' | 'attempt';
 
 type LogAscentSheetProps = {
-  visible: boolean;
   onDismiss: () => void;
   climbUuid: string;
   climbName: string;
@@ -41,6 +41,13 @@ type LogAscentSheetProps = {
 };
 
 const STATUS_OPTIONS: TickStatus[] = ['flash', 'send', 'attempt'];
+
+// Portal the sheet above the tab bar / persistent queue bar on iOS so the
+// footer Save button isn't hidden behind those overlays.
+function LogAscentSheetContainer({ children }: PropsWithChildren) {
+  return <FullWindowOverlay>{children}</FullWindowOverlay>;
+}
+const modalContainerComponent = Platform.OS === 'ios' ? LogAscentSheetContainer : undefined;
 
 function getMinAttempts(tickStatus: TickStatus): number {
   if (tickStatus === 'send') return 2;
@@ -77,7 +84,6 @@ function GradeChip({ grade, selected, onPress }: { grade: Grade; selected: boole
 }
 
 export function LogAscentSheet({
-  visible,
   onDismiss,
   climbUuid,
   climbName,
@@ -94,16 +100,14 @@ export function LogAscentSheet({
   const theme = useTheme();
   const { systemColors } = theme;
   const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetModal>(null);
 
+  // Mount-based control: parent renders this only when the sheet should be
+  // open, so we just present on mount and let the parent unmount on dismiss
+  // (same pattern as ClimbFilterSheet / DevicePickerSheet).
   useEffect(() => {
-    // Sheet mounts when visible becomes true — expand it. Re-run on every
-    // `visible` toggle, since the parent keeps the sheet mounted across
-    // opens, and a [] deps array would only expand on the first open.
-    if (visible) {
-      sheetRef.current?.expand();
-    }
-  }, [visible]);
+    sheetRef.current?.present();
+  }, []);
 
   const saveTick = useSaveTick(toBoardName(boardName));
   const { data: grades } = useGrades(boardName);
@@ -159,14 +163,6 @@ export function LogAscentSheet({
     setQuality(rating ?? 0);
   }, []);
 
-  const resetForm = useCallback(() => {
-    setStatus('flash');
-    setAttemptCount(1);
-    setQuality(0);
-    setSelectedDifficultyId(null);
-    setComment('');
-  }, []);
-
   const handleSave = useCallback(() => {
     saveTick.mutate(
       {
@@ -188,9 +184,7 @@ export function LogAscentSheet({
       {
         onSuccess: () => {
           hapticSuccess();
-          resetForm();
-          sheetRef.current?.close();
-          onDismiss();
+          sheetRef.current?.dismiss();
         },
         onError: () => {
           hapticError();
@@ -213,19 +207,8 @@ export function LogAscentSheet({
     layoutId,
     sizeId,
     setIds,
-    onDismiss,
-    resetForm,
     t,
   ]);
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index === -1) {
-        onDismiss();
-      }
-    },
-    [onDismiss],
-  );
 
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
@@ -264,149 +247,143 @@ export function LogAscentSheet({
     textAlignVertical: 'top' as const,
   };
 
-  if (!visible) return null;
-
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={sheetRef}
+      name="log-ascent"
       index={0}
       snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      stackBehavior="push"
+      containerComponent={modalContainerComponent}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
-      onChange={handleSheetChange}
+      onDismiss={onDismiss}
       handleIndicatorStyle={styles.indicator}
       backgroundStyle={backgroundStyle}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
     >
-      <BottomSheetView style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text variant="title3">{t('mobile.logAscent.title')}</Text>
-          <Text variant="subheadline" style={styles.climbName}>
-            {climbName}
-          </Text>
-        </View>
+      <View style={styles.header}>
+        <Text variant="title3">{t('mobile.logAscent.title')}</Text>
+        <Text variant="subheadline" style={styles.climbName}>
+          {climbName}
+        </Text>
+      </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Status segmented control */}
-          <View style={styles.section}>
-            <SegmentedControl
-              options={segmentOptions}
-              selectedKey={status}
-              onSelect={handleStatusChange}
-              trackColor={trackColor}
-            />
-          </View>
-
-          {/* Attempt count stepper */}
-          <View style={styles.section}>
-            <Text variant="subheadline" style={styles.sectionLabel}>
-              {t('mobile.logAscent.attempts')}
-            </Text>
-            <View style={styles.stepperRow}>
-              <Pressable
-                onPress={handleDecrement}
-                disabled={attemptCount <= minAttempts}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.logAscent.decreaseAttempts')}
-                style={[stepperButtonStyle, attemptCount <= minAttempts && styles.stepperDisabled]}
-              >
-                <Icon
-                  name="minus.circle"
-                  size={22}
-                  color={attemptCount <= minAttempts ? iosSystemColors.systemGray4 : brandColors.primary}
-                />
-              </Pressable>
-              <Text variant="title3" style={styles.attemptCount}>
-                {attemptCount}
-              </Text>
-              <Pressable
-                onPress={handleIncrement}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.logAscent.increaseAttempts')}
-                style={stepperButtonStyle}
-              >
-                <Icon name="add" size={22} color={brandColors.primary} />
-              </Pressable>
-            </View>
-          </View>
-
-          <Separator />
-
-          {/* Quality rating */}
-          <View style={styles.section}>
-            <Text variant="subheadline" style={styles.sectionLabel}>
-              {t('mobile.logAscent.quality')}
-            </Text>
-            <StarRating value={quality} onChange={handleQualityChange} clearValue={0} />
-          </View>
-
-          <Separator />
-
-          {/* Grade opinion */}
-          {grades && grades.length > 0 && (
-            <>
-              <View style={styles.section}>
-                <Text variant="subheadline" style={styles.sectionLabel}>
-                  {t('mobile.logAscent.gradeOpinion')}
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.gradeChipsContainer}
-                >
-                  {grades.map((grade) => (
-                    <GradeChip
-                      key={grade.difficultyId}
-                      grade={grade}
-                      selected={selectedDifficultyId === grade.difficultyId}
-                      onPress={() =>
-                        setSelectedDifficultyId(selectedDifficultyId === grade.difficultyId ? null : grade.difficultyId)
-                      }
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-
-              <Separator />
-            </>
-          )}
-
-          {/* Comment */}
-          <View style={styles.section}>
-            <Text variant="subheadline" style={styles.sectionLabel}>
-              {t('mobile.logAscent.comment')}
-            </Text>
-            <TextInput
-              value={comment}
-              onChangeText={setComment}
-              placeholder={t('mobile.logAscent.commentPlaceholder')}
-              placeholderTextColor={systemColors.tertiaryLabel as string}
-              multiline
-              style={commentInputStyle}
-            />
-          </View>
-
-        </ScrollView>
-
-        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-          <Button
-            title={t('mobile.logAscent.save')}
-            onPress={handleSave}
-            variant="filled"
-            size="large"
-            loading={saveTick.isPending}
-            disabled={saveTick.isPending}
-            style={styles.saveButton}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.section}>
+          <SegmentedControl
+            options={segmentOptions}
+            selectedKey={status}
+            onSelect={handleStatusChange}
+            trackColor={trackColor}
           />
         </View>
-      </BottomSheetView>
-    </BottomSheet>
+
+        <View style={styles.section}>
+          <Text variant="subheadline" style={styles.sectionLabel}>
+            {t('mobile.logAscent.attempts')}
+          </Text>
+          <View style={styles.stepperRow}>
+            <Pressable
+              onPress={handleDecrement}
+              disabled={attemptCount <= minAttempts}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.logAscent.decreaseAttempts')}
+              style={[stepperButtonStyle, attemptCount <= minAttempts && styles.stepperDisabled]}
+            >
+              <Icon
+                name="minus.circle"
+                size={22}
+                color={attemptCount <= minAttempts ? iosSystemColors.systemGray4 : brandColors.primary}
+              />
+            </Pressable>
+            <Text variant="title3" style={styles.attemptCount}>
+              {attemptCount}
+            </Text>
+            <Pressable
+              onPress={handleIncrement}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.logAscent.increaseAttempts')}
+              style={stepperButtonStyle}
+            >
+              <Icon name="add" size={22} color={brandColors.primary} />
+            </Pressable>
+          </View>
+        </View>
+
+        <Separator />
+
+        <View style={styles.section}>
+          <Text variant="subheadline" style={styles.sectionLabel}>
+            {t('mobile.logAscent.quality')}
+          </Text>
+          <StarRating value={quality} onChange={handleQualityChange} clearValue={0} />
+        </View>
+
+        <Separator />
+
+        {grades && grades.length > 0 && (
+          <>
+            <View style={styles.section}>
+              <Text variant="subheadline" style={styles.sectionLabel}>
+                {t('mobile.logAscent.gradeOpinion')}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.gradeChipsContainer}
+              >
+                {grades.map((grade) => (
+                  <GradeChip
+                    key={grade.difficultyId}
+                    grade={grade}
+                    selected={selectedDifficultyId === grade.difficultyId}
+                    onPress={() =>
+                      setSelectedDifficultyId(selectedDifficultyId === grade.difficultyId ? null : grade.difficultyId)
+                    }
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            <Separator />
+          </>
+        )}
+
+        <View style={styles.section}>
+          <Text variant="subheadline" style={styles.sectionLabel}>
+            {t('mobile.logAscent.comment')}
+          </Text>
+          <TextInput
+            value={comment}
+            onChangeText={setComment}
+            placeholder={t('mobile.logAscent.commentPlaceholder')}
+            placeholderTextColor={systemColors.tertiaryLabel as string}
+            multiline
+            style={commentInputStyle}
+          />
+        </View>
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
+        <Button
+          title={t('mobile.logAscent.save')}
+          onPress={handleSave}
+          variant="filled"
+          size="large"
+          loading={saveTick.isPending}
+          disabled={saveTick.isPending}
+          style={styles.saveButton}
+        />
+      </View>
+    </BottomSheetModal>
   );
 }
 
@@ -417,7 +394,7 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
   },
-  content: {
+  scrollView: {
     flex: 1,
   },
   scrollContent: {
@@ -463,7 +440,6 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
-    paddingBottom: spacing[3],
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: iosSystemColors.separator,
   },

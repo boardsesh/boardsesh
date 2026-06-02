@@ -5,7 +5,6 @@ import {
   BottomSheetModal,
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
-  type BottomSheetScrollViewMethods,
 } from '@gorhom/bottom-sheet';
 import { FullWindowOverlay } from 'react-native-screens';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -179,7 +178,6 @@ export function ClimbFilterSheet({ onDismiss, boardConfig, currentFilters, onApp
   const { isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
 
@@ -433,7 +431,6 @@ export function ClimbFilterSheet({ onDismiss, boardConfig, currentFilters, onApp
       </View>
 
       <BottomSheetScrollView
-        ref={scrollRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}

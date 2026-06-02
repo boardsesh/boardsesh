@@ -198,14 +198,13 @@ export default function BoardSearchScreen() {
       </View>
     ) : null;
 
-  const detailSheet = (
+  const detailSheet = selectedBoard ? (
     <BoardDetailSheet
       board={selectedBoard}
-      visible={selectedBoard != null}
       onClose={() => setSelectedUuid(null)}
       onSetActive={handleSetActive}
     />
-  );
+  ) : null;
 
   // expo-maps unavailable (pre-build client): show a placeholder but keep the
   // search field + results list working so the feature degrades, not crashes.

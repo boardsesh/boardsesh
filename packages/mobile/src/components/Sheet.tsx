@@ -1,16 +1,14 @@
 import { forwardRef, useCallback, useMemo, type ReactNode } from 'react';
-import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetScrollView,
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hapticMedium } from '../lib/haptics';
-import { sheetStyles, spacing } from '../theme/tokens';
+import { sheetStyles } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
 
 type SheetProps = {
   children: ReactNode;
@@ -25,10 +23,6 @@ type SheetProps = {
   // default BottomSheetView breaks gorhom's scroll gesture wiring.
   scrollable?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
-  // Optional bottom action area. Rendered as a sibling below the content with
-  // safe-area-aware bottom padding so the CTA sits comfortably above the home
-  // indicator (instead of flush against the screen edge).
-  footer?: ReactNode;
 };
 
 export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
@@ -41,12 +35,10 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
     enablePanDownToClose = true,
     scrollable = false,
     contentContainerStyle,
-    footer,
   },
   ref,
 ) {
   const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
   const renderBackdrop = useCallback(
@@ -66,17 +58,6 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
 
   const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
 
-  const footerNode = footer ? (
-    <View
-      style={[
-        styles.footer,
-        { backgroundColor: systemColors.secondaryBackground as string, paddingBottom: insets.bottom + spacing[3] },
-      ]}
-    >
-      {footer}
-    </View>
-  ) : null;
-
   return (
     <BottomSheet
       ref={ref}
@@ -91,28 +72,10 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
       handleIndicatorStyle={sheetStyles.indicator}
       style={styles.sheet}
     >
-      {footer ? (
-        // Footer path: wrap scroll/static body + footer in a BottomSheetView so
-        // they share the sheet's flex column and the footer hugs the bottom.
-        <BottomSheetView style={styles.content}>
-          {scrollable ? (
-            <BottomSheetScrollView
-              style={styles.scrollView}
-              contentContainerStyle={contentContainerStyle}
-              showsVerticalScrollIndicator={false}
-            >
-              {children}
-            </BottomSheetScrollView>
-          ) : (
-            children
-          )}
-          {footerNode}
-        </BottomSheetView>
-      ) : scrollable ? (
-        // No-footer scrollable path stays unchanged for existing consumers:
-        // BottomSheetScrollView as the direct child keeps gorhom's gesture
-        // wiring intact (nesting it inside BottomSheetView is what the wrapper
-        // historically warned against).
+      {scrollable ? (
+        // style (flex: 1) sizes the scroll viewport to fill the sheet; the
+        // caller's padding goes on contentContainerStyle so it scrolls with the
+        // content rather than clipping the scrollable area.
         <BottomSheetScrollView
           style={styles.content}
           contentContainerStyle={contentContainerStyle}
@@ -143,14 +106,5 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
   },
 });

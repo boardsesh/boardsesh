@@ -452,9 +452,8 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
       )}
 
       {/* Log Ascent sheet (full, via long-press) */}
-      {displayedClimb && (
+      {displayedClimb && showLogAscent ? (
         <LogAscentSheet
-          visible={showLogAscent}
           onDismiss={() => setShowLogAscent(false)}
           climbUuid={displayedClimb.uuid}
           climbName={displayedClimb.name}
@@ -467,7 +466,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           setIds={setIds}
           sessionId={sessionId}
         />
-      )}
+      ) : null}
     </>
   );
 });

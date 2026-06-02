@@ -185,7 +185,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       {activeBoardConfig ? <PlayDrawer ref={playDrawerRef} boardConfig={activeBoardConfig} /> : null}
       {logAscentInput ? (
         <LogAscentSheet
-          visible
           onDismiss={dismissLogAscent}
           climbUuid={logAscentInput.climbUuid}
           climbName={logAscentInput.climbName}
