@@ -86,7 +86,10 @@ export async function GET(request: NextRequest) {
       .select({ climbUuid: schema.userFavorites.climbUuid })
       .from(schema.userFavorites)
       .where(
-        and(eq(schema.userFavorites.userId, session.user.id), inArray(schema.userFavorites.climbUuid, climbUuids)),
+        and(
+          eq(schema.userFavorites.userId, session.user.id),
+          inArray(schema.userFavorites.climbUuid, validationResult.data.climbUuids),
+        ),
       );
 
     return NextResponse.json({ favorites: favorites.map((f) => f.climbUuid) });
