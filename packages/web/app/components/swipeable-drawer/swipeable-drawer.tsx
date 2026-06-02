@@ -421,6 +421,13 @@ const SwipeableDrawer: React.FC<SwipeableDrawerProps> = ({
   // For a fling, MUI uses an internally-computed `calculatedDurationRef` that
   // overrides `transitionDuration`, but `SlideProps.timeout` is merged onto the
   // transition slot last, so it wins and the exit stays instant on every path.
+  //
+  // NOTE: this reads DOM geometry (`getComputedStyle` / `offsetWidth` via
+  // `readCurrentTranslate`) during render. It's a synchronous read of a ref we
+  // own and only gates the exit duration, so a torn value just falls back to the
+  // animated exit (no correctness impact) — but if this component is ever used
+  // under React concurrent features, move it into a layout effect / event
+  // handler to avoid reading layout in render.
   const exitPaper = lastPaperRef.current;
   const exitIsHorizontal = placement === 'left' || placement === 'right';
   const gesturePrePositioned =

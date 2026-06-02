@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 
 import SwipeableDrawer from '../swipeable-drawer';
@@ -261,6 +261,110 @@ describe('SwipeableDrawer', () => {
       });
       screen.getByTestId('inner').dispatchEvent(event);
 
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  // handleSwipeableClose is MUI's onClose (fired on backdrop click / Esc / swipe
+  // release). jsdom can't dispatch a real swipe-gesture sequence, so we trigger
+  // it via a backdrop click and prime the paper's inline transform to exercise
+  // the synchronous branches the e2e can't isolate.
+  describe('swipe-close handoff (handleSwipeableClose)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // The paper element handleSwipeableClose mutates is the one captured in
+    // lastPaperRef — the wrapper Box's parent — which is `.MuiDrawer-paper`.
+    function getPaper(): HTMLElement {
+      return document.querySelector('.MuiDrawer-paper') as HTMLElement;
+    }
+    function triggerClose(container: HTMLElement) {
+      // MUI Modal invokes onClose on a backdrop click.
+      fireEvent.click(container.querySelector('.MuiBackdrop-root') as HTMLElement);
+    }
+    function dispatchTransformEnd(paper: HTMLElement) {
+      const event = new Event('transitionend') as TransitionEvent;
+      Object.defineProperty(event, 'propertyName', { value: 'transform' });
+      paper.dispatchEvent(event);
+    }
+
+    it('closes synchronously when the paper carries no gesture transform', () => {
+      // No in-progress swipe → no inline transform → close immediately (the
+      // backdrop / Esc / programmatic path), bypassing the gesture animation.
+      const onClose = vi.fn();
+      const { container } = render(
+        <SwipeableDrawer {...baseProps} placement="bottom" onClose={onClose} keepMounted>
+          <div>body</div>
+        </SwipeableDrawer>,
+      );
+      getPaper().style.transform = '';
+      triggerClose(container);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('defers onClose until the close transition ends when a swipe pre-positioned the paper', () => {
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const { container } = render(
+        <SwipeableDrawer {...baseProps} placement="bottom" onClose={onClose} keepMounted>
+          <div>body</div>
+        </SwipeableDrawer>,
+      );
+      const paper = getPaper();
+      Object.defineProperty(paper, 'offsetHeight', { value: 1000, configurable: true });
+      paper.style.transform = 'translateY(600px)'; // gesture pulled it past the half-way gate
+
+      triggerClose(container);
+      // The wrapper animates the paper the rest of the way off-screen first.
+      expect(onClose).not.toHaveBeenCalled();
+      expect(paper.style.transform).toBe('translateY(1000px)');
+
+      act(() => dispatchTransformEnd(paper));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to a timer when transitionend never fires', () => {
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const { container } = render(
+        <SwipeableDrawer {...baseProps} placement="bottom" onClose={onClose} keepMounted>
+          <div>body</div>
+        </SwipeableDrawer>,
+      );
+      const paper = getPaper();
+      Object.defineProperty(paper, 'offsetHeight', { value: 1000, configurable: true });
+      paper.style.transform = 'translateY(600px)';
+
+      triggerClose(container);
+      expect(onClose).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(400); // > duration + fallback margin
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels the deferred onClose when the drawer unmounts mid-close', () => {
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      const { container, unmount } = render(
+        <SwipeableDrawer {...baseProps} placement="bottom" onClose={onClose} keepMounted>
+          <div>body</div>
+        </SwipeableDrawer>,
+      );
+      const paper = getPaper();
+      Object.defineProperty(paper, 'offsetHeight', { value: 1000, configurable: true });
+      paper.style.transform = 'translateY(600px)';
+
+      triggerClose(container);
+      expect(onClose).not.toHaveBeenCalled();
+
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      dispatchTransformEnd(paper);
       expect(onClose).not.toHaveBeenCalled();
     });
   });

@@ -72,14 +72,19 @@ async function swipeDown(page: Page, start: { x: number; y: number }, distance: 
   const client = await page.context().newCDPSession(page);
   const pointAt = (y: number) => [{ x: start.x, y, id: 0, radiusX: 2, radiusY: 2, force: 1 }];
 
-  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pointAt(start.y) });
-  for (let i = 1; i <= steps; i++) {
-    const y = start.y + (distance * i) / steps;
-    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pointAt(y) });
-    await page.waitForTimeout(16);
+  // Always detach the CDP session, even if a dispatch throws mid-gesture, so it
+  // doesn't leak across tests.
+  try {
+    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pointAt(start.y) });
+    for (let i = 1; i <= steps; i++) {
+      const y = start.y + (distance * i) / steps;
+      await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pointAt(y) });
+      await page.waitForTimeout(16);
+    }
+    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } finally {
+    await client.detach();
   }
-  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await client.detach();
 }
 
 /** Assert the sampled translateY series is a single monotonic slide off-screen. */
@@ -143,7 +148,7 @@ test.describe('Play view drawer — swipe to close', () => {
     });
 
     assertMonotonicClose(samples, box.height);
-    await expect(page).not.toHaveURL(/\/view\//);
+    await expect(page).not.toHaveURL(/\/view\//, { timeout: 2000 });
   });
 
   test('drag-handle swipe closes with a single monotonic slide (no snap-back)', async ({ page }, testInfo) => {
@@ -163,6 +168,6 @@ test.describe('Play view drawer — swipe to close', () => {
     });
 
     assertMonotonicClose(samples, box.height);
-    await expect(page).not.toHaveURL(/\/view\//);
+    await expect(page).not.toHaveURL(/\/view\//, { timeout: 2000 });
   });
 });

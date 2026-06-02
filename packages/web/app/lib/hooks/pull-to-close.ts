@@ -6,7 +6,11 @@ import { useRef, useCallback, useEffect } from 'react';
 
 export const DECELERATE_EASING = 'cubic-bezier(0.0, 0, 0.2, 1)';
 export const CLOSE_ANIMATION_MS = 200;
-export const ANIMATION_DELAY_MS = 210; // CLOSE_ANIMATION_MS + safety margin
+// Total timeout used as the fallback for `onTransformSettled` (and as the
+// post-animation delay when snapping back), a hair longer than the transition so
+// it never cuts the animation short. NOT an additive delay on top of the
+// transition — it's the whole budget.
+export const ANIMATION_FALLBACK_MS = 210; // CLOSE_ANIMATION_MS + safety margin
 
 /**
  * Invoke `cb` once the element's `transform` transition ends, falling back to a
@@ -256,7 +260,7 @@ export function usePullToClose({
       el.style.transition = `transform ${CLOSE_ANIMATION_MS}ms ${DECELERATE_EASING}`;
       el.style.transform = `translateY(${targetY}px)`;
       settleCleanupRef.current?.();
-      settleCleanupRef.current = onTransformSettled(el, ANIMATION_DELAY_MS, () => {
+      settleCleanupRef.current = onTransformSettled(el, ANIMATION_FALLBACK_MS, () => {
         settleCleanupRef.current = null;
         onCloseRef.current();
       });
@@ -269,7 +273,7 @@ export function usePullToClose({
         if (currentEl) {
           currentEl.style.transition = '';
         }
-      }, ANIMATION_DELAY_MS);
+      }, ANIMATION_FALLBACK_MS);
     }
 
     state.isPulling = false;
