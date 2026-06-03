@@ -570,18 +570,24 @@
       "gradeRange": "Grade range",
       "minGrade": "Min",
       "maxGrade": "Max",
-      "minAscents": "Min ascents",
       "anyAscents": "Any",
       "minRating": "Min rating",
       "anyRating": "Any",
       "apply": "Apply filters",
       "reset": "Reset",
       "section": {
-        "climb": "Climb",
-        "quality": "Quality",
         "status": "Status",
-        "progress": "Progress"
+        "refine": "Refine",
+        "advanced": "Advanced"
       },
+      "hideSent": "Hide climbs I've sent",
+      "hideSentDescription": "Only show climbs you haven't completed",
+      "popularity": "Popularity",
+      "established2plus": "Established 2+",
+      "benchmark": "Benchmarks only",
+      "benchmarkDescription": "Setter-flagged benchmark climbs",
+      "showCount_one": "Show {{count}} climb",
+      "showCount_other": "Show {{count}} climbs",
       "sort": {
         "ascents": "Ascents",
         "quality": "Quality",
@@ -615,7 +621,6 @@
         "onlyCompleted": "Only completed"
       },
       "signInForDrafts": "Sign in to filter your drafts",
-      "signInForProgress": "Sign in to filter by your ticks",
       "setters": "Setters",
       "none": "None",
       "tall": "Tall climbs only",
@@ -647,7 +652,8 @@
       "anyGrade": "Any grade",
       "gradeClear": "Any",
       "gradeHint": "Tap a grade · tap a second for a range",
-      "filters": "Filters"
+      "filters": "Filters",
+      "removeFilter": "Remove {{name}} filter"
     },
     "climbRow": {
       "addToQueue": "Add to queue",

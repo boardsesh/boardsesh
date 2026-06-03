@@ -5,7 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
-import { toClimbSearchInput, DEFAULT_CLIMB_FILTER_STATE } from '@boardsesh/climb-filters';
+import {
+  toClimbSearchInput,
+  mergeBoardFilters,
+  countActiveFiltersBeyondGrade,
+  DEFAULT_CLIMB_FILTER_STATE,
+  DEFAULT_CLIMB_BOARD_FILTER_STATE,
+  type ClimbBoardFilterState,
+} from '@boardsesh/climb-filters';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Text } from '../../../src/components/Text';
@@ -14,7 +21,6 @@ import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../
 import { GradePopover } from '../../../src/components/search/GradePopover';
 import { SearchBottomBar } from '../../../src/components/search/SearchBottomBar';
 import { StickyFilterStrip } from '../../../src/components/search/StickyFilterStrip';
-import { countActiveFiltersBeyondGrade } from '../../../src/components/search/active-filter-count';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useQueue } from '../../../src/providers/queue-provider';
@@ -68,7 +74,18 @@ function ClimbListInner() {
   const { openClimbActions, openAddToPlaylist } = useDrawerHost();
   const { systemColors } = useTheme();
   const { addToQueue, state: queueState } = useQueue();
-  const { filters, name, setFilters, setGrade, setName, replaceSearch } = useClimbSearch();
+  const {
+    filters,
+    boardFilters,
+    name,
+    setFilters,
+    setBoardFilters,
+    patchFilters,
+    patchBoardFilters,
+    setGrade,
+    setName,
+    replaceSearch,
+  } = useClimbSearch();
   const { layout, loaded: layoutLoaded } = useSearchLayout();
   // The active climb (driving the board / persistent queue bar). We highlight
   // its row so the search → tap → change-active loop is always visible.
@@ -198,12 +215,12 @@ function ClimbListInner() {
       .then((saved) => {
         if (cancelled) return;
         if (saved) {
-          replaceSearch(saved.filters, saved.searchText);
+          replaceSearch(saved.filters, saved.searchText, saved.boardFilters);
           syncHeaderText(saved.searchText);
         } else {
           // Never-searched board → clean default band, no grade/filters/name
           // inherited from the board the climber came from.
-          replaceSearch(DEFAULT_CLIMB_FILTER_STATE, '');
+          replaceSearch(DEFAULT_CLIMB_FILTER_STATE, '', DEFAULT_CLIMB_BOARD_FILTER_STATE);
           syncHeaderText('');
         }
         restoredKeyRef.current = boardKey;
@@ -228,10 +245,10 @@ function ClimbListInner() {
   useEffect(() => {
     if (!boardConfig || restoredKeyRef.current !== boardKey) return;
     const handle = setTimeout(() => {
-      void saveLastSearch(boardConfig, filters, name);
+      void saveLastSearch(boardConfig, filters, name, boardFilters);
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [filters, name, boardConfig, boardKey]);
+  }, [filters, name, boardFilters, boardConfig, boardKey]);
 
   // Pre-warm board images so they're cached before the user taps into a climb.
   useEffect(() => {
@@ -262,30 +279,36 @@ function ClimbListInner() {
   useEffect(() => {
     setAccumulatedClimbs([]);
     setPageNumber(1);
-  }, [name, filters, angle]);
+  }, [name, filters, boardFilters, angle]);
 
   const searchInput = useMemo(
     () =>
-      toClimbSearchInput(
-        filters,
-        { boardName, layoutId, sizeId, setIds, angle },
-        { page: pageNumber, pageSize: PAGE_SIZE },
-        { name },
+      mergeBoardFilters(
+        toClimbSearchInput(
+          filters,
+          { boardName, layoutId, sizeId, setIds, angle },
+          { page: pageNumber, pageSize: PAGE_SIZE },
+          { name },
+        ),
+        boardFilters,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, pageNumber, filters],
+    [boardName, layoutId, sizeId, setIds, angle, name, pageNumber, filters, boardFilters],
   );
 
   // Page-independent input for the result count so the count query key stays
   // stable while the user scrolls (totalCount is the same across pages).
   const countInput = useMemo(
     () =>
-      toClimbSearchInput(
-        filters,
-        { boardName, layoutId, sizeId, setIds, angle },
-        { page: 1, pageSize: PAGE_SIZE },
-        { name },
+      mergeBoardFilters(
+        toClimbSearchInput(
+          filters,
+          { boardName, layoutId, sizeId, setIds, angle },
+          { page: 1, pageSize: PAGE_SIZE },
+          { name },
+        ),
+        boardFilters,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, filters],
+    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters],
   );
   const { data: totalCount } = useSearchClimbsCount(countInput, searchReady);
 
@@ -327,11 +350,14 @@ function ClimbListInner() {
   // climbs beyond what's loaded. Activation pages are 0-based; search is 1-based.
   const fetchSearchPage = useCallback(
     async ({ page, pageSize }: { page: number; pageSize: number }) => {
-      const input = toClimbSearchInput(
-        filters,
-        { boardName, layoutId, sizeId, setIds, angle },
-        { page: page + 1, pageSize },
-        { name },
+      const input = mergeBoardFilters(
+        toClimbSearchInput(
+          filters,
+          { boardName, layoutId, sizeId, setIds, angle },
+          { page: page + 1, pageSize },
+          { name },
+        ),
+        boardFilters,
       );
       const response = await getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
       return {
@@ -339,7 +365,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [filters, boardName, layoutId, sizeId, setIds, angle, name],
+    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(accumulatedClimbs), [accumulatedClimbs]);
@@ -366,10 +392,13 @@ function ClimbListInner() {
   );
 
   const handleApplyFilters = useCallback(
-    (newFilters: ClimbFilters) => {
+    (newFilters: ClimbFilters, newBoardFilters: ClimbBoardFilterState) => {
       setFilters(newFilters);
+      setBoardFilters(newBoardFilters);
       setShowFilters(false);
 
+      // Recent pills capture climb filters + name only (not board-renderer
+      // filters), so we still gate on those for the pill.
       const currentSearch = name;
       if (hasActiveFilters(newFilters) || currentSearch.length > 0) {
         const label = getFilterSummary(newFilters, currentSearch, gradesRef.current, t);
@@ -379,7 +408,7 @@ function ClimbListInner() {
           .catch(() => {});
       }
     },
-    [t, isAuthenticated, name, setFilters],
+    [t, isAuthenticated, name, setFilters, setBoardFilters],
   );
 
   const handleApplyRecentFilter = useCallback(
@@ -418,7 +447,10 @@ function ClimbListInner() {
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),
     [filters.minGrade, filters.maxGrade],
   );
-  const activeFilterCount = useMemo(() => countActiveFiltersBeyondGrade(filters), [filters]);
+  const activeFilterCount = useMemo(
+    () => countActiveFiltersBeyondGrade(filters, boardFilters),
+    [filters, boardFilters],
+  );
 
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (
@@ -480,10 +512,14 @@ function ClimbListInner() {
         <StickyFilterStrip
           bound={gradeBound}
           grades={grades}
+          filters={filters}
+          boardFilters={boardFilters}
           count={totalCount}
           activeFilterCount={activeFilterCount}
           onOpenGrade={handleOpenGrade}
           onOpenFilters={handleOpenFilters}
+          onPatchFilters={patchFilters}
+          onPatchBoardFilters={patchBoardFilters}
         />
       ) : null}
 
@@ -538,10 +574,14 @@ function ClimbListInner() {
         <SearchBottomBar
           bound={gradeBound}
           grades={grades}
+          filters={filters}
+          boardFilters={boardFilters}
           count={totalCount}
           activeFilterCount={activeFilterCount}
           onOpenGrade={handleOpenGrade}
           onOpenFilters={handleOpenFilters}
+          onPatchFilters={patchFilters}
+          onPatchBoardFilters={patchBoardFilters}
           bottomOffset={searchBarBottom}
         />
       ) : null}
@@ -563,6 +603,8 @@ function ClimbListInner() {
           onDismiss={handleDismissFilters}
           boardConfig={boardConfig}
           currentFilters={filters}
+          currentBoardFilters={boardFilters}
+          searchName={name}
           onApply={handleApplyFilters}
         />
       ) : null}

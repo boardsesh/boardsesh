@@ -1,30 +1,38 @@
 // The shared control row used by both search layouts (bottom bar + sticky
-// strip): the grade pill (primary), the live result count, and the filters
-// gear with an active-count badge. Layout-agnostic — the wrappers position it.
+// strip): the grade pill (primary), removable active-filter pills, the live
+// result count, and the filters gear with an active-count badge. A multi-filter
+// query is always visible and one-tap-dismissible without opening the sheet.
 
 import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Grade } from '@boardsesh/shared-schema';
-import { isAnyGrade, type GradeBound } from '@boardsesh/climb-filters';
+import { isAnyGrade, type ClimbBoardFilterState, type GradeBound } from '@boardsesh/climb-filters';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
+import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { formatGradePillLabel } from './grade-pill-label';
+import { buildActiveFilterPills } from './active-filter-pills';
 
 type ClimbSearchControlsProps = {
   bound: GradeBound;
   grades: readonly Grade[];
+  filters: ClimbFilters;
+  boardFilters: ClimbBoardFilterState;
   /** Result count for the active filter set; undefined while loading. */
   count: number | undefined;
   activeFilterCount: number;
   onOpenGrade: () => void;
   onOpenFilters: () => void;
+  onPatchFilters: (patch: Partial<ClimbFilters>) => void;
+  onPatchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
 };
 
 function tintFromHex(hexColor: string | undefined): string | undefined {
@@ -35,10 +43,14 @@ function tintFromHex(hexColor: string | undefined): string | undefined {
 export function ClimbSearchControls({
   bound,
   grades,
+  filters,
+  boardFilters,
   count,
   activeFilterCount,
   onOpenGrade,
   onOpenFilters,
+  onPatchFilters,
+  onPatchBoardFilters,
 }: ClimbSearchControlsProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -55,6 +67,8 @@ export function ClimbSearchControls({
     const grade = grades.find((entry) => entry.difficultyId === id);
     return grade ? (getGradeColor(grade.name) ?? undefined) : undefined;
   }, [bound, grades]);
+
+  const pills = useMemo(() => buildActiveFilterPills(filters, boardFilters, t), [filters, boardFilters, t]);
 
   const gradeActive = !isAnyGrade(bound);
   const pillBackground = gradeActive ? (tintFromHex(accentHex) ?? systemColors.fill) : systemColors.fill;
@@ -75,13 +89,38 @@ export function ClimbSearchControls({
         <Icon name="chevron.down" size={13} color={systemColors.secondaryLabel as string} />
       </Pressable>
 
-      <View style={styles.spacer}>
-        {count != null ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
-            {t('mobile.search.climbsCount', { count })}
-          </Text>
-        ) : null}
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={styles.pillsScroll}
+        contentContainerStyle={styles.pillsContent}
+      >
+        {pills.map((pill) => (
+          <Pressable
+            key={pill.key}
+            onPress={() => {
+              hapticSelection();
+              if (pill.clearFilters) onPatchFilters(pill.clearFilters);
+              if (pill.clearBoard) onPatchBoardFilters(pill.clearBoard);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.search.removeFilter', { name: pill.label })}
+            style={[styles.filterPill, { backgroundColor: systemColors.fill as string }]}
+          >
+            <Text variant="caption1" numberOfLines={1} style={styles.filterPillText}>
+              {pill.label}
+            </Text>
+            <Icon name="close" size={11} color={systemColors.secondaryLabel as string} />
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {count != null ? (
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.count}>
+          {t('mobile.search.climbsCount', { count })}
+        </Text>
+      ) : null}
 
       <Pressable
         onPress={onOpenFilters}
@@ -123,7 +162,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: 18,
     borderWidth: 1,
-    maxWidth: '60%',
+    maxWidth: '40%',
   },
   gradeDot: {
     width: 8,
@@ -134,10 +173,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
   },
-  spacer: {
+  pillsScroll: {
     flex: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+  },
+  pillsContent: {
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingRight: spacing[1],
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingLeft: spacing[2],
+    paddingRight: spacing[1],
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  filterPillText: {
+    fontWeight: '500',
+    maxWidth: 120,
+  },
+  count: {
+    flexShrink: 0,
   },
   gearButton: {
     width: 40,

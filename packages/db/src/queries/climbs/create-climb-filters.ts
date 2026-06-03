@@ -213,6 +213,12 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     );
   }
 
+  // Benchmark-only: climbs the board curators flagged as benchmarks carry a
+  // non-null benchmark_difficulty. (onlyClassics is a legacy no-op — see #2499.)
+  if (searchParams.onlyBenchmarks) {
+    climbStatsConditions.push(sql`${boardClimbStats.benchmarkDifficulty} IS NOT NULL`);
+  }
+
   // Name search condition
   const nameCondition: SQL[] = searchParams.name ? [sql`${boardClimbs.name} ILIKE ${`%${searchParams.name}%`}`] : [];
 

@@ -1,5 +1,11 @@
 import * as SecureStore from 'expo-secure-store';
-import { SORT_OPTIONS, STATUS_FILTER_VALUES, type SortOption, type StatusFilter } from '@boardsesh/climb-filters';
+import {
+  SORT_OPTIONS,
+  STATUS_FILTER_VALUES,
+  normalizeRetiredStatus,
+  type SortOption,
+  type StatusFilter,
+} from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
 
@@ -47,10 +53,11 @@ function isValidEntry(entry: unknown): entry is RecentFilter {
 // this, an entry missing `status` would render as "active" since
 // `hasActiveClimbFilters` treats `undefined !== 'any'` as a change.
 function normalizeEntry(entry: RecentFilter): RecentFilter {
-  if (entry.filters.status == null) {
-    return { ...entry, filters: { ...entry.filters, status: 'any' } };
-  }
-  return entry;
+  const status = entry.filters.status ?? 'any';
+  // Backfill a missing status and retire legacy 'established' → 'any' (the
+  // Popularity control reflects minAscents), so replayed pills never carry a
+  // status the UI can't show.
+  return { ...entry, filters: normalizeRetiredStatus({ ...entry.filters, status }) };
 }
 
 function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {

@@ -570,18 +570,24 @@
       "gradeRange": "Plage de cotation",
       "minGrade": "Min",
       "maxGrade": "Max",
-      "minAscents": "Min enchaînements",
       "anyAscents": "Tous",
       "minRating": "Min note",
       "anyRating": "Tous",
       "apply": "Appliquer les filtres",
       "reset": "Réinitialiser",
       "section": {
-        "climb": "Voie",
-        "quality": "Qualité",
         "status": "Statut",
-        "progress": "Progression"
+        "refine": "Affiner",
+        "advanced": "Avancé"
       },
+      "hideSent": "Masquer mes voies réussies",
+      "hideSentDescription": "N'afficher que les voies que vous n'avez pas réussies",
+      "popularity": "Popularité",
+      "established2plus": "Établies 2+",
+      "benchmark": "Benchmarks uniquement",
+      "benchmarkDescription": "Voies marquées benchmark par l'ouvreur",
+      "showCount_one": "Voir {{count}} voie",
+      "showCount_other": "Voir {{count}} voies",
       "sort": {
         "ascents": "Ascensions",
         "quality": "Qualité",
@@ -615,7 +621,6 @@
         "onlyCompleted": "Uniquement réussies"
       },
       "signInForDrafts": "Connecte-toi pour filtrer tes brouillons",
-      "signInForProgress": "Connecte-toi pour filtrer selon tes réalisations",
       "setters": "Ouvreurs",
       "none": "Aucun",
       "tall": "Voies hautes uniquement",
@@ -647,7 +652,8 @@
       "anyGrade": "Tout niveau",
       "gradeClear": "Tous",
       "gradeHint": "Touchez un niveau · un second pour une plage",
-      "filters": "Filtres"
+      "filters": "Filtres",
+      "removeFilter": "Retirer le filtre {{name}}"
     },
     "climbRow": {
       "addToQueue": "Ajouter à la file",

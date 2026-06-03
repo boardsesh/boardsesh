@@ -199,6 +199,9 @@ export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
     queryFn: () => getHttpClient().request<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
     enabled,
+    // Hold the last count while a new filter set is in flight so the bar /
+    // "Show N" button doesn't flicker to blank on every filter change.
+    placeholderData: (previous) => previous,
   });
 }
 

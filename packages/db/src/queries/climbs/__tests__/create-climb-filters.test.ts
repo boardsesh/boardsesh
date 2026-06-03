@@ -459,3 +459,18 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(attemptsSql, /'attempt'/);
   });
 });
+
+void describe('createClimbFilters: onlyBenchmarks', () => {
+  void it('produces no benchmark condition by default', () => {
+    const f = createClimbFilters(params, baseSearch);
+    assert.equal(f.climbStatsConditions.length, 0);
+  });
+
+  void it('emits a benchmark_difficulty IS NOT NULL stats condition when onlyBenchmarks is on', () => {
+    const f = createClimbFilters(params, { onlyBenchmarks: true });
+    assert.equal(f.climbStatsConditions.length, 1);
+    const rendered = sqlToString(f.climbStatsConditions[0]);
+    assert.match(rendered, /benchmark_difficulty/);
+    assert.match(rendered, /IS NOT NULL/i);
+  });
+});
