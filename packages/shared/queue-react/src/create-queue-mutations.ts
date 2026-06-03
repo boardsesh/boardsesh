@@ -28,6 +28,7 @@ import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
+  REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   MIRROR_CURRENT_CLIMB,
   PUBLISH_PLAYBACK_STATE,
@@ -78,6 +79,14 @@ export type QueueMutationsDeps<TItem> = {
 export type QueueMutationsActions<TItem> = {
   addQueueItem: (item: TItem, position?: number) => Promise<void>;
   removeQueueItem: (uuid: string) => Promise<void>;
+  /**
+   * Move a queued item from `oldIndex` to `newIndex` (positions in the full
+   * queue array). Requires an existing session — never lazily creates one.
+   * The server broadcasts a `QueueReordered` delta; callers optimistically
+   * apply `DELTA_REORDER_QUEUE_ITEM` locally, whose uuid-at-oldIndex check
+   * makes the echoed event a safe no-op.
+   */
+  reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
   setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   /**
@@ -225,6 +234,12 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
       await execute(ready.client, { query: REMOVE_QUEUE_ITEM, variables: { uuid } });
+    },
+
+    reorderQueueItem: async (uuid, oldIndex, newIndex) => {
+      const ready = await resolveCore({ allowCreate: false });
+      if (!ready) return;
+      await execute(ready.client, { query: REORDER_QUEUE_ITEM, variables: { uuid, oldIndex, newIndex } });
     },
 
     setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {

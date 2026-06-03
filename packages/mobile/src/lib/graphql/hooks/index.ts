@@ -184,12 +184,19 @@ export function useAngles(boardName: string, layoutId: number) {
 // Climb Queries
 // ============================================
 
-export function useSearchClimbs(input: ClimbSearchInput, enabled = true) {
+export function useSearchClimbs(
+  input: ClimbSearchInput,
+  enabled = true,
+  options?: { staleTime?: number; gcTime?: number },
+) {
   return useQuery({
     queryKey: ['searchClimbs', input],
     queryFn: () => getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
     enabled,
+    // undefined → React Query's defaults.
+    staleTime: options?.staleTime,
+    gcTime: options?.gcTime,
   });
 }
 

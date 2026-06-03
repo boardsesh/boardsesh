@@ -293,13 +293,19 @@
       "endSessionConfirm": "¿Estás seguro de que quieres terminar esta sesión?",
       "climbCount_one": "{{count}} bloque",
       "climbCount_other": "{{count}} bloques",
-      "logAscent": "Registrar ascenso"
+      "logAscent": "Registrar ascenso",
+      "dragHandleAria": "Arrastra para reordenar {{name}}"
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
       "editQueue": "Editar cola",
       "doneEditing": "Listo"
+    },
+    "queueSnackbar": {
+      "added": "Bloque añadido a la cola",
+      "open": "Abrir",
+      "openAria": "Abrir cola"
     },
     "toast": {
       "sessionEnded": "Sesión terminada"

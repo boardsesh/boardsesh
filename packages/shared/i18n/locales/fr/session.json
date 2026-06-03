@@ -293,13 +293,19 @@
       "endSessionConfirm": "Êtes-vous sûr de vouloir terminer cette session ?",
       "climbCount_one": "{{count}} bloc",
       "climbCount_other": "{{count}} blocs",
-      "logAscent": "Enregistrer l'ascension"
+      "logAscent": "Enregistrer l'ascension",
+      "dragHandleAria": "Glisser pour réorganiser {{name}}"
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",
       "toggleHistory": "Afficher l'historique",
       "editQueue": "Modifier la file",
       "doneEditing": "Terminé"
+    },
+    "queueSnackbar": {
+      "added": "Bloc ajouté à la file",
+      "open": "Ouvrir",
+      "openAria": "Ouvrir la file"
     },
     "toast": {
       "sessionEnded": "Session terminée"

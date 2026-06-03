@@ -3,6 +3,7 @@ import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
+  REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   SET_QUEUE,
   MIRROR_CURRENT_CLIMB,
@@ -59,6 +60,11 @@ describe('web mode (no ensureReady)', () => {
     expect(queriesFor(REMOVE_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'x' });
   });
 
+  it('issues REORDER_QUEUE_ITEM with scalar indices', async () => {
+    await make().reorderQueueItem('a', 0, 2);
+    expect(queriesFor(REORDER_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'a', oldIndex: 0, newIndex: 2 });
+  });
+
   it('maps the queue and the optional current item for SET_QUEUE', async () => {
     await make().setQueue([item('a'), item('b')], item('c'));
     const vars = queriesFor(SET_QUEUE)[0][1].variables;
@@ -109,6 +115,20 @@ describe('mobile mode (ensureReady)', () => {
     await make({ getSessionId: () => null, ensureReady }).removeQueueItem('x');
     expect(ensureReady).not.toHaveBeenCalled();
     expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('no-ops (no create, no execute) for reorderQueueItem when no session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    await make({ getSessionId: () => null, ensureReady }).reorderQueueItem('a', 0, 1);
+    expect(ensureReady).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('issues REORDER_QUEUE_ITEM after ensureReady resolves an existing session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    await make({ ensureReady }).reorderQueueItem('a', 2, 0);
+    expect(ensureReady).toHaveBeenCalledWith('S');
+    expect(queriesFor(REORDER_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'a', oldIndex: 2, newIndex: 0 });
   });
 
   it('no-ops instead of throwing when ensureReady returns null', async () => {

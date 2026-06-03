@@ -10,16 +10,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { Text } from './Text';
 import { Icon } from './Icon';
-import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
-import { AscentStatusBadge } from './AscentStatusBadge';
+import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import { ClimbListItemContent } from './ClimbListItemContent';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
-import { formatSends, formatQuality } from '../lib/format-climb-stats';
-import { useGradeFormat } from '../hooks/use-grade-format';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
@@ -135,12 +130,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   selected,
   unsupported,
 }: ClimbListRowProps) {
-  const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const { formatGrade } = useGradeFormat();
-
-  const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
-  const formattedGrade = formatGrade(climb.difficulty);
 
   const swipeableRef = useRef<SwipeableMethods>(null);
 
@@ -182,17 +172,26 @@ const ClimbListRow = React.memo(function ClimbListRow({
   }, []);
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
-  // releases past the threshold — no second tap. We close immediately so the
-  // panel snaps back rather than resting open (the Spotify feel).
+  // releases past the threshold — no second tap. We deliberately do NOT close
+  // here: closing mid-"will open" raced ReanimatedSwipeable's open animation
+  // and left its open/closed state machine out of sync, so only every OTHER
+  // swipe fired willOpen. The row finishes opening and is snapped shut from
+  // onSwipeableOpen (handleSwipeableOpened) instead — a clean closed→open→
+  // closed cycle that fires on every swipe.
   const handleAddToQueue = useCallback(() => {
     hapticSuccess();
     onAddToQueueRef.current?.(climbRef.current);
-    swipeableRef.current?.close();
   }, []);
 
   const handleOpenPlaylist = useCallback(() => {
     hapticMedium();
     onOpenPlaylistRef.current?.(climbRef.current);
+  }, []);
+
+  // Snap the row shut once it has fully settled open. Runs after the action
+  // already fired on willOpen, so the user sees an instant commit and the row
+  // springs back.
+  const handleSwipeableOpened = useCallback(() => {
     swipeableRef.current?.close();
   }, []);
 
@@ -251,25 +250,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [],
   );
 
-  // Subtitle parts: sends · quality★ · setter (each dropped when absent).
-  const subtitleText = useMemo(() => {
-    const parts: string[] = [];
-    if (climb.is_draft) {
-      parts.push(t('createClimbForm.draftBadge'));
-    }
-    if (!climb.is_draft && climb.ascensionist_count) {
-      parts.push(formatSends(climb.ascensionist_count));
-    }
-    const qualityNum = parseFloat(climb.quality_average);
-    if (qualityNum > 0) {
-      parts.push(`${formatQuality(climb.quality_average)}★`);
-    }
-    if (climb.setter_username) {
-      parts.push(climb.setter_username);
-    }
-    return parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
-  }, [climb.is_draft, climb.ascensionist_count, climb.quality_average, climb.setter_username, t]);
-
   return (
     <View style={[styles.outerContainer, unsupported && styles.unsupported]}>
       <ReanimatedSwipeable
@@ -282,6 +262,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
         renderLeftActions={renderLeftActions}
         renderRightActions={renderRightActions}
         onSwipeableWillOpen={handleSwipeWillOpen}
+        onSwipeableOpen={handleSwipeableOpened}
       >
         <GestureDetector gesture={tapGesture}>
           <View
@@ -295,35 +276,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
             {selected ? <View style={styles.selectedFill} pointerEvents="none" /> : null}
             {selected ? <View style={styles.selectedAccent} pointerEvents="none" /> : null}
 
-            {/* Left: portrait thumbnail with ascent badge */}
-            <View style={styles.thumbnailContainer}>
-              <ClimbListThumbnail
-                frames={climb.frames}
-                boardName={boardName}
-                layoutId={layoutId}
-                sizeId={sizeId}
-                setIds={setIds}
-                mirrored={climb.mirrored ?? false}
-              />
-              <AscentStatusBadge climbUuid={climb.uuid} angle={angle} />
-            </View>
-
-            {/* Center: name + subtitle */}
-            <View style={styles.centerColumn}>
-              <Text variant="body" numberOfLines={1} style={styles.climbName}>
-                {climb.name}
-              </Text>
-              <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
-                {subtitleText}
-              </Text>
-            </View>
-
-            {/* Right: colorized grade */}
-            <View style={styles.rightSection}>
-              <Text variant="headline" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-                {formattedGrade ?? climb.difficulty}
-              </Text>
-            </View>
+            <ClimbListItemContent
+              climb={climb}
+              boardName={boardName}
+              layoutId={layoutId}
+              sizeId={sizeId}
+              setIds={setIds}
+              angle={angle}
+            />
           </View>
         </GestureDetector>
       </ReanimatedSwipeable>
@@ -370,34 +330,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 5,
     backgroundColor: brandColors.primary,
-  },
-  thumbnailContainer: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
-    flexShrink: 0,
-    position: 'relative',
-  },
-  centerColumn: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-    gap: 2,
-  },
-  climbName: {
-    fontWeight: '600',
-  },
-  subtitle: {
-    opacity: 0.6,
-  },
-  rightSection: {
-    flexShrink: 0,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  gradeText: {
-    fontWeight: '700',
-    minWidth: 34,
-    textAlign: 'right',
   },
   separator: {
     height: StyleSheet.hairlineWidth,

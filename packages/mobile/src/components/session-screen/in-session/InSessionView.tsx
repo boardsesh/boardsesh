@@ -4,12 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
 import { Button } from '../../Button';
-import { QueueItemRow } from '../../QueueItemRow';
+import { ActivityIndicator } from '../../ActivityIndicator';
+import { QueueItemRow, type QueueItemRowBoard } from '../../QueueItemRow';
 import { EndSessionSheet } from '../../EndSessionSheet';
 import { useTheme } from '../../../providers/theme-provider';
 import { useQueue } from '../../../providers/queue-provider';
+import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionScreen } from '../../../providers/session-screen-provider';
 import { useSessionSummary } from '../../../lib/graphql/hooks';
 import { spacing, borderRadius } from '../../../theme/tokens';
@@ -23,7 +26,18 @@ export function InSessionView() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { close } = useSessionScreen();
+  const { boardConfig } = useDrawerHost();
   const { state, sessionId, setCurrentClimb, removeFromQueue, endSession } = useQueue();
+
+  const board: QueueItemRowBoard | null = boardConfig
+    ? {
+        boardName: boardConfig.boardName as BoardName,
+        layoutId: boardConfig.layoutId,
+        sizeId: boardConfig.sizeId,
+        setIds: boardConfig.setIds,
+        angle: boardConfig.angle,
+      }
+    : null;
 
   // Live summary: same query as the post-session view, just polled while the
   // overlay is open so the live tiles stay current as the user logs ticks.
@@ -78,12 +92,19 @@ export function InSessionView() {
                 {t('mobile.session.inQueueEmpty')}
               </Text>
             </View>
+          ) : !board ? (
+            // Items exist but the active board (for thumbnails) is still
+            // resolving — show a spinner rather than a misleading empty state.
+            <View style={[styles.emptyCard, { backgroundColor: systemColors.secondaryBackground }]}>
+              <ActivityIndicator />
+            </View>
           ) : (
             queue.map((item, index) => (
               <QueueItemRow
                 key={item.uuid}
                 item={item}
                 position={index + 1}
+                board={board}
                 isCurrentClimb={currentUuid === item.uuid}
                 onPress={handlePressItem}
                 onRemove={handleRemoveItem}

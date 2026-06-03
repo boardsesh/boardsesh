@@ -8,16 +8,19 @@ const config = getDefaultConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 
-// Exclude Claude Code's nested git worktrees from Metro's crawl/watch. Each of
-// the 30+ worktrees under <root>/.claude/worktrees/ carries its own full
-// node_modules (~5M files combined), which otherwise makes the haste-map crawl
-// hang for minutes on startup and exhausts the inotify watch limit (ENOSPC).
-// Nothing the app imports lives there, so pruning it is safe and lets the dev
-// server boot in seconds.
-const claudeWorktreesBlock = /[/\\]\.claude[/\\].*/;
+// Exclude non-source directories from Metro's crawl/watch:
+//  - <root>/.claude/worktrees/* — 30+ nested git worktrees, each with its own
+//    full node_modules (~5M files combined), which otherwise makes the haste-map
+//    crawl hang for minutes and exhausts the inotify watch limit (ENOSPC).
+//  - <root>/.local-work/* — local tooling scratch (e.g. an Android SDK install
+//    whose ephemeral unzip temp dirs vanish mid-watch and crash the file watcher
+//    with ENOENT, exit code 7).
+// Nothing the app imports lives in either, so pruning them is safe and lets the
+// dev server boot in seconds.
+const ignoredRoots = [/[/\\]\.claude[/\\].*/, /[/\\]\.local-work[/\\].*/];
 config.resolver.blockList = config.resolver.blockList
-  ? [].concat(config.resolver.blockList, claudeWorktreesBlock)
-  : claudeWorktreesBlock;
+  ? [].concat(config.resolver.blockList, ignoredRoots)
+  : ignoredRoots;
 
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),

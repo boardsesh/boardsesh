@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
+import type { QueueItemRowBoard } from '../QueueItemRow';
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticMedium, hapticWarning } from '../../lib/haptics';
@@ -14,35 +16,58 @@ import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 
+// iOS renders the modal in a native window overlay so it sits above the
+// persistent queue bar (mirrors ModalSheet / LogAscentSheet); Android's modal
+// portal already covers it.
+function ModalSheetContainer({ children }: { children?: ReactNode }) {
+  return <FullWindowOverlay>{children}</FullWindowOverlay>;
+}
+const modalContainerComponent = Platform.OS === 'ios' ? ModalSheetContainer : undefined;
+
 type QueueSheetProps = {
   visible: boolean;
+  board: QueueItemRowBoard;
+  /** Request an animated close (header button) — host flips `visible` to false. */
   onClose: () => void;
+  /** Fired AFTER the dismiss animation finishes so the host can unmount. */
+  onDismissed: () => void;
   onClimbPress: (item: ClimbQueueItem) => void;
+  onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
+  onTickHistory: (item: ClimbQueueItem) => void;
 };
 
-export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) {
+export function QueueSheet({
+  visible,
+  board,
+  onClose,
+  onDismissed,
+  onClimbPress,
+  onSuggestionPress,
+  onTickHistory,
+}: QueueSheetProps) {
   const { t } = useTranslation('session');
   const insets = useSafeAreaInsets();
   const { systemColors } = useTheme();
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetModal>(null);
 
-  const { state, removeFromQueue, clearQueue } = useQueue();
+  const { state, removeFromQueue, clearQueue, reorderQueue, playlistSuggestionSource } = useQueue();
   const { queue, currentClimbQueueItem } = state;
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
 
-  const snapPoints = useMemo(() => ['60%', '90%'], []);
+  const snapPoints = useMemo(() => ['70%', '95%'], []);
 
   const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
   useEffect(() => {
     if (visible) {
-      sheetRef.current?.snapToIndex(0);
+      sheetRef.current?.present();
     } else {
-      sheetRef.current?.close();
+      sheetRef.current?.dismiss();
     }
   }, [visible]);
 
@@ -52,19 +77,12 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
     setShowFullHistory(false);
   }, []);
 
-  const handleClose = useCallback(() => {
+  // The modal's dismiss animation has finished (header request, backdrop, or
+  // pan-down). Reset local UI state and let the host unmount.
+  const handleDismissed = useCallback(() => {
     resetState();
-    onClose();
-  }, [resetState, onClose]);
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index < 0) {
-        handleClose();
-      }
-    },
-    [handleClose],
-  );
+    onDismissed();
+  }, [resetState, onDismissed]);
 
   const handleToggleEditMode = useCallback(() => {
     setIsEditMode((prev) => {
@@ -120,7 +138,7 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
     ),
     [],
   );
@@ -130,14 +148,21 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
   const viewOnlyMode = queue.length === 0;
 
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={sheetRef}
-      index={-1}
+      index={0}
       snapPoints={snapPoints}
+      // Stack above the play drawer (when opened from its queue button) instead
+      // of replacing it, so closing the queue sheet reveals the drawer again.
+      stackBehavior="push"
       enablePanDownToClose
+      // Freeze the sheet pan while a row is being dragged so scroll-to-expand
+      // never fights the reorder gesture.
+      enableContentPanningGesture={!isDragging}
+      enableHandlePanningGesture={!isDragging}
       backdropComponent={renderBackdrop}
-      onChange={handleSheetChange}
-      onClose={handleClose}
+      containerComponent={modalContainerComponent}
+      onDismiss={handleDismissed}
       handleIndicatorStyle={sheetStyles.indicator}
       backgroundStyle={backgroundStyle}
       style={styles.sheet}
@@ -150,22 +175,28 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
         viewOnlyMode={viewOnlyMode}
         onToggleEditMode={handleToggleEditMode}
         onToggleHistory={handleToggleHistory}
-        onClose={handleClose}
+        onClose={onClose}
         onClearAll={handleClearAll}
       />
 
       <QueueList
         queue={queue}
         currentItemUuid={currentItemUuid}
+        board={board}
         isEditMode={isEditMode}
         showHistory={showHistory}
         showFullHistory={showFullHistory}
         selectedItems={selectedItems}
+        playlistSuggestionSource={playlistSuggestionSource}
         autoScrollOnMount={visible}
         onToggleSelect={handleToggleSelect}
         onClimbPress={onClimbPress}
         onRemove={handleRemove}
         onShowFullHistory={handleShowFullHistory}
+        onTickHistory={onTickHistory}
+        onSuggestionPress={onSuggestionPress}
+        reorderQueue={reorderQueue}
+        onDraggingChange={setIsDragging}
       />
 
       {isEditMode && selectedItems.size > 0 && (
@@ -191,7 +222,7 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
           </Pressable>
         </View>
       )}
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
 

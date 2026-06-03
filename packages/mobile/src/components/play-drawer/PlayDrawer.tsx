@@ -20,11 +20,11 @@ import { PlayDrawerHeader } from './PlayDrawerHeader';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
-import { QueueSheet } from './QueueSheet';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { Icon } from '../Icon';
 import { useQueue } from '../../providers/queue-provider';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -113,6 +113,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
 
   const { state, setCurrentClimb, nextClimb, previousClimb, playlistSuggestionSource, sessionId, addToQueue } =
     useQueue();
+  const { openQueueSheet } = useDrawerHost();
   const bluetooth = useOptionalBluetoothContext();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   const { formatGrade } = useGradeFormat();
@@ -236,8 +237,8 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   }, []);
 
   const handleOpenQueue = useCallback(() => {
-    setActiveSubDrawer('queue');
-  }, []);
+    openQueueSheet();
+  }, [openQueueSheet]);
 
   const handleOpenAngleSelector = useCallback(() => {
     setActiveSubDrawer('angleSelector');
@@ -396,7 +397,6 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
                       enabled={!isTickBarActive}
                     />
                   )}
-
                 </View>
 
                 <PlayDrawerActionBar
@@ -440,19 +440,6 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           )}
         </BottomSheetScrollView>
       </BottomSheetModal>
-
-      {/* Sub-drawer: Queue */}
-      {activeSubDrawer === 'queue' && (
-        <QueueSheet
-          visible={true}
-          onClose={handleCloseSubDrawer}
-          onClimbPress={(item) => {
-            setClimb(item.climb);
-            setCurrentClimb(item);
-            handleCloseSubDrawer();
-          }}
-        />
-      )}
 
       {/* Sub-drawer: Climb actions */}
       {activeSubDrawer === 'actions' && (

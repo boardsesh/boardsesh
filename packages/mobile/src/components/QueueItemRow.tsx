@@ -9,20 +9,41 @@ import {
 } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { Icon } from './Icon';
+import { ClimbListItemContent } from './ClimbListItemContent';
+import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { brandColors } from '../theme/colors';
 import { iosSystemColors } from '../theme/ios-colors';
+import { spacing } from '../theme/tokens';
+import { springs } from '../theme/animations';
 import { useTheme } from '../providers/theme-provider';
-import { useGradeFormat } from '../hooks/use-grade-format';
 import { hapticSelection, hapticMedium } from '../lib/haptics';
+import type { QueueDragControls } from './play-drawer/use-queue-drag';
+import { rowReorderShift } from './play-drawer/queue-drag-math';
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
+// Width of the leading position/play/checkbox slot. Exported so the queue list's
+// suggestion rows reserve the same gutter and align their thumbnails + separator
+// with the queue rows from a single source of truth.
+export const POSITION_SLOT_WIDTH = 28;
+// Inset the separator to start under the climb name (after position + thumbnail).
+export const SEPARATOR_INSET = spacing[3] + POSITION_SLOT_WIDTH + spacing[3] + THUMBNAIL_WIDTH + spacing[3];
+
+export type QueueItemRowBoard = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+};
 
 type QueueItemRowProps = {
   item: ClimbQueueItem;
   position: number;
+  board: QueueItemRowBoard;
   isCurrentClimb: boolean;
   onPress: (item: ClimbQueueItem) => void;
   onRemove: (uuid: string) => void;
@@ -30,6 +51,16 @@ type QueueItemRowProps = {
   isSelected?: boolean;
   isHistoryItem?: boolean;
   onToggleSelect?: (uuid: string) => void;
+  /** Open the log-ascent sheet for an already-climbed (history) row. */
+  onTickHistory?: (item: ClimbQueueItem) => void;
+  /** Drag-to-reorder wiring (only passed for upcoming/future rows). */
+  drag?: QueueDragControls;
+  /** This row's index within the flat list (drag coordinate). */
+  rowIndex?: number;
+  /** This row's index within the queue array (drag commit). */
+  queueIndex?: number;
+  /** Whether this row may be dragged (future rows, not in edit mode). */
+  isDraggable?: boolean;
 };
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -69,6 +100,7 @@ function PositionIndicator({
 export function QueueItemRow({
   item,
   position,
+  board,
   isCurrentClimb,
   onPress,
   onRemove,
@@ -76,6 +108,11 @@ export function QueueItemRow({
   isSelected = false,
   isHistoryItem = false,
   onToggleSelect,
+  onTickHistory,
+  drag,
+  rowIndex,
+  queueIndex,
+  isDraggable = false,
 }: QueueItemRowProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('session');
@@ -85,7 +122,7 @@ export function QueueItemRow({
   const isSwipeOpen = useSharedValue(false);
   const [isOpen, setIsOpen] = useState(false);
 
-  // Disable swipe for edit mode and history items
+  // Disable swipe-to-delete for edit mode and history items.
   const swipeEnabled = !isEditMode && !isHistoryItem;
 
   // Reset swipe position when swipe gets disabled (e.g. entering edit mode)
@@ -132,12 +169,49 @@ export function QueueItemRow({
             runOnJS(setIsOpen)(false);
           }
         }),
-    [swipeEnabled, translateX, isSwipeOpen, handleRemove],
+    [swipeEnabled, translateX, isSwipeOpen],
   );
+
+  // Long-press drag handle gesture (future rows only). Memoized on the row's
+  // identity so it doesn't churn while the list re-renders.
+  const dragHandleGesture = useMemo(() => {
+    if (!isDraggable || !drag || rowIndex == null || queueIndex == null) return null;
+    return drag.makeHandleGesture(rowIndex, item.uuid, queueIndex);
+  }, [isDraggable, drag, rowIndex, queueIndex, item.uuid]);
 
   const rowAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+
+  // Lift the dragged row and shift its siblings to open a gap. Reads the
+  // list-level drag shared values; for non-future rows (no `drag`) it stays at
+  // rest. `active`/`target` always fall inside the future window, so history /
+  // current rows never shift even though they share this style.
+  // Capture only the shared-values bag (not the whole `drag` object, which holds
+  // JS functions that can't cross to the UI thread).
+  const dragShared = drag?.shared;
+  const dragAnimatedStyle = useAnimatedStyle(() => {
+    if (!dragShared || dragShared.activeUuid.value === null) {
+      return { transform: [{ translateY: 0 }], zIndex: 0, elevation: 0 };
+    }
+    if (dragShared.activeUuid.value === item.uuid) {
+      return {
+        transform: [{ translateY: dragShared.dragTranslateY.value }, { scale: 1.02 }],
+        zIndex: 30,
+        elevation: 10,
+      };
+    }
+    const shift =
+      rowIndex == null
+        ? 0
+        : rowReorderShift(
+            rowIndex,
+            dragShared.activeRowIndex.value,
+            dragShared.targetRowIndex.value,
+            dragShared.rowHeight.value,
+          );
+    return { transform: [{ translateY: withSpring(shift, springs.interactive) }], zIndex: 0, elevation: 0 };
+  });
 
   const deleteButtonStyle = useAnimatedStyle(() => {
     const width = Math.min(Math.abs(translateX.value), DELETE_BUTTON_WIDTH);
@@ -179,10 +253,22 @@ export function QueueItemRow({
     });
   };
 
-  const { formatGrade } = useGradeFormat();
+  const handleTickPress = useCallback(() => {
+    hapticSelection();
+    onTickHistory?.(item);
+  }, [onTickHistory, item]);
+
+  const handleRowLayout = useCallback(
+    (height: number) => {
+      if (isDraggable) drag?.onRowHeight(height);
+    },
+    [isDraggable, drag],
+  );
+
   const climbName = item.climb?.name ?? t('mobile.queue.unknownClimb');
-  const rawDifficulty = item.climb?.difficulty ?? '';
-  const difficulty = formatGrade(rawDifficulty) ?? rawDifficulty;
+
+  const showTick = isHistoryItem && !isEditMode && !!onTickHistory;
+  const showDragHandle = !!dragHandleGesture && !isEditMode;
 
   const rowContent = (
     <AnimatedPressable
@@ -192,12 +278,13 @@ export function QueueItemRow({
       accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
       style={[
         styles.row,
+        { backgroundColor: systemColors.secondaryBackground },
         isCurrentClimb && !isHistoryItem && styles.currentClimbRow,
         isHistoryItem && styles.historyRow,
         rowAnimatedStyle,
       ]}
     >
-      {/* Position number or checkbox */}
+      {/* Position number / play indicator / edit checkbox */}
       <View style={styles.positionContainer}>
         <PositionIndicator
           isEditMode={isEditMode}
@@ -207,34 +294,46 @@ export function QueueItemRow({
         />
       </View>
 
-      {/* Climb info */}
-      <View style={styles.climbInfo}>
-        <Text
-          variant="body"
-          numberOfLines={1}
-          style={isCurrentClimb && !isHistoryItem ? styles.currentClimbText : undefined}
-        >
-          {climbName}
-        </Text>
-      </View>
+      {/* Shared climb visual: thumbnail + name/subtitle + grade */}
+      <ClimbListItemContent
+        climb={item.climb}
+        boardName={board.boardName}
+        layoutId={board.layoutId}
+        sizeId={board.sizeId}
+        setIds={board.setIds}
+        angle={board.angle}
+      />
 
-      {/* Grade pill */}
-      {difficulty ? (
-        <View style={[styles.gradePill, isCurrentClimb && !isHistoryItem && styles.currentGradePill]}>
-          <Text
-            variant="caption1"
-            color={isCurrentClimb && !isHistoryItem ? brandColors.primary : iosSystemColors.systemGray}
-            style={styles.gradeText}
+      {/* Trailing action: tick (history) or drag handle (upcoming) */}
+      {showTick ? (
+        <Pressable
+          onPress={handleTickPress}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.queue.logAscent')}
+          style={styles.trailingButton}
+        >
+          <Icon name="tick" size={26} color={brandColors.success} />
+        </Pressable>
+      ) : showDragHandle && dragHandleGesture ? (
+        <GestureDetector gesture={dragHandleGesture}>
+          <View
+            style={styles.trailingButton}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.queue.dragHandleAria', { name: climbName })}
           >
-            {difficulty}
-          </Text>
-        </View>
+            <Icon name="drag.handle" size={22} color={iosSystemColors.systemGray} />
+          </View>
+        </GestureDetector>
       ) : null}
     </AnimatedPressable>
   );
 
   return (
-    <Animated.View style={containerAnimatedStyle}>
+    <Animated.View
+      style={[containerAnimatedStyle, dragAnimatedStyle]}
+      onLayout={(event) => handleRowLayout(event.nativeEvent.layout.height)}
+    >
       <View style={styles.swipeContainer}>
         {/* Delete action behind the row */}
         {swipeEnabled && (
@@ -254,7 +353,7 @@ export function QueueItemRow({
       </View>
 
       {/* Separator */}
-      <View style={[styles.separator, { marginLeft: 52, backgroundColor: systemColors.separator }]} />
+      <View style={[styles.separator, { marginLeft: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
     </Animated.View>
   );
 }
@@ -268,10 +367,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minHeight: 52,
-    backgroundColor: 'transparent',
+    columnGap: spacing[3],
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[3],
   },
   currentClimbRow: {
     backgroundColor: `${brandColors.primary}14`,
@@ -280,35 +378,20 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   positionContainer: {
-    width: 28,
+    width: POSITION_SLOT_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
   positionText: {
     fontWeight: '500',
     fontVariant: ['tabular-nums'],
   },
-  climbInfo: {
-    flex: 1,
+  trailingButton: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-  },
-  currentClimbText: {
-    fontWeight: '600',
-  },
-  gradePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: `${iosSystemColors.systemGray}1F`,
-    marginLeft: 8,
-  },
-  currentGradePill: {
-    backgroundColor: `${brandColors.primary}1F`,
-  },
-  gradeText: {
-    fontWeight: '600',
+    flexShrink: 0,
   },
   deleteAction: {
     position: 'absolute',

@@ -21,6 +21,7 @@ import { I18nProvider } from '../src/providers/i18n-provider';
 import { BluetoothProvider } from '../src/providers/bluetooth-provider';
 import { ToastProvider } from '../src/providers/toast-provider';
 import { QueueProvider } from '../src/providers/queue-provider';
+import { QueueSnackbarProvider } from '../src/providers/queue-snackbar-provider';
 import { DrawerHostProvider } from '../src/providers/drawer-host-provider';
 import { SessionScreenProvider } from '../src/providers/session-screen-provider';
 import { SessionScreenHost } from '../src/components/session-screen/SessionScreenHost';
@@ -201,11 +202,12 @@ function RootLayout() {
                   <ConnectionSettingsProvider>
                     <ToastProvider>
                       <ClimbActionsDataWrapper>
-                        <QueueProvider>
-                          <BoardAdapterWrapper>
-                            <PlaylistsAdapterWrapper>
-                              <BoardProviderWrapper>
-                                {/* BottomSheetModalProvider sits inside the board
+                        <QueueSnackbarProvider>
+                          <QueueProvider>
+                            <BoardAdapterWrapper>
+                              <PlaylistsAdapterWrapper>
+                                <BoardProviderWrapper>
+                                  {/* BottomSheetModalProvider sits inside the board
                                     providers (gorhom's BottomSheetModal portals
                                     PlayDrawer → QuickTickBar here, so the host
                                     must be able to see BoardAdapter/BoardProvider
@@ -216,29 +218,30 @@ function RootLayout() {
                                     exist before the picker mounts or gorhom
                                     throws "BottomSheetModalInternalContext
                                     cannot be null". */}
-                                <BottomSheetModalProvider>
-                                  <BluetoothProviderWrapper>
-                                    <SessionScreenProvider>
-                                      <DrawerHostProvider>
-                                        <ThemedNavigation>
-                                          <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                                            <Stack.Screen name="(tabs)" />
-                                            <Stack.Screen
-                                              name="auth"
-                                              options={{ headerShown: false, gestureEnabled: false }}
-                                            />
-                                          </Stack>
-                                        </ThemedNavigation>
-                                        <PersistentQueueBar />
-                                        <SessionScreenHost />
-                                      </DrawerHostProvider>
-                                    </SessionScreenProvider>
-                                  </BluetoothProviderWrapper>
-                                </BottomSheetModalProvider>
-                              </BoardProviderWrapper>
-                            </PlaylistsAdapterWrapper>
-                          </BoardAdapterWrapper>
-                        </QueueProvider>
+                                  <BottomSheetModalProvider>
+                                    <BluetoothProviderWrapper>
+                                      <SessionScreenProvider>
+                                        <DrawerHostProvider>
+                                          <ThemedNavigation>
+                                            <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+                                              <Stack.Screen name="(tabs)" />
+                                              <Stack.Screen
+                                                name="auth"
+                                                options={{ headerShown: false, gestureEnabled: false }}
+                                              />
+                                            </Stack>
+                                          </ThemedNavigation>
+                                          <PersistentQueueBar />
+                                          <SessionScreenHost />
+                                        </DrawerHostProvider>
+                                      </SessionScreenProvider>
+                                    </BluetoothProviderWrapper>
+                                  </BottomSheetModalProvider>
+                                </BoardProviderWrapper>
+                              </PlaylistsAdapterWrapper>
+                            </BoardAdapterWrapper>
+                          </QueueProvider>
+                        </QueueSnackbarProvider>
                       </ClimbActionsDataWrapper>
                     </ToastProvider>
                   </ConnectionSettingsProvider>

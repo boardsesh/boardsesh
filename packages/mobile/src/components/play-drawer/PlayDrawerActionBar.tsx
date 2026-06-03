@@ -3,7 +3,6 @@ import { View, Pressable, Platform, StyleSheet, type ViewStyle } from 'react-nat
 import { SymbolView } from 'expo-symbols';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
-import { Badge } from '../Badge';
 import { Text } from '../Text';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { brandColors } from '../../theme/colors';
@@ -209,19 +208,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         <View style={styles.spacer} />
 
         <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
-        <View>
-          <ActionButton
-            size="sm"
-            iconName="queue"
-            onPress={onOpenQueue}
-            accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
-          />
-          {remainingQueueCount > 0 && (
-            <View style={styles.badgeContainer}>
-              <Badge count={remainingQueueCount} color={brandColors.primary} size="small" />
-            </View>
-          )}
-        </View>
+        <ActionButton
+          size="sm"
+          iconName="queue"
+          onPress={onOpenQueue}
+          accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
+        />
       </View>
     </View>
   );
@@ -249,10 +241,7 @@ function ActionButton({
   accessibilityLabel,
 }: ActionButtonProps) {
   const { dim, icon } = SIZES[size];
-  const buttonStyle: ViewStyle[] = [
-    styles.actionButton,
-    { width: dim, height: dim, borderRadius: dim / 2 },
-  ];
+  const buttonStyle: ViewStyle[] = [styles.actionButton, { width: dim, height: dim, borderRadius: dim / 2 }];
   if (active && activeColor) {
     buttonStyle.push({ backgroundColor: `${activeColor}20` });
   }
@@ -391,11 +380,6 @@ const styles = StyleSheet.create({
   actionButtonPressed: {
     opacity: 0.6,
     transform: [{ scale: 0.9 }],
-  },
-  badgeContainer: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
   },
   anglePill: {
     paddingHorizontal: 14,

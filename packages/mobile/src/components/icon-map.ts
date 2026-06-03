@@ -83,6 +83,7 @@ export const iconMap = {
   'end.session': { ios: 'stop.circle', android: 'stop-circle-outline' },
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
+  'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },
 
   // Math
   minus: { ios: 'minus', android: 'minus' },

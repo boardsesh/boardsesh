@@ -121,7 +121,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           hitSlop={8}
           style={styles.headerButton}
         >
-          <Icon name="close" size={18} color={iosSystemColors.systemGray} />
+          <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
         </Pressable>
       </View>
     </View>
