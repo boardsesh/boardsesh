@@ -50,6 +50,9 @@ function createBoardContextValue({
     saveClimb: async () => {
       throw new Error('unused in test');
     },
+    saveMoonBoardClimb: async () => {
+      throw new Error('unused in test');
+    },
     updateClimb: async () => {
       throw new Error('unused in test');
     },

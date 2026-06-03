@@ -702,6 +702,13 @@
         "bleConnected": "Panel conectado",
         "bleUnavailable": "Elige un panel para iluminarlo por Bluetooth."
       },
+      "moonboard": {
+        "angleLabel": "Ángulo",
+        "gradeLabel": "Grado sugerido",
+        "benchmarkLabel": "Benchmark",
+        "benchmarkDescription": "Marca este bloque como benchmark para el grado.",
+        "invalidPublish": "Añade al menos una presa de inicio y una de final para publicar."
+      },
       "drafts": {
         "holds_one": "{{count}} presa",
         "holds_other": "{{count}} presas"

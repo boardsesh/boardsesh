@@ -1,5 +1,5 @@
 import { GraphQLOperationError, isClimbDuplicateExtension } from '@boardsesh/graphql-client';
-import type { BoardName, SaveClimbInput } from '@boardsesh/shared-schema';
+import type { BoardName, MoonBoardHoldsInput, SaveClimbInput, SaveMoonBoardClimbInput } from '@boardsesh/shared-schema';
 
 // Mirrors the subset of web's `SaveClimbOptions` (aurora types) that the save
 // mutation actually maps. snake_case is preserved so form payloads can be
@@ -40,6 +40,41 @@ export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions
     framesCount: options.frames_count,
     framesPace: options.frames_pace,
     angle: options.angle,
+  };
+}
+
+/**
+ * MoonBoard create payload. MoonBoard diverges from Aurora: holds are grid
+ * coordinate buckets (not a frames string), grade/benchmark/setter are
+ * MoonBoard-only, and there is no in-place update path (create-only). camelCase
+ * here because the MoonBoard editor builds this directly (no legacy snake_case
+ * form payload to forward).
+ */
+export type SaveMoonBoardClimbOptions = {
+  layoutId: number;
+  name: string;
+  description?: string;
+  holds: MoonBoardHoldsInput;
+  angle: number;
+  isDraft?: boolean;
+  userGrade?: string;
+  isBenchmark?: boolean;
+  setter?: string;
+};
+
+/** Maps the MoonBoard create options to the GraphQL `SaveMoonBoardClimbInput`. */
+export function toSaveMoonBoardClimbInput(options: SaveMoonBoardClimbOptions): SaveMoonBoardClimbInput {
+  return {
+    boardType: 'moonboard',
+    layoutId: options.layoutId,
+    name: options.name,
+    description: options.description ?? '',
+    holds: options.holds,
+    angle: options.angle,
+    isDraft: options.isDraft,
+    userGrade: options.userGrade,
+    isBenchmark: options.isBenchmark,
+    setter: options.setter,
   };
 }
 

@@ -702,6 +702,13 @@
         "bleConnected": "Board connected",
         "bleUnavailable": "Pick a board to light it up over Bluetooth."
       },
+      "moonboard": {
+        "angleLabel": "Angle",
+        "gradeLabel": "Suggested grade",
+        "benchmarkLabel": "Benchmark",
+        "benchmarkDescription": "Flag this as a benchmark problem for the grade.",
+        "invalidPublish": "Add at least one start and one finish hold to publish."
+      },
       "drafts": {
         "holds_one": "{{count}} hold",
         "holds_other": "{{count}} holds"

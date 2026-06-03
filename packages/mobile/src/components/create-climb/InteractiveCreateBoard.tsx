@@ -2,8 +2,7 @@ import React, { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
-import { BoardImageNative } from '../BoardImageNative';
+import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { overlays } from '../../theme/tokens';
@@ -12,10 +11,12 @@ import { HoldTargetLayer } from './HoldTargetLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 
 type InteractiveCreateBoardProps = {
-  boardName: BoardName;
-  layoutId: number;
-  sizeId: number;
-  setIds: string;
+  /**
+   * The board photo layer, supplied by the caller so this component stays
+   * board-family-agnostic: Aurora passes `<BoardImageNative frames="" …/>`,
+   * MoonBoard passes `<MoonBoardBackground …/>`. Rendered beneath the holds.
+   */
+  background: ReactNode;
   boardWidth: number;
   boardHeight: number;
   holdTargets: BoardHoldTarget[];
@@ -29,17 +30,14 @@ type InteractiveCreateBoardProps = {
 };
 
 /**
- * The no-SVG interactive board editor. The background is the bundled board PNG
- * (via BoardImageNative with empty frames); painted holds and tap targets are
- * plain RN Views placed INSIDE the zoom-transformed Animated.View, so RNGH
- * hit-tests them in board-local space and taps land correctly at any zoom level
- * with zero manual coordinate math.
+ * The no-SVG interactive board editor. The background is supplied by the caller
+ * (Aurora board PNG via BoardImageNative, or the stacked MoonBoard webps);
+ * painted holds and tap targets are plain RN Views placed INSIDE the
+ * zoom-transformed Animated.View, so RNGH hit-tests them in board-local space
+ * and taps land correctly at any zoom level with zero manual coordinate math.
  */
 export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard({
-  boardName,
-  layoutId,
-  sizeId,
-  setIds,
+  background,
   boardWidth,
   boardHeight,
   holdTargets,
@@ -86,16 +84,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
       <GestureDetector gesture={rootGesture}>
         <View style={containerStyle} onLayout={handleLayout}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
-            <BoardImageNative
-              frames=""
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-            />
+            {background}
             {overlay ? (
               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                 {overlay}
@@ -144,6 +133,7 @@ const styles = StyleSheet.create({
   },
   board: {
     width: '100%',
+    height: '100%',
   },
   resetButton: {
     position: 'absolute',

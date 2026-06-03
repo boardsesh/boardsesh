@@ -20,6 +20,9 @@ type BrushBarProps = {
   boardName: BoardName;
   selectedBrush: BrushRole;
   onSelectBrush: (role: BrushRole) => void;
+  /** Paintable roles to show as chips. Defaults to the Aurora set (incl. Foot);
+   * MoonBoard passes Start/Hand/Finish only (no foot). */
+  paintRoles?: ReadonlyArray<Exclude<BrushRole, 'OFF'>>;
   startingCount: number;
   finishCount: number;
   // Secondary controls.
@@ -58,6 +61,7 @@ export function BrushBar({
   boardName,
   selectedBrush,
   onSelectBrush,
+  paintRoles = PAINT_ROLES,
   startingCount,
   finishCount,
   saveState,
@@ -75,12 +79,12 @@ export function BrushBar({
 
   const roleChips = useMemo(
     () =>
-      PAINT_ROLES.map((role) => ({
+      paintRoles.map((role) => ({
         role,
         label: roleLabels[role],
         color: brushRoleColor(boardName, role),
       })),
-    [boardName, roleLabels],
+    [boardName, roleLabels, paintRoles],
   );
 
   const handleSelect = (role: BrushRole) => {
