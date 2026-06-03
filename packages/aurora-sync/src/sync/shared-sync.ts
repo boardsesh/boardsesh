@@ -23,6 +23,7 @@ import type {
   SyncPutFields,
 } from '../api/sync-api-types';
 import { UNIFIED_TABLES } from '../db/table-select';
+import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 import { setterFollows, notifications, userBoardMappings, userFollows } from '@boardsesh/db/schema';
@@ -436,7 +437,11 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
         ascensionistCount: auroraCount,
         auroraAscensionistCount: auroraCount,
         difficultyAverage: Number(item.difficulty_average),
-        qualityAverage: Number(item.quality_average),
+        // Aurora reports quality on a 1–3 scale; Kilter Grips and MoonBoard use
+        // 1–5. Normalise every board to 1–5 (×5/3) so board_climb_stats.quality_average
+        // is one scale the UI can render uniformly. quality_average is a stored
+        // average (double), so keep it continuous rather than rounding.
+        qualityAverage: normalizeQualityTo5(item.quality_average),
         faUsername: item.fa_username,
         faAt: item.fa_at,
       };

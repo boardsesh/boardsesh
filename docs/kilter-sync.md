@@ -205,6 +205,19 @@ ascensionist_count = COALESCE(kilter_ascensionist_count, aurora_ascensionist_cou
 
 For boards with only one catalog source (e.g. Tension, `kilter_` is NULL) this collapses to `aurora_ + boardsesh_` — behaviour unchanged. The same formula is used at all three writers: the catalog sync (`catalog-sync.ts`), aurora-sync (`shared-sync.ts`), and the Boardsesh-tick recompute (`recompute-climb-stats.ts`). `boardsesh_ascensionist_count` stays additive because Boardsesh-native ticks aren't (yet) pushed to Kilter; revisit when push-back lands.
 
+### Quality scale — every board on 1–5
+
+Kilter Grips reports `quality_average` on a 1–5 scale (MoonBoard too), but Aurora reports 1–3. To keep `board_climb_stats.quality_average` one scale the UI renders uniformly, aurora-sync now normalises its writes to 1–5 via `normalizeQualityTo5` (`×5/3`, continuous — it's a stored average, so unlike `convertQuality` it isn't rounded to integer star steps). Kilter Grips values are stored as-is (already 1–5); Boardsesh-tick quality is already 1–5.
+
+**One-time backfill (NOT idempotent — run exactly once per environment):** existing Aurora-board rows are still 1–3 until rescaled:
+
+```sql
+UPDATE board_climb_stats SET quality_average = quality_average * 5.0 / 3.0
+WHERE board_type IN ('tension','decoy','soill','touchstone','grasshopper') AND quality_average IS NOT NULL;
+```
+
+(Kilter is excluded — its quality is grips-authoritative and already 1–5 for grips-covered climbs; running this twice would double-scale.)
+
 ## Schema changes
 
 The catalog-relevant schema (`board_climbs.hold_fingerprint` + index, `board_climb_aliases`, `board_climb_stats.kilter_ascensionist_count` + the three-writer recompute) already shipped with Flow B. Flow A adds one table:
