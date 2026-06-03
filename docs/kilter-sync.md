@@ -173,6 +173,13 @@ bun packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
 
 Idempotent (re-running writes the same fingerprints; self-aliases use `ON CONFLICT DO UPDATE`).
 
+### Known limitations (climbs skipped + reported, never silently dropped)
+
+A full run reports a small `climbsUnmapped` count (~0.01% after the UUID-first match). Two causes:
+
+- **New multi-frame animated climbs.** Kilter's animated (`frame_count > 1`) climbs encode `climb_concat` as `h{hole}p{code}s{startFrame}e{endFrame}` rather than the comma-frame format, which the parser doesn't decode. Existing animated climbs match by UUID (so they still get stats); only a _new_ animated climb (unseen UUID) is skipped. Decoding the `s`/`e` format is a follow-up.
+- **Post-2024 hold-set placements.** A handful of climbs use holds whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails. Refreshing `board_placements` (needs the `mounting_holes` PowerSync bucket) is a follow-up.
+
 ## Climb dedup
 
 Kilter's catalog has duplicate climbs at different UUIDs with identical hold layouts. We collapse them behind a canonical row.
@@ -187,17 +194,16 @@ Kilter's catalog has duplicate climbs at different UUIDs with identical hold lay
 
 **Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `kilter_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
 
-### Three-writer `ascensionist_count`
+### `ascensionist_count` — aurora/kilter are aliased, not summed
 
-`board_climb_stats.ascensionist_count` is the materialized sum of three independently-owned columns. The catalog sync owns `kilter_ascensionist_count` and recomputes the sum in the same statement:
+`board_climb_stats.ascensionist_count` is the materialized count the search hot path reads. There are three owned columns (`aurora_`, `kilter_`, `boardsesh_`), but for the **Kilter board `aurora_` and `kilter_` are the SAME ascents**: the legacy column was filled from the pre-split `kilterboardapp.com` and `kilter_` is filled from `kiltergrips.com`, which Kilter migrated the same logs into. They match within snapshot noise (median ratio 1.0). **Summing them double-counts** — every Kilter benchmark would read ~2× its real ascents — so the formula takes Kilter (the live source) and falls back to aurora, then adds the independent Boardsesh contribution:
 
 ```
-ascensionist_count = COALESCE(aurora_ascensionist_count,0)
-                   + COALESCE(kilter_ascensionist_count,0)
-                   + COALESCE(boardsesh_ascensionist_count,0)
+ascensionist_count = COALESCE(kilter_ascensionist_count, aurora_ascensionist_count, 0)
+                   + COALESCE(boardsesh_ascensionist_count, 0)
 ```
 
-Same formula at the aurora-sync (`shared-sync.ts`) and Boardsesh-tick (`recompute-climb-stats.ts`) callsites.
+For boards with only one catalog source (e.g. Tension, `kilter_` is NULL) this collapses to `aurora_ + boardsesh_` — behaviour unchanged. The same formula is used at all three writers: the catalog sync (`catalog-sync.ts`), aurora-sync (`shared-sync.ts`), and the Boardsesh-tick recompute (`recompute-climb-stats.ts`). `boardsesh_ascensionist_count` stays additive because Boardsesh-native ticks aren't (yet) pushed to Kilter; revisit when push-back lands.
 
 ## Schema changes
 

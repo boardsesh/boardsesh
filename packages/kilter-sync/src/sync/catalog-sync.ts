@@ -169,24 +169,30 @@ async function syncBoardLayoutGroup(
     for (const climb of climbs) {
       if (!climb.isListed || climb.isDraft || climb.isDeleted) continue;
       result.climbsSeen += 1;
+      const lowerUuid = climb.climbUuid.toLowerCase();
 
+      // 1. UUID identity — the Grips catalog inherited Aurora's climb UUIDs, so
+      //    most incoming climbs already exist as their own canonical. Match on
+      //    UUID *before* parsing climb_concat: existing climbs keep their
+      //    backfilled holds + fingerprint (no need to re-derive), it skips
+      //    parsing for the ~80% UUID-matched majority, and it lets multi-frame
+      //    animated climbs — whose climb_concat uses an s{frame}/e{frame}
+      //    encoding we don't fully decode — still resolve and receive stats.
+      //    The fingerprint dedup map is pre-seeded from the DB load below, so
+      //    nothing is lost by not re-fingerprinting existing rows here.
+      const existingUuid = existingByLowerUuid.get(lowerUuid);
+      if (existingUuid) {
+        climbUuidToCanonical.set(lowerUuid, existingUuid);
+        continue;
+      }
+
+      // New UUID — parse holds to fingerprint (and, if canonical, to insert).
       const frames = gripsClimbConcatToFrames(climb.climbConcat, holeToPlacement);
       if (frames === null) {
         result.climbsUnmapped += 1;
         continue;
       }
       const fingerprint = fingerprintFromHolds(framesToHolds(frames));
-      const lowerUuid = climb.climbUuid.toLowerCase();
-
-      // 1. UUID identity — the Grips catalog inherited Aurora's climb UUIDs, so
-      //    most incoming climbs already exist as their own canonical.
-      const existingUuid = existingByLowerUuid.get(lowerUuid);
-      if (existingUuid) {
-        climbUuidToCanonical.set(lowerUuid, existingUuid);
-        // Make sure later duplicates in this run can collapse onto it.
-        if (!fingerprintToCanonical.has(fingerprint)) fingerprintToCanonical.set(fingerprint, existingUuid);
-        continue;
-      }
 
       // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
       //    already-seen-this-run) canonical becomes an alias, not a new row.
@@ -345,7 +351,11 @@ async function syncBoardLayoutGroup(
           target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
           set: {
             kilterAscensionistCount: sql`excluded.kilter_ascensionist_count`,
-            ascensionistCount: sql`COALESCE(${boardClimbStats.auroraAscensionistCount}, 0) + COALESCE(excluded.kilter_ascensionist_count, 0) + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
+            // aurora_ and kilter_ are the SAME ascents for the Kilter board (the
+            // pre-split kilterboardapp.com vs kiltergrips.com — Kilter migrated
+            // the logs). Take Kilter (the live source) and fall back to aurora,
+            // never sum, or every Kilter climb would show ~2× its real ascents.
+            ascensionistCount: sql`COALESCE(excluded.kilter_ascensionist_count, ${boardClimbStats.auroraAscensionistCount}, 0) + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
             // Kilter-origin canonicals: clobber with Grips values. Aurora-origin
             // canonicals (no Grips display row): excluded is null → keep existing.
             displayDifficulty: sql`COALESCE(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,

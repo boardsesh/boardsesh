@@ -451,7 +451,12 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
           displayDifficulty: sql`excluded.display_difficulty`,
           benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
           auroraAscensionistCount: sql`excluded.aurora_ascensionist_count`,
-          ascensionistCount: sql`COALESCE(excluded.aurora_ascensionist_count, 0) + COALESCE(${climbStatsSchema.kilterAscensionistCount}, 0) + COALESCE(${climbStatsSchema.boardseshAscensionistCount}, 0)`,
+          // aurora_ and kilter_ are the SAME ascents for the Kilter board (two
+          // backends across the Aurora→Kilter Grips split), so they are NOT
+          // summed — Kilter (the live source) wins, aurora is the fallback.
+          // For Aurora-only boards (Tension etc.) kilter_ is NULL so this
+          // collapses to aurora_ — behaviour unchanged. See kilter-sync.md.
+          ascensionistCount: sql`COALESCE(${climbStatsSchema.kilterAscensionistCount}, excluded.aurora_ascensionist_count, 0) + COALESCE(${climbStatsSchema.boardseshAscensionistCount}, 0)`,
           difficultyAverage: sql`excluded.difficulty_average`,
           qualityAverage: sql`excluded.quality_average`,
           faUsername: sql`excluded.fa_username`,
