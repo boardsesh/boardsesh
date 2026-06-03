@@ -46,7 +46,6 @@
     "@boardsesh/board-constants": "*",
     "@boardsesh/crypto": "*",
     "@boardsesh/db": "*",
-    "@boardsesh/shared-schema": "*",
     "@boardsesh/sync-runtime": "*",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",

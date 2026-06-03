@@ -1,0 +1,1 @@
+DROP INDEX "board_climb_ratings_climb_idx";

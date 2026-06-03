@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse, type NextRequest } from 'next/server';
 import { KILTER_IDP_HOST, KILTER_OIDC_REALM } from '@boardsesh/kilter-sync/api';
 import { authOptions } from '@/app/lib/auth/auth-options';
+import { isSecureCookieContext } from '@/app/lib/auth/secure-cookies';
 import { isKilterSyncAllowed } from '@/app/lib/kilter-sync/access';
 
 /**
@@ -32,6 +33,7 @@ const KILTER_OAUTH_REDIRECT_URI = process.env.KILTER_OAUTH_REDIRECT_URI;
 
 const STATE_COOKIE_NAME = 'kilter_oauth_state';
 const VERIFIER_COOKIE_NAME = 'kilter_oauth_verifier';
+const NONCE_COOKIE_NAME = 'kilter_oauth_nonce';
 const COOKIE_MAX_AGE_SECONDS = 600; // 10 minutes — handshake should complete fast
 
 function base64url(buf: Buffer): string {
@@ -72,6 +74,9 @@ export async function GET(req: NextRequest) {
   const state = base64url(randomBytes(16));
   const verifier = generateVerifier();
   const challenge = challengeFor(verifier);
+  // OIDC nonce: bound to the id_token Keycloak mints and checked against
+  // this cookie in the callback (defence-in-depth alongside state/PKCE).
+  const nonce = base64url(randomBytes(16));
 
   const authorize = new URL(`https://${KILTER_IDP_HOST}/realms/${KILTER_OIDC_REALM}/protocol/openid-connect/auth`);
   authorize.searchParams.set('response_type', 'code');
@@ -81,6 +86,7 @@ export async function GET(req: NextRequest) {
   // user metadata; openid is required for the id_token (which carries `sub`).
   authorize.searchParams.set('scope', 'openid profile email offline_access');
   authorize.searchParams.set('state', state);
+  authorize.searchParams.set('nonce', nonce);
   authorize.searchParams.set('code_challenge', challenge);
   authorize.searchParams.set('code_challenge_method', 'S256');
 
@@ -91,14 +97,21 @@ export async function GET(req: NextRequest) {
   response.cookies.set(STATE_COOKIE_NAME, state, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureCookieContext(),
     path: '/api/internal/board-credentials/kilter',
     maxAge: COOKIE_MAX_AGE_SECONDS,
   });
   response.cookies.set(VERIFIER_COOKIE_NAME, verifier, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureCookieContext(),
+    path: '/api/internal/board-credentials/kilter',
+    maxAge: COOKIE_MAX_AGE_SECONDS,
+  });
+  response.cookies.set(NONCE_COOKIE_NAME, nonce, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isSecureCookieContext(),
     path: '/api/internal/board-credentials/kilter',
     maxAge: COOKIE_MAX_AGE_SECONDS,
   });

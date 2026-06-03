@@ -26,6 +26,7 @@ const SETTINGS_ERROR_URL = '/settings?kilter=error';
 
 const STATE_COOKIE_NAME = 'kilter_oauth_state';
 const VERIFIER_COOKIE_NAME = 'kilter_oauth_verifier';
+const NONCE_COOKIE_NAME = 'kilter_oauth_nonce';
 const HANDSHAKE_COOKIE_PATH = '/api/internal/board-credentials/kilter';
 
 // The `reason` query param reflected onto /settings is an
@@ -49,9 +50,9 @@ function safeOauthErrorReason(raw: string): string {
 /**
  * Build a redirect response and clear the handshake cookies in the same
  * pass. Every exit from this route — success or error — must scrub the
- * state + verifier so a stale cookie can't carry forward into a later
- * tab. The cookies are HttpOnly + 600s TTL, so leaving them alive just
- * means the next 10 minutes of any handshake start from a slightly
+ * state + verifier + nonce so a stale cookie can't carry forward into a
+ * later tab. The cookies are HttpOnly + 600s TTL, so leaving them alive
+ * just means the next 10 minutes of any handshake start from a slightly
  * confusing state; not a security hole, but not the contract the file
  * docs promise either.
  */
@@ -59,6 +60,7 @@ function redirectAndClearCookies(req: NextRequest, location: string): NextRespon
   const response = NextResponse.redirect(new URL(location, req.url));
   response.cookies.delete({ name: STATE_COOKIE_NAME, path: HANDSHAKE_COOKIE_PATH });
   response.cookies.delete({ name: VERIFIER_COOKIE_NAME, path: HANDSHAKE_COOKIE_PATH });
+  response.cookies.delete({ name: NONCE_COOKIE_NAME, path: HANDSHAKE_COOKIE_PATH });
   return response;
 }
 
@@ -108,6 +110,7 @@ export async function GET(req: NextRequest) {
 
   const stateCookie = req.cookies.get(STATE_COOKIE_NAME)?.value;
   const verifier = req.cookies.get(VERIFIER_COOKIE_NAME)?.value;
+  const nonceCookie = req.cookies.get(NONCE_COOKIE_NAME)?.value;
   if (!stateCookie || !verifier || stateCookie !== state) {
     // Either CSRF / replay attempt, or the user took >10 min between
     // /start and the redirect. Either way, restart the handshake — and
@@ -164,6 +167,10 @@ export async function GET(req: NextRequest) {
     if (!tokens.id_token) throw new Error('id_token missing from token response');
     ({ sub, preferredUsername } = await verifyKeycloakToken(tokens.id_token, {
       expectedAudience: KILTER_OAUTH_CLIENT_ID,
+      // Bind the id_token to the nonce we stashed at /start. Absent only
+      // if the cookie expired/was stripped, in which case verification
+      // falls back to issuer + audience + signature + exp.
+      expectedNonce: nonceCookie,
     }));
   } catch (err) {
     Sentry.captureException(err, {

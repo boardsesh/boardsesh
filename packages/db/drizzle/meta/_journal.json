@@ -799,6 +799,13 @@
       "when": 1780444998471,
       "tag": "0113_pretty_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1780454395393,
+      "tag": "0114_strange_harpoon",
+      "breakpoints": true
     }
   ]
 }

@@ -513,7 +513,6 @@ export const boardClimbRatings = pgTable(
       table.angle,
       table.userId,
     ),
-    climbIdx: index('board_climb_ratings_climb_idx').on(table.boardType, table.climbUuid),
     // Note: a standalone user_id index would be redundant — the unique
     // index on (board_type, climb_uuid, angle, user_id) already covers
     // user lookups for our queries, which always constrain board_type.

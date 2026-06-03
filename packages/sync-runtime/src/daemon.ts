@@ -46,6 +46,15 @@ export function resolveDaemonOptions(options: DaemonOptions = {}): ResolvedDaemo
     maxDelayMinutes: options.maxDelayMinutes ?? DEFAULT_DAEMON_OPTIONS.maxDelayMinutes,
   };
 
+  // Hours must be valid clock hours — out-of-range values would never match the
+  // formatter output and silently disable quiet hours.
+  if (!isValidHour(resolved.quietHoursStart) || !isValidHour(resolved.quietHoursEnd)) {
+    throw new Error(
+      `Daemon quietHoursStart and quietHoursEnd must be integers in 0-23 ` +
+        `(got start=${resolved.quietHoursStart}, end=${resolved.quietHoursEnd}).`,
+    );
+  }
+
   // An equal start/end would silently disable the daemon. Fail loud instead —
   // callers that actually want "always quiet" (pause mode) should use the
   // abort signal or stop the process.
@@ -54,6 +63,23 @@ export function resolveDaemonOptions(options: DaemonOptions = {}): ResolvedDaemo
       `Daemon quietHoursStart and quietHoursEnd must differ (got ${resolved.quietHoursStart} for both). ` +
         `Use a 1-hour window at minimum, or 0/0 is not a valid "disable quiet hours" shortcut.`,
     );
+  }
+
+  // A negative delay would make sleep() resolve immediately and busy-loop the
+  // daemon; min must not exceed max so the random range stays well-formed.
+  if (resolved.minDelayMinutes < 0) {
+    throw new Error(`Daemon minDelayMinutes must be >= 0 (got ${resolved.minDelayMinutes}).`);
+  }
+  if (resolved.minDelayMinutes > resolved.maxDelayMinutes) {
+    throw new Error(
+      `Daemon minDelayMinutes must be <= maxDelayMinutes ` +
+        `(got min=${resolved.minDelayMinutes}, max=${resolved.maxDelayMinutes}).`,
+    );
+  }
+
+  // A non-positive quiet poll would busy-loop while waiting out quiet hours.
+  if (resolved.quietPollMs <= 0) {
+    throw new Error(`Daemon quietPollMs must be > 0 (got ${resolved.quietPollMs}).`);
   }
 
   return resolved;
@@ -158,6 +184,10 @@ export async function runDaemonLoop(
       throw error;
     }
   }
+}
+
+function isValidHour(hour: number): boolean {
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23;
 }
 
 function getHourInTimeZone(date: Date, timeZone: string): number {

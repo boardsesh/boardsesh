@@ -201,6 +201,12 @@ export async function streamKilterPowerSync(args: {
   }
 
   try {
+    // Always abort the fetch on any loop exit — success
+    // (checkpoint_complete `return`), an `onOp` throw, a caller/timeout
+    // abort, or an unexpected read error. Without this, only the
+    // checkpoint_complete path released the connection, leaking the open
+    // HTTP stream on every other exit. The catch block below still owns
+    // error classification; the `finally` only frees the socket.
     for await (const line of readNdjsonLines(response)) {
       let parsed: StreamLine;
       try {
@@ -217,14 +223,14 @@ export async function streamKilterPowerSync(args: {
       }
 
       if ('checkpoint_complete' in parsed) {
-        // Snapshot done. Abort to release the connection — the server
-        // would otherwise hold it open for live updates we don't want.
-        completionController.abort();
+        // Snapshot done. Return to release the connection — the `finally`
+        // aborts the fetch, which the server would otherwise hold open
+        // for live updates we don't want.
         return;
       }
 
       if ('token_expires_in' in parsed) {
-        // Keepalive — we abort on checkpoint_complete so we shouldn't
+        // Keepalive — we return on checkpoint_complete so we shouldn't
         // normally see one, but tolerate it gracefully.
         continue;
       }
@@ -232,15 +238,16 @@ export async function streamKilterPowerSync(args: {
       if ('data' in parsed && parsed.data && Array.isArray(parsed.data.data)) {
         for (const op of parsed.data.data) {
           if (op.op !== 'PUT' && op.op !== 'REMOVE') continue;
-          // Intentional: any throw from `onOp` propagates up and aborts
-          // the rest of the stream for this cycle. The trade-off is
-          // strict — one bad op drops the user's entire pull — but the
-          // alternative (catch + continue) would leave the partial
-          // applied set with no signal that something was skipped. The
-          // daemon's transient-error retry policy re-runs the cycle
-          // next tick, so a transient writer failure self-heals. A
-          // persistent one becomes a Sentry-visible failure for the
-          // user, which is what we want.
+          // Intentional: any throw from `onOp` propagates up and exits
+          // the read loop for this cycle (the `finally` below then aborts
+          // the underlying fetch so we don't leak the HTTP stream). The
+          // trade-off is strict — one bad op drops the user's entire
+          // pull — but the alternative (catch + continue) would leave the
+          // partial applied set with no signal that something was
+          // skipped. The daemon's transient-error retry policy re-runs
+          // the cycle next tick, so a transient writer failure
+          // self-heals. A persistent one becomes a Sentry-visible
+          // failure for the user, which is what we want.
           await onOp(op);
         }
       }
@@ -276,5 +283,13 @@ export async function streamKilterPowerSync(args: {
       throw new KilterApiError('timeout', 'PowerSync stream aborted');
     }
     throw err;
+  } finally {
+    // Release the underlying fetch/HTTP stream on every exit path. The
+    // catch above runs first (JS evaluates catch before finally), so its
+    // error classification still observes the pre-abort
+    // `completionController.signal.aborted` state. abort() on an already
+    // aborted controller is a no-op, so the checkpoint_complete and
+    // caller/timeout paths are unaffected.
+    completionController.abort();
   }
 }

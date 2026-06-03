@@ -110,7 +110,12 @@ export type SyncKilterUserDataArgs = {
  */
 async function decodeAccessTokenSub(accessToken: string): Promise<string> {
   try {
-    const { sub } = await verifyKeycloakToken(accessToken);
+    // The Kilter access token's `aud` is the resource it's scoped to —
+    // `["kilter", "account"]`. Enforcing `expectedAudience: 'kilter'`
+    // alongside the realm `iss` + signature + `exp` check rejects a
+    // token minted for a different resource/client on the same realm
+    // (e.g. an `account`-only token) that would otherwise pass iss+sig.
+    const { sub } = await verifyKeycloakToken(accessToken, { expectedAudience: 'kilter' });
     return sub;
   } catch (err) {
     throw new KilterApiError(
@@ -571,16 +576,28 @@ export async function applyLogs(
     // Match in JS by (climb_uuid, angle, |Δt| ≤ tolerance). The over-
     // fetch is bounded by the batch's combined climb/angle/time
     // envelope; in practice this returns at most a few extra rows.
+    //
+    // Each existing tick can adopt AT MOST ONE incoming log. Two logs
+    // for the same canonical climb+angle within ±tolerance (a re-logged
+    // attempt, or a server-side merge artefact) would otherwise both
+    // match the same row — both become adoptions with the same target
+    // uuid, the bulk UPDATE…FROM applies only one (arbitrary winner),
+    // and the loser is lost forever (next cycle it hits divergent-skip).
+    // `claimed` reserves a matched uuid so a second log skips it and
+    // falls through to the INSERT path, getting its own tick.
+    const claimed = new Set<string>();
     for (const candidate of naturalKeyCandidates) {
       const target = Date.parse(candidate.raw.created_at);
       const toleranceMs = NATURAL_KEY_TIME_TOLERANCE_SECONDS * 1000;
       const match = candidateRows.find((r) => {
+        if (claimed.has(r.uuid)) return false;
         if (r.climbUuid !== candidate.canonical) return false;
         if (r.angle !== candidate.raw.angle) return false;
         const dt = Math.abs(Date.parse(r.climbedAt) - target);
         return dt <= toleranceMs;
       });
       if (match) {
+        claimed.add(match.uuid);
         naturalKeyMatchesByKey.set(candidate.raw.log_uuid, { uuid: match.uuid, kilterId: match.kilterId });
       }
     }
@@ -726,6 +743,19 @@ export async function applyClimbRatings(
   }
 
   if (removeIds.length > 0) {
+    // Ratings HARD-delete on REMOVE, unlike logs which SOFT-detach (see
+    // the long REMOVE comment in applyLogs). The asymmetry is safe here
+    // for two reasons:
+    //   1. The DELETE is scoped to kilter_id IN (removeIds), so it only
+    //      removes kilter-origin rows. Boardsesh-origin ratings have a
+    //      NULL kilter_id and never match this predicate — they survive.
+    //   2. On PowerSync snapshot re-delivery (REMOVE-before-PUT), the
+    //      upsert below re-inserts the kilter-origin row via its
+    //      natural-key conflict target, so the round-trip is lossless.
+    // Unlike a tick, a rating carries no promoted Boardsesh-side state
+    // (no attempt→send promotion, party-session links, computed fields)
+    // that a delete-then-reinsert would destroy — the row is fully
+    // reconstructable from the next PUT, so soft-detach buys nothing.
     await tx
       .delete(boardClimbRatings)
       .where(and(eq(boardClimbRatings.userId, userId), inArray(boardClimbRatings.kilterId, removeIds)));
@@ -733,11 +763,20 @@ export async function applyClimbRatings(
 
   if (puts.length === 0) return;
 
-  const values = [] as Array<typeof boardClimbRatings.$inferInsert>;
+  // Dedupe by the conflict key (board_type, climb_uuid, angle, user_id)
+  // BEFORE the upsert. Distinct source UUIDs can alias to one canonical
+  // climb_uuid (resolveCanonicalClimbUuid), so two PUTs at the same
+  // angle+user can collapse to the same conflict key. Postgres rejects
+  // an ON CONFLICT DO UPDATE that touches the same target row twice in
+  // one statement ("command cannot affect row a second time"), which
+  // would abort the whole ratings flush. Last write wins — PowerSync
+  // delivers a full snapshot per cycle, so within one batch the final
+  // PUT carries the freshest state.
+  const valuesByConflictKey = new Map<string, typeof boardClimbRatings.$inferInsert>();
   for (const op of puts) {
     const raw = op.data as RawClimbRating;
     const canonical = await resolveCanonicalClimbUuid(tx, KILTER_BOARD_TYPE, raw.climb_uuid, aliasCache);
-    values.push({
+    valuesByConflictKey.set(`${KILTER_BOARD_TYPE}:${canonical}:${raw.angle}:${userId}`, {
       boardType: KILTER_BOARD_TYPE,
       climbUuid: canonical,
       angle: raw.angle,
@@ -752,6 +791,7 @@ export async function applyClimbRatings(
       kilterId: raw.climb_rating_uuid,
     });
   }
+  const values = Array.from(valuesByConflictKey.values());
 
   if (values.length === 0) return;
 
@@ -880,7 +920,7 @@ export async function applyCircuits(
       .sort((a, b) => a.position - b.position);
 
     const existing = await tx
-      .select({ climbUuid: playlistClimbs.climbUuid, position: playlistClimbs.position })
+      .select({ climbUuid: playlistClimbs.climbUuid, angle: playlistClimbs.angle, position: playlistClimbs.position })
       .from(playlistClimbs)
       .where(eq(playlistClimbs.playlistId, playlistId))
       .orderBy(playlistClimbs.position);
@@ -909,7 +949,10 @@ export async function applyCircuits(
     const allEqual =
       sameLength &&
       existing.every(
-        (e, i) => e.climbUuid === incomingResolved[i].climbUuid && e.position === incomingResolved[i].position,
+        (e, i) =>
+          e.climbUuid === incomingResolved[i].climbUuid &&
+          e.angle === incomingResolved[i].angle &&
+          e.position === incomingResolved[i].position,
       );
 
     if (allEqual) continue;

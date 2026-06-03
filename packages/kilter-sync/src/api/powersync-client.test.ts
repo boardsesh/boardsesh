@@ -245,6 +245,36 @@ describe('streamKilterPowerSync', () => {
     });
   });
 
+  it('aborts the underlying fetch and propagates the error when onOp rejects', async () => {
+    // Capture the AbortSignal handed to fetch so we can assert the stream
+    // gets torn down even though onOp throws rather than reaching
+    // checkpoint_complete.
+    let fetchSignal: AbortSignal | undefined;
+    const op: PowerSyncOp = { op_id: '1', op: 'PUT', object_type: 'logs', object_id: 'log-1', data: {} };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: { signal?: AbortSignal }) => {
+        fetchSignal = init?.signal;
+        return ndjsonResponse([
+          JSON.stringify({ data: { bucket: 'user_buckets[abc]', after: '0', has_more: false, data: [op] } }) + '\n',
+          JSON.stringify({ checkpoint_complete: {} }) + '\n',
+        ]);
+      }),
+    );
+
+    const onOpError = new Error('writer blew up');
+    const onOp = vi.fn(async () => {
+      throw onOpError;
+    });
+
+    await expect(streamKilterPowerSync({ accessToken: 'tok', streams: ['user_buckets'], onOp })).rejects.toBe(
+      onOpError,
+    );
+
+    expect(onOp).toHaveBeenCalledTimes(1);
+    expect(fetchSignal?.aborted).toBe(true);
+  });
+
   it('throws KilterApiError("timeout") when fetch open fails with an AbortError', async () => {
     vi.stubGlobal(
       'fetch',

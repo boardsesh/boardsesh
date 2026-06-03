@@ -388,6 +388,61 @@ describe('applyLogs — natural-key adoption', () => {
     expect(insertValues).toHaveLength(0);
   });
 
+  it('adopts one existing tick and INSERTS the second when two logs match the same NULL-kilter_id row (no tick loss)', async () => {
+    // Two incoming logs share the same canonical climb_uuid + angle and
+    // both fall within ±60s of ONE existing Boardsesh-originated tick
+    // (kilter_id NULL). Without the claimed-set both would adopt the same
+    // uuid; the bulk UPDATE applies once and the loser is dropped forever.
+    // Correct behaviour: the existing tick adopts the first log, the
+    // second falls through to the INSERT path as its own tick.
+    const { tx, calls, insertValues } = createTx({
+      selectResults: [
+        // kilter_id SELECT: neither log is known yet.
+        [],
+        // natural-key SELECT: a single NULL-kilter_id candidate.
+        [
+          {
+            uuid: 'tick-uuid-shared',
+            kilterId: null,
+            climbUuid: 'climb-1',
+            angle: 40,
+            climbedAt: '2026-05-01T12:00:15.000Z',
+          },
+        ],
+      ],
+    });
+
+    const ops: PowerSyncOp[] = [
+      makeLogPutOp({
+        log_uuid: 'log-FIRST',
+        climb_uuid: 'climb-1',
+        angle: 40,
+        created_at: '2026-05-01T12:00:00.000Z',
+      }),
+      makeLogPutOp({
+        log_uuid: 'log-SECOND',
+        climb_uuid: 'climb-1',
+        angle: 40,
+        created_at: '2026-05-01T12:00:30.000Z',
+      }),
+    ];
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1']), logSpy);
+
+    // One adoption (bulk UPDATE) and one INSERT — the second log is NOT lost.
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
+    expect(insertValues[0]).toHaveLength(1);
+    // The shared tick was claimed by the first log, so the second is the
+    // insert. Either log_uuid could win the adoption depending on order;
+    // the invariant is that exactly one of the two becomes the insert.
+    const insertedKilterId = insertValues[0][0].kilterId as string;
+    expect(['log-FIRST', 'log-SECOND']).toContain(insertedKilterId);
+    expect(insertValues[0][0]).toMatchObject({ climbUuid: 'climb-1', angle: 40 });
+    // No divergent skip — both logs were handled.
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
   it('handles a mixed batch (insert + update + adopt + divergent) in one call with the expected round-trip count', async () => {
     // 4 PUT ops:
     //   - log-EXISTING: kilter_id SELECT returns this → bulk UPDATE
@@ -749,6 +804,40 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
     expect(insertValues[0]).toHaveLength(1);
   });
 
+  it('dedupes two PUTs that alias to one canonical climb_uuid at the same angle+user to a single upsert row', async () => {
+    // Two ratings carry DISTINCT source climb_uuids that both alias to one
+    // canonical (a deduped climb). At the same angle + user they collapse
+    // to one conflict key (board_type, climb_uuid, angle, user_id).
+    // Without dedup the VALUES list carries two rows with the same conflict
+    // key and Postgres aborts the whole flush ("ON CONFLICT DO UPDATE
+    // command cannot affect row a second time"). The dedup must hand the
+    // upsert exactly one row, last-write-wins.
+    const { tx, calls, insertValues } = createRichTx();
+    // Both source uuids resolve to the same canonical via the alias cache.
+    const aliasCache = new Map<string, string>();
+    aliasCache.set('kilter:climb-src-a', 'climb-canonical');
+    aliasCache.set('kilter:climb-src-b', 'climb-canonical');
+
+    const ops = [
+      makeRatingPutOp({ climb_rating_uuid: 'r-a', climb_uuid: 'climb-src-a', angle: 40, rating: 3 }),
+      makeRatingPutOp({ climb_rating_uuid: 'r-b', climb_uuid: 'climb-src-b', angle: 40, rating: 5 }),
+    ];
+
+    await applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCache);
+
+    // Exactly one bulk insert carrying ONE deduped values row.
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
+    expect(insertValues[0]).toHaveLength(1);
+    // Last write wins: the second PUT (r-b, rating 5) is the survivor.
+    expect(insertValues[0][0]).toMatchObject({
+      climbUuid: 'climb-canonical',
+      angle: 40,
+      userId: 'user-1',
+      rating: 5,
+      kilterId: 'r-b',
+    });
+  });
+
   it('normalises a null incoming comment to empty string on insert (COALESCE preserves existing on UPDATE)', async () => {
     const { tx, insertValues } = createRichTx();
     const op = makeRatingPutOp({ climb_rating_uuid: 'r-1', climb_uuid: 'climb-A', angle: 40, comment: null });
@@ -900,5 +989,43 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
       return (rows as Array<Record<string, unknown>>).some((r) => 'climbUuid' in r);
     });
     expect(climbsInsertCalls).toHaveLength(0);
+  });
+
+  it('rewrites playlist_climbs when only a climb angle changed (same uuids + order)', async () => {
+    // Same climb_uuids in the same order, but climb-A's angle moved
+    // 40 → 25. The diff must compare angle too, otherwise this angle-only
+    // edit is dropped and the playlist keeps the stale angle.
+    const existing = [
+      { climbUuid: 'climb-A', angle: 40, position: 0 },
+      { climbUuid: 'climb-B', angle: 25, position: 1 },
+    ];
+    const { tx, calls } = createRichTx({
+      selectResults: [existing],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const circuitOp = makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' });
+    const climbOps = [
+      makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', angle: 25, position: 0 }),
+      makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-B', angle: 25, position: 1 }),
+    ];
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [circuitOp],
+      climbOps,
+      aliasCacheFor(['climb-A', 'climb-B']),
+    );
+
+    // The angle change must trigger the wipe-and-reinsert path.
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(1);
+    const climbsInsertCalls = calls.filter((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'climbUuid' in r);
+    });
+    expect(climbsInsertCalls).toHaveLength(1);
   });
 });

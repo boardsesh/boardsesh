@@ -170,7 +170,10 @@ export async function passwordGrant(args: {
  * `iss` is always required. `aud` is checked when the caller passes
  * `expectedAudience` (Keycloak's id_token sets `aud=<client_id>`; access
  * tokens vary by realm setup, so we leave that to the caller). `exp` is
- * enforced unconditionally by jose.
+ * enforced unconditionally by jose. `nonce` is checked when the caller
+ * passes `expectedNonce` — the browser flow binds the id_token to the
+ * value it stashed in an HttpOnly cookie at /start, so a replayed
+ * id_token from another handshake fails to match.
  */
 const KILTER_REALM_ISSUER = `https://${KILTER_IDP_HOST}/realms/${KILTER_OIDC_REALM}`;
 const KILTER_JWKS_URL = new URL(`${KILTER_REALM_ISSUER}/protocol/openid-connect/certs`);
@@ -199,7 +202,7 @@ function getJwks(): ReturnType<typeof createRemoteJWKSet> {
 
 export async function verifyKeycloakToken(
   jwt: string,
-  opts: { expectedIssuer?: string; expectedAudience?: string } = {},
+  opts: { expectedIssuer?: string; expectedAudience?: string; expectedNonce?: string } = {},
 ): Promise<{ sub: string; preferredUsername?: string; payload: JWTPayload }> {
   const expectedIssuer = opts.expectedIssuer ?? KILTER_REALM_ISSUER;
   try {
@@ -210,6 +213,12 @@ export async function verifyKeycloakToken(
     });
     if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
       throw new KilterApiError('unauthorized', 'Keycloak JWT missing sub');
+    }
+    if (opts.expectedNonce !== undefined && payload.nonce !== opts.expectedNonce) {
+      // OIDC nonce binding (defence-in-depth): the id_token must carry the
+      // nonce we minted at /start, so a token from a different handshake
+      // can't be replayed into this callback.
+      throw new KilterApiError('unauthorized', 'Keycloak id_token nonce mismatch');
     }
     const preferredUsername = typeof payload.preferred_username === 'string' ? payload.preferred_username : undefined;
     return { sub: payload.sub, preferredUsername, payload };

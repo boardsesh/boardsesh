@@ -99,17 +99,31 @@ export class SyncRunner {
     const summary: SyncSummary = { total: 1, successful: 0, failed: 0, errors: [] };
     const { db } = this.getClient();
 
-    const cred = await this.getNextCredentialToSync(db);
-    if (!cred) {
-      summary.total = 0;
-      return summary;
-    }
-
+    // Candidate selection is inside the try so a DB failure here is handled
+    // by the same path as a per-credential failure (and, in the daemon, by
+    // runDaemonLoop's onCycleError) instead of escaping unlogged.
+    let cred: KilterCredentialRecord | null = null;
     try {
+      cred = await this.getNextCredentialToSync(db);
+      if (!cred) {
+        summary.total = 0;
+        return summary;
+      }
+
       await this.runCycleForCredential(db, cred);
       summary.successful = 1;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+
+      // A failure before we even picked a credential (e.g. the selection
+      // query itself) has no user to stamp — surface it and bail.
+      if (!cred) {
+        this.handleError(err, { board: KILTER_BOARD_TYPE });
+        summary.failed = 1;
+        summary.errors.push({ userId: '', boardType: KILTER_BOARD_TYPE, error: err.message });
+        return summary;
+      }
+
       const transient = isTransientKilterError(err);
 
       if (transient) {
@@ -162,11 +176,15 @@ export class SyncRunner {
       log: (msg) => this.log(msg),
     });
 
-    // Push-back (Boardsesh → Kilter for ticks/ratings/circuits) is gated
-    // behind KILTER_SYNC_PUSH_ENABLED. Pull works end-to-end against a
-    // real account; push waits on a separate verification pass that
-    // involves writing to a real Kilter database, which we shouldn't do
-    // speculatively from sync. See packages/kilter-sync/src/sync/push-back.ts.
+    // TODO(push-back): wire pushKilterUserData(...) in here, between the
+    // user-sync above and the credential stamp below. It is deliberately not
+    // called yet — push-back (Boardsesh → Kilter for ticks/ratings/circuits)
+    // stays gated behind KILTER_SYNC_PUSH_ENABLED until the REST payloads are
+    // verified against a real Kilter account. Pull already works end-to-end;
+    // push waits on that verification pass because it writes to a real Kilter
+    // database, which we shouldn't do speculatively from sync. A future
+    // enabler reads KILTER_SYNC_PUSH_ENABLED and invokes the call at this
+    // point. See packages/kilter-sync/src/sync/push-back.ts.
 
     await db
       .update(auroraCredentials)
@@ -284,10 +302,12 @@ export class SyncRunner {
     // Keycloak rotates refresh tokens on each refresh by default. Persist
     // the new one (encrypted) so the next cycle uses the fresh value;
     // re-using a stale refresh_token after rotation gets you invalid_grant.
-    // Use the caller's db handle so the rotation update lands in the same
-    // connection as the rest of the cycle (matters under PgBouncer
-    // transaction pooling — opening a second connection here would put
-    // the writes on a different session).
+    // This is a deliberate immediate autocommit done before the rest of the
+    // sync runs — there's no transaction wrapping the cycle, so this write
+    // lands on its own. We do it eagerly to minimise the rotation-loss
+    // window: if the process crashes between Keycloak issuing the rotated
+    // token and this write committing, the old refresh_token is already
+    // invalid and the user must re-auth on the next cycle.
     if (response.refresh_token && response.refresh_token !== refreshToken) {
       await db
         .update(auroraCredentials)
@@ -363,7 +383,18 @@ export class SyncRunner {
           await this.syncNextUser();
         },
         resolved,
-        { signal: this.daemonController.signal, onLog: (m: string) => this.log(m) },
+        {
+          signal: this.daemonController.signal,
+          onLog: (m: string) => this.log(m),
+          // syncNextUser handles per-credential failures internally; this
+          // catches anything that escapes a cycle (e.g. an unexpected throw)
+          // so it's logged + reported to Sentry instead of silently dropped.
+          onCycleError: (error: unknown) => {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.handleError(err, { board: KILTER_BOARD_TYPE });
+            this.log(`[KilterSyncRunner] Daemon cycle error: ${err.message}`);
+          },
+        },
       );
     } finally {
       this.daemonController = null;

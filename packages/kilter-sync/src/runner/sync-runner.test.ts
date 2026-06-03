@@ -171,7 +171,11 @@ describe('SyncRunner.syncNextUser', () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
-  it('permanent KilterApiError (invalid_client) marks syncStatus error', async () => {
+  it('transient KilterApiError (invalid_client) does NOT poison the credential — operator misconfig is retried', async () => {
+    // invalid_client is an operator-level OAuth-client misconfig (wrong
+    // KILTER_OAUTH_CLIENT_ID/SECRET) identical for every user, so it is
+    // transient: the cycle fails but must not flip syncStatus to 'error'
+    // (which would cascade across the whole user base as the daemon iterates).
     const runner = new SyncRunner();
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db, updates } = createDbShim();
@@ -185,11 +189,9 @@ describe('SyncRunner.syncNextUser', () => {
     const summary = await runner.syncNextUser();
 
     expect(summary.failed).toBe(1);
-    const errorUpdate = updates.find((u) => u.set.syncStatus === 'error');
-    expect(errorUpdate?.set).toMatchObject({
-      syncStatus: 'error',
-      syncError: 'Keycloak rejected client credentials',
-    });
+    // No status-mutating update — the credential is left untouched for retry.
+    expect(updates.find((u) => u.set.syncStatus === 'error')).toBeUndefined();
+    expect(updates.find((u) => u.set.syncStatus === 'expired')).toBeUndefined();
   });
 
   it('invalid_grant marks syncStatus expired (re-auth signal, not "error")', async () => {

@@ -56,6 +56,15 @@ export function isTransientKilterError(err: unknown): boolean {
     case 'timeout':
     case 'powersync':
       return true;
+    case 'invalid_client':
+      // Operator-config fault, not a per-user fault. `invalid_client` means
+      // the OAuth client credentials (KILTER_OAUTH_CLIENT_ID/SECRET) are
+      // wrong or unknown to Keycloak — identical for every credential the
+      // daemon walks. Classifying it permanent would flip EVERY user to
+      // syncStatus = 'error' as the runner iterates. Treat it as transient
+      // so the daemon retries (and keeps erroring loudly) until the operator
+      // fixes the env, instead of mass-disabling user credentials.
+      return true;
     case 'http':
       return err.httpStatus !== undefined && err.httpStatus >= 500;
     case 'unauthorized':
@@ -68,7 +77,6 @@ export function isTransientKilterError(err: unknown): boolean {
       // through `invalid_grant` below, not here.
       return true;
     case 'invalid_grant':
-    case 'invalid_client':
     case 'unknown':
       return false;
     default: {

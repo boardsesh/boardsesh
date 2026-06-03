@@ -6,8 +6,12 @@ describe('isTransientKilterError', () => {
     expect(isTransientKilterError(new KilterApiError('invalid_grant', 'refresh expired'))).toBe(false);
   });
 
-  it('treats invalid_client as permanent', () => {
-    expect(isTransientKilterError(new KilterApiError('invalid_client', 'bad client id'))).toBe(false);
+  it('treats invalid_client as transient (operator OAuth-client misconfig, not per-user)', () => {
+    // invalid_client is the same for every credential the daemon walks —
+    // it means KILTER_OAUTH_CLIENT_ID/SECRET are wrong. Treating it
+    // permanent would mass-flip every user to syncStatus = 'error', so we
+    // retry instead. invalid_grant stays the per-user "must re-auth" signal.
+    expect(isTransientKilterError(new KilterApiError('invalid_client', 'bad client id'))).toBe(true);
   });
 
   it('treats unauthorized as transient (transient 401 → next cycle re-fetches token)', () => {

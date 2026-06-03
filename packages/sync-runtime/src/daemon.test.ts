@@ -27,6 +27,31 @@ describe('daemon scheduling', () => {
     expect(DEFAULT_DAEMON_OPTIONS.maxDelayMinutes).toBe(15);
   });
 
+  it('rejects equal quiet-hour boundaries', () => {
+    expect(() => resolveDaemonOptions({ quietHoursStart: 3, quietHoursEnd: 3 })).toThrow(/must differ/);
+  });
+
+  it('rejects out-of-range quiet hours', () => {
+    expect(() => resolveDaemonOptions({ quietHoursStart: -1 })).toThrow(/0-23/);
+    expect(() => resolveDaemonOptions({ quietHoursEnd: 24 })).toThrow(/0-23/);
+    expect(() => resolveDaemonOptions({ quietHoursStart: 1.5, quietHoursEnd: 5 })).toThrow(/0-23/);
+  });
+
+  it('rejects a negative minimum delay', () => {
+    expect(() => resolveDaemonOptions({ minDelayMinutes: -1 })).toThrow(/minDelayMinutes must be >= 0/);
+  });
+
+  it('rejects a minimum delay greater than the maximum', () => {
+    expect(() => resolveDaemonOptions({ minDelayMinutes: 20, maxDelayMinutes: 5 })).toThrow(
+      /minDelayMinutes must be <= maxDelayMinutes/,
+    );
+  });
+
+  it('rejects a non-positive quiet poll interval', () => {
+    expect(() => resolveDaemonOptions({ quietPollMs: 0 })).toThrow(/quietPollMs must be > 0/);
+    expect(() => resolveDaemonOptions({ quietPollMs: -1000 })).toThrow(/quietPollMs must be > 0/);
+  });
+
   it('runs a cycle immediately during active hours and then waits before retrying', async () => {
     const controller = new AbortController();
     const cycle = vi.fn(async () => {
