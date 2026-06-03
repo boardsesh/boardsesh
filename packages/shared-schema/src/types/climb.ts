@@ -174,6 +174,41 @@ export type SetterStat = {
   climbCount: number;
 };
 
+/**
+ * Input for the community hold-usage heatmap. Board configuration plus the
+ * community filter subset that changes the aggregate. Community-only: no
+ * personal-progress fields.
+ */
+export type HoldHeatmapInput = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  minGrade?: number | null;
+  maxGrade?: number | null;
+  minAscents?: number | null;
+  minRating?: number | null;
+  name?: string | null;
+  settername?: string[] | null;
+  onlyClassics?: boolean | null;
+};
+
+/**
+ * Aggregate usage of a single hold across the climbs matching a board
+ * configuration. Community-only (no per-user fields).
+ */
+export type HoldStat = {
+  holdId: number;
+  totalUses: number;
+  startingUses: number;
+  handUses: number;
+  footUses: number;
+  finishUses: number;
+  totalAscents: number;
+  averageDifficulty: number | null;
+};
+
 export type SaveClimbInput = {
   boardType: string;
   layoutId: number;

@@ -1,5 +1,5 @@
 import { gql } from 'graphql-request';
-import type { Climb, HoldsFilter, ZoneMatchMode } from '@boardsesh/shared-schema';
+import type { Climb, HoldHeatmapInput, HoldStat, HoldsFilter, ZoneMatchMode } from '@boardsesh/shared-schema';
 
 // Slim fragment for search/list views. Intentionally omits `description` to
 // keep the list payload small — descriptions can be long and no list UI
@@ -109,6 +109,31 @@ export const GET_CLIMB = gql`
     }
   }
 `;
+
+// Community hold-usage heatmap for the create-climb editor. Community totals
+// only — no per-user fields. Returns an empty list for MoonBoard.
+export const HOLD_HEATMAP_QUERY = gql`
+  query HoldHeatmap($input: HoldHeatmapInput!) {
+    holdHeatmap(input: $input) {
+      holdId
+      totalUses
+      startingUses
+      handUses
+      footUses
+      finishUses
+      totalAscents
+      averageDifficulty
+    }
+  }
+`;
+
+export type HoldHeatmapVariables = {
+  input: HoldHeatmapInput;
+};
+
+export type HoldHeatmapResponse = {
+  holdHeatmap: HoldStat[];
+};
 
 // Type for the search input
 export type ClimbSearchInputVariables = {

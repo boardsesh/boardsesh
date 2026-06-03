@@ -12,7 +12,9 @@ import { spacing } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { BoardImageNative } from '../BoardImageNative';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { InteractiveCreateBoard } from './InteractiveCreateBoard';
+import { HeatmapOverlay } from './HeatmapOverlay';
 import { BrushBar } from './BrushBar';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateClimbSettingsSheet } from './CreateClimbSettingsSheet';
@@ -103,6 +105,7 @@ function AuroraCreateClimbScreen({
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
 
   // The controller asks the screen to open settings (e.g. an unnamed save).
   useEffect(() => {
@@ -111,6 +114,38 @@ function AuroraCreateClimbScreen({
 
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
+
+  // Community hold-usage heatmap. Only fetched once the user toggles it on.
+  const { statsByHoldId } = useHoldHeatmap(
+    {
+      boardName: board.boardName,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: board.angle,
+    },
+    heatmapVisible,
+  );
+
+  // Skip painted holds so the heat never covers the working climb.
+  const paintedHoldIds = useMemo(
+    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
+    [controller.litUpHoldsMap],
+  );
+
+  const heatmapOverlay = useMemo(
+    () =>
+      heatmapVisible ? (
+        <HeatmapOverlay
+          statsByHoldId={statsByHoldId}
+          holdTargets={boardHolds.holdTargets}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          paintedHoldIds={paintedHoldIds}
+        />
+      ) : null,
+    [heatmapVisible, statsByHoldId, boardHolds, paintedHoldIds],
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
@@ -135,6 +170,7 @@ function AuroraCreateClimbScreen({
             onPaint={controller.handlePaint}
             onLongPressHold={handleLongPress}
             showAllHolds={controller.showAllHolds}
+            overlay={heatmapOverlay}
           />
         </View>
 
@@ -188,6 +224,8 @@ function AuroraCreateClimbScreen({
             onOpenSettings={() => setSettingsOpen(true)}
             onSetActive={controller.handleSetActive}
             canSetActive={controller.canSetActive}
+            onToggleHeatmap={() => setHeatmapVisible((visible) => !visible)}
+            heatmapActive={heatmapVisible}
           />
         </View>
       </KeyboardAvoidingView>
