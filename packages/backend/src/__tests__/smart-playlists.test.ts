@@ -471,4 +471,29 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*base\.climb_uuid/i);
     expect(rendered).toMatch(/sent\.board_type\s*=\s*base\.board_type/i);
   });
+
+  it('liked_climbs CTE joins boardClimbs to derive board_type (#2449)', async () => {
+    // Post-#2449 user_favorites no longer carries board_name. The CTE must
+    // INNER JOIN boardClimbs on climb_uuid so each favorite contributes its
+    // climb's board, and the COUNT must distinguish by (board_type, climb_uuid)
+    // rather than referencing the dropped column. Asserting SQL shape here so a
+    // serialization regression (e.g. an accidental userFavorites.board_name)
+    // fails in CI instead of at runtime.
+    const ctx = makeCtx();
+    mockDb.execute.mockResolvedValueOnce([]);
+
+    await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
+
+    const sqlArg = mockDb.execute.mock.calls[0][0] as { queryChunks?: unknown[] } | undefined;
+    const rendered = (sqlArg?.queryChunks ?? [])
+      .map((chunk) => (typeof chunk === 'string' ? chunk : ((chunk as { value?: string }).value ?? '')))
+      .join(' ');
+
+    // No reference to the dropped column anywhere in the rendered SQL.
+    expect(rendered).not.toMatch(/board_name/i);
+    // liked_climbs CTE counts distinct (board_type, climb_uuid) via the join.
+    expect(rendered).toMatch(/liked_climbs\s+AS\s*\(/i);
+    expect(rendered).toMatch(/COUNT\s*\(\s*DISTINCT\s*\(\s*c\.board_type\s*,\s*uf\.climb_uuid\s*\)\s*\)/i);
+    expect(rendered).toMatch(/INNER\s+JOIN[\s\S]*?ON\s+c\.uuid\s*=\s*uf\.climb_uuid/i);
+  });
 });
