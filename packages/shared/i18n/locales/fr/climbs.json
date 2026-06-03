@@ -586,6 +586,12 @@
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks uniquement",
       "benchmarkDescription": "Voies marquées benchmark par l'ouvreur",
+      "climbType": {
+        "label": "Type",
+        "all": "Toutes",
+        "boulders": "Blocs",
+        "routes": "Voies"
+      },
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
       "sort": {

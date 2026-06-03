@@ -586,6 +586,12 @@
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks only",
       "benchmarkDescription": "Setter-flagged benchmark climbs",
+      "climbType": {
+        "label": "Type",
+        "all": "All",
+        "boulders": "Boulders",
+        "routes": "Routes"
+      },
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "sort": {

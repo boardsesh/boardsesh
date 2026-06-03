@@ -21,6 +21,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   if (filters.hideCompleted) count += 1;
   if (filters.showOnlyAttempted) count += 1;
   if (filters.showOnlyCompleted) count += 1;
+  if (filters.boulders != null || filters.routes != null) count += 1;
   if (
     filters.sortBy !== DEFAULT_CLIMB_FILTER_STATE.sortBy ||
     filters.sortOrder !== DEFAULT_CLIMB_FILTER_STATE.sortOrder

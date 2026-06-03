@@ -5,7 +5,12 @@
 // dynamic `t()` keys (the i18n linter only allows literal keys). Each pill
 // carries the patch that clears it.
 
-import { formatMinAscentsFilterCount, type ClimbBoardFilterState } from '@boardsesh/climb-filters';
+import {
+  climbTypeOf,
+  climbTypePatch,
+  formatMinAscentsFilterCount,
+  type ClimbBoardFilterState,
+} from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 
 export type ActiveFilterPill = {
@@ -46,6 +51,14 @@ export function buildActiveFilterPills(
   }
   if (boardFilters.onlyBenchmarks) {
     pills.push({ key: 'benchmark', label: t('mobile.filter.benchmark'), clearBoard: { onlyBenchmarks: undefined } });
+  }
+  const climbType = climbTypeOf(filters);
+  if (climbType !== 'all') {
+    pills.push({
+      key: 'climbType',
+      label: climbType === 'boulders' ? t('mobile.filter.climbType.boulders') : t('mobile.filter.climbType.routes'),
+      clearFilters: climbTypePatch('all'),
+    });
   }
   if (filters.setter && filters.setter.length > 0) {
     pills.push({

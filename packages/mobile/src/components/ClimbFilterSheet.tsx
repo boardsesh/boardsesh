@@ -17,6 +17,8 @@ import {
   hasActiveClimbFilters,
   applyStatusChange,
   normalizeRetiredStatus,
+  climbTypeOf,
+  climbTypePatch,
   toClimbSearchInput,
   mergeBoardFilters,
   formatMinAscentsFilterCount,
@@ -25,6 +27,7 @@ import {
   type SortOrder,
   type StatusFilter,
   type GradeAccuracyValue,
+  type ClimbType,
   type ClimbBoardFilterState,
   SORT_OPTIONS,
   GRADE_ACCURACY_VALUES,
@@ -329,6 +332,18 @@ export function ClimbFilterSheet({
     (value: GradeAccuracyValue | 'off') => setFiltersPatch({ gradeAccuracy: value === 'off' ? undefined : value }),
     [setFiltersPatch],
   );
+  const handleClimbTypeChange = useCallback(
+    (value: string) => setFiltersPatch(climbTypePatch(value as ClimbType)),
+    [setFiltersPatch],
+  );
+  const climbTypeOptions = useMemo(
+    () => [
+      { key: 'all', label: t('mobile.filter.climbType.all') },
+      { key: 'boulders', label: t('mobile.filter.climbType.boulders') },
+      { key: 'routes', label: t('mobile.filter.climbType.routes') },
+    ],
+    [t],
+  );
 
   const handleApply = useCallback(() => {
     onApply(localFilters, localBoardFilters);
@@ -366,6 +381,12 @@ export function ClimbFilterSheet({
 
   const refineSummary = useMemo(() => {
     const parts: string[] = [];
+    const climbType = climbTypeOf(localFilters);
+    if (climbType !== 'all') {
+      parts.push(
+        climbType === 'boulders' ? t('mobile.filter.climbType.boulders') : t('mobile.filter.climbType.routes'),
+      );
+    }
     if (localFilters.gradeAccuracy != null) parts.push(accuracyLabels[localFilters.gradeAccuracy]);
     if (localFilters.setter && localFilters.setter.length > 0) {
       parts.push(t('mobile.search.settersCount', { count: localFilters.setter.length }));
@@ -373,14 +394,7 @@ export function ClimbFilterSheet({
     if (localFilters.onlyTallClimbs) parts.push(t('mobile.filter.tall'));
     if (localFilters.onlyWideClimbs) parts.push(t('mobile.filter.wide'));
     return parts.join(' · ') || null;
-  }, [
-    localFilters.gradeAccuracy,
-    localFilters.setter,
-    localFilters.onlyTallClimbs,
-    localFilters.onlyWideClimbs,
-    accuracyLabels,
-    t,
-  ]);
+  }, [localFilters, accuracyLabels, t]);
 
   const advancedSummary = useMemo(() => {
     const parts: string[] = [];
@@ -538,6 +552,18 @@ export function ClimbFilterSheet({
             summary={refineSummary}
             resetKey={sectionResetKey}
           >
+            <Text variant="footnote" style={styles.subsectionLabel}>
+              {t('mobile.filter.climbType.label')}
+            </Text>
+            <SegmentedControl
+              options={climbTypeOptions}
+              selectedKey={climbTypeOf(localFilters)}
+              onSelect={handleClimbTypeChange}
+              textVariant="footnote"
+              trackColor={trackColor}
+            />
+
+            <View style={styles.subsectionGap} />
             <Pressable
               onPress={openSetters}
               accessibilityRole="button"
