@@ -586,6 +586,12 @@
       "established2plus": "Establecido 2+",
       "benchmark": "Solo benchmarks",
       "benchmarkDescription": "Vías marcadas como benchmark por el equipador",
+      "climbType": {
+        "label": "Tipo",
+        "all": "Todas",
+        "boulders": "Bloques",
+        "routes": "Vías"
+      },
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
       "sort": {
