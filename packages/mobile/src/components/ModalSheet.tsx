@@ -5,7 +5,7 @@
 // `LogAscentSheet`) so the sheet portals over the bar. Same prop surface as
 // `Sheet`, driven imperatively via ref (`present()` / `dismiss()`).
 
-import { forwardRef, useCallback, useMemo, type ReactNode } from 'react';
+import { forwardRef, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
@@ -20,6 +20,7 @@ import { hapticMedium } from '../lib/haptics';
 import { sheetStyles, spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
+import { SheetHandle } from './SheetHandle';
 
 // iOS renders the modal in a native window overlay so it sits above the queue
 // bar; Android's modal portal already covers it.
@@ -59,6 +60,21 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
+  // Keep our own handle to the modal instance so the chevron close button can
+  // drive `dismiss()`, while still forwarding the instance to the parent's ref.
+  const innerRef = useRef<BottomSheetModal | null>(null);
+  const setRefs = useCallback(
+    (instance: BottomSheetModal | null) => {
+      innerRef.current = instance;
+      if (typeof ref === 'function') ref(instance);
+      else if (ref) ref.current = instance;
+    },
+    [ref],
+  );
+
+  const handleClose = useCallback(() => innerRef.current?.dismiss(), []);
+  const renderHandle = useCallback(() => <SheetHandle onClose={handleClose} />, [handleClose]);
+
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
@@ -89,14 +105,14 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={setRefs}
       index={0}
       snapPoints={enableDynamicSizing ? undefined : snapPoints}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}
       backdropComponent={renderBackdrop}
       backgroundStyle={backgroundStyle}
-      handleIndicatorStyle={sheetStyles.indicator}
+      handleComponent={renderHandle}
       containerComponent={modalContainerComponent}
       onChange={handleChange}
       onDismiss={onDismiss}

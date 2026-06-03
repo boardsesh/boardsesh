@@ -34,6 +34,7 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { RadioGroup, type RadioOption } from './RadioGroup';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
+import { SheetHandle } from './SheetHandle';
 import { useTheme } from '../providers/theme-provider';
 import { useGrades } from '../lib/graphql/hooks';
 import { useAuth } from '../providers/auth-provider';
@@ -385,6 +386,8 @@ export function ClimbFilterSheet({ onDismiss, boardConfig, currentFilters, onApp
     [],
   );
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={() => sheetRef.current?.dismiss()} />, []);
+
   const openSetters = useCallback(() => {
     if (!boardConfig) return;
     router.push({
@@ -422,7 +425,7 @@ export function ClimbFilterSheet({ onDismiss, boardConfig, currentFilters, onApp
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
-      handleIndicatorStyle={styles.indicator}
+      handleComponent={renderHandle}
       backgroundStyle={backgroundStyle}
     >
       <View style={styles.header}>
@@ -663,12 +666,6 @@ export function ClimbFilterSheet({ onDismiss, boardConfig, currentFilters, onApp
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
   scrollView: {
     flex: 1,
   },

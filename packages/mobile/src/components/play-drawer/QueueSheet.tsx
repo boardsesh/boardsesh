@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
+import { SheetHandle } from '../SheetHandle';
 import { Text } from '../Text';
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -125,6 +126,8 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
     [],
   );
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={() => sheetRef.current?.close()} />, []);
+
   const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
 
   const viewOnlyMode = queue.length === 0;
@@ -138,7 +141,7 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
       backdropComponent={renderBackdrop}
       onChange={handleSheetChange}
       onClose={handleClose}
-      handleIndicatorStyle={sheetStyles.indicator}
+      handleComponent={renderHandle}
       backgroundStyle={backgroundStyle}
       style={styles.sheet}
     >
@@ -150,7 +153,6 @@ export function QueueSheet({ visible, onClose, onClimbPress }: QueueSheetProps) 
         viewOnlyMode={viewOnlyMode}
         onToggleEditMode={handleToggleEditMode}
         onToggleHistory={handleToggleHistory}
-        onClose={handleClose}
         onClearAll={handleClearAll}
       />
 

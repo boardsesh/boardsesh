@@ -7,7 +7,7 @@
 // a portal above the play drawer's own modal. `FullWindowOverlay` on iOS
 // lifts the sheet above the tab bar — same pattern as DevicePickerSheet.
 import { useCallback, useEffect, useMemo, useRef, type PropsWithChildren } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -15,11 +15,8 @@ import {
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { FullWindowOverlay } from 'react-native-screens';
-import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
-import { spacing } from '../theme/tokens';
-import { Icon } from './Icon';
+import { SheetHandle } from './SheetHandle';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 
 type LogAscentSheetProps = {
@@ -67,7 +64,6 @@ export function LogAscentSheet({
   // nothing happens).
   const isPresentedRef = useRef(false);
   const { systemColors } = useTheme();
-  const { t } = useTranslation('session');
 
   useEffect(() => {
     if (visible && !isPresentedRef.current) {
@@ -98,6 +94,8 @@ export function LogAscentSheet({
     [],
   );
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={onDismiss} />, [onDismiss]);
+
   const backgroundStyle: ViewStyle = {
     backgroundColor: systemColors.secondaryBackground as string,
     borderTopLeftRadius: 16,
@@ -115,28 +113,13 @@ export function LogAscentSheet({
       enablePanDownToClose
       onDismiss={handleSheetDismiss}
       backdropComponent={renderBackdrop}
-      handleIndicatorStyle={styles.indicator}
+      handleComponent={renderHandle}
       backgroundStyle={backgroundStyle}
       keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
     >
       <BottomSheetView style={styles.content}>
-        <View style={styles.closeButtonRow}>
-          <Pressable
-            onPress={onDismiss}
-            accessibilityRole="button"
-            accessibilityLabel={t('playView.tickBar.closeAria')}
-            hitSlop={8}
-            style={({ pressed }) => [
-              styles.closeButton,
-              { backgroundColor: systemColors.fill as string },
-              pressed && styles.closeButtonPressed,
-            ]}
-          >
-            <Icon name="chevron.down" size={18} color={systemColors.secondaryLabel} />
-          </Pressable>
-        </View>
         <QuickTickBar
           climbUuid={climbUuid}
           boardName={boardName}
@@ -156,29 +139,7 @@ export function LogAscentSheet({
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
   content: {
     flex: 1,
-  },
-  closeButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[1],
-  },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeButtonPressed: {
-    opacity: 0.7,
   },
 });

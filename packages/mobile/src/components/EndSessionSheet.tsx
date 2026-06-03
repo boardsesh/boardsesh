@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { SheetHandle } from './SheetHandle';
 import { useTheme } from '../providers/theme-provider';
-import { spacing, sheetStyles } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
 
 type EndSessionSheetProps = {
   visible: boolean;
@@ -46,6 +47,8 @@ export function EndSessionSheet({ visible, onDismiss, onConfirm, isEnding, climb
     onDismiss();
   }, [onDismiss]);
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={() => sheetRef.current?.close()} />, []);
+
   if (!mounted) return null;
 
   return (
@@ -56,7 +59,7 @@ export function EndSessionSheet({ visible, onDismiss, onConfirm, isEnding, climb
       onClose={handleClose}
       backdropComponent={renderBackdrop}
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
-      handleIndicatorStyle={sheetStyles.indicator}
+      handleComponent={renderHandle}
     >
       <BottomSheetView style={styles.content}>
         <Icon name="end.session" size={40} color={systemColors.secondaryLabel} />

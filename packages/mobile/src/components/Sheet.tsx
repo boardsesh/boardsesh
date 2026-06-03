@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, type ReactNode } from 'react';
+import { forwardRef, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -12,6 +12,7 @@ import { hapticMedium } from '../lib/haptics';
 import { sheetStyles, spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
+import { SheetHandle } from './SheetHandle';
 
 // On iOS a plain BottomSheet renders inside the screen's view tree, so it sits
 // behind root-level chrome (the floating tab bar + persistent queue bar).
@@ -72,6 +73,21 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
+  // Keep our own handle to the sheet instance so the chevron close button can
+  // drive `close()`, while still forwarding the instance to the parent's ref.
+  const innerRef = useRef<BottomSheet | null>(null);
+  const setRefs = useCallback(
+    (instance: BottomSheet | null) => {
+      innerRef.current = instance;
+      if (typeof ref === 'function') ref(instance);
+      else if (ref) ref.current = instance;
+    },
+    [ref],
+  );
+
+  const handleClose = useCallback(() => innerRef.current?.close(), []);
+  const renderHandle = useCallback(() => <SheetHandle onClose={handleClose} />, [handleClose]);
+
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
@@ -102,7 +118,7 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
 
   const sheet = (
     <BottomSheet
-      ref={ref}
+      ref={setRefs}
       index={-1}
       snapPoints={enableDynamicSizing ? undefined : snapPoints}
       enableDynamicSizing={enableDynamicSizing}
@@ -114,7 +130,7 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
       backgroundStyle={backgroundStyle}
       onChange={handleChange}
       onClose={onClose}
-      handleIndicatorStyle={sheetStyles.indicator}
+      handleComponent={renderHandle}
       style={styles.sheet}
     >
       {footer ? (

@@ -17,6 +17,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { buildAngleStatsMap, type AngleStats } from './community-utils';
 import { AngleBoardDiagram } from './AngleBoardDiagram';
 import { AngleSlider } from './AngleSlider';
+import { SheetHandle } from '../SheetHandle';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { brandColors } from '../../theme/colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
@@ -108,6 +109,8 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
     [],
   );
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={() => sheetRef.current?.dismiss()} />, []);
+
   const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
 
   return (
@@ -121,7 +124,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
       enablePanDownToClose
       onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
-      handleIndicatorStyle={sheetStyles.indicator}
+      handleComponent={renderHandle}
       backgroundStyle={backgroundStyle}
     >
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing[4] }]}>

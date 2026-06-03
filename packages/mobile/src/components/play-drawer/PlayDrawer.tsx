@@ -23,6 +23,7 @@ import { DeferredSections } from './DeferredSections';
 import { QueueSheet } from './QueueSheet';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
+import { SheetCloseButton } from '../SheetHandle';
 import { Icon } from '../Icon';
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -306,6 +307,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     () => (props: BottomSheetHandleProps) => (
       <View onLayout={handleHandleLayout}>
         <BottomSheetHandle {...props} indicatorStyle={sheetStyles.indicator} />
+        <SheetCloseButton onClose={() => sheetRef.current?.dismiss()} />
       </View>
     ),
     [handleHandleLayout],

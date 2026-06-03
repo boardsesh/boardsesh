@@ -14,6 +14,7 @@ import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol';
 import type { DiscoveredDevice } from '../../lib/ble/types';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { SheetHandle } from '../SheetHandle';
 import { DeviceCard } from './DeviceCard';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
@@ -53,6 +54,8 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
     [],
   );
 
+  const renderHandle = useCallback(() => <SheetHandle onClose={() => sheetRef.current?.dismiss()} />, []);
+
   const renderDeviceItem = useCallback(
     ({ item }: { item: DiscoveredDevice }) => {
       const boardType = parseBoardTypeFromDeviceName(item.name);
@@ -87,7 +90,7 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
-      handleIndicatorStyle={styles.indicator}
+      handleComponent={renderHandle}
       backgroundStyle={backgroundStyle}
     >
       <BottomSheetView style={styles.header}>
@@ -136,12 +139,6 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
   header: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],

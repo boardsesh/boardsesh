@@ -16,7 +16,6 @@ type QueueSheetHeaderProps = {
   viewOnlyMode: boolean;
   onToggleEditMode: () => void;
   onToggleHistory: () => void;
-  onClose: () => void;
   onClearAll: () => void;
 };
 
@@ -28,7 +27,6 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   viewOnlyMode,
   onToggleEditMode,
   onToggleHistory,
-  onClose,
   onClearAll,
 }: QueueSheetHeaderProps) {
   const { t } = useTranslation('session');
@@ -113,16 +111,6 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             <Icon name="edit" size={20} color={iosSystemColors.systemGray} />
           </Pressable>
         )}
-
-        <Pressable
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel={t('playView.closeAria')}
-          hitSlop={8}
-          style={styles.headerButton}
-        >
-          <Icon name="close" size={18} color={iosSystemColors.systemGray} />
-        </Pressable>
       </View>
     </View>
   );
