@@ -330,3 +330,41 @@ describe('clearLastSearch / clearAllLastSearches', () => {
     expect(await getLastSearch(tensionBoard)).toBeNull();
   });
 });
+
+describe('saveLastSearch / getLastSearch board filters', () => {
+  beforeEach(resetStore);
+
+  it('round-trips board filters (benchmark) for a board', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, activeFilters, 'crimps', { onlyBenchmarks: true });
+    const restored = await getLastSearch(kilterBoard);
+    expect(restored?.boardFilters.onlyBenchmarks).toBe(true);
+  });
+
+  it('persists a benchmark-only search (no climb filters, no text)', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, defaultFilters, '', { onlyBenchmarks: true });
+    expect((await getLastSearch(kilterBoard))?.boardFilters.onlyBenchmarks).toBe(true);
+  });
+
+  it('deletes the entry when board filters also clear back to default', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, defaultFilters, '', { onlyBenchmarks: true });
+    expect(await getLastSearch(kilterBoard)).not.toBeNull();
+    await saveLastSearch(kilterBoard, defaultFilters, '', {});
+    expect(await getLastSearch(kilterBoard)).toBeNull();
+  });
+
+  it('defaults boardFilters to {} for entries written before the field existed', async () => {
+    const { boardConfigKey, getLastSearch } = await import('../last-search-store');
+    await seedRaw({
+      [boardConfigKey(kilterBoard)]: {
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', minGrade: 18 },
+        searchText: 'x',
+        updatedAt: 1,
+      },
+    });
+    const restored = await getLastSearch(kilterBoard);
+    expect(restored?.boardFilters).toEqual({});
+  });
+});

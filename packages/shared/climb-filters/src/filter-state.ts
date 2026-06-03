@@ -105,6 +105,18 @@ export function applyStatusChange(_previous: ClimbFilterState, newStatus: Status
   }
 }
 
+/**
+ * "established" is retired as a user-facing status (it's the same lever as
+ * `minAscents >= 2`, now folded into the Popularity control), but the enum
+ * value still appears in older stored searches / recent pills. Map it to `any`
+ * while preserving `minAscents`, so the UI never holds a status that has no
+ * control and the active-filter count doesn't double-count the one lever.
+ * The enum value is kept for back-compat; this just normalizes on read.
+ */
+export function normalizeRetiredStatus(state: ClimbFilterState): ClimbFilterState {
+  return state.status === 'established' ? { ...state, status: 'any' } : state;
+}
+
 export type BoardSearchConfig = {
   boardName: string;
   layoutId: number;

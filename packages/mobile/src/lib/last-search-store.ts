@@ -3,13 +3,18 @@ import {
   SORT_OPTIONS,
   STATUS_FILTER_VALUES,
   hasActiveClimbFilters,
+  hasActiveBoardFilters,
+  normalizeRetiredStatus,
+  DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type BoardSearchConfig,
+  type ClimbBoardFilterState,
 } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { AUTH_GATED_FIELDS } from './recent-filter-store';
 
 export type LastSearch = {
   filters: ClimbFilters;
+  boardFilters: ClimbBoardFilterState;
   searchText: string;
   updatedAt: number;
 };
@@ -53,14 +58,22 @@ function isValidLastSearch(entry: unknown): entry is LastSearch {
   return true;
 }
 
-// Backfill `status` for entries written before the field existed. Without this
-// a missing status renders as "active" since `hasActiveClimbFilters` treats
-// `undefined !== 'any'` as a change.
+// Backfill defaults for fields added after older entries were written:
+// `status` (else a missing status renders as "active" since
+// `hasActiveClimbFilters` treats `undefined !== 'any'` as a change) and
+// `boardFilters` (older entries predate per-board board filters).
 function normalizeEntry(entry: LastSearch): LastSearch {
-  if (entry.filters.status == null) {
-    return { ...entry, filters: { ...entry.filters, status: 'any' } };
+  let next = entry;
+  if (next.filters.status == null) {
+    next = { ...next, filters: { ...next.filters, status: 'any' } };
   }
-  return entry;
+  // Retire legacy status='established' → 'any' (keeping minAscents) so restored
+  // state never carries a status the UI can't show / clear.
+  next = { ...next, filters: normalizeRetiredStatus(next.filters) };
+  if (next.boardFilters == null || typeof next.boardFilters !== 'object' || Array.isArray(next.boardFilters)) {
+    next = { ...next, boardFilters: DEFAULT_CLIMB_BOARD_FILTER_STATE };
+  }
+  return next;
 }
 
 function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
@@ -130,10 +143,11 @@ export async function saveLastSearch(
   board: BoardSearchConfig,
   filters: ClimbFilters,
   searchText: string,
+  boardFilters: ClimbBoardFilterState = DEFAULT_CLIMB_BOARD_FILTER_STATE,
 ): Promise<void> {
   try {
     const key = boardConfigKey(board);
-    if (!hasActiveClimbFilters(filters) && searchText.trim() === '') {
+    if (!hasActiveClimbFilters(filters) && !hasActiveBoardFilters(boardFilters) && searchText.trim() === '') {
       const map = await readMap();
       if (key in map) {
         delete map[key];
@@ -142,7 +156,7 @@ export async function saveLastSearch(
       return;
     }
     const map = await readMap();
-    map[key] = { filters, searchText, updatedAt: Date.now() };
+    map[key] = { filters, boardFilters, searchText, updatedAt: Date.now() };
     const capped = capMap(map);
     await SecureStore.setItemAsync(LAST_SEARCH_KEY, JSON.stringify(capped));
   } catch {

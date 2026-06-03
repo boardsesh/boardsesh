@@ -570,18 +570,24 @@
       "gradeRange": "Rango de grado",
       "minGrade": "Mín",
       "maxGrade": "Máx",
-      "minAscents": "Mín encadenes",
       "anyAscents": "Todos",
       "minRating": "Mín valoración",
       "anyRating": "Todos",
       "apply": "Aplicar filtros",
       "reset": "Restablecer",
       "section": {
-        "climb": "Vía",
-        "quality": "Calidad",
         "status": "Estado",
-        "progress": "Progreso"
+        "refine": "Afinar",
+        "advanced": "Avanzado"
       },
+      "hideSent": "Ocultar lo que ya encadené",
+      "hideSentDescription": "Mostrar solo vías que no has completado",
+      "popularity": "Popularidad",
+      "established2plus": "Establecido 2+",
+      "benchmark": "Solo benchmarks",
+      "benchmarkDescription": "Vías marcadas como benchmark por el equipador",
+      "showCount_one": "Ver {{count}} vía",
+      "showCount_other": "Ver {{count}} vías",
       "sort": {
         "ascents": "Ascensos",
         "quality": "Calidad",
@@ -615,7 +621,6 @@
         "onlyCompleted": "Solo completadas"
       },
       "signInForDrafts": "Inicia sesión para filtrar tus borradores",
-      "signInForProgress": "Inicia sesión para filtrar por tus envíos",
       "setters": "Equipadores",
       "none": "Ninguno",
       "tall": "Solo vías altas",
@@ -647,7 +652,8 @@
       "anyGrade": "Cualquier grado",
       "gradeClear": "Cualquiera",
       "gradeHint": "Toca un grado · toca otro para un rango",
-      "filters": "Filtros"
+      "filters": "Filtros",
+      "removeFilter": "Quitar filtro {{name}}"
     },
     "climbRow": {
       "addToQueue": "Añadir a la cola",

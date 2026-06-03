@@ -6,18 +6,23 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { Grade } from '@boardsesh/shared-schema';
-import type { GradeBound } from '@boardsesh/climb-filters';
+import type { GradeBound, ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
 import { shadowColor } from '../../theme/tokens';
+import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { ClimbSearchControls } from './ClimbSearchControls';
 
 type SearchBottomBarProps = {
   bound: GradeBound;
   grades: readonly Grade[];
+  filters: ClimbFilters;
+  boardFilters: ClimbBoardFilterState;
   count: number | undefined;
   activeFilterCount: number;
   onOpenGrade: () => void;
   onOpenFilters: () => void;
+  onPatchFilters: (patch: Partial<ClimbFilters>) => void;
+  onPatchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
   /** Distance from the bottom of the screen (clears the queue + tab bars). */
   bottomOffset: number;
 };
