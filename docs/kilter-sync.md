@@ -13,7 +13,7 @@ The `@boardsesh/kilter-sync` package is a separate top-level package from `@boar
 | Push    | REST under same session                        | REST under Keycloak bearer (separate host)    |
 | Catalog | Bundled into the same `/sync` response         | Separate PowerSync streams (`global*`)        |
 
-Per-user pull works end-to-end against the live Kilter backend. Catalog ingest and push-back are stubbed pending wire verification — see [Open wire questions](#open-wire-questions) below.
+Per-user pull and catalog ingest both work end-to-end against the live Kilter backend. Push-back is stubbed pending wire verification — see [Open wire questions](#open-wire-questions) below.
 
 The package can run as:
 
@@ -77,7 +77,7 @@ PowerSync groups rows into named buckets. We subscribe with `include_defaults: f
 | `user_buckets[<sub>]`             | `users`, `walls` (homewall), `logs`, `climb_ratings`, `gym_users`, `user_analytics`     |
 | `circuit_buckets[<circuit_uuid>]` | `circuits`, `circuit_climbs`                                                            |
 
-Notable absence: there is **no `climbs` table** in any PowerSync bucket. Climb metadata for the Kilter board comes from a different surface that's still being identified — see [Open wire questions](#open-wire-questions). The per-user pull works without it because `boardsesh_ticks.climb_uuid` references the Kilter UUID directly and the alias resolver falls back to the input UUID when the canonical catalog hasn't been ingested yet.
+Notable absence: there is **no `climbs` table** in any PowerSync bucket. Climb metadata is fetched over REST (`GET /api/climbs/all/{productLayoutUuid}`), not PowerSync — see [Catalog sync (Flow A)](#catalog-sync-flow-a). The per-user pull tolerates a not-yet-ingested catalog because `boardsesh_ticks.climb_uuid` references the Kilter UUID directly and the alias resolver falls back to the input UUID.
 
 A normal per-user sync subscribes to **both** `user_buckets` and `circuit_buckets`. The user's circuits are listed by UUID inside `user_buckets`, but the circuit metadata + its climb list live in the circuit-scoped bucket — you need both or you ingest empty playlists.
 
@@ -134,14 +134,78 @@ Circuit rows upsert into `playlists` (`kilter_id` = `circuit_uuid`, `kilter_type
 
 The Kilter server scopes the `user_buckets` and `circuit_buckets` streams by the bearer token's `sub` today, so subscribing with `parameters: {}` works. We still defensively decode `sub` from the access JWT and drop any `circuits` op whose `user_uuid` doesn't match — if the server-side sync rules ever loosen, we'd at worst ignore valid data rather than write someone else's. `circuit_climbs` carry no `user_uuid`; we trust the parent-circuit filter.
 
-## Catalog sync (Flow A) — stubbed
+## Catalog sync (Flow A)
 
-Catalog ingest is not wired in this PR — there's no `shared-sync.ts` yet. The PowerSync bucket layout is verified (see table above) but two things still need to land before catalog sync can be added:
+Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kilter-sync/src/sync/catalog-sync.ts). The public climb catalog is **not** a PowerSync bucket — it's REST, paged by product layout. A cycle:
 
-1. The `climbs` source — not in PowerSync, location TBD.
-2. The bucket-to-`board_*` mapping (Kilter's `hold_placements` + `mounting_holes` have replaced Aurora's flat `placements` table; the mapping isn't 1:1).
+1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
+2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
+3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`.
+4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
+5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
+6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats` with the three-writer `kilter_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
+7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default.
 
-Per-user pull does not depend on catalog ingest, so the daemon runs without it. When catalog support lands, re-introduce the piggyback model from aurora-sync (`lastCatalogSyncAt`, cooldown getter, try/catch inside `runCycleForCredential`) — the runner has placeholder comments where it goes.
+### Verified REST/PowerSync contract (Phase 0, 2026-06-02)
+
+The endpoint paths read off the APK were partly wrong; verified live against a real account:
+
+| Need      | Endpoint                                      | Notes                                                                                                                                 |
+| --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog   | `GET /api/climbs/all/{productLayoutUuid}`     | Full per-layout array, no pagination. The documented `climbdetails/{productName}/edges` 404s; `/climbs/all/` with no id returns `[]`. |
+| Stats     | `GET /api/climb-stat/all/{productLayoutUuid}` | `{climbUuid, angle, ascentCount, currentDifficultyId, difficultyAverage, qualityAverage, faUsername, faAt}`                           |
+| Deletions | `GET /api/climbs/delteduuids`                 | `string[]` (mixed casing)                                                                                                             |
+| Reference | PowerSync `global` / `global_gyms`            | `product_layouts` carries `product_layout_uuid` + `product_name` + edges                                                              |
+
+Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs (all distinct; each climb has exactly one layout); ~80% already exist in `board_climbs` by UUID (case-insensitive).
+
+### Cooldown + piggyback
+
+In-memory cooldown (`Map<board, lastRunMs>`, default 1h via `sharedSyncCooldownMs`) mirroring aurora-sync's `maybeRunSharedSync`. After a successful per-user cycle, `runCycleForCredential` calls `maybeRunCatalogSync` with that user's token; a catalog failure is caught and never poisons the user's credential. (Note: aurora-sync uses an in-memory cooldown for this, not `board_shared_syncs`; `board_shared_syncs` stays a per-table watermark store.)
+
+### Prerequisite: fingerprint backfill
+
+Dedup keys on `(board_type, layout_id, hold_fingerprint)`, but the legacy Kilter catalog landed before that column existed — every existing kilter climb has `hold_fingerprint IS NULL` until backfilled. Run once before catalog sync so Grips climbs dedupe against the existing catalog instead of duplicating it:
+
+```bash
+bun packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
+```
+
+Idempotent (re-running writes the same fingerprints; self-aliases use `ON CONFLICT DO UPDATE`).
+
+## Climb dedup
+
+Kilter's catalog has duplicate climbs at different UUIDs with identical hold layouts. We collapse them behind a canonical row.
+
+**Fingerprint.** `sha256` of sorted `hold_id:hold_state:frame_number` tuples (`packages/kilter-sync/src/sync/fingerprint.ts`), stored on `board_climbs.hold_fingerprint`, indexed `(board_type, layout_id, hold_fingerprint)`.
+
+**Resolution, per incoming climb:**
+
+1. **UUID identity** — if the incoming UUID already exists in `board_climbs` (case-insensitive), it is its own canonical. (The dominant path: Grips inherited Aurora's UUIDs.)
+2. **Fingerprint hit** — a new UUID whose `(layout_id, fingerprint)` matches an existing or already-seen-this-run canonical becomes an alias (`board_climb_aliases`), not a new row.
+3. **Miss** — insert a new canonical row + a self-alias.
+
+**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `kilter_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
+
+### Three-writer `ascensionist_count`
+
+`board_climb_stats.ascensionist_count` is the materialized sum of three independently-owned columns. The catalog sync owns `kilter_ascensionist_count` and recomputes the sum in the same statement:
+
+```
+ascensionist_count = COALESCE(aurora_ascensionist_count,0)
+                   + COALESCE(kilter_ascensionist_count,0)
+                   + COALESCE(boardsesh_ascensionist_count,0)
+```
+
+Same formula at the aurora-sync (`shared-sync.ts`) and Boardsesh-tick (`recompute-climb-stats.ts`) callsites.
+
+## Schema changes
+
+The catalog-relevant schema (`board_climbs.hold_fingerprint` + index, `board_climb_aliases`, `board_climb_stats.kilter_ascensionist_count` + the three-writer recompute) already shipped with Flow B. Flow A adds one table:
+
+| Change | Object                                                                                                      | Notes                                                                                                 |
+| ------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| new    | `board_layout_aliases (board_type, layout_uuid PK, layout_id FK→board_layouts, source, first/last_seen_at)` | Persists the Grips `product_layout_uuid` → integer `layout_id` mapping; reused by the per-user paths. |
 
 ## OAuth handshake
 
@@ -180,7 +244,7 @@ Same `CRON_SECRET` as `/sync-cron` (aurora-sync); the two endpoints are independ
 bunx kilter-sync list                # List all stored kilter credentials
 bunx kilter-sync user <userId>       # Force a sync for one user
 bunx kilter-sync daemon              # Run the daemon (one-user-per-cycle, quiet hours)
-bunx kilter-sync catalog             # Stubbed — not wired (no public method on the runner)
+bunx kilter-sync catalog --user <id> # Sync the public climb catalog (Flow A)
 ```
 
 Run with 1Password like aurora-sync:
@@ -210,6 +274,6 @@ These are the things still TODO. The kilter wire-spec documents that backed the 
 
 1. **REST push payload shapes.** `/api/logs/bulk`, `/api/climb-rating/`, `/api/circuits`, `/api/circuit-climbs` — endpoint paths confirmed, body shapes not. Push-back is gated behind `KILTER_SYNC_PUSH_ENABLED` and the POST helpers call `pushNotWired()` (throws) until captured.
 2. **Attempts endpoint.** Whether attempts share `/api/logs/` with `topped=false`, or live on a separate REST endpoint. Pull side handles both as `logs` rows already; only push is blocked.
-3. **Climb-metadata source.** PowerSync has no `climbs` bucket. Where does climb metadata for the Kilter board come from — a separate REST endpoint? A different PowerSync stream gated by a scope we don't request yet? Until this is answered, catalog ingest stays stubbed and the canonical-uuid resolver falls back to the input UUID.
+3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog is REST, paged per product layout: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The documented `climbdetails/{productName}/edges` endpoint does not exist.
 
 When any of these get verified, replace the matching `pushNotWired()` call with the real POST and remove the item here.

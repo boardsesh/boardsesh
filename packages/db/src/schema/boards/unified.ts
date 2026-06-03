@@ -428,6 +428,43 @@ export const boardClimbAliases = pgTable(
   }),
 );
 
+// Maps a Kilter Grips `product_layout_uuid` (a small integer-as-string,
+// e.g. "27") onto the integer `board_layouts.id` the rest of board_* uses.
+// Kilter Grips ships finer-grained layout variants than the legacy Aurora
+// catalog (many Grips layouts → one board_layouts row, keyed by product),
+// and its climbs reference layouts by this uuid. The catalog sync resolves
+// the mapping once per run (by product name / single-layout fallback) and
+// persists it here so it survives restarts and so the per-user paths
+// (mounting holes, ticks that carry product_layout_uuid) can reuse it.
+//
+// Unlike board_climb_aliases.alias_uuid, layout_id is a hard FK — it always
+// references an existing board_layouts row (we never invent layouts here).
+// source records how the mapping was derived ('name' | 'single-layout' |
+// 'manual'); last_seen_at refreshes on every ingest.
+export const boardLayoutAliases = pgTable(
+  'board_layout_aliases',
+  {
+    boardType: text('board_type').notNull(),
+    layoutUuid: text('layout_uuid').notNull(),
+    layoutId: integer('layout_id').notNull(),
+    source: text('source').notNull(),
+    firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.boardType, table.layoutUuid] }),
+    layoutIdx: index('board_layout_aliases_layout_idx').on(table.boardType, table.layoutId),
+    layoutFk: foreignKey({
+      columns: [table.boardType, table.layoutId],
+      foreignColumns: [boardLayouts.boardType, boardLayouts.id],
+      name: 'board_layout_aliases_layout_fk',
+    })
+      .onUpdate('cascade')
+      .onDelete('cascade'),
+    layoutUuidNonEmpty: check('board_layout_aliases_uuid_non_empty', sql`${table.layoutUuid} <> ''`),
+  }),
+);
+
 // Per-user-per-climb rating, separate from the per-tick quality/difficulty
 // pair on boardsesh_ticks. Kilter exposes ratings as their own first-class
 // resource (POST /api/climb-rating/) and we need a stable home for both
@@ -860,6 +897,9 @@ export type NewBoardProductSizeLayoutSet = typeof boardProductSizesLayoutsSets.$
 
 export type BoardClimb = typeof boardClimbs.$inferSelect;
 export type NewBoardClimb = typeof boardClimbs.$inferInsert;
+
+export type BoardLayoutAlias = typeof boardLayoutAliases.$inferSelect;
+export type NewBoardLayoutAlias = typeof boardLayoutAliases.$inferInsert;
 
 export type BoardClimbStat = typeof boardClimbStats.$inferSelect;
 export type NewBoardClimbStat = typeof boardClimbStats.$inferInsert;

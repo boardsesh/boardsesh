@@ -15,28 +15,31 @@ import {
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { isTransientKilterError, KilterApiError } from '../api/errors';
 import { refreshAccessToken, type KeycloakClientConfig } from '../api/keycloak';
+import { passwordTokenProvider, refreshTokenProvider, type KilterTokenProvider } from '../api/token-provider';
 import { syncKilterUserData } from '../sync/user-sync';
+import { syncKilterCatalog, type KilterCatalogSummary } from '../sync/catalog-sync';
 import type { RunnerClient, RunnerDb, SyncRunnerConfig, SyncSummary, KilterCredentialRecord } from './types';
+
+// Catalog cooldown: a full per-cycle catalog pull is expensive, so the daemon
+// piggyback runs it at most once per window. In-memory (per-process), mirroring
+// aurora-sync's shared-sync cooldown; overridable via config.sharedSyncCooldownMs.
+const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 
 export class SyncRunner {
   private config: SyncRunnerConfig;
   private daemonController: AbortController | null = null;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
+  // Per-process catalog cooldown, keyed by board (only 'kilter' today).
+  private lastCatalogSyncAt = new Map<string, number>();
 
   constructor(config: SyncRunnerConfig = {}) {
     this.config = config;
   }
 
-  // NOTE: catalog cooldown / piggyback wiring lives in aurora-sync but is
-  // intentionally absent here. Kilter publishes its catalog via different
-  // PowerSync buckets and (notably) without a `climbs` table. When that
-  // mapping lands, re-introduce a `lastCatalogSyncAt` member, a cooldown
-  // getter backed by `sharedSyncCooldownMs`, a try/catch piggyback call
-  // inside runCycleForCredential, plus a `syncCatalog()` method and a
-  // matching `catalog` CLI command. Both were intentionally removed
-  // alongside this note to keep the surface honest — we don't want a CLI
-  // command that prints "✓ catalog sync complete" while doing nothing.
+  private getCatalogSyncCooldownMs(): number {
+    return this.config.sharedSyncCooldownMs ?? DEFAULT_CATALOG_SYNC_COOLDOWN_MS;
+  }
 
   private getClient(): { client: RunnerClient; db: RunnerDb } {
     if (!this.client || !this.db) {
@@ -175,9 +178,92 @@ export class SyncRunner {
       })
       .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
 
-    // Piggyback catalog refresh is intentionally not invoked here — wire
-    // it up via the comment block above the class once the catalog
-    // mapping is implemented.
+    // Piggyback: after the user-half succeeds and is stamped active, refresh
+    // the shared catalog if its cooldown has elapsed. Reuses this user's token.
+    await this.maybeRunCatalogSync(db, cred, accessToken);
+  }
+
+  /**
+   * Catalog refresh ridden in after a user sync. In-memory cooldown, stamped
+   * before AND after (success or failure) so a slow/erroring catalog can't
+   * monopolise cycles. A catalog failure never poisons the user's credential —
+   * the user-half already committed.
+   */
+  private async maybeRunCatalogSync(db: RunnerDb, cred: KilterCredentialRecord, currentToken: string): Promise<void> {
+    const board = KILTER_BOARD_TYPE;
+    const cooldownMs = this.getCatalogSyncCooldownMs();
+    const lastRun = this.lastCatalogSyncAt.get(board);
+    const now = Date.now();
+    if (lastRun !== undefined && now - lastRun < cooldownMs) {
+      this.log(
+        `[kilter-catalog] skipped — within cooldown (${Math.round((cooldownMs - (now - lastRun)) / 60000)}m left)`,
+      );
+      return;
+    }
+    this.lastCatalogSyncAt.set(board, now);
+
+    // Reuse the just-minted user token first, then re-mint on demand (the
+    // catalog pull can outlast a single access-token TTL).
+    let cachedToken: string | null = currentToken;
+    const tokenProvider: KilterTokenProvider = async () => {
+      if (cachedToken !== null) {
+        const token = cachedToken;
+        cachedToken = null;
+        return token;
+      }
+      return this.refreshTokenFor(cred, db);
+    };
+
+    try {
+      await syncKilterCatalog({ db, tokenProvider, log: (message) => this.log(message), applyDeletions: false });
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
+    } finally {
+      this.lastCatalogSyncAt.set(board, Date.now());
+    }
+  }
+
+  /**
+   * Run a catalog sync directly (CLI `kilter-sync catalog`). The caller
+   * supplies the token provider (refresh-grant for a linked user, or ROPC for
+   * local testing). Errors propagate so the CLI surfaces them.
+   */
+  async runCatalogSync(
+    tokenProvider: KilterTokenProvider,
+    opts: { applyDeletions?: boolean; layoutUuids?: string[] } = {},
+  ): Promise<KilterCatalogSummary> {
+    const { db } = this.getClient();
+    return syncKilterCatalog({
+      db,
+      tokenProvider,
+      log: (message) => this.log(message),
+      applyDeletions: opts.applyDeletions,
+      layoutUuids: opts.layoutUuids,
+    });
+  }
+
+  /** Build a refresh-grant token provider from a linked user's stored credential. */
+  async buildUserTokenProvider(userId: string): Promise<KilterTokenProvider> {
+    const { db } = this.getClient();
+    const cred = await this.getCredential(db, userId);
+    if (!cred) throw new Error(`No kilter credential for user ${userId}`);
+    if (!cred.encryptedRefreshToken)
+      throw new Error(`Kilter credential for ${userId} has no refresh token — user must reconnect`);
+    return refreshTokenProvider({
+      encryptedRefreshToken: cred.encryptedRefreshToken,
+      client: this.getKeycloakClient(),
+      onRotatedRefreshToken: async (newRefreshToken) => {
+        await db
+          .update(auroraCredentials)
+          .set({ encryptedRefreshToken: encrypt(newRefreshToken), updatedAt: new Date() })
+          .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
+      },
+    });
+  }
+
+  /** Build a ROPC token provider for local testing (KILTER_TEST_USERNAME/PASSWORD). */
+  buildPasswordTokenProvider(username: string, password: string): KilterTokenProvider {
+    return passwordTokenProvider({ username, password, client: this.getKeycloakClient() });
   }
 
   private async refreshTokenFor(cred: KilterCredentialRecord, db: RunnerDb): Promise<string> {

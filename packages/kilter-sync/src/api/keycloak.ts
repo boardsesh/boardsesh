@@ -126,6 +126,30 @@ export async function refreshAccessToken(args: {
 }
 
 /**
+ * Resource-Owner-Password-Credentials grant. NOT used in production —
+ * the daemon and per-user flows always ride on a stored refresh token
+ * (see `refreshAccessToken`). This exists only as a local-validation
+ * escape hatch: the OAuth onboarding UI lets a real user link their
+ * account, but for headless catalog testing (`KILTER_TEST_USERNAME` /
+ * `KILTER_TEST_PASSWORD`) we mint a token directly from credentials.
+ * The `kilter` realm allows the ROPC grant for its public client with
+ * the same `openid offline_access` scope the browser flow requests.
+ */
+export async function passwordGrant(args: {
+  username: string;
+  password: string;
+  client: KeycloakClientConfig;
+}): Promise<KeycloakTokenResponse> {
+  const body = new URLSearchParams({
+    grant_type: 'password',
+    username: args.username,
+    password: args.password,
+    scope: 'openid offline_access',
+  });
+  return tokenRequest(body, args.client);
+}
+
+/**
  * Threat model for JWT verification:
  *
  * `KILTER_IDP_HOST` is env-driven so we can point a dev build at a
