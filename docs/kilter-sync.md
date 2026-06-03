@@ -18,7 +18,7 @@ Per-user pull and catalog ingest both work end-to-end against the live Kilter ba
 The package can run as:
 
 1. **CLI** — `bunx kilter-sync …` for local debugging and forced syncs
-2. **Backend daemon** — long-running loop on Railway, one user per cycle, mirrors aurora-sync's daemon model
+2. **Daemon CLI** — long-running `kilter-sync daemon` loop on a VM, one user per cycle, mirrors aurora-sync's daemon model
 
 There is no Vercel cron path. The web app only hosts the OAuth handshake and the access-control gate.
 
@@ -28,8 +28,8 @@ Kilter exposes its product across three independent hosts. We hit all three on a
 
 ```
 ┌──────────────────────┐   refresh_token grant   ┌────────────────────────┐
-│ idp.kiltergrips.com  │ ◀───────────────────── │  Backend daemon        │
-│ (Keycloak OIDC)      │ ────▶ access_token ──▶ │  /kilter-sync-cron     │
+│ idp.kiltergrips.com  │ ◀───────────────────── │  kilter-sync daemon    │
+│ (Keycloak OIDC)      │ ────▶ access_token ──▶ │  (CLI on a VM)         │
 └──────────────────────┘                         └────────────┬───────────┘
                                                               │
                                                               │  Bearer <access>
@@ -248,14 +248,7 @@ Same loop shape as aurora-sync's daemon: one user per cycle, oldest `last_sync_a
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 
-Backend hosts it at:
-
-```
-POST /kilter-sync-cron
-Authorization: Bearer <CRON_SECRET>
-```
-
-Same `CRON_SECRET` as `/sync-cron` (aurora-sync); the two endpoints are independent so a 500 on one doesn't take down the other. Implementation in `packages/backend/src/handlers/kilter-sync.ts`.
+It runs as a **long-lived CLI process on a VM** — `bunx kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. A long-lived process is required for the catalog piggyback's in-memory cooldown to hold across cycles; a per-request backend handler would reset it and re-pull the full catalog every invocation. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
 
 ## CLI
 
@@ -281,7 +274,6 @@ op run --env-file=packages/kilter-sync/.env.1password -- bunx kilter-sync daemon
 | `KILTER_OAUTH_REDIRECT_URI`    | yes (web)          | Must match the redirect URI registered in Keycloak                 |
 | `KILTER_SYNC_ALLOWED_USER_IDS` | yes during rollout | Comma-separated NextAuth user IDs allowed to link                  |
 | `AURORA_CREDENTIALS_SECRET`    | yes                | Shared encryption key with aurora-sync — same key, same table      |
-| `CRON_SECRET`                  | yes (backend)      | Bearer token for `/kilter-sync-cron`                               |
 | `KILTER_IDP_HOST`              | no                 | Override Keycloak host (sandbox)                                   |
 | `KILTER_SYNC_HOST`             | no                 | Override PowerSync host (sandbox)                                  |
 | `KILTER_PORTAL_HOST`           | no                 | Override REST portal host (sandbox)                                |

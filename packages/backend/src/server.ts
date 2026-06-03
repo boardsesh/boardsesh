@@ -11,8 +11,6 @@ import { handleHealthCheck } from './handlers/health';
 import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleStaticAvatar, handleStaticBetaThumbnail } from './handlers/static';
-import { handleSyncCron } from './handlers/sync';
-import { handleKilterSyncCron } from './handlers/kilter-sync';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
@@ -359,18 +357,6 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
-      // Sync cron endpoint (triggered by external cron service)
-      if (pathname === '/sync-cron' && (req.method === 'POST' || req.method === 'OPTIONS')) {
-        await handleSyncCron(req, res);
-        return;
-      }
-
-      // Kilter sync cron endpoint (PowerSync-driven sibling of /sync-cron)
-      if (pathname === '/kilter-sync-cron' && (req.method === 'POST' || req.method === 'OPTIONS')) {
-        await handleKilterSyncCron(req, res);
-        return;
-      }
-
       // GraphQL endpoint - delegate to Yoga
       if (pathname === '/graphql') {
         // Apply CORS for GraphQL requests
@@ -433,8 +419,6 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Native auth credentials: ${httpScheme}://0.0.0.0:${PORT}/auth/native/credentials`);
     logger.info(`  Native auth refresh: ${httpScheme}://0.0.0.0:${PORT}/auth/native/refresh`);
     logger.info(`  Native auth revoke: ${httpScheme}://0.0.0.0:${PORT}/auth/native/revoke`);
-    logger.info(`  Sync cron: ${httpScheme}://0.0.0.0:${PORT}/sync-cron`);
-    logger.info(`  Kilter sync cron: ${httpScheme}://0.0.0.0:${PORT}/kilter-sync-cron`);
 
     // Warm up popular board configs cache in the background.
     // Uses a Redis lock so only one node across the cluster runs the query.
