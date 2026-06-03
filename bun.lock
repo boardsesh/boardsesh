@@ -332,6 +332,7 @@
       "name": "@boardsesh/create-climb-react",
       "version": "1.0.0",
       "dependencies": {
+        "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
         "@boardsesh/shared-schema": "*",
       },

@@ -1,4 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import { getMoonBoardDetails } from '@boardsesh/board-config';
 import { getBoardRenderData } from './board-details';
 
 /**
@@ -27,8 +28,23 @@ export function getCreateBoardHolds(cfg: {
   sizeId: number;
   setIds: number[];
 }): CreateBoardHolds | null {
-  // MoonBoard uses a separate grid source (getMoonBoardDetails); added in the
-  // MoonBoard PR. For now every supported create board is an Aurora board.
+  // MoonBoard uses a separate grid source (getMoonBoardDetails) that already
+  // produces the 198 grid holds as {id, cx, cy, r} in board-space pixels.
+  if (cfg.boardName === 'moonboard') {
+    try {
+      const moonBoard = getMoonBoardDetails({ layout_id: cfg.layoutId, set_ids: cfg.setIds });
+      return {
+        holdTargets: moonBoard.holdsData.map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r })),
+        boardWidth: moonBoard.boardWidth,
+        boardHeight: moonBoard.boardHeight,
+        family: 'moonboard',
+      };
+    } catch {
+      // Unknown MoonBoard layout — render the unavailable state.
+      return null;
+    }
+  }
+
   const data = getBoardRenderData(cfg);
   if (!data) return null;
   return {

@@ -21,13 +21,18 @@ export type { LogbookEntry, LogbookSourceTick, TickStatus } from './logbook-keys
 export { buildOptimisticTickEntry, applySavedTickToLogbook, rollbackOptimisticTick } from './tick-helpers';
 export type { SaveTickOptions } from './tick-helpers';
 
-export { toSaveClimbInput, isDuplicateClimbError } from './climb-helpers';
-export type { SaveClimbOptions, SaveClimbResponse, UpdateClimbResponse } from './climb-helpers';
+export { toSaveClimbInput, toSaveMoonBoardClimbInput, isDuplicateClimbError } from './climb-helpers';
+export type {
+  SaveClimbOptions,
+  SaveClimbResponse,
+  SaveMoonBoardClimbOptions,
+  UpdateClimbResponse,
+} from './climb-helpers';
 
 export { useLogbook, useInvalidateLogbook } from './use-logbook';
 export { useSaveTick } from './use-save-tick';
 export { useUpdateTick, useDeleteTick } from './use-mutate-tick';
-export { useSaveClimb, useUpdateClimb } from './use-save-climb';
+export { useSaveClimb, useSaveMoonBoardClimb, useUpdateClimb } from './use-save-climb';
 
 export { BoardProvider, useBoardProvider, useOptionalBoardProvider, BoardContext } from './board-provider';
 export type { BoardContextType } from './board-provider';

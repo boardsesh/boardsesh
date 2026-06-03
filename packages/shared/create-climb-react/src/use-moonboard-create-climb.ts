@@ -1,13 +1,18 @@
-'use client';
-
 import { useState, useCallback, useMemo } from 'react';
-import type { LitUpHoldsMap, HoldState } from '../board-renderer/types';
-import { MOONBOARD_HOLD_STATES } from '@/app/lib/moonboard-config';
+import type { HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
+import { MOONBOARD_HOLD_STATES } from '@boardsesh/board-config';
 
 type UseMoonBoardCreateClimbOptions = {
   initialHoldsMap?: LitUpHoldsMap;
 };
 
+/**
+ * MoonBoard hold-state machine for the create-climb editor. Pure React +
+ * board-config — shared verbatim by the web form, the web MoonBoard edit modal,
+ * and the React Native editor. MoonBoard differs from Aurora: only
+ * Start/Hand/Finish roles (no foot), a fixed green/blue/red colour scheme, and
+ * a publish rule of at least one start AND one finish hold.
+ */
 export function useMoonBoardCreateClimb(options?: UseMoonBoardCreateClimbOptions) {
   const [litUpHoldsMap, setLitUpHoldsMap] = useState<LitUpHoldsMap>(options?.initialHoldsMap ?? {});
 

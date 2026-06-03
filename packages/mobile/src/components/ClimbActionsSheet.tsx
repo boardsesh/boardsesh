@@ -156,7 +156,10 @@ function ClimbActionsSheet({
   // Edit is owner-only, and only while the climb is still a draft OR within
   // 24h of first publish (the backend enforces the same window). `userId`
   // is null for Aurora-synced climbs that predate Boardsesh accounts.
+  // MoonBoard is create-only on mobile (no in-place update path), so it never
+  // offers an Edit row.
   const canEdit = useMemo(() => {
+    if (boardName === 'moonboard') return false;
     if (!climb || !currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
     const snapshot: SavedClimbSnapshot = {
       uuid: climb.uuid,

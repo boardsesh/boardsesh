@@ -8,14 +8,17 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { BoardImageNative } from '../BoardImageNative';
 import { InteractiveCreateBoard } from './InteractiveCreateBoard';
 import { BrushBar } from './BrushBar';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateClimbSettingsSheet } from './CreateClimbSettingsSheet';
 import { DraftsSheet } from './DraftsSheet';
+import { MoonBoardCreateClimbScreen } from './MoonBoardCreateClimbScreen';
+import { CreateClimbDuplicateBanner } from './CreateClimbDuplicateBanner';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type CreateClimbScreenProps = {
@@ -31,27 +34,16 @@ type CreateClimbScreenProps = {
  * bar, and the long-press / settings / drafts sheets. Composes the controller
  * hook with the no-SVG board renderer.
  */
-export function CreateClimbScreen({
-  board,
-  forkFrames,
-  forkName,
-  forkDescription,
-  editClimbUuid,
-}: CreateClimbScreenProps) {
+/**
+ * Create-climb editor router. Resolves the board's hold geometry, then renders
+ * either the MoonBoard variant (create-only; Start/Hand/Finish brush; grade /
+ * benchmark / angle fields) or the Aurora variant. The unavailable state covers
+ * an unknown board / layout combination for either family.
+ */
+export function CreateClimbScreen(props: CreateClimbScreenProps) {
+  const { board } = props;
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const router = useRouter();
-
-  const controller = useCreateClimbScreen({ board, forkFrames, forkName, forkDescription, editClimbUuid });
-
-  const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [draftsOpen, setDraftsOpen] = useState(false);
-
-  // The controller asks the screen to open settings (e.g. an unnamed save).
-  useEffect(() => {
-    if (controller.openSettingsSignal > 0) setSettingsOpen(true);
-  }, [controller.openSettingsSignal]);
 
   const boardHolds = useMemo(
     () =>
@@ -63,9 +55,6 @@ export function CreateClimbScreen({
       }),
     [board.boardName, board.layoutId, board.sizeId, board.setIds],
   );
-
-  const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
-  const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
 
   if (!boardHolds) {
     return (
@@ -83,15 +72,62 @@ export function CreateClimbScreen({
     );
   }
 
+  if (boardHolds.family === 'moonboard') {
+    // MoonBoard is create-only — fork/edit params are intentionally not threaded
+    // here (Edit is disabled for moonboard in ClimbActionsSheet, and there's no
+    // MoonBoard drafts/edit entry point).
+    return <MoonBoardCreateClimbScreen board={board} boardHolds={boardHolds} />;
+  }
+
+  return <AuroraCreateClimbScreen {...props} boardHolds={boardHolds} />;
+}
+
+type AuroraCreateClimbScreenProps = CreateClimbScreenProps & {
+  boardHolds: NonNullable<ReturnType<typeof getCreateBoardHolds>>;
+};
+
+function AuroraCreateClimbScreen({
+  board,
+  forkFrames,
+  forkName,
+  forkDescription,
+  editClimbUuid,
+  boardHolds,
+}: AuroraCreateClimbScreenProps) {
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+  const router = useRouter();
+
+  const controller = useCreateClimbScreen({ board, forkFrames, forkName, forkDescription, editClimbUuid });
+
+  const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+
+  // The controller asks the screen to open settings (e.g. an unnamed save).
+  useEffect(() => {
+    if (controller.openSettingsSignal > 0) setSettingsOpen(true);
+  }, [controller.openSettingsSignal]);
+
+  const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
+  const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.boardArea}>
           <InteractiveCreateBoard
-            boardName={board.boardName as BoardName}
-            layoutId={board.layoutId}
-            sizeId={board.sizeId}
-            setIds={board.setIds}
+            background={
+              <BoardImageNative
+                frames=""
+                boardName={board.boardName as BoardName}
+                layoutId={board.layoutId}
+                sizeId={board.sizeId}
+                setIds={board.setIds}
+                boardWidth={boardHolds.boardWidth}
+                boardHeight={boardHolds.boardHeight}
+              />
+            }
             boardWidth={boardHolds.boardWidth}
             boardHeight={boardHolds.boardHeight}
             holdTargets={boardHolds.holdTargets}
@@ -103,7 +139,7 @@ export function CreateClimbScreen({
         </View>
 
         {controller.publishDuplicateError ? (
-          <DuplicateBanner
+          <CreateClimbDuplicateBanner
             name={controller.publishDuplicateError.existingClimbName}
             onView={
               controller.publishDuplicateError.existingClimbUuid
@@ -209,40 +245,6 @@ export function CreateClimbScreen({
   );
 }
 
-function DuplicateBanner({
-  name,
-  onView,
-  onDismiss,
-}: {
-  name: string | null;
-  onView?: () => void;
-  onDismiss: () => void;
-}) {
-  const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
-  return (
-    <View style={[styles.banner, { backgroundColor: systemColors.secondaryBackground }]}>
-      <View style={styles.bannerText}>
-        <Text variant="footnote">
-          {name
-            ? t('createClimbForm.alerts.publishDuplicateNamed', { name })
-            : t('createClimbForm.alerts.publishDuplicateUnnamed')}
-        </Text>
-        {onView ? (
-          <Pressable onPress={onView} accessibilityRole="button">
-            <Text variant="footnote" color={brandColors.primary}>
-              {t('createClimbForm.alerts.viewMatchingClimb')}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <Pressable onPress={onDismiss} accessibilityRole="button" hitSlop={8}>
-        <Icon name="close" size={16} color={systemColors.secondaryLabel as string} />
-      </Pressable>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -266,19 +268,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
-  },
-  banner: {
-    marginHorizontal: spacing[3],
-    marginBottom: spacing[2],
-    padding: spacing[3],
-    borderRadius: borderRadius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  bannerText: {
-    flex: 1,
-    gap: spacing[1],
   },
   centered: {
     flex: 1,
