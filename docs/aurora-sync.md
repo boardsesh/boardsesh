@@ -7,22 +7,22 @@ This document describes how Aurora board data (Kilter, Tension) is synced from t
 The `@boardsesh/aurora-sync` package provides the shared sync implementation. It can run:
 
 1. **CLI** - For local debugging and manual sync runs
-2. **OS-level service / Railway backend** - Long-running daemon that picks one user per cycle, syncs their per-user tables, then runs a board-wide shared sync using their fresh Aurora token
-3. **Vercel** - (Removed) Previously a daily `/api/internal/shared-sync/tension` cron; shared sync now piggybacks on user sync inside the daemon
+2. **Daemon CLI on a VM** - `aurora-sync daemon` as a long-lived process: picks one user per cycle, syncs their per-user tables, then runs a board-wide shared sync using their fresh Aurora token. This is the production deployment.
+3. **Backend / Vercel cron** - (Removed) Previously a `POST /sync-cron` backend handler and a `/api/internal/user-sync-cron` Vercel route; both removed in favour of the long-lived daemon, which the catalog piggyback's in-memory cooldown needs to survive across cycles.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  External Cron  │────▶│  Railway Backend │────▶│   Neon (Prod)   │
-│  (cron-job.org) │     │  POST /sync-cron │     │    Database     │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                │
-                                ▼
-                        ┌──────────────────┐
-                        │   Aurora API     │
-                        │  (Kilter/Tension)│
-                        └──────────────────┘
+┌─────────────────┐     ┌─────────────────┐
+│  aurora-sync    │────▶│   Postgres      │
+│  daemon (VM)    │     │   (prod)        │
+└─────────────────┘     └─────────────────┘
+        │
+        ▼
+┌──────────────────┐
+│   Aurora API     │
+│  (Kilter/Tension)│
+└──────────────────┘
 ```
 
 ## How Sync Works
@@ -89,19 +89,25 @@ After every successful per-user sync, the daemon also runs a shared sync for tha
 
 When the climbs upsert sees previously-unseen UUIDs, the daemon also writes `new_climbs_synced` rows into the `notifications` table for each follower of the climb's setter (`setter_follows` and any linked `user_follows` accounts).
 
-### `board_climb_stats`: two-writer model
+### `board_climb_stats`: multi-writer model
 
-`ascensionist_count` is the materialized sum of two source columns, each
-owned by a single writer:
+`ascensionist_count` is the materialized count derived from per-source columns,
+each owned by a single writer:
 
-| Column                         | Owner                           | Updated by                                                                                                                |
-| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `aurora_ascensionist_count`    | Aurora sync                     | `upsertClimbStats` (this file's daemon) — written verbatim from Aurora's payload                                          |
-| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats` | `packages/backend/src/graphql/resolvers/ticks/recompute-climb-stats.ts` — `COUNT(DISTINCT user_id)` over flash/send ticks |
-| `ascensionist_count`           | Both writers, kept in lockstep  | Every `upsertClimbStats` and every `recomputeClimbStats` recompute it as `COALESCE(aurora,0) + COALESCE(boardsesh,0)`     |
+| Column                         | Owner                           | Updated by                                                                                                                    |
+| ------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `aurora_ascensionist_count`    | Aurora sync                     | `upsertClimbStats` (this file's daemon) — written verbatim from Aurora's payload                                              |
+| `kilter_ascensionist_count`    | Kilter Grips sync               | `packages/kilter-sync` catalog sync                                                                                           |
+| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats` | `packages/backend/src/graphql/resolvers/ticks/recompute-climb-stats.ts` — `COUNT(DISTINCT user_id)` over flash/send ticks     |
+| `ascensionist_count`           | All writers, kept in lockstep   | recomputed as `COALESCE(kilter_ascensionist_count, aurora_ascensionist_count, 0) + COALESCE(boardsesh_ascensionist_count, 0)` |
+
+`aurora_` and `kilter_` are **not summed**: for the Kilter board they are the
+same ascents from two backends across the Aurora→Kilter Grips split, so the sum
+takes Kilter (live) and falls back to aurora. For Aurora-only boards (Tension
+etc.) `kilter_` is NULL and it collapses to `aurora_`. See kilter-sync.md.
 
 The search hot path reads `ascensionist_count` through the covering index from
-migration 0067, so it stays a regular column (not `GENERATED`) — both writers
+migration 0067, so it stays a regular column (not `GENERATED`) — every writer
 must update it whenever they touch their own share.
 
 `fa_username` / `fa_at` follow a related but asymmetric rule. Aurora's upsert
@@ -120,6 +126,11 @@ on Aurora climbs it leaves them untouched so Aurora's averages stay
 authoritative. `display_difficulty` mirrors `difficulty_average` in both
 writers (Aurora: `Number(item.display_difficulty || item.difficulty_average)`;
 Boardsesh: the same `AVG(bt.difficulty)` value used for `difficulty_average`).
+
+Aurora reports `quality_average` on a 1–3 scale, but Kilter Grips / MoonBoard
+use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, `×5/3`) so
+`board_climb_stats.quality_average` is one scale across every board. Existing
+Aurora-board rows need a one-time `×5/3` backfill (see kilter-sync.md).
 
 If you add a new writer to `board_climb_stats`, decide which side it owns and
 recompute `ascensionist_count` in the same statement that updates that side.
@@ -188,54 +199,30 @@ op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync daemon
 - It does not sync between `10:00 PM` and `7:00 AM` in `Australia/Sydney`, but the process stays alive and checks again every minute.
 - Aurora HTTP, timeout, network, and rate-limit failures are treated as transient and retried later without marking the credential as errored.
 
-## Railway Deployment
+## Deployment (daemon CLI on a VM)
+
+Run `aurora-sync daemon` as a long-lived process (systemd unit, a small VM, or a
+Railway/Fly worker). It loops internally — there is no HTTP endpoint and no
+`CRON_SECRET`; nothing fronts it. A long-lived process is required so the shared-sync
+piggyback's in-memory cooldown holds across cycles (a per-request handler would
+reset it and re-pull the catalog every invocation — see kilter-sync.md).
 
 ### 1. Environment Variables
 
-Add to Railway service:
+| Variable                    | Description                                          |
+| --------------------------- | ---------------------------------------------------- |
+| `DATABASE_URL`              | Postgres connection string                           |
+| `AURORA_CREDENTIALS_SECRET` | Same key as the web app (for decrypting credentials) |
 
-| Variable                    | Description                                     |
-| --------------------------- | ----------------------------------------------- |
-| `DATABASE_URL`              | Neon PostgreSQL connection string               |
-| `AURORA_CREDENTIALS_SECRET` | Same key as Vercel (for decrypting credentials) |
-| `CRON_SECRET`               | New secret for authenticating cron requests     |
+### 2. Run it
 
-### 2. Endpoint
-
-The backend exposes:
-
-```
-POST /sync-cron
-Authorization: Bearer <CRON_SECRET>
+```bash
+op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync daemon
 ```
 
-Response:
+### 3. Monitoring
 
-```json
-{
-  "success": true,
-  "results": {
-    "total": 3,
-    "successful": 3,
-    "failed": 0
-  },
-  "errors": [],
-  "timestamp": "2024-01-02T12:00:00.000Z"
-}
-```
-
-### 3. External Cron Setup
-
-Use [cron-job.org](https://cron-job.org) or similar:
-
-- **URL**: `https://<railway-app>.up.railway.app/sync-cron`
-- **Method**: POST
-- **Headers**: `Authorization: Bearer <CRON_SECRET>`
-- **Schedule**: Every 15 minutes (or as needed)
-
-### 4. Monitoring
-
-Check Railway logs for sync output:
+Check the process logs for sync output:
 
 ```
 [Sync] Starting sync cron job...
@@ -346,12 +333,9 @@ Unresolvable names (delisted climbs, typos) are returned to the user in the resu
 
 ## Migration from Vercel Cron
 
-After Railway sync is working:
-
-1. Monitor Railway logs to confirm syncs complete successfully
-2. Compare sync timestamps between Vercel and Railway
-3. Disable Vercel cron route (`/api/internal/user-sync-cron`)
-4. Remove the route file after confirming Railway works
+Complete — sync moved off the Vercel/backend cron to the `aurora-sync daemon` CLI.
+The legacy `/api/internal/user-sync-cron` Vercel route and the `POST /sync-cron`
+backend handler have been removed; the daemon on a VM is the sole sync path.
 
 ### Kilter sync allowlist (interim)
 

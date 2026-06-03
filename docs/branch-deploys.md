@@ -1216,54 +1216,16 @@ After API consolidation:
 
 ### Current State
 
-Sync runs in two places:
+Sync runs as **long-lived daemon CLIs on a VM**, not as HTTP crons:
 
-1. **Vercel crons** (`packages/web/vercel.json`):
-   - `/api/internal/shared-sync/tension` - every 2 hours
-   - `/api/internal/shared-sync/kilter` - every 2 hours
-   - `/api/internal/user-sync-cron` - every 2 hours
-   - `/api/internal/migrate-users-cron` - daily at 3am
+- `aurora-sync daemon` (Kilter/Tension via the Aurora API)
+- `kilter-sync daemon` (Kilter Grips via Keycloak + PowerSync + REST)
 
-2. **Backend** (`packages/backend/src/handlers/sync.ts`):
-   - `/sync-cron` - already handles user sync via `@boardsesh/aurora-sync`
-
-### Migration Steps
-
-1. **Add shared sync to backend** - The `@boardsesh/aurora-sync` package already exists. Add a `/shared-sync-cron` endpoint to the backend that calls the shared sync runner for both Kilter and Tension.
-
-2. **Add user migration to backend** - Move the `migrate-users-cron` logic to a backend endpoint.
-
-3. **Set up external cron triggers** - Use GitHub Actions scheduled workflow to hit the backend sync endpoints:
-
-   ```yaml
-   # .github/workflows/sync-cron.yml
-   name: Sync Cron
-   on:
-     schedule:
-       - cron: '0 */2 * * *' # Every 2 hours
-   jobs:
-     sync:
-       runs-on: ubuntu-latest
-       steps:
-         - name: Trigger user sync
-           run: |
-             curl -X POST https://backend.boardsesh.com/sync-cron \
-               -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-         - name: Trigger shared sync
-           run: |
-             curl -X POST https://backend.boardsesh.com/shared-sync-cron \
-               -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-   ```
-
-4. **Remove Vercel crons** - Delete the `crons` array from `packages/web/vercel.json` and remove the corresponding API route handlers.
+Each loops internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticates with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed; a long-lived process is required so the shared/catalog piggyback's in-memory cooldown survives across cycles.
 
 ### Branch Deploy Sync Strategy
 
-Sync should be **disabled by default** for branch deployments:
-
-- Branch backends don't need to sync with Aurora API (they use snapshot data from the dev-db image)
-- Running sync on branch databases would waste Aurora API rate limits
-- If sync testing is needed, it can be triggered manually via the endpoint
+Branch deploys simply **don't run the daemons** — they use snapshot data from the dev-db image, so there's nothing to schedule or disable. If sync testing is needed on a branch, run the CLI manually (e.g. `bunx kilter-sync catalog --user <id>`) against that branch's database.
 
 ---
 

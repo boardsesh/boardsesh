@@ -350,7 +350,7 @@ To turn the homelab replica on for application reads, set `READ_REPLICA_URL` in 
 
 - Auth (`/api/auth/*`) and session reads/writes.
 - All write paths — `boardsesh_ticks` insert/update, profile edits, comments, votes, follows, party-mode `board_sessions` writes.
-- Aurora sync (`packages/web/app/api/internal/user-sync-cron/route.ts`, `packages/aurora-sync/`) — credentials and sync-status writes are write-heavy and must read its own writes.
+- Board sync daemons (`packages/aurora-sync/`, `packages/kilter-sync/`, run as CLIs on a VM) — credentials and sync-status writes are write-heavy and must read their own writes.
 - Backend GraphQL resolvers other than the read-only feed/search.
 - `packages/db/scripts/*` — one-shot CLIs target the direct primary URL.
 
