@@ -12,6 +12,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
+import { BoardImageNative } from '../BoardImageNative';
 import { InteractiveCreateBoard } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
@@ -201,10 +202,17 @@ export function CreateDrawer({
 
           <View style={styles.boardSection}>
             <InteractiveCreateBoard
-              boardName={board.boardName as BoardName}
-              layoutId={board.layoutId}
-              sizeId={board.sizeId}
-              setIds={board.setIds}
+              background={
+                <BoardImageNative
+                  frames=""
+                  boardName={board.boardName as BoardName}
+                  layoutId={board.layoutId}
+                  sizeId={board.sizeId}
+                  setIds={board.setIds}
+                  boardWidth={boardHolds.boardWidth}
+                  boardHeight={boardHolds.boardHeight}
+                />
+              }
               boardWidth={boardHolds.boardWidth}
               boardHeight={boardHolds.boardHeight}
               holdTargets={boardHolds.holdTargets}

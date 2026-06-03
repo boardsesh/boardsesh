@@ -732,6 +732,13 @@
         "noMatchLabel": "No matching",
         "noMatchDescription": "Hands can't match on the same hold"
       },
+      "moonboard": {
+        "angleLabel": "Angle",
+        "gradeLabel": "Suggested grade",
+        "benchmarkLabel": "Benchmark",
+        "benchmarkDescription": "Flag this as a benchmark problem for the grade.",
+        "invalidPublish": "Add at least one start and one finish hold to publish."
+      },
       "drafts": {
         "holds_one": "{{count}} hold",
         "holds_other": "{{count}} holds",

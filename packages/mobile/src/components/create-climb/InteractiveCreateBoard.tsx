@@ -1,10 +1,9 @@
-import React, { useMemo, type ReactNode } from 'react';
+import React, { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
-import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
-import { BoardImageNative } from '../BoardImageNative';
+import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { overlays } from '../../theme/tokens';
@@ -15,10 +14,12 @@ import { buildHoldHitTargets } from './holdLayout';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from './use-zoomed-hold-tap-gesture';
 
 type InteractiveCreateBoardProps = {
-  boardName: BoardName;
-  layoutId: number;
-  sizeId: number;
-  setIds: string;
+  /**
+   * Board photo layer supplied by the caller so this component stays
+   * board-family-agnostic: Aurora passes BoardImageNative, MoonBoard passes the
+   * stacked MoonBoard background.
+   */
+  background: ReactNode;
   boardWidth: number;
   boardHeight: number;
   holdTargets: BoardHoldTarget[];
@@ -27,32 +28,21 @@ type InteractiveCreateBoardProps = {
   onLongPressHold: (holdId: number) => void;
   mirrored?: boolean;
   showAllHolds?: boolean;
-  /** Exact on-screen board size, computed by the drawer up front so the board
-   *  renders immediately (no onLayout round-trip while the sheet animates in). */
-  renderWidth: number;
-  renderHeight: number;
+  /** Exact on-screen board size. The drawer passes this so the board renders on
+   *  the first frame; full-screen callers can omit it and use onLayout sizing. */
+  renderWidth?: number;
+  renderHeight?: number;
   /** Optional overlay (e.g. heatmap) drawn between the background and the holds. */
   overlay?: ReactNode;
 };
 
 /**
- * The no-SVG interactive board editor. The background is the bundled board PNG
- * (via BoardImageNative with empty frames); painted holds and tap targets are
- * plain RN Views placed INSIDE the zoom-transformed Animated.View, so RNGH
- * hit-tests them in board-local space and taps land correctly at any zoom level
- * with zero manual coordinate math.
- *
- * Sized by the drawer (renderWidth/renderHeight) so it paints on the first frame.
- * Gesture model mirrors the Play Drawer's board: pinch is always live, but the
- * 1-finger zoom-pan only mounts while zoomed (a conditional overlay) so idle
- * vertical drags fall through to the BottomSheetScrollView and scroll/close the
- * drawer instead of being eaten here.
+ * The no-SVG interactive board editor. Painted holds and tap targets are plain
+ * RN views placed inside the zoom-transformed board, so RNGH hit-tests them in
+ * board-local space at any zoom level.
  */
 export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard({
-  boardName,
-  layoutId,
-  sizeId,
-  setIds,
+  background,
   boardWidth,
   boardHeight,
   holdTargets,
@@ -66,6 +56,11 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   overlay,
 }: InteractiveCreateBoardProps) {
   const { t } = useTranslation('common');
+  const [measuredSize, setMeasuredSize] = useState({ width: 0, height: 0 });
+  const hasFixedRenderSize = renderWidth !== undefined && renderHeight !== undefined;
+  const boardRenderWidth = renderWidth ?? measuredSize.width;
+  const boardRenderHeight = renderHeight ?? measuredSize.height;
+
   const {
     pinchGesture,
     zoomPanGesture,
@@ -79,8 +74,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     animatedZoomStyle,
   } = useZoomPanGesture({
     enabled: true,
-    containerWidth: renderWidth,
-    containerHeight: renderHeight,
+    containerWidth: boardRenderWidth,
+    containerHeight: boardRenderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
   });
 
@@ -90,11 +85,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     return map;
   }, [holdTargets]);
 
-  // Hit circles for resolving a tap to a hold while zoomed (the pan overlay sits
-  // above the per-hold detectors, so it resolves taps itself — see #2687).
   const hitTargets = useMemo(
-    () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored),
-    [holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
+    () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, boardRenderWidth, boardRenderHeight, mirrored),
+    [holdTargets, boardWidth, boardHeight, boardRenderWidth, boardRenderHeight, mirrored],
   );
 
   const overlayGesture = useZoomedHoldTapGesture({
@@ -109,21 +102,25 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     onLongPress: onLongPressHold,
   });
 
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setMeasuredSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+  }, []);
+
+  const clipStyle = useMemo(
+    () =>
+      hasFixedRenderSize
+        ? [styles.clip, { width: renderWidth, height: renderHeight }]
+        : [styles.clip, styles.flexibleClip, { aspectRatio: boardWidth / boardHeight }],
+    [hasFixedRenderSize, renderWidth, renderHeight, boardWidth, boardHeight],
+  );
+
   return (
     <View style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
-        <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
+        <View style={clipStyle} onLayout={hasFixedRenderSize ? undefined : handleLayout}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
-            <BoardImageNative
-              frames=""
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-            />
+            {background}
             {overlay ? (
               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                 {overlay}
@@ -133,7 +130,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               holdTargets={holdTargets}
               boardWidth={boardWidth}
               boardHeight={boardHeight}
-              measuredWidth={renderWidth}
+              measuredWidth={boardRenderWidth}
               mirrored={mirrored}
               showAllHolds={showAllHolds}
               onPaint={onPaint}
@@ -144,17 +141,11 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               holdById={holdById}
               boardWidth={boardWidth}
               boardHeight={boardHeight}
-              measuredWidth={renderWidth}
+              measuredWidth={boardRenderWidth}
               mirrored={mirrored}
             />
           </Animated.View>
 
-          {/* Pan-while-zoomed overlay: only mounted when zoomed so it doesn't
-              claim 1-finger touches at rest (which would block the drawer's
-              scroll/close). 2-finger pinches fall through via maxPointers(1).
-              The overlay sits above the per-hold detectors, so its gesture also
-              resolves taps/long-presses to holds (Race with the pan) — without
-              that, painting and the role sheet are dead while zoomed (#2687). */}
           {isZoomed ? (
             <GestureDetector gesture={overlayGesture}>
               <View style={StyleSheet.absoluteFill} />
@@ -176,11 +167,15 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
 
 const styles = StyleSheet.create({
   root: {
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   clip: {
     overflow: 'hidden',
+  },
+  flexibleClip: {
+    width: '100%',
   },
   board: {
     width: '100%',

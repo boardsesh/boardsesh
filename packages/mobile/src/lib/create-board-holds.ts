@@ -4,8 +4,7 @@ import { getBoardRenderData } from './board-details';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
- * target + painted indicator. Both Aurora (`getBoardRenderData`) and MoonBoard
- * (`getMoonBoardDetails`, added in the MoonBoard PR) already produce
+ * target + painted indicator. Both Aurora and MoonBoard render data produce
  * `{id, cx, cy, r}` in board-space pixels, so one editor renders either family.
  */
 export type BoardHoldTarget = { id: number; cx: number; cy: number; r: number };
@@ -33,18 +32,16 @@ function createBoardHoldsCacheKey(cfg: CreateBoardHoldsConfig): string {
 
 /**
  * Parse a comma-separated `setIds` route/param string into numeric set ids.
- * Mirrors the `split(',').map(Number).filter(Boolean)` pattern the board render
- * pipeline uses (see `use-native-climb-render.ts`): an empty string yields `[]`
- * (not `[0]`), and any `0`/blank token is dropped — set ids are positive.
+ * Mirrors the board render pipeline: an empty string yields `[]`, and any
+ * `0`/blank token is dropped because set ids are positive.
  */
 export function parseSetIdsParam(setIds: string): number[] {
   return setIds.split(',').map(Number).filter(Boolean);
 }
 
 /**
- * Resolve the full set of tappable holds for a board configuration, board-family
- * agnostic. Aurora boards come from the hole-placement pipeline; MoonBoard comes
- * from the grid-backed render data branch.
+ * Resolve the full set of tappable holds for a board configuration,
+ * board-family agnostic.
  */
 export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHolds | null {
   const cacheKey = createBoardHoldsCacheKey(cfg);

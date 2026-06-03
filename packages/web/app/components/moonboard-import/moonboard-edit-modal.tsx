@@ -11,7 +11,7 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import MoonBoardRenderer from '../moonboard-renderer/moonboard-renderer';
-import { useMoonBoardCreateClimb } from '../create-climb/use-moonboard-create-climb';
+import { useMoonBoardCreateClimb } from '@boardsesh/create-climb-react';
 import HoldIndicator from '../create-climb/hold-indicator';
 import HoldTypePicker from '../create-climb/hold-type-picker';
 import { useHoldTypePicker } from '../create-climb/use-hold-type-picker';

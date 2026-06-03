@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMoonBoardCreateClimb } from '../use-moonboard-create-climb';
 
-vi.mock('@/app/lib/moonboard-config', () => ({
+vi.mock('@boardsesh/board-config', () => ({
   MOONBOARD_HOLD_STATES: {
     start: { color: '#00FF00', displayColor: '#00FF00' },
     hand: { color: '#00FFFF', displayColor: '#00FFFF' },
