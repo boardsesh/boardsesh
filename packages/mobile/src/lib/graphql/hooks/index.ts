@@ -1,18 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
-  UserBoard,
-  UserBoardConnection,
-  Climb,
   ClimbSearchInput,
-  Grade,
-  Angle,
   MyBoardsInput,
   SearchBoardsInput,
   PopularBoardConfigsInput,
   CreateBoardInput,
   SetterStatsInput,
-  UserProfile,
-  SessionSummary,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -426,7 +419,7 @@ export function useAttachBetaLink() {
         input,
       }),
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
     },
   });
 }
@@ -447,3 +440,4 @@ export { useYouProfileData } from './use-you-profile-data';
 export { useVote, useBulkVoteSummaries, useComments, useAddComment } from './use-social';
 export { useSessionDetail, useSessionPreview } from './use-session-detail';
 export { useDeleteAccountInfo, useDeleteAccount } from './use-delete-account';
+export { useHoldHeatmap, type HoldHeatmapParams, type UseHoldHeatmapResult } from './use-hold-heatmap';

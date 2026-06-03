@@ -13,7 +13,9 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { BoardImageNative } from '../BoardImageNative';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { InteractiveCreateBoard } from './InteractiveCreateBoard';
+import { HeatmapOverlay } from './HeatmapOverlay';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
@@ -74,6 +76,7 @@ export function CreateDrawer({
   // approach as the Play Drawer rather than hardcoded heights.
   const [handleHeight, setHandleHeight] = useState(0);
   const [aboveFoldHeight, setAboveFoldHeight] = useState(0);
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
   // Live snap index, kept current via onChange so the re-snap below targets the
   // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
@@ -92,6 +95,38 @@ export function CreateDrawer({
     }
     return { width: availWidth, height: availWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
+
+  // Community hold-usage heatmap. Only fetched once the user toggles it on.
+  const { statsByHoldId } = useHoldHeatmap(
+    {
+      boardName: board.boardName,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: board.angle,
+    },
+    heatmapVisible,
+  );
+
+  // Skip painted holds so the heat never covers the working climb.
+  const paintedHoldIds = useMemo(
+    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
+    [controller.litUpHoldsMap],
+  );
+
+  const heatmapOverlay = useMemo(
+    () =>
+      heatmapVisible ? (
+        <HeatmapOverlay
+          statsByHoldId={statsByHoldId}
+          holdTargets={boardHolds.holdTargets}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          paintedHoldIds={paintedHoldIds}
+        />
+      ) : null,
+    [heatmapVisible, statsByHoldId, boardHolds, paintedHoldIds],
+  );
 
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
@@ -222,6 +257,7 @@ export function CreateDrawer({
               showAllHolds={controller.showAllHolds}
               renderWidth={boardRender.width}
               renderHeight={boardRender.height}
+              overlay={heatmapOverlay}
             />
           </View>
 
@@ -238,6 +274,8 @@ export function CreateDrawer({
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}
             onSave={() => void controller.handleSave()}
+            onToggleHeatmap={() => setHeatmapVisible((visible) => !visible)}
+            heatmapActive={heatmapVisible}
           />
         </View>
 

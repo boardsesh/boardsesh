@@ -228,4 +228,60 @@ export const climbTypeDefs = /* GraphQL */ `
     "Number of climbs authored by this setter for the board configuration"
     climbCount: Int!
   }
+
+  """
+  Input for the community hold-usage heatmap. Identifies a board configuration
+  plus the subset of community filters that materially change the aggregate
+  (mirrors the keys the web heatmap cache keys on). Personal-progress filters
+  are intentionally absent — the heatmap is community-only.
+  """
+  input HoldHeatmapInput {
+    "Board type (e.g., 'kilter', 'tension')"
+    boardName: String!
+    "Layout ID"
+    layoutId: Int!
+    "Size ID"
+    sizeId: Int!
+    "Comma-separated set IDs"
+    setIds: String!
+    "Board angle in degrees"
+    angle: Int!
+    "Only count climbs at or above this display grade"
+    minGrade: Int
+    "Only count climbs at or below this display grade"
+    maxGrade: Int
+    "Only count climbs with at least this many ascents"
+    minAscents: Int
+    "Only count climbs with at least this average rating (whole stars, 1-5)"
+    minRating: Float
+    "Case-insensitive substring filter on climb name"
+    name: String
+    "Restrict to climbs by these setter usernames"
+    settername: [String!]
+    "Restrict to classic/benchmark climbs only"
+    onlyClassics: Boolean
+  }
+
+  """
+  Aggregate usage of a single hold across the climbs matching a board
+  configuration. Community-only — there are no per-user fields.
+  """
+  type HoldStat {
+    "Hold (placement) id this row aggregates"
+    holdId: Int!
+    "Distinct climbs that use this hold in any role"
+    totalUses: Int!
+    "Times this hold is used as a starting hold"
+    startingUses: Int!
+    "Times this hold is used as a hand hold"
+    handUses: Int!
+    "Times this hold is used as a foot hold"
+    footUses: Int!
+    "Times this hold is used as a finish hold"
+    finishUses: Int!
+    "Sum of ascents across the climbs that use this hold"
+    totalAscents: Int!
+    "Average display difficulty across the climbs that use this hold (null when none have stats)"
+    averageDifficulty: Float
+  }
 `;

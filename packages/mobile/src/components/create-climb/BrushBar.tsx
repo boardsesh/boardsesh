@@ -148,7 +148,7 @@ export function BrushBar({
         <View style={styles.actions}>
           <SecondaryButton
             icon="flame"
-            label={t('mobile.create.actions.heatmap')}
+            label={heatmapActive ? t('search.holds.hideHeatmap') : t('search.holds.showHeatmap')}
             onPress={onToggleHeatmap}
             active={heatmapActive}
             disabled={!onToggleHeatmap}

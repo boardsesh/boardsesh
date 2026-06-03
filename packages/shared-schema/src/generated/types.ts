@@ -1708,6 +1708,63 @@ export type GymMembersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/**
+ * Input for the community hold-usage heatmap. Identifies a board configuration
+ * plus the subset of community filters that materially change the aggregate
+ * (mirrors the keys the web heatmap cache keys on). Personal-progress filters
+ * are intentionally absent — the heatmap is community-only.
+ */
+export type HoldHeatmapInput = {
+  /** Board angle in degrees */
+  angle: Scalars['Int']['input'];
+  /** Board type (e.g., 'kilter', 'tension') */
+  boardName: Scalars['String']['input'];
+  /** Layout ID */
+  layoutId: Scalars['Int']['input'];
+  /** Only count climbs at or below this display grade */
+  maxGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Only count climbs with at least this many ascents */
+  minAscents?: InputMaybe<Scalars['Int']['input']>;
+  /** Only count climbs at or above this display grade */
+  minGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Only count climbs with at least this average rating (whole stars, 1-5) */
+  minRating?: InputMaybe<Scalars['Float']['input']>;
+  /** Case-insensitive substring filter on climb name */
+  name?: InputMaybe<Scalars['String']['input']>;
+  /** Restrict to classic/benchmark climbs only */
+  onlyClassics?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Comma-separated set IDs */
+  setIds: Scalars['String']['input'];
+  /** Restrict to climbs by these setter usernames */
+  settername?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Size ID */
+  sizeId: Scalars['Int']['input'];
+};
+
+/**
+ * Aggregate usage of a single hold across the climbs matching a board
+ * configuration. Community-only — there are no per-user fields.
+ */
+export type HoldStat = {
+  __typename?: 'HoldStat';
+  /** Average display difficulty across the climbs that use this hold (null when none have stats) */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Times this hold is used as a finish hold */
+  finishUses: Scalars['Int']['output'];
+  /** Times this hold is used as a foot hold */
+  footUses: Scalars['Int']['output'];
+  /** Times this hold is used as a hand hold */
+  handUses: Scalars['Int']['output'];
+  /** Hold (placement) id this row aggregates */
+  holdId: Scalars['Int']['output'];
+  /** Times this hold is used as a starting hold */
+  startingUses: Scalars['Int']['output'];
+  /** Sum of ascents across the climbs that use this hold */
+  totalAscents: Scalars['Int']['output'];
+  /** Distinct climbs that use this hold in any role */
+  totalUses: Scalars['Int']['output'];
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -3097,6 +3154,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Community hold-usage heatmap for a board configuration: how often each hold
+   * is used across matching climbs (community totals only — no per-user stats).
+   * Returns an empty list for MoonBoard (no hold tables).
+   */
+  holdHeatmap: Array<HoldStat>;
+  /**
    * Check if the current user follows a specific user.
    * Requires authentication.
    */
@@ -3508,6 +3571,11 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: HoldHeatmapInput;
 };
 
 /** Root query type for all read operations. */
@@ -5485,6 +5553,8 @@ export type ResolversTypes = ResolversObject<{
   GymMemberConnection: ResolverTypeWrapper<GymMemberConnection>;
   GymMemberRole: GymMemberRole;
   GymMembersInput: GymMembersInput;
+  HoldHeatmapInput: HoldHeatmapInput;
+  HoldStat: ResolverTypeWrapper<HoldStat>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   JSON: ResolverTypeWrapper<Scalars['JSON']['output']>;
@@ -5743,6 +5813,8 @@ export type ResolversParentTypes = ResolversObject<{
   GymMember: GymMember;
   GymMemberConnection: GymMemberConnection;
   GymMembersInput: GymMembersInput;
+  HoldHeatmapInput: HoldHeatmapInput;
+  HoldStat: HoldStat;
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
   JSON: Scalars['JSON']['output'];
@@ -6684,6 +6756,21 @@ export type GymMemberConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   members?: Resolver<Array<ResolversTypes['GymMember']>, ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type HoldStatResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldStat'] = ResolversParentTypes['HoldStat'],
+> = ResolversObject<{
+  averageDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  finishUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  footUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  handUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startingUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -7750,6 +7837,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
+  >;
+  holdHeatmap?: Resolver<
+    Array<ResolversTypes['HoldStat']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldHeatmapArgs, 'input'>
   >;
   isFollowing?: Resolver<
     ResolversTypes['Boolean'],
@@ -8854,6 +8947,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymConnection?: GymConnectionResolvers<ContextType>;
   GymMember?: GymMemberResolvers<ContextType>;
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
+  HoldStat?: HoldStatResolvers<ContextType>;
   JSON?: GraphQLScalarType;
   LayoutStats?: LayoutStatsResolvers<ContextType>;
   LeaderChanged?: LeaderChangedResolvers<ContextType>;

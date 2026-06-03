@@ -3,6 +3,8 @@ import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
   type ConnectionContext,
+  type HoldHeatmapInput,
+  type HoldStat,
   type SetterStat,
   type SetterStatsInput,
   type SimilarClimb,
@@ -11,7 +13,7 @@ import {
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
-import { getSetterStats } from '@boardsesh/db/queries';
+import { getHoldHeatmapData, getSetterStats } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import {
   type ClimbSearchParams,
@@ -28,6 +30,7 @@ import {
   CheckMoonBoardClimbDuplicatesInputSchema,
   ClimbSearchInputSchema,
   ExternalUUIDSchema,
+  HoldHeatmapInputSchema,
   SetterStatsInputSchema,
   SimilarClimbsInputSchema,
 } from '../../../validation/schemas';
@@ -71,7 +74,9 @@ export const climbQueries = {
     const validated = validateInput(SimilarClimbsInputSchema, input, 'input');
 
     if (!isValidBoardName(validated.boardType)) {
-      throw new Error(`Invalid board name: ${validated.boardType}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+      throw new Error(
+        `Invalid board name: ${String(validated.boardType)}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`,
+      );
     }
     const boardType = validated.boardType as BoardName;
 
@@ -230,7 +235,9 @@ export const climbQueries = {
     const validated = validateInput(SetterStatsInputSchema, input, 'input');
 
     if (!isValidBoardName(validated.boardName)) {
-      throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+      throw new Error(
+        `Invalid board name: ${String(validated.boardName)}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`,
+      );
     }
 
     // MoonBoard doesn't have database tables for setter stats — return empty results
@@ -258,6 +265,77 @@ export const climbQueries = {
     return rows.map((row) => ({
       setterUsername: row.setter_username,
       climbCount: row.climb_count,
+    }));
+  },
+
+  /**
+   * Community hold-usage heatmap for a board configuration. Aggregates how
+   * often each hold is used across matching climbs — community totals only
+   * (never passes a userId, so no personal-progress overlay). MoonBoard has no
+   * hold tables, so it short-circuits to an empty list.
+   */
+  holdHeatmap: async (
+    _: unknown,
+    { input }: { input: HoldHeatmapInput },
+    ctx: ConnectionContext,
+  ): Promise<HoldStat[]> => {
+    // The aggregate scans board_climb_holds for the whole board config before
+    // grouping; 30/min/IP matches setterStats-class read cost and stays well
+    // above the create-editor's interactive cadence (toggled on, then cached
+    // 5 min by React Query on the client).
+    await applyRateLimit(ctx, 30, 'hold-heatmap');
+    const validated = validateInput(HoldHeatmapInputSchema, input, 'input');
+
+    if (!isValidBoardName(validated.boardName)) {
+      throw new Error(
+        `Invalid board name: ${String(validated.boardName)}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`,
+      );
+    }
+
+    // MoonBoard has no board_climb_holds/board_climb_stats rows — return empty
+    // to mirror the web REST heatmap route's MoonBoard short-circuit.
+    if (validated.boardName === 'moonboard') {
+      return [];
+    }
+
+    // Parse setIds from comma-separated string (same pattern as searchClimbs).
+    const setIds = validated.setIds
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => !isNaN(id));
+
+    const params: ParsedBoardRouteParameters = {
+      board_name: validated.boardName,
+      layout_id: validated.layoutId,
+      size_id: validated.sizeId,
+      set_ids: setIds,
+      angle: validated.angle,
+    };
+
+    // Map only the community filter subset onto the search params. Personal
+    // progress filters are deliberately omitted — the heatmap is community-only.
+    const searchParams: ClimbSearchParams = {
+      minGrade: validated.minGrade ?? undefined,
+      maxGrade: validated.maxGrade ?? undefined,
+      minAscents: validated.minAscents ?? undefined,
+      minRating: validated.minRating ?? undefined,
+      name: validated.name || undefined,
+      settername: validated.settername && validated.settername.length > 0 ? validated.settername : undefined,
+      onlyClassics: validated.onlyClassics ?? undefined,
+    };
+
+    // No userId → community totals only.
+    const rows = await getHoldHeatmapData(dbRead, params, searchParams);
+
+    return rows.map((row) => ({
+      holdId: row.holdId,
+      totalUses: row.totalUses,
+      startingUses: row.startingUses,
+      handUses: row.handUses,
+      footUses: row.footUses,
+      finishUses: row.finishUses,
+      totalAscents: row.totalAscents,
+      averageDifficulty: row.averageDifficulty,
     }));
   },
 

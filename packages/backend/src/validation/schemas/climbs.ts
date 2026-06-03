@@ -247,6 +247,21 @@ export const SetterStatsInputSchema = z.object({
   search: z.string().max(200).optional(),
 });
 
+export const HoldHeatmapInputSchema = z.object({
+  boardName: BoardNameSchema,
+  layoutId: z.number().int().positive('Layout ID must be positive'),
+  sizeId: z.number().int().positive('Size ID must be positive'),
+  setIds: z.string().min(1, 'Set IDs cannot be empty'),
+  angle: z.number().int().min(0).max(90),
+  minGrade: z.number().int().optional(),
+  maxGrade: z.number().int().optional(),
+  minAscents: z.number().int().min(0).optional(),
+  minRating: z.number().min(0).max(5).optional(),
+  name: z.string().max(200).optional(),
+  settername: z.array(z.string().max(100)).optional(),
+  onlyClassics: z.boolean().optional(),
+});
+
 export const SimilarClimbsInputSchema = z
   .object({
     boardType: BoardNameSchema,

@@ -34,6 +34,8 @@ type CreateDrawerActionBarProps = {
   onSetActive: () => void;
   saveState: SaveButtonState;
   onSave: () => void;
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
 };
 
 /**
@@ -55,6 +57,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onSetActive,
   saveState,
   onSave,
+  onToggleHeatmap,
+  heatmapActive = false,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -135,6 +139,16 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           onPress={onClear}
           accessibilityLabel={t('mobile.create.actions.clear')}
         />
+        {onToggleHeatmap ? (
+          <ActionButton
+            size="sm"
+            iconName="flame"
+            onPress={onToggleHeatmap}
+            active={heatmapActive}
+            activeColor={brandColors.primary}
+            accessibilityLabel={heatmapActive ? t('search.holds.hideHeatmap') : t('search.holds.showHeatmap')}
+          />
+        ) : null}
 
         <View style={drawerActionBarStyles.spacer} />
 
