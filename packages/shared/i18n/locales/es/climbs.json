@@ -732,6 +732,13 @@
         "noMatchLabel": "Sin igualar",
         "noMatchDescription": "No se pueden igualar las manos en la misma presa"
       },
+      "moonboard": {
+        "angleLabel": "Ángulo",
+        "gradeLabel": "Grado sugerido",
+        "benchmarkLabel": "Benchmark",
+        "benchmarkDescription": "Marca este bloque como benchmark para el grado.",
+        "invalidPublish": "Añade al menos una presa de inicio y una de final para publicar."
+      },
       "drafts": {
         "holds_one": "{{count}} presa",
         "holds_other": "{{count}} presas",

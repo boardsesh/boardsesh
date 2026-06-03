@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
 import type { BoardName, HoldState } from '@boardsesh/shared-schema';
 
-// The four paintable roles plus the eraser. `'OFF'` clears a hold; the four
-// named roles map straight onto the create-climb hold-state machine's
-// `setHoldState(holdId, role)`.
 export type BrushRole = Extract<HoldState, 'STARTING' | 'HAND' | 'FINISH' | 'FOOT'> | 'OFF';
 
 export const PAINT_ROLES: ReadonlyArray<Exclude<BrushRole, 'OFF'>> = ['STARTING', 'HAND', 'FINISH', 'FOOT'];
+
+export const MOONBOARD_PAINT_ROLES: ReadonlyArray<Exclude<BrushRole, 'OFF'>> = ['STARTING', 'HAND', 'FINISH'];
 
 export function getPaintRoles(boardName: BoardName): ReadonlyArray<Exclude<BrushRole, 'OFF'>> {
   const supportedRoles = STATE_TO_PRIMARY_CODE[boardName];
@@ -16,11 +15,8 @@ export function getPaintRoles(boardName: BoardName): ReadonlyArray<Exclude<Brush
 }
 
 /**
- * The swatch colour for a role on a given board, taken from the board's
- * canonical role code (the same code the frame string and BLE encoder use).
- * Falls back to a neutral grey when a board doesn't define the role (e.g. a
- * Tycho-style colour-only product has no STARTING/FINISH) so the chip stays
- * visible rather than rendering an undefined colour.
+ * Swatch colour for a role on a given board, taken from the board's canonical
+ * role code. Falls back to a neutral grey when a board does not define the role.
  */
 export function brushRoleColor(boardName: BoardName, role: Exclude<BrushRole, 'OFF'>): string {
   const code = STATE_TO_PRIMARY_CODE[boardName]?.[role];
@@ -31,9 +27,8 @@ export function brushRoleColor(boardName: BoardName, role: Exclude<BrushRole, 'O
 }
 
 /**
- * Localised labels for the four paint roles, built from static `t()` calls so
- * the i18n orphan checker can trace every key (a `t(variable)` lookup is
- * lint-blocked). Shared by the brush bar and the long-press role sheet.
+ * Localised labels for paint roles, built from static t() calls so the i18n
+ * orphan checker can trace every key.
  */
 export function useBrushRoleLabels(): Record<Exclude<BrushRole, 'OFF'>, string> {
   const { t } = useTranslation('climbs');

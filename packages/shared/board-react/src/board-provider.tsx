@@ -9,10 +9,19 @@ import type { BoardName, UpdateClimbInput } from '@boardsesh/shared-schema';
 import { useBoardAdapter } from './adapter';
 import { useLogbook as useLogbookQuery } from './use-logbook';
 import { useSaveTick as useSaveTickMutation } from './use-save-tick';
-import { useSaveClimb as useSaveClimbMutation, useUpdateClimb as useUpdateClimbMutation } from './use-save-climb';
+import {
+  useSaveClimb as useSaveClimbMutation,
+  useSaveMoonBoardClimb as useSaveMoonBoardClimbMutation,
+  useUpdateClimb as useUpdateClimbMutation,
+} from './use-save-climb';
 import { logbookClimbAngleKey, type LogbookEntry } from './logbook-keys';
 import type { SaveTickOptions } from './tick-helpers';
-import type { SaveClimbOptions, SaveClimbResponse, UpdateClimbResponse } from './climb-helpers';
+import type {
+  SaveClimbOptions,
+  SaveClimbResponse,
+  SaveMoonBoardClimbOptions,
+  UpdateClimbResponse,
+} from './climb-helpers';
 
 export type BoardContextType = {
   /**
@@ -36,6 +45,7 @@ export type BoardContextType = {
   getLogbook: (climbUuids: string[]) => Promise<void>;
   saveTick: (options: SaveTickOptions) => Promise<void>;
   saveClimb: (options: SaveClimbOptions) => Promise<SaveClimbResponse>;
+  saveMoonBoardClimb: (options: SaveMoonBoardClimbOptions) => Promise<SaveClimbResponse>;
   updateClimb: (input: UpdateClimbInput) => Promise<UpdateClimbResponse>;
 };
 
@@ -50,6 +60,7 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName | 
   const { logbook } = useLogbookQuery(boardName, climbUuids);
   const saveTickMutation = useSaveTickMutation(boardName);
   const saveClimbMutation = useSaveClimbMutation(boardName);
+  const saveMoonBoardClimbMutation = useSaveMoonBoardClimbMutation();
   const updateClimbMutation = useUpdateClimbMutation();
 
   // Flip isInitialized once auth has resolved. Latched: once true, stays
@@ -89,10 +100,12 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName | 
   // rendering. Empty-dep `useCallback` then keeps the public callback stable.
   const saveTickMutateRef = useRef(saveTickMutation.mutateAsync);
   const saveClimbMutateRef = useRef(saveClimbMutation.mutateAsync);
+  const saveMoonBoardClimbMutateRef = useRef(saveMoonBoardClimbMutation.mutateAsync);
   const updateClimbMutateRef = useRef(updateClimbMutation.mutateAsync);
   useEffect(() => {
     saveTickMutateRef.current = saveTickMutation.mutateAsync;
     saveClimbMutateRef.current = saveClimbMutation.mutateAsync;
+    saveMoonBoardClimbMutateRef.current = saveMoonBoardClimbMutation.mutateAsync;
     updateClimbMutateRef.current = updateClimbMutation.mutateAsync;
   });
 
@@ -111,6 +124,10 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName | 
     return saveClimbMutateRef.current(options);
   }, []);
 
+  const saveMoonBoardClimb = useCallback(async (options: SaveMoonBoardClimbOptions): Promise<SaveClimbResponse> => {
+    return saveMoonBoardClimbMutateRef.current(options);
+  }, []);
+
   const updateClimb = useCallback(async (input: UpdateClimbInput): Promise<UpdateClimbResponse> => {
     return updateClimbMutateRef.current(input);
   }, []);
@@ -127,6 +144,7 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName | 
       getLogbook,
       saveTick,
       saveClimb,
+      saveMoonBoardClimb,
       updateClimb,
     }),
     [
@@ -139,6 +157,7 @@ export function BoardProvider({ boardName, children }: { boardName: BoardName | 
       getLogbook,
       saveTick,
       saveClimb,
+      saveMoonBoardClimb,
       updateClimb,
     ],
   );

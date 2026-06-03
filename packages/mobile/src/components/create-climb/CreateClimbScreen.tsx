@@ -6,12 +6,16 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateDrawer } from './CreateDrawer';
+import { CreateDrawerForm } from './CreateDrawerForm';
+import { OpenDraftsSection } from './OpenDraftsSection';
+import { MoonBoardCreateClimbScreen } from './MoonBoardCreateClimbScreen';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type CreateClimbScreenProps = {
@@ -23,21 +27,61 @@ type CreateClimbScreenProps = {
 };
 
 /**
- * The create-climb editor screen: a single Play Drawer-style sheet (the
- * CreateDrawer) carrying the header, the board, the brush + action rows, the
- * metadata form, and the Open Drafts table. The long-press role picker stacks
- * above the drawer. A successful publish dismisses the screen so the success
- * toast lands over the climbs list.
+ * Create-climb editor router. Resolves hold geometry, then renders either the
+ * MoonBoard variant or the Aurora drawer. The unavailable state covers unknown
+ * board/layout combinations for either family.
  */
-export function CreateClimbScreen({
+export function CreateClimbScreen(props: CreateClimbScreenProps) {
+  const { board } = props;
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+
+  const boardHolds = useMemo(
+    () =>
+      getCreateBoardHolds({
+        boardName: board.boardName,
+        layoutId: board.layoutId,
+        sizeId: board.sizeId,
+        setIds: board.setIds.split(',').map(Number),
+      }),
+    [board.boardName, board.layoutId, board.sizeId, board.setIds],
+  );
+
+  if (!boardHolds) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Text variant="headline" style={styles.centeredTitle}>
+            {t('mobile.create.unavailable.title')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredSubtitle}>
+            {t('mobile.create.unavailable.subtitle')}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (boardHolds.family === 'moonboard') {
+    return <MoonBoardCreateClimbScreen board={board} boardHolds={boardHolds} />;
+  }
+
+  return <AuroraCreateClimbScreen {...props} boardHolds={boardHolds} />;
+}
+
+type AuroraCreateClimbScreenProps = CreateClimbScreenProps & {
+  boardHolds: NonNullable<ReturnType<typeof getCreateBoardHolds>>;
+};
+
+function AuroraCreateClimbScreen({
   board,
   forkFrames,
   forkName,
   forkDescription,
   editClimbUuid,
-}: CreateClimbScreenProps) {
-  const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  boardHolds,
+}: AuroraCreateClimbScreenProps) {
   const router = useRouter();
 
   const controller = useCreateClimbScreen({
@@ -51,25 +95,11 @@ export function CreateClimbScreen({
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
 
-  const boardHolds = useMemo(
-    () =>
-      getCreateBoardHolds({
-        boardName: board.boardName,
-        layoutId: board.layoutId,
-        sizeId: board.sizeId,
-        setIds: board.setIds.split(',').map(Number),
-      }),
-    [board.boardName, board.layoutId, board.sizeId, board.setIds],
-  );
-
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
 
   const handleLoadDraft = useCallback(
     (climb: Climb) => {
-      // Re-enter the screen in edit mode for the picked draft so the controller
-      // re-seeds holds/name/description cleanly. The route's key (editClimbUuid)
-      // forces a remount, giving a fresh editing session + undo history.
       router.replace({
         pathname: '/(tabs)/climbs/create',
         params: {
@@ -102,35 +132,42 @@ export function CreateClimbScreen({
     [router, board],
   );
 
-  if (!boardHolds) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
-        <View style={styles.centered}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
-          <Text variant="headline" style={styles.centeredTitle}>
-            {t('mobile.create.unavailable.title')}
-          </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredSubtitle}>
-            {t('mobile.create.unavailable.subtitle')}
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    // Transparent so the create drawer floats over the climbs/search list (dimmed
-    // by the drawer's own backdrop) — no separate modal card.
     <View style={styles.container}>
       <CreateDrawer
         board={board}
         controller={controller}
         boardHolds={boardHolds}
+        background={
+          <BoardImageNative
+            frames=""
+            boardName={board.boardName as BoardName}
+            layoutId={board.layoutId}
+            sizeId={board.sizeId}
+            setIds={board.setIds}
+            boardWidth={boardHolds.boardWidth}
+            boardHeight={boardHolds.boardHeight}
+          />
+        }
         onLongPressHold={handleLongPress}
         subSheetOpen={longPressHoldId !== null}
-        onLoadDraft={handleLoadDraft}
         onClose={() => router.back()}
         onViewDuplicate={handleViewDuplicate}
+        belowFold={
+          <>
+            <CreateDrawerForm
+              description={controller.description}
+              onChangeDescription={controller.setDescription}
+              noMatch={controller.noMatch}
+              onChangeNoMatch={controller.setNoMatch}
+              isDraft={controller.isDraft}
+              onChangeIsDraft={controller.setIsDraft}
+              showAllHolds={controller.showAllHolds}
+              onChangeShowAllHolds={controller.setShowAllHolds}
+            />
+            <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
+          </>
+        }
       />
 
       <HoldRoleSheet

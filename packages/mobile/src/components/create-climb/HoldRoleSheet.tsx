@@ -9,7 +9,7 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } from './brush-roles';
+import { PAINT_ROLES, brushRoleColor, useBrushRoleLabels, type BrushRole } from './brush-roles';
 
 type HoldRoleSheetProps = {
   /** The long-pressed hold, or null when the sheet is closed. */
@@ -18,15 +18,18 @@ type HoldRoleSheetProps = {
   litUpHoldsMap: LitUpHoldsMap;
   startingCount: number;
   finishCount: number;
+  /** Assignable roles. Defaults to the Aurora set (incl. Foot); MoonBoard
+   * passes Start/Hand/Finish only (no foot). */
+  paintRoles?: ReadonlyArray<Exclude<BrushRole, 'OFF'>>;
   onSelectRole: (holdId: number, role: BrushRole) => void;
   onClose: () => void;
 };
 
 /**
  * Long-press role picker for a single hold. Lets the user assign Start / Hand /
- * Finish / Foot, or clear the hold. Start and Finish are disabled once two are
- * placed (unless the long-pressed hold already holds that role, so the user can
- * re-confirm or switch it).
+ * Finish / Foot (MoonBoard omits Foot), or clear the hold. Start and Finish are
+ * disabled once two are placed (unless the long-pressed hold already holds that
+ * role, so the user can re-confirm or switch it).
  */
 export function HoldRoleSheet({
   holdId,
@@ -34,6 +37,7 @@ export function HoldRoleSheet({
   litUpHoldsMap,
   startingCount,
   finishCount,
+  paintRoles = PAINT_ROLES,
   onSelectRole,
   onClose,
 }: HoldRoleSheetProps) {
@@ -53,7 +57,6 @@ export function HoldRoleSheet({
   const currentState: HoldState | undefined = holdId != null ? litUpHoldsMap[holdId]?.state : undefined;
 
   const snapPoints = useMemo(() => ['38%'], []);
-  const paintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
 
   const handleSelect = (role: BrushRole) => {
     if (holdId == null) return;

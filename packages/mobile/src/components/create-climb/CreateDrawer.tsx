@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, {
@@ -8,19 +8,48 @@ import BottomSheet, {
   type BottomSheetBackdropProps,
   type BottomSheetHandleProps,
 } from '@gorhom/bottom-sheet';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { InteractiveCreateBoard } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
-import { CreateDrawerForm } from './CreateDrawerForm';
-import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
-import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import type { BrushRole } from './brush-roles';
+import type { CreateClimbBoard, SaveButtonState } from './use-create-climb-screen';
 
-type Controller = ReturnType<typeof useCreateClimbScreen>;
+type PublishDuplicateError = {
+  existingClimbUuid: string | null;
+  existingClimbName: string | null;
+};
+
+type CreateDrawerController = {
+  name: string;
+  setName: (next: string) => void;
+  startingCount: number;
+  finishCount: number;
+  focusNameSignal: number;
+  bleConnected: boolean;
+  bleConnecting: boolean;
+  handleToggleBle: () => void;
+  publishDuplicateError: PublishDuplicateError | null;
+  dismissDuplicateError: () => void;
+  litUpHoldsMap: LitUpHoldsMap;
+  handlePaint: (holdId: number) => void;
+  showAllHolds: boolean;
+  selectedBrush: BrushRole;
+  setSelectedBrush: (role: BrushRole) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  undo: () => void;
+  redo: () => void;
+  handleClear: () => void;
+  canSetActive: boolean;
+  handleSetActive: () => void;
+  saveState: SaveButtonState;
+  handleSave: () => Promise<void> | void;
+};
 
 type BoardHolds = {
   holdTargets: BoardHoldTarget[];
@@ -30,70 +59,67 @@ type BoardHolds = {
 
 type CreateDrawerProps = {
   board: CreateClimbBoard;
-  controller: Controller;
+  controller: CreateDrawerController;
   boardHolds: BoardHolds;
+  background: ReactNode;
+  overlay?: ReactNode;
+  paintRoles?: ReadonlyArray<Exclude<BrushRole, 'OFF'>>;
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
   onLongPressHold: (holdId: number) => void;
-  /** True while a stacked sub-sheet (e.g. the long-press role picker) is open —
-   *  disables the drawer's pan so a drag over the sub-sheet doesn't move it. */
+  /** True while a stacked sub-sheet is open, so sub-sheet drags do not move the drawer. */
   subSheetOpen: boolean;
-  onLoadDraft: (climb: Climb) => void;
-  /** Dismiss the create drawer (the header's close chevron). */
+  /** Dismiss the create drawer. */
   onClose: () => void;
-  /** Open the climb that a publish collided with (the duplicate banner link). */
+  /** Open the climb that a publish collided with. */
   onViewDuplicate: (uuid: string) => void;
+  belowFold: ReactNode;
 };
 
-// Space the header + two-row action bar + handle + safe areas need, so the
-// board is sized to leave them on-screen at the peek (a rough reserve — the
-// peek snap itself is measured from the real above-fold height).
 const ABOVE_FOLD_CHROME = 300;
 
 /**
- * The create-climb drawer — one Play Drawer-style bottom sheet. Peek shows the
- * header (editable name + start/finish), the board, and the two-row action bar
- * (brush chips + actions). Dragging up reveals the below-the-fold form
- * (description, toggles, connect) and the Open Drafts table.
+ * The create-climb drawer. Peek shows the header, board, and action bar;
+ * dragging up reveals board-family-specific form content below the fold.
  */
 export function CreateDrawer({
   board,
   controller,
   boardHolds,
+  background,
+  overlay,
+  paintRoles,
+  onToggleHeatmap,
+  heatmapActive = false,
   onLongPressHold,
   subSheetOpen,
-  onLoadDraft,
   onClose,
   onViewDuplicate,
+  belowFold,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheet>(null);
 
-  // Measured contributors to the peek snap-point — same runtime-measurement
-  // approach as the Play Drawer rather than hardcoded heights.
   const [handleHeight, setHandleHeight] = useState(0);
   const [aboveFoldHeight, setAboveFoldHeight] = useState(0);
-  // Live snap index, kept current via onChange so the re-snap below targets the
-  // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
 
   const boardMaxHeight = Math.max(200, windowHeight - insets.top - insets.bottom - ABOVE_FOLD_CHROME);
 
-  // Compute the on-screen board size up front (window width minus the board
-  // section margins, capped by the height budget) so the board paints on the
-  // first frame instead of waiting for an onLayout pass inside the animating sheet.
   const boardRender = useMemo(() => {
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
-    const availWidth = windowWidth - spacing[4] * 2;
-    const availAspect = availWidth / boardMaxHeight;
-    if (availAspect > boardAspect) {
+    const availableWidth = windowWidth - spacing[4] * 2;
+    const availableAspect = availableWidth / boardMaxHeight;
+    if (availableAspect > boardAspect) {
       return { width: boardMaxHeight * boardAspect, height: boardMaxHeight };
     }
-    return { width: availWidth, height: availWidth / boardAspect };
+    return { width: availableWidth, height: availableWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
 
-  const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
-    setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
+  const setHeightIfChanged = (setter: (updater: (previous: number) => number) => void, measured: number) => {
+    setter((previous) => (Math.abs(previous - measured) > 2 ? Math.round(measured) : previous));
   };
   const handleHandleLayout = useCallback((event: LayoutChangeEvent) => {
     setHeightIfChanged(setHandleHeight, event.nativeEvent.layout.height);
@@ -102,17 +128,11 @@ export function CreateDrawer({
     setHeightIfChanged(setAboveFoldHeight, event.nativeEvent.layout.height);
   }, []);
 
-  // handle + content paddingTop + above-fold (header + board + action bar) +
-  // bottom safe area + a reveal margin so a hint of the below-fold form peeks.
   const peekHeight =
     handleHeight > 0 && aboveFoldHeight > 0
       ? handleHeight + spacing[2] + aboveFoldHeight + insets.bottom + spacing[3]
       : 0;
 
-  // Re-snap to the current index whenever the peek height changes: the first
-  // measurement (fallback → measured peek) and any re-layout (rotation resizes
-  // the board, so peekHeight changes) settle the sheet to the right height
-  // without yanking a user who has expanded it.
   useEffect(() => {
     if (peekHeight === 0) return;
     sheetRef.current?.snapToIndex(indexRef.current);
@@ -127,8 +147,6 @@ export function CreateDrawer({
     [peekHeight],
   );
 
-  // Dim the scene behind at every snap. Tapping the backdrop or swiping down
-  // dismisses the drawer (autosave keeps any in-progress draft).
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
@@ -201,10 +219,7 @@ export function CreateDrawer({
 
           <View style={styles.boardSection}>
             <InteractiveCreateBoard
-              boardName={board.boardName as BoardName}
-              layoutId={board.layoutId}
-              sizeId={board.sizeId}
-              setIds={board.setIds}
+              background={background}
               boardWidth={boardHolds.boardWidth}
               boardHeight={boardHolds.boardHeight}
               holdTargets={boardHolds.holdTargets}
@@ -214,6 +229,7 @@ export function CreateDrawer({
               showAllHolds={controller.showAllHolds}
               renderWidth={boardRender.width}
               renderHeight={boardRender.height}
+              overlay={overlay}
             />
           </View>
 
@@ -221,11 +237,14 @@ export function CreateDrawer({
             boardName={board.boardName}
             selectedBrush={controller.selectedBrush}
             onSelectBrush={controller.setSelectedBrush}
+            paintRoles={paintRoles}
             canUndo={controller.canUndo}
             canRedo={controller.canRedo}
             onUndo={controller.undo}
             onRedo={controller.redo}
             onClear={controller.handleClear}
+            onToggleHeatmap={onToggleHeatmap}
+            heatmapActive={heatmapActive}
             canSetActive={controller.canSetActive}
             onSetActive={controller.handleSetActive}
             saveState={controller.saveState}
@@ -233,19 +252,7 @@ export function CreateDrawer({
           />
         </View>
 
-        <View style={styles.belowFold}>
-          <CreateDrawerForm
-            description={controller.description}
-            onChangeDescription={controller.setDescription}
-            noMatch={controller.noMatch}
-            onChangeNoMatch={controller.setNoMatch}
-            isDraft={controller.isDraft}
-            onChangeIsDraft={controller.setIsDraft}
-            showAllHolds={controller.showAllHolds}
-            onChangeShowAllHolds={controller.setShowAllHolds}
-          />
-          <OpenDraftsSection board={board} onLoadDraft={onLoadDraft} />
-        </View>
+        <View style={styles.belowFold}>{belowFold}</View>
       </BottomSheetScrollView>
     </BottomSheet>
   );

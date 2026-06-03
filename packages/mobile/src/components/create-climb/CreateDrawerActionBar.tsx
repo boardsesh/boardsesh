@@ -14,8 +14,6 @@ import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } fro
 import { deriveSaveButtonView } from './save-button-view';
 import type { SaveButtonState } from './use-create-climb-screen';
 
-// Looked up dynamically by role below; mark each resolvable key (one per line,
-// namespace-qualified) so the orphan checker keeps them.
 // i18n-keep climbs.mobile.create.brush.start
 // i18n-keep climbs.mobile.create.brush.hand
 // i18n-keep climbs.mobile.create.brush.finish
@@ -25,32 +23,32 @@ type CreateDrawerActionBarProps = {
   boardName: BoardName;
   selectedBrush: BrushRole;
   onSelectBrush: (role: BrushRole) => void;
+  paintRoles?: ReadonlyArray<Exclude<BrushRole, 'OFF'>>;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onClear: () => void;
+  onToggleHeatmap?: () => void;
+  heatmapActive?: boolean;
   canSetActive: boolean;
   onSetActive: () => void;
   saveState: SaveButtonState;
   onSave: () => void;
 };
 
-/**
- * The create-drawer two-row action bar, built on the shared drawer-action-bar
- * grammar. Row 1 (where the Play Drawer's play controls sit) is the five brush
- * chips; Row 2 is the other actions: undo / redo / clear, then set-active and
- * the save state-machine button.
- */
 export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   boardName,
   selectedBrush,
   onSelectBrush,
+  paintRoles,
   canUndo,
   canRedo,
   onUndo,
   onRedo,
   onClear,
+  onToggleHeatmap,
+  heatmapActive = false,
   canSetActive,
   onSetActive,
   saveState,
@@ -60,10 +58,11 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   const { systemColors } = useTheme();
   const roleLabels = useBrushRoleLabels();
 
-  const paintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
+  const defaultPaintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
+  const visiblePaintRoles = paintRoles ?? defaultPaintRoles;
   const roleChips = useMemo(
-    () => paintRoles.map((role) => ({ role, label: roleLabels[role], color: brushRoleColor(boardName, role) })),
-    [boardName, paintRoles, roleLabels],
+    () => visiblePaintRoles.map((role) => ({ role, label: roleLabels[role], color: brushRoleColor(boardName, role) })),
+    [boardName, visiblePaintRoles, roleLabels],
   );
 
   const handleSelect = (role: BrushRole) => {
@@ -135,6 +134,16 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           onPress={onClear}
           accessibilityLabel={t('mobile.create.actions.clear')}
         />
+        {onToggleHeatmap ? (
+          <ActionButton
+            size="sm"
+            iconName="flame"
+            onPress={onToggleHeatmap}
+            active={heatmapActive}
+            activeColor={brandColors.primary}
+            accessibilityLabel={t('mobile.create.actions.heatmap')}
+          />
+        ) : null}
 
         <View style={drawerActionBarStyles.spacer} />
 

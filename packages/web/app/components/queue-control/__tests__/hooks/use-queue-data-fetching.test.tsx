@@ -156,6 +156,7 @@ describe('useQueueDataFetching', () => {
       logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
     });
@@ -170,6 +171,7 @@ describe('useQueueDataFetching', () => {
       logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
     });
@@ -184,6 +186,7 @@ describe('useQueueDataFetching', () => {
       logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
+      saveMoonBoardClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
     });

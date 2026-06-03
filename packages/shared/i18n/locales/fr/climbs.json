@@ -732,6 +732,13 @@
         "noMatchLabel": "Une main par prise",
         "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
       },
+      "moonboard": {
+        "angleLabel": "Inclinaison",
+        "gradeLabel": "Cotation suggérée",
+        "benchmarkLabel": "Benchmark",
+        "benchmarkDescription": "Marquer ce bloc comme benchmark pour la cotation.",
+        "invalidPublish": "Ajoutez au moins une prise de départ et une d'arrivée pour publier."
+      },
       "drafts": {
         "holds_one": "{{count}} prise",
         "holds_other": "{{count}} prises",
