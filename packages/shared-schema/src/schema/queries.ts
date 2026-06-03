@@ -88,6 +88,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     setterStats(input: SetterStatsInput!): [SetterStat!]!
 
     """
+    Community hold-usage heatmap for a board configuration: how often each hold
+    is used across matching climbs (community totals only — no per-user stats).
+    Returns an empty list for MoonBoard (no hold tables).
+    """
+    holdHeatmap(input: HoldHeatmapInput!): [HoldStat!]!
+
+    """
     Get climb stats history for a climb over the last 12 months.
     Returns snapshots captured during shared sync for trend analysis.
     """

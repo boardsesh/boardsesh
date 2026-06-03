@@ -6,7 +6,8 @@ import {
   type ParsedBoardRouteParameters,
   type ClimbSearchParams,
 } from '../db/queries/climbs/index';
-import { db } from '../db/client';
+import { db, dbRead } from '../db/client';
+import { getHoldHeatmapData } from '@boardsesh/db/queries';
 import { sql } from 'drizzle-orm';
 
 describe('Climb Query Functions', () => {
@@ -259,6 +260,95 @@ describe('Climb Query Functions', () => {
       // Both should execute without errors (may return null if no data)
       expect(kilterResult === null || typeof kilterResult === 'object').toBe(true);
       expect(tensionResult === null || typeof tensionResult === 'object').toBe(true);
+    });
+  });
+
+  describe('getHoldHeatmapData', () => {
+    // Seed two listed climbs that share hold 700 (HAND in both) plus a unique
+    // hold each, with stats so totalAscents/averageDifficulty are populated.
+    //   - "easy"  (V4-ish, 100 ascents): holds 700 (HAND), 701 (STARTING)
+    //   - "hard"  (V8-ish, 200 ascents): holds 700 (HAND), 702 (FOOT)
+    const HEATMAP_PREFIX = 'heatmap-test-';
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${HEATMAP_PREFIX + 'easy'}, 'kilter', 1, 'test-setter', 'Heatmap Easy', 'p700r12p701r15', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${HEATMAP_PREFIX + 'hard'}, 'kilter', 1, 'test-setter', 'Heatmap Hard', 'p700r12p702r13', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7])
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES
+          ('kilter', ${HEATMAP_PREFIX + 'easy'}, 700, 0, 'HAND'),
+          ('kilter', ${HEATMAP_PREFIX + 'easy'}, 701, 0, 'STARTING'),
+          ('kilter', ${HEATMAP_PREFIX + 'hard'}, 700, 0, 'HAND'),
+          ('kilter', ${HEATMAP_PREFIX + 'hard'}, 702, 0, 'FOOT')
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count)
+        VALUES
+          ('kilter', ${HEATMAP_PREFIX + 'easy'}, 40, 13, 100),
+          ('kilter', ${HEATMAP_PREFIX + 'hard'}, 40, 21, 200)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${HEATMAP_PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_holds WHERE climb_uuid LIKE ${HEATMAP_PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${HEATMAP_PREFIX + '%'}`);
+    });
+
+    it('should aggregate community hold stats for a board config', async () => {
+      const rows = await getHoldHeatmapData(dbRead, testParams, { page: 0, pageSize: 20 });
+      const byHold = new Map(rows.map((row) => [row.holdId, row]));
+
+      // The shared hold is used by both climbs; the unique holds by one each.
+      const shared = byHold.get(700);
+      expect(shared).toBeDefined();
+      expect(shared?.totalUses).toBe(2);
+      expect(shared?.handUses).toBe(2);
+      // totalAscents sums ascensionist_count across both climbs (100 + 200).
+      expect(shared?.totalAscents).toBe(300);
+      // Community-only: no per-user fields without a userId.
+      expect(shared?.userAscents).toBeUndefined();
+      expect(shared?.userAttempts).toBeUndefined();
+
+      const startingHold = byHold.get(701);
+      expect(startingHold?.totalUses).toBe(1);
+      expect(startingHold?.startingUses).toBe(1);
+
+      const footHold = byHold.get(702);
+      expect(footHold?.totalUses).toBe(1);
+      expect(footHold?.footUses).toBe(1);
+    });
+
+    it('should narrow the aggregate when a grade filter excludes climbs', async () => {
+      // Only the "hard" climb (display grade 21) is in 20..22; the shared hold
+      // 700 should now reflect a single climb, and 701 (easy-only) drops out.
+      const rows = await getHoldHeatmapData(dbRead, testParams, {
+        page: 0,
+        pageSize: 20,
+        minGrade: 20,
+        maxGrade: 22,
+      });
+      const byHold = new Map(rows.map((row) => [row.holdId, row]));
+
+      expect(byHold.get(700)?.totalUses).toBe(1);
+      expect(byHold.get(700)?.totalAscents).toBe(200);
+      expect(byHold.get(702)?.totalUses).toBe(1);
+      expect(byHold.has(701)).toBe(false);
+    });
+
+    it('should return an empty array for an invalid size_id', async () => {
+      const rows = await getHoldHeatmapData(dbRead, { ...testParams, size_id: 999999 }, { page: 0, pageSize: 20 });
+      const seededHolds = rows.filter((row) => row.holdId === 700 || row.holdId === 701 || row.holdId === 702);
+      expect(seededHolds).toEqual([]);
     });
   });
 

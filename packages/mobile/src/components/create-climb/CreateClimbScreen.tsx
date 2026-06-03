@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
@@ -16,6 +17,7 @@ import { CreateDrawer } from './CreateDrawer';
 import { CreateDrawerForm } from './CreateDrawerForm';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { MoonBoardCreateClimbScreen } from './MoonBoardCreateClimbScreen';
+import { HeatmapOverlay } from './HeatmapOverlay';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type CreateClimbScreenProps = {
@@ -94,9 +96,40 @@ function AuroraCreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  const [heatmapVisible, setHeatmapVisible] = useState(false);
 
   const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
+
+  const { statsByHoldId } = useHoldHeatmap(
+    {
+      boardName: board.boardName,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: board.angle,
+    },
+    heatmapVisible,
+  );
+
+  const paintedHoldIds = useMemo(
+    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
+    [controller.litUpHoldsMap],
+  );
+
+  const heatmapOverlay = useMemo(
+    () =>
+      heatmapVisible ? (
+        <HeatmapOverlay
+          statsByHoldId={statsByHoldId}
+          holdTargets={boardHolds.holdTargets}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          paintedHoldIds={paintedHoldIds}
+        />
+      ) : null,
+    [heatmapVisible, statsByHoldId, boardHolds, paintedHoldIds],
+  );
 
   const handleLoadDraft = useCallback(
     (climb: Climb) => {
@@ -149,6 +182,9 @@ function AuroraCreateClimbScreen({
             boardHeight={boardHolds.boardHeight}
           />
         }
+        overlay={heatmapOverlay}
+        onToggleHeatmap={() => setHeatmapVisible((visible) => !visible)}
+        heatmapActive={heatmapVisible}
         onLongPressHold={handleLongPress}
         subSheetOpen={longPressHoldId !== null}
         onClose={() => router.back()}
