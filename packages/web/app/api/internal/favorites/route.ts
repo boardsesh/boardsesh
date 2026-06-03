@@ -14,9 +14,10 @@ const favoriteSchema = z
 
 const checkFavoriteSchema = z
   .object({
-    // Cap matches packages/backend/src/validation/schemas/favorites.ts so a
-    // caller can't trigger an unbounded inArray() query against the DB.
-    climbUuids: z.array(z.string().min(1)).min(1).max(500),
+    // Cap matches the backend's FavoritesQueryClimbUuidsSchema so a caller
+    // can't trigger an unbounded inArray() query. No .min() — an empty
+    // array is a valid no-op that returns { favorites: [] }.
+    climbUuids: z.array(z.string().min(1)).max(500),
   })
   .strict();
 

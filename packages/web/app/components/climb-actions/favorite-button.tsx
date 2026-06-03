@@ -13,7 +13,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useTranslation } from 'react-i18next';
 
 type FavoriteButtonProps = {
-  // Analytics dimension only — the favorite itself is board-agnostic post-#2449.
+  // Analytics dimension only — the favorite itself is board-agnostic.
   // Kept required so the track() call always has a board to attribute to.
   boardName: BoardName;
   climbUuid: string;
