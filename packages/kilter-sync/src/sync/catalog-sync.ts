@@ -39,6 +39,14 @@ export type SyncKilterCatalogArgs = {
    * Deleting catalog rows is data deletion (see CLAUDE.md) — opt in explicitly.
    */
   applyDeletions?: boolean;
+  /**
+   * Skip setter-follow notifications for newly-inserted canonicals. Use for the
+   * first bulk ingest — it backfills tens of thousands of *historical* climbs,
+   * and firing "your followed setter posted a new climb" for all of them would
+   * spam followers. Leave false for steady-state runs, where a new canonical is
+   * a genuinely new climb worth notifying about.
+   */
+  suppressNotifications?: boolean;
 };
 
 export type KilterCatalogSummary = {
@@ -442,7 +450,11 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     );
   }
 
-  if (allNewCanonicals.length > 0) {
+  if (allNewCanonicals.length > 0 && args.suppressNotifications) {
+    log(
+      `[kilter-catalog] suppressed setter notifications for ${allNewCanonicals.length} new canonical(s) (bulk ingest)`,
+    );
+  } else if (allNewCanonicals.length > 0) {
     try {
       await createSetterSyncNotifications(args.db, allNewCanonicals, log);
     } catch (error) {

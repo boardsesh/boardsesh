@@ -80,41 +80,54 @@ program
   .option('--user <userId>', 'use this linked user’s stored Kilter credential (refresh grant)')
   .option('--layouts <uuids>', 'comma-separated product_layout_uuids to sync (default: all listed)')
   .option('--apply-deletions', 'apply /delteduuids reconciliation (default: report only)')
+  .option('--suppress-notifications', 'skip setter-follow notifications (use for the first bulk ingest)')
   .option('-v, --verbose', 'verbose per-layout logging')
-  .action(async (opts: { user?: string; layouts?: string; applyDeletions?: boolean; verbose?: boolean }) => {
-    const runner = new SyncRunner({ onLog: (m) => (opts.verbose ? console.info(m) : undefined) });
-    try {
-      let tokenProvider;
-      if (opts.user) {
-        tokenProvider = await runner.buildUserTokenProvider(opts.user);
-      } else if (process.env.KILTER_TEST_USERNAME && process.env.KILTER_TEST_PASSWORD) {
-        // Local-validation only: ROPC password grant. Production always uses --user.
-        tokenProvider = runner.buildPasswordTokenProvider(
-          process.env.KILTER_TEST_USERNAME,
-          process.env.KILTER_TEST_PASSWORD,
-        );
-      } else {
-        console.error(
-          'No token source: pass --user <id> for a linked account, or set KILTER_TEST_USERNAME/KILTER_TEST_PASSWORD for local testing.',
-        );
+  .action(
+    async (opts: {
+      user?: string;
+      layouts?: string;
+      applyDeletions?: boolean;
+      suppressNotifications?: boolean;
+      verbose?: boolean;
+    }) => {
+      const runner = new SyncRunner({ onLog: (m) => (opts.verbose ? console.info(m) : undefined) });
+      try {
+        let tokenProvider;
+        if (opts.user) {
+          tokenProvider = await runner.buildUserTokenProvider(opts.user);
+        } else if (process.env.KILTER_TEST_USERNAME && process.env.KILTER_TEST_PASSWORD) {
+          // Local-validation only: ROPC password grant. Production always uses --user.
+          tokenProvider = runner.buildPasswordTokenProvider(
+            process.env.KILTER_TEST_USERNAME,
+            process.env.KILTER_TEST_PASSWORD,
+          );
+        } else {
+          console.error(
+            'No token source: pass --user <id> for a linked account, or set KILTER_TEST_USERNAME/KILTER_TEST_PASSWORD for local testing.',
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const layoutUuids = opts.layouts
+          ? opts.layouts
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean)
+          : undefined;
+        const summary = await runner.runCatalogSync(tokenProvider, {
+          applyDeletions: opts.applyDeletions,
+          layoutUuids,
+          suppressNotifications: opts.suppressNotifications,
+        });
+        console.log('✓ catalog sync complete:', JSON.stringify(summary, null, 2));
+      } catch (err) {
+        console.error('✗ catalog sync failed:', err instanceof Error ? err.message : err);
         process.exitCode = 1;
-        return;
+      } finally {
+        await runner.stop();
       }
-      const layoutUuids = opts.layouts
-        ? opts.layouts
-            .split(',')
-            .map((value) => value.trim())
-            .filter(Boolean)
-        : undefined;
-      const summary = await runner.runCatalogSync(tokenProvider, { applyDeletions: opts.applyDeletions, layoutUuids });
-      console.log('✓ catalog sync complete:', JSON.stringify(summary, null, 2));
-    } catch (err) {
-      console.error('✗ catalog sync failed:', err instanceof Error ? err.message : err);
-      process.exitCode = 1;
-    } finally {
-      await runner.stop();
-    }
-  });
+    },
+  );
 
 program
   .command('daemon')
