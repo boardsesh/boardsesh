@@ -340,7 +340,20 @@
         "contentTitleFallback": "Sesión de escalada",
         "previous": "Anterior",
         "next": "Siguiente"
-      }
+      },
+      "inStatsFlashes": "Flashes",
+      "inLeaderboardTitle": "Quién escala",
+      "inLeaderboardClimber": "Escalador",
+      "inPresenceCount": "{{count}} escalando",
+      "inDriverLabel": "Al mando",
+      "invite": "Invitar escaladores",
+      "inviteTitle": "Invitar a esta sesión",
+      "inviteSubtitle": "Escanea para unirte o comparte el enlace",
+      "inviteCopyLink": "Copiar enlace",
+      "inviteCopied": "Enlace copiado",
+      "inviteShare": "Compartir",
+      "inStatsHardestEach": "Más difíciles",
+      "inviteAction": "Invitar"
     }
   },
   "playView": {
@@ -408,5 +421,32 @@
       "starRating_one": "{{count}} estrella",
       "starRating_other": "{{count}} estrellas"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Sesión no encontrada",
+    "editTitle": "Editar sesión",
+    "nameLabel": "Nombre",
+    "goalLabel": "Objetivo",
+    "save": "Guardar",
+    "participants": "Escaladores",
+    "updated": "Sesión actualizada",
+    "updateError": "No se pudo actualizar la sesión",
+    "title": "Sesión"
+  },
+  "mobileJoin": {
+    "loading": "Cargando sesión…",
+    "notFound": "Sesión no encontrada",
+    "ended": "Esta sesión ha terminado",
+    "error": "No se pudo cargar esta sesión",
+    "retry": "Reintentar",
+    "confirmTitle": "¿Unirte a la sesión de {{host}}?",
+    "boardLabel": "{{board}} · {{count}} escalando",
+    "join": "Unirse a la sesión",
+    "cancel": "Cancelar",
+    "switchTitle": "¿Salir de tu sesión actual?",
+    "switchBody": "Saldrás de tu sesión activa para unirte a esta.",
+    "signInToJoin": "Inicia sesión para unirte",
+    "joinError": "No se pudo unir a la sesión",
+    "hostFallback": "un escalador"
   }
 }

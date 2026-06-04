@@ -120,7 +120,9 @@
   },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} climb",
-    "climbCount_other": "{{count}} climbs"
+    "climbCount_other": "{{count}} climbs",
+    "hardest": "Hardest",
+    "sendsLabel": "sends"
   },
   "sessionSummary": {
     "completed": "Session completed"

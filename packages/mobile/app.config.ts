@@ -111,6 +111,13 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       // target's DEVELOPMENT_TEAM build setting. Matches the existing main
       // target value baked into Boardsesh.xcodeproj/project.pbxproj.
       appleTeamId: '9L3HKPZBH3',
+      // Universal Links for the multiplayer join flow:
+      // https://www.boardsesh.com/join/{sessionId} (and the apex domain, since
+      // either can appear in a shared link). The web /join page is the no-app
+      // fallback. The matching apple-app-site-association is served by
+      // packages/web at /.well-known/apple-app-site-association. Changing this
+      // requires a native rebuild (it's baked into the entitlements).
+      associatedDomains: ['applinks:www.boardsesh.com', 'applinks:boardsesh.com'],
       supportsTablet: false,
       // Entitlements for the App Group (shared with the BoardseshWidgets target),
       // shared keychain (so SharedKeychain.swift can read auth + push tokens),
@@ -145,6 +152,24 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
     },
     android: {
       package: 'com.boardsesh.app',
+      // App Links for the multiplayer join flow:
+      // https://www.boardsesh.com/join/{sessionId} (and the apex domain).
+      // autoVerify lets Android open the link directly in the app once the
+      // Digital Asset Links file (served by packages/web at
+      // /.well-known/assetlinks.json) verifies the package signature. The web
+      // /join page is the no-app fallback. Changing this requires a native
+      // rebuild (it's baked into AndroidManifest.xml).
+      intentFilters: [
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
+            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/join' },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+      ],
       // Keep the legacy predictive back gesture OFF. Enabling it
       // (android.predictiveBackGestureEnabled: true) currently breaks
       // cross-screen back navigation with Expo Router + react-native-screens —

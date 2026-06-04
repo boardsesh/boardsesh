@@ -398,3 +398,4 @@ export {
 } from './use-you-data';
 export { useYouProfileData } from './use-you-profile-data';
 export { useVote, useBulkVoteSummaries, useComments, useAddComment } from './use-social';
+export { useSessionDetail, useUpdateInferredSession, useSessionPreview } from './use-session-detail';
