@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedScrollHandler,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,11 +21,23 @@ import type { SessionDetailTick } from '@boardsesh/shared-schema';
 import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks';
 import { gradeSortValue } from '../../you/profile-chart-colors';
 import { spacing } from '../../../theme/tokens';
+import { springs } from '../../../theme/animations';
 import { SessionAnalytics, type HardestSend } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
 
-export function InSessionView() {
+// Drag the sheet down past this fraction of the screen (or flick faster) to
+// dismiss; otherwise it springs back. Mirrors the host's open/close thresholds.
+const DISMISS_DISTANCE_FRACTION = 0.18;
+const DISMISS_VELOCITY = 800;
+
+type InSessionViewProps = {
+  /** Host overlay offset (0 = presented). The body pull-to-dismiss drives it. */
+  translateY: SharedValue<number>;
+  screenHeight: number;
+};
+
+export function InSessionView({ translateY, screenHeight }: InSessionViewProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -109,6 +129,40 @@ export function InSessionView() {
     [sessionUsers, participantId],
   );
 
+  // Swipe-down-to-dismiss from the body. Drag the sheet only when the inner
+  // scroll is at the top and the pull is downward; otherwise the scroll handles
+  // it (the two run simultaneously). Drives the host's translateY, and on
+  // release either dismisses (close) or springs back to fully presented.
+  const scrollOffset = useSharedValue(0);
+  const startedAtTop = useSharedValue(true);
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollOffset.value = event.contentOffset.y;
+  });
+  const scrollGesture = useMemo(() => Gesture.Native(), []);
+  const dismissGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY(12)
+        .onStart(() => {
+          startedAtTop.value = scrollOffset.value <= 0;
+        })
+        .onUpdate((event) => {
+          if (startedAtTop.value && event.translationY > 0) {
+            translateY.value = event.translationY;
+          }
+        })
+        .onEnd((event) => {
+          if (!startedAtTop.value) return;
+          if (translateY.value > screenHeight * DISMISS_DISTANCE_FRACTION || event.velocityY > DISMISS_VELOCITY) {
+            runOnJS(close)();
+          } else {
+            translateY.value = withSpring(0, springs.gentle);
+          }
+        })
+        .simultaneousWithExternalGesture(scrollGesture),
+    [translateY, screenHeight, close, scrollOffset, startedAtTop, scrollGesture],
+  );
+
   const [showEndSession, setShowEndSession] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
 
@@ -126,37 +180,48 @@ export function InSessionView() {
   }, [endSession, close, router]);
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <SessionPresenceRow
-          users={sessionUsers}
-          driverParticipantId={driverParticipantId}
-          selfParticipantId={participantId}
-        />
+    <GestureDetector gesture={dismissGesture}>
+      <View style={styles.container}>
+        <GestureDetector gesture={scrollGesture}>
+          <Animated.ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
+            showsVerticalScrollIndicator={false}
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            // No bounce: a downward pull at the top should move the sheet (our
+            // pan), not bounce the scroll view underneath it.
+            bounces={false}
+          >
+            <SessionPresenceRow
+              users={sessionUsers}
+              driverParticipantId={driverParticipantId}
+              selfParticipantId={participantId}
+            />
 
-        <SessionAnalytics
-          sends={sends}
-          flashes={flashes}
-          hardestGrade={hardestGrade}
-          hardestSends={hardestSends}
-          startedAt={startedAt}
-          gradeDistribution={gradeDistribution}
-        />
+            <SessionAnalytics
+              sends={sends}
+              flashes={flashes}
+              hardestGrade={hardestGrade}
+              hardestSends={hardestSends}
+              startedAt={startedAt}
+              gradeDistribution={gradeDistribution}
+            />
 
-        <SessionLeaderboard
-          participants={participants}
-          driverParticipantId={driverParticipantId}
-          selfUserId={selfUserId}
-        />
-      </ScrollView>
+            <SessionLeaderboard
+              participants={participants}
+              driverParticipantId={driverParticipantId}
+              selfUserId={selfUserId}
+            />
+          </Animated.ScrollView>
+        </GestureDetector>
 
-      <View
-        style={[styles.footer, { backgroundColor: systemColors.background, paddingBottom: insets.bottom + spacing[3] }]}
-      >
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: systemColors.background, paddingBottom: insets.bottom + spacing[3] },
+          ]}
+        >
         <Button
           title={t('mobile.session.inEndSession')}
           onPress={() => setShowEndSession(true)}
@@ -165,14 +230,15 @@ export function InSessionView() {
         />
       </View>
 
-      <EndSessionSheet
-        visible={showEndSession}
-        onDismiss={() => setShowEndSession(false)}
-        onConfirm={() => void handleConfirmEnd()}
-        isEnding={isEnding}
-        climbCount={state.queue.length}
-      />
-    </View>
+        <EndSessionSheet
+          visible={showEndSession}
+          onDismiss={() => setShowEndSession(false)}
+          onConfirm={() => void handleConfirmEnd()}
+          isEnding={isEnding}
+          climbCount={state.queue.length}
+        />
+      </View>
+    </GestureDetector>
   );
 }
 

@@ -108,7 +108,12 @@ export function SessionScreenHost() {
       <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
         <View style={StyleSheet.absoluteFill}>
           <GlassSurface glassEffectStyle="regular" style={StyleSheet.absoluteFill} />
-          <SessionScreen onClose={close} headerGesture={headerGesture} />
+          <SessionScreen
+            onClose={close}
+            headerGesture={headerGesture}
+            translateY={translateY}
+            screenHeight={screenHeight}
+          />
         </View>
       </Animated.View>
     </View>
