@@ -94,6 +94,10 @@ vi.mock('@boardsesh/create-climb-react', () => ({
     totalHolds: 3,
     isValid: true,
     resetHolds: mockResetMoonboardHolds,
+    undo: vi.fn(),
+    redo: vi.fn(),
+    canUndo: false,
+    canRedo: false,
   })),
 }));
 
@@ -528,6 +532,10 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
       totalHolds: 0,
       isValid: false,
       resetHolds: mockResetMoonboardHolds,
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
     });
     renderMoonboard();
     expect(screen.queryByText('createClimbForm.alerts.checkingMoonBoardDuplicate')).toBeNull();
@@ -544,6 +552,10 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
       totalHolds: 0,
       isValid: false,
       resetHolds: mockResetMoonboardHolds,
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
     });
     renderMoonboard();
     const deleteIcon = document.querySelector('[data-testid="DeleteOutlinedIcon"]');

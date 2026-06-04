@@ -109,7 +109,9 @@ export function useMoonBoardCreateClimb(options?: UseMoonBoardCreateClimbOptions
         if (currentHold?.state === nextState) return previousHoldsMap;
 
         if (nextState === 'STARTING') {
-          const currentStartingCount = Object.values(previousHoldsMap).filter((hold) => hold.state === 'STARTING').length;
+          const currentStartingCount = Object.values(previousHoldsMap).filter(
+            (hold) => hold.state === 'STARTING',
+          ).length;
           if (currentStartingCount >= 2) return previousHoldsMap;
         }
         if (nextState === 'FINISH') {
