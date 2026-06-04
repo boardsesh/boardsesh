@@ -26,7 +26,21 @@
     "unknownName": "Escalador",
     "cancel": "Cancelar",
     "sessions": {
-      "empty": "Aún no hay sesiones — ve a escalar algo."
+      "empty": "Aún no hay sesiones — ve a escalar algo.",
+      "weeklySends": "{{count}} encadenes esta semana",
+      "weekly": {
+        "sessions": "Sesiones",
+        "sends": "Encadenes",
+        "flashes": "Flashes",
+        "attempts": "Intentos"
+      },
+      "streak": "Racha de {{count}} semanas",
+      "sectionToday": "Hoy",
+      "sectionThisWeek": "Esta semana",
+      "sectionEarlier": "Anterior",
+      "emptyTitle": "Aún no hay sesiones",
+      "emptyBody": "Inicia una sesión y tus vías aparecerán aquí.",
+      "emptyCta": "Empezar una sesión"
     },
     "progress": {
       "empty": "Nada registrado todavía — tus estadísticas aparecen cuando empieces a registrar vías."

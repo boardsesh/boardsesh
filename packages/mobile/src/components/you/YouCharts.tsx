@@ -1,11 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
-import type { RawBar, RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
+import type { RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
-import { gradeChartColor, layoutChartColor, flashRedpointColor } from './profile-chart-colors';
+import { gradeChartColor, layoutChartColor, flashRedpointColor, type ColoredBar } from './profile-chart-colors';
 
 const MAX_X_LABELS = 12;
 const AXIS_LABEL_SIZE = 10;
@@ -82,8 +82,13 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, children }: FramePro
 }
 
 type StackedBarsProps = {
-  bars: RawBar[] | null;
-  /** 'grade' colors segments by grade label; 'layout' by layoutKey. */
+  bars: ColoredBar[] | null;
+  /**
+   * Fallback colour resolution when a segment has no explicit `color`:
+   * 'grade' colours by grade label, 'layout' by layoutKey. A segment that
+   * carries its own `color` (e.g. the gold flash cap on session grade bars)
+   * overrides this.
+   */
   colorBy: 'grade' | 'layout';
   height?: number;
   loading?: boolean;
@@ -117,7 +122,8 @@ export function StackedBarChart({
           .filter((segment) => segment.value > 0)
           .map((segment) => ({
             value: segment.value,
-            color: colorBy === 'grade' ? gradeChartColor(segment.key) : layoutChartColor(segment.key),
+            // An explicit segment colour wins; otherwise fall back to colorBy.
+            color: segment.color ?? (colorBy === 'grade' ? gradeChartColor(segment.key) : layoutChartColor(segment.key)),
           }));
         const stacks = filled.length > 0 ? filled : [{ value: 0, color: 'transparent' }];
         // Round only the stack's outer corners (bottom of the bottom segment,

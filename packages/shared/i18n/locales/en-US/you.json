@@ -26,7 +26,21 @@
     "unknownName": "Climber",
     "cancel": "Cancel",
     "sessions": {
-      "empty": "No sessions logged yet — go climb something."
+      "empty": "No sessions logged yet — go climb something.",
+      "weeklySends": "{{count}} sends this week",
+      "weekly": {
+        "sessions": "Sessions",
+        "sends": "Sends",
+        "flashes": "Flashes",
+        "attempts": "Attempts"
+      },
+      "streak": "{{count}} week streak",
+      "sectionToday": "Today",
+      "sectionThisWeek": "This week",
+      "sectionEarlier": "Earlier",
+      "emptyTitle": "No sessions yet",
+      "emptyBody": "Start a session and your climbs land here.",
+      "emptyCta": "Start a session"
     },
     "progress": {
       "empty": "Nothing logged yet — your stats show up once you start ticking climbs."

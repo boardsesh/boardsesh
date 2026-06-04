@@ -120,7 +120,9 @@
   },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} bloc",
-    "climbCount_other": "{{count}} blocs"
+    "climbCount_other": "{{count}} blocs",
+    "hardest": "Plus dur",
+    "sendsLabel": "réussites"
   },
   "sessionSummary": {
     "completed": "Session terminée"
