@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -17,11 +17,16 @@ import { EndSessionSheet } from '../../EndSessionSheet';
 import { useTheme } from '../../../providers/theme-provider';
 import { useQueue } from '../../../providers/queue-provider';
 import { useSessionScreen } from '../../../providers/session-screen-provider';
-import type { SessionDetailTick } from '@boardsesh/shared-schema';
+import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
+import type BottomSheet from '@gorhom/bottom-sheet';
 import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks';
+import { navigateToSessionClimb } from '../../../lib/session-tick-mapping';
 import { gradeSortValue } from '../../you/profile-chart-colors';
 import { spacing } from '../../../theme/tokens';
 import { springs } from '../../../theme/animations';
+import { SectionHeader } from '../../SectionHeader';
+import { SessionTickRow } from '../../session/SessionTickRow';
+import { CommentSheet } from '../../you/CommentSheet';
 import { SessionAnalytics, type HardestSend } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
@@ -81,6 +86,13 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
   const hardestGrade = live?.hardestGrade ?? detail?.hardestGrade ?? null;
 
   const isMultiUser = participants.length > 1;
+
+  // Lookup for the per-tick leading avatar in multi-user sessions.
+  const participantById = useMemo(() => {
+    const map = new Map<string, SessionFeedParticipant>();
+    for (const participant of participants) map.set(participant.userId, participant);
+    return map;
+  }, [participants]);
 
   // Hardest send(s) to celebrate. Solo: the session's single hardest (grade from
   // the aggregate, climb name mined from the tick list). Party: each climber's
@@ -173,6 +185,25 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
   const [showEndSession, setShowEndSession] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
 
+  // Comment thread for a tapped climb's tick (opened from a row's social row).
+  const commentSheetRef = useRef<BottomSheet | null>(null);
+  const [commentTickUuid, setCommentTickUuid] = useState<string | null>(null);
+
+  const handleTickPress = useCallback(
+    (tick: SessionDetailTick) => {
+      // The session overlay sits above the tab navigator; drop it before pushing
+      // the climb route so the climb lands on a visible screen.
+      close();
+      navigateToSessionClimb(router, tick);
+    },
+    [close, router],
+  );
+
+  const handleOpenTickComments = useCallback((tickUuid: string) => {
+    setCommentTickUuid(tickUuid);
+    commentSheetRef.current?.snapToIndex(0);
+  }, []);
+
   const handleConfirmEnd = useCallback(async () => {
     setIsEnding(true);
     const summary = await endSession();
@@ -216,6 +247,22 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
             />
 
             <SessionLeaderboard participants={participants} driverUserId={driverUserId} selfUserId={selfUserId} />
+
+            {detail && detail.ticks.length > 0 ? (
+              <View style={styles.climbs}>
+                <SectionHeader title={t('detail.climbsCount', { count: detail.ticks.length })} />
+                {detail.ticks.map((tick) => (
+                  <SessionTickRow
+                    key={tick.uuid}
+                    tick={tick}
+                    isMultiUser={isMultiUser}
+                    participant={participantById.get(tick.userId)}
+                    onPress={handleTickPress}
+                    onOpenComments={handleOpenTickComments}
+                  />
+                ))}
+              </View>
+            ) : null}
           </Animated.ScrollView>
         </GestureDetector>
 
@@ -240,6 +287,13 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
           isEnding={isEnding}
           climbCount={state.queue.length}
         />
+
+        <CommentSheet
+          sheetRef={commentSheetRef}
+          entityId={commentTickUuid}
+          entityType="tick"
+          onClose={() => setCommentTickUuid(null)}
+        />
       </View>
     </GestureDetector>
   );
@@ -260,5 +314,11 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
+  },
+  // Pull the climbs list out of the content's horizontal padding so the
+  // full-bleed SectionHeader / SessionTickRow rows match the session-detail
+  // screen (their own 16px inset + edge-to-edge separators).
+  climbs: {
+    marginHorizontal: -spacing[4],
   },
 });
