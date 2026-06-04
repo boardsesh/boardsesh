@@ -14,7 +14,9 @@ import { spacing, borderRadius } from '../../../theme/tokens';
 
 type SessionLeaderboardProps = {
   participants: SessionFeedParticipant[];
-  driverParticipantId?: string | null;
+  /** DB user id of the driver (resolved from the participant roster upstream) —
+   *  the same id space as `participant.userId`, so it actually matches. */
+  driverUserId?: string | null;
   selfUserId?: string | null;
 };
 
@@ -24,7 +26,7 @@ type SessionLeaderboardProps = {
  * Hidden when fewer than two climbers have logged anything (no leaderboard of
  * one).
  */
-export function SessionLeaderboard({ participants, driverParticipantId, selfUserId }: SessionLeaderboardProps) {
+export function SessionLeaderboard({ participants, driverUserId, selfUserId }: SessionLeaderboardProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
 
@@ -40,11 +42,10 @@ export function SessionLeaderboard({ participants, driverParticipantId, selfUser
       <SectionHeader title={t('mobile.session.inLeaderboardTitle')} />
       <View style={[styles.list, { backgroundColor: systemColors.secondaryBackground }]}>
         {ranked.map((participant, index) => {
-          // The leaderboard keys on userId, but the driver is tracked by
-          // participant id; we can only highlight the driver when the two ids
-          // line up. selfUserId likewise drives the "you" tint.
+          // Both ids are DB user ids (driverUserId is resolved from the roster
+          // upstream), so they match a participant's userId directly.
           const isSelf = !!selfUserId && participant.userId === selfUserId;
-          const isDriver = !!driverParticipantId && participant.userId === driverParticipantId;
+          const isDriver = !!driverUserId && participant.userId === driverUserId;
           return (
             <View
               key={participant.userId}

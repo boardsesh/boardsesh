@@ -64,7 +64,9 @@ export default function JoinSessionScreen() {
       // owned-board reuse path run instead.
       let ownedBoards = myBoards.data?.boards;
       if (!ownedBoards) {
-        ownedBoards = (await myBoards.refetch()).data?.boards ?? [];
+        // cancelRefetch:false reuses an in-flight fetch instead of firing a
+        // redundant request if the boards query is already loading.
+        ownedBoards = (await myBoards.refetch({ cancelRefetch: false })).data?.boards ?? [];
       }
       const userBoard = await resolveBoardForSession(session.boardPath, {
         ownedBoards,

@@ -111,7 +111,6 @@ export const SessionTickRow = memo(function SessionTickRow({
             entityType="tick"
             upvotes={tick.upvotes}
             userVote={null}
-            commentCount={0}
             onOpenComments={onOpenComments}
             compact
           />

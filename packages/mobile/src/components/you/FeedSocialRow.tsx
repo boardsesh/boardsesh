@@ -17,7 +17,10 @@ type FeedSocialRowProps = {
   upvotes: number;
   /** Server vote for the viewer: 1 = upvoted, else not. */
   userVote: number | null;
-  commentCount: number;
+  /** Comment count to badge. Omit when the count isn't known (e.g. per-tick
+   *  rows, where the detail query doesn't return it) — the icon shows without
+   *  a number rather than a misleading 0. */
+  commentCount?: number;
   onOpenComments: (entityId: string) => void;
   /** Compact spacing for inline (per-tick) placement. */
   compact?: boolean;
@@ -67,7 +70,7 @@ export function FeedSocialRow({
       </Pressable>
       <Pressable style={styles.button} onPress={() => onOpenComments(entityId)} accessibilityRole="button" hitSlop={6}>
         <Icon name="comment" size={iconSize} color={systemColors.secondaryLabel} />
-        {commentCount > 0 && (
+        {commentCount != null && commentCount > 0 && (
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {commentCount}
           </Text>

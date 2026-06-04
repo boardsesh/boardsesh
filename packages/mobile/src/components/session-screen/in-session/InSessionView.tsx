@@ -129,6 +129,13 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
     [sessionUsers, participantId],
   );
 
+  // The driver is tracked by participant id (SessionUser.id); resolve it to the
+  // DB user id the leaderboard rows key on so the driver badge actually lights.
+  const driverUserId = useMemo(
+    () => sessionUsers.find((user) => user.id === driverParticipantId)?.userId ?? null,
+    [sessionUsers, driverParticipantId],
+  );
+
   // Swipe-down-to-dismiss from the body. Drag the sheet only when the inner
   // scroll is at the top and the pull is downward; otherwise the scroll handles
   // it (the two run simultaneously). Drives the host's translateY, and on
@@ -208,11 +215,7 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
               gradeDistribution={gradeDistribution}
             />
 
-            <SessionLeaderboard
-              participants={participants}
-              driverParticipantId={driverParticipantId}
-              selfUserId={selfUserId}
-            />
+            <SessionLeaderboard participants={participants} driverUserId={driverUserId} selfUserId={selfUserId} />
           </Animated.ScrollView>
         </GestureDetector>
 

@@ -26,7 +26,6 @@
     "unknownName": "Grimpeur",
     "cancel": "Annuler",
     "sessions": {
-      "empty": "Aucune session enregistrée — va grimper.",
       "weeklySends": "{{count}} réussites cette semaine",
       "weekly": {
         "sessions": "Sessions",

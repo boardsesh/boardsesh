@@ -26,7 +26,6 @@
     "unknownName": "Escalador",
     "cancel": "Cancelar",
     "sessions": {
-      "empty": "Aún no hay sesiones — ve a escalar algo.",
       "weeklySends": "{{count}} encadenes esta semana",
       "weekly": {
         "sessions": "Sesiones",

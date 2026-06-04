@@ -26,7 +26,6 @@
     "unknownName": "Climber",
     "cancel": "Cancel",
     "sessions": {
-      "empty": "No sessions logged yet — go climb something.",
       "weeklySends": "{{count}} sends this week",
       "weekly": {
         "sessions": "Sessions",
