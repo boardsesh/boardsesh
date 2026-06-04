@@ -2,8 +2,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type RefObject } from 'react';
-import type { GradeBound } from '@boardsesh/climb-filters';
+import type { ClimbBoardFilterState, GradeBound } from '@boardsesh/climb-filters';
 import type { SearchHeaderHandle } from '../../SearchHeader';
+import type { ClimbFilters } from '../../../lib/climb-filter-types';
 
 const haptics = vi.hoisted(() => ({ light: vi.fn(), selection: vi.fn() }));
 const signal = vi.hoisted(() => ({ setSearchExpanded: vi.fn() }));
@@ -65,6 +66,12 @@ vi.mock('../../GlassIconButton', () => ({
 
 vi.mock('../GradePill', () => ({ GradePill: () => createElement('div', { 'data-gradepill': 'true' }) }));
 vi.mock('../FilterButton', () => ({ FilterButton: () => createElement('div', { 'data-filterbutton': 'true' }) }));
+vi.mock('../ActiveFilterChips', () => ({
+  ActiveFilterChips: () => createElement('div', { 'data-active-chips': 'true' }),
+}));
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
+}));
 
 import { SearchFab } from '../SearchFab';
 
@@ -79,9 +86,14 @@ function makeProps(over: Partial<Parameters<typeof SearchFab>[0]> = {}) {
     onSearchBlur: vi.fn(),
     bound: {} as GradeBound,
     grades: [],
+    filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any' } as ClimbFilters,
+    boardFilters: {} as ClimbBoardFilterState,
+    count: undefined,
     activeFilterCount: 0,
     onOpenGrade: vi.fn(),
     onOpenFilters: vi.fn(),
+    onPatchFilters: vi.fn(),
+    onPatchBoardFilters: vi.fn(),
     toolbarBottom: 100,
     ...over,
   };
@@ -129,5 +141,12 @@ describe('SearchFab', () => {
     expect(fab(container).getAttribute('data-badge')).toBe('4');
     fireEvent.click(fab(container));
     expect(fab(container).getAttribute('data-badge')).toBe('');
+  });
+
+  it('shows the live count and active chips while expanded and idle', () => {
+    const { container } = render(<SearchFab {...makeProps({ activeFilterCount: 2, count: 42 })} />);
+    fireEvent.click(fab(container));
+    expect(container.textContent).toContain('mobile.search.climbsCount');
+    expect(container.querySelector('[data-active-chips]')).not.toBeNull();
   });
 });

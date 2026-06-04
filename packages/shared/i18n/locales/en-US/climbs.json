@@ -567,10 +567,12 @@
       "savedToast": "Tick saved"
     },
     "filter": {
-      "climbType": "Climb Type",
-      "boulders": "Boulders",
-      "routes": "Routes",
-      "both": "Both",
+      "climbType": {
+        "label": "Type",
+        "all": "All",
+        "boulders": "Boulders",
+        "routes": "Routes"
+      },
       "title": "Filters",
       "sortBy": "Sort by",
       "gradeRange": "Grade range",

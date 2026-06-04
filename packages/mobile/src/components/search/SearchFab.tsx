@@ -21,17 +21,20 @@ import Animated, {
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from 'expo-router';
 import type { Grade } from '@boardsesh/shared-schema';
-import { type GradeBound } from '@boardsesh/climb-filters';
+import { type ClimbBoardFilterState, type GradeBound } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { TOOLBAR_FAB_SIZE, TOOLBAR_SIDE_MARGIN } from '../../theme/layout';
 import { hapticLight, hapticSelection } from '../../lib/haptics';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { setSearchExpanded } from '../../lib/search-expanded-state';
+import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { GlassIconButton } from '../GlassIconButton';
+import { Text } from '../Text';
 import { GradePill } from './GradePill';
 import { FilterButton } from './FilterButton';
+import { ActiveFilterChips } from './ActiveFilterChips';
 
 type SearchFabProps = {
   searchFieldRef: RefObject<SearchHeaderHandle | null>;
@@ -44,9 +47,14 @@ type SearchFabProps = {
   onSearchBlur: () => void;
   bound: GradeBound;
   grades: readonly Grade[];
+  filters: ClimbFilters;
+  boardFilters: ClimbBoardFilterState;
+  count: number | undefined;
   activeFilterCount: number;
   onOpenGrade: () => void;
   onOpenFilters: () => void;
+  onPatchFilters: (patch: Partial<ClimbFilters>) => void;
+  onPatchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
   /** Resting bottom for the cluster (clears the tab bar + floating toolbar). */
   toolbarBottom: number;
 };
@@ -61,9 +69,14 @@ export function SearchFab({
   onSearchBlur,
   bound,
   grades,
+  filters,
+  boardFilters,
+  count,
   activeFilterCount,
   onOpenGrade,
   onOpenFilters,
+  onPatchFilters,
+  onPatchBoardFilters,
   toolbarBottom,
 }: SearchFabProps) {
   const { t } = useTranslation('climbs');
@@ -137,6 +150,7 @@ export function SearchFab({
 
   const enter = reduceMotion ? undefined : FadeIn.duration(200);
   const exit = reduceMotion ? undefined : FadeOut.duration(150);
+  const showMetadataRow = expanded && !focused && (count != null || activeFilterCount > 0);
 
   return (
     <>
@@ -150,6 +164,24 @@ export function SearchFab({
       ) : null}
 
       <Animated.View pointerEvents="box-none" style={[styles.cluster, clusterStyle]}>
+        {showMetadataRow ? (
+          <Animated.View entering={enter} exiting={exit} style={styles.metadataRow}>
+            {count != null ? (
+              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.countText}>
+                {t('mobile.search.climbsCount', { count })}
+              </Text>
+            ) : null}
+            <ActiveFilterChips
+              filters={filters}
+              boardFilters={boardFilters}
+              onPatchFilters={onPatchFilters}
+              onPatchBoardFilters={onPatchBoardFilters}
+              chipHeight={32}
+              style={styles.chips}
+              contentContainerStyle={styles.chipsContent}
+            />
+          </Animated.View>
+        ) : null}
         <View pointerEvents="box-none" style={styles.fabRow}>
           {/* The FAB is pinned LEFT and morphs 🔍→✕; everything speed-dials to its
               right. Collapsed, it carries the active-filter count as a badge. */}
@@ -220,6 +252,22 @@ const styles = StyleSheet.create({
     left: TOOLBAR_SIDE_MARGIN,
     right: TOOLBAR_SIDE_MARGIN,
     zIndex: 19,
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginBottom: spacing[2],
+    marginLeft: TOOLBAR_FAB_SIZE + spacing[2],
+  },
+  countText: {
+    flexShrink: 0,
+  },
+  chips: {
+    flex: 1,
+  },
+  chipsContent: {
+    paddingRight: spacing[2],
   },
   searchSlot: {
     flex: 1,

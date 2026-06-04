@@ -81,7 +81,7 @@ import { ActiveFilterChips } from '../ActiveFilterChips';
 // A base filter state with everything off, so each test opts in to exactly the
 // filters it wants surfaced.
 function makeFilters(over: Partial<ClimbFilters> = {}): ClimbFilters {
-  return { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: false, ...over };
+  return { sortBy: 'ascents', sortOrder: 'desc', status: 'any', ...over };
 }
 
 function makeProps(over: Partial<Parameters<typeof ActiveFilterChips>[0]> = {}) {
@@ -167,18 +167,14 @@ describe('ActiveFilterChips', () => {
     expect(onPatchFilters).not.toHaveBeenCalled();
   });
 
-  it('clearing the climb-type chip resets to the boulders default (multi-field patch)', () => {
+  it('clearing the climb-type chip resets to all climbs', () => {
     const onPatchFilters = vi.fn();
-    // routes-only differs from the boulders default, so it surfaces a chip whose
-    // clear payload restores boulders.
     const { container } = render(
-      <ActiveFilterChips
-        {...makeProps({ filters: makeFilters({ boulders: false, routes: true }), onPatchFilters })}
-      />,
+      <ActiveFilterChips {...makeProps({ filters: makeFilters({ boulders: false, routes: true }), onPatchFilters })} />,
     );
-    expect(container.textContent).toContain('mobile.filter.routes');
+    expect(container.textContent).toContain('mobile.filter.climbType.routes');
     fireEvent.click(chips(container)[0]);
-    expect(onPatchFilters).toHaveBeenCalledWith({ boulders: true, routes: false });
+    expect(onPatchFilters).toHaveBeenCalledWith({ boulders: undefined, routes: undefined });
   });
 
   it('defaults the chip height to 30 (radius 15) when chipHeight is omitted', () => {

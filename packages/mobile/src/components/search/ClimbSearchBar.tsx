@@ -25,6 +25,7 @@ import type { ClimbFilters } from '../../lib/climb-filter-types';
 import type { SearchLayout } from '../../lib/search-layout-preference';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { GlassIconButton } from '../GlassIconButton';
+import { Text } from '../Text';
 import { GradePill } from './GradePill';
 import { FilterButton } from './FilterButton';
 import { ActiveFilterChips } from './ActiveFilterChips';
@@ -43,6 +44,7 @@ type ClimbSearchBarProps = {
   grades: readonly Grade[];
   filters: ClimbFilters;
   boardFilters: ClimbBoardFilterState;
+  count: number | undefined;
   activeFilterCount: number;
   onOpenGrade: () => void;
   onOpenFilters: () => void;
@@ -67,6 +69,7 @@ export function ClimbSearchBar({
   grades,
   filters,
   boardFilters,
+  count,
   activeFilterCount,
   onOpenGrade,
   onOpenFilters,
@@ -116,6 +119,12 @@ export function ClimbSearchBar({
 
         {showControls ? <GradePill bound={bound} grades={grades} onPress={onOpenGrade} maxWidth={132} /> : null}
 
+        {showControls && count != null ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.countText}>
+            {t('mobile.search.climbsCount', { count })}
+          </Text>
+        ) : null}
+
         {showControls ? <FilterButton activeFilterCount={activeFilterCount} onPress={onOpenFilters} /> : null}
       </View>
 
@@ -150,5 +159,8 @@ const styles = StyleSheet.create({
   chipsRow: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  countText: {
+    flexShrink: 0,
   },
 });

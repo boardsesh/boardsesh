@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vite-plus/test';
 import {
   DEFAULT_CLIMB_FILTER_STATE,
+  climbTypeOf,
+  climbTypePatch,
   hasActiveClimbFilters,
   toClimbSearchInput,
   type ClimbFilterState,
@@ -14,44 +16,51 @@ function inputFor(overrides: Partial<ClimbFilterState>) {
 }
 
 describe('climb-type (boulders/routes) filter', () => {
-  it('defaults to boulders-only', () => {
-    expect(DEFAULT_CLIMB_FILTER_STATE.boulders).toBe(true);
-    expect(DEFAULT_CLIMB_FILTER_STATE.routes).toBe(false);
+  it('defaults to all climbs', () => {
+    expect(DEFAULT_CLIMB_FILTER_STATE.boulders).toBeUndefined();
+    expect(DEFAULT_CLIMB_FILTER_STATE.routes).toBeUndefined();
   });
 
-  it('does not count the boulders-only default as an active filter', () => {
+  it('does not count the all-climbs default as an active filter', () => {
     expect(hasActiveClimbFilters(DEFAULT_CLIMB_FILTER_STATE)).toBe(false);
   });
 
-  it('maps boulders-only to boulders=true with routes omitted', () => {
+  it('maps boulders-only to explicit boulders=true/routes=false', () => {
     const input = inputFor({ boulders: true, routes: false });
     expect(input.boulders).toBe(true);
-    expect(input.routes).toBeUndefined();
+    expect(input.routes).toBe(false);
   });
 
-  it('maps routes-only to routes=true with boulders omitted', () => {
+  it('maps routes-only to explicit boulders=false/routes=true', () => {
     const input = inputFor({ boulders: false, routes: true });
     expect(input.routes).toBe(true);
-    expect(input.boulders).toBeUndefined();
+    expect(input.boulders).toBe(false);
   });
 
-  it('omits both fields when both are selected (no frames_count constraint)', () => {
+  it('preserves explicit both-selected values', () => {
     const input = inputFor({ boulders: true, routes: true });
-    expect(input.boulders).toBeUndefined();
-    expect(input.routes).toBeUndefined();
+    expect(input.boulders).toBe(true);
+    expect(input.routes).toBe(true);
   });
 
-  it('omits both fields when neither is selected (widened to all climbs)', () => {
+  it('preserves explicit neither-selected values', () => {
     const input = inputFor({ boulders: false, routes: false });
-    expect(input.boulders).toBeUndefined();
-    expect(input.routes).toBeUndefined();
+    expect(input.boulders).toBe(false);
+    expect(input.routes).toBe(false);
   });
 
-  it('treats routes-on as an active filter', () => {
+  it('treats explicit routes-only as an active filter', () => {
     expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, boulders: false, routes: true })).toBe(true);
   });
 
-  it('treats boulders-off as an active filter', () => {
-    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, boulders: false, routes: false })).toBe(true);
+  it('treats explicit boulders-only as an active filter', () => {
+    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, boulders: true, routes: false })).toBe(true);
+  });
+
+  it('maps UI climb type patches through a single 3-way helper', () => {
+    expect(climbTypeOf(DEFAULT_CLIMB_FILTER_STATE)).toBe('all');
+    expect(climbTypePatch('all')).toEqual({ boulders: undefined, routes: undefined });
+    expect(climbTypePatch('boulders')).toEqual({ boulders: true, routes: false });
+    expect(climbTypePatch('routes')).toEqual({ boulders: false, routes: true });
   });
 });

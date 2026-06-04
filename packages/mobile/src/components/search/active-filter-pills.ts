@@ -5,7 +5,12 @@
 // dynamic `t()` keys (the i18n linter only allows literal keys). Each pill
 // carries the patch that clears it.
 
-import { formatMinAscentsFilterCount, type ClimbBoardFilterState } from '@boardsesh/climb-filters';
+import {
+  climbTypeOf,
+  climbTypePatch,
+  formatMinAscentsFilterCount,
+  type ClimbBoardFilterState,
+} from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 
 export type ActiveFilterPill = {
@@ -47,14 +52,13 @@ export function buildActiveFilterPills(
   if (boardFilters.onlyBenchmarks) {
     pills.push({ key: 'benchmark', label: t('mobile.filter.benchmark'), clearBoard: { onlyBenchmarks: undefined } });
   }
-  // Climb-type is boulders-only by default; surface a removable pill only when
-  // it differs (routes-only or both). Clearing resets to the boulders default.
-  const bouldersOn = filters.boulders ?? true;
-  const routesOn = filters.routes ?? false;
-  if (routesOn && !bouldersOn) {
-    pills.push({ key: 'climbType', label: t('mobile.filter.routes'), clearFilters: { boulders: true, routes: false } });
-  } else if (routesOn && bouldersOn) {
-    pills.push({ key: 'climbType', label: t('mobile.filter.both'), clearFilters: { boulders: true, routes: false } });
+  const climbType = climbTypeOf(filters);
+  if (climbType !== 'all') {
+    pills.push({
+      key: 'climbType',
+      label: climbType === 'boulders' ? t('mobile.filter.climbType.boulders') : t('mobile.filter.climbType.routes'),
+      clearFilters: climbTypePatch('all'),
+    });
   }
   if (filters.setter && filters.setter.length > 0) {
     pills.push({

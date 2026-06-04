@@ -23,6 +23,8 @@ import {
   hasActiveBoardFilters,
   applyStatusChange,
   normalizeRetiredStatus,
+  climbTypeOf,
+  climbTypePatch,
   toClimbSearchInput,
   mergeBoardFilters,
   formatMinAscentsFilterCount,
@@ -31,6 +33,7 @@ import {
   type SortOrder,
   type StatusFilter,
   type GradeAccuracyValue,
+  type ClimbType,
   type ClimbBoardFilterState,
   SORT_OPTIONS,
   GRADE_ACCURACY_VALUES,
@@ -292,29 +295,15 @@ export function ClimbFilterSheet({
     (value: GradeAccuracyValue | 'off') => setFiltersPatch({ gradeAccuracy: value === 'off' ? undefined : value }),
     [setFiltersPatch],
   );
-  // Climb-type toggle (main's #2496 control). A 3-way control means there's no
-  // UI path to "neither", so the never-both-off invariant is structural (see
-  // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
-  const climbTypeKey = useMemo<'boulders' | 'routes' | 'both'>(() => {
-    const bouldersOn = localFilters.boulders ?? true;
-    const routesOn = localFilters.routes ?? false;
-    if (bouldersOn && !routesOn) return 'boulders';
-    if (!bouldersOn && routesOn) return 'routes';
-    return 'both';
-  }, [localFilters.boulders, localFilters.routes]);
   const handleClimbTypeChange = useCallback(
-    (key: string) => {
-      if (key === 'routes') setFiltersPatch({ boulders: false, routes: true });
-      else if (key === 'both') setFiltersPatch({ boulders: true, routes: true });
-      else setFiltersPatch({ boulders: true, routes: false });
-    },
+    (key: string) => setFiltersPatch(climbTypePatch(key as ClimbType)),
     [setFiltersPatch],
   );
   const climbTypeOptions = useMemo(
     () => [
-      { key: 'boulders', label: t('mobile.filter.boulders') },
-      { key: 'routes', label: t('mobile.filter.routes') },
-      { key: 'both', label: t('mobile.filter.both') },
+      { key: 'all', label: t('mobile.filter.climbType.all') },
+      { key: 'boulders', label: t('mobile.filter.climbType.boulders') },
+      { key: 'routes', label: t('mobile.filter.climbType.routes') },
     ],
     [t],
   );
@@ -355,11 +344,12 @@ export function ClimbFilterSheet({
 
   const refineSummary = useMemo(() => {
     const parts: string[] = [];
-    // Boulders-only is the default, so only surface a chip when it differs.
-    const bouldersOn = localFilters.boulders ?? true;
-    const routesOn = localFilters.routes ?? false;
-    if (routesOn && !bouldersOn) parts.push(t('mobile.filter.routes'));
-    else if (routesOn && bouldersOn) parts.push(t('mobile.filter.both'));
+    const climbType = climbTypeOf(localFilters);
+    if (climbType !== 'all') {
+      parts.push(
+        climbType === 'boulders' ? t('mobile.filter.climbType.boulders') : t('mobile.filter.climbType.routes'),
+      );
+    }
     if (localFilters.gradeAccuracy != null) parts.push(accuracyLabels[localFilters.gradeAccuracy]);
     if (localFilters.setter && localFilters.setter.length > 0) {
       parts.push(t('mobile.search.settersCount', { count: localFilters.setter.length }));
@@ -529,11 +519,11 @@ export function ClimbFilterSheet({
             resetKey={sectionResetKey}
           >
             <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.filter.climbType')}
+              {t('mobile.filter.climbType.label')}
             </Text>
             <SegmentedControl
               options={climbTypeOptions}
-              selectedKey={climbTypeKey}
+              selectedKey={climbTypeOf(localFilters)}
               onSelect={handleClimbTypeChange}
               textVariant="footnote"
               trackColor={trackColor}
