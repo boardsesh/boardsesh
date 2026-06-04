@@ -77,8 +77,9 @@ export function CreateClimbSettingsSheet({
     [systemColors],
   );
 
-  if (!visible) return null;
-
+  // Keep the modal mounted and drive it purely via present()/dismiss() in the
+  // effect above. Returning null on !visible would unmount the sheet before the
+  // dismiss effect runs (sheetRef goes null), so the close animation never plays.
   return (
     <ModalSheet ref={sheetRef} snapPoints={['72%']} onDismiss={onDismiss} scrollable>
       <View style={styles.body}>

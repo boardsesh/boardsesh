@@ -7,6 +7,13 @@ export default defineConfig({
   define: {
     __DEV__: 'true',
   },
+  // The mobile package pins its own react, while the shared `@boardsesh/*-react`
+  // packages resolve the workspace-root react. A test that renders a shared hook
+  // (e.g. `useCreateClimb`) would otherwise load two React copies and trip
+  // "Invalid hook call". Dedupe collapses them onto a single instance.
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
     name: 'mobile',
     globals: true,

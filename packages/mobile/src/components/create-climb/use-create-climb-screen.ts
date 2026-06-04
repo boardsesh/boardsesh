@@ -135,6 +135,23 @@ export function useCreateClimbScreen({
     [],
   );
 
+  // A saved climb belongs to the angle it was saved at. The screen stays mounted
+  // across angle changes (the route re-memoises `board`), so a new working angle
+  // means a new climb (same holds, different angle). Drop the saved identity and
+  // mint a fresh preview uuid so Save creates a new row at the new angle and Set
+  // Active carries the right angle — otherwise the queue item would pair the old
+  // uuid with the new angle. Mirrors the per-angle autosave draft key.
+  const lastAngleRef = useRef(board.angle);
+  useEffect(() => {
+    if (lastAngleRef.current === board.angle) return;
+    lastAngleRef.current = board.angle;
+    // Edit identity comes from editClimbUuid (seeded once), not the working angle.
+    if (isEditing) return;
+    setSavedClimb(null);
+    setPublishDuplicateError(null);
+    previewUuidRef.current = randomUUID();
+  }, [board.angle, isEditing]);
+
   // ---- Edit mode: fetch the climb and seed the editor once. ----
   const editVariables = useMemo(
     () =>
