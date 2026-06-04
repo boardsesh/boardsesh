@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
@@ -8,11 +8,17 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { Gesture } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { useSessionScreen } from '../../providers/session-screen-provider';
 import { GlassSurface } from '../GlassSurface';
 import { SessionScreen } from './SessionScreen';
 import { springs } from '../../theme/animations';
+
+// Drag down past this fraction of the screen (or flick faster than this) to
+// dismiss; otherwise the overlay springs back to fully presented.
+const DISMISS_DISTANCE_FRACTION = 0.2;
+const DISMISS_VELOCITY = 800;
 
 /**
  * Full-screen Strava-style overlay that hosts the Session screen. Mounted once
@@ -66,6 +72,31 @@ export function SessionScreenHost() {
     };
   });
 
+  // Swipe-down-to-dismiss, attached to the header (so it never fights the
+  // in-session body scroll). Drives the same translateY the open/close
+  // animation uses; on release we either dismiss (which lets the close effect
+  // finish the exit) or spring back to fully presented.
+  const dragStartY = useSharedValue(0);
+  const headerGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY(10)
+        .onStart(() => {
+          dragStartY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+          translateY.value = Math.max(0, dragStartY.value + event.translationY);
+        })
+        .onEnd((event) => {
+          if (translateY.value > screenHeight * DISMISS_DISTANCE_FRACTION || event.velocityY > DISMISS_VELOCITY) {
+            runOnJS(close)();
+          } else {
+            translateY.value = withSpring(0, springs.gentle);
+          }
+        }),
+    [screenHeight, close, translateY, dragStartY],
+  );
+
   if (!isOpen && !mounted) {
     return null;
   }
@@ -77,7 +108,12 @@ export function SessionScreenHost() {
       <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
         <View style={StyleSheet.absoluteFill}>
           <GlassSurface glassEffectStyle="regular" style={StyleSheet.absoluteFill} />
-          <SessionScreen onClose={close} />
+          <SessionScreen
+            onClose={close}
+            headerGesture={headerGesture}
+            translateY={translateY}
+            screenHeight={screenHeight}
+          />
         </View>
       </Animated.View>
     </View>

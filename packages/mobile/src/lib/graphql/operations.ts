@@ -18,6 +18,9 @@ import type {
   PublicUserProfile,
   FollowConnection,
   TickStatus,
+  SessionUser,
+  SessionFeedParticipant,
+  SessionGradeDistributionItem,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -540,6 +543,53 @@ export type GetNearbySessionsQueryResponse = {
   nearbySessions: DiscoverableSessionItem[];
 };
 
+// Read-only session preview, used by the join-confirmation screen to show the
+// host, board, and participant count before the user commits to joining. The
+// `session` query does not join the session — joining happens via JOIN_SESSION
+// once the user confirms (see QueueProvider.joinSession).
+export const GET_SESSION = gql`
+  query GetSession($sessionId: ID!) {
+    session(sessionId: $sessionId) {
+      id
+      name
+      boardPath
+      color
+      goal
+      startedAt
+      endedAt
+      driverParticipantId
+      users {
+        id
+        username
+        isLeader
+        avatarUrl
+        userId
+        connectionState
+      }
+    }
+  }
+`;
+
+export type GetSessionQueryVariables = {
+  sessionId: string;
+};
+
+export type SessionPreview = {
+  id: string;
+  name: string | null;
+  boardPath: string;
+  color: string | null;
+  goal: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  driverParticipantId: string | null;
+  users: SessionUser[];
+};
+
+export type GetSessionQueryResponse = {
+  session: SessionPreview | null;
+};
+
 // ============================================
 // Tick Queries & Mutations
 // ============================================
@@ -823,9 +873,55 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         boardPath
         changedByParticipantId
       }
+      ... on SessionStatsUpdated {
+        sessionId
+        totalSends
+        totalFlashes
+        totalAttempts
+        tickCount
+        participants {
+          userId
+          displayName
+          avatarUrl
+          sends
+          flashes
+          attempts
+        }
+        gradeDistribution {
+          grade
+          flash
+          send
+          attempt
+        }
+        boardTypes
+        hardestGrade
+        durationMinutes
+        goal
+      }
     }
   }
 `;
+
+/**
+ * Aggregate live-session stats pushed over `sessionUpdates` (the
+ * `SessionStatsUpdated` event). Mirrors the feed/detail stat shape so the
+ * in-session analytics view can render flashes + the flash/send/attempt grade
+ * split without a separate poll. Ticks are intentionally omitted (the live view
+ * shows aggregates only).
+ */
+export type SessionLiveStatsEvent = {
+  sessionId: string;
+  totalSends: number;
+  totalFlashes: number;
+  totalAttempts: number;
+  tickCount: number;
+  participants: SessionFeedParticipant[];
+  gradeDistribution: SessionGradeDistributionItem[];
+  boardTypes: string[];
+  hardestGrade?: string | null;
+  durationMinutes?: number | null;
+  goal?: string | null;
+};
 
 // Envelope for the session-updates subscription. Fields specific to events the
 // mobile app reacts to are optional so a plain `__typename` + field check
@@ -833,8 +929,28 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
 // fall through the guard. Extend as more event handling lands.
 export type SessionUpdateEvent = {
   __typename: string;
+  // SessionBoardPathChanged
   boardPath?: string;
   changedByParticipantId?: string | null;
+  // UserJoined / UserPresenceChanged
+  user?: SessionUser;
+  // UserLeft
+  userId?: string;
+  // DriverChanged
+  driverParticipantId?: string | null;
+  previousDriverParticipantId?: string | null;
+  // SessionStatsUpdated (aggregate fields — see SessionLiveStatsEvent)
+  sessionId?: string;
+  totalSends?: number;
+  totalFlashes?: number;
+  totalAttempts?: number;
+  tickCount?: number;
+  participants?: SessionFeedParticipant[];
+  gradeDistribution?: SessionGradeDistributionItem[];
+  boardTypes?: string[];
+  hardestGrade?: string | null;
+  durationMinutes?: number | null;
+  goal?: string | null;
 };
 
 // Fields the queue UI needs from each climb in a subscription payload.

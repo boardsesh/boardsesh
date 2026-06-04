@@ -346,7 +346,20 @@
         "contentTitleFallback": "Session d'escalade",
         "previous": "Précédent",
         "next": "Suivant"
-      }
+      },
+      "inStatsFlashes": "Flashs",
+      "inLeaderboardTitle": "Qui grimpe",
+      "inLeaderboardClimber": "Grimpeur",
+      "inPresenceCount": "{{count}} en train de grimper",
+      "inDriverLabel": "Aux commandes",
+      "invite": "Inviter des grimpeurs",
+      "inviteTitle": "Inviter à cette session",
+      "inviteSubtitle": "Scannez pour rejoindre ou partagez le lien",
+      "inviteCopyLink": "Copier le lien",
+      "inviteCopied": "Lien copié",
+      "inviteShare": "Partager",
+      "inStatsHardestEach": "Les plus durs",
+      "inviteAction": "Inviter"
     }
   },
   "playView": {
@@ -414,5 +427,32 @@
       "starRating_one": "{{count}} etoile",
       "starRating_other": "{{count}} etoiles"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Session introuvable",
+    "editTitle": "Modifier la session",
+    "nameLabel": "Nom",
+    "goalLabel": "Objectif",
+    "save": "Enregistrer",
+    "participants": "Grimpeurs",
+    "updated": "Session mise à jour",
+    "updateError": "Impossible de mettre à jour la session",
+    "title": "Session"
+  },
+  "mobileJoin": {
+    "loading": "Chargement de la session…",
+    "notFound": "Session introuvable",
+    "ended": "Cette session est terminée",
+    "error": "Impossible de charger cette session",
+    "retry": "Réessayer",
+    "confirmTitle": "Rejoindre la session de {{host}} ?",
+    "boardLabel": "{{board}} · {{count}} en train de grimper",
+    "join": "Rejoindre la session",
+    "cancel": "Annuler",
+    "switchTitle": "Quitter votre session actuelle ?",
+    "switchBody": "Vous quitterez votre session active pour rejoindre celle-ci.",
+    "signInToJoin": "Connectez-vous pour rejoindre",
+    "joinError": "Impossible de rejoindre la session",
+    "hostFallback": "un grimpeur"
   }
 }

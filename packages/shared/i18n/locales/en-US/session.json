@@ -346,7 +346,20 @@
         "contentTitleFallback": "Climbing session",
         "previous": "Previous",
         "next": "Next"
-      }
+      },
+      "inStatsFlashes": "Flashes",
+      "inLeaderboardTitle": "Who's climbing",
+      "inLeaderboardClimber": "Climber",
+      "inPresenceCount": "{{count}} climbing",
+      "inDriverLabel": "Driving",
+      "invite": "Invite climbers",
+      "inviteTitle": "Invite to this session",
+      "inviteSubtitle": "Scan to join, or share the link",
+      "inviteCopyLink": "Copy link",
+      "inviteCopied": "Link copied",
+      "inviteShare": "Share",
+      "inStatsHardestEach": "Hardest sends",
+      "inviteAction": "Invite"
     }
   },
   "playView": {
@@ -414,5 +427,32 @@
       "starRating_one": "{{count}} star",
       "starRating_other": "{{count}} stars"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Session not found",
+    "editTitle": "Edit session",
+    "nameLabel": "Name",
+    "goalLabel": "Goal",
+    "save": "Save",
+    "participants": "Climbers",
+    "updated": "Session updated",
+    "updateError": "Couldn't update session",
+    "title": "Session"
+  },
+  "mobileJoin": {
+    "loading": "Loading session…",
+    "notFound": "Session not found",
+    "ended": "This session has ended",
+    "error": "Couldn't load this session",
+    "retry": "Try again",
+    "confirmTitle": "Join {{host}}'s session?",
+    "boardLabel": "{{board}} · {{count}} climbing",
+    "join": "Join session",
+    "cancel": "Cancel",
+    "switchTitle": "Leave your current session?",
+    "switchBody": "You'll leave your active session to join this one.",
+    "signInToJoin": "Sign in to join",
+    "joinError": "Couldn't join the session",
+    "hostFallback": "a climber"
   }
 }

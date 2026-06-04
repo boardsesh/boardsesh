@@ -1,64 +1,177 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedScrollHandler,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { BoardName } from '@boardsesh/shared-schema';
-import { Text } from '../../Text';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../Button';
-import { ActivityIndicator } from '../../ActivityIndicator';
-import { QueueItemRow, type QueueItemRowBoard } from '../../QueueItemRow';
 import { EndSessionSheet } from '../../EndSessionSheet';
 import { useTheme } from '../../../providers/theme-provider';
 import { useQueue } from '../../../providers/queue-provider';
-import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionScreen } from '../../../providers/session-screen-provider';
-import { useSessionSummary } from '../../../lib/graphql/hooks';
-import { spacing, borderRadius } from '../../../theme/tokens';
-import { SessionStatsHeader } from './SessionStatsHeader';
+import type { SessionDetailTick } from '@boardsesh/shared-schema';
+import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks';
+import { gradeSortValue } from '../../you/profile-chart-colors';
+import { spacing } from '../../../theme/tokens';
+import { springs } from '../../../theme/animations';
+import { SessionAnalytics, type HardestSend } from './SessionAnalytics';
+import { SessionLeaderboard } from './SessionLeaderboard';
+import { SessionPresenceRow } from './SessionPresenceRow';
 
-const SUMMARY_POLL_INTERVAL_MS = 15_000;
+// Drag the sheet down past this fraction of the screen (or flick faster) to
+// dismiss; otherwise it springs back. Mirrors the host's open/close thresholds.
+const DISMISS_DISTANCE_FRACTION = 0.18;
+const DISMISS_VELOCITY = 800;
 
-export function InSessionView() {
+type InSessionViewProps = {
+  /** Host overlay offset (0 = presented). The body pull-to-dismiss drives it. */
+  translateY: SharedValue<number>;
+  screenHeight: number;
+};
+
+export function InSessionView({ translateY, screenHeight }: InSessionViewProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { close } = useSessionScreen();
-  const { boardConfig } = useDrawerHost();
-  const { state, sessionId, setCurrentClimb, removeFromQueue, endSession } = useQueue();
+  const { state, sessionId, liveStats, sessionUsers, driverParticipantId, participantId, endSession } = useQueue();
 
-  const board: QueueItemRowBoard | null = boardConfig
-    ? {
-        boardName: boardConfig.boardName as BoardName,
-        layoutId: boardConfig.layoutId,
-        sizeId: boardConfig.sizeId,
-        setIds: boardConfig.setIds,
-        angle: boardConfig.angle,
-      }
-    : null;
+  // Seed the live view from the full session detail (rich grade split, flashes,
+  // per-participant flashes, and the tick list we mine for the hardest climb's
+  // NAME). `liveStats` (pushed over the session subscription ~2s after a tick)
+  // overlays the seed so aggregates update without polling.
+  const detailQuery = useSessionDetail(sessionId ?? undefined);
+  const detail = detailQuery.data;
 
-  // Live summary: same query as the post-session view, just polled while the
-  // overlay is open so the live tiles stay current as the user logs ticks.
+  // Only trust a live push that belongs to the CURRENT session. After a direct
+  // A→B session switch the provider resets liveStats, but this guards the window
+  // (and any late A push) so we never attribute the previous session's numbers
+  // to this one.
+  const live = liveStats && liveStats.sessionId === sessionId ? liveStats : null;
+
+  // startedAt isn't carried by the live push, so the ticking timer reads it from
+  // a single (non-polled) summary query.
   const summaryQuery = useSessionSummary(sessionId);
-  const refetchSummary = summaryQuery.refetch;
+  const startedAt = summaryQuery.data?.startedAt ?? null;
+
+  // A new hardest grade arriving over the live push won't carry the climb NAME
+  // (the push has aggregates only). Refresh the detail so detail.ticks gains the
+  // tick whose climbName we surface in the celebration card.
+  const liveHardestGrade = live?.hardestGrade ?? null;
   useEffect(() => {
-    if (!sessionId) return;
-    const id = setInterval(() => {
-      void refetchSummary();
-    }, SUMMARY_POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [sessionId, refetchSummary]);
+    if (!sessionId || !liveHardestGrade) return;
+    void queryClient.invalidateQueries({ queryKey: ['sessionDetail', sessionId] });
+  }, [sessionId, liveHardestGrade, queryClient]);
+
+  // Live push takes precedence over the seed for every aggregate.
+  const sends = live?.totalSends ?? detail?.totalSends ?? 0;
+  const flashes = live?.totalFlashes ?? detail?.totalFlashes ?? 0;
+  const gradeDistribution = live?.gradeDistribution ?? detail?.gradeDistribution ?? [];
+  const participants = live?.participants ?? detail?.participants ?? [];
+  const hardestGrade = live?.hardestGrade ?? detail?.hardestGrade ?? null;
+
+  const isMultiUser = participants.length > 1;
+
+  // Hardest send(s) to celebrate. Solo: the session's single hardest (grade from
+  // the aggregate, climb name mined from the tick list). Party: each climber's
+  // own hardest send, hardest first, so everyone's effort shows with their face.
+  const hardestSends = useMemo<HardestSend[]>(() => {
+    const sends = (detail?.ticks ?? []).filter((tick) => tick.status !== 'attempt');
+    if (!isMultiUser) {
+      if (!hardestGrade) return [];
+      let bestName: string | null = null;
+      let bestDifficulty = -Infinity;
+      for (const tick of sends) {
+        const difficulty = tick.difficulty ?? -Infinity;
+        if (difficulty > bestDifficulty) {
+          bestDifficulty = difficulty;
+          bestName = tick.climbName ?? null;
+        }
+      }
+      return [{ grade: hardestGrade, climbName: bestName }];
+    }
+    const bestByUser = new Map<string, SessionDetailTick>();
+    for (const tick of sends) {
+      const current = bestByUser.get(tick.userId);
+      if (!current || (tick.difficulty ?? -Infinity) > (current.difficulty ?? -Infinity)) {
+        bestByUser.set(tick.userId, tick);
+      }
+    }
+    return [...bestByUser.entries()]
+      .map(([userId, tick]) => {
+        const participant = participants.find((entry) => entry.userId === userId);
+        return {
+          userId,
+          displayName: participant?.displayName ?? null,
+          avatarUrl: participant?.avatarUrl ?? null,
+          grade: tick.difficultyName ?? '',
+          climbName: tick.climbName,
+        };
+      })
+      .filter((entry) => entry.grade)
+      .sort((a, b) => gradeSortValue(b.grade) - gradeSortValue(a.grade));
+  }, [detail?.ticks, participants, isMultiUser, hardestGrade]);
+
+  // Our own database user id (for the "you" highlight in the leaderboard).
+  // Undefined when we can't resolve it — the leaderboard handles that.
+  const selfUserId = useMemo(
+    () => sessionUsers.find((user) => user.id === participantId)?.userId ?? null,
+    [sessionUsers, participantId],
+  );
+
+  // The driver is tracked by participant id (SessionUser.id); resolve it to the
+  // DB user id the leaderboard rows key on so the driver badge actually lights.
+  const driverUserId = useMemo(
+    () => sessionUsers.find((user) => user.id === driverParticipantId)?.userId ?? null,
+    [sessionUsers, driverParticipantId],
+  );
+
+  // Swipe-down-to-dismiss from the body. Drag the sheet only when the inner
+  // scroll is at the top and the pull is downward; otherwise the scroll handles
+  // it (the two run simultaneously). Drives the host's translateY, and on
+  // release either dismisses (close) or springs back to fully presented.
+  const scrollOffset = useSharedValue(0);
+  const startedAtTop = useSharedValue(true);
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollOffset.value = event.contentOffset.y;
+  });
+  const scrollGesture = useMemo(() => Gesture.Native(), []);
+  const dismissGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY(12)
+        .onStart(() => {
+          startedAtTop.value = scrollOffset.value <= 0;
+        })
+        .onUpdate((event) => {
+          if (startedAtTop.value && event.translationY > 0) {
+            translateY.value = event.translationY;
+          }
+        })
+        .onEnd((event) => {
+          if (!startedAtTop.value) return;
+          if (translateY.value > screenHeight * DISMISS_DISTANCE_FRACTION || event.velocityY > DISMISS_VELOCITY) {
+            runOnJS(close)();
+          } else {
+            translateY.value = withSpring(0, springs.gentle);
+          }
+        })
+        .simultaneousWithExternalGesture(scrollGesture),
+    [translateY, screenHeight, close, scrollOffset, startedAtTop, scrollGesture],
+  );
 
   const [showEndSession, setShowEndSession] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
-
-  const { queue, currentClimbQueueItem } = state;
-  const currentUuid = currentClimbQueueItem?.uuid;
-
-  const handlePressItem = useCallback((item: ClimbQueueItem) => setCurrentClimb(item), [setCurrentClimb]);
-  const handleRemoveItem = useCallback((uuid: string) => removeFromQueue(uuid), [removeFromQueue]);
 
   const handleConfirmEnd = useCallback(async () => {
     setIsEnding(true);
@@ -74,49 +187,44 @@ export function InSessionView() {
   }, [endSession, close, router]);
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <SessionStatsHeader summary={summaryQuery.data ?? null} />
+    <GestureDetector gesture={dismissGesture}>
+      <View style={styles.container}>
+        <GestureDetector gesture={scrollGesture}>
+          <Animated.ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
+            showsVerticalScrollIndicator={false}
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            // No bounce: a downward pull at the top should move the sheet (our
+            // pan), not bounce the scroll view underneath it.
+            bounces={false}
+          >
+            <SessionPresenceRow
+              users={sessionUsers}
+              driverParticipantId={driverParticipantId}
+              selfParticipantId={participantId}
+            />
 
-        <View style={styles.queueSection}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionLabel}>
-            {t('mobile.session.inQueueTitle')}
-          </Text>
-          {queue.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: systemColors.secondaryBackground }]}>
-              <Text variant="body" color={systemColors.secondaryLabel}>
-                {t('mobile.session.inQueueEmpty')}
-              </Text>
-            </View>
-          ) : !board ? (
-            // Items exist but the active board (for thumbnails) is still
-            // resolving — show a spinner rather than a misleading empty state.
-            <View style={[styles.emptyCard, { backgroundColor: systemColors.secondaryBackground }]}>
-              <ActivityIndicator />
-            </View>
-          ) : (
-            queue.map((item, index) => (
-              <QueueItemRow
-                key={item.uuid}
-                item={item}
-                position={index + 1}
-                board={board}
-                isCurrentClimb={currentUuid === item.uuid}
-                onPress={handlePressItem}
-                onRemove={handleRemoveItem}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
+            <SessionAnalytics
+              sends={sends}
+              flashes={flashes}
+              hardestGrade={hardestGrade}
+              hardestSends={hardestSends}
+              startedAt={startedAt}
+              gradeDistribution={gradeDistribution}
+            />
 
-      <View
-        style={[styles.footer, { backgroundColor: systemColors.background, paddingBottom: insets.bottom + spacing[3] }]}
-      >
+            <SessionLeaderboard participants={participants} driverUserId={driverUserId} selfUserId={selfUserId} />
+          </Animated.ScrollView>
+        </GestureDetector>
+
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: systemColors.background, paddingBottom: insets.bottom + spacing[3] },
+          ]}
+        >
         <Button
           title={t('mobile.session.inEndSession')}
           onPress={() => setShowEndSession(true)}
@@ -125,14 +233,15 @@ export function InSessionView() {
         />
       </View>
 
-      <EndSessionSheet
-        visible={showEndSession}
-        onDismiss={() => setShowEndSession(false)}
-        onConfirm={() => void handleConfirmEnd()}
-        isEnding={isEnding}
-        climbCount={queue.length}
-      />
-    </View>
+        <EndSessionSheet
+          visible={showEndSession}
+          onDismiss={() => setShowEndSession(false)}
+          onConfirm={() => void handleConfirmEnd()}
+          isEnding={isEnding}
+          climbCount={state.queue.length}
+        />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -147,18 +256,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     gap: spacing[5],
-  },
-  queueSection: {
-    gap: spacing[2],
-  },
-  sectionLabel: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  emptyCard: {
-    padding: spacing[4],
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
   },
   footer: {
     paddingHorizontal: spacing[4],

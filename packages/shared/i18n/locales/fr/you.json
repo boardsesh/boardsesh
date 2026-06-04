@@ -26,7 +26,20 @@
     "unknownName": "Grimpeur",
     "cancel": "Annuler",
     "sessions": {
-      "empty": "Aucune session enregistrée — va grimper."
+      "weeklySends": "{{count}} réussites cette semaine",
+      "weekly": {
+        "sessions": "Sessions",
+        "sends": "Réussites",
+        "flashes": "Flashs",
+        "attempts": "Essais"
+      },
+      "streak": "Série de {{count}} semaines",
+      "sectionToday": "Aujourd'hui",
+      "sectionThisWeek": "Cette semaine",
+      "sectionEarlier": "Plus tôt",
+      "emptyTitle": "Pas encore de sessions",
+      "emptyBody": "Démarrez une session et vos voies apparaîtront ici.",
+      "emptyCta": "Démarrer une session"
     },
     "progress": {
       "empty": "Rien d'enregistré pour l'instant — tes stats apparaissent dès que tu coches des voies."

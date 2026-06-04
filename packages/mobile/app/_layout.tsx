@@ -24,6 +24,7 @@ import { QueueProvider } from '../src/providers/queue-provider';
 import { QueueSnackbarProvider } from '../src/providers/queue-snackbar-provider';
 import { DrawerHostProvider } from '../src/providers/drawer-host-provider';
 import { SessionScreenProvider } from '../src/providers/session-screen-provider';
+import { DeepLinkProvider } from '../src/providers/deep-link-provider';
 import { SessionScreenHost } from '../src/components/session-screen/SessionScreenHost';
 import { FeatureFlagsProvider } from '../src/providers/feature-flags-provider';
 import { PartyProfileProvider } from '../src/providers/party-profile-provider';
@@ -234,17 +235,24 @@ function RootLayout() {
                                     <BluetoothProviderWrapper>
                                       <SessionScreenProvider>
                                         <DrawerHostProvider>
-                                          <ThemedNavigation>
-                                            <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                                              <Stack.Screen name="(tabs)" />
-                                              <Stack.Screen
-                                                name="auth"
-                                                options={{ headerShown: false, gestureEnabled: false }}
-                                              />
-                                            </Stack>
-                                          </ThemedNavigation>
-                                          <PersistentQueueBar />
-                                          <SessionScreenHost />
+                                          <DeepLinkProvider>
+                                            <ThemedNavigation>
+                                              <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+                                                <Stack.Screen name="(tabs)" />
+                                                <Stack.Screen
+                                                  name="auth"
+                                                  options={{ headerShown: false, gestureEnabled: false }}
+                                                />
+                                                <Stack.Screen name="session/[sessionId]" />
+                                                <Stack.Screen
+                                                  name="join/[sessionId]"
+                                                  options={{ presentation: 'modal', headerShown: false }}
+                                                />
+                                              </Stack>
+                                            </ThemedNavigation>
+                                            <PersistentQueueBar />
+                                            <SessionScreenHost />
+                                          </DeepLinkProvider>
                                         </DrawerHostProvider>
                                       </SessionScreenProvider>
                                     </BluetoothProviderWrapper>

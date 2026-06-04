@@ -33,7 +33,7 @@ import {
   type SubscriptionWireEnvelope,
 } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
-import type { SessionSummary, SubscriptionQueueEvent } from '@boardsesh/shared-schema';
+import type { SessionSummary, SubscriptionQueueEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { execute } from '@boardsesh/graphql-client';
 import { buildBoardPath, parseBoardPath } from '@boardsesh/board-config';
 import { JOIN_SESSION } from '@boardsesh/graphql/operations/queue-session';
@@ -48,6 +48,7 @@ import {
   type CreateSessionMutationResponse,
   type EndSessionMutationResponse,
   type SessionUpdateEvent,
+  type SessionLiveStatsEvent,
   type GetClimbQueryResponse,
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
@@ -72,6 +73,21 @@ type QueueContextValue = {
   dispatch: React.Dispatch<QueueAction>;
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
+  /**
+   * Live aggregate stats for the active session, pushed over `sessionUpdates`
+   * (the `SessionStatsUpdated` event) as ticks are logged. Null until the first
+   * push arrives (or when there's no session).
+   */
+  liveStats: SessionLiveStatsEvent | null;
+  /**
+   * Connected participants in the active session. Seeded from the JOIN_SESSION
+   * response and kept current via UserJoined/UserLeft/UserPresenceChanged.
+   */
+  sessionUsers: SessionUser[];
+  /** Participant id of the member currently driving the wall, if any. */
+  driverParticipantId: string | null;
+  /** Our own participant id for the active session (marks "you" in rosters). */
+  participantId: string | null;
   addToQueue: (item: ClimbQueueItem) => void;
   removeFromQueue: (uuid: string) => void;
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
@@ -93,6 +109,15 @@ type QueueContextValue = {
    * mutation failed. No-op (returns existing id) when a session is live.
    */
   startSession: (config?: StartSessionConfig) => Promise<string | null>;
+  /**
+   * Join an existing session created by someone else (party mode). Switches the
+   * active board to the session's board, sets + persists the sessionId, and
+   * relies on the session effect to run JOIN_SESSION + open the realtime
+   * subscriptions. No-ops if already in this session. Differs from
+   * `startSession`, which *reads* the active board to create a new session;
+   * `joinSession` *writes* the active board from the session's boardPath.
+   */
+  joinSession: (sessionId: string, opts: { boardPath: string; userBoard: UserBoard }) => Promise<void>;
   /**
    * Broadcast the session's boardPath so every party member follows the same
    * angle/board. Best-effort; a true no-op in solo (never creates a session).
@@ -129,6 +154,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(queueReducer, defaultSearchParams, initialState);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  // Live session analytics + presence. liveStats is pushed over `sessionUpdates`
+  // (SessionStatsUpdated); the roster is seeded from JOIN_SESSION and kept
+  // current via UserJoined/UserLeft/UserPresenceChanged/DriverChanged.
+  const [liveStats, setLiveStats] = useState<SessionLiveStatsEvent | null>(null);
+  const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([]);
+  const [driverParticipantId, setDriverParticipantId] = useState<string | null>(null);
+  const [participantId, setParticipantId] = useState<string | null>(null);
   // Our own participant id, captured from the JOIN_SESSION response. Used to
   // suppress the echo of our own SessionBoardPathChanged broadcasts (the server
   // stamps `changedByParticipantId` with the originator's participant id).
@@ -179,14 +211,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           );
         },
         execute: async ({ sessionId: sid, boardPath }) => {
-          const result = await execute<{ joinSession?: { participantId?: string | null } }>(getWsClient(), {
+          const result = await execute<{
+            joinSession?: {
+              participantId?: string | null;
+              driverParticipantId?: string | null;
+              users?: SessionUser[] | null;
+            };
+          }>(getWsClient(), {
             query: JOIN_SESSION,
             variables: { sessionId: sid, boardPath },
           });
+          const joined = result?.joinSession;
           // Remember our participant id so we can ignore the echo of our own
           // board-path broadcasts. Only overwrite on a concrete value.
-          const joinedParticipantId = result?.joinSession?.participantId;
-          if (joinedParticipantId) participantIdRef.current = joinedParticipantId;
+          if (joined?.participantId) {
+            participantIdRef.current = joined.participantId;
+            setParticipantId(joined.participantId);
+          }
+          // Seed the live presence roster + driver from the join response. The
+          // UserJoined/UserLeft/DriverChanged events that follow are deltas;
+          // this is the initial snapshot of who's already in the session.
+          if (joined?.users) setSessionUsers(joined.users);
+          setDriverParticipantId(joined?.driverParticipantId ?? null);
           return result;
         },
       }),
@@ -254,6 +300,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
       participantIdRef.current = null;
+      setParticipantId(null);
+      setLiveStats(null);
+      setSessionUsers([]);
+      setDriverParticipantId(null);
       joinTracker.reset();
       return;
     }
@@ -344,7 +394,49 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       {
         next: ({ data }) => {
           const event = data?.sessionUpdates;
-          if (!event || event.__typename !== 'SessionBoardPathChanged' || !event.boardPath) return;
+          if (!event) return;
+
+          // Live analytics push: flashes + flash/send/attempt grade split +
+          // per-participant breakdown. Drives the in-session analytics view and
+          // leaderboard without polling.
+          if (event.__typename === 'SessionStatsUpdated') {
+            setLiveStats({
+              sessionId: event.sessionId ?? sessionId,
+              totalSends: event.totalSends ?? 0,
+              totalFlashes: event.totalFlashes ?? 0,
+              totalAttempts: event.totalAttempts ?? 0,
+              tickCount: event.tickCount ?? 0,
+              participants: event.participants ?? [],
+              gradeDistribution: event.gradeDistribution ?? [],
+              boardTypes: event.boardTypes ?? [],
+              hardestGrade: event.hardestGrade ?? null,
+              durationMinutes: event.durationMinutes ?? null,
+              goal: event.goal ?? null,
+            });
+            return;
+          }
+
+          // Presence roster maintenance (deltas on top of the JOIN_SESSION seed).
+          if ((event.__typename === 'UserJoined' || event.__typename === 'UserPresenceChanged') && event.user) {
+            const incoming = event.user;
+            setSessionUsers((prev) => {
+              const next = prev.filter((existing) => existing.id !== incoming.id);
+              next.push(incoming);
+              return next;
+            });
+            return;
+          }
+          if (event.__typename === 'UserLeft' && event.userId) {
+            const leftId = event.userId;
+            setSessionUsers((prev) => prev.filter((existing) => existing.id !== leftId));
+            return;
+          }
+          if (event.__typename === 'DriverChanged') {
+            setDriverParticipantId(event.driverParticipantId ?? null);
+            return;
+          }
+
+          if (event.__typename !== 'SessionBoardPathChanged' || !event.boardPath) return;
           // Echo of our own change — we already applied it locally before
           // broadcasting. A null local participant id (peer event before our
           // JOIN_SESSION resolved) can't be the originator, so we apply it.
@@ -385,6 +477,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       unsubConnected();
       unsubClosed();
       unsubscribeRef.current = null;
+      // Reset live analytics/presence on EVERY session change (not only on
+      // teardown to null). A direct A→B switch (joinSession) flips sessionId
+      // without an intermediate null, so without this the previous session's
+      // liveStats/roster would leak into the joined session until B's first
+      // push. The new session re-seeds the roster from its JOIN_SESSION response.
+      setLiveStats(null);
+      setSessionUsers([]);
+      setDriverParticipantId(null);
+      setParticipantId(null);
+      participantIdRef.current = null;
       joinTracker.reset();
     };
   }, [sessionId, coordinator, ensureJoined, joinTracker]);
@@ -736,6 +838,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }
   }, [clearSession, showToast, t]);
 
+  const joinSession = useCallback(
+    async (sessionToJoin: string, opts: { boardPath: string; userBoard: UserBoard }) => {
+      // Idempotent against double-tap / re-entrant deep links.
+      if (sessionIdRef.current === sessionToJoin) return;
+      // Switch the active board to the session's board FIRST (and persist it) so
+      // the session effect's JOIN_SESSION reads the correct boardPath and the
+      // whole tree (BLE wrapper, BoardProvider, climb list, play drawer) renders
+      // on the joined board. Unlike startSession (which reads the active board to
+      // build the new session's path), joinSession writes it from the session.
+      await setActiveBoard(opts.userBoard);
+      sessionIdRef.current = sessionToJoin;
+      setSessionId(sessionToJoin);
+      await setStoredSessionId(sessionToJoin);
+    },
+    [setActiveBoard],
+  );
+
   const publishPlaybackState = useCallback(
     (input: PublishPlaybackStateInput) => mutations.publishPlaybackState(input),
     [mutations],
@@ -747,6 +866,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       dispatch,
       sessionId,
       setSessionId,
+      liveStats,
+      sessionUsers,
+      driverParticipantId,
+      participantId,
       addToQueue,
       removeFromQueue,
       reorderQueue,
@@ -760,6 +883,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearSession,
       endSession,
       startSession: createSessionWithConfig,
+      joinSession,
       setSessionBoardPath,
       subscribeToQueueEvents,
       publishPlaybackState,
@@ -767,6 +891,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [
       state,
       sessionId,
+      liveStats,
+      sessionUsers,
+      driverParticipantId,
+      participantId,
       addToQueue,
       removeFromQueue,
       reorderQueue,
@@ -780,6 +908,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearSession,
       endSession,
       createSessionWithConfig,
+      joinSession,
       setSessionBoardPath,
       subscribeToQueueEvents,
       publishPlaybackState,
