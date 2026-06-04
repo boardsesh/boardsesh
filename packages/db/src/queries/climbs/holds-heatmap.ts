@@ -45,65 +45,37 @@ export const getHoldHeatmapData = async (
   searchParams: ClimbSearchParams,
   userId?: string,
 ): Promise<HoldHeatmapData[]> => {
-  // Use the shared filter creator
+  // Use the shared filter creator. Personal-progress filters (hideAttempted /
+  // showOnlyCompleted / …) are applied inside createClimbFilters via the where
+  // conditions, so they restrict *which* climbs are counted — they don't change
+  // the aggregate columns. That's why a single query covers every case.
   const filters = createClimbFilters(params, searchParams, userId);
 
-  // Check if personal progress filters are active - if so, use user-specific counts
-  const personalProgressFiltersEnabled =
-    searchParams.hideAttempted ||
-    searchParams.hideCompleted ||
-    searchParams.showOnlyAttempted ||
-    searchParams.showOnlyCompleted;
+  // Community aggregate over the matching climb set. totalAscents is always the
+  // community ascent total (SUM of ascensionistCount) — never a climb count.
+  let holdStats: Record<string, unknown>[] = await dbHandle
+    .select({
+      holdId: boardClimbHolds.holdId,
+      totalUses: sql<number>`COUNT(DISTINCT ${boardClimbHolds.climbUuid})`,
+      totalAscents: sql<number>`SUM(${boardClimbStats.ascensionistCount})`,
+      startingUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'STARTING' THEN 1 ELSE 0 END)`,
+      handUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'HAND' THEN 1 ELSE 0 END)`,
+      footUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FOOT' THEN 1 ELSE 0 END)`,
+      finishUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FINISH' THEN 1 ELSE 0 END)`,
+      averageDifficulty: sql<number>`AVG(${boardClimbStats.displayDifficulty})`,
+    })
+    .from(boardClimbHolds)
+    .innerJoin(boardClimbs, and(...filters.getClimbHoldsJoinConditions()))
+    .leftJoin(boardClimbStats, and(...filters.getHoldHeatmapClimbStatsConditions()))
+    .where(
+      and(...filters.getClimbWhereConditions(), ...filters.getSizeConditions(), ...filters.getClimbStatsConditions()),
+    )
+    .groupBy(boardClimbHolds.holdId);
 
-  let holdStats: Record<string, unknown>[];
-
-  if (personalProgressFiltersEnabled && userId) {
-    // When personal progress filters are active, the filters already limit
-    // climbs to the user's attempted/completed ones, so the base query is the
-    // same but the results are user-filtered.
-    holdStats = await dbHandle
-      .select({
-        holdId: boardClimbHolds.holdId,
-        totalUses: sql<number>`COUNT(DISTINCT ${boardClimbHolds.climbUuid})`,
-        totalAscents: sql<number>`COUNT(DISTINCT ${boardClimbHolds.climbUuid})`,
-        startingUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'STARTING' THEN 1 ELSE 0 END)`,
-        handUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'HAND' THEN 1 ELSE 0 END)`,
-        footUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FOOT' THEN 1 ELSE 0 END)`,
-        finishUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FINISH' THEN 1 ELSE 0 END)`,
-        averageDifficulty: sql<number>`AVG(${boardClimbStats.displayDifficulty})`,
-      })
-      .from(boardClimbHolds)
-      .innerJoin(boardClimbs, and(...filters.getClimbHoldsJoinConditions()))
-      .leftJoin(boardClimbStats, and(...filters.getHoldHeatmapClimbStatsConditions()))
-      .where(
-        and(...filters.getClimbWhereConditions(), ...filters.getSizeConditions(), ...filters.getClimbStatsConditions()),
-      )
-      .groupBy(boardClimbHolds.holdId);
-  } else {
-    // Global community stats when no personal progress filters are active.
-    holdStats = await dbHandle
-      .select({
-        holdId: boardClimbHolds.holdId,
-        totalUses: sql<number>`COUNT(DISTINCT ${boardClimbHolds.climbUuid})`,
-        totalAscents: sql<number>`SUM(${boardClimbStats.ascensionistCount})`,
-        startingUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'STARTING' THEN 1 ELSE 0 END)`,
-        handUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'HAND' THEN 1 ELSE 0 END)`,
-        footUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FOOT' THEN 1 ELSE 0 END)`,
-        finishUses: sql<number>`SUM(CASE WHEN ${boardClimbHolds.holdState} = 'FINISH' THEN 1 ELSE 0 END)`,
-        averageDifficulty: sql<number>`AVG(${boardClimbStats.displayDifficulty})`,
-      })
-      .from(boardClimbHolds)
-      .innerJoin(boardClimbs, and(...filters.getClimbHoldsJoinConditions()))
-      .leftJoin(boardClimbStats, and(...filters.getHoldHeatmapClimbStatsConditions()))
-      .where(
-        and(...filters.getClimbWhereConditions(), ...filters.getSizeConditions(), ...filters.getClimbStatsConditions()),
-      )
-      .groupBy(boardClimbHolds.holdId);
-  }
-
-  // Add user-specific data only if not already computed in the main query.
-  if (userId && !personalProgressFiltersEnabled) {
-    // Per-hold user ascents/attempts come from boardsesh_ticks (NextAuth userId).
+  // Personal-progress overlay: per-hold user ascents/attempts straight from
+  // boardsesh_ticks (NextAuth userId). Computed from real ticks — never aliased
+  // from climb counts. The mobile path passes no userId and skips this entirely.
+  if (userId) {
     const [userAscentsRows, userAttemptsRows] = await Promise.all([
       executeRows<{ hold_id: number; user_ascents: number }>(
         dbHandle,
@@ -146,14 +118,6 @@ export const getHoldHeatmapData = async (
       ...stat,
       userAscents: ascentsMap.get(Number(stat.holdId)) || 0,
       userAttempts: attemptsMap.get(Number(stat.holdId)) || 0,
-    }));
-  } else if (personalProgressFiltersEnabled && userId) {
-    // The main stats already ARE the user stats, but the frontend still expects
-    // userAscents/userAttempts fields for backward compatibility.
-    holdStats = holdStats.map((stat) => ({
-      ...stat,
-      userAscents: Number(stat.totalAscents) || 0,
-      userAttempts: Number(stat.totalUses) || 0,
     }));
   }
 

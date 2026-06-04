@@ -276,11 +276,9 @@ export const climbQueries = {
     // above the create-editor's interactive cadence (toggled on, then cached
     // 5 min by React Query on the client).
     await applyRateLimit(ctx, 30, 'hold-heatmap');
+    // HoldHeatmapInputSchema validates boardName via BoardNameSchema, so an
+    // unsupported board is already rejected here — no isValidBoardName guard needed.
     const validated = validateInput(HoldHeatmapInputSchema, input, 'input');
-
-    if (!isValidBoardName(validated.boardName)) {
-      throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
-    }
 
     // MoonBoard has no board_climb_holds/board_climb_stats rows — return empty
     // to mirror the web REST heatmap route's MoonBoard short-circuit.

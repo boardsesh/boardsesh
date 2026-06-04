@@ -7,6 +7,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
+import { useToast } from '../../providers/toast-provider';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { spacing } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
@@ -98,6 +99,7 @@ function AuroraCreateClimbScreen({
 }: AuroraCreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
+  const { showToast } = useToast();
   const router = useRouter();
 
   const controller = useCreateClimbScreen({ board, forkFrames, forkName, forkDescription, editClimbUuid });
@@ -116,7 +118,7 @@ function AuroraCreateClimbScreen({
   const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
 
   // Community hold-usage heatmap. Only fetched once the user toggles it on.
-  const { statsByHoldId } = useHoldHeatmap(
+  const { statsByHoldId, isError: heatmapError } = useHoldHeatmap(
     {
       boardName: board.boardName,
       layoutId: board.layoutId,
@@ -126,6 +128,15 @@ function AuroraCreateClimbScreen({
     },
     heatmapVisible,
   );
+
+  // A failed heatmap fetch would otherwise leave the flame toggle lit over an
+  // empty overlay with no feedback. Drop the overlay and surface the failure.
+  useEffect(() => {
+    if (heatmapVisible && heatmapError) {
+      setHeatmapVisible(false);
+      showToast(t('createClimbForm.alerts.heatmapLoadFailed'), 'error');
+    }
+  }, [heatmapVisible, heatmapError, showToast, t]);
 
   // Skip painted holds so the heat never covers the working climb.
   const paintedHoldIds = useMemo(

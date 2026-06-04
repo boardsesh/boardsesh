@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { HoldStat } from '@boardsesh/shared-schema';
+import type { BoardName, HoldStat } from '@boardsesh/shared-schema';
 import { HOLD_HEATMAP_QUERY, type HoldHeatmapResponse } from '@boardsesh/graphql/operations';
 import { getHttpClient } from '../client';
 
 /** Board configuration the heatmap aggregates over (matches HoldHeatmapInput). */
 export type HoldHeatmapParams = {
-  boardName: string;
+  boardName: BoardName;
   layoutId: number;
   sizeId: number;
   setIds: string;
@@ -18,6 +18,8 @@ export type UseHoldHeatmapResult = {
   /** Lookup from hold id → its aggregate row, for O(1) access while rendering. */
   statsByHoldId: Map<number, HoldStat>;
   isLoading: boolean;
+  /** True when the heatmap query failed; lets the screen drop the overlay + warn. */
+  isError: boolean;
 };
 
 /**
@@ -51,5 +53,5 @@ export function useHoldHeatmap(params: HoldHeatmapParams, enabled: boolean): Use
     return map;
   }, [holdStats]);
 
-  return { holdStats, statsByHoldId, isLoading: query.isLoading };
+  return { holdStats, statsByHoldId, isLoading: query.isLoading, isError: query.isError };
 }

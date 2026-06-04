@@ -405,7 +405,8 @@
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
       "identicalClimbDrawerTitle": "Identical climb",
-      "saveFailedFallback": "Failed to save climb. Please try again."
+      "saveFailedFallback": "Failed to save climb. Please try again.",
+      "heatmapLoadFailed": "Couldn't load the heatmap. Try again."
     },
     "settings": {
       "tooltip": "Climb settings",

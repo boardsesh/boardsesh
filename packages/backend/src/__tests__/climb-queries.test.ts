@@ -347,8 +347,7 @@ describe('Climb Query Functions', () => {
 
     it('should return an empty array for an invalid size_id', async () => {
       const rows = await getHoldHeatmapData(dbRead, { ...testParams, size_id: 999999 }, { page: 0, pageSize: 20 });
-      const seededHolds = rows.filter((row) => row.holdId === 700 || row.holdId === 701 || row.holdId === 702);
-      expect(seededHolds).toEqual([]);
+      expect(rows).toEqual([]);
     });
   });
 

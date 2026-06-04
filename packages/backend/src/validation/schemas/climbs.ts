@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ExternalUUIDSchema, BoardNameSchema, SetIdsSchema } from './primitives';
 
 /**
  * Climb validation schema (simplified for input)
@@ -104,7 +104,7 @@ export const ClimbSearchInputSchema = z.object({
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: z.string().min(1, 'Set IDs cannot be empty'),
+  setIds: SetIdsSchema,
   angle: z.number().int(),
   page: z.number().int().min(0).optional(),
   pageSize: z.number().int().min(1).max(100, 'Page size cannot exceed 100').optional(),
@@ -229,7 +229,7 @@ export const SetterStatsInputSchema = z.object({
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: z.string().min(1, 'Set IDs cannot be empty'),
+  setIds: SetIdsSchema,
   angle: z.number().int().min(0).max(90),
   search: z.string().max(200).optional(),
 });
@@ -238,7 +238,7 @@ export const HoldHeatmapInputSchema = z.object({
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: z.string().min(1, 'Set IDs cannot be empty'),
+  setIds: SetIdsSchema,
   angle: z.number().int().min(0).max(90),
   minGrade: z.number().int().optional(),
   maxGrade: z.number().int().optional(),

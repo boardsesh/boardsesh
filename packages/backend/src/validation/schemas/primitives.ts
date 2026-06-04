@@ -73,6 +73,15 @@ export const BoardNameSchema = z.enum(SUPPORTED_BOARDS, {
 });
 
 /**
+ * Set IDs validation schema. Set IDs travel as a comma-separated list of
+ * integers (e.g. "1" or "1,2,3"). The resolvers parse them with
+ * `parseInt`/`filter(!isNaN)`, so a non-numeric string like "abc" would slip
+ * through `min(1)`, collapse to an empty array, and silently drop the set
+ * filter — returning data for the whole board. Enforce the numeric shape here.
+ */
+export const SetIdsSchema = z.string().regex(/^\d+(,\d+)*$/, 'Set IDs must be comma-separated numbers');
+
+/**
  * Slug validation schema
  */
 export const SlugSchema = z

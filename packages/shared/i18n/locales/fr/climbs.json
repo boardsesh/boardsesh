@@ -405,7 +405,8 @@
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
       "viewMatchingClimb": "Voir le bloc correspondant",
       "identicalClimbDrawerTitle": "Bloc identique",
-      "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer."
+      "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer.",
+      "heatmapLoadFailed": "Impossible de charger la carte de chaleur. Réessayez."
     },
     "settings": {
       "tooltip": "Paramètres du bloc",

@@ -1,4 +1,5 @@
 // Climb and Hold types
+import type { BoardName } from './board-config';
 import type { MoonBoardHoldsInput } from './new-climb-feed';
 
 export type HoldState = 'OFF' | 'STARTING' | 'FINISH' | 'HAND' | 'FOOT' | 'ANY' | 'NOT' | 'AUX';
@@ -180,7 +181,7 @@ export type SetterStat = {
  * personal-progress fields.
  */
 export type HoldHeatmapInput = {
-  boardName: string;
+  boardName: BoardName;
   layoutId: number;
   sizeId: number;
   setIds: string;

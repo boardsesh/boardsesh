@@ -396,7 +396,8 @@
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
       "identicalClimbDrawerTitle": "Bloque idéntico",
-      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo."
+      "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
+      "heatmapLoadFailed": "No se pudo cargar el mapa de calor. Inténtalo de nuevo."
     },
     "settings": {
       "tooltip": "Ajustes del bloque",
