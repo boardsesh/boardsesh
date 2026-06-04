@@ -2,6 +2,25 @@ import { randomUUID } from 'expo-crypto';
 import type { Climb, ClimbInput } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
+// A type-valid but empty ClimbInput. `ClimbQueueItem.climb` is typed
+// non-nullable, but an item deserialized from a peer broadcast can arrive
+// partially synced with no climb (the wire boundary is untyped). Returning this
+// placeholder from `toClimbInput` keeps the queue mutation mapper from throwing
+// on `null.uuid`; resolving such "unknown climb" items properly (fetch + patch,
+// or skip from the payload) is tracked in #2527.
+const PLACEHOLDER_CLIMB_INPUT: ClimbInput = {
+  uuid: '',
+  setter_username: '',
+  name: '',
+  frames: '',
+  angle: 0,
+  ascensionist_count: 0,
+  difficulty: '',
+  quality_average: '0',
+  stars: 0,
+  difficulty_error: '',
+};
+
 /**
  * Map a `Climb` to the GraphQL `ClimbInput` for queue mutations. `ClimbInput` is
  * a strict subset of `Climb` — sending extra fields (notably `created_at`, which
@@ -12,8 +31,15 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
  * explicitly here and let the `ClimbInput` return type pin the shape. Use this at
  * every wire boundary (add / setCurrent / setQueue) so it can't be bypassed by an
  * item built from a raw climb (e.g. `addToQueue({ uuid, climb })`).
+ *
+ * Tolerates a nullish climb (returns `PLACEHOLDER_CLIMB_INPUT`) so a
+ * partially-synced peer item can't crash the mutation. See #2527.
  */
-export function toClimbInput(climb: Climb): ClimbInput {
+export function toClimbInput(climb: Climb | null | undefined): ClimbInput {
+  if (!climb) {
+    if (__DEV__) console.warn('[queue] toClimbInput called without a climb — sending placeholder. See #2527.');
+    return PLACEHOLDER_CLIMB_INPUT;
+  }
   return {
     uuid: climb.uuid,
     setter_username: climb.setter_username,

@@ -46,7 +46,12 @@ export type ClimbListItemClimb = {
 };
 
 type ClimbListItemContentProps = {
-  climb: ClimbListItemClimb;
+  // Nullable: the search list always supplies a climb, but a partially-synced
+  // peer queue item can reach the queue row with no climb (`ClimbQueueItem.climb`
+  // is typed non-null, yet the wire boundary is untyped). When absent we render
+  // an "Unknown Climb" placeholder rather than crashing on `climb.difficulty`.
+  // Proper resolution of these items is tracked in #2527.
+  climb: ClimbListItemClimb | null | undefined;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -109,13 +114,12 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   angle,
 }: ClimbListItemContentProps) {
   const { t } = useTranslation('climbs');
+  const { t: tSession } = useTranslation('session');
   const { formatGrade } = useGradeFormat();
-
-  const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
-  const formattedGrade = formatGrade(climb.difficulty);
 
   // Subtitle parts: sends · quality★ · setter (each dropped when absent).
   const subtitleText = useMemo(() => {
+    if (!climb) return '';
     const parts: string[] = [];
     if (climb.is_draft) {
       parts.push(t('createClimbForm.draftBadge'));
@@ -131,7 +135,27 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       parts.push(climb.setter_username);
     }
     return parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
-  }, [climb.is_draft, climb.ascensionist_count, climb.quality_average, climb.setter_username, t]);
+  }, [climb?.is_draft, climb?.ascensionist_count, climb?.quality_average, climb?.setter_username, t]);
+
+  // Partially-synced peer item with no climb data (#2527): show an "Unknown
+  // Climb" placeholder keeping the three-block layout so the row doesn't crash
+  // and the gutter/separator still line up with resolved rows.
+  if (!climb) {
+    return (
+      <>
+        <View style={styles.thumbnailContainer} />
+        <View style={styles.centerColumn}>
+          <Text variant="body" numberOfLines={1} style={styles.climbName}>
+            {tSession('mobile.queue.unknownClimb')}
+          </Text>
+        </View>
+        <View style={styles.rightSection} />
+      </>
+    );
+  }
+
+  const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
+  const formattedGrade = formatGrade(climb.difficulty);
 
   return (
     <>
