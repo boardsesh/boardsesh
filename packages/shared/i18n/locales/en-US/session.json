@@ -248,9 +248,7 @@
     "similarClimbs": {
       "title": "Similar Climbs",
       "empty": "No similar climbs found",
-      "retry": "Try again",
-      "sends_one": "{{count}} send",
-      "sends_other": "{{count}} sends"
+      "retry": "Try again"
     },
     "community": {
       "title": "Community",
@@ -337,8 +335,6 @@
       "inStatsDuration": "Duration",
       "inStatsHardest": "Hardest send",
       "inStatsGrades": "Grade distribution",
-      "inQueueTitle": "Queue",
-      "inQueueEmpty": "Queue is empty — browse climbs to add.",
       "inEndSession": "End session",
       "notification": {
         "channelName": "Active climbing session",

@@ -248,9 +248,7 @@
     "similarClimbs": {
       "title": "Escaladas similares",
       "empty": "No se encontraron escaladas similares",
-      "retry": "Reintentar",
-      "sends_one": "{{count}} envío",
-      "sends_other": "{{count}} envíos"
+      "retry": "Reintentar"
     },
     "community": {
       "title": "Comunidad",
@@ -337,8 +335,6 @@
       "inStatsDuration": "Duración",
       "inStatsHardest": "Encadene más duro",
       "inStatsGrades": "Distribución de grados",
-      "inQueueTitle": "Cola",
-      "inQueueEmpty": "Cola vacía — explora vías para añadir.",
       "inEndSession": "Terminar sesión",
       "notification": {
         "channelName": "Sesión de escalada activa",

@@ -248,9 +248,7 @@
     "similarClimbs": {
       "title": "Voies similaires",
       "empty": "Aucune voie similaire trouvee",
-      "retry": "Reessayer",
-      "sends_one": "{{count}} envoi",
-      "sends_other": "{{count}} envois"
+      "retry": "Reessayer"
     },
     "community": {
       "title": "Communaute",
@@ -337,8 +335,6 @@
       "inStatsDuration": "Durée",
       "inStatsHardest": "Plus dure enchaînée",
       "inStatsGrades": "Répartition par cotation",
-      "inQueueTitle": "File",
-      "inQueueEmpty": "File vide — parcours des voies pour ajouter.",
       "inEndSession": "Terminer la session",
       "notification": {
         "channelName": "Session d'escalade active",
