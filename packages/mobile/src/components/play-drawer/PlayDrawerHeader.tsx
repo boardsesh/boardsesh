@@ -1,23 +1,30 @@
 import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getSoftGradeColor } from '@boardsesh/play-view';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
 
 const MIN_GRADE_COLUMN_WIDTH: number = spacing[12];
 const GRADE_COLUMN_CHARACTER_WIDTH: number = spacing[3];
 
-export function getInitialGradeColumnWidth(displayGrade: string): number {
+// First-render estimate only; DrawerHeader's runtime measurement remains authoritative.
+export function estimateInitialGradeColumnWidth(displayGrade: string): number {
   return Math.max(MIN_GRADE_COLUMN_WIDTH, displayGrade.length * GRADE_COLUMN_CHARACTER_WIDTH);
 }
 
-export function resolvePlayDrawerHeaderGradeColor(displayGrade: string, rawDifficulty?: string): string {
-  return getGradeColor(rawDifficulty ?? displayGrade) ?? DEFAULT_GRADE_COLOR;
+export function resolvePlayDrawerHeaderGradeColor(
+  displayGrade: string,
+  rawDifficulty?: string,
+  darkMode?: boolean,
+): string {
+  return getSoftGradeColor(rawDifficulty ?? displayGrade, darkMode) ?? DEFAULT_GRADE_COLOR;
 }
 
 type PlayDrawerHeaderProps = {
@@ -46,10 +53,11 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   benchmarkDifficulty,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
-  const gradeColumnWidth = useMemo(() => getInitialGradeColumnWidth(difficulty), [difficulty]);
+  const { colorScheme } = useTheme();
+  const gradeColumnWidth = useMemo(() => estimateInitialGradeColumnWidth(difficulty), [difficulty]);
   const gradeColor = useMemo(
-    () => resolvePlayDrawerHeaderGradeColor(difficulty, rawDifficulty),
-    [rawDifficulty, difficulty],
+    () => resolvePlayDrawerHeaderGradeColor(difficulty, rawDifficulty, colorScheme === 'dark'),
+    [rawDifficulty, difficulty, colorScheme],
   );
 
   const subtitleParts: string[] = [];

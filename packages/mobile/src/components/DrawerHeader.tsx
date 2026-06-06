@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { memo, useCallback, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { spacing } from '../theme/tokens';
 
@@ -9,6 +9,11 @@ const DEFAULT_TRAILING_MIN_WIDTH: number = spacing[12];
 export function resolveDrawerHeaderTrailingWidth(layoutWidth: number, minWidth: number): number {
   return Math.max(minWidth, Math.ceil(layoutWidth));
 }
+
+type TrailingMeasurement = {
+  minWidth: number;
+  width: number;
+};
 
 type DrawerHeaderProps = {
   /** Centered column content (e.g. title + subtitle, or a name input + counts). */
@@ -30,16 +35,21 @@ export const DrawerHeader = memo(function DrawerHeader({
   trailing,
   trailingMinWidth = DEFAULT_TRAILING_MIN_WIDTH,
 }: DrawerHeaderProps) {
-  const [trailingWidth, setTrailingWidth] = useState(trailingMinWidth);
-
-  useEffect(() => {
-    setTrailingWidth((previous) => (previous === trailingMinWidth ? previous : trailingMinWidth));
-  }, [trailingMinWidth]);
+  const [trailingMeasurement, setTrailingMeasurement] = useState<TrailingMeasurement>({
+    minWidth: trailingMinWidth,
+    width: trailingMinWidth,
+  });
+  const mirroredTrailingWidth =
+    trailingMeasurement.minWidth === trailingMinWidth ? trailingMeasurement.width : trailingMinWidth;
 
   const handleTrailingLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const measured = resolveDrawerHeaderTrailingWidth(event.nativeEvent.layout.width, trailingMinWidth);
-      setTrailingWidth((previous) => (previous === measured ? previous : measured));
+      setTrailingMeasurement((previous) =>
+        previous.minWidth === trailingMinWidth && previous.width === measured
+          ? previous
+          : { minWidth: trailingMinWidth, width: measured },
+      );
     },
     [trailingMinWidth],
   );
@@ -47,9 +57,9 @@ export const DrawerHeader = memo(function DrawerHeader({
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View style={[styles.leadingSpacer, { width: trailingWidth }]} />
+        <View style={[styles.leadingSpacer, { width: mirroredTrailingWidth }]} />
         <View style={styles.centerColumn}>{center}</View>
-        <View style={[styles.trailing, { minWidth: trailingWidth }]} onLayout={handleTrailingLayout}>
+        <View style={[styles.trailing, { minWidth: trailingMinWidth }]} onLayout={handleTrailingLayout}>
           {trailing}
         </View>
       </View>
