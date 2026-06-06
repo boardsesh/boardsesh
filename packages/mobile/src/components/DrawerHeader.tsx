@@ -1,10 +1,14 @@
-import { memo, useCallback, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { spacing } from '../theme/tokens';
 
 // Default width of the trailing slot (and the matching leading spacer) so the
 // centered column stays optically centered before the trailing element measures.
 const DEFAULT_TRAILING_MIN_WIDTH: number = spacing[12];
+
+export function resolveDrawerHeaderTrailingWidth(layoutWidth: number, minWidth: number): number {
+  return Math.max(minWidth, Math.ceil(layoutWidth));
+}
 
 type DrawerHeaderProps = {
   /** Centered column content (e.g. title + subtitle, or a name input + counts). */
@@ -28,17 +32,24 @@ export const DrawerHeader = memo(function DrawerHeader({
 }: DrawerHeaderProps) {
   const [trailingWidth, setTrailingWidth] = useState(trailingMinWidth);
 
-  const handleTrailingLayout = useCallback((event: LayoutChangeEvent) => {
-    const measured = Math.ceil(event.nativeEvent.layout.width);
-    setTrailingWidth((previous) => (previous === measured ? previous : measured));
-  }, []);
+  useEffect(() => {
+    setTrailingWidth((previous) => (previous === trailingMinWidth ? previous : trailingMinWidth));
+  }, [trailingMinWidth]);
+
+  const handleTrailingLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const measured = resolveDrawerHeaderTrailingWidth(event.nativeEvent.layout.width, trailingMinWidth);
+      setTrailingWidth((previous) => (previous === measured ? previous : measured));
+    },
+    [trailingMinWidth],
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={[styles.leadingSpacer, { width: trailingWidth }]} />
         <View style={styles.centerColumn}>{center}</View>
-        <View style={[styles.trailing, { minWidth: trailingMinWidth }]} onLayout={handleTrailingLayout}>
+        <View style={[styles.trailing, { minWidth: trailingWidth }]} onLayout={handleTrailingLayout}>
           {trailing}
         </View>
       </View>

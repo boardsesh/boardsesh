@@ -7,6 +7,18 @@ import { Text } from '../Text';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { spacing } from '../../theme/tokens';
+
+const MIN_GRADE_COLUMN_WIDTH: number = spacing[12];
+const GRADE_COLUMN_CHARACTER_WIDTH: number = spacing[3];
+
+export function getInitialGradeColumnWidth(displayGrade: string): number {
+  return Math.max(MIN_GRADE_COLUMN_WIDTH, displayGrade.length * GRADE_COLUMN_CHARACTER_WIDTH);
+}
+
+export function resolvePlayDrawerHeaderGradeColor(displayGrade: string, rawDifficulty?: string): string {
+  return getGradeColor(rawDifficulty ?? displayGrade) ?? DEFAULT_GRADE_COLOR;
+}
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -34,8 +46,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   benchmarkDifficulty,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
+  const gradeColumnWidth = useMemo(() => getInitialGradeColumnWidth(difficulty), [difficulty]);
   const gradeColor = useMemo(
-    () => getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
+    () => resolvePlayDrawerHeaderGradeColor(difficulty, rawDifficulty),
     [rawDifficulty, difficulty],
   );
 
@@ -65,6 +78,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           {difficulty}
         </Text>
       }
+      trailingMinWidth={gradeColumnWidth}
     />
   );
 });
