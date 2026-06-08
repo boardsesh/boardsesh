@@ -718,7 +718,8 @@
         "clear": "Effacer les prises",
         "setActive": "Définir comme voie active",
         "undo": "Annuler",
-        "redo": "Rétablir"
+        "redo": "Rétablir",
+        "heatmap": "Basculer la carte de chaleur"
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",

@@ -718,7 +718,8 @@
         "clear": "Borrar presas",
         "setActive": "Fijar como vía activa",
         "undo": "Deshacer",
-        "redo": "Rehacer"
+        "redo": "Rehacer",
+        "heatmap": "Alternar mapa de calor"
       },
       "holdRole": {
         "title": "Asignar rol de presa",

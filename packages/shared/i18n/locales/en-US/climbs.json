@@ -718,7 +718,8 @@
         "clear": "Clear holds",
         "setActive": "Set as active climb",
         "undo": "Undo",
-        "redo": "Redo"
+        "redo": "Redo",
+        "heatmap": "Toggle heatmap"
       },
       "holdRole": {
         "title": "Set hold role",
