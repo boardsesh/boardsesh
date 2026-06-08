@@ -4,6 +4,17 @@ import type { ExpoConfig, ConfigContext } from 'expo/config';
 const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
 const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PROJECT_ID;
 
+// Side-by-side "debug" flavour. When BOARDSESH_DEBUG_BUILD=1 (set by the PR APK
+// workflow, android-pr-rn.yml), prebuild emits a distinct app name + applicationId
+// /bundleIdentifier so the build installs ALONGSIDE the production app instead of
+// replacing it (the scheme stays shared on purpose — see below). Paired with an
+// `assembleDebug` build, that gives a throwaway "Boardsesh Debug" install with the
+// expo-dev-client Metro server switcher for pointing a PR branch at a local/preview
+// dev server.
+const IS_DEBUG_BUILD = process.env.BOARDSESH_DEBUG_BUILD === '1';
+const APP_NAME = IS_DEBUG_BUILD ? 'Boardsesh Debug' : 'Boardsesh';
+const APP_ID = IS_DEBUG_BUILD ? 'com.boardsesh.app.debug' : 'com.boardsesh.app';
+
 function resolveDevMetadata(): {
   branchName: string | null;
   qaNotes: string | null;
@@ -81,10 +92,14 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
 
   return {
     ...config,
-    name: 'Boardsesh',
+    name: APP_NAME,
     slug: 'boardsesh',
     owner: 'boardsesh',
     version: '2.0.0',
+    // Deliberately NOT suffixed for the debug flavour: this scheme is the OAuth
+    // redirect URI registered with Aurora (com.boardsesh.app://auth/callback in
+    // src/lib/auth.ts). The side-by-side install is keyed off applicationId, not
+    // the scheme, so keeping it shared keeps login working in the debug build.
     scheme: 'com.boardsesh.app',
     orientation: 'portrait',
     icon: './assets/icon.png',
@@ -106,7 +121,7 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
         }
       : {}),
     ios: {
-      bundleIdentifier: 'com.boardsesh.app',
+      bundleIdentifier: APP_ID,
       // Required by @bacons/apple-targets to assign the widget extension
       // target's DEVELOPMENT_TEAM build setting. Matches the existing main
       // target value baked into Boardsesh.xcodeproj/project.pbxproj.
@@ -151,7 +166,7 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       },
     },
     android: {
-      package: 'com.boardsesh.app',
+      package: APP_ID,
       // App Links for the multiplayer join flow:
       // https://www.boardsesh.com/join/{sessionId} (and the apex domain).
       // autoVerify lets Android open the link directly in the app once the

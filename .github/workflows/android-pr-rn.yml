@@ -5,15 +5,16 @@ name: Android PR Build (React Native)
 #   1. Catches what the JS-only checks can't — a broken Expo config plugin, an
 #      app.config.ts mistake, or a Gradle/native-module compile failure — BEFORE
 #      it reaches the push-to-main android-apk-rn.yml release build.
-#   2. Produces a sideloadable APK artifact so anyone can test the branch on a
-#      real device WITHOUT the production keystore.
+#   2. Produces an installable "Boardsesh Debug" APK so anyone can test the
+#      branch on a real device WITHOUT the production keystore.
 #
-# It builds `assembleRelease` (JS bundled → runs standalone), but with the
-# debug-signing FALLBACK in with-android-release-signing.js: this job is NOT in
-# the Production GitHub Environment, so it has no ANDROID_KEYSTORE_* secrets and
-# the plugin signs `release` with the debug key. That makes the APK sideloadable
-# but with a DIFFERENT signature than the production/Play build — uninstall any
-# existing com.boardsesh.app before installing it.
+# It builds `assembleDebug` (debug-signed via the auto-generated debug keystore)
+# with BOARDSESH_DEBUG_BUILD=1, so app.config.ts emits a distinct app name
+# ("Boardsesh Debug") and applicationId (com.boardsesh.app.debug). That installs
+# ALONGSIDE the production com.boardsesh.app app instead of replacing it. The
+# debug variant bundles expo-dev-client, so the APK ships the Metro dev-server
+# switcher: open it and point the PR branch at a local/preview dev server (the
+# JS is not baked in — this build runs against a Metro server, not standalone).
 #
 # ci.yml already runs typecheck:mobile + the mobile vitest project +
 # check:mobile-bundle on PRs, so this doesn't duplicate those. Distinct from the
@@ -100,28 +101,26 @@ jobs:
           # Skip the tailscale probe (already short-circuited on CI, set
           # explicitly so a misconfigured runner never pays the 2s timeout).
           TAILSCALE_HOSTS: ''
+          # Emit the "Boardsesh Debug" flavour: distinct app name +
+          # applicationId (com.boardsesh.app.debug) so it installs alongside the
+          # production app. See app.config.ts.
+          BOARDSESH_DEBUG_BUILD: '1'
         run: bunx expo prebuild --platform android --clean --no-install
 
-      - name: Build debug-signed release APK (compiles all native modules + plugins)
+      - name: Build debug APK (compiles all native modules + plugins, ships dev-client)
         working-directory: packages/mobile/android
-        # No ANDROID_KEYSTORE_* env here → with-android-release-signing falls back
-        # to debug signing. assembleRelease bundles the JS so the APK runs
-        # standalone (a debug APK would expect a Metro dev server).
-        env:
-          # No Production env here → no SENTRY_AUTH_TOKEN; disable the Sentry
-          # source-map upload so the JS-bundle task doesn't fail trying to upload.
-          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+        # assembleDebug signs with the auto-generated debug keystore and bundles
+        # expo-dev-client, so the APK ships the Metro dev-server switcher. The JS
+        # is NOT baked in — point it at a Metro dev server via the launcher.
         # arm64-v8a only: every modern physical device, ~4× less native compile
         # (board-renderer CMake + RN/Hermes) → faster + far lower peak memory.
-        # The GitHub Release sideload APK uses the same arm64-only path; Play
-        # distribution still goes through the signed AAB in android-apk-rn.yml.
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --stacktrace
+        run: ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --stacktrace
 
-      - name: Upload sideloadable APK
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: boardsesh-rn-android-pr-${{ github.event.pull_request.number || github.run_number }}
-          path: packages/mobile/android/app/build/outputs/apk/release/*.apk
+          path: packages/mobile/android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
           if-no-files-found: warn
