@@ -81,6 +81,13 @@ describe('TabLayout', () => {
     expect(unstable_settings.initialRouteName).toBe('climbs');
   });
 
+  it('renders Home as the leading tab, search last', () => {
+    const { container } = render(<TabLayout />);
+    const order = Array.from(container.querySelectorAll('[data-trigger]')).map((el) => el.getAttribute('data-trigger'));
+
+    expect(order).toEqual(['home', 'discover', 'record', 'profile', 'climbs']);
+  });
+
   it('does not render the Record badge when no status is active', () => {
     const { container } = render(<TabLayout />);
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;

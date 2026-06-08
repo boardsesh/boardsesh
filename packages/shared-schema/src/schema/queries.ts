@@ -239,6 +239,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     discoverPlaylists(input: DiscoverPlaylistsInput!): DiscoverPlaylistsResult!
 
     """
+    Public per-board recommendation cohort playlists (Crowd Favorites / Hidden
+    Gems / Fresh) for an exact board config. Returns [] when the config has no
+    generated cohort — callers fall back to a popularity sort.
+    """
+    recommendedPlaylists(input: RecommendedPlaylistsInput!): [DiscoverablePlaylist!]!
+
+    """
     Search public playlists globally by name.
     """
     searchPlaylists(input: SearchPlaylistsInput!): SearchPlaylistsResult!

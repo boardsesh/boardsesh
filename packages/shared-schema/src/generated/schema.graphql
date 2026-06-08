@@ -1686,6 +1686,20 @@ type DiscoverPlaylistsResult {
 }
 
 """
+Input for board-config-scoped recommendation cohort playlists.
+"""
+input RecommendedPlaylistsInput {
+  "Board type"
+  boardType: String!
+  "Layout ID"
+  layoutId: Int!
+  "Board size ID"
+  sizeId: Int!
+  "Board angle in degrees"
+  angle: Int!
+}
+
+"""
 Input for searching playlists globally.
 """
 input SearchPlaylistsInput {
@@ -3756,6 +3770,13 @@ type Query {
   Discover public playlists with at least 1 climb.
   """
   discoverPlaylists(input: DiscoverPlaylistsInput!): DiscoverPlaylistsResult!
+
+  """
+  Public per-board recommendation cohort playlists (Crowd Favorites / Hidden
+  Gems / Fresh) for an exact board config. Returns [] when the config has no
+  generated cohort — callers fall back to a popularity sort.
+  """
+  recommendedPlaylists(input: RecommendedPlaylistsInput!): [DiscoverablePlaylist!]!
 
   """
   Search public playlists globally by name.

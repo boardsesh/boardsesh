@@ -51,8 +51,15 @@ export default function TabLayout() {
     return (
       <Tabs tabBar={(props) => <MaterialTabBar {...props} />} screenOptions={{ headerShown: false }}>
         <Tabs.Screen
-          name="climbs"
-          options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
+          name="home"
+          options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
+        />
+        <Tabs.Screen
+          name="discover"
+          options={{
+            title: tPlaylists('bottomTabBar.discover'),
+            tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
+          }}
         />
         <Tabs.Screen
           name="record"
@@ -63,18 +70,15 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="discover"
-          options={{
-            title: tPlaylists('bottomTabBar.discover'),
-            tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
-          }}
-        />
-        <Tabs.Screen
           name="profile"
           options={{
             title: t('mobile.nav.profile'),
             tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
           }}
+        />
+        <Tabs.Screen
+          name="climbs"
+          options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
         />
       </Tabs>
     );
@@ -90,9 +94,14 @@ export default function TabLayout() {
         <QueueBottomAccessory />
       </NativeTabs.BottomAccessory>
 
-      <NativeTabs.Trigger name="climbs" role="search">
-        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
-        <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="home">
+        <NativeTabs.Trigger.Icon sf="house" md="home" />
+        <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="discover">
+        <NativeTabs.Trigger.Icon sf="bookmark" md="bookmarks" />
+        <NativeTabs.Trigger.Label>{tPlaylists('bottomTabBar.discover')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="record">
@@ -103,14 +112,14 @@ export default function TabLayout() {
         ) : null}
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="discover">
-        <NativeTabs.Trigger.Icon sf="bookmark" md="bookmarks" />
-        <NativeTabs.Trigger.Label>{tPlaylists('bottomTabBar.discover')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="profile">
         <NativeTabs.Trigger.Icon sf="person.crop.circle" md="account_circle" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.profile')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="climbs" role="search">
+        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
+        <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

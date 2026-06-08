@@ -22,8 +22,10 @@ import { boardClimbSendStats } from '../src/schema/app/recommendation-stats.js';
 import {
   buildRecomputeSetterStatsSql,
   buildRecommendationRefsSql,
+  cohortKey,
+  PUBLIC_RECOMMENDATION_VARIANTS,
   type BoardTarget,
-  type RecommendationType,
+  type PublicRecommendationVariant,
 } from '../src/queries/recommendations/index.js';
 import { rowsOf } from '../src/queries/util/rows.js';
 import { getSizeFullnessTiers } from '@boardsesh/board-constants/size-comparison';
@@ -49,30 +51,6 @@ const COHORTS: Cohort[] = [
   { boardType: 'tension', layoutId: 9, sizeId: 1, angle: 40 }, // Original Full Wall
   { boardType: 'tension', layoutId: 10, sizeId: 6, angle: 40 }, // TB2 Mirror 12x12
   { boardType: 'tension', layoutId: 11, sizeId: 6, angle: 40 }, // TB2 Spray 12x12
-];
-
-const PUBLIC_VARIANTS: ReadonlyArray<{
-  type: RecommendationType;
-  slug: string;
-  label: string;
-  color: string;
-  icon: string;
-}> = [
-  {
-    type: 'RECOMMENDED_CROWD_FAVORITES',
-    slug: 'crowd-favorites',
-    label: 'Crowd Favorites',
-    color: '#d65a4f',
-    icon: 'LocalFireDepartmentOutlined',
-  },
-  {
-    type: 'RECOMMENDED_HIDDEN_GEMS',
-    slug: 'hidden-gems',
-    label: 'Hidden Gems',
-    color: '#9C27B0',
-    icon: 'DiamondOutlined',
-  },
-  { type: 'RECOMMENDED_FRESH', slug: 'fresh', label: 'Fresh', color: '#FBBF24', icon: 'EnergySavingsLeafOutlined' },
 ];
 
 const BOARD_LABEL: Record<string, string> = { kilter: 'Kilter', tension: 'Tension' };
@@ -222,7 +200,7 @@ function cohortPlaylistName(variantLabel: string, cohort: Cohort): string {
 async function upsertCohortPlaylist(
   db: Db,
   cohort: Cohort,
-  variant: (typeof PUBLIC_VARIANTS)[number],
+  variant: PublicRecommendationVariant,
 ): Promise<{ name: string; count: number; skipped: boolean }> {
   const target = cohortTarget(cohort);
   const tiers = getSizeFullnessTiers(cohort.boardType, cohort.sizeId);
@@ -253,7 +231,7 @@ async function upsertCohortPlaylist(
     return { name, count: 0, skipped: true };
   }
 
-  const key = `${cohort.boardType}:${cohort.layoutId}:${cohort.sizeId}:${cohort.angle}:${variant.slug}`;
+  const key = cohortKey(cohort.boardType, cohort.layoutId, cohort.sizeId, cohort.angle, variant.slug);
 
   // Upsert the playlist and atomically swap its climbs — a crash mid-swap must
   // never leave a published playlist empty.
@@ -301,7 +279,7 @@ async function upsertCohortPlaylist(
 async function generateCohortPlaylists(db: Db): Promise<void> {
   console.log('[recs] generating cohort playlists…');
   for (const cohort of COHORTS) {
-    for (const variant of PUBLIC_VARIANTS) {
+    for (const variant of PUBLIC_RECOMMENDATION_VARIANTS) {
       const { name, count, skipped } = await upsertCohortPlaylist(db, cohort, variant);
       console.log(`[recs]   ${name} → ${skipped ? 'SKIPPED (0 climbs, kept previous)' : `${count} climbs`}`);
     }

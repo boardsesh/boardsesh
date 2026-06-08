@@ -3183,6 +3183,12 @@ export type Query = {
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
    */
   recentBetaLinks: Array<RecentBetaLink>;
+  /**
+   * Public per-board recommendation cohort playlists (Crowd Favorites / Hidden
+   * Gems / Fresh) for an exact board config. Returns [] when the config has no
+   * generated cohort — callers fall back to a popularity sort.
+   */
+  recommendedPlaylists: Array<DiscoverablePlaylist>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -3594,6 +3600,11 @@ export type QueryRecentBetaLinksArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryRecommendedPlaylistsArgs = {
+  input: RecommendedPlaylistsInput;
+};
+
+/** Root query type for all read operations. */
 export type QuerySearchBoardsArgs = {
   input: SearchBoardsInput;
 };
@@ -3850,6 +3861,18 @@ export type RecentBetaLink = {
   boardType: Scalars['String']['output'];
   climbName?: Maybe<Scalars['String']['output']>;
   layoutId?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Input for board-config-scoped recommendation cohort playlists. */
+export type RecommendedPlaylistsInput = {
+  /** Board angle in degrees */
+  angle: Scalars['Int']['input'];
+  /** Board type */
+  boardType: Scalars['String']['input'];
+  /** Layout ID */
+  layoutId: Scalars['Int']['input'];
+  /** Board size ID */
+  sizeId: Scalars['Int']['input'];
 };
 
 export type RegisterControllerInput = {
@@ -5505,6 +5528,7 @@ export type ResolversTypes = ResolversObject<{
   QueueReordered: ResolverTypeWrapper<QueueReordered>;
   QueueState: ResolverTypeWrapper<QueueState>;
   RecentBetaLink: ResolverTypeWrapper<RecentBetaLink>;
+  RecommendedPlaylistsInput: RecommendedPlaylistsInput;
   RegisterControllerInput: RegisterControllerInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -5760,6 +5784,7 @@ export type ResolversParentTypes = ResolversObject<{
   QueueReordered: QueueReordered;
   QueueState: QueueState;
   RecentBetaLink: RecentBetaLink;
+  RecommendedPlaylistsInput: RecommendedPlaylistsInput;
   RegisterControllerInput: RegisterControllerInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -7810,6 +7835,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRecentBetaLinksArgs, 'limit'>
+  >;
+  recommendedPlaylists?: Resolver<
+    Array<ResolversTypes['DiscoverablePlaylist']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryRecommendedPlaylistsArgs, 'input'>
   >;
   searchBoards?: Resolver<
     ResolversTypes['UserBoardConnection'],

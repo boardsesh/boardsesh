@@ -70,6 +70,7 @@ type Documents = {
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n': typeof types.RemoveClimbFromPlaylistDocument;
   '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetPlaylistClimbsDocument;
   '\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.DiscoverPlaylistsDocument;
+  '\n  query RecommendedPlaylists($input: RecommendedPlaylistsInput!) {\n    recommendedPlaylists(input: $input) {\n      id\n      uuid\n      boardType\n      layoutId\n      name\n      description\n      color\n      icon\n      createdAt\n      updatedAt\n      climbCount\n      creatorId\n      creatorName\n    }\n  }\n': typeof types.RecommendedPlaylistsDocument;
   '\n  query GetPlaylistCreators($input: GetPlaylistCreatorsInput!) {\n    playlistCreators(input: $input) {\n      userId\n      displayName\n      playlistCount\n    }\n  }\n': typeof types.GetPlaylistCreatorsDocument;
   '\n  mutation UpdatePlaylistLastAccessed($playlistId: ID!) {\n    updatePlaylistLastAccessed(playlistId: $playlistId)\n  }\n': typeof types.UpdatePlaylistLastAccessedDocument;
   '\n  query SearchPlaylists($input: SearchPlaylistsInput!) {\n    searchPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        climbCount\n        creatorId\n        creatorName\n        createdAt\n        updatedAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.SearchPlaylistsDocument;
@@ -235,6 +236,8 @@ const documents: Documents = {
     types.GetPlaylistClimbsDocument,
   '\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.DiscoverPlaylistsDocument,
+  '\n  query RecommendedPlaylists($input: RecommendedPlaylistsInput!) {\n    recommendedPlaylists(input: $input) {\n      id\n      uuid\n      boardType\n      layoutId\n      name\n      description\n      color\n      icon\n      createdAt\n      updatedAt\n      climbCount\n      creatorId\n      creatorName\n    }\n  }\n':
+    types.RecommendedPlaylistsDocument,
   '\n  query GetPlaylistCreators($input: GetPlaylistCreatorsInput!) {\n    playlistCreators(input: $input) {\n      userId\n      displayName\n      playlistCount\n    }\n  }\n':
     types.GetPlaylistCreatorsDocument,
   '\n  mutation UpdatePlaylistLastAccessed($playlistId: ID!) {\n    updatePlaylistLastAccessed(playlistId: $playlistId)\n  }\n':
@@ -687,6 +690,12 @@ export function graphql(
 export function graphql(
   source: '\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n      }\n      totalCount\n      hasMore\n    }\n  }\n',
 ): (typeof documents)['\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n      }\n      totalCount\n      hasMore\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query RecommendedPlaylists($input: RecommendedPlaylistsInput!) {\n    recommendedPlaylists(input: $input) {\n      id\n      uuid\n      boardType\n      layoutId\n      name\n      description\n      color\n      icon\n      createdAt\n      updatedAt\n      climbCount\n      creatorId\n      creatorName\n    }\n  }\n',
+): (typeof documents)['\n  query RecommendedPlaylists($input: RecommendedPlaylistsInput!) {\n    recommendedPlaylists(input: $input) {\n      id\n      uuid\n      boardType\n      layoutId\n      name\n      description\n      color\n      icon\n      createdAt\n      updatedAt\n      climbCount\n      creatorId\n      creatorName\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

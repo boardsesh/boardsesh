@@ -470,6 +470,23 @@ export type DiscoverPlaylistsQueryResponse = {
   discoverPlaylists: DiscoverPlaylistsResult;
 };
 
+// Board-config-scoped recommendation cohort playlists (Crowd Favorites / Hidden
+// Gems / Fresh). Returns the matching cohort DiscoverablePlaylists or [].
+export type RecommendedPlaylistsInput = {
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  angle: number;
+};
+
+export type RecommendedPlaylistsQueryVariables = {
+  input: RecommendedPlaylistsInput;
+};
+
+export type RecommendedPlaylistsQueryResponse = {
+  recommendedPlaylists: DiscoverablePlaylist[];
+};
+
 export type GetPlaylistCreatorsInput = {
   boardType: string;
   layoutId: number;
@@ -505,6 +522,27 @@ export const DISCOVER_PLAYLISTS = gql`
       }
       totalCount
       hasMore
+    }
+  }
+`;
+
+// Public per-board recommendation cohort playlists (board-config-scoped).
+export const RECOMMENDED_PLAYLISTS = gql`
+  query RecommendedPlaylists($input: RecommendedPlaylistsInput!) {
+    recommendedPlaylists(input: $input) {
+      id
+      uuid
+      boardType
+      layoutId
+      name
+      description
+      color
+      icon
+      createdAt
+      updatedAt
+      climbCount
+      creatorId
+      creatorName
     }
   }
 `;

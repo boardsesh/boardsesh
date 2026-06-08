@@ -253,5 +253,19 @@
     "selectBoardForPlaylist": "Choisissez un board avant de créer une playlist",
     "createdPlaylistToast": "Playlist « {{name}} » créée",
     "createPlaylistFailed": "Impossible de créer la playlist"
+  },
+  "home": {
+    "popular": "Populaires sur ton board",
+    "topRated": "Les mieux notés",
+    "fresh": "Récemment ouverts",
+    "atLevel": "À ton niveau",
+    "beta": "Beta récente",
+    "switchBoard": "Changer",
+    "continueSession": "Reprendre la session",
+    "pickBoard": {
+      "title": "Choisis un board pour commencer",
+      "description": "Choisis ton board pour voir des blocs à essayer, de la beta récente et des sélections pour ton mur.",
+      "cta": "Choisir un board"
+    }
   }
 }

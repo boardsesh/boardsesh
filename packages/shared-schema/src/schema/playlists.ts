@@ -328,6 +328,20 @@ export const playlistsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Input for board-config-scoped recommendation cohort playlists.
+  """
+  input RecommendedPlaylistsInput {
+    "Board type"
+    boardType: String!
+    "Layout ID"
+    layoutId: Int!
+    "Board size ID"
+    sizeId: Int!
+    "Board angle in degrees"
+    angle: Int!
+  }
+
+  """
   Input for searching playlists globally.
   """
   input SearchPlaylistsInput {

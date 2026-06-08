@@ -35,6 +35,7 @@
     },
     "nav": {
       "boards": "Boards",
+      "home": "Home",
       "climbs": "Climbs",
       "climb": "Climb",
       "profile": "Profile",

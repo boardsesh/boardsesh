@@ -253,5 +253,19 @@
     "selectBoardForPlaylist": "Select a board before creating a playlist",
     "createdPlaylistToast": "Created playlist \"{{name}}\"",
     "createPlaylistFailed": "Failed to create playlist"
+  },
+  "home": {
+    "popular": "Popular on your board",
+    "topRated": "Top rated",
+    "fresh": "Recently set",
+    "atLevel": "At your level",
+    "beta": "Fresh beta",
+    "switchBoard": "Switch",
+    "continueSession": "Continue session",
+    "pickBoard": {
+      "title": "Pick a board to get started",
+      "description": "Choose your board to see climbs worth trying, fresh beta, and picks for your wall.",
+      "cta": "Pick a board"
+    }
   }
 }

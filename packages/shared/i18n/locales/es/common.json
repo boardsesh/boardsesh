@@ -233,6 +233,7 @@
     },
     "nav": {
       "boards": "Tablas",
+      "home": "Inicio",
       "climbs": "Bloques",
       "climb": "Bloque",
       "profile": "Perfil",

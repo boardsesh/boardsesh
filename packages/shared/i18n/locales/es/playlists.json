@@ -253,5 +253,19 @@
     "selectBoardForPlaylist": "Selecciona una tabla de escalada antes de crear una playlist",
     "createdPlaylistToast": "Playlist «{{name}}» creada",
     "createPlaylistFailed": "No se pudo crear la playlist"
+  },
+  "home": {
+    "popular": "Populares en tu tabla",
+    "topRated": "Mejor valorados",
+    "fresh": "Recién creados",
+    "atLevel": "A tu nivel",
+    "beta": "Beta reciente",
+    "switchBoard": "Cambiar",
+    "continueSession": "Continuar sesión",
+    "pickBoard": {
+      "title": "Elige una tabla para empezar",
+      "description": "Elige tu tabla para ver bloques que merecen la pena, beta reciente y recomendaciones para tu muro.",
+      "cta": "Elegir tabla"
+    }
   }
 }

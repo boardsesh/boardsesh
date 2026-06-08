@@ -3180,6 +3180,12 @@ export type Query = {
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
    */
   recentBetaLinks: Array<RecentBetaLink>;
+  /**
+   * Public per-board recommendation cohort playlists (Crowd Favorites / Hidden
+   * Gems / Fresh) for an exact board config. Returns [] when the config has no
+   * generated cohort — callers fall back to a popularity sort.
+   */
+  recommendedPlaylists: Array<DiscoverablePlaylist>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -3591,6 +3597,11 @@ export type QueryRecentBetaLinksArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryRecommendedPlaylistsArgs = {
+  input: RecommendedPlaylistsInput;
+};
+
+/** Root query type for all read operations. */
 export type QuerySearchBoardsArgs = {
   input: SearchBoardsInput;
 };
@@ -3847,6 +3858,18 @@ export type RecentBetaLink = {
   boardType: Scalars['String']['output'];
   climbName?: Maybe<Scalars['String']['output']>;
   layoutId?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Input for board-config-scoped recommendation cohort playlists. */
+export type RecommendedPlaylistsInput = {
+  /** Board angle in degrees */
+  angle: Scalars['Int']['input'];
+  /** Board type */
+  boardType: Scalars['String']['input'];
+  /** Layout ID */
+  layoutId: Scalars['Int']['input'];
+  /** Board size ID */
+  sizeId: Scalars['Int']['input'];
 };
 
 export type RegisterControllerInput = {
@@ -6186,6 +6209,30 @@ export type DiscoverPlaylistsQuery = {
       creatorName: string;
     }>;
   };
+};
+
+export type RecommendedPlaylistsQueryVariables = Exact<{
+  input: RecommendedPlaylistsInput;
+}>;
+
+export type RecommendedPlaylistsQuery = {
+  __typename?: 'Query';
+  recommendedPlaylists: Array<{
+    __typename?: 'DiscoverablePlaylist';
+    id: string;
+    uuid: string;
+    boardType: string;
+    layoutId?: number | null;
+    name: string;
+    description?: string | null;
+    color?: string | null;
+    icon?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    climbCount: number;
+    creatorId: string;
+    creatorName: string;
+  }>;
 };
 
 export type GetPlaylistCreatorsQueryVariables = Exact<{
@@ -10090,6 +10137,60 @@ export const DiscoverPlaylistsDocument = {
     },
   ],
 } as unknown as DocumentNode<DiscoverPlaylistsQuery, DiscoverPlaylistsQueryVariables>;
+export const RecommendedPlaylistsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'RecommendedPlaylists' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'RecommendedPlaylistsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'recommendedPlaylists' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'icon' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'creatorId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'creatorName' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RecommendedPlaylistsQuery, RecommendedPlaylistsQueryVariables>;
 export const GetPlaylistCreatorsDocument = {
   kind: 'Document',
   definitions: [

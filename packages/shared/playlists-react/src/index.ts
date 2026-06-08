@@ -14,6 +14,9 @@ export type { RecentPlaylistEntry, RecentsStorageAdapter } from './recents-adapt
 export { useDiscoverPlaylists } from './use-discover-playlists';
 export type { UseDiscoverPlaylistsOptions, UseDiscoverPlaylistsResult } from './use-discover-playlists';
 
+export { useRecommendedPlaylists } from './use-recommended-playlists';
+export type { UseRecommendedPlaylistsOptions, UseRecommendedPlaylistsResult } from './use-recommended-playlists';
+
 export { useUserPlaylists } from './use-user-playlists';
 export type { UseUserPlaylistsOptions, UseUserPlaylistsResult } from './use-user-playlists';
 

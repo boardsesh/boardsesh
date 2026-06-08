@@ -107,6 +107,14 @@ export const GetPlaylistCreatorsInputSchema = z.object({
   searchQuery: z.string().max(100).optional(),
 });
 
+export const RecommendedPlaylistsInputSchema = z.object({
+  boardType: BoardNameSchema,
+  layoutId: z.number().int().positive(),
+  sizeId: z.number().int().positive(),
+  // Board angles run 0–70 across our boards (matches GetSmartPlaylistInput).
+  angle: z.number().int().min(0).max(70),
+});
+
 export const SearchPlaylistsInputSchema = z.object({
   query: z.string().min(1).max(200),
   boardType: BoardNameSchema.optional(),

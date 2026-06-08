@@ -35,6 +35,7 @@
     },
     "nav": {
       "boards": "Boards",
+      "home": "Accueil",
       "climbs": "Blocs",
       "climb": "Bloc",
       "profile": "Profil",
