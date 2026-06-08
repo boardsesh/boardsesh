@@ -143,6 +143,12 @@ const staticFallbackMaterialTheme = createMaterial3Theme(brandColors.primaryFill
 function hasDeviceDynamicPalette(colorScheme: ColorScheme, materialColors: Material3Scheme): boolean {
   const fallbackColors = staticFallbackMaterialTheme[colorScheme];
 
+  // `@pchmn/expo-material3-theme` returns a generated theme from our fallback
+  // source color when the platform has no real wallpaper palette. There is no
+  // explicit "dynamic palette was used" flag, so compare several independent
+  // MD3 roles against the generated fallback. Using multiple roles makes this
+  // less sensitive to one role matching by coincidence; keep this in sync with
+  // the fields that drive both Paper and token-skinned Material surfaces.
   return (
     materialColors.primary !== fallbackColors.primary ||
     materialColors.background !== fallbackColors.background ||

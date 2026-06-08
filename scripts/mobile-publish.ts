@@ -122,7 +122,10 @@ console.log(`[mobile:publish] Platform: ${platform}`);
 console.log('');
 
 const easArgs = [
+  'x',
+  '-p',
   'eas-cli@16',
+  'eas',
   'update',
   '--branch',
   sanitizedBranch,
@@ -133,10 +136,10 @@ const easArgs = [
   '--non-interactive',
 ];
 
-console.log(`[mobile:publish] Running: bunx ${easArgs.join(' ')}`);
+console.log(`[mobile:publish] Running: bun ${easArgs.join(' ')}`);
 console.log('');
 
-const result = spawnSync('bunx', easArgs, {
+const result = spawnSync('bun', easArgs, {
   cwd: MOBILE_DIR,
   stdio: 'inherit',
   env: { ...process.env },
@@ -146,8 +149,8 @@ if (result.status !== 0) {
   console.error('');
   console.error('[mobile:publish] Update failed.');
   if (result.status === 1) {
-    console.error('[mobile:publish] Make sure you are logged in: bunx eas login');
-    console.error('[mobile:publish] And the project is linked: bunx eas init (from packages/mobile/)');
+    console.error('[mobile:publish] Make sure you are logged in: bun x -p eas-cli@16 eas login');
+    console.error('[mobile:publish] And the project is linked: bun x -p eas-cli@16 eas init (from packages/mobile/)');
   }
   process.exit(result.status ?? 1);
 }
@@ -157,4 +160,4 @@ console.log(`[mobile:publish] Published to branch "${sanitizedBranch}".`);
 console.log(`[mobile:publish] Testers on the "preview" build will receive this update.`);
 console.log('');
 console.log(`[mobile:publish] To point a preview build at this branch:`);
-console.log(`  bunx eas-cli@16 channel:edit preview --branch ${sanitizedBranch}`);
+console.log(`  bun x -p eas-cli@16 eas channel:edit preview --branch ${sanitizedBranch}`);

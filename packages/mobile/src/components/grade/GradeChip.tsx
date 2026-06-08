@@ -10,7 +10,7 @@ import {
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
-import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
+import { withAlpha } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
 import { readableTextColor } from './grade-chip-colors';
 
@@ -39,7 +39,7 @@ export function GradeChip({
   onLayout,
   style,
 }: GradeChipProps) {
-  const { systemColors, brandColors = staticBrandColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const accentColor = gradeColor ?? brandColors.primary;
   const selected = tone === 'selected';
   const ranged = tone === 'range';

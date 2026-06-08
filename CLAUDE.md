@@ -232,7 +232,7 @@ Multiple worktrees can publish independent previews. Testers install the "previe
 
 One-time: `vp run mobile:preview-build` produces an installable `.ipa`/`.apk`. Testers install it (iOS ad-hoc, Android APK).
 
-Four preview channels (`preview-1` ... `preview-4`), one per test device. Publish: `vp run mobile:publish` (defaults to current git branch; pass `--branch`, `--message`, `--platform ios` to override). Point a channel at a branch: `bunx eas-cli@16 channel:edit preview-N --branch <branch>`.
+Four preview channels (`preview-1` ... `preview-4`), one per test device. Publish: `vp run mobile:publish` (defaults to current git branch; pass `--branch`, `--message`, `--platform ios` to override). Point a channel at a branch: `bun x -p eas-cli@16 eas channel:edit preview-N --branch <branch>`.
 
 CI: `mobile-eas-update.yml` auto-publishes on every push to a non-main branch touching `packages/mobile/` or shared packages, and comments on the PR. `EXPO_TOKEN` secret required.
 

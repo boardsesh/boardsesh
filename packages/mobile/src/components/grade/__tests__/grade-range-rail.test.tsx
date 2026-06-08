@@ -10,6 +10,7 @@ const accessibilityInfo = vi.hoisted(() => ({
   screenReaderEnabled: vi.fn(() => Promise.resolve(false)),
   addEventListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
+const theme = vi.hoisted(() => ({ primary: '#6D28D9' }));
 
 type LayoutEvent = { nativeEvent: { layout: { x: number; width: number; height: number; y: number } } };
 
@@ -67,12 +68,14 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('../GradeChip', () => ({
   GradeChip: ({
     label,
+    gradeColor,
     onPress,
     accessibilityLabel,
     accessibilityState,
     onLayout,
   }: {
     label: string;
+    gradeColor?: string;
     onPress: () => void;
     accessibilityLabel: string;
     accessibilityState?: { selected?: boolean };
@@ -86,6 +89,7 @@ vi.mock('../GradeChip', () => ({
           onPress();
         },
         'data-label': accessibilityLabel,
+        'data-grade-color': gradeColor,
         'data-selected': accessibilityState?.selected ? 'true' : 'false',
       },
       label,
@@ -123,6 +127,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryBackground: '#fff',
       secondaryLabel: '#666',
     },
+    brandColors: { primary: theme.primary },
   }),
 }));
 
@@ -171,6 +176,7 @@ describe('GradeRangeRail', () => {
     accessibilityInfo.screenReaderEnabled.mockReset();
     accessibilityInfo.screenReaderEnabled.mockResolvedValue(false);
     accessibilityInfo.addEventListener.mockClear();
+    theme.primary = '#6D28D9';
   });
 
   afterEach(() => {
@@ -296,6 +302,13 @@ describe('GradeRangeRail', () => {
       vi.advanceTimersByTime(3000);
     });
     expect(onRequestClose).not.toHaveBeenCalled();
+  });
+
+  it('passes the resolved theme primary to the clear chip', () => {
+    theme.primary = '#3366AA';
+    const { getByText } = renderRail({ minGradeId: undefined, maxGradeId: undefined });
+
+    expect(getByText('mobile.search.gradeClear').getAttribute('data-grade-color')).toBe('#3366AA');
   });
 });
 
