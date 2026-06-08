@@ -6,6 +6,7 @@ import { ClimbListThumbnail, THUMBNAIL_WIDTH } from '../ClimbListThumbnail';
 import { Text } from '../Text';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import type { ClimbListItemClimb } from '../ClimbListItemContent';
+import { spacing } from '../../theme/tokens';
 
 export type ClimbCoverCardProps = {
   climb: ClimbListItemClimb;
@@ -62,7 +63,7 @@ export const ClimbCoverCard = memo(function ClimbCoverCard({
 const styles = StyleSheet.create({
   card: {
     width: THUMBNAIL_WIDTH,
-    gap: 4,
+    gap: spacing[1],
   },
   pressed: {
     opacity: 0.85,

@@ -2,10 +2,16 @@ import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { isBoardName } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
-import { HomeBoardHeader, HomeRecommendedRows, HomeJumpBackIn, HomeBetaRow } from '../../../src/components/home';
+import {
+  HomeBoardHeader,
+  HomeRecommendedRows,
+  HomeJumpBackIn,
+  HomeBetaRow,
+  type HomeRowBoard,
+} from '../../../src/components/home';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -31,6 +37,19 @@ export default function HomeScreen() {
 
   const userId = isAuthenticated ? (profile?.id ?? null) : null;
 
+  // Narrow the stored board type to a known BoardName before handing it to the
+  // board-scoped rows (defensive — the picker only stores supported boards).
+  const homeBoard: HomeRowBoard | null =
+    activeBoard && isBoardName(activeBoard.boardType)
+      ? {
+          boardName: activeBoard.boardType,
+          layoutId: activeBoard.layoutId,
+          sizeId: activeBoard.sizeId,
+          setIds: activeBoard.setIds,
+          angle: activeBoard.angle,
+        }
+      : null;
+
   return (
     <ScrollView
       style={styles.flex}
@@ -44,23 +63,17 @@ export default function HomeScreen() {
         {t('mobile.nav.home')}
       </Text>
 
-      {activeBoard ? (
+      {activeBoard && homeBoard ? (
         <>
           <HomeBoardHeader board={activeBoard} />
           <HomeRecommendedRows
-            board={{
-              boardName: activeBoard.boardType as BoardName,
-              layoutId: activeBoard.layoutId,
-              sizeId: activeBoard.sizeId,
-              setIds: activeBoard.setIds,
-              angle: activeBoard.angle,
-            }}
+            board={homeBoard}
             boardUuid={activeBoard.uuid}
             isOwned={activeBoard.isOwned}
             userId={userId}
           />
-          <HomeJumpBackIn boardType={activeBoard.boardType} layoutId={activeBoard.layoutId} />
-          <HomeBetaRow boardType={activeBoard.boardType} layoutId={activeBoard.layoutId} />
+          <HomeJumpBackIn boardType={homeBoard.boardName} layoutId={homeBoard.layoutId} />
+          <HomeBetaRow boardType={homeBoard.boardName} layoutId={homeBoard.layoutId} />
         </>
       ) : (
         <View style={styles.emptyContainer}>
@@ -98,12 +111,12 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing[10] * 2,
-    paddingHorizontal: 32,
+    paddingTop: spacing[16],
+    paddingHorizontal: spacing[8],
     gap: spacing[2],
   },
   emptyTitle: {
-    marginTop: 12,
+    marginTop: spacing[3],
     opacity: 0.7,
   },
   emptySubtitle: {

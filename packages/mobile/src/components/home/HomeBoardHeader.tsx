@@ -23,7 +23,9 @@ export const HomeBoardHeader = memo(function HomeBoardHeader({ board }: HomeBoar
   const { t } = useTranslation('playlists');
   const { sessionId } = useQueue();
 
-  const subtitle = [board.layoutName ?? board.sizeName ?? null, `${board.angle}°`].filter(Boolean).join(' · ');
+  // Layout · size · angle — each part dropped only when absent, so a board with
+  // both a layout and size name shows both (not one silently masking the other).
+  const subtitle = [board.layoutName, board.sizeName, `${board.angle}°`].filter(Boolean).join(' · ');
 
   return (
     <View style={styles.container}>

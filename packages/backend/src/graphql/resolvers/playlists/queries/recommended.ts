@@ -8,6 +8,8 @@ import { RecommendedPlaylistsInputSchema } from '../../../../validation/schemas'
 import { formatPublicPlaylist } from '../helpers/enrichment';
 import { PUBLIC_PLAYLIST_SELECT, PUBLIC_PLAYLIST_GROUP_BY } from './discover';
 
+type RecommendedPlaylist = ReturnType<typeof formatPublicPlaylist>;
+
 /** Display order of the cohort variants by slug (crowd-favorites → fresh). */
 const VARIANT_ORDER = new Map(PUBLIC_RECOMMENDATION_VARIANTS.map((variant, index) => [variant.slug, index]));
 
@@ -34,7 +36,7 @@ export const recommendedPlaylists = async (
     };
   },
   _ctx: ConnectionContext,
-): Promise<unknown[]> => {
+): Promise<RecommendedPlaylist[]> => {
   validateInput(RecommendedPlaylistsInputSchema, input, 'input');
 
   const keys = cohortKeysForBoard(input.boardType, input.layoutId, input.sizeId, input.angle);
