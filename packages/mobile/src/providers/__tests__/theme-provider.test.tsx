@@ -23,6 +23,7 @@ vi.mock('../../lib/preferences/secure-store-adapter', () => ({
 // module doesn't blow up. PlatformColor is still mocked as a passthrough for
 // belt-and-braces in case some other module reaches for it.
 const useColorSchemeMock = vi.fn();
+const appStateAddEventListenerMock = vi.hoisted(() => vi.fn(() => ({ remove: vi.fn() })));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   useColorScheme: () => useColorSchemeMock(),
@@ -30,6 +31,7 @@ vi.mock('react-native', () => ({
   // The provider drives Appearance.setColorScheme so the override flips native
   // iOS colours; mock it so the effect doesn't blow up under jsdom.
   Appearance: { setColorScheme: vi.fn() },
+  AppState: { addEventListener: appStateAddEventListenerMock },
 }));
 
 // useGlassCapability imports these; under jsdom (Platform.OS='android') the
@@ -50,6 +52,7 @@ describe('ThemeProvider', () => {
     setMock.mockReset();
     removeMock.mockReset();
     useColorSchemeMock.mockReset();
+    appStateAddEventListenerMock.mockClear();
     // Defaults: no stored preference, OS in light mode.
     getMock.mockResolvedValue(null);
     setMock.mockResolvedValue(undefined);

@@ -28,9 +28,29 @@ describe('buildPaperTheme', () => {
     expect(theme.colors.surface).toBe('#221A33');
   });
 
-  it('passes a provided dynamic palette straight through (Material You hook)', () => {
-    const dynamic = { primary: '#123456' } as unknown as Parameters<typeof buildPaperTheme>[1];
+  it('passes a provided dynamic palette straight through for Paper colors and surfaces', () => {
+    const dynamic = {
+      primary: '#123456',
+      background: '#F8FAFF',
+      surface: '#F1F4FB',
+      surfaceVariant: '#E4E9F2',
+      outlineVariant: '#C2CAD6',
+      elevation: {
+        level0: 'transparent',
+        level1: '#EEF2FA',
+        level2: '#E8EEF8',
+        level3: '#E2EAF5',
+        level4: '#DDE5F1',
+        level5: '#D7E1EE',
+      },
+    } as unknown as Parameters<typeof buildPaperTheme>[1];
     const theme = buildPaperTheme('light', dynamic);
+
     expect(theme.colors.primary).toBe('#123456');
+    expect(theme.colors.background).toBe('#F8FAFF');
+    expect(theme.colors.surface).toBe('#F1F4FB');
+    expect(theme.colors.surfaceVariant).toBe('#E4E9F2');
+    expect(theme.colors.outlineVariant).toBe('#C2CAD6');
+    expect(theme.colors.elevation.level2).toBe('#E8EEF8');
   });
 });

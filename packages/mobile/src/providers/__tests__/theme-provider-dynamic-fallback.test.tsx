@@ -7,6 +7,7 @@ import { UI_VARIANT_KEY } from '@boardsesh/key-value-storage';
 
 const getMock = vi.fn();
 const useColorSchemeMock = vi.fn();
+const appStateAddEventListenerMock = vi.hoisted(() => vi.fn(() => ({ remove: vi.fn() })));
 
 vi.mock('../../lib/preferences/secure-store-adapter', () => ({
   secureStorePreferences: {
@@ -21,6 +22,7 @@ vi.mock('react-native', () => ({
   useColorScheme: () => useColorSchemeMock(),
   PlatformColor: (name: string) => name,
   Appearance: { setColorScheme: vi.fn() },
+  AppState: { addEventListener: appStateAddEventListenerMock },
 }));
 
 vi.mock('expo-glass-effect', () => ({
@@ -74,6 +76,7 @@ describe('ThemeProvider supported Material fallback', () => {
   beforeEach(() => {
     getMock.mockReset();
     useColorSchemeMock.mockReset();
+    appStateAddEventListenerMock.mockClear();
     getMock.mockResolvedValue(null);
     useColorSchemeMock.mockReturnValue('light');
   });

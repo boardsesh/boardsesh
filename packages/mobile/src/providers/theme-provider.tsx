@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Appearance, Platform, useColorScheme, type OpaqueColorValue } from 'react-native';
+import { AppState, Appearance, Platform, useColorScheme, type OpaqueColorValue } from 'react-native';
 import {
   createMaterial3Theme,
   isDynamicThemeSupported,
@@ -156,7 +156,7 @@ function hasDeviceDynamicPalette(colorScheme: ColorScheme, materialColors: Mater
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const deviceColorScheme = useColorScheme();
-  const { theme: material3Theme } = useMaterial3Theme(materialThemeOptions);
+  const { theme: material3Theme, resetTheme: resetMaterial3Theme } = useMaterial3Theme(materialThemeOptions);
   // `'system'` until SecureStore hydrates — same value as a brand-new user, so
   // the first paint matches the OS preference. Once hydration completes the
   // resolved scheme switches to the saved override (if any) without a visible
@@ -207,6 +207,18 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   useEffect(() => {
     Appearance.setColorScheme(themeOverride === 'system' ? 'unspecified' : themeOverride);
   }, [themeOverride]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isDynamicThemeSupported) return;
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') resetMaterial3Theme();
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [resetMaterial3Theme]);
 
   const colorScheme: ColorScheme = useMemo(() => {
     if (themeOverride === 'light') return 'light';

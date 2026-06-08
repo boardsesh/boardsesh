@@ -8,6 +8,8 @@ import { THEME_OVERRIDE_KEY, UI_VARIANT_KEY } from '@boardsesh/key-value-storage
 const getMock = vi.fn();
 const setMock = vi.fn();
 const useColorSchemeMock = vi.fn();
+const resetMaterial3ThemeMock = vi.hoisted(() => vi.fn());
+const appStateChangeListeners = vi.hoisted(() => [] as Array<(state: string) => void>);
 
 vi.mock('../../lib/preferences/secure-store-adapter', () => ({
   secureStorePreferences: {
@@ -22,6 +24,12 @@ vi.mock('react-native', () => ({
   useColorScheme: () => useColorSchemeMock(),
   PlatformColor: (name: string) => name,
   Appearance: { setColorScheme: vi.fn() },
+  AppState: {
+    addEventListener: (_eventName: string, listener: (state: string) => void) => {
+      appStateChangeListeners.push(listener);
+      return { remove: vi.fn() };
+    },
+  },
 }));
 
 vi.mock('expo-glass-effect', () => ({
@@ -91,7 +99,7 @@ vi.mock('@pchmn/expo-material3-theme', () => ({
   useMaterial3Theme: () => ({
     theme: dynamicMaterialTheme,
     updateTheme: () => undefined,
-    resetTheme: () => undefined,
+    resetTheme: resetMaterial3ThemeMock,
   }),
 }));
 
@@ -104,6 +112,8 @@ describe('ThemeProvider dynamic Material color', () => {
     getMock.mockReset();
     setMock.mockReset();
     useColorSchemeMock.mockReset();
+    resetMaterial3ThemeMock.mockReset();
+    appStateChangeListeners.length = 0;
     getMock.mockResolvedValue(null);
     setMock.mockResolvedValue(undefined);
     useColorSchemeMock.mockReturnValue('light');
@@ -134,6 +144,18 @@ describe('ThemeProvider dynamic Material color', () => {
     expect(result.current.systemColors.fill).toBe('rgba(168, 199, 250, 0.18)');
     expect(result.current.brandColors.primary).toBe('#A8C7FA');
     expect(result.current.brandColors.onPrimary).toBe('#071426');
+  });
+
+  it('refreshes the native dynamic palette when Android returns active', async () => {
+    renderHook(() => useTheme(), { wrapper });
+
+    await waitFor(() => expect(appStateChangeListeners).toHaveLength(1));
+
+    appStateChangeListeners[0]?.('background');
+    expect(resetMaterial3ThemeMock).not.toHaveBeenCalled();
+
+    appStateChangeListeners[0]?.('active');
+    expect(resetMaterial3ThemeMock).toHaveBeenCalledTimes(1);
   });
 
   it('ignores dynamic Material colors when the resolved variant is Liquid Glass', async () => {

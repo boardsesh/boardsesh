@@ -892,12 +892,12 @@ The Expo app (`packages/mobile/`) is a separate implementation from the web CSS 
 
 `packages/mobile/src/components/GlassSurface.tsx` is the single primitive for every translucent surface. It resolves the best material per device:
 
-| Condition                                   | Material                                              |
-| ------------------------------------------- | ----------------------------------------------------- |
-| iOS 26+ (Liquid Glass available)            | `expo-glass-effect` `GlassView`                       |
-| iOS < 26                                    | `@react-native-community/blur` `BlurView` (frosted)   |
-| Android                                     | Solid themed surface (`systemColors.secondaryBackground`) |
-| Reduce Transparency on (any platform)       | Solid themed surface                                  |
+| Condition                             | Material                                                  |
+| ------------------------------------- | --------------------------------------------------------- |
+| iOS 26+ (Liquid Glass available)      | `expo-glass-effect` `GlassView`                           |
+| iOS < 26                              | `@react-native-community/blur` `BlurView` (frosted)       |
+| Android                               | Solid themed surface (`systemColors.secondaryBackground`) |
+| Reduce Transparency on (any platform) | Solid themed surface                                      |
 
 Props: `glassEffectStyle` (`'regular'` for frosted chrome, `'clear'` for content-forward), `tintColor` (translucent hue composited onto the glass), `fallbackColor` (solid path).
 
@@ -922,7 +922,7 @@ The mobile app ships **two visual variants**, switchable in More → **UI style*
 
 **Our theme stays the source of truth.** `src/theme/paper-theme.ts` `buildPaperTheme(colorScheme, dynamic?)` maps our tokens (`materialSurfaces`, `brandColors`) onto MD3 colour roles and feeds `PaperProvider` (mounted by `src/providers/material-theme-provider.tsx`, under `ThemeProvider`). Paper's MD3 type scale + shapes stay as defaults (system font). On Android 12+ in the Material variant, `@pchmn/expo-material3-theme` supplies the device Material You palette; unsupported devices keep the static "Velvet Send" violet Material map.
 
-**Material You must reach both theme paths.** `ThemeProvider` gates dynamic color to `variant === 'material' && isDynamicThemeSupported`, passes that palette to Paper, and converts it into the `systemColors` shape used by token-skinned surfaces. Do not feed dynamic color only to Paper; the tab bar, gorhom sheets, accessory bar, `ListRow`, `GradeChip`, and `GlassSurface` material branch must stay palette-consistent.
+**Material You must reach both theme paths.** `ThemeProvider` gates dynamic color to `variant === 'material'`, `isDynamicThemeSupported`, and a real device palette. If the native module returns its generated maroon fallback, `dynamicMaterialColors` stays undefined and the static Material map is used. Do not feed dynamic color only to Paper; the tab bar, gorhom sheets, accessory bar, `ListRow`, `GradeChip`, and `GlassSurface` material branch must stay palette-consistent.
 
 **Per-primitive dispatch convention** — when adding/migrating a primitive, branch on the variant and keep the Liquid Glass body untouched in the `else`:
 

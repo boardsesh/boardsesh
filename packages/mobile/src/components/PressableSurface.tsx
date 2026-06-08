@@ -14,7 +14,8 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { springs } from '../theme/animations';
 import { androidRipple } from '../theme/tokens';
-import { brandColors } from '../theme/colors';
+import { brandColors as staticBrandColors } from '../theme/colors';
+import { useOptionalTheme } from '../providers/theme-provider';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -84,6 +85,8 @@ export function PressableSurface({
   onAccessibilityAction,
   style,
 }: PressableSurfaceProps) {
+  const theme = useOptionalTheme();
+  const defaultRippleColor = theme?.brandColors.tint ?? staticBrandColors.tint;
   // `pressed` is 0 at rest, 1 while held. Resolved into a scale or opacity in
   // the worklet so the same shared value drives either feedback mode.
   const pressed = useSharedValue(0);
@@ -125,7 +128,7 @@ export function PressableSurface({
         onLongPress={onLongPress}
         onLayout={onLayout}
         disabled={disabled}
-        android_ripple={androidRipple(rippleColor ?? brandColors.tint, rippleBorderless)}
+        android_ripple={androidRipple(rippleColor ?? defaultRippleColor, rippleBorderless)}
         hitSlop={hitSlop}
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}

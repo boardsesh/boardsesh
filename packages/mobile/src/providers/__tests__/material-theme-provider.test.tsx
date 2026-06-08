@@ -8,16 +8,15 @@ const dynamicMaterialColors = vi.hoisted(() => ({ primary: '#3366AA' }) as unkno
 
 type BuildPaperThemeMock = (colorScheme: string, dynamicPalette?: Material3Scheme) => { colors: { primary: string } };
 
-const buildPaperThemeMock = vi.hoisted(() =>
-  vi.fn<BuildPaperThemeMock>(() => ({ colors: { primary: '#3366AA' } })),
-);
+const buildPaperThemeMock = vi.hoisted(() => vi.fn<BuildPaperThemeMock>(() => ({ colors: { primary: '#3366AA' } })));
 
 vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
   default: () => createElement('span', { 'data-icon': 'material-community' }),
 }));
 
 vi.mock('react-native-paper', () => ({
-  PaperProvider: ({ children }: { children: ReactNode }) => createElement('div', { 'data-paper': 'provider' }, children),
+  PaperProvider: ({ children }: { children: ReactNode }) =>
+    createElement('div', { 'data-paper': 'provider' }, children),
 }));
 
 vi.mock('../theme-provider', () => ({

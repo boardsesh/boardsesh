@@ -4,7 +4,10 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // Controls the rendering branch under test.
-const ctrl = vi.hoisted(() => ({ os: 'ios' as string }));
+const ctrl = vi.hoisted(() => ({
+  os: 'ios' as string,
+  theme: null as { brandColors: { tint: string } } | null,
+}));
 
 // Minimal RN surface: Pressable becomes a <button> that exposes whether it
 // received an android_ripple config and forwards onPress as onClick.
@@ -52,6 +55,10 @@ vi.mock('../../theme/colors', () => ({
   brandColors: { tint: '#6D28D9' },
 }));
 
+vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => ctrl.theme,
+}));
+
 vi.mock('../../theme/animations', () => ({
   springs: { snappy: {} },
 }));
@@ -60,6 +67,7 @@ import { PressableSurface } from '../PressableSurface';
 
 beforeEach(() => {
   ctrl.os = 'ios';
+  ctrl.theme = null;
 });
 
 describe('PressableSurface', () => {
@@ -69,10 +77,17 @@ describe('PressableSurface', () => {
     expect(container.querySelector('[data-has-ripple="true"]')).not.toBeNull();
   });
 
-  it('defaults the Android ripple to the brand tint', () => {
+  it('falls back to the static brand tint outside a theme provider', () => {
     ctrl.os = 'android';
     const { container } = render(<PressableSurface>x</PressableSurface>);
     expect(container.querySelector('[data-ripple-color="#6D28D9"]')).not.toBeNull();
+  });
+
+  it('uses the resolved theme tint for default Android ripples', () => {
+    ctrl.os = 'android';
+    ctrl.theme = { brandColors: { tint: '#3366AA' } };
+    const { container } = render(<PressableSurface>x</PressableSurface>);
+    expect(container.querySelector('[data-ripple-color="#3366AA"]')).not.toBeNull();
   });
 
   it('honours an explicit rippleColor on Android', () => {
