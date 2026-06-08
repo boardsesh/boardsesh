@@ -20,6 +20,7 @@ import { resolve } from 'node:path';
 import {
   base64url,
   die,
+  failAndExit,
   highestVersion,
   normalize,
   pickNextVersion,
@@ -89,14 +90,11 @@ async function fetchLatestProductionVersionName({ accessToken, packageName }) {
     if (trackResponse.status === 404) return null;
     if (!trackResponse.ok) {
       const body = await trackResponse.text();
-      die(
-        SCRIPT,
-        `Play Developer API tracks.get failed: ${trackResponse.status} ${trackResponse.statusText}\n${body}`,
-      );
+      die(SCRIPT, `Play Developer API tracks.get failed: ${trackResponse.status} ${trackResponse.statusText}\n${body}`);
     }
     const track = await trackResponse.json();
-    const releases = (track.releases ?? []).filter((release) =>
-      release.status === 'completed' || release.status === 'inProgress',
+    const releases = (track.releases ?? []).filter(
+      (release) => release.status === 'completed' || release.status === 'inProgress',
     );
     return highestVersion(releases.map((release) => release.name));
   } finally {
@@ -130,9 +128,7 @@ async function main() {
   const releasedVersion = await fetchLatestProductionVersionName({ accessToken, packageName });
 
   process.stderr.write(`source versionName: ${sourceVersion}\n`);
-  process.stderr.write(
-    `play production version: ${releasedVersion ?? '(none — no production release yet)'}\n`,
-  );
+  process.stderr.write(`play production version: ${releasedVersion ?? '(none — no production release yet)'}\n`);
 
   const nextVersion = pickNextVersion(sourceVersion, releasedVersion);
 
@@ -140,4 +136,4 @@ async function main() {
   process.stdout.write(`${nextVersion}\n`);
 }
 
-main().catch((error) => die(SCRIPT, error.stack ?? String(error)));
+main().catch((error) => failAndExit(SCRIPT, error));

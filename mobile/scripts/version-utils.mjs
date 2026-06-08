@@ -1,8 +1,17 @@
 // Shared helpers for the iOS / Android marketing-version computation scripts.
 // Kept zero-dependency so callers can run on any Node 18+ runtime.
 
+// Throws rather than calling process.exit() so that `finally` blocks (e.g. the
+// Play edit cleanup) still run when a failure happens mid-request. The script
+// entrypoints catch this and exit non-zero via failAndExit().
 export function die(scriptName, message) {
-  process.stderr.write(`${scriptName}: ${message}\n`);
+  throw new Error(`${scriptName}: ${message}`);
+}
+
+// Top-level error handler for the entrypoints. Prints to stderr and exits 1,
+// after any in-flight `finally` cleanup has already run.
+export function failAndExit(scriptName, error) {
+  process.stderr.write(`${error?.stack ?? error?.message ?? `${scriptName}: ${String(error)}`}\n`);
   process.exit(1);
 }
 
@@ -17,7 +26,11 @@ export function base64url(input) {
 }
 
 export function normalize(version) {
-  const parts = String(version).trim().split('.').slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  const parts = String(version)
+    .trim()
+    .split('.')
+    .slice(0, 3)
+    .map((part) => Number.parseInt(part, 10) || 0);
   while (parts.length < 3) parts.push(0);
   return parts.join('.');
 }
@@ -49,9 +62,7 @@ export function pickNextVersion(sourceVersion, releasedVersion) {
 // Picks the highest version from a list (after normalising). Returns null if
 // the list is empty after filtering.
 export function highestVersion(versions) {
-  const normalised = versions
-    .filter((value) => typeof value === 'string' && value.length > 0)
-    .map(normalize);
+  const normalised = versions.filter((value) => typeof value === 'string' && value.length > 0).map(normalize);
   if (normalised.length === 0) return null;
   return normalised.sort(compareVersions).at(-1);
 }

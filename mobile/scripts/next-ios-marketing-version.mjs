@@ -24,6 +24,7 @@ import {
   base64url,
   compareVersions,
   die,
+  failAndExit,
   highestVersion,
   normalize,
   pickNextVersion,
@@ -44,9 +45,7 @@ function signJwt({ keyId, issuerId, privateKey }) {
     }),
   );
   const signingInput = `${header}.${payload}`;
-  const signature = createSign('SHA256')
-    .update(signingInput)
-    .sign({ key: privateKey, dsaEncoding: 'ieee-p1363' });
+  const signature = createSign('SHA256').update(signingInput).sign({ key: privateKey, dsaEncoding: 'ieee-p1363' });
   return `${signingInput}.${base64url(signature)}`;
 }
 
@@ -57,9 +56,7 @@ function readCurrentMarketingVersion(pbxprojPath) {
   const unique = [...new Set(matches.map(normalize))];
   if (unique.length > 1) {
     process.stderr.write(
-      `${SCRIPT}: warning — multiple MARKETING_VERSION values in pbxproj (${unique.join(
-        ', ',
-      )}); using the highest\n`,
+      `${SCRIPT}: warning — multiple MARKETING_VERSION values in pbxproj (${unique.join(', ')}); using the highest\n`,
     );
   }
   return unique.sort(compareVersions).at(-1);
@@ -77,9 +74,7 @@ async function fetchLatestReleasedVersion({ appId, jwt }) {
     die(SCRIPT, `App Store Connect lookup failed: ${response.status} ${response.statusText}\n${body}`);
   }
   const json = await response.json();
-  const versionStrings = (json?.data ?? [])
-    .map((entry) => entry?.attributes?.versionString)
-    .filter(Boolean);
+  const versionStrings = (json?.data ?? []).map((entry) => entry?.attributes?.versionString).filter(Boolean);
   return highestVersion(versionStrings);
 }
 
@@ -88,9 +83,7 @@ async function main() {
   const issuerId = requireEnv(SCRIPT, 'APP_STORE_CONNECT_ISSUER_ID');
   const keyPath = requireEnv(SCRIPT, 'APP_STORE_CONNECT_API_KEY_PATH');
   const appId = requireEnv(SCRIPT, 'APP_STORE_APP_ID');
-  const pbxprojPath = resolve(
-    process.env.PBXPROJ_PATH ?? 'mobile/ios/App/App.xcodeproj/project.pbxproj',
-  );
+  const pbxprojPath = resolve(process.env.PBXPROJ_PATH ?? 'mobile/ios/App/App.xcodeproj/project.pbxproj');
 
   const sourceVersion = readCurrentMarketingVersion(pbxprojPath);
 
@@ -107,4 +100,4 @@ async function main() {
   process.stdout.write(`${nextVersion}\n`);
 }
 
-main().catch((error) => die(SCRIPT, error.stack ?? String(error)));
+main().catch((error) => failAndExit(SCRIPT, error));

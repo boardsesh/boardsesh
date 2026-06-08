@@ -3,13 +3,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import {
-  bumpPatch,
-  compareVersions,
-  highestVersion,
-  normalize,
-  pickNextVersion,
-} from './version-utils.mjs';
+import { bumpPatch, compareVersions, highestVersion, normalize, pickNextVersion } from './version-utils.mjs';
 
 describe('normalize', () => {
   it('pads 2-segment versions to 3 segments', () => {
