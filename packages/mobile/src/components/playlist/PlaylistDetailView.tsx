@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useState } from 'react';
 import {
+  type ColorValue,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -18,13 +19,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { Appbar } from 'react-native-paper';
+import { Appbar, Menu } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { type IconName } from '../icon-map';
+import { type IconName, iconMap } from '../icon-map';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
@@ -40,6 +41,7 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { SKELETON_PLACEHOLDERS } from './skeleton-placeholders';
 
 /** Bottom scrim that keeps white title/meta legible across the palette (amber
  *  and green included) without per-colour luminance branching. */
@@ -51,8 +53,6 @@ const GRADIENT_END = { x: 1, y: 1 } as const;
  *  enough to contain the floating FABs (which sit `spacing[1]` below the inset),
  *  so they're centered in the bar rather than poking out under it. */
 const NAV_BAR_HEIGHT = glassSize.standard + spacing[1] * 2;
-/** Rows of skeleton placeholder shown while the first page loads. */
-const SKELETON_ROW_COUNT = 8;
 
 /** Optional richer empty state (Material branch only). When omitted, the
  *  Material branch falls back to the same generic icon + `emptyMessage` the
@@ -64,6 +64,42 @@ export type PlaylistDetailEmptyState = {
   title: string;
   /** Supporting line under the headline (already translated). */
   supporting?: string;
+};
+
+/** A primary owner/viewer control rendered as a Paper `Appbar.Action` in the
+ *  Material header (e.g. follow, pin). Mirrors a glass action FAB. */
+export type PlaylistMaterialAction = {
+  /** Stable React key. */
+  key: string;
+  /** Semantic icon name, mapped to its MaterialCommunityIcons glyph for Paper. */
+  icon: IconName;
+  /** Already-translated accessibility label. */
+  accessibilityLabel: string;
+  onPress: () => void;
+  /** When set, tints the action (e.g. the brand colour for a pinned playlist). */
+  tint?: ColorValue;
+  /** Disables the action while a request is in flight (e.g. follow toggling). */
+  disabled?: boolean;
+};
+
+/** An item inside the Material header's overflow (`dots-vertical`) `Menu` — the
+ *  owner edit/delete controls the glass branch exposes via its more-FAB sheet. */
+export type PlaylistMaterialMenuItem = {
+  key: string;
+  /** Already-translated row label. */
+  title: string;
+  icon: IconName;
+  onPress: () => void;
+  /** Renders the row in the destructive (red) tone, e.g. Delete. */
+  destructive?: boolean;
+};
+
+/** Material-branch action set. `inline` actions become `Appbar.Action`s; `menu`
+ *  items (if any) hang off a trailing overflow `Menu`. The glass branch ignores
+ *  this and renders its `actions` render-prop FABs instead. */
+export type PlaylistMaterialActions = {
+  inline?: PlaylistMaterialAction[];
+  menu?: PlaylistMaterialMenuItem[];
 };
 
 export type PlaylistDetailHero = {
@@ -104,6 +140,11 @@ export type PlaylistDetailViewProps = {
    *  the colour header bar takes over. The back FAB on the left is always
    *  rendered; absent here = a back-only top bar. */
   actions?: (collapsed: boolean) => ReactNode;
+  /** Material-branch equivalent of `actions`. The glass branch can't share the
+   *  same nodes (its FABs are glass surfaces), so the Material header renders
+   *  these structured descriptors as Paper `Appbar.Action`s + an overflow
+   *  `Menu`. Absent here = a back-only Material header. */
+  materialActions?: PlaylistMaterialActions;
 };
 
 /**
@@ -128,6 +169,7 @@ export function PlaylistDetailView({
   emptyMessage,
   emptyState,
   actions,
+  materialActions,
 }: PlaylistDetailViewProps) {
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
@@ -180,6 +222,12 @@ export function PlaylistDetailView({
     },
   );
   const actionNode = actions?.(collapsed);
+
+  // Material overflow `Menu` open state (owner edit/delete). Only used when the
+  // Material branch is active and `materialActions.menu` is non-empty.
+  const [menuVisible, setMenuVisible] = useState(false);
+  const openMenu = useCallback(() => setMenuVisible(true), []);
+  const closeMenu = useCallback(() => setMenuVisible(false), []);
 
   const handleEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
@@ -337,6 +385,52 @@ export function PlaylistDetailView({
               onPress={handleActivateAll}
               accessibilityLabel={t('detail.activateAll')}
             />
+          ) : null}
+          {/* Owner/viewer controls (follow, pin) the glass branch floats over the
+              hero, surfaced here as Paper actions so Material owners keep them. */}
+          {materialActions?.inline?.map((action) => (
+            <Appbar.Action
+              key={action.key}
+              icon={iconMap[action.icon].android}
+              color={(action.tint ?? systemColors.label) as string}
+              rippleColor={withAlpha(accent, 0.16)}
+              onPress={action.onPress}
+              disabled={action.disabled}
+              accessibilityLabel={action.accessibilityLabel}
+            />
+          ))}
+          {/* Overflow menu for the owner edit/delete actions the glass branch
+              opens via its more-FAB bottom sheet. */}
+          {materialActions?.menu && materialActions.menu.length > 0 ? (
+            <Menu
+              visible={menuVisible}
+              onDismiss={closeMenu}
+              anchor={
+                <Appbar.Action
+                  icon="dots-vertical"
+                  color={systemColors.label as string}
+                  rippleColor={withAlpha(accent, 0.16)}
+                  onPress={openMenu}
+                  accessibilityLabel={t('detail.actions')}
+                />
+              }
+              contentStyle={{ backgroundColor: systemColors.elevatedSurface }}
+            >
+              {materialActions.menu.map((item) => (
+                <Menu.Item
+                  key={item.key}
+                  title={item.title}
+                  leadingIcon={iconMap[item.icon].android}
+                  titleStyle={{
+                    color: (item.destructive ? iosSystemColors.systemRed : systemColors.label) as string,
+                  }}
+                  onPress={() => {
+                    closeMenu();
+                    item.onPress();
+                  }}
+                />
+              ))}
+            </Menu>
           ) : null}
         </Appbar.Header>
       </View>
@@ -499,8 +593,8 @@ function MaterialEmptyState({
   icon: IconName;
   title: string;
   supporting?: string;
-  titleColor: string | import('react-native').OpaqueColorValue;
-  supportingColor: string | import('react-native').OpaqueColorValue;
+  titleColor: ColorValue;
+  supportingColor: ColorValue;
 }) {
   return (
     <View style={styles.stateContainer}>
@@ -522,10 +616,6 @@ function MaterialEmptyState({
 function keyExtractor(item: Climb) {
   return item.uuid;
 }
-
-// Hoisted stable keys for the first-page skeleton rows — never reorder, so index
-// keys are fine and avoid allocating an array on every render.
-const SKELETON_PLACEHOLDERS = Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => `skeleton-${index}`);
 
 const styles = StyleSheet.create({
   container: {

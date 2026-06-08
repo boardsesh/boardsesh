@@ -4,7 +4,9 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 
-const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'glass' as 'glass' | 'material' }));
+import type { UiVariant } from '../../../theme/resolve-ui-variant';
+
+const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'liquidGlass' as UiVariant }));
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
@@ -99,6 +101,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       background: '#ffffff',
       secondaryBackground: '#f2f2f2',
       tertiaryBackground: '#e5e5e5',
+      elevatedSurface: '#ffffff',
     },
     brandColors: { primary: '#6D28D9' },
   }),
@@ -121,7 +124,7 @@ vi.mock('../../../theme/colors', () => ({
   withAlpha: (color: string, alpha: number) => `${color}|${alpha}`,
 }));
 vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { white: '#ffffff', systemGray4: '#aeaeb2' },
+  iosSystemColors: { white: '#ffffff', systemGray4: '#aeaeb2', systemRed: '#ff3b30' },
 }));
 
 // ── Leaf components ───────────────────────────────────────────────────────────
@@ -146,8 +149,18 @@ vi.mock('../../ClimbListRowSkeleton', () => ({
 }));
 
 // icon-map is pure data but pulls in expo-symbols types via Icon's import chain;
-// stub it so the component's `type IconName` import resolves without RN deps.
-vi.mock('../../icon-map', () => ({ iconMap: {} }));
+// stub the entries the Material header maps to MaterialCommunityIcons glyphs so
+// `iconMap[name].android` resolves without RN deps.
+vi.mock('../../icon-map', () => ({
+  iconMap: {
+    'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
+    'check.small': { ios: 'checkmark', android: 'check' },
+    pin: { ios: 'pin', android: 'pin-outline' },
+    'pin.fill': { ios: 'pin.fill', android: 'pin' },
+    edit: { ios: 'pencil', android: 'pencil-outline' },
+    delete: { ios: 'trash', android: 'delete-outline' },
+  },
+}));
 
 // react-native-paper drags in expo-modules-core at import time; stub the only
 // pieces the Material branch uses so the suite can load.
@@ -160,12 +173,34 @@ vi.mock('react-native-paper', () => {
     icon,
     onPress,
     accessibilityLabel,
+    disabled,
   }: {
     icon?: string;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { 'data-appbar-action': icon, onClick: onPress, 'aria-label': accessibilityLabel });
-  return { Appbar: { Header, BackAction, Content, Action } };
+    disabled?: boolean;
+  }) =>
+    createElement('button', {
+      'data-appbar-action': icon,
+      onClick: onPress,
+      'aria-label': accessibilityLabel,
+      disabled: disabled ?? false,
+    });
+  // Render the anchor (the dots-vertical action) always; render the children
+  // (menu items) only when `visible`, matching Paper's open/closed behaviour.
+  const MenuComponent = ({
+    visible,
+    anchor,
+    children,
+  }: {
+    visible?: boolean;
+    anchor?: ReactNode;
+    children?: ReactNode;
+  }) => createElement('div', { 'data-menu': 'true' }, anchor ?? null, visible ? children : null);
+  const MenuItem = ({ title, onPress }: { title?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { 'data-menu-item': 'true', onClick: onPress }, title);
+  const Menu = Object.assign(MenuComponent, { Item: MenuItem });
+  return { Appbar: { Header, BackAction, Content, Action }, Menu };
 });
 
 vi.mock('../../GlassIconButton', () => ({
@@ -225,7 +260,7 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
 describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
-    ctrl.variant = 'glass';
+    ctrl.variant = 'liquidGlass';
   });
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -428,6 +463,89 @@ describe('PlaylistDetailView', () => {
     it('shows skeleton rows while loading', () => {
       const { container } = render(<PlaylistDetailView {...makeProps({ isLoading: true, climbs: [] })} />);
       expect(container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0);
+    });
+
+    // ── Material actions (regression: owners lost follow/pin/edit/delete) ──────
+
+    it('renders inline materialActions as Appbar actions and wires onPress', () => {
+      const onFollow = vi.fn();
+      const onPin = vi.fn();
+      const materialActions = {
+        inline: [
+          { key: 'follow', icon: 'person.badge.plus' as const, accessibilityLabel: 'Follow', onPress: onFollow },
+          { key: 'pin', icon: 'pin' as const, accessibilityLabel: 'Pin playlist', onPress: onPin },
+        ],
+      };
+      const { container } = render(<PlaylistDetailView {...makeProps({ materialActions })} />);
+      const follow = container.querySelector('[data-appbar-action="account-plus-outline"]');
+      const pin = container.querySelector('[data-appbar-action="pin-outline"]');
+      expect(follow).not.toBeNull();
+      expect(pin).not.toBeNull();
+      fireEvent.click(follow as HTMLElement);
+      fireEvent.click(pin as HTMLElement);
+      expect(onFollow).toHaveBeenCalledTimes(1);
+      expect(onPin).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables an inline action when disabled is set', () => {
+      const materialActions = {
+        inline: [
+          {
+            key: 'follow',
+            icon: 'person.badge.plus' as const,
+            accessibilityLabel: 'Follow',
+            onPress: vi.fn(),
+            disabled: true,
+          },
+        ],
+      };
+      const { container } = render(<PlaylistDetailView {...makeProps({ materialActions })} />);
+      const follow = container.querySelector('[data-appbar-action="account-plus-outline"]') as HTMLButtonElement;
+      expect(follow.disabled).toBe(true);
+    });
+
+    it('renders an overflow menu anchor for owner edit/delete actions', () => {
+      const materialActions = {
+        menu: [
+          { key: 'edit', title: 'Edit', icon: 'edit' as const, onPress: vi.fn() },
+          { key: 'delete', title: 'Delete', icon: 'delete' as const, onPress: vi.fn(), destructive: true },
+        ],
+      };
+      const { container } = render(<PlaylistDetailView {...makeProps({ materialActions })} />);
+      // The dots-vertical anchor is present; menu items are hidden until opened.
+      expect(container.querySelector('[data-appbar-action="dots-vertical"]')).not.toBeNull();
+      expect(container.querySelectorAll('[data-menu-item]')).toHaveLength(0);
+    });
+
+    it('opens the overflow menu and fires the edit/delete handlers', () => {
+      const onEdit = vi.fn();
+      const onDelete = vi.fn();
+      const materialActions = {
+        menu: [
+          { key: 'edit', title: 'Edit', icon: 'edit' as const, onPress: onEdit },
+          { key: 'delete', title: 'Delete', icon: 'delete' as const, onPress: onDelete, destructive: true },
+        ],
+      };
+      const { container } = render(<PlaylistDetailView {...makeProps({ materialActions })} />);
+      const openOverflow = () =>
+        fireEvent.click(container.querySelector('[data-appbar-action="dots-vertical"]') as HTMLElement);
+      // Open the menu → both items render → tapping one closes the menu (so the
+      // next tap re-opens) and fires its handler.
+      openOverflow();
+      expect(container.querySelectorAll('[data-menu-item]')).toHaveLength(2);
+      fireEvent.click(container.querySelectorAll('[data-menu-item]')[0] as HTMLElement);
+      openOverflow();
+      fireEvent.click(container.querySelectorAll('[data-menu-item]')[1] as HTMLElement);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders no overflow anchor when materialActions has no menu items', () => {
+      const materialActions = {
+        inline: [{ key: 'pin', icon: 'pin' as const, accessibilityLabel: 'Pin playlist', onPress: vi.fn() }],
+      };
+      const { container } = render(<PlaylistDetailView {...makeProps({ materialActions })} />);
+      expect(container.querySelector('[data-appbar-action="dots-vertical"]')).toBeNull();
     });
   });
 });

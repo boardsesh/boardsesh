@@ -22,7 +22,9 @@ import {
   PlaylistActionsMenu,
   PlaylistFollowButton,
   PlaylistBackFab,
+  SKELETON_PLACEHOLDERS,
   type PlaylistFormValues,
+  type PlaylistMaterialActions,
 } from '../../../src/components/playlist';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
 import { getHttpClient } from '../../../src/lib/graphql/client';
@@ -42,6 +44,7 @@ type DetailParams = {
 export default function PlaylistDetail() {
   const { playlist_uuid: playlistUuid } = useLocalSearchParams<DetailParams>();
   const { t } = useTranslation('playlists');
+  const { t: tCommon } = useTranslation('common');
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
@@ -326,6 +329,63 @@ export default function PlaylistDetail() {
     ],
   );
 
+  // Material-branch equivalent of `renderActions`: the same follow / pin / more
+  // capabilities, as structured descriptors the Paper header renders as
+  // `Appbar.Action`s + an overflow `Menu`. Owners keep edit/delete here too —
+  // the regression this fixes was Material owners losing those controls.
+  const materialActions = useMemo<PlaylistMaterialActions | undefined>(() => {
+    if (!playlist) return undefined;
+    const inline: NonNullable<PlaylistMaterialActions['inline']> = [];
+    if (isAuthenticated && isFollowable) {
+      inline.push({
+        key: 'follow',
+        icon: isFollowing ? 'check.small' : 'person.badge.plus',
+        accessibilityLabel: isFollowing ? tCommon('follow.following') : tCommon('follow.follow'),
+        onPress: handleToggleFollow,
+        disabled: followLoading,
+        tint: isFollowing ? brandColors.primary : undefined,
+      });
+    }
+    if (isAuthenticated) {
+      inline.push({
+        key: 'pin',
+        icon: isPinned ? 'pin.fill' : 'pin',
+        accessibilityLabel: isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel'),
+        onPress: () => {
+          hapticSelection();
+          handleTogglePin();
+        },
+        tint: isPinned ? brandColors.primary : undefined,
+      });
+    }
+    // Wire edit straight to the form sheet (not `openEdit`, which sequences the
+    // glass actions bottom sheet's dismiss → open handoff that Material doesn't
+    // use). The Paper `Menu` closes itself before invoking onPress, so there's no
+    // double-sheet animation to coordinate.
+    const menu: NonNullable<PlaylistMaterialActions['menu']> = isOwner
+      ? [
+          { key: 'edit', title: t('detail.menu.edit'), icon: 'edit', onPress: () => setEditVisible(true) },
+          { key: 'delete', title: t('detail.menu.delete'), icon: 'delete', onPress: handleDelete, destructive: true },
+        ]
+      : [];
+    if (inline.length === 0 && menu.length === 0) return undefined;
+    return { inline, menu };
+  }, [
+    playlist,
+    isAuthenticated,
+    isFollowable,
+    isFollowing,
+    handleToggleFollow,
+    followLoading,
+    isPinned,
+    handleTogglePin,
+    isOwner,
+    handleDelete,
+    brandColors,
+    t,
+    tCommon,
+  ]);
+
   const hero = useMemo(
     () => ({
       name: playlist?.name ?? t('metadata.detail.fallbackTitle'),
@@ -382,6 +442,7 @@ export default function PlaylistDetail() {
         onActivateClimb={activate}
         emptyMessage={t('detail.empty')}
         actions={renderActions}
+        materialActions={materialActions}
       />
 
       <PlaylistActionsMenu
@@ -402,9 +463,6 @@ export default function PlaylistDetail() {
     </>
   );
 }
-
-// Stable hoisted keys for the first-page skeleton rows.
-const SKELETON_PLACEHOLDERS = Array.from({ length: 8 }, (_, index) => `skeleton-${index}`);
 
 const styles = StyleSheet.create({
   stateContainer: {
