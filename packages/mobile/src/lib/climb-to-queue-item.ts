@@ -37,7 +37,10 @@ const PLACEHOLDER_CLIMB_INPUT: ClimbInput = {
  */
 export function toClimbInput(climb: Climb | null | undefined): ClimbInput {
   if (!climb) {
-    if (__DEV__) console.warn('[queue] toClimbInput called without a climb — sending placeholder. See #2527.');
+    // Log unconditionally (not __DEV__-only): in production this placeholder
+    // flows into a real queue mutation with an empty uuid, so the bad-data path
+    // must stay observable rather than failing silently. See #2527.
+    console.warn('[queue] toClimbInput called without a climb — sending placeholder. See #2527.');
     return PLACEHOLDER_CLIMB_INPUT;
   }
   return {

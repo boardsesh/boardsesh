@@ -77,8 +77,14 @@ function setup() {
   return { reorderQueue, result };
 }
 
-// Grab the PanRecorder behind the GestureType the hook returns.
-function gestureFor(handle: ReturnType<typeof useQueueDrag>['makeHandleGesture'], rowIndex: number, uuid: string) {
+// Grab the PanRecorder behind the GestureType the hook returns. The row-facing
+// drag API lives on the stable `controls` bag (`controls.makeHandleGesture`),
+// split out from the volatile `isDragging` so memoized rows don't re-render.
+function gestureFor(
+  handle: ReturnType<typeof useQueueDrag>['controls']['makeHandleGesture'],
+  rowIndex: number,
+  uuid: string,
+) {
   return handle(rowIndex, uuid, rowIndex) as unknown as PanRecorder;
 }
 
@@ -89,7 +95,7 @@ describe('useQueueDrag', () => {
 
   it('commits a downward reorder via reorderQueue when the row moves', () => {
     const { reorderQueue, result } = setup();
-    const gesture = gestureFor(result.current.makeHandleGesture, 3, 'climb-a');
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 3, 'climb-a');
 
     act(() => gesture.handlers.onStart());
     act(() => gesture.handlers.onUpdate({ translationY: 120 })); // +1 row (default height 120)
@@ -102,7 +108,7 @@ describe('useQueueDrag', () => {
 
   it('does not call reorderQueue when the row lands back on its start index', () => {
     const { reorderQueue, result } = setup();
-    const gesture = gestureFor(result.current.makeHandleGesture, 3, 'climb-a');
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 3, 'climb-a');
 
     act(() => gesture.handlers.onStart());
     act(() => gesture.handlers.onUpdate({ translationY: 10 })); // < half a row → no move
@@ -114,7 +120,7 @@ describe('useQueueDrag', () => {
 
   it('clamps an upward drag to the first future row (cannot enter history/current)', () => {
     const { reorderQueue, result } = setup();
-    const gesture = gestureFor(result.current.makeHandleGesture, 5, 'climb-c');
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 5, 'climb-c');
 
     act(() => gesture.handlers.onStart());
     act(() => gesture.handlers.onUpdate({ translationY: -1000 }));
@@ -127,7 +133,7 @@ describe('useQueueDrag', () => {
 
   it('toggles isDragging across the gesture lifecycle', () => {
     const { result } = setup();
-    const gesture = gestureFor(result.current.makeHandleGesture, 3, 'climb-a');
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 3, 'climb-a');
 
     expect(result.current.isDragging).toBe(false);
     act(() => gesture.handlers.onStart());
@@ -141,8 +147,8 @@ describe('useQueueDrag', () => {
     // With the default 120px height, a 90px drag rounds to +1 row (3 → 4). After
     // reporting a 60px row height it rounds to +1.5 → +2 rows (3 → 5), proving
     // onRowHeight feeds the live step distance.
-    act(() => result.current.onRowHeight(60));
-    const gesture = gestureFor(result.current.makeHandleGesture, 3, 'climb-a');
+    act(() => result.current.controls.onRowHeight(60));
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 3, 'climb-a');
 
     act(() => gesture.handlers.onStart());
     act(() => gesture.handlers.onUpdate({ translationY: 90 }));
@@ -154,7 +160,7 @@ describe('useQueueDrag', () => {
 
   it('fires selection haptics on grab and on each row the drop target crosses', () => {
     const { result } = setup();
-    const gesture = gestureFor(result.current.makeHandleGesture, 3, 'climb-a');
+    const gesture = gestureFor(result.current.controls.makeHandleGesture, 3, 'climb-a');
 
     act(() => gesture.handlers.onStart()); // grab → 1 haptic
     act(() => gesture.handlers.onUpdate({ translationY: 120 })); // target 3 → 4 → 1 haptic
