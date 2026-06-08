@@ -22,7 +22,6 @@ type Params = {
   sizeId?: string;
   setIds?: string;
   angle?: string;
-  layoutName?: string;
   holdsFilter?: string;
 };
 
@@ -62,7 +61,9 @@ export default function HoldFilterScreen() {
   const layoutId = Number(params.layoutId ?? 0);
   const sizeId = Number(params.sizeId ?? 0);
   const setIds = params.setIds ?? '';
-  const layoutName = params.layoutName ?? '';
+  // Matches the web `boardLayout` property: the layout identity, not the board
+  // name. Mobile carries the numeric layoutId at this call site (PR #2618).
+  const boardLayout = String(layoutId);
 
   const [holdsFilter, setHoldsFilter] = useState<HoldsFilter>(() => parseHoldsFilter(params.holdsFilter));
   // Mirror of the latest holdsFilter so the focus-effect cleanup hands back the
@@ -128,10 +129,10 @@ export default function HoldFilterScreen() {
       track(SHARED_EVENTS.SearchHoldFilterChanged, {
         type,
         mode: applyMode,
-        boardLayout: layoutName,
+        boardLayout,
       });
     },
-    [activeHoldId, applyMode, layoutName],
+    [activeHoldId, applyMode, boardLayout],
   );
 
   const handleClearHold = useCallback(() => {
@@ -143,13 +144,13 @@ export default function HoldFilterScreen() {
       delete next[holdKey];
       return next;
     });
-    track(SHARED_EVENTS.SearchHoldFilterCleared, { boardLayout: layoutName });
-  }, [activeHoldId, layoutName]);
+    track(SHARED_EVENTS.SearchHoldFilterCleared, { boardLayout });
+  }, [activeHoldId, boardLayout]);
 
   const handleClearAll = useCallback(() => {
     setHoldsFilter({});
-    track(SHARED_EVENTS.SearchHoldFilterCleared, { boardLayout: layoutName });
-  }, [layoutName]);
+    track(SHARED_EVENTS.SearchHoldFilterCleared, { boardLayout });
+  }, [boardLayout]);
 
   const closePicker = useCallback(() => setActiveHoldId(null), []);
 

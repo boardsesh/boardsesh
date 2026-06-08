@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType } from '@boardsesh/shared-schema';
-import { ANY_HOLD_COLOR, buildHoldFilterOptions } from '@boardsesh/climb-filters';
+import { buildHoldFilterOptions } from '@boardsesh/climb-filters';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -79,10 +79,13 @@ export function HoldFilterPicker({
 
   const isEmpty = Object.keys(entry).length === 0;
 
-  const handleSwatch = (type: HoldFilterType) => {
-    hapticSelection();
-    onToggleType(type);
-  };
+  const handleSwatch = useCallback(
+    (type: HoldFilterType) => {
+      hapticSelection();
+      onToggleType(type);
+    },
+    [onToggleType],
+  );
 
   return (
     <Sheet ref={sheetRef} snapPoints={snapPoints} onClose={onClose} enablePanDownToClose fullWindowOverlay>
@@ -110,7 +113,7 @@ export function HoldFilterPicker({
               : isActive
                 ? t('mobile.holdFilter.includedSuffix')
                 : '';
-            const swatchColor = option.color === ANY_HOLD_COLOR ? '#FFFFFF' : option.color;
+            const swatchColor = option.color;
             return (
               <Pressable
                 key={option.type}
