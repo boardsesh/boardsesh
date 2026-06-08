@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/nextjs';
 import { useSnackbar } from './snackbar-provider';
 
@@ -25,12 +26,18 @@ const STACK_OVERFLOW_MESSAGE = 'Maximum call stack';
  */
 export function GlobalErrorTrap() {
   const { showMessage } = useSnackbar();
+  const { t } = useTranslation('common');
 
   useEffect(() => {
     const handler = (event: ErrorEvent) => {
       const err = event.error;
       if (!(err instanceof RangeError)) return;
       if (!err.message?.includes(STACK_OVERFLOW_MESSAGE)) return;
+
+      // Suppress the browser's default error logging for this event. We
+      // re-capture below with enriched context, so the bare auto-captured
+      // frame is redundant noise.
+      event.preventDefault();
 
       Sentry.captureException(err, {
         tags: { kind: 'stack-overflow-trap' },
@@ -43,12 +50,12 @@ export function GlobalErrorTrap() {
         },
       });
 
-      showMessage('Something looped on this page. We logged it — try reloading.', 'warning', undefined, 6000);
+      showMessage(t('stackOverflowTrap.message'), 'warning', undefined, 6000);
     };
 
     window.addEventListener('error', handler);
     return () => window.removeEventListener('error', handler);
-  }, [showMessage]);
+  }, [showMessage, t]);
 
   return null;
 }

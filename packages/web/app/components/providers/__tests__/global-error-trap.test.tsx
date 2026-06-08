@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, act } from '@testing-library/react';
+import { render, act, cleanup } from '@testing-library/react';
 import React from 'react';
 import { GlobalErrorTrap } from '../global-error-trap';
 import { SnackbarProvider } from '../snackbar-provider';
@@ -8,6 +8,14 @@ const captureExceptionMock = vi.fn();
 
 vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => captureExceptionMock(...args),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      key === 'stackOverflowTrap.message' ? 'Something looped on this page. We logged it — try reloading.' : key,
+    i18n: { language: 'en-US' },
+  }),
 }));
 
 function dispatchErrorEvent(error: unknown, overrides: Partial<ErrorEventInit> = {}) {
@@ -28,8 +36,10 @@ describe('GlobalErrorTrap', () => {
   });
 
   afterEach(() => {
-    // Clean up any leftover snackbar nodes between tests.
-    document.body.innerHTML = '';
+    // Unmount via React so the GlobalErrorTrap `useEffect` cleanup runs and
+    // removes its window `error` listener between tests (a raw innerHTML reset
+    // would leak listeners across cases).
+    cleanup();
   });
 
   it('captures RangeError stack overflow with extra context', () => {

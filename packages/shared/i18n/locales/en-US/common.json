@@ -1,4 +1,7 @@
 {
+  "stackOverflowTrap": {
+    "message": "Something looped on this page. We logged it — try reloading."
+  },
   "languageSwitcher": {
     "ariaLabelWithCurrent": "Language: {{language}}"
   },

@@ -1,4 +1,7 @@
 {
+  "stackOverflowTrap": {
+    "message": "Algo entró en bucle en esta página. Lo registramos — prueba a recargar."
+  },
   "languageSwitcher": {
     "ariaLabelWithCurrent": "Idioma: {{language}}"
   },

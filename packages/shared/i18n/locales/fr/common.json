@@ -1,4 +1,7 @@
 {
+  "stackOverflowTrap": {
+    "message": "Quelque chose a bouclé sur cette page. Nous l'avons enregistré — essaie de recharger."
+  },
   "languageSwitcher": {
     "ariaLabelWithCurrent": "Langue : {{language}}"
   },

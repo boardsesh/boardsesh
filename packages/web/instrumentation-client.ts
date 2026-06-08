@@ -25,6 +25,12 @@ Sentry.init({
   // home page (multiple SWR/GraphQL queries fire in parallel on mount).
   maxBreadcrumbs: 100,
 
+  // Scope `sentry-trace`/`baggage` propagation headers (injected by
+  // browserTracingIntegration) to our own origin. Without this they'd ride
+  // along on every outgoing request, including Aurora proxy and third-party
+  // endpoints that don't expect them.
+  tracePropagationTargets: ['boardsesh.com'],
+
   integrations: [
     // Records fetch/XHR/navigation breadcrumbs without sampling traces. We
     // explicitly opt out of performance traces (tracesSampleRate is unset) —
