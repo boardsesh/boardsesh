@@ -149,6 +149,8 @@ describe('ThemeProvider', () => {
       // Material maps M3 tonal surfaces + the 20dp button radius.
       expect(result.current.radii.button).toBe(20);
       expect(result.current.systemColors.background).toBe('#F3EFFA');
+      expect(result.current.brandColors.primary).toBe('#6D28D9');
+      expect(result.current.dynamicMaterialColors).toBeUndefined();
     });
 
     it('setUiVariant persists to SecureStore and flips the resolved variant + tokens', async () => {

@@ -23,7 +23,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { gradeRailCenter } from '../../lib/grade-seed';
 import { hapticSelection } from '../../lib/haptics';
-import { brandColors } from '../../theme/colors';
+import { brandColors as staticBrandColors } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
 import { GradeChip } from './GradeChip';
 
@@ -83,7 +83,7 @@ export function GradeRangeRail({
   style,
 }: GradeRangeRailProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors = staticBrandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   const chipLayoutsRef = useRef<Record<number, ChipLayout>>({});

@@ -14,8 +14,9 @@ type ColorScheme = 'light' | 'dark';
  * Roboto on Android, San Francisco on iOS) — that IS the native Material look.
  * Only the colour roles are mapped from our tokens.
  *
- * The optional `dynamic` palette is the hook for the Material You fast-follow
- * (@pchmn/expo-material3-theme); unused today, callers pass `undefined`.
+ * The optional `dynamic` palette is the Android 12+ Material You palette from
+ * @pchmn/expo-material3-theme. Callers pass `undefined` for static fallback
+ * Material and every Liquid Glass path.
  */
 export function buildPaperTheme(colorScheme: ColorScheme, dynamic?: MD3Theme['colors']): MD3Theme {
   const base = colorScheme === 'dark' ? MD3DarkTheme : MD3LightTheme;

@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Appearance, Platform, useColorScheme, type OpaqueColorValue } from 'react-native';
 import {
+  createMaterial3Theme,
+  isDynamicThemeSupported,
+  useMaterial3Theme,
+  type Material3Scheme,
+} from '@pchmn/expo-material3-theme';
+import {
   THEME_OVERRIDE_KEY,
   isThemeOverride,
   type ThemeOverride,
@@ -11,9 +17,11 @@ import {
 import {
   iosSystemColors,
   brandColors,
-  brandColorsDark,
   androidFallbackColors,
   materialSurfaces,
+  materialSurfacesFromDynamicPalette,
+  brandColorsFromDynamicPalette,
+  type BrandColors,
 } from '../theme/colors';
 import { textStyles, type TextVariant } from '../theme/typography';
 import {
@@ -32,12 +40,6 @@ import { useGlassCapability } from '../hooks/use-glass-capability';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
 
 type ColorScheme = 'light' | 'dark';
-
-/**
- * Resolved brand colours for the current colour scheme. `brandColors` (light) and
- * `brandColorsDark` share the same keys, so either set satisfies this shape.
- */
-type ResolvedBrandColors = typeof brandColors | typeof brandColorsDark;
 
 /**
  * Resolved system colors for the current color scheme.
@@ -61,7 +63,9 @@ type ResolvedSystemColors = {
 type Theme = {
   colorScheme: ColorScheme;
   systemColors: ResolvedSystemColors;
-  brandColors: ResolvedBrandColors;
+  brandColors: BrandColors;
+  /** Device-provided MD3 palette when Material You dynamic color is active. */
+  dynamicMaterialColors?: Material3Scheme;
   textStyles: typeof textStyles;
   spacing: typeof spacing;
   borderRadius: typeof borderRadius;
@@ -93,12 +97,18 @@ const ThemeContext = createContext<Theme | null>(null);
  * On Android, PlatformColor is not used — we pick from the
  * androidFallbackColors light/dark map.
  */
-function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): ResolvedSystemColors {
+function resolveSystemColors(
+  colorScheme: ColorScheme,
+  variant: UiVariant,
+  dynamicMaterialColors?: Material3Scheme,
+): ResolvedSystemColors {
   // Material variant: M3 tonal surfaces on every platform — including iOS 26
   // hardware when the user explicitly chose Material. Drawn opaque (no glass),
   // so we don't use PlatformColor here.
   if (variant === 'material') {
-    return { ...materialSurfaces[colorScheme] };
+    return dynamicMaterialColors
+      ? materialSurfacesFromDynamicPalette(colorScheme, dynamicMaterialColors)
+      : { ...materialSurfaces[colorScheme] };
   }
 
   if (Platform.OS === 'ios' && iosSystemColors) {
@@ -123,20 +133,30 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
   };
 }
 
-/**
- * Pick the brand colour set for the current scheme. The dark set lifts the violet
- * tint and brightens semantic tones so brand foregrounds stay legible on near-black.
- */
-function resolveBrandColors(colorScheme: ColorScheme): ResolvedBrandColors {
-  return colorScheme === 'dark' ? brandColorsDark : brandColors;
-}
-
 type ThemeProviderProps = {
   children: ReactNode;
 };
 
+const materialThemeOptions = { fallbackSourceColor: brandColors.primaryFill };
+const staticFallbackMaterialTheme = createMaterial3Theme(brandColors.primaryFill);
+
+function hasDeviceDynamicPalette(colorScheme: ColorScheme, materialColors: Material3Scheme): boolean {
+  const fallbackColors = staticFallbackMaterialTheme[colorScheme];
+
+  return (
+    materialColors.primary !== fallbackColors.primary ||
+    materialColors.background !== fallbackColors.background ||
+    materialColors.surfaceContainerLow !== fallbackColors.surfaceContainerLow ||
+    materialColors.surfaceContainer !== fallbackColors.surfaceContainer ||
+    materialColors.elevation.level2 !== fallbackColors.elevation.level2 ||
+    materialColors.onSurface !== fallbackColors.onSurface ||
+    materialColors.outlineVariant !== fallbackColors.outlineVariant
+  );
+}
+
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const deviceColorScheme = useColorScheme();
+  const { theme: material3Theme } = useMaterial3Theme(materialThemeOptions);
   // `'system'` until SecureStore hydrates — same value as a brand-new user, so
   // the first paint matches the OS preference. Once hydration completes the
   // resolved scheme switches to the saved override (if any) without a visible
@@ -230,12 +250,21 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   );
 
   const theme = useMemo<Theme>(() => {
-    const resolvedSystemColors = resolveSystemColors(colorScheme, variant);
+    const candidateDynamicMaterialColors = material3Theme[colorScheme];
+    const dynamicMaterialColors =
+      variant === 'material' &&
+      isDynamicThemeSupported &&
+      hasDeviceDynamicPalette(colorScheme, candidateDynamicMaterialColors)
+        ? candidateDynamicMaterialColors
+        : undefined;
+    const resolvedSystemColors = resolveSystemColors(colorScheme, variant, dynamicMaterialColors);
+    const resolvedBrandColors = brandColorsFromDynamicPalette(colorScheme, dynamicMaterialColors);
 
     return {
       colorScheme,
       systemColors: resolvedSystemColors,
-      brandColors: resolveBrandColors(colorScheme),
+      brandColors: resolvedBrandColors,
+      dynamicMaterialColors,
       textStyles,
       spacing,
       borderRadius,
@@ -251,7 +280,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       radii: radiiByVariant[variant],
       sheet: sheetChromeByVariant[variant],
     };
-  }, [colorScheme, variant, themeOverride, setThemeOverride, uiVariantPreference, setUiVariant]);
+  }, [colorScheme, material3Theme, variant, themeOverride, setThemeOverride, uiVariantPreference, setUiVariant]);
 
   // React 19 context provider syntax (Expo SDK 53+ / React 19)
   return <ThemeContext value={theme}>{children}</ThemeContext>;

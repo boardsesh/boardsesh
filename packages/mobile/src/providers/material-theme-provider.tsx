@@ -29,8 +29,11 @@ const paperSettings = { icon: paperIcon };
  * it's cheap and keeps the provider tree stable across a variant switch.
  */
 export function MaterialThemeProvider({ children }: { children: ReactNode }) {
-  const { colorScheme } = useTheme();
-  const paperTheme = useMemo(() => buildPaperTheme(colorScheme), [colorScheme]);
+  const { colorScheme, dynamicMaterialColors } = useTheme();
+  const paperTheme = useMemo(
+    () => buildPaperTheme(colorScheme, dynamicMaterialColors),
+    [colorScheme, dynamicMaterialColors],
+  );
 
   return (
     <PaperProvider theme={paperTheme} settings={paperSettings}>

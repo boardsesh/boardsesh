@@ -19,6 +19,12 @@ export default defineConfig({
       // `src/lib/analytics`. Analytics is a no-op in tests (isAnalyticsEnabled is
       // false), so a lightweight stub satisfies the static imports safely.
       'posthog-react-native': fileURLToPath(new URL('./test/posthog-react-native-stub.ts', import.meta.url)),
+      // @pchmn/expo-material3-theme is an Android native module. Stub it for
+      // generic unit tests; theme-specific tests can vi.mock the package with a
+      // dynamic palette before importing ThemeProvider.
+      '@pchmn/expo-material3-theme': fileURLToPath(
+        new URL('./test/expo-material3-theme-stub.ts', import.meta.url),
+      ),
       // react-native-paper's real entry throws a SyntaxError under vitest's node
       // env (untransformed RN-native source + react-native-vector-icons). Stub it
       // so any suite can import a Paper-backed primitive; component tests that

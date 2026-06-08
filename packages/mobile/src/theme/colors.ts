@@ -1,4 +1,5 @@
 import { Platform, PlatformColor, type OpaqueColorValue } from 'react-native';
+import type { Material3Scheme } from '@pchmn/expo-material3-theme';
 
 /**
  * iOS semantic system colors via PlatformColor.
@@ -153,9 +154,12 @@ export const materialSurfaces = {
 } as const;
 
 export type SystemColorKey = keyof typeof androidFallbackColors.light;
-export type BrandColors = typeof brandColors;
+export type MaterialColorScheme = keyof typeof materialSurfaces;
+export type BrandColorKey = keyof typeof brandColors;
+export type BrandColors = Record<BrandColorKey, string>;
 export type AndroidFallbackColors = typeof androidFallbackColors;
 export type MaterialSurfaces = typeof materialSurfaces;
+export type MaterialSurfaceTokens = Record<SystemColorKey, string>;
 
 /**
  * Normalise a `#RGB`/`#RRGGBB` hex string to a 6-digit hex (no `#`), or return
@@ -224,4 +228,52 @@ export function blendOpaque(foreground: string, background: string, alpha: numbe
   }
   const mix = (channel: 0 | 1 | 2) => fg[channel] * alpha + bg[channel] * (1 - alpha);
   return `#${toHexByte(mix(0))}${toHexByte(mix(1))}${toHexByte(mix(2))}`;
+}
+
+/**
+ * Convert a Material You / MD3 palette into the same semantic surface ladder
+ * the token-skinned mobile components already consume through
+ * `useTheme().systemColors`.
+ */
+export function materialSurfacesFromDynamicPalette(
+  colorScheme: MaterialColorScheme,
+  dynamicPalette: Material3Scheme,
+): MaterialSurfaceTokens {
+  const isDark = colorScheme === 'dark';
+
+  return {
+    background: dynamicPalette.background,
+    secondaryBackground: dynamicPalette.surfaceContainerLow,
+    tertiaryBackground: dynamicPalette.surfaceContainer,
+    groupedBackground: dynamicPalette.background,
+    elevatedSurface: dynamicPalette.elevation.level2,
+    label: dynamicPalette.onSurface,
+    secondaryLabel: dynamicPalette.onSurfaceVariant,
+    tertiaryLabel: withAlpha(dynamicPalette.onSurface, 0.38),
+    separator: dynamicPalette.outlineVariant,
+    fill: withAlpha(dynamicPalette.primary, isDark ? 0.18 : 0.12),
+  };
+}
+
+/**
+ * Keep semantic status colours stable, but let Material-only accent chrome
+ * follow the device's dynamic primary colour.
+ */
+export function brandColorsFromDynamicPalette(
+  colorScheme: MaterialColorScheme,
+  dynamicPalette?: Material3Scheme,
+): BrandColors {
+  const fallbackBrandColors = colorScheme === 'dark' ? brandColorsDark : brandColors;
+
+  if (!dynamicPalette) {
+    return fallbackBrandColors;
+  }
+
+  return {
+    ...fallbackBrandColors,
+    tint: dynamicPalette.primary,
+    primary: dynamicPalette.primary,
+    primaryFill: dynamicPalette.primary,
+    onPrimary: dynamicPalette.onPrimary,
+  };
 }
