@@ -15,15 +15,18 @@ import { useTranslation } from 'react-i18next';
 import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound } from '@boardsesh/climb-filters';
+import type { ClimbViewMode } from '../../lib/view-mode-store';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-board';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { spacing } from '../../theme/tokens';
-import { hapticLight } from '../../lib/haptics';
+import { glassSize } from '../../theme/layout';
+import { hapticLight, hapticSelection } from '../../lib/haptics';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { Text } from '../Text';
-import { iconMap } from '../icon-map';
+import { GlassIconButton } from '../GlassIconButton';
+import { iconMap, type IconName } from '../icon-map';
 import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
 import { GradeRangeRail } from '../grade';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
@@ -69,6 +72,10 @@ type ClimbTopChromeProps = {
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound) => void;
+  /** Current climbs-list layout. The toggle button shows the OTHER mode's icon. */
+  viewMode?: ClimbViewMode;
+  /** Flips the list between single-column (`list`) and 2-up (`grid`). */
+  onToggleViewMode?: () => void;
 };
 
 export function ClimbTopChrome({
@@ -96,6 +103,8 @@ export function ClimbTopChrome({
   gradeChip,
   onOpenGrade,
   onGradeChange,
+  viewMode = 'list',
+  onToggleViewMode,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
@@ -103,6 +112,16 @@ export function ClimbTopChrome({
   const insets = useSafeAreaInsets();
   const { data: activeBoard } = useActiveBoard();
   const usesCustomSearch = searchMode === 'custom';
+
+  // Single-button toggle: the glyph is the TARGET mode the tap switches to
+  // (list shows the grid icon, grid shows the list icon), and the a11y label
+  // names that target. Matches the legacy app's grid/list toggle.
+  const viewModeIcon: IconName = viewMode === 'grid' ? 'view-list' : 'view-grid';
+  const viewModeLabel = viewMode === 'grid' ? t('mobile.viewMode.toViewList') : t('mobile.viewMode.toViewGrid');
+  const handleToggleViewMode = useCallback(() => {
+    hapticSelection();
+    onToggleViewMode?.();
+  }, [onToggleViewMode]);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -168,6 +187,15 @@ export function ClimbTopChrome({
             titleStyle={styles.materialTitle}
             subtitleStyle={styles.materialSubtitle}
           />
+          {onToggleViewMode ? (
+            <Appbar.Action
+              icon={iconMap[viewModeIcon].android}
+              color={systemColors.label as string}
+              onPress={handleToggleViewMode}
+              accessibilityLabel={viewModeLabel}
+              accessibilityHint={t('mobile.viewMode.hint')}
+            />
+          ) : null}
           {canCreate ? (
             <Appbar.Action
               icon={iconMap.plus.android}
@@ -249,6 +277,24 @@ export function ClimbTopChrome({
     );
   }
 
+  // Liquid-glass view-mode toggle: a glass island that cross-fades SF Symbols
+  // (list.bullet ↔ square.grid.2x2) on the active mode, honouring Reduce Motion.
+  // Shown right of the search field; on iOS 26 native search (no in-chrome field)
+  // it floats right-aligned so the toggle is still reachable in the chrome.
+  const viewModeToggle = onToggleViewMode ? (
+    <GlassIconButton
+      iconName="view-grid"
+      secondaryIconName="view-list"
+      active={viewMode === 'grid'}
+      iconColor={systemColors.label}
+      fallbackColor={systemColors.fill}
+      size={glassSize.standard}
+      onPress={handleToggleViewMode}
+      accessibilityLabel={viewModeLabel}
+      accessibilityHint={t('mobile.viewMode.hint')}
+    />
+  ) : null;
+
   // Liquid-glass variant: the shared collapsing chrome (centred board pill that
   // collapses into the filter title, board glyph docking into the toolbar) with
   // the climbs-only search row as its below-row content.
@@ -277,7 +323,14 @@ export function ClimbTopChrome({
                 height={TOP_ACTION_SIZE}
               />
             </View>
+            {viewModeToggle}
           </View>
+        </View>
+      ) : viewModeToggle ? (
+        // Native search (iOS 26): the search field lives in the tab bar, so the
+        // toggle floats alone, right-aligned, in the chrome's below-islands row.
+        <View pointerEvents="box-none" style={[styles.searchStack, styles.viewModeOnlyRow]}>
+          {viewModeToggle}
         </View>
       ) : null}
     </CollapsingTopChrome>
@@ -380,6 +433,10 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     minWidth: 0,
+  },
+  viewModeOnlyRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
   },
   materialContainer: {
     position: 'absolute',

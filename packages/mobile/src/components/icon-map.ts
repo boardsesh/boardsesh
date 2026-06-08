@@ -124,6 +124,11 @@ export const iconMap = {
   clock: { ios: 'clock', android: 'clock-outline' },
   filter: { ios: 'line.3.horizontal.decrease', android: 'filter-variant' },
   sort: { ios: 'arrow.up.arrow.down', android: 'sort-variant' },
+  // Climbs view-mode toggle: the icon shows the TARGET mode the tap switches to
+  // (single-button toggle), so 'view-grid' is shown while in list mode and
+  // 'view-list' while in grid mode.
+  'view-list': { ios: 'list.bullet', android: 'view-list' },
+  'view-grid': { ios: 'square.grid.2x2', android: 'view-grid' },
   refresh: { ios: 'arrow.clockwise', android: 'refresh' },
   'crop.free': { ios: 'viewfinder', android: 'crop-free' },
   photo: { ios: 'photo', android: 'image-outline' },

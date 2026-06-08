@@ -667,6 +667,11 @@
       "gradeCloseHint": "Cierra el selector de grado",
       "allClimbs": "Todas las vías"
     },
+    "viewMode": {
+      "toViewGrid": "Ver en cuadrícula",
+      "toViewList": "Ver en lista",
+      "hint": "Cambia la lista de vías entre una columna y una cuadrícula de dos"
+    },
     "gradeRail": {
       "setFilterAria": "Filtrar por grado {{grade}}",
       "selectedFilterAria": "Filtro de grado {{grade}} seleccionado",

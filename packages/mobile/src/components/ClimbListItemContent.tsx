@@ -171,7 +171,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   );
 });
 
-export { ClimbListItemContent };
+export { ClimbListItemContent, AscentStatusGlyph };
 
 const styles = StyleSheet.create({
   thumbnailContainer: {

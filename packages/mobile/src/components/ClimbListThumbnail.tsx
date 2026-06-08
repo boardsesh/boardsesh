@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import { borderRadius } from '../theme/tokens';
@@ -21,6 +21,12 @@ type ClimbListThumbnailProps = {
   sizeId: number;
   setIds: string;
   mirrored?: boolean;
+  /**
+   * Overrides the fixed 76×96 list cell. The grid card passes a column-width
+   * wrapper (`aspectRatio` instead of a fixed height) so the same thumbnail
+   * scales up to a 2-up tile. List rows omit it and keep the portrait cell.
+   */
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -41,6 +47,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   sizeId,
   setIds,
   mirrored,
+  style,
 }: ClimbListThumbnailProps) {
   const { overlayUri, backgroundPaths, missingBackgroundCount } = useNativeClimbRender({
     frames,
@@ -52,7 +59,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   });
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <LayeredClimbImage
         overlayUri={overlayUri}
         backgroundPaths={backgroundPaths}

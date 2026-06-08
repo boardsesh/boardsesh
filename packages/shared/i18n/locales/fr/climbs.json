@@ -667,6 +667,11 @@
       "gradeCloseHint": "Ferme le sélecteur de cotation",
       "allClimbs": "Toutes les voies"
     },
+    "viewMode": {
+      "toViewGrid": "Voir en grille",
+      "toViewList": "Voir en liste",
+      "hint": "Bascule la liste des voies entre une colonne et une grille à deux"
+    },
     "gradeRail": {
       "setFilterAria": "Filtrer par cotation {{grade}}",
       "selectedFilterAria": "Filtre de cotation {{grade}} sélectionné",

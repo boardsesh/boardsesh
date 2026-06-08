@@ -667,6 +667,11 @@
       "gradeCloseHint": "Closes the grade picker",
       "allClimbs": "All climbs"
     },
+    "viewMode": {
+      "toViewGrid": "View as grid",
+      "toViewList": "View as list",
+      "hint": "Switches the climbs list between a single column and a two-up grid"
+    },
     "gradeRail": {
       "setFilterAria": "Set grade filter to {{grade}}",
       "selectedFilterAria": "{{grade}} grade filter selected",

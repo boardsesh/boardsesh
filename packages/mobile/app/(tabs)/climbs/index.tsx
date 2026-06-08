@@ -25,6 +25,7 @@ import {
   type ClimbBoardFilterState,
 } from '@boardsesh/climb-filters';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
+import { ClimbGridCard } from '../../../src/components/ClimbGridCard';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Text } from '../../../src/components/Text';
@@ -60,12 +61,18 @@ import {
   type RecentFilter,
 } from '../../../src/lib/recent-filter-store';
 import { getLastSearch, saveLastSearch, boardConfigKey } from '../../../src/lib/last-search-store';
+import {
+  getViewMode,
+  saveViewMode,
+  DEFAULT_CLIMB_VIEW_MODE,
+  type ClimbViewMode,
+} from '../../../src/lib/view-mode-store';
 import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filter-summary';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
-import { spacing } from '../../../src/theme/tokens';
+import { spacing, borderRadius } from '../../../src/theme/tokens';
 import { glassSize } from '../../../src/theme/layout';
 
 const PAGE_SIZE = 30;
@@ -184,6 +191,9 @@ function ClimbListInner() {
   const [showFilters, setShowFilters] = useState(false);
   const [showGrade, setShowGrade] = useState(false);
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
+  // Climbs-list layout (single-column list vs 2-up grid). Restored per board and
+  // defaulted to list. Held as state so the FlashList can re-key on a change.
+  const [viewMode, setViewMode] = useState<ClimbViewMode>(DEFAULT_CLIMB_VIEW_MODE);
   // Measured height of the floating glass chrome (incl. the top safe-area inset).
   // The list pads its top by this so the first row rests below the chrome and the
   // rest scroll under it.
@@ -346,6 +356,41 @@ function ClimbListInner() {
 
   // Search is "ready" once this board's restore has landed — gate queries on it.
   const searchReady = hasBoardConfig && restoredKey === boardKey;
+
+  // Restore this board's saved view mode on arrival; a board that never had a
+  // non-default mode chosen falls back to list. Keyed on the board only.
+  useEffect(() => {
+    if (!boardConfig) return;
+    let cancelled = false;
+    getViewMode(boardConfig)
+      .then((savedMode) => {
+        if (!cancelled) setViewMode(savedMode);
+      })
+      .catch(() => {
+        if (!cancelled) setViewMode(DEFAULT_CLIMB_VIEW_MODE);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-run only when the board changes — boardConfig is memoised on board fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardKey]);
+
+  const handleToggleViewMode = useCallback(() => {
+    setViewMode((current) => {
+      const next: ClimbViewMode = current === 'grid' ? 'list' : 'grid';
+      if (boardConfig) void saveViewMode(boardConfig, next);
+      track(SHARED_EVENTS.ViewModeChanged, {
+        mode: next,
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        angle,
+      });
+      return next;
+    });
+  }, [boardConfig, boardName, layoutId, sizeId, setIds, angle]);
 
   useEffect(() => {
     if (!searchReady || visibleSearchTextRef.current === name) return;
@@ -728,6 +773,25 @@ function ClimbListInner() {
     ],
   );
 
+  const renderClimbGridItem = useCallback(
+    ({ item: climb }: { item: Climb }) => (
+      <View style={styles.gridCell}>
+        <ClimbGridCard
+          climb={climb}
+          boardName={boardName as BoardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          setIds={setIds}
+          angle={angle}
+          onPress={handleClimbPress}
+          onOpenActions={openClimbActions}
+          selected={climb.uuid === activeClimbUuid}
+        />
+      </View>
+    ),
+    [boardName, layoutId, sizeId, setIds, angle, handleClimbPress, openClimbActions, activeClimbUuid],
+  );
+
   if (!hasBoardConfig && !isBoardLoading) {
     return (
       <>
@@ -768,13 +832,20 @@ function ClimbListInner() {
 
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
 
+  const isGrid = viewMode === 'grid';
+
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
       <FlashList
+        // Re-key on the layout so a mode flip remounts the list — an instant
+        // swap (FlashList recycles cells, so a live numColumns change without a
+        // remount would mis-size recycled rows mid-flip).
+        key={viewMode}
         ref={listRef}
         data={visibleClimbs}
-        renderItem={renderClimbItem}
+        renderItem={isGrid ? renderClimbGridItem : renderClimbItem}
+        numColumns={isGrid ? 2 : 1}
         keyExtractor={keyExtractor}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
@@ -784,7 +855,11 @@ function ClimbListInner() {
         // inset and the list pads manually by the measured chrome height. Leaving
         // this 'automatic' would double-inset under the (invisible) native header.
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingTop: searchBarHeight, paddingBottom: listPaddingBottom }}
+        contentContainerStyle={{
+          paddingTop: searchBarHeight,
+          paddingBottom: listPaddingBottom,
+          paddingHorizontal: isGrid ? spacing[3] : 0,
+        }}
         scrollIndicatorInsets={{ top: searchBarHeight }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -813,10 +888,22 @@ function ClimbListInner() {
             ) : null}
           </>
         }
-        ListFooterComponent={isFetchingNextPage ? <ClimbListSkeletonRows count={FOOTER_SKELETON_ROW_COUNT} /> : null}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            isGrid ? (
+              <ClimbGridSkeletonRows count={FOOTER_SKELETON_ROW_COUNT} />
+            ) : (
+              <ClimbListSkeletonRows count={FOOTER_SKELETON_ROW_COUNT} />
+            )
+          ) : null
+        }
         ListEmptyComponent={
           showInitialSkeletons ? (
-            <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            isGrid ? (
+              <ClimbGridSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            ) : (
+              <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            )
           ) : isEmpty ? (
             <View style={styles.emptyContainer}>
               <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
@@ -862,6 +949,8 @@ function ClimbListInner() {
         gradeChip={gradeChip}
         onOpenGrade={handleOpenGrade}
         onGradeChange={handleGradeChange}
+        viewMode={viewMode}
+        onToggleViewMode={handleToggleViewMode}
       />
 
       {filterInTopChrome ? null : (
@@ -906,6 +995,28 @@ function ClimbListSkeletonRows({ count }: { count: number }) {
   );
 }
 
+// 2-up skeleton tiles for the grid layout. Reuses the list-row skeleton's fill
+// colour, sized to a portrait card so the loading state matches the grid card.
+function ClimbGridSkeletonRows({ count }: { count: number }) {
+  return (
+    <View style={styles.gridSkeletonGrid}>
+      {Array.from({ length: count }, (_item, index) => (
+        <GridSkeletonCell key={`climb-grid-skeleton-${index}`} />
+      ))}
+    </View>
+  );
+}
+
+function GridSkeletonCell() {
+  const { systemColors } = useTheme();
+  return (
+    <View style={styles.gridCell} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.gridSkeletonThumbnail, { backgroundColor: systemColors.fill }]} />
+      <View style={[styles.gridSkeletonName, { backgroundColor: systemColors.fill }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -938,5 +1049,30 @@ const styles = StyleSheet.create({
   },
   emptyCta: {
     marginTop: spacing[4],
+  },
+  // One grid cell: half the row (numColumns=2) with a half-gutter on each side,
+  // so the inter-card gap is spacing[2] and the outer edges align with the
+  // contentContainer's spacing[3] horizontal padding. Vertical gap via bottom margin.
+  gridCell: {
+    flex: 1,
+    paddingHorizontal: spacing[1],
+    marginBottom: spacing[3],
+  },
+  gridSkeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  gridSkeletonThumbnail: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: borderRadius.md,
+    opacity: 0.55,
+  },
+  gridSkeletonName: {
+    marginTop: spacing[2],
+    width: '70%',
+    height: 16,
+    borderRadius: borderRadius.full,
+    opacity: 0.45,
   },
 });
