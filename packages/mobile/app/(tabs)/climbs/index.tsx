@@ -627,9 +627,9 @@ function ClimbListInner() {
   );
   const gradeChip = useMemo(() => {
     if (gradeFilterToken) {
-      return { label: gradeFilterToken.label, active: true, onClear: gradeFilterToken.clear };
+      return { label: gradeFilterToken.label, active: true as const, onClear: gradeFilterToken.clear };
     }
-    return { label: t('mobile.filter.gradeRange'), active: false };
+    return { label: t('mobile.filter.gradeRange'), active: false as const };
   }, [gradeFilterToken, t]);
 
   const stackOptions = useMemo(

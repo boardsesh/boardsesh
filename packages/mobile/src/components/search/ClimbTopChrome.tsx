@@ -44,6 +44,8 @@ const SUMMARY_CAPSULE_HEIGHT = glassSize.mini;
 const SUMMARY_CAPSULE_RADIUS = SUMMARY_CAPSULE_HEIGHT / 2;
 const MATERIAL_SEARCH_HEIGHT = 56;
 
+type GradeChip = { label: string; active: false } | { label: string; active: true; onClear: () => void };
+
 type ClimbTopChromeProps = {
   searchMode?: 'custom' | 'native';
   canCreate: boolean;
@@ -68,7 +70,7 @@ type ClimbTopChromeProps = {
   gradeBound?: GradeBound;
   grades?: readonly Grade[];
   gradeRailVisible?: boolean;
-  gradeChip?: { label: string; active: boolean; onClear?: () => void };
+  gradeChip?: GradeChip;
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound) => void;
 };
@@ -126,9 +128,6 @@ export function ClimbTopChrome({
   const handleBlur = useCallback(() => {
     onSearchBlur();
   }, [onSearchBlur]);
-
-  const canOpenAngleSelector = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
-  const leftActionCount = (canCreate ? 1 : 0) + (canOpenAngleSelector ? 1 : 0);
 
   if (variant === 'material') {
     const boardLabel = formatActiveBoardLabel(activeBoard);
@@ -216,7 +215,7 @@ export function ClimbTopChrome({
                   }
                   onOpenGrade?.();
                 }}
-                onClose={hasGradeFilter ? gradeChip?.onClear : undefined}
+                onClose={hasGradeFilter ? gradeChip.onClear : undefined}
                 closeIcon={iconMap.close.android}
                 accessibilityLabel={t('mobile.search.gradeAction')}
                 style={[styles.materialChip, hasGradeFilter ? { backgroundColor: systemColors.fill } : undefined]}
@@ -256,6 +255,9 @@ export function ClimbTopChrome({
       </View>
     );
   }
+
+  const canOpenAngleSelector = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
+  const leftActionCount = (canCreate ? 1 : 0) + (canOpenAngleSelector ? 1 : 0);
 
   return (
     <View pointerEvents="box-none" style={[styles.container, { paddingTop: insets.top }]} onLayout={handleLayout}>
