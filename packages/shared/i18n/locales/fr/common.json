@@ -40,7 +40,8 @@
       "climb": "Bloc",
       "profile": "Profil",
       "setters": "Ouvreurs",
-      "holdFilter": "Types de prise"
+      "holdFilter": "Types de prise",
+      "zoneFilter": "Zone du mur"
     }
   },
   "lightControl": {

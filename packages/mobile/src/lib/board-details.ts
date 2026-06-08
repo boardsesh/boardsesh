@@ -7,6 +7,13 @@ import { WEB_BASE_URL } from './env';
 type BoardRenderData = {
   boardWidth: number;
   boardHeight: number;
+  // Board playing-surface edges in placement-grid coordinates (the `edge_*`
+  // columns / BoardDetails). The zone search filter maps its grid-space box to
+  // SVG pixels through these.
+  edgeLeft: number;
+  edgeRight: number;
+  edgeBottom: number;
+  edgeTop: number;
   imageUrls: string[];
   holdsData: HoldPlacement[];
 };
@@ -66,7 +73,7 @@ export function getBoardRenderData(params: {
 
   const imageUrls = imageFilenames.map((filename) => `${WEB_BASE_URL}/images/${boardName}/${filename}`);
 
-  return { boardWidth, boardHeight, imageUrls, holdsData };
+  return { boardWidth, boardHeight, edgeLeft, edgeRight, edgeBottom, edgeTop, imageUrls, holdsData };
 }
 
 function getMoonBoardRenderData(params: {
@@ -93,6 +100,10 @@ function getMoonBoardRenderData(params: {
     return {
       boardWidth: details.boardWidth,
       boardHeight: details.boardHeight,
+      edgeLeft: details.edge_left,
+      edgeRight: details.edge_right,
+      edgeBottom: details.edge_bottom,
+      edgeTop: details.edge_top,
       imageUrls,
       holdsData,
     };

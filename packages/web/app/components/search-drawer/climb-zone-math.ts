@@ -15,7 +15,9 @@ export {
   svgToGrid,
   computeHandleRadius,
   isHoldInsideZone,
+  pruneHoldsToZone,
   type BoardEdges,
   type DragMode,
   type BoardDimensions,
+  type HoldPositionLookup,
 } from '@boardsesh/climb-filters';

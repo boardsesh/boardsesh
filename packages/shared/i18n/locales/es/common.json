@@ -238,7 +238,8 @@
       "climb": "Bloque",
       "profile": "Perfil",
       "setters": "Equipadores",
-      "holdFilter": "Tipos de presa"
+      "holdFilter": "Tipos de presa",
+      "zoneFilter": "Zona del muro"
     }
   },
   "lightControl": {

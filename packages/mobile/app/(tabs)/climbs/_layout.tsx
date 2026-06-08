@@ -62,6 +62,16 @@ export default function ClimbsLayout() {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="zone"
+        options={{
+          // Full-screen interactive board for the board-region (zone) filter.
+          // Like the hold filter: owns its own header and a pushed route so the
+          // board's drag/pinch never competes with a modal sheet's pan.
+          title: t('mobile.nav.zoneFilter'),
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

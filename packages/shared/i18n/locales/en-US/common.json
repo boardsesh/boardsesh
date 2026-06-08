@@ -40,7 +40,8 @@
       "climb": "Climb",
       "profile": "Profile",
       "setters": "Setters",
-      "holdFilter": "Hold types"
+      "holdFilter": "Hold types",
+      "zoneFilter": "Board region"
     }
   },
   "lightControl": {

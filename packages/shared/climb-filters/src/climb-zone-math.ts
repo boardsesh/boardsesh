@@ -1,4 +1,4 @@
-import type { ZoneBoxInput } from '@boardsesh/shared-schema';
+import type { HoldsFilter, ZoneBoxInput } from '@boardsesh/shared-schema';
 
 /**
  * Platform-free geometry helpers for the board "zone" search filter — the
@@ -182,4 +182,35 @@ export function isHoldInsideZone(
     gridPoint.y >= zone.edgeBottom &&
     gridPoint.y <= zone.edgeTop
   );
+}
+
+/** Hold-position lookup keyed by hold id (`board_holes`/SVG-pixel `cx`/`cy`). */
+export type HoldPositionLookup = ReadonlyMap<number, { cx: number; cy: number }>;
+
+/**
+ * Drop every hold filter whose hold sits outside the zone box. The backend
+ * `allHolds` zone filter keeps a climb only when every one of its holds fits
+ * inside the box, so a filter hold sitting outside the zone guarantees zero
+ * matches — pruning it stops the user staring at empty results.
+ *
+ * Holds the lookup doesn't know are dropped too: under an active zone a tap on a
+ * fabricated/stale id can't be the user's intent. A `null` zone means "no zone
+ * constraint", so every filter survives. Shared so web and mobile prune
+ * identically (extracted from the web search drawer's local `pruneHoldsToZone`).
+ */
+export function pruneHoldsToZone(
+  holdsFilter: HoldsFilter,
+  zone: ZoneBoxInput | null | undefined,
+  holdsById: HoldPositionLookup,
+  dims: BoardDimensions,
+): HoldsFilter {
+  if (!zone) return holdsFilter;
+  const pruned: HoldsFilter = {};
+  for (const [holdIdRaw, entry] of Object.entries(holdsFilter)) {
+    const hold = holdsById.get(Number(holdIdRaw));
+    if (hold && entry && isHoldInsideZone(hold, zone, dims)) {
+      pruned[Number(holdIdRaw)] = entry;
+    }
+  }
+  return pruned;
 }

@@ -23,6 +23,9 @@ type UseZoomPanGestureReturn = {
   zoomPanGesture: GestureType;
   isZoomed: boolean;
   isZoomedSV: SharedValue<boolean>;
+  /** Live zoom scale on the UI thread, so an overlay inside the transform can
+   * convert screen-pixel drag deltas into unscaled board-pixel deltas. */
+  scaleSV: SharedValue<number>;
   resetZoom: () => void;
   animatedZoomStyle: AnimatedStyle;
 };
@@ -233,6 +236,7 @@ export function useZoomPanGesture({
     zoomPanGesture,
     isZoomed,
     isZoomedSV,
+    scaleSV: scale,
     resetZoom,
     animatedZoomStyle,
   };

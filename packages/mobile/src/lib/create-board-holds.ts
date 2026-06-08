@@ -1,4 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import type { BoardEdges } from '@boardsesh/climb-filters';
 import { getBoardRenderData } from './board-details';
 
 /**
@@ -9,7 +10,7 @@ import { getBoardRenderData } from './board-details';
  */
 export type BoardHoldTarget = { id: number; cx: number; cy: number; r: number };
 
-export type CreateBoardHolds = {
+export type CreateBoardHolds = BoardEdges & {
   holdTargets: BoardHoldTarget[];
   boardWidth: number;
   boardHeight: number;
@@ -33,6 +34,10 @@ export function getCreateBoardHolds(cfg: {
     holdTargets: data.holdsData.map((hold) => ({ id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r })),
     boardWidth: data.boardWidth,
     boardHeight: data.boardHeight,
+    edgeLeft: data.edgeLeft,
+    edgeRight: data.edgeRight,
+    edgeBottom: data.edgeBottom,
+    edgeTop: data.edgeTop,
     family: cfg.boardName === 'moonboard' ? 'moonboard' : 'aurora',
   };
 }

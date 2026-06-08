@@ -50,6 +50,10 @@ export const SHARED_EVENTS = {
   ClimbSearchPerformed: 'Climb Search Performed',
   SearchHoldFilterChanged: 'Search Hold Filter Changed',
   SearchHoldFilterCleared: 'Search Hold Filter Cleared',
+  SearchZoneEnabled: 'Search Zone Enabled',
+  SearchZoneUpdated: 'Search Zone Updated',
+  SearchZoneCleared: 'Search Zone Cleared',
+  SearchZoneModeChanged: 'Search Zone Mode Changed',
   // Beta videos
   BetaVideoLinkClicked: 'Beta Video Link Clicked',
   BetaVideoClimbClicked: 'Beta Video Climb Clicked',

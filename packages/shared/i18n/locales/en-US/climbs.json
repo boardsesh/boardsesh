@@ -775,6 +775,25 @@
         "foot": "Foot",
         "any": "Any"
       }
+    },
+    "zoneFilter": {
+      "title": "Board region",
+      "summaryActive": "On",
+      "enable": "Add a region",
+      "clearZone": "Clear region",
+      "allHolds": "All holds",
+      "anyHold": "Any hold",
+      "modeLabel": "Which holds must fit the region",
+      "hint": "Add a region to find climbs that stay inside one part of the board.",
+      "activeHint": "Drag the box and its corners to set the region. All holds must fit inside; switch to Any hold to keep climbs that reach into it.",
+      "regionLabel": "Board region",
+      "regionHint": "Swipe up or down to move the region across the board.",
+      "corner": {
+        "topLeft": "Top-left corner",
+        "topRight": "Top-right corner",
+        "bottomLeft": "Bottom-left corner",
+        "bottomRight": "Bottom-right corner"
+      }
     }
   }
 }

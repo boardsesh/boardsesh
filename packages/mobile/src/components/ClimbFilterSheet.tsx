@@ -51,6 +51,7 @@ import { useAuth } from '../providers/auth-provider';
 import { hapticSelection } from '../lib/haptics';
 import { subscribeToSetterSelection } from '../lib/filter-handoff';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
+import { subscribeToZoneFilterSelection } from '../lib/zone-filter-handoff';
 import { springs } from '../theme/animations';
 // Aliased: the active-filter label reads scheme-aware brand from `useTheme()`.
 // `staticBrandColors` is the static set, used only for the selected chip — a FILL
@@ -180,6 +181,21 @@ export function ClimbFilterSheet({
       setLocalBoardFilters((previous) => ({
         ...previous,
         holdsFilter: Object.keys(holdsFilter).length > 0 ? holdsFilter : undefined,
+      }));
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeToZoneFilterSelection(({ zoneBox, zoneMode, holdsFilter }) => {
+      setLocalBoardFilters((previous) => ({
+        ...previous,
+        zoneBox,
+        zoneMode: zoneBox ? zoneMode : undefined,
+        // The zone editor may have pruned out-of-zone hold filters; fold the
+        // possibly-edited holds filter back in when it handed one over.
+        ...(holdsFilter !== undefined
+          ? { holdsFilter: Object.keys(holdsFilter).length > 0 ? holdsFilter : undefined }
+          : {}),
       }));
     });
   }, []);
@@ -381,7 +397,26 @@ export function ClimbFilterSheet({
     });
   }, [router, boardConfig, localBoardFilters.holdsFilter]);
 
+  const openZoneFilter = useCallback(() => {
+    if (!boardConfig) return;
+    router.push({
+      pathname: '/(tabs)/climbs/zone',
+      params: {
+        boardName: boardConfig.boardName,
+        layoutId: String(boardConfig.layoutId),
+        sizeId: String(boardConfig.sizeId),
+        setIds: boardConfig.setIds,
+        angle: String(boardConfig.angle),
+        layoutName: boardConfig.boardName,
+        zoneBox: JSON.stringify(localBoardFilters.zoneBox ?? null),
+        zoneMode: localBoardFilters.zoneMode ?? 'allHolds',
+        holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
+      },
+    });
+  }, [router, boardConfig, localBoardFilters.zoneBox, localBoardFilters.zoneMode, localBoardFilters.holdsFilter]);
+
   const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
+  const zoneActive = localBoardFilters.zoneBox != null;
 
   const refineSummary = useMemo(() => {
     const parts: string[] = [];
@@ -395,10 +430,11 @@ export function ClimbFilterSheet({
       parts.push(t('mobile.search.settersCount', { count: localFilters.setter.length }));
     }
     if (holdFilterCount > 0) parts.push(t('mobile.holdFilter.summaryCount', { count: holdFilterCount }));
+    if (zoneActive) parts.push(t('mobile.zoneFilter.title'));
     if (localFilters.onlyTallClimbs) parts.push(t('mobile.filter.tallClimbs'));
     if (localFilters.onlyWideClimbs) parts.push(t('mobile.filter.wideClimbs'));
     return parts.join(' · ') || null;
-  }, [localFilters, accuracyLabels, holdFilterCount, t]);
+  }, [localFilters, accuracyLabels, holdFilterCount, zoneActive, t]);
 
   const advancedSummary = useMemo(() => {
     const parts: string[] = [];
@@ -591,6 +627,28 @@ export function ClimbFilterSheet({
                   {holdFilterCount > 0
                     ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
                     : t('mobile.filter.none')}
+                </Text>
+                <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+              </View>
+            </Pressable>
+
+            <View style={styles.subsectionGap} />
+            <Pressable
+              onPress={openZoneFilter}
+              disabled={!boardConfig}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.zoneFilter.title')}
+              style={({ pressed }) => [
+                styles.tappableRow,
+                { backgroundColor: systemColors.tertiaryBackground },
+                pressed && styles.tappableRowPressed,
+                !boardConfig && styles.tappableRowDisabled,
+              ]}
+            >
+              <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
+              <View style={styles.tappableRowTrailing}>
+                <Text variant="footnote" style={styles.tappableRowValue}>
+                  {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
                 </Text>
                 <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
               </View>

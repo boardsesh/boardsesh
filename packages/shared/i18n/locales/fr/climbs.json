@@ -775,6 +775,25 @@
         "foot": "Pied",
         "any": "Toute"
       }
+    },
+    "zoneFilter": {
+      "title": "Zone du mur",
+      "summaryActive": "Activée",
+      "enable": "Ajouter une zone",
+      "clearZone": "Effacer la zone",
+      "allHolds": "Toutes les prises",
+      "anyHold": "Une prise",
+      "modeLabel": "Quelles prises doivent tenir dans la zone",
+      "hint": "Ajoutez une zone pour trouver des blocs qui restent dans une partie du mur.",
+      "activeHint": "Faites glisser la boîte et ses coins pour régler la zone. Toutes les prises doivent tenir dedans ; passez à Une prise pour garder les blocs qui l'atteignent.",
+      "regionLabel": "Zone du mur",
+      "regionHint": "Balayez vers le haut ou le bas pour déplacer la zone sur le mur.",
+      "corner": {
+        "topLeft": "Coin supérieur gauche",
+        "topRight": "Coin supérieur droit",
+        "bottomLeft": "Coin inférieur gauche",
+        "bottomRight": "Coin inférieur droit"
+      }
     }
   }
 }

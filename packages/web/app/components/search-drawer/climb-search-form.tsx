@@ -36,6 +36,7 @@ import {
   computeHandleRadius,
   gridToSvg,
   isHoldInsideZone,
+  pruneHoldsToZone as pruneHoldsToZoneShared,
   svgToGrid,
   type BoardDimensions,
   type DragMode,
@@ -263,17 +264,10 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
   // The backend zone filter requires every hold of a climb to fit inside
   // the box. So a filter-hold sitting outside the zone guarantees zero
   // matches — drop it instead of leaving the user staring at empty results.
+  // Shared with mobile (`@boardsesh/climb-filters`); prunes against the latest
+  // ref snapshot so a hold tapped immediately before a corner grab still counts.
   const pruneHoldsToZone = useCallback(
-    (zone: ZoneBox): HoldsFilter => {
-      const prunedHoldsFilter: HoldsFilter = {};
-      for (const [holdIdRaw, entry] of Object.entries(holdsFilterRef.current)) {
-        const hold = holdsById.get(Number(holdIdRaw));
-        if (hold && entry && isHoldInsideZone(hold, zone, dims)) {
-          prunedHoldsFilter[Number(holdIdRaw)] = entry;
-        }
-      }
-      return prunedHoldsFilter;
-    },
+    (zone: ZoneBox): HoldsFilter => pruneHoldsToZoneShared(holdsFilterRef.current, zone, holdsById, dims),
     [dims, holdsById],
   );
 

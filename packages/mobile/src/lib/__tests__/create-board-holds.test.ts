@@ -18,6 +18,10 @@ describe('getCreateBoardHolds', () => {
     mockedGetBoardRenderData.mockReturnValue({
       boardWidth: 650,
       boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
       imageUrls: ['https://example.com/images/moonboard/moonboard-bg.png'],
       holdsData: [
         { id: 1, mirroredHoldId: null, cx: 68, cy: 950, r: 12 },
@@ -39,6 +43,10 @@ describe('getCreateBoardHolds', () => {
       ],
       boardWidth: 650,
       boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
       family: 'moonboard',
     });
   });

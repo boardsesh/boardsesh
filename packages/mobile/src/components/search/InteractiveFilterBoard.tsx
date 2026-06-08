@@ -1,8 +1,8 @@
 import React, { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, StyleSheet, Pressable } from 'react-native';
-import Animated from 'react-native-reanimated';
-import { GestureDetector } from 'react-native-gesture-handler';
+import Animated, { type SharedValue } from 'react-native-reanimated';
+import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
@@ -13,6 +13,16 @@ import { overlays } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { SearchHoldFilterRings } from './SearchHoldFilterRings';
 
+/** Context handed to an overlay rendered inside the board's zoom transform. */
+export type FilterBoardTransformContext = {
+  /** The board's pinch gesture, to compose overlay pans Simultaneous with it. */
+  pinchGesture: GestureType;
+  /** Live zoom scale, so an overlay can convert screen-pixel deltas to board px. */
+  scaleSV: SharedValue<number>;
+  renderWidth: number;
+  renderHeight: number;
+};
+
 type InteractiveFilterBoardProps = {
   boardName: BoardName;
   layoutId: number;
@@ -21,15 +31,23 @@ type InteractiveFilterBoardProps = {
   boardWidth: number;
   boardHeight: number;
   holdTargets: BoardHoldTarget[];
-  holdsFilter: HoldsFilter;
+  /** Hold-type filter rings, when this board edits hold types. Omit for zone mode. */
+  holdsFilter?: HoldsFilter;
   /** The hold the picker is currently editing — drawn with a bright ring. */
-  activeHoldId: number | null;
-  onHoldTap: (holdId: number) => void;
+  activeHoldId?: number | null;
+  /** Tap handler that opens the hold picker. Omit to disable hold taps (zone mode). */
+  onHoldTap?: (holdId: number) => void;
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
   /** Optional chrome (e.g. a floating toolbar) rendered over the board canvas. */
   children?: ReactNode;
+  /**
+   * Overlay rendered INSIDE the zoom transform (like the hold filter rings) so it
+   * tracks the board at any zoom — used by the zone editor for the draggable
+   * rectangle. Receives the board pinch + live scale so its pans compose cleanly.
+   */
+  renderInTransform?: (context: FilterBoardTransformContext) => ReactNode;
 };
 
 /**
@@ -52,15 +70,16 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   boardHeight,
   holdTargets,
   holdsFilter,
-  activeHoldId,
+  activeHoldId = null,
   onHoldTap,
   mirrored = false,
   renderWidth,
   renderHeight,
   children,
+  renderInTransform,
 }: InteractiveFilterBoardProps) {
   const { t } = useTranslation('common');
-  const { pinchGesture, zoomPanGesture, isZoomed, resetZoom, animatedZoomStyle } = useZoomPanGesture({
+  const { pinchGesture, zoomPanGesture, isZoomed, scaleSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
     enabled: true,
     containerWidth: renderWidth,
     containerHeight: renderHeight,
@@ -70,6 +89,11 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   // tap to open the picker, so we route both tap and "long press" to the same
   // handler (HoldTargetLayer requires both).
   const handleHoldTap = onHoldTap;
+
+  const transformContext = useMemo<FilterBoardTransformContext>(
+    () => ({ pinchGesture, scaleSV, renderWidth, renderHeight }),
+    [pinchGesture, scaleSV, renderWidth, renderHeight],
+  );
 
   const activeHighlight = useMemo(() => {
     if (activeHoldId == null || renderWidth <= 0) return null;
@@ -113,26 +137,31 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               boardHeight={boardHeight}
               mirrored={mirrored}
             />
-            <SearchHoldFilterRings
-              boardName={boardName}
-              holdsFilter={holdsFilter}
-              holdTargets={holdTargets}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              measuredWidth={renderWidth}
-              mirrored={mirrored}
-            />
+            {holdsFilter ? (
+              <SearchHoldFilterRings
+                boardName={boardName}
+                holdsFilter={holdsFilter}
+                holdTargets={holdTargets}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                measuredWidth={renderWidth}
+                mirrored={mirrored}
+              />
+            ) : null}
             {activeHighlight}
-            <HoldTargetLayer
-              holdTargets={holdTargets}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              measuredWidth={renderWidth}
-              mirrored={mirrored}
-              showAllHolds
-              onPaint={handleHoldTap}
-              onLongPress={handleHoldTap}
-            />
+            {handleHoldTap ? (
+              <HoldTargetLayer
+                holdTargets={holdTargets}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                measuredWidth={renderWidth}
+                mirrored={mirrored}
+                showAllHolds
+                onPaint={handleHoldTap}
+                onLongPress={handleHoldTap}
+              />
+            ) : null}
+            {renderInTransform ? renderInTransform(transformContext) : null}
           </Animated.View>
 
           {isZoomed ? (

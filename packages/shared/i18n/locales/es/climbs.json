@@ -775,6 +775,25 @@
         "foot": "Pie",
         "any": "Cualquiera"
       }
+    },
+    "zoneFilter": {
+      "title": "Zona del muro",
+      "summaryActive": "Activada",
+      "enable": "Añadir una zona",
+      "clearZone": "Borrar zona",
+      "allHolds": "Todas las presas",
+      "anyHold": "Alguna presa",
+      "modeLabel": "Qué presas deben caber en la zona",
+      "hint": "Añade una zona para encontrar bloques que se queden en una parte del muro.",
+      "activeHint": "Arrastra la caja y sus esquinas para fijar la zona. Todas las presas deben caber dentro; cambia a Alguna presa para conservar los bloques que la alcancen.",
+      "regionLabel": "Zona del muro",
+      "regionHint": "Desliza hacia arriba o abajo para mover la zona por el muro.",
+      "corner": {
+        "topLeft": "Esquina superior izquierda",
+        "topRight": "Esquina superior derecha",
+        "bottomLeft": "Esquina inferior izquierda",
+        "bottomRight": "Esquina inferior derecha"
+      }
     }
   }
 }
