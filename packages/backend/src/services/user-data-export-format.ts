@@ -299,6 +299,12 @@ function buildPlacementCoordinateMap(
   return map;
 }
 
+// `@boardsesh/board-constants` exports a shared `getLayoutName` used by the
+// analytics call sites (web + mobile), but that one falls back to `''` so a
+// numeric id is never sent where web sends a name. This export copy keeps its
+// own `String(layoutId)` fallback on purpose: a data export should always carry
+// an identifiable value for the layout rather than a blank, so an unrecognised
+// id stays traceable in the user's downloaded file.
 function getLayoutName(boardType: AuroraBoardName, layoutId: number): string {
   return LAYOUTS[boardType as BoardName]?.[layoutId]?.name ?? String(layoutId);
 }

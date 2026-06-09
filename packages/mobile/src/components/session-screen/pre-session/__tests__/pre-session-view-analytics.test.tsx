@@ -2,6 +2,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { VolumeOptions } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -87,18 +88,19 @@ describe('PreSessionView analytics', () => {
     render(createElement(PreSessionView));
 
     // Flip the generator on so handleStart takes the generate branch.
+    const volumeOptions: VolumeOptions = {
+      type: 'volume',
+      warmUp: 'none',
+      targetGrade: 10,
+      mainSetClimbs: 20,
+      mainSetVariability: 0,
+      climbBias: 'any',
+      minAscents: 0,
+      minRating: 0,
+      onlyTallClimbs: false,
+    };
     act(() => {
-      picker.onChange?.({
-        type: 'on',
-        options: {
-          type: 'volume',
-          targetGrade: 10,
-          minAscents: 0,
-          minRating: 0,
-          onlyTallClimbs: false,
-          climbBias: 'none',
-        } as never,
-      });
+      picker.onChange?.({ type: 'on', options: volumeOptions });
     });
 
     await act(async () => {

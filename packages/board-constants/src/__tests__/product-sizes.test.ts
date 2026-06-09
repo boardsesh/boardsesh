@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { isKilterHomewallTallSizeId, isKilterHomewallWideSizeId } from '../product-sizes';
+import { getLayoutName, isKilterHomewallTallSizeId, isKilterHomewallWideSizeId } from '../product-sizes';
 
 describe('Kilter Homewall size filter capabilities', () => {
   it('marks 8x12 and 10x12 Homewall sizes as tall-capable', () => {
@@ -18,5 +18,16 @@ describe('Kilter Homewall size filter capabilities', () => {
     for (const sizeId of [23, 24]) {
       expect(isKilterHomewallWideSizeId(sizeId)).toBe(false);
     }
+  });
+});
+
+describe('getLayoutName', () => {
+  it('resolves a known board + layout id to its human-readable name', () => {
+    expect(getLayoutName('kilter', 1)).toBe('Kilter Board Original');
+    expect(getLayoutName('tension', 9)).toBe('Original Layout');
+  });
+
+  it('returns an empty string for an unknown layout id', () => {
+    expect(getLayoutName('kilter', 99999)).toBe('');
   });
 });
