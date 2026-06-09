@@ -298,10 +298,14 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
 
   // Four scrim panels (top / bottom / left / right of the box) dim the board
   // outside the rectangle, tracking the live box.
+  // Read the mirrored render bounds (not the JS props) so a mid-session layout
+  // change (e.g. orientation flip) recomputes scrim coverage against the fresh
+  // size, matching clampRectWorklet — otherwise the bottom/right scrim panels
+  // keep the pre-rotation extent and leave the board partially undimmed.
   const scrimTopStyle = useAnimatedStyle(() => ({ height: Math.max(0, top.value) }));
   const scrimBottomStyle = useAnimatedStyle(() => ({
     top: top.value + height.value,
-    height: Math.max(0, renderHeight - (top.value + height.value)),
+    height: Math.max(0, renderHeightSV.value - (top.value + height.value)),
   }));
   const scrimLeftStyle = useAnimatedStyle(() => ({
     top: top.value,
@@ -311,7 +315,7 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
   const scrimRightStyle = useAnimatedStyle(() => ({
     left: left.value + width.value,
     top: top.value,
-    width: Math.max(0, renderWidth - (left.value + width.value)),
+    width: Math.max(0, renderWidthSV.value - (left.value + width.value)),
     height: height.value,
   }));
 

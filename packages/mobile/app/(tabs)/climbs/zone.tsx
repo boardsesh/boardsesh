@@ -44,19 +44,30 @@ type Params = {
 // must leave room for, so the full board fits without scroll.
 const CHROME_BUDGET = 220;
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function parseZoneBox(raw: string | undefined): ZoneBoxInput | null {
-  if (!raw) return null;
+  // Absent or the literal "null" the sheet may have sent for "no zone".
+  if (!raw || raw === 'null') return null;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (
       parsed &&
       typeof parsed === 'object' &&
-      'edgeLeft' in parsed &&
-      'edgeRight' in parsed &&
-      'edgeBottom' in parsed &&
-      'edgeTop' in parsed
+      isFiniteNumber((parsed as Record<string, unknown>).edgeLeft) &&
+      isFiniteNumber((parsed as Record<string, unknown>).edgeRight) &&
+      isFiniteNumber((parsed as Record<string, unknown>).edgeBottom) &&
+      isFiniteNumber((parsed as Record<string, unknown>).edgeTop)
     ) {
-      return parsed as ZoneBoxInput;
+      const box = parsed as Record<string, number>;
+      return {
+        edgeLeft: box.edgeLeft,
+        edgeRight: box.edgeRight,
+        edgeBottom: box.edgeBottom,
+        edgeTop: box.edgeTop,
+      };
     }
   } catch {
     // Malformed param → start with no zone rather than crash.

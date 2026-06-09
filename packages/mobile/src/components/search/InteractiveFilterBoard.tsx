@@ -160,13 +160,26 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                 onLongPress={onHoldTap}
               />
             ) : null}
-            {renderInTransform ? renderInTransform(transformContext) : null}
           </Animated.View>
 
+          {/* 1-finger pan-to-reposition the zoomed board. Sits ABOVE the board
+              layer (so a drag over the bare board pans it) but BELOW the
+              `renderInTransform` overlay layer (so the zone rectangle + corner
+              handles still win their touches while zoomed). */}
           {isZoomed ? (
             <GestureDetector gesture={zoomPanGesture}>
               <View style={StyleSheet.absoluteFill} />
             </GestureDetector>
+          ) : null}
+
+          {/* Overlay rendered INSIDE the same zoom transform but ABOVE the
+              pan-reset layer, so its gestures (e.g. the zone rectangle) receive
+              touches even when zoomed. Its root is `pointerEvents="box-none"`,
+              so taps on empty space fall through to the pan-reset layer below. */}
+          {renderInTransform ? (
+            <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, animatedZoomStyle]}>
+              {renderInTransform(transformContext)}
+            </Animated.View>
           ) : null}
 
           {isZoomed ? (

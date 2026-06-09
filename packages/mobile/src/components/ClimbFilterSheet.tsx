@@ -406,7 +406,10 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        zoneBox: JSON.stringify(localBoardFilters.zoneBox ?? null),
+        // Omit zoneBox entirely when no zone is set — passing
+        // `JSON.stringify(null)` would send the literal string "null", which the
+        // parse side then has to special-case. Absent param → no zone.
+        ...(localBoardFilters.zoneBox ? { zoneBox: JSON.stringify(localBoardFilters.zoneBox) } : {}),
         zoneMode: localBoardFilters.zoneMode ?? 'allHolds',
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
       },

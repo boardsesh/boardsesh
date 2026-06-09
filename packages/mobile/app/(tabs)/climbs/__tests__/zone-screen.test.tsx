@@ -222,4 +222,71 @@ describe('ZoneFilterScreen', () => {
     fireEvent.click(doneButton);
     expect(routerBack).toHaveBeenCalledTimes(1);
   });
+
+  // Route params arrive as strings from the navigator and can be malformed
+  // (manual deep link, stale handoff, the "null" string the sheet sends for an
+  // empty zone). The parse helpers must fall back to safe defaults, never crash.
+  describe('malformed route params', () => {
+    it('treats the literal "null" zoneBox string as no zone', () => {
+      routeParams.current = baseParams({ zoneBox: 'null' });
+      const { container } = render(<ZoneFilterScreen />);
+      // No zone → the add-a-region affordance, no mode island.
+      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).not.toBeNull();
+      expect(container.querySelector('[data-segment="allHolds"]')).toBeNull();
+    });
+
+    it('treats garbage JSON in zoneBox as no zone instead of crashing', () => {
+      routeParams.current = baseParams({ zoneBox: '{not valid json' });
+      const { container } = render(<ZoneFilterScreen />);
+      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).not.toBeNull();
+      expect(container.querySelector('[data-segment="allHolds"]')).toBeNull();
+    });
+
+    it('treats a zoneBox with non-numeric edges as no zone', () => {
+      routeParams.current = baseParams({
+        zoneBox: JSON.stringify({ edgeLeft: 'x', edgeRight: 80, edgeBottom: 20, edgeTop: 80 }),
+      });
+      const { container } = render(<ZoneFilterScreen />);
+      expect(container.querySelector('[data-button="mobile.zoneFilter.enable"]')).not.toBeNull();
+    });
+
+    it('falls back to allHolds for an unrecognised zoneMode value', () => {
+      routeParams.current = baseParams({
+        zoneBox: JSON.stringify({ edgeLeft: 20, edgeRight: 80, edgeBottom: 20, edgeTop: 80 }),
+        zoneMode: 'bananas',
+      });
+      const { container } = render(<ZoneFilterScreen />);
+      // The mode island renders with the safe-default mode selected.
+      const island = container.querySelector('[data-selected-key]');
+      expect(island?.getAttribute('data-selected-key')).toBe('allHolds');
+    });
+
+    it('treats garbage JSON in holdsFilter as an empty filter', () => {
+      routeParams.current = baseParams({
+        zoneBox: JSON.stringify({ edgeLeft: 20, edgeRight: 80, edgeBottom: 20, edgeTop: 80 }),
+        // Start in anyHold so flipping to allHolds runs the prune over the
+        // (defaulted-empty) holds filter and hands an empty object back.
+        zoneMode: 'anyHold',
+        holdsFilter: 'not-json',
+      });
+      const { container, unmount } = render(<ZoneFilterScreen />);
+      fireEvent.click(container.querySelector('[data-segment="allHolds"]') as HTMLButtonElement);
+      unmount();
+      const selection = emitZoneFilterSelection.mock.calls.at(-1)?.[0] as { holdsFilter?: HoldsFilter };
+      expect(selection.holdsFilter).toEqual({});
+    });
+
+    it('treats a JSON-array holdsFilter as an empty filter', () => {
+      routeParams.current = baseParams({
+        zoneBox: JSON.stringify({ edgeLeft: 20, edgeRight: 80, edgeBottom: 20, edgeTop: 80 }),
+        zoneMode: 'anyHold',
+        holdsFilter: JSON.stringify([1, 2, 3]),
+      });
+      const { container, unmount } = render(<ZoneFilterScreen />);
+      fireEvent.click(container.querySelector('[data-segment="allHolds"]') as HTMLButtonElement);
+      unmount();
+      const selection = emitZoneFilterSelection.mock.calls.at(-1)?.[0] as { holdsFilter?: HoldsFilter };
+      expect(selection.holdsFilter).toEqual({});
+    });
+  });
 });
