@@ -100,8 +100,10 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   const [initialValues] = useState<LogAscentFormValues>(getInitialValues);
   const [formValues, setFormValues] = useState<LogAscentFormValues>(initialValues);
   const [isMirrored, setIsMirrored] = useState(!!currentClimb?.mirrored);
+  const initialMirrored = !!currentClimb?.mirrored;
   const [isSaving, setIsSaving] = useState(false);
-  const [logType, setLogType] = useState<LogType>('ascent');
+  const initialLogType: LogType = 'ascent';
+  const [logType, setLogType] = useState<LogType>(initialLogType);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // TODO: Tension spray doesnt support mirroring
@@ -129,8 +131,8 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
     formValues.difficulty !== initialValues.difficulty ||
     (formValues.notes ?? '') !== (initialValues.notes ?? '') ||
     (formValues.videoUrl ?? '') !== (initialValues.videoUrl ?? '') ||
-    isMirrored !== !!currentClimb?.mirrored ||
-    logType !== 'ascent';
+    isMirrored !== initialMirrored ||
+    logType !== initialLogType;
 
   const handleSwitch = () => {
     if (!wallClimb || !onSwitchClimb) return;
