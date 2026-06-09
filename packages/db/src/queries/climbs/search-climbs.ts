@@ -229,7 +229,7 @@ async function statsDrivenSearch(
 
 /**
  * Standard search: FROM board_climbs LEFT JOIN board_climb_stats.
- * Used for non-default sorts (difficulty, name, quality, creation, popular)
+ * Used for non-default sorts (difficulty, name, creation, popular)
  * and for draft queries.
  */
 async function standardSearch(
