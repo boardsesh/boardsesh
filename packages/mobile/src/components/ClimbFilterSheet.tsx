@@ -406,7 +406,6 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        layoutName: boardConfig.boardName,
         zoneBox: JSON.stringify(localBoardFilters.zoneBox ?? null),
         zoneMode: localBoardFilters.zoneMode ?? 'allHolds',
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),

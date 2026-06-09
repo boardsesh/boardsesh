@@ -792,7 +792,8 @@
         "topLeft": "Top-left corner",
         "topRight": "Top-right corner",
         "bottomLeft": "Bottom-left corner",
-        "bottomRight": "Bottom-right corner"
+        "bottomRight": "Bottom-right corner",
+        "hint": "Swipe up or down to grow or shrink the region from this corner."
       }
     }
   }

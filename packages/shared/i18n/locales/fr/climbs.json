@@ -792,7 +792,8 @@
         "topLeft": "Coin supérieur gauche",
         "topRight": "Coin supérieur droit",
         "bottomLeft": "Coin inférieur gauche",
-        "bottomRight": "Coin inférieur droit"
+        "bottomRight": "Coin inférieur droit",
+        "hint": "Balayez vers le haut ou le bas pour agrandir ou réduire la zone depuis ce coin."
       }
     }
   }

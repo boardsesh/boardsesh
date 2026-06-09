@@ -792,7 +792,8 @@
         "topLeft": "Esquina superior izquierda",
         "topRight": "Esquina superior derecha",
         "bottomLeft": "Esquina inferior izquierda",
-        "bottomRight": "Esquina inferior derecha"
+        "bottomRight": "Esquina inferior derecha",
+        "hint": "Desliza hacia arriba o abajo para agrandar o reducir la zona desde esta esquina."
       }
     }
   }

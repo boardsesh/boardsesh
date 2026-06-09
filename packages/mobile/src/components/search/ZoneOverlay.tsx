@@ -44,6 +44,8 @@ type ZoneOverlayProps = {
   bodyLabel: string;
   bodyHint: string;
   cornerLabels: ZoneCornerLabels;
+  /** Shared resize hint announced on every corner handle (VoiceOver). */
+  cornerHint: string;
 };
 
 // A grid-space zone box → a render-pixel rectangle. gridToSvg already inverts Y
@@ -116,6 +118,7 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
   bodyLabel,
   bodyHint,
   cornerLabels,
+  cornerHint,
 }: ZoneOverlayProps) {
   const { systemColors } = useTheme();
 
@@ -133,6 +136,11 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
 
   // Board-min-size clamp bound in render pixels, mirrored onto the UI thread.
   const minRenderSize = useSharedValue(0);
+  // Board render bounds mirrored onto the UI thread too, so a mid-gesture layout
+  // change (e.g. orientation flip) clamps against the fresh size instead of the
+  // stale JS-captured numbers.
+  const renderWidthSV = useSharedValue(renderWidth);
+  const renderHeightSV = useSharedValue(renderHeight);
 
   // Sync the shared rect whenever the committed grid box (or layout) changes.
   // After a commit the prop updates and we re-seed, so drag handoff is seamless.
@@ -143,11 +151,25 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
     top.value = rect.top;
     width.value = rect.width;
     height.value = rect.height;
+    renderWidthSV.value = renderWidth;
+    renderHeightSV.value = renderHeight;
     const renderScale = renderWidth / dims.boardWidth;
     const minGrid = Math.max(1, Math.round((dims.edgeRight - dims.edgeLeft) * 0.05));
     const gridToRenderPx = (dims.boardWidth / (dims.edgeRight - dims.edgeLeft)) * renderScale;
     minRenderSize.value = minGrid * gridToRenderPx;
-  }, [zoneBox, dims, renderWidth, renderHeight, left, top, width, height, minRenderSize]);
+  }, [
+    zoneBox,
+    dims,
+    renderWidth,
+    renderHeight,
+    left,
+    top,
+    width,
+    height,
+    minRenderSize,
+    renderWidthSV,
+    renderHeightSV,
+  ]);
 
   const commit = useCallback(
     (rect: RenderRect) => {
@@ -163,21 +185,23 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
     (rect: RenderRect): RenderRect => {
       'worklet';
       const minSize = minRenderSize.value;
+      const boundWidth = renderWidthSV.value;
+      const boundHeight = renderHeightSV.value;
       let rectLeft = rect.left;
       let rectTop = rect.top;
       let rectWidth = rect.width;
       let rectHeight = rect.height;
       if (rectWidth < minSize) rectWidth = minSize;
       if (rectHeight < minSize) rectHeight = minSize;
-      if (rectWidth > renderWidth) rectWidth = renderWidth;
-      if (rectHeight > renderHeight) rectHeight = renderHeight;
+      if (rectWidth > boundWidth) rectWidth = boundWidth;
+      if (rectHeight > boundHeight) rectHeight = boundHeight;
       if (rectLeft < 0) rectLeft = 0;
       if (rectTop < 0) rectTop = 0;
-      if (rectLeft + rectWidth > renderWidth) rectLeft = renderWidth - rectWidth;
-      if (rectTop + rectHeight > renderHeight) rectTop = renderHeight - rectHeight;
+      if (rectLeft + rectWidth > boundWidth) rectLeft = boundWidth - rectWidth;
+      if (rectTop + rectHeight > boundHeight) rectTop = boundHeight - rectHeight;
       return { left: rectLeft, top: rectTop, width: rectWidth, height: rectHeight };
     },
-    [minRenderSize, renderWidth, renderHeight],
+    [minRenderSize, renderWidthSV, renderHeightSV],
   );
 
   const handleRadius = useMemo(() => {
@@ -338,6 +362,7 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
           zoneBox={zoneBox}
           onCommit={onCommit}
           label={cornerLabels[corner.mode]}
+          hint={cornerHint}
         />
       ))}
     </View>
@@ -365,6 +390,7 @@ type CornerHandleProps = {
   zoneBox: ZoneBoxInput;
   onCommit: (box: ZoneBoxInput) => void;
   label: string;
+  hint: string;
 };
 
 const CornerHandle = React.memo(function CornerHandle({
@@ -388,6 +414,7 @@ const CornerHandle = React.memo(function CornerHandle({
   zoneBox,
   onCommit,
   label,
+  hint,
 }: CornerHandleProps) {
   const { mode, anchorX, anchorY } = corner;
 
@@ -500,6 +527,7 @@ const CornerHandle = React.memo(function CornerHandle({
         accessibilityRole="adjustable"
         accessible
         accessibilityLabel={label}
+        accessibilityHint={hint}
         accessibilityActions={ACCESSIBILITY_ACTIONS}
         onAccessibilityAction={onAccessibilityAction}
         style={[styles.handleHit, handleStyle]}

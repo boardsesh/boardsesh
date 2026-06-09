@@ -1,5 +1,4 @@
-import type { ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
-import type { HoldsFilter } from '@boardsesh/shared-schema';
+import type { HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 
 /**
  * Hands the edited board-region (zone) filter back from the full-screen board

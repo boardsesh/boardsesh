@@ -10,6 +10,7 @@ import {
   type BoardDimensions,
   type HoldPositionLookup,
 } from '@boardsesh/climb-filters';
+import { getLayout } from '@boardsesh/board-constants';
 import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -34,7 +35,6 @@ type Params = {
   sizeId?: string;
   setIds?: string;
   angle?: string;
-  layoutName?: string;
   zoneBox?: string;
   zoneMode?: string;
   holdsFilter?: string;
@@ -100,7 +100,11 @@ export default function ZoneFilterScreen() {
   const layoutId = Number(params.layoutId ?? 0);
   const sizeId = Number(params.sizeId ?? 0);
   const setIds = params.setIds ?? '';
-  const layoutName = params.layoutName ?? '';
+  // The `boardLayout` analytics property is the layout NAME (e.g. "Original"),
+  // matching web's `boardDetails.layout_name`. The route's `layoutName` param
+  // carried the board family (e.g. "kilter"), so resolve the real name from the
+  // board config instead of trusting the param.
+  const layoutName = getLayout(boardName, layoutId)?.name ?? '';
 
   const [zoneBox, setZoneBox] = useState<ZoneBoxInput | null>(() => parseZoneBox(params.zoneBox));
   const [zoneMode, setZoneMode] = useState<ZoneMatchMode>(() => parseZoneMode(params.zoneMode));
@@ -252,6 +256,7 @@ export default function ZoneFilterScreen() {
           bodyLabel={t('mobile.zoneFilter.regionLabel')}
           bodyHint={t('mobile.zoneFilter.regionHint')}
           cornerLabels={cornerLabels}
+          cornerHint={t('mobile.zoneFilter.corner.hint')}
         />
       );
     },
