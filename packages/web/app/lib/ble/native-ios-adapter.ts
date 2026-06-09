@@ -10,7 +10,7 @@ import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from './scan-constants';
 // disconnect events arrive and whether their deviceId matches the connected one.
 // Silent in normal use; loads live via the web app so no app rebuild is needed.
 function bleDebugEnabled(): boolean {
-  return typeof window !== 'undefined' && window.location.search.includes('bleDebug');
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bleDebug');
 }
 
 type NativeBoardBlePlugin = NonNullable<NonNullable<Window['Capacitor']>['Plugins']['BoardBle']>;

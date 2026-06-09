@@ -58,7 +58,7 @@ Feature flags are controlled via build defines: `ENABLE_BLE_PROXY`, `ENABLE_DISP
 
 The ESP32 acts as a drop-in board controller:
 
-1. Exposes a BLE GATT server (Nordic UART Service) compatible with official Kilter/Tension apps
+1. Exposes a BLE GATT server (Nordic UART Service) compatible with official Kilter/Tension apps. The primary advertisement carries only the Aurora service UUID (so filtered scans see the board within the 31-byte legacy advert limit); the Nordic UART service is discovered via GATT after connect.
 2. Receives LED commands from the app via BLE and drives WS2812B LEDs directly
 3. Optionally forwards BLE LED data to the BoardSesh backend for climb identification
 
