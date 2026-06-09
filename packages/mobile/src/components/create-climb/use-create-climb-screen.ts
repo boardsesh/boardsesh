@@ -114,6 +114,7 @@ export function useCreateClimbScreen({
     generateFramesString,
     startingCount,
     finishCount,
+    totalHolds,
     isValid,
     resetHolds,
     loadHolds,
@@ -379,8 +380,9 @@ export function useCreateClimbScreen({
     const frames = generateFramesString();
     // Encode the no-match marker into the description only at save time.
     const fullDescription = withNoMatch(description, noMatch);
-    // Mirror web's `holdCount` property (create-climb-form.tsx).
-    const holdCount = Object.keys(litUpHoldsMap).length;
+    // Mirror web's `holdCount` property (create-climb-form.tsx), which sends the
+    // hook's `totalHolds` (non-OFF holds only) — not the raw map size.
+    const holdCount = totalHolds;
     // Web sends the human-readable layout name (`boardDetails.layout_name || ''`)
     // for `boardLayout`; mobile only carries the numeric layout id, so resolve it
     // to the same name via the shared board-constants table. PostHog groups by
@@ -473,7 +475,7 @@ export function useCreateClimbScreen({
     name,
     canUpdate,
     savedClimb,
-    litUpHoldsMap,
+    totalHolds,
     generateFramesString,
     updateClimb,
     saveClimb,

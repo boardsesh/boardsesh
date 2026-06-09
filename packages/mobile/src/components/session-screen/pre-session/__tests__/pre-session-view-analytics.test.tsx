@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
@@ -103,20 +103,22 @@ describe('PreSessionView analytics', () => {
 
     await act(async () => {
       startButton.onPress?.();
-      // Let the async handleStart chain (startSession → select → track) settle.
-      await Promise.resolve();
-      await Promise.resolve();
     });
 
+    // handleStart awaits startSession → select before tracking; poll until those
+    // promises settle rather than flushing a fixed number of microtasks.
+    await waitFor(() =>
+      expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
+        workoutType: 'volume',
+        boardName: 'kilter',
+        angle: 40,
+        // 2 climbs queued out of a 3-slot plan → 1 short.
+        savedCount: 2,
+        failedCount: 1,
+      }),
+    );
+
     expect(queue.addToQueue).toHaveBeenCalledTimes(2);
-    expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
-      workoutType: 'volume',
-      boardName: 'kilter',
-      angle: 40,
-      // 2 climbs queued out of a 3-slot plan → 1 short.
-      savedCount: 2,
-      failedCount: 1,
-    });
   });
 
   it('does not fire when the generator is off', async () => {
@@ -124,9 +126,11 @@ describe('PreSessionView analytics', () => {
 
     await act(async () => {
       startButton.onPress?.();
-      await Promise.resolve();
-      await Promise.resolve();
     });
+
+    // With the generator off, handleStart only starts the session. Wait for that
+    // call to settle, then assert no generate event fired.
+    await waitFor(() => expect(queue.startSession).toHaveBeenCalledTimes(1));
 
     expect(analytics.track).not.toHaveBeenCalledWith('Session Queue Generated', expect.anything());
   });

@@ -29,6 +29,11 @@ const preview = vi.hoisted(() => ({
 // Capture the confirmation card's Join button so the test can press it.
 const buttons = vi.hoisted(() => ({ joinPress: null as (() => void) | null }));
 
+// Lets a test simulate an unparseable board path (parseBoardPath → null).
+const boardConfig = vi.hoisted(() => ({
+  parsed: { boardName: 'kilter', layoutId: 1, angle: 40 } as { boardName: string; layoutId: number; angle: number } | null,
+}));
+
 vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
@@ -45,7 +50,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 
 vi.mock('@boardsesh/board-config', () => ({
-  parseBoardPath: () => ({ boardName: 'kilter', layoutId: 1, angle: 40 }),
+  parseBoardPath: () => boardConfig.parsed,
   formatBoardDisplayName: () => 'Kilter',
 }));
 
@@ -94,6 +99,7 @@ beforeEach(() => {
   queue.sessionId = null;
   queue.joinSession.mockClear();
   buttons.joinPress = null;
+  boardConfig.parsed = { boardName: 'kilter', layoutId: 1, angle: 40 };
 });
 
 describe('JoinSessionScreen analytics', () => {
@@ -118,5 +124,21 @@ describe('JoinSessionScreen analytics', () => {
 
     expect(queue.joinSession).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('does not fire "Session Joined" when the board path is unparseable', async () => {
+    boardConfig.parsed = null;
+    render(createElement(JoinSessionScreen));
+    expect(buttons.joinPress).not.toBeNull();
+
+    await act(async () => {
+      buttons.joinPress?.();
+    });
+
+    // The join still completes; we just skip the event rather than send null
+    // board props that would never group with web's events.
+    await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Joined', expect.anything());
   });
 });

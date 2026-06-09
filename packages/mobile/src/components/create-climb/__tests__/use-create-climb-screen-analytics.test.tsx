@@ -23,13 +23,15 @@ const editClimb = vi.hoisted(() => ({ data: undefined as unknown }));
 
 // The create-climb hold-state machine. The save flow only reads back
 // `generateFramesString` (non-empty so the save proceeds), `isValid` (true so it
-// doesn't early-return), and `litUpHoldsMap` (for holdCount).
+// doesn't early-return), and `totalHolds` (the non-OFF hold count → holdCount,
+// matching web). The 3-hold map mirrors totalHolds=3.
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } },
   setHoldState: vi.fn(),
   generateFramesString: vi.fn(() => 'p1r12p2r13p3r14'),
   startingCount: 1,
   finishCount: 1,
+  totalHolds: 3,
   isValid: true,
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
