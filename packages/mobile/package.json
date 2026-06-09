@@ -75,6 +75,7 @@
     "i18next": "^23.16.8",
     "intl-pluralrules": "^2.0.1",
     "posthog-react-native": "^4.46.8",
+    "posthog-react-native-session-replay": "^1.6.0",
     "react": "19.2.3",
     "react-i18next": "^15.0.0",
     "react-native": "0.85.3",

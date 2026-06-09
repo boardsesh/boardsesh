@@ -26,8 +26,22 @@ const DEFAULT_PNG_OPTIONS: sharp.PngOptions = {
   adaptiveFiltering: true,
 };
 
+const THUMBNAIL_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 85,
+  chromaSubsampling: '4:4:4',
+  progressive: false,
+  optimiseScans: false,
+};
+
+const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 90,
+  chromaSubsampling: '4:4:4',
+  mozjpeg: true,
+};
+
 const OG_BOARD_PADDING_X = 48;
 const OG_BOARD_PADDING_Y = 48;
+const MAX_FRAMES_LENGTH = 16_384;
 
 // Lazily initialized WASM module with promise lock to prevent thundering herd
 let renderOverlay: ((configJson: string) => Uint8Array) | null = null;
@@ -169,6 +183,64 @@ function createOgBackgroundBuffer(boardWidth: number, boardHeight: number): Buff
   );
 }
 
+type OutputFormat = 'webp' | 'png' | 'jpeg';
+
+function normalizeOutputFormat(format: string): OutputFormat | null {
+  if (format === 'jpg') return 'jpeg';
+  if (format === 'webp' || format === 'png' || format === 'jpeg') return format;
+  return null;
+}
+
+function isValidFrameSegment(segment: string): boolean {
+  if (segment.length === 0) return false;
+  let cursor = 0;
+
+  if (segment[cursor] === '"') {
+    cursor++;
+  }
+
+  if (cursor >= segment.length) return false;
+
+  while (cursor < segment.length) {
+    const current = segment[cursor];
+    if (current === 'x') {
+      cursor++;
+      const start = cursor;
+      while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+        cursor++;
+      }
+      if (cursor === start) return false;
+      continue;
+    }
+
+    if (current !== 'p') return false;
+    cursor++;
+    const placementStart = cursor;
+    while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+      cursor++;
+    }
+    if (cursor === placementStart || segment[cursor] !== 'r') return false;
+
+    cursor++;
+    const roleStart = cursor;
+    while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+      cursor++;
+    }
+    if (cursor === roleStart) return false;
+  }
+
+  return true;
+}
+
+function isValidFramesString(frames: string): boolean {
+  if (frames.length === 0) return true;
+  return frames.split(',').every(isValidFrameSegment);
+}
+
+function getJpegOptions(thumbnail: boolean): sharp.JpegOptions {
+  return thumbnail ? THUMBNAIL_JPEG_OPTIONS : DEFAULT_JPEG_OPTIONS;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -181,7 +253,7 @@ export async function GET(request: NextRequest) {
     const thumbnail = searchParams.get('thumbnail') === '1';
     const includeBackground = searchParams.get('include_background') === '1';
     const isOgVariant = searchParams.get('variant') === 'og';
-    const format = searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp');
+    const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
     if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
@@ -192,8 +264,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid board_name' }, { status: 400 });
     }
 
-    if (format !== 'webp' && format !== 'png') {
+    if (format === null) {
       return NextResponse.json({ error: 'Invalid format' }, { status: 400 });
+    }
+
+    if (frames.length > MAX_FRAMES_LENGTH) {
+      return NextResponse.json({ error: 'Frames string is too large' }, { status: 400 });
+    }
+
+    if (!isValidFramesString(frames)) {
+      return NextResponse.json({ error: 'Invalid frames' }, { status: 400 });
     }
 
     const parsedSetIds = setIds
@@ -309,6 +389,9 @@ export async function GET(request: NextRequest) {
               .webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : DEFAULT_WEBP_OPTIONS)
               .toBuffer();
             outputContentType = 'image/webp';
+          } else if (!isOgVariant && format === 'jpeg') {
+            outputBuffer = await compositedImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+            outputContentType = 'image/jpeg';
           } else {
             imageBuffer = await compositedImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
           }
@@ -321,6 +404,9 @@ export async function GET(request: NextRequest) {
           if (!isOgVariant && format === 'webp') {
             outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
             outputContentType = 'image/webp';
+          } else if (!isOgVariant && format === 'jpeg') {
+            outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+            outputContentType = 'image/jpeg';
           } else {
             imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
           }
@@ -333,6 +419,9 @@ export async function GET(request: NextRequest) {
         if (!isOgVariant && format === 'webp') {
           outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
           outputContentType = 'image/webp';
+        } else if (!isOgVariant && format === 'jpeg') {
+          outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+          outputContentType = 'image/jpeg';
         } else {
           imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
         }
@@ -345,6 +434,9 @@ export async function GET(request: NextRequest) {
       if (!isOgVariant && format === 'webp') {
         outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
         outputContentType = 'image/webp';
+      } else if (!isOgVariant && format === 'jpeg') {
+        outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+        outputContentType = 'image/jpeg';
       } else {
         imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
       }
@@ -354,18 +446,21 @@ export async function GET(request: NextRequest) {
     const encodeT0 = performance.now();
 
     if (outputBuffer === null && isOgVariant && imageBuffer) {
-      outputBuffer = await sharp(createOgBackgroundBuffer(width, height))
-        .composite([
-          {
-            input: imageBuffer,
-            left: Math.round((OG_IMAGE_WIDTH - width) / 2),
-            top: Math.round((OG_IMAGE_HEIGHT - height) / 2),
-            blend: 'over',
-          },
-        ])
-        .png(DEFAULT_PNG_OPTIONS)
-        .toBuffer();
-      outputContentType = 'image/png';
+      const ogImage = sharp(createOgBackgroundBuffer(width, height)).composite([
+        {
+          input: imageBuffer,
+          left: Math.round((OG_IMAGE_WIDTH - width) / 2),
+          top: Math.round((OG_IMAGE_HEIGHT - height) / 2),
+          blend: 'over',
+        },
+      ]);
+      if (format === 'jpeg') {
+        outputBuffer = await ogImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+        outputContentType = 'image/jpeg';
+      } else {
+        outputBuffer = await ogImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
+        outputContentType = 'image/png';
+      }
     } else if (outputBuffer === null && imageBuffer && format === 'webp') {
       const getWebpOptions = () => {
         if (thumbnail) return THUMBNAIL_WEBP_OPTIONS;
@@ -374,6 +469,9 @@ export async function GET(request: NextRequest) {
       };
       outputBuffer = await sharp(imageBuffer).webp(getWebpOptions()).toBuffer();
       outputContentType = 'image/webp';
+    } else if (outputBuffer === null && imageBuffer && format === 'jpeg') {
+      outputBuffer = await sharp(imageBuffer).jpeg(getJpegOptions(thumbnail)).toBuffer();
+      outputContentType = 'image/jpeg';
     } else if (outputBuffer === null && imageBuffer) {
       outputBuffer = imageBuffer;
       outputContentType = 'image/png';

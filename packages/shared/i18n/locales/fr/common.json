@@ -32,6 +32,44 @@
         "vGrade": "Cotation V",
         "font": "Français",
         "both": "Les deux"
+      },
+      "language": {
+        "title": "Langue",
+        "system": "Système",
+        "description": "Système suit la langue de votre appareil."
+      },
+      "diagnostics": {
+        "title": "Diagnostic",
+        "recording": "Aidez-nous à régler le Bluetooth",
+        "recordingDescription": "Quand le mur décroche sans arrêt, activez ceci. On enregistre votre écran et la connexion Bluetooth pour voir ce qui cloche. Ce que vous tapez reste masqué, et c'est désactivé tant que vous ne l'activez pas."
+      }
+    },
+    "onboarding": {
+      "skip": "Passer",
+      "next": "Suivant",
+      "getStarted": "Connecter un board",
+      "replaySection": "Tutoriel",
+      "replayTitle": "Revoir le tutoriel",
+      "replaySubtitle": "Affiche à nouveau la visite de bienvenue",
+      "replayError": "Impossible de rouvrir le tutoriel. Réessaie.",
+      "pageIndicator": "Page {{current}} sur {{total}}",
+      "cards": {
+        "welcome": {
+          "title": "Allume ton board",
+          "body": "Boardsesh pilote ton mur : recherche, file d'attente et lecture, le tout depuis ton téléphone."
+        },
+        "connect": {
+          "title": "Connecte-toi en Bluetooth",
+          "body": "Connecte ton board une fois et les prises s'allument pendant que tu grimpes."
+        },
+        "find": {
+          "title": "Cherche par cotation, enchaîne le mur",
+          "body": "Filtre des milliers de blocs par cotation, angle et ouvreur pour trouver ton prochain enchaînement."
+        },
+        "play": {
+          "title": "Touche un bloc, allume les prises",
+          "body": "Crée une file, lance la lecture et le mur te montre exactement où attraper."
+        }
       }
     },
     "nav": {

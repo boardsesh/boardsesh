@@ -3,13 +3,15 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { generateWorkoutPlan } from '@boardsesh/playlist-generator';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../../lib/analytics';
 import { Button } from '../../Button';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { useAuth } from '../../../providers/auth-provider';
-import { useQueue } from '../../../providers/queue-provider';
+import { useQueueActions } from '../../../providers/queue-provider';
 import { useToast } from '../../../providers/toast-provider';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { BoardSummaryCard } from './BoardSummaryCard';
@@ -28,7 +30,7 @@ export function PreSessionView() {
   const bottomChrome = useBottomChromeMetrics();
   const { data: activeBoard } = useActiveBoard();
   const { isAuthenticated } = useAuth();
-  const { startSession, addToQueue } = useQueue();
+  const { startSession, addToQueue } = useQueueActions();
   const { showToast } = useToast();
 
   const [selection, setSelection] = useState<GeneratorSelection>({ type: 'off' });
@@ -59,6 +61,17 @@ export function PreSessionView() {
           // through the existing queue-provider plumbing, so the queue echoes
           // through the WS subscription exactly like a manual add.
           items.forEach((item) => addToQueue(item));
+          // Mirror web's start-sesh-drawer `Session Queue Generated`. The mobile
+          // path adds every selected climb (no per-slot failure tracking), so
+          // savedCount is the queued count and failedCount is the planned-minus-
+          // queued shortfall when the catalog couldn't fill every slot.
+          track(SHARED_EVENTS.SessionQueueGenerated, {
+            workoutType: selection.options.type,
+            boardName: activeBoard.boardType,
+            angle: activeBoard.angle,
+            savedCount: items.length,
+            failedCount: plan.length - items.length,
+          });
         }
       }
     } catch {
@@ -86,6 +99,7 @@ export function PreSessionView() {
 
         <GeneratorPickerCard
           boardName={activeBoard ? toBoardName(activeBoard.boardType) : null}
+          angle={activeBoard?.angle ?? null}
           selection={selection}
           onChange={setSelection}
         />

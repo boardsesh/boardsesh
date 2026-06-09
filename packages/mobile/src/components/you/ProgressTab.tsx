@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { View, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { useYouProfileData } from '../../lib/graphql/hooks';
@@ -16,7 +16,7 @@ import { useTheme } from '../../providers/theme-provider';
 
 type YouData = ReturnType<typeof useYouProfileData>;
 
-export function ProgressTab({ data }: { data: YouData }) {
+export const ProgressTab = memo(function ProgressTab({ data }: { data: YouData }) {
   const { t } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { systemColors, colorScheme, brandColors } = useTheme();
@@ -121,7 +121,7 @@ export function ProgressTab({ data }: { data: YouData }) {
       )}
     </ScrollView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

@@ -4,14 +4,15 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { countFilteredHolds, toggleHoldFilterType } from '@boardsesh/climb-filters';
+import { getLayout } from '@boardsesh/board-constants/product-sizes';
+import { countFilteredHolds, parseHoldsFilter, toggleHoldFilterType } from '@boardsesh/climb-filters';
 import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { InteractiveFilterBoard } from '../../../src/components/search/InteractiveFilterBoard';
 import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { getCreateBoardHolds } from '../../../src/lib/create-board-holds';
+import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
 import { track } from '../../../src/lib/analytics';
 import { spacing } from '../../../src/theme/tokens';
@@ -21,26 +22,16 @@ type Params = {
   layoutId?: string;
   sizeId?: string;
   setIds?: string;
-  angle?: string;
   holdsFilter?: string;
 };
 
-// Chrome above the board (header + footer summary) the board height budget must
-// leave room for, so the full board fits without scroll.
+// Vertical space (px) reserved for the on-screen chrome around the board so the
+// full board fits without scroll: the header row (~44) plus its top padding
+// (spacing[2]), and the footer summary (~44) plus its top padding — roughly 132
+// at the current type scale. A rough constant is fine: the board still fits as
+// long as the budget is in the right ballpark, and `availHeight` is clamped
+// below.
 const CHROME_BUDGET = 132;
-
-function parseHoldsFilter(raw: string | undefined): HoldsFilter {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as HoldsFilter;
-    }
-  } catch {
-    // Malformed param → start empty rather than crash.
-  }
-  return {};
-}
 
 /**
  * Full-screen board sub-screen for the hold-type search filter. Mirrors the
@@ -61,9 +52,10 @@ export default function HoldFilterScreen() {
   const layoutId = Number(params.layoutId ?? 0);
   const sizeId = Number(params.sizeId ?? 0);
   const setIds = params.setIds ?? '';
-  // Matches the web `boardLayout` property: the layout identity, not the board
-  // name. Mobile carries the numeric layoutId at this call site (PR #2618).
-  const boardLayout = String(layoutId);
+  // Matches the web `boardLayout` property: the layout NAME (web sends
+  // `boardDetails.layout_name`), not the numeric id, so the hold-filter events
+  // join cleanly with web across platforms. Falls back to '' for unknown ids.
+  const boardLayout = getLayout(boardName, layoutId)?.name ?? '';
 
   const [holdsFilter, setHoldsFilter] = useState<HoldsFilter>(() => parseHoldsFilter(params.holdsFilter));
   // Mirror of the latest holdsFilter so the focus-effect cleanup hands back the
@@ -80,7 +72,7 @@ export default function HoldFilterScreen() {
       boardName,
       layoutId,
       sizeId,
-      setIds: setIds.split(',').map(Number).filter(Number.isFinite),
+      setIds: parseSetIdsParam(setIds),
     });
   }, [boardName, layoutId, sizeId, setIds]);
 
@@ -88,6 +80,8 @@ export default function HoldFilterScreen() {
     if (!boardHolds) return { width: 0, height: 0 };
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
     const availWidth = windowWidth - spacing[4] * 2;
+    // Clamp to a 200px floor so a short window (small device in landscape, or an
+    // over-large CHROME_BUDGET estimate) never collapses the board to nothing.
     const availHeight = Math.max(200, windowHeight - insets.top - insets.bottom - CHROME_BUDGET);
     if (availWidth / availHeight > boardAspect) {
       return { width: availHeight * boardAspect, height: availHeight };
@@ -186,6 +180,10 @@ export default function HoldFilterScreen() {
       </View>
 
       <View style={styles.boardSection}>
+        {/* Known follow-up (not in this PR): `BoardSearchConfig` doesn't carry a
+            `mirrored` flag today, so the board always renders un-mirrored here
+            and a mirrored search shows its hold rings on the opposite side. Wire
+            `mirrored` through `BoardSearchConfig` to fix it. */}
         <InteractiveFilterBoard
           boardName={boardName}
           layoutId={layoutId}

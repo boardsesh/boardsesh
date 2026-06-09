@@ -230,6 +230,44 @@
         "vGrade": "Grado V",
         "font": "Francés",
         "both": "Ambos"
+      },
+      "language": {
+        "title": "Idioma",
+        "system": "Sistema",
+        "description": "Sistema usa el idioma de tu dispositivo."
+      },
+      "diagnostics": {
+        "title": "Diagnóstico",
+        "recording": "Ayúdanos a arreglar el Bluetooth",
+        "recordingDescription": "Cuando la tabla se desconecte una y otra vez, activa esto. Grabaremos tu pantalla y la conexión Bluetooth para ver qué falla. Lo que escribes queda oculto, y está apagado hasta que lo enciendas."
+      }
+    },
+    "onboarding": {
+      "skip": "Omitir",
+      "next": "Siguiente",
+      "getStarted": "Conecta una tabla",
+      "replaySection": "Tutorial",
+      "replayTitle": "Repetir el tutorial",
+      "replaySubtitle": "Vuelve a ver el recorrido de bienvenida",
+      "replayError": "No se pudo abrir el tutorial. Inténtalo de nuevo.",
+      "pageIndicator": "Página {{current}} de {{total}}",
+      "cards": {
+        "welcome": {
+          "title": "Ilumina tu tabla",
+          "body": "Boardsesh controla tu muro: busca, encola y juega, todo desde tu móvil."
+        },
+        "connect": {
+          "title": "Conecta por Bluetooth",
+          "body": "Conecta tu tabla una vez y las presas se iluminan mientras escalas."
+        },
+        "find": {
+          "title": "Busca por grado, encadena el muro",
+          "body": "Filtra miles de bloques por grado, ángulo y equipador para encontrar tu próximo encadene."
+        },
+        "play": {
+          "title": "Toca un bloque, ilumina las presas",
+          "body": "Crea una cola, dale a reproducir y el muro te muestra exactamente dónde agarrar."
+        }
       }
     },
     "nav": {

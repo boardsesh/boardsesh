@@ -1,0 +1,92 @@
+// @vitest-environment jsdom
+import { render } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+
+// Capture the per-row onPress LogbookTab wires up, so the test can fire a tap
+// without a real list renderer.
+const row = vi.hoisted(() => ({ onPress: null as (() => void) | null }));
+
+const feed = vi.hoisted(() => ({
+  data: {
+    pages: [
+      {
+        userAscentsFeed: {
+          items: [{ uuid: 'ascent-1', climbUuid: 'climb-1' }],
+        },
+      },
+    ],
+  },
+  isPending: false,
+  isRefetching: false,
+  isFetchingNextPage: false,
+  hasNextPage: false,
+  refetch: vi.fn(),
+  fetchNextPage: vi.fn(),
+}));
+
+vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
+
+vi.mock('react-native', () => ({
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  RefreshControl: () => null,
+  StyleSheet: { create: (styles: unknown) => styles },
+}));
+
+// Render every data row through renderItem so the mocked LogbookRow mounts and
+// captures its onPress.
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+  }: {
+    data: Array<{ uuid: string }>;
+    renderItem: (info: { item: { uuid: string } }) => ReactNode;
+  }) => createElement('div', null, ...data.map((item) => renderItem({ item }))),
+}));
+
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../LogbookRow', () => ({
+  LogbookRow: ({
+    onPress,
+    ascent,
+  }: {
+    onPress: (ascent: { climbUuid: string }) => void;
+    ascent: { climbUuid: string };
+  }) => {
+    row.onPress = () => onPress(ascent);
+    return createElement('div');
+  },
+}));
+vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
+vi.mock('../../Text', () => ({ Text: () => null }));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
+vi.mock('../../../lib/graphql/hooks', () => ({ useUserAscentsFeed: () => feed }));
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+}));
+vi.mock('../../../theme/tokens', () => ({ spacing: {} }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: {}, brandColors: {} }),
+}));
+
+import { LogbookTab } from '../LogbookTab';
+
+beforeEach(() => {
+  analytics.track.mockClear();
+  row.onPress = null;
+});
+
+describe('LogbookTab analytics', () => {
+  it('fires "Logbook Row Clicked" with the climb uuid when a row is tapped', () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    expect(row.onPress).not.toBeNull();
+
+    row.onPress?.();
+
+    expect(analytics.track).toHaveBeenCalledWith('Logbook Row Clicked', { climbUuid: 'climb-1' });
+  });
+});

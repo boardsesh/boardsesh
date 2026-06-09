@@ -55,6 +55,14 @@ export function useCarouselGesture({
     reduceMotionSV.value = reduceMotion;
   }, [reduceMotion, reduceMotionSV]);
 
+  // Mirror the slide-off distance (board width) into a shared value so the
+  // post-layout change from screenWidth to the contained board width doesn't
+  // rebuild the gesture mid-session.
+  const boardWidthSV = useSharedValue(boardWidth);
+  useEffect(() => {
+    boardWidthSV.value = boardWidth;
+  }, [boardWidth, boardWidthSV]);
+
   const callbacksRef = useRef({ onSwipeNext, onSwipePrevious });
   callbacksRef.current = { onSwipeNext, onSwipePrevious };
 
@@ -183,7 +191,7 @@ export function useCarouselGesture({
               runOnJS(commitImmediate)('next');
             } else {
               isAnimating.value = true;
-              translateX.value = withTiming(-boardWidth, { duration: EXIT_DURATION });
+              translateX.value = withTiming(-boardWidthSV.value, { duration: EXIT_DURATION });
               runOnJS(scheduleCommit)('next');
             }
           } else if (offset > SWIPE_THRESHOLD && canSwipePrevious) {
@@ -192,7 +200,7 @@ export function useCarouselGesture({
               runOnJS(commitImmediate)('previous');
             } else {
               isAnimating.value = true;
-              translateX.value = withTiming(boardWidth, { duration: EXIT_DURATION });
+              translateX.value = withTiming(boardWidthSV.value, { duration: EXIT_DURATION });
               runOnJS(scheduleCommit)('previous');
             }
           } else {
@@ -202,7 +210,7 @@ export function useCarouselGesture({
     [
       canSwipeNext,
       canSwipePrevious,
-      boardWidth,
+      boardWidthSV,
       translateX,
       isAnimating,
       hasTriggeredHaptic,

@@ -88,6 +88,7 @@ export function ClimbCapsule({
     currentItem,
     previousItem,
     nextItem,
+    canPeek,
     handleNext,
     handlePrevious,
     swipeAccessibilityActions,
@@ -161,7 +162,7 @@ export function ClimbCapsule({
               boardConfig={boardConfig}
             />
           </Animated.View>
-          {nextClimb ? (
+          {nextClimb && canPeek ? (
             <Animated.View style={[styles.peekSlot, { right: labelRight }, nextPeekStyle]} pointerEvents="none">
               <ClimbLabel
                 climb={nextClimb}
@@ -173,7 +174,7 @@ export function ClimbCapsule({
               />
             </Animated.View>
           ) : null}
-          {previousClimb ? (
+          {previousClimb && canPeek ? (
             <Animated.View style={[styles.peekSlot, { right: labelRight }, prevPeekStyle]} pointerEvents="none">
               <ClimbLabel
                 climb={previousClimb}

@@ -30,7 +30,7 @@ vi.mock('@boardsesh/playlists-react', () => ({
   fetchPlaylistSuggestionClimbs: (args: unknown) => mocks.fetchSuggestion(args),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => ({
+  useQueueActions: () => ({
     setCurrentClimb: mocks.setCurrentClimb,
     refreshPlaylistSuggestionSource: mocks.refreshPlaylistSuggestionSource,
   }),
@@ -85,8 +85,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     const climb = makeClimb('a');
     const item = await captured().queueApi!.setCurrentClimb(climb, { playlistSuggestionSource: null });
     expect(mocks.setCurrentClimb).toHaveBeenCalledWith({ uuid: 'qi-a', climb }, { playlistSuggestionSource: null });
-    // Returning the item (non-null) is what tells the shared hook activation
-    // succeeded so it fires onActivated.
+    // Returning the item (non-null) tells the shared hook the synchronous
+    // activation phase succeeded.
     expect(item).toEqual({ uuid: 'qi-a', climb });
   });
 
@@ -101,11 +101,18 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     expect(captured().resolveTarget(makeClimb('a'))).toBeNull();
   });
 
-  it('onActivated opens the play drawer without re-setting the current climb', () => {
-    renderActivation();
+  it('opens the play drawer immediately on activate, before the queue state updates', async () => {
+    const { result } = renderActivation();
     const climb = makeClimb('a');
-    captured().onActivated?.(climb);
+    await result.current(climb);
+    // The drawer opens FIRST — before the shared activation's setCurrentClimb +
+    // suggestion-source work — so BottomSheetModal.present() fires on the same
+    // frame as the tap. setAsCurrent:false stops the drawer re-dispatching and
+    // wiping the suggestion source the activation builds.
     expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { setAsCurrent: false });
+    // The shared activation still runs (suggestion source + the queue dispatch,
+    // which is wrapped in startTransition).
+    expect(mocks.activate).toHaveBeenCalledWith(climb);
   });
 
   it('fetchClimbsForBoard pages the playlist via the injected fetchPage', async () => {

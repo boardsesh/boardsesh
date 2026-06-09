@@ -5,7 +5,7 @@ vi.mock('../board-details', () => ({
 }));
 
 import { getBoardRenderData } from '../board-details';
-import { getCreateBoardHolds } from '../create-board-holds';
+import { getCreateBoardHolds, parseSetIdsParam } from '../create-board-holds';
 
 const mockedGetBoardRenderData = vi.mocked(getBoardRenderData);
 
@@ -62,5 +62,19 @@ describe('getCreateBoardHolds', () => {
         setIds: [8],
       }),
     ).toBeNull();
+  });
+});
+
+describe('parseSetIdsParam', () => {
+  it('returns an empty array for an empty string (not [0])', () => {
+    expect(parseSetIdsParam('')).toEqual([]);
+  });
+
+  it('parses a comma-separated list of set ids', () => {
+    expect(parseSetIdsParam('24,25')).toEqual([24, 25]);
+  });
+
+  it('drops zero and blank tokens', () => {
+    expect(parseSetIdsParam('0,24,,25')).toEqual([24, 25]);
   });
 });

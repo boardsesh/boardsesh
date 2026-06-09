@@ -8,11 +8,13 @@
 
 // LED configuration
 // Note: GPIO 5 conflicts with LCD_RST on T-Display-S3
-// Use TDISPLAY_LED_PIN or WAVESHARE_LED_PIN build flag to override for display builds
+// Use TDISPLAY_LED_PIN, WAVESHARE_LED_PIN, or WAVESHARE_AMOLED_LED_PIN build flag to override for display builds
 #ifdef TDISPLAY_LED_PIN
 #define LED_PIN TDISPLAY_LED_PIN
 #elif defined(WAVESHARE_LED_PIN)
 #define LED_PIN WAVESHARE_LED_PIN
+#elif defined(WAVESHARE_AMOLED_LED_PIN)
+#define LED_PIN WAVESHARE_AMOLED_LED_PIN
 #else
 #define LED_PIN 5  // GPIO pin for LED data (default for non-display builds)
 #endif
@@ -37,6 +39,9 @@
 #define DEFAULT_BACKEND_HOST "ws.boardsesh.com"
 #define DEFAULT_BACKEND_PORT 443
 #define DEFAULT_BACKEND_PATH "/graphql"
+#ifndef DEFAULT_RENDER_BASE_URL
+#define DEFAULT_RENDER_BASE_URL "https://www.boardsesh.com"
+#endif
 
 // Web server
 #define WEB_SERVER_PORT 80

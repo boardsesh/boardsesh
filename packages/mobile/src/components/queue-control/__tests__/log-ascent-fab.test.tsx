@@ -67,7 +67,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../../providers/queue-provider', () => ({ useQueue: () => ({ sessionId: queue.sessionId }) }));
+vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: queue.sessionId }) }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openLogAscent: drawer.openLogAscent, boardConfig: drawer.boardConfig }),
@@ -141,7 +141,13 @@ describe('LogAscentFab', () => {
   });
 
   it('opens the log-ascent sheet with the expected payload when tapped', () => {
-    const climb = makeClimb({ uuid: 'climb-123', angle: 40, difficulty: 'V5', mirrored: true, benchmark_difficulty: 'V6' });
+    const climb = makeClimb({
+      uuid: 'climb-123',
+      angle: 40,
+      difficulty: 'V5',
+      mirrored: true,
+      benchmark_difficulty: 'V6',
+    });
     drawer.boardConfig = makeBoardConfig({ boardName: 'tension', layoutId: 8, sizeId: 17, setIds: '26,27' });
     queue.sessionId = 'sess-42';
 

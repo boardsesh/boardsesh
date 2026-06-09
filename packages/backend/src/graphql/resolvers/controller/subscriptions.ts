@@ -18,7 +18,7 @@ import { roomManager } from '../../../services/room-manager';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { getLedPlacements } from '@boardsesh/board-constants/led-placements';
 import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
-import { accumulateFramesToMaps } from '@boardsesh/board-constants/hold-states';
+import { accumulateFramesToMaps, accumulatedMapsToFrameStrings } from '@boardsesh/board-constants/hold-states';
 import { requireControllerAuth } from '../shared/helpers';
 import { getGradeColor } from './grade-colors';
 import { buildNavigationContext, findClimbIndex } from './navigation-helpers';
@@ -106,6 +106,14 @@ function climbToLedCommands(
   return commands;
 }
 
+export function toThumbnailFrames(frames: string | null | undefined, boardName: BoardName): string {
+  if (!frames) return '';
+  if (!frames.includes(',') && !frames.includes('x')) return frames;
+
+  const accumulatedMaps = accumulateFramesToMaps(frames, boardName);
+  return accumulatedMapsToFrameStrings(accumulatedMaps, boardName).at(-1) ?? '';
+}
+
 export const controllerSubscriptions = {
   /**
    * ESP32 controller subscribes to receive LED commands
@@ -148,6 +156,7 @@ export const controllerSubscriptions = {
         climb: { uuid: string; name: string; difficulty: string; angle: number; frames: string } | null | undefined,
         currentItemUuid?: string,
         clientId?: string | null,
+        fallbackFrames?: string | null,
       ): Promise<LedUpdate> => {
         // Get LED placements for this controller's configuration
         const ledPlacements = getLedPlacements(
@@ -166,6 +175,7 @@ export const controllerSubscriptions = {
             __typename: 'LedUpdate',
             commands: [],
             boardPath,
+            frames: toThumbnailFrames(fallbackFrames, controller.boardName as BoardName),
             clientId,
             // If clientId matches controller, this is an unknown BLE climb - show "Unknown Climb"
             climbName: clientId ? 'Unknown Climb' : undefined,
@@ -191,6 +201,7 @@ export const controllerSubscriptions = {
           climbGrade: climb.difficulty,
           gradeColor: getGradeColor(climb.difficulty),
           boardPath,
+          frames: toThumbnailFrames(climb.frames, controller.boardName as BoardName),
           angle: climb.angle,
           navigation,
           clientId,
@@ -229,6 +240,7 @@ export const controllerSubscriptions = {
           if (queueEvent.__typename === 'CurrentClimbChanged' || queueEvent.__typename === 'FullSync') {
             // Extract clientId from the event (null for FullSync or system-initiated changes)
             const eventClientId = queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.clientId : null;
+            const eventFrames = queueEvent.__typename === 'CurrentClimbChanged' ? queueEvent.frames : null;
 
             const currentItem =
               queueEvent.__typename === 'CurrentClimbChanged'
@@ -244,7 +256,7 @@ export const controllerSubscriptions = {
                   push(ledUpdate);
                 } else {
                   // No climb - could be clearing or unknown climb
-                  const ledUpdate = await buildLedUpdateWithNavigation(null, undefined, eventClientId);
+                  const ledUpdate = await buildLedUpdateWithNavigation(null, undefined, eventClientId, eventFrames);
                   push(ledUpdate);
                 }
               } catch (error) {

@@ -21,10 +21,12 @@ import {
   TOOLBAR_GAP,
   TOOLBAR_FAB_SIZE,
   TOOLBAR_GAP_ABOVE_TABBAR,
+  TABBAR_SEAM_OVERLAP,
   glassSize,
 } from '../../theme/layout';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useMeasuredTabBarHeight } from '../../providers/tab-bar-height-provider';
 
 type ActiveContextBarProps = {
   /** Optional leading widget; defaults to an empty gutter that balances the bar. */
@@ -38,8 +40,11 @@ type ActiveContextBarProps = {
   /** Render the primary edge-to-edge (no leading/trailing slots) — the Material
    *  full-width bar, where the trailing action lives inside the primary. */
   fillPrimary?: boolean;
-  /** Lift above the tab bar (defaults to TOOLBAR_GAP_ABOVE_TABBAR). */
+  /** Lift above the tab bar (defaults to TOOLBAR_GAP_ABOVE_TABBAR). Floating only. */
   gapAboveTabBar?: number;
+  /** Dock flush against the tab bar (Material) rather than floating above it. Positions
+   *  the bar's bottom on the tab bar's *measured* top, tucked under its hairline. */
+  dockToTabBar?: boolean;
   /** Horizontal inset from the screen edge; Material uses 0 for a docked bar. */
   horizontalInset?: number;
 };
@@ -51,10 +56,20 @@ export function ActiveContextBar({
   trailingWidth = glassSize.hero,
   fillPrimary = false,
   gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR,
+  dockToTabBar = false,
   horizontalInset = TOOLBAR_SIDE_MARGIN,
 }: ActiveContextBarProps) {
   const reduceMotion = useReduceMotion();
   const bottomChrome = useBottomChromeMetrics();
+  const measuredTabBarHeight = useMeasuredTabBarHeight();
+
+  // Docked (Material): sit on the tab bar's REAL measured top, tucked under its hairline
+  // by one px. Before the first measurement, fall back to the constant-estimated top
+  // (≤2px off for a single frame, then it snaps to the truth). Floating (glass) keeps
+  // its lift above the tab bar.
+  const bottom = dockToTabBar
+    ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP
+    : bottomChrome.tabBarBottom + gapAboveTabBar;
 
   return (
     <Animated.View
@@ -63,7 +78,7 @@ export function ActiveContextBar({
       style={[
         styles.toolbar,
         {
-          bottom: bottomChrome.tabBarBottom + gapAboveTabBar,
+          bottom,
           left: horizontalInset,
           right: horizontalInset,
         },

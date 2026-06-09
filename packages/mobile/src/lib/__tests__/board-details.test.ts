@@ -22,7 +22,7 @@ vi.mock('../env', () => ({
 
 import { getImageFilename } from '@boardsesh/board-constants/product-sizes';
 import { BOARD_IMAGE_DIMENSIONS, getMoonBoardDetails } from '@boardsesh/board-config';
-import { getBoardAspectRatio, getBoardRenderData } from '../board-details';
+import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } from '../board-details';
 
 const mockedGetImageFilename = vi.mocked(getImageFilename);
 const mockedGetMoonBoardDetails = vi.mocked(getMoonBoardDetails);
@@ -36,6 +36,7 @@ const baseParams = {
 describe('getBoardAspectRatio', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    clearBoardRenderDataCache();
     BOARD_IMAGE_DIMENSIONS.kilter = {};
   });
 
@@ -86,6 +87,7 @@ describe('getBoardAspectRatio', () => {
 describe('getBoardRenderData', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    clearBoardRenderDataCache();
   });
 
   it('builds MoonBoard render data from the shared MoonBoard config', () => {

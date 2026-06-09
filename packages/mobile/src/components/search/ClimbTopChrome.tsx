@@ -20,11 +20,10 @@ import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { spacing } from '../../theme/tokens';
 import { hapticLight } from '../../lib/haptics';
-import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { Text } from '../Text';
 import { iconMap } from '../icon-map';
-import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
+import { BoardSwitcherButton, CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
 import { GradeRangeRail } from '../grade';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
 import { FilterButton } from './FilterButton';
@@ -98,10 +97,8 @@ export function ClimbTopChrome({
   onGradeChange,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
-  const { t: tCommon } = useTranslation('common');
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data: activeBoard } = useActiveBoard();
   const usesCustomSearch = searchMode === 'custom';
 
   const handleLayout = useCallback(
@@ -127,7 +124,6 @@ export function ClimbTopChrome({
   }, [onSearchBlur]);
 
   if (variant === 'material') {
-    const boardLabel = formatActiveBoardLabel(activeBoard);
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
     const hasNonGradeFilters = nonGradeFilterCount > 0;
@@ -154,20 +150,7 @@ export function ClimbTopChrome({
           elevated
           style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
         >
-          <Appbar.Content
-            title={tCommon('mobile.nav.climbs')}
-            subtitle={boardLabel ?? undefined}
-            onPress={
-              boardLabel
-                ? () => {
-                    hapticLight();
-                    onOpenBoardDetail();
-                  }
-                : undefined
-            }
-            titleStyle={styles.materialTitle}
-            subtitleStyle={styles.materialSubtitle}
-          />
+          <BoardSwitcherButton onPress={onOpenBoardDetail} accessibilityHint={t('mobile.search.boardSwitcherHint')} />
           {canCreate ? (
             <Appbar.Action
               icon={iconMap.plus.android}
@@ -392,12 +375,6 @@ const styles = StyleSheet.create({
   materialAppbar: {
     elevation: 0,
     shadowOpacity: 0,
-  },
-  materialTitle: {
-    fontWeight: '700',
-  },
-  materialSubtitle: {
-    fontWeight: '500',
   },
   materialSearchStack: {
     paddingHorizontal: spacing[4],

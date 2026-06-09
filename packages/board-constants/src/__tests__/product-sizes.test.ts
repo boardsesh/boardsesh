@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { isKilterHomewallTallSizeId, isKilterHomewallWideSizeId } from '../product-sizes';
+import { getLayoutName, isKilterHomewallTallSizeId, isKilterHomewallWideSizeId } from '../product-sizes';
+
+describe('getLayoutName', () => {
+  it('returns the human-readable name for a known board + layoutId', () => {
+    expect(getLayoutName('kilter', 1)).toBe('Kilter Board Original');
+  });
+
+  it("returns '' for an unknown layoutId", () => {
+    expect(getLayoutName('kilter', 99999)).toBe('');
+  });
+});
 
 describe('Kilter Homewall size filter capabilities', () => {
   it('marks 8x12 and 10x12 Homewall sizes as tall-capable', () => {

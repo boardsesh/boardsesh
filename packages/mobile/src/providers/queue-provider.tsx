@@ -97,8 +97,6 @@ type QueueContextValue = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   nextClimb: () => void;
   previousClimb: () => void;
-  /** Active playlist suggestion source (client-only; survives server syncs). */
-  playlistSuggestionSource: PlaylistSuggestionSource | null;
   /** Replace the playlist suggestion source that drives swipe-through climbs. */
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   /** Refresh the suggestion source in place (no-op unless it matches the active one). */
@@ -156,6 +154,18 @@ type QueueContextValue = {
 
 const QueueContext = createContext<QueueContextValue | null>(null);
 
+/**
+ * QueueProvider intentionally exposes several narrow hooks. Pick the smallest
+ * subscription that matches the read:
+ * - useQueue(): legacy/full reducer state plus actions; use only when state shape is required.
+ * - useQueueActions(): stable command surface for enqueue/session/playback writes.
+ * - useQueueSessionId(): rare session-id changes for structural chrome.
+ * - useQueueSessionControls(): session id plus driver/serial controls for party surfaces.
+ * - useQueueLiveStats(): high-frequency live stats and roster updates.
+ * - useActiveClimbUuid(): row-level active-climb highlighting.
+ * - useHasActiveClimb(): presence-only bottom chrome metrics.
+ * - usePlaylistSuggestionSource(): playlist peek/suggestion navigation.
+ */
 type TakeControlOptions = {
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
 };
@@ -172,6 +182,21 @@ type QueueSessionControlContextValue = Pick<
 >;
 
 const QueueSessionControlContext = createContext<QueueSessionControlContextValue | null>(null);
+
+/**
+ * SessionId-only selector context. Its identity changes ONLY when the active
+ * session id changes (session start / end / join — rare), never on queue
+ * mutations or the ≤1/2s party pushes. Consumed by high-fanout *structural*
+ * readers — the tab layout (which renders every tab inline), the board adapter,
+ * and the session screen — so a queue change can't cascade a re-render through
+ * the whole navigation tree. Narrower than QueueSessionControlContext, which
+ * also churns on driver / board-serial changes.
+ */
+type QueueSessionIdContextValue = {
+  sessionId: string | null;
+};
+
+const QueueSessionIdContext = createContext<QueueSessionIdContextValue | null>(null);
 
 /**
  * Live session analytics + presence, split out of the main QueueContext so the
@@ -208,10 +233,23 @@ type QueueActiveClimbContextValue = {
 const QueueActiveClimbContext = createContext<QueueActiveClimbContextValue | null>(null);
 
 /**
+ * Boolean "is any climb currently active" selector. Identity changes ONLY when a
+ * climb appears/disappears (none↔some) — NOT when navigating *between* climbs.
+ * Consumed by bottom-chrome metrics (climbs, discover, You screens) so navigating
+ * climbs in the play drawer no longer re-renders those whole tab screens.
+ */
+type QueueHasActiveClimbContextValue = {
+  hasActiveClimb: boolean;
+};
+
+const QueueHasActiveClimbContext = createContext<QueueHasActiveClimbContextValue | null>(null);
+
+/**
  * Stable queue actions, split out so consumers that only dispatch actions (e.g.
  * the climb list's add-to-queue) don't subscribe to the whole reducer `state`.
- * Holds everything in QueueContextValue except `state`, `dispatch`, `sessionId`,
- * `setSessionId`, and the live-stats fields (which live in their own contexts).
+ * Holds everything in QueueContextValue except volatile state and selector-only
+ * values. Playlist suggestion state lives in QueuePlaylistSuggestionContext so
+ * playlist activation does not wake every action-only consumer in the tab tree.
  */
 type QueueActionsContextValue = Omit<
   QueueContextValue,
@@ -226,6 +264,12 @@ type QueueActionsContextValue = Omit<
 
 const QueueActionsContext = createContext<QueueActionsContextValue | null>(null);
 
+type QueuePlaylistSuggestionContextValue = {
+  playlistSuggestionSource: PlaylistSuggestionSource | null;
+};
+
+const QueuePlaylistSuggestionContext = createContext<QueuePlaylistSuggestionContextValue | null>(null);
+
 export function useQueue(): QueueContextValue {
   const context = useContext(QueueContext);
   if (!context) throw new Error('useQueue must be used within QueueProvider');
@@ -235,6 +279,12 @@ export function useQueue(): QueueContextValue {
 export function useQueueSessionControls(): QueueSessionControlContextValue {
   const context = useContext(QueueSessionControlContext);
   if (!context) throw new Error('useQueueSessionControls must be used within QueueProvider');
+  return context;
+}
+
+export function useQueueSessionId(): QueueSessionIdContextValue {
+  const context = useContext(QueueSessionIdContext);
+  if (!context) throw new Error('useQueueSessionId must be used within QueueProvider');
   return context;
 }
 
@@ -250,10 +300,22 @@ export function useActiveClimbUuid(): string | null {
   return context.activeClimbUuid;
 }
 
+export function useHasActiveClimb(): boolean {
+  const context = useContext(QueueHasActiveClimbContext);
+  if (!context) throw new Error('useHasActiveClimb must be used within QueueProvider');
+  return context.hasActiveClimb;
+}
+
 export function useQueueActions(): QueueActionsContextValue {
   const context = useContext(QueueActionsContext);
   if (!context) throw new Error('useQueueActions must be used within QueueProvider');
   return context;
+}
+
+export function usePlaylistSuggestionSource(): PlaylistSuggestionSource | null {
+  const context = useContext(QueuePlaylistSuggestionContext);
+  if (!context) throw new Error('usePlaylistSuggestionSource must be used within QueueProvider');
+  return context.playlistSuggestionSource;
 }
 
 const defaultSearchParams: QueueSearchParams = {};
@@ -413,7 +475,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   }, [sessionId]);
 
   useEffect(() => {
-    getStoredSessionId().then((storedId) => {
+    void getStoredSessionId().then((storedId) => {
       if (__DEV__) {
         console.info(`[session] restored from store: ${storedId ?? '(none)'}`);
       }
@@ -1253,7 +1315,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setCurrentClimb,
       nextClimb,
       previousClimb,
-      playlistSuggestionSource,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
       clearSession,
@@ -1276,7 +1337,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setCurrentClimb,
       nextClimb,
       previousClimb,
-      playlistSuggestionSource,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
       clearSession,
@@ -1313,11 +1373,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const activeClimbUuid = state.currentClimbQueueItem?.climb?.uuid ?? null;
   const activeClimbValue = useMemo<QueueActiveClimbContextValue>(() => ({ activeClimbUuid }), [activeClimbUuid]);
 
+  // Presence-only selector: flips solely when a climb appears/disappears, so
+  // bottom-chrome consumers (whole tab screens) don't re-render on climb-to-climb
+  // navigation — only the climb-row highlight (useActiveClimbUuid) does.
+  const hasActiveClimb = activeClimbUuid != null;
+  const hasActiveClimbValue = useMemo<QueueHasActiveClimbContextValue>(() => ({ hasActiveClimb }), [hasActiveClimb]);
+
+  // SessionId-only selector: identity changes only when a session starts/ends,
+  // so structural readers (tab layout, board adapter, session screen) stop
+  // re-rendering the navigation tree on every queue mutation.
+  const sessionIdValue = useMemo<QueueSessionIdContextValue>(() => ({ sessionId }), [sessionId]);
+
   // Live analytics + presence: the ≤1/2s party push recreates only this small
   // value, re-rendering only SessionScreen + InSessionView.
   const liveStatsValue = useMemo<QueueLiveStatsContextValue>(
     () => ({ liveStats, sessionUsers }),
     [liveStats, sessionUsers],
+  );
+
+  const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(
+    () => ({ playlistSuggestionSource }),
+    [playlistSuggestionSource],
   );
 
   const sessionControlValue = useMemo<QueueSessionControlContextValue>(
@@ -1345,13 +1421,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   return (
     <QueueSessionControlContext.Provider value={sessionControlValue}>
-      <QueueLiveStatsContext.Provider value={liveStatsValue}>
-        <QueueActionsContext.Provider value={actionsValue}>
-          <QueueActiveClimbContext.Provider value={activeClimbValue}>
-            <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-          </QueueActiveClimbContext.Provider>
-        </QueueActionsContext.Provider>
-      </QueueLiveStatsContext.Provider>
+      <QueueSessionIdContext.Provider value={sessionIdValue}>
+        <QueueLiveStatsContext.Provider value={liveStatsValue}>
+          <QueueActionsContext.Provider value={actionsValue}>
+            <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+              <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                  <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                </QueueHasActiveClimbContext.Provider>
+              </QueueActiveClimbContext.Provider>
+            </QueuePlaylistSuggestionContext.Provider>
+          </QueueActionsContext.Provider>
+        </QueueLiveStatsContext.Provider>
+      </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>
   );
 }

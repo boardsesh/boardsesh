@@ -69,3 +69,10 @@ export const TOOLBAR_RESERVE = glassSize.hero + TOOLBAR_GAP_ABOVE_TABBAR;
 
 /** Height of the Material active-context bar docked directly above the tab bar. */
 export const MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT = glassSize.standard;
+
+/** One logical px the docked Material bar tucks under the tab bar's top hairline.
+ *  Because the bar now docks against the tab bar's *measured* height (not the
+ *  `TAB_BAR_HEIGHT` constant), this only has to cover the hairline border / sub-pixel
+ *  rounding — not absorb a constant-vs-reality mismatch — so it stays a fixed hairline
+ *  instead of a hand-tuned per-device offset. */
+export const TABBAR_SEAM_OVERLAP = 1;

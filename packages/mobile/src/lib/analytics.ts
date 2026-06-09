@@ -38,8 +38,38 @@ function getClient(): PostHog | null {
   // PostHog merges those early events into the person record once the alias is
   // processed, so this is acceptable (web has the same cold-start window), but
   // don't be surprised to see a few lifecycle events on a transient anon id.
-  client = new PostHog(apiKey, { host });
+  client = new PostHog(apiKey, {
+    host,
+    // Session replay stays OFF by construction: `enableSessionReplay` defaults
+    // false, so the SDK NEVER auto-records — capture only ever begins when a user
+    // opts in via setSessionRecordingEnabled() → startSessionRecording(), which
+    // lazily initialises the native replay SDK. The masking below is what gets
+    // applied at that point: text inputs + images stay masked (the app has auth
+    // forms and white dark-mode input fields), and console capture is left on so
+    // the BLE console.warn/error lines land on the replay timeline.
+    sessionReplayConfig: {
+      maskAllTextInputs: true,
+      maskAllImages: true,
+      captureLog: true,
+    },
+  });
   return client;
+}
+
+// Opt-in diagnostics session recording. Off by default — nothing records until a
+// climber turns it on (see session-recording-preference). startSessionRecording()
+// lazily initialises the native replay SDK with the masking config above;
+// stopSessionRecording() halts it. No-op when analytics is disabled (dev / no
+// key) because getClient() returns null. Safe to call before the client is built
+// — getClient() constructs it on demand.
+export function setSessionRecordingEnabled(enabled: boolean): void {
+  const client = getClient();
+  if (!client) return;
+  if (enabled) {
+    void client.startSessionRecording();
+  } else {
+    void client.stopSessionRecording();
+  }
 }
 
 // Exposed so AnalyticsProvider can hand the same instance to PostHogProvider for

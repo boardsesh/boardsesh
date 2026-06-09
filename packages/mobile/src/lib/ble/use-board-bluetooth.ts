@@ -141,10 +141,10 @@ export function useBoardBluetooth({
     if (isConnected) {
       activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
     } else {
-      deactivateKeepAwake(KEEP_AWAKE_TAG);
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     }
     return () => {
-      deactivateKeepAwake(KEEP_AWAKE_TAG);
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     };
   }, [isConnected]);
 
@@ -287,6 +287,10 @@ export function useBoardBluetooth({
         // throw the plain-Error signatures the predicate matches ("Not
         // connected", "Device disconnected during write").
         if (isDisconnectionError(error)) {
+          // The tug-of-war signal: we believed we were connected but a write just
+          // failed on a dead link. On a shared board this is usually another
+          // device having grabbed it. Recorded so the two-climber case is visible.
+          track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
           handleDisconnection();
         }
         return false;
@@ -337,6 +341,11 @@ export function useBoardBluetooth({
             // reconnect with a spurious error.
           }
         }
+
+        // Surface the scan on the session-recording timeline / PostHog. `reconnect`
+        // distinguishes a deliberate same-board serial reconnect (lightbulb) from a
+        // fresh picker-driven connect.
+        track(SHARED_EVENTS.BluetoothScanStarted, { boardName, layoutId, sizeId, reconnect: !!targetSerial });
 
         const connection = await adapter.requestAndConnect(targetSerial);
         apiLevelRef.current = parseApiLevel(connection.deviceName);

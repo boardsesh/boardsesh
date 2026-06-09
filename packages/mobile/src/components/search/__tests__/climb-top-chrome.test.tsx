@@ -166,7 +166,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 }));
 
 vi.mock('../../../theme/tokens', () => ({
-  spacing: { 1: 4, 2: 8, 4: 16 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   shadows: { sm: {} },
 }));
 
@@ -510,7 +510,7 @@ describe('ClimbTopChrome', () => {
     expect(onHeightChange).toHaveBeenCalledWith(88);
   });
 
-  it('renders the Material branch as an opaque app bar with search and grade controls', () => {
+  it('renders the Material branch with the board switcher, search, and grade controls', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const onOpenBoardDetail = vi.fn();
@@ -529,12 +529,19 @@ describe('ClimbTopChrome', () => {
     );
 
     expect(container.querySelector('[data-gradient]')).toBeNull();
-    expect(container.querySelector('[data-appbar-title="true"]')?.textContent).toBe('mobile.nav.climbs');
-    expect(container.querySelector('[data-appbar-subtitle="true"]')?.textContent).toBe('Display:kilter • 12x12 • 40°');
+    // The board switcher replaces the static Appbar.Content subtitle: the board
+    // label shows as the title with a down-caret affordance. Assert the hint too
+    // so this pins the BoardSwitcherButton specifically, not any [data-capsule].
+    const switcher = capsule(container);
+    expect(switcher?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12 • 40°');
+    expect(switcher?.getAttribute('data-hint')).toBe('mobile.search.boardSwitcherHint');
+    expect(container.querySelector('[data-icon="chevron.down"]')).not.toBeNull();
     expect(container.querySelector('[data-search-field]')).not.toBeNull();
-    expect(container.querySelector('[data-pressable="mobile.search.gradeAction"]')?.textContent).toContain('Grade range');
+    expect(container.querySelector('[data-pressable="mobile.search.gradeAction"]')?.textContent).toContain(
+      'Grade range',
+    );
 
-    fireEvent.click(container.querySelector('[data-appbar-content="true"]') as HTMLButtonElement);
+    fireEvent.click(capsule(container)!);
     expect(onOpenBoardDetail).toHaveBeenCalledTimes(1);
     expect(haptics.light).toHaveBeenCalledTimes(1);
   });
@@ -643,7 +650,9 @@ describe('ClimbTopChrome', () => {
 
     fireEvent.click(container.querySelector('[data-pressable="mobile.search.gradeAction"]') as HTMLButtonElement);
     expect(onOpenGrade).toHaveBeenCalledTimes(1);
-    fireEvent.click(container.querySelector('[data-pressable="mobile.gradeRail.clearFilterAria"]') as HTMLButtonElement);
+    fireEvent.click(
+      container.querySelector('[data-pressable="mobile.gradeRail.clearFilterAria"]') as HTMLButtonElement,
+    );
     expect(onClearGrade).toHaveBeenCalledTimes(1);
 
     rerender(

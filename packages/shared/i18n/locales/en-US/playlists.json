@@ -51,7 +51,11 @@
       },
       "likedClimbs": {
         "title": "Liked Climbs",
-        "description": "All climbs you've hearted."
+        "description": "All climbs you've hearted.",
+        "empty": {
+          "title": "No likes yet",
+          "supporting": "Tap the heart on a climb to stash it here."
+        }
       },
       "crowdFavorites": {
         "title": "Crowd Favorites",
@@ -93,6 +97,7 @@
   "detail": {
     "share": "Share playlist",
     "actions": "Playlist actions",
+    "activateAll": "Queue every climb",
     "menu": {
       "generate": "Generate",
       "edit": "Edit",

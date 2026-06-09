@@ -48,6 +48,12 @@ jobs:
       # on this var). Same DSN/project as web + backend; not secret — already
       # hardcoded in packages/web and packages/backend source.
       EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+      # PostHog product analytics. Intentionally the SAME project token as web
+      # (vars.NEXT_PUBLIC_POSTHOG_KEY) so a signed-in user's web + mobile activity
+      # resolves to one person. EXPO_PUBLIC_* vars are inlined into the JS bundle at
+      # build time; without this, analytics.ts sees no key and isAnalyticsEnabled is
+      # false, so every track() silently no-ops (the app shipped zero events before).
+      EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
 
     steps:
       - name: Checkout repository
@@ -66,6 +72,7 @@ jobs:
           EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
           EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
           EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
           EOF
 
       - name: Expo prebuild (generate ios/)

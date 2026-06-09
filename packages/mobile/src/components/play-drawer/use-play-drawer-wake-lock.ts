@@ -8,10 +8,10 @@ export function usePlayDrawerWakeLock(isOpen: boolean): void {
     if (isOpen) {
       activateKeepAwakeAsync(WAKE_LOCK_TAG).catch(() => {});
     } else {
-      deactivateKeepAwake(WAKE_LOCK_TAG);
+      deactivateKeepAwake(WAKE_LOCK_TAG).catch(() => {});
     }
     return () => {
-      deactivateKeepAwake(WAKE_LOCK_TAG);
+      deactivateKeepAwake(WAKE_LOCK_TAG).catch(() => {});
     };
   }, [isOpen]);
 }

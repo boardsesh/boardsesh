@@ -665,6 +665,7 @@
       "gradeAction": "Ajustar el rango de grado",
       "gradeOpenHint": "Abre el selector de grado",
       "gradeCloseHint": "Cierra el selector de grado",
+      "boardSwitcherHint": "Abre el selector de tabla",
       "allClimbs": "Todas las vías"
     },
     "gradeRail": {

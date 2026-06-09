@@ -29,6 +29,15 @@ describe('computePeekOffset', () => {
   it('never lets the prev-peek overshoot past the viewport edge', () => {
     expect(computePeekOffset({ direction: 'prev', swipeOffset: 800, viewportWidth: 400 })).toBe(0);
   });
+
+  // Regression: before the viewport is measured (width 0) both peeks resolve to
+  // translateX 0 — i.e. stacked directly on the current label. Consumers must not
+  // render the peek slots until width > 0 (the `canPeek` guard in useQueueCarousel),
+  // or the queue bar shows several climbs' text overlapping. See ClimbCapsule.
+  it('collapses both peeks onto the current label when the viewport is unmeasured', () => {
+    expect(computePeekOffset({ direction: 'next', swipeOffset: 0, viewportWidth: 0 })).toBe(0);
+    expect(computePeekOffset({ direction: 'prev', swipeOffset: 0, viewportWidth: 0 })).toBe(0);
+  });
 });
 
 describe('decideSwipeDirection', () => {

@@ -4,7 +4,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 
-const ctrl = vi.hoisted(() => ({ back: vi.fn() }));
+const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
@@ -50,13 +50,8 @@ vi.mock('react-native-reanimated', () => ({
 
 // ── Expo / third-party ────────────────────────────────────────────────────────
 vi.mock('expo-linear-gradient', () => ({
-  LinearGradient: ({
-    colors,
-    children,
-  }: {
-    colors: string[];
-    children?: ReactNode;
-  }) => createElement('div', { 'data-gradient': JSON.stringify(colors) }, children ?? null),
+  LinearGradient: ({ colors, children }: { colors: string[]; children?: ReactNode }) =>
+    createElement('div', { 'data-gradient': JSON.stringify(colors) }, children ?? null),
 }));
 
 vi.mock('@shopify/flash-list', () => ({
@@ -77,7 +72,7 @@ vi.mock('@shopify/flash-list', () => ({
       'div',
       { 'data-list': 'true', onClick: onEndReached },
       ListHeaderComponent ?? null,
-      data?.length === 0 ? ListEmptyComponent ?? null : null,
+      data?.length === 0 ? (ListEmptyComponent ?? null) : null,
       ListFooterComponent ?? null,
     ),
 }));
@@ -94,7 +89,19 @@ vi.mock('react-i18next', () => ({
 
 // ── Theme / providers ─────────────────────────────────────────────────────────
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { label: '#000000', fill: '#eeeeee' } }),
+  useTheme: () => ({
+    variant: ctrl.variant,
+    systemColors: {
+      label: '#000000',
+      secondaryLabel: '#666666',
+      tertiaryLabel: '#999999',
+      fill: '#eeeeee',
+      background: '#ffffff',
+      secondaryBackground: '#f2f2f2',
+      tertiaryBackground: '#e5e5e5',
+    },
+    brandColors: { primary: '#6D28D9' },
+  }),
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -129,11 +136,37 @@ vi.mock('../../Icon', () => ({
 }));
 
 vi.mock('../../ActivityIndicator', () => ({
-  ActivityIndicator: ({ size }: { size?: string }) =>
-    createElement('div', { 'data-spinner': size ?? 'default' }),
+  ActivityIndicator: ({ size }: { size?: string }) => createElement('div', { 'data-spinner': size ?? 'default' }),
 }));
 
 vi.mock('../../ClimbListRow', () => ({ ClimbListRow: () => null }));
+
+vi.mock('../../ClimbListRowSkeleton', () => ({
+  ClimbListRowSkeleton: () => createElement('div', { 'data-skeleton-row': 'true' }),
+}));
+
+// icon-map is pure data but pulls in expo-symbols types via Icon's import chain;
+// stub it so the component's `type IconName` import resolves without RN deps.
+vi.mock('../../icon-map', () => ({ iconMap: {} }));
+
+// react-native-paper drags in expo-modules-core at import time; stub the only
+// pieces the Material branch uses so the suite can load.
+vi.mock('react-native-paper', () => {
+  const Header = ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children);
+  const BackAction = ({ onPress, accessibilityLabel }: { onPress?: () => void; accessibilityLabel?: string }) =>
+    createElement('button', { 'data-icon': 'back', onClick: onPress, 'aria-label': accessibilityLabel });
+  const Content = ({ title }: { title?: ReactNode }) => createElement('span', { 'data-appbar-title': 'true' }, title);
+  const Action = ({
+    icon,
+    onPress,
+    accessibilityLabel,
+  }: {
+    icon?: string;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { 'data-appbar-action': icon, onClick: onPress, 'aria-label': accessibilityLabel });
+  return { Appbar: { Header, BackAction, Content, Action } };
+});
 
 vi.mock('../../GlassIconButton', () => ({
   GlassIconButton: ({
@@ -148,8 +181,7 @@ vi.mock('../../GlassIconButton', () => ({
 }));
 
 vi.mock('../PlaylistBoardBackdrop', () => ({
-  PlaylistBoardBackdrop: ({ boardType }: { boardType: string }) =>
-    createElement('div', { 'data-backdrop': boardType }),
+  PlaylistBoardBackdrop: ({ boardType }: { boardType: string }) => createElement('div', { 'data-backdrop': boardType }),
 }));
 
 // Use real playlist-gradient and playlist-colors (pure TS, no RN imports).
@@ -193,6 +225,7 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
 describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
+    ctrl.variant = 'liquidGlass';
   });
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -237,7 +270,9 @@ describe('PlaylistDetailView', () => {
   });
 
   it('renders the emoji icon when hero.icon is set', () => {
-    const { getByText } = render(<PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, icon: '🏔️' } })} />);
+    const { getByText } = render(
+      <PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, icon: '🏔️' } })} />,
+    );
     expect(getByText('🏔️')).not.toBeNull();
   });
 
@@ -269,30 +304,24 @@ describe('PlaylistDetailView', () => {
 
   // ── Loading / empty states ──────────────────────────────────────────────────
 
-  it('shows large loading spinner when isLoading=true and climbs is empty', () => {
+  it('shows skeleton rows when isLoading=true and climbs is empty', () => {
     const { container } = render(<PlaylistDetailView {...makeProps({ isLoading: true, climbs: [] })} />);
-    expect(container.querySelector('[data-spinner="large"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0);
   });
 
   it('shows empty message and playlist icon when not loading and climbs is empty', () => {
-    const { getByText, container } = render(
-      <PlaylistDetailView {...makeProps({ isLoading: false, climbs: [] })} />,
-    );
+    const { getByText, container } = render(<PlaylistDetailView {...makeProps({ isLoading: false, climbs: [] })} />);
     expect(getByText('No climbs yet')).not.toBeNull();
     expect(container.querySelector('[data-icon="playlist"]')).not.toBeNull();
   });
 
   it('shows a small footer spinner when isFetchingNextPage=true', () => {
-    const { container } = render(
-      <PlaylistDetailView {...makeProps({ isFetchingNextPage: true, climbs: [CLIMB] })} />,
-    );
+    const { container } = render(<PlaylistDetailView {...makeProps({ isFetchingNextPage: true, climbs: [CLIMB] })} />);
     expect(container.querySelector('[data-spinner="small"]')).not.toBeNull();
   });
 
   it('shows no footer spinner when isFetchingNextPage=false', () => {
-    const { container } = render(
-      <PlaylistDetailView {...makeProps({ isFetchingNextPage: false, climbs: [CLIMB] })} />,
-    );
+    const { container } = render(<PlaylistDetailView {...makeProps({ isFetchingNextPage: false, climbs: [CLIMB] })} />);
     expect(container.querySelector('[data-spinner="small"]')).toBeNull();
   });
 
@@ -319,7 +348,9 @@ describe('PlaylistDetailView', () => {
   it('uses translucent gradient colors when board backdrop is enabled', () => {
     const { container } = render(
       <PlaylistDetailView
-        {...makeProps({ hero: { name: 'P', climbCount: 0, showBoardBackdrop: true, boardType: 'kilter', color: '#8C4A52' } })}
+        {...makeProps({
+          hero: { name: 'P', climbCount: 0, showBoardBackdrop: true, boardType: 'kilter', color: '#8C4A52' },
+        })}
       />,
     );
     const gradients = container.querySelectorAll('[data-gradient]');
@@ -338,5 +369,78 @@ describe('PlaylistDetailView', () => {
     const firstGradientColors: string[] = JSON.parse(gradients[0]?.getAttribute('data-gradient') ?? '[]');
     // No alpha suffix means opaque colors from buildHeroGradient
     expect(firstGradientColors.every((c) => !c.includes('|0.82'))).toBe(true);
+  });
+
+  // ── Material 3 branch ─────────────────────────────────────────────────────────
+  describe('material variant', () => {
+    beforeEach(() => {
+      ctrl.variant = 'material';
+    });
+
+    it('renders the Paper app bar instead of the gradient hero', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      expect(container.querySelector('[data-appbar]')).not.toBeNull();
+      // No gradient hero in the Material branch.
+      expect(container.querySelector('[data-gradient]')).toBeNull();
+    });
+
+    it('back action calls router.back', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps()} />);
+      fireEvent.click(container.querySelector('[data-icon="back"]') as HTMLElement);
+      expect(ctrl.back).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the activate-all play action and wires it to the first climb', () => {
+      const onActivateClimb = vi.fn();
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], onActivateClimb })} />);
+      const playAction = container.querySelector('[data-appbar-action="play"]');
+      expect(playAction).not.toBeNull();
+      fireEvent.click(playAction as HTMLElement);
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
+    });
+
+    it('omits the activate-all action when the list is empty', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [] })} />);
+      expect(container.querySelector('[data-appbar-action="play"]')).toBeNull();
+    });
+
+    it('renders the richer empty state when emptyState is provided', () => {
+      const { getByText } = render(
+        <PlaylistDetailView
+          {...makeProps({
+            climbs: [],
+            isLoading: false,
+            emptyState: { icon: 'favorite', title: 'No likes yet', supporting: 'Tap the heart' },
+          })}
+        />,
+      );
+      expect(getByText('No likes yet')).not.toBeNull();
+      expect(getByText('Tap the heart')).not.toBeNull();
+    });
+
+    it('falls back to emptyMessage when no emptyState is given', () => {
+      const { getByText } = render(
+        <PlaylistDetailView {...makeProps({ climbs: [], isLoading: false, emptyMessage: 'Nothing here' })} />,
+      );
+      expect(getByText('Nothing here')).not.toBeNull();
+    });
+
+    it('shows skeleton rows while loading', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ isLoading: true, climbs: [] })} />);
+      expect(container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0);
+    });
+
+    it('surfaces the actions node in the app bar (compact form)', () => {
+      // The owner's Follow / Pin / More controls must reach the Material app bar —
+      // dropping them leaves a playlist owner with no edit/pin/delete on Material.
+      const actions = vi.fn((collapsed: boolean) =>
+        createElement('span', { 'data-action-collapsed': String(collapsed) }, 'action'),
+      );
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], actions })} />);
+      // App bar is always present on Material, so actions are asked for the compact
+      // (collapsed) icon form rather than the scroll-driven pill.
+      expect(actions).toHaveBeenCalledWith(true);
+      expect(container.querySelector('[data-action-collapsed="true"]')).not.toBeNull();
+    });
   });
 });

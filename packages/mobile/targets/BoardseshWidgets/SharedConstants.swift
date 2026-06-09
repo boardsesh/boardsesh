@@ -41,6 +41,13 @@ enum SharedConstants {
     /// server echo is treated as own-echo.
     static let widgetNavigateCorrelationIdKey = "bs_widget_navigate_correlation_id"
     static let bleBoardConfigKey = "bs_ble_board_config"
+    /// CBPeripheral.identifier (a per-install, per-device stable UUID — not the
+    /// hardware address) of the last successfully connected board. Persisted by
+    /// BoardBleManager on connect and cleared on a deliberate disconnect, so the
+    /// Live Activity lightbulb's ReconnectBoardIntent can retrieve + reconnect to
+    /// the same board without a fresh device pick. Left intact on an unexpected
+    /// drop precisely so that reconnect path stays available.
+    static let bleLastPeripheralUuidKey = "bs_ble_last_peripheral_uuid"
     /// Legacy key — auth token now lives in `SharedKeychain` under
     /// `SharedKeychain.authTokenKey`. Kept here only so upgrade paths can
     /// `removeObject` any leftover plaintext value from earlier installs.
@@ -65,6 +72,11 @@ enum SharedConstants {
     /// Gone, signaling that the cached APNs push token is bound to a different
     /// session and the main app should re-register.
     static let pushRegistrationStaleNotification = "com.boardsesh.app.pushRegistrationStale"
+
+    /// Fallback for the Live Activity lightbulb's ReconnectBoardIntent: if iOS
+    /// runs that intent in the widget extension (which can't link BoardBleManager),
+    /// it posts this so the live main app reconnects BLE to the last known board.
+    static let bleReconnectNotification = "com.boardsesh.app.bleReconnect"
 
     // MARK: Live Activity
 

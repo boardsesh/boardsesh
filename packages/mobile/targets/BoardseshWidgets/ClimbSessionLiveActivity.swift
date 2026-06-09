@@ -140,14 +140,14 @@ private struct WallControlButton: View {
     let wallControl: WallControlViewState
 
     var body: some View {
-        if wallControl.isPartySession && !wallControl.navigationAllowed {
-            Button(intent: TakeControlIntent()) {
-                WallControlStatus(wallControl: wallControl)
-            }
-            .buttonStyle(.plain)
-        } else {
+        // The lightbulb is always a button now: tapping it reconnects Bluetooth to
+        // the last known board (and, in a party session where this device isn't the
+        // driver, also claims wall control). When already connected and driving,
+        // ReconnectBoardIntent just re-lights the wall — a harmless no-op grab.
+        Button(intent: ReconnectBoardIntent()) {
             WallControlStatus(wallControl: wallControl)
         }
+        .buttonStyle(.plain)
     }
 }
 

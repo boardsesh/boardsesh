@@ -17,7 +17,7 @@ vi.mock('../../../src/lib/ble/bluetooth-status-store', () => ({
 }));
 
 vi.mock('../../../src/providers/queue-provider', () => ({
-  useQueue: () => ({ sessionId: cfg.sessionId }),
+  useQueueSessionId: () => ({ sessionId: cfg.sessionId }),
 }));
 
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({

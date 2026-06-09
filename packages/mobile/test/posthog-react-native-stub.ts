@@ -20,6 +20,12 @@ export class PostHog {
   reset(): void {}
   screen(): void {}
   setPersonProperties(): void {}
+  startSessionRecording(): Promise<void> {
+    return Promise.resolve();
+  }
+  stopSessionRecording(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export const PostHogProvider = ({ children }: { children?: unknown }) => children;

@@ -18,6 +18,16 @@ export type CreateBoardHolds = BoardEdges & {
 };
 
 /**
+ * Parse a comma-separated `setIds` route/param string into numeric set ids.
+ * Mirrors the `split(',').map(Number).filter(Boolean)` pattern the board render
+ * pipeline uses (see `use-native-climb-render.ts`): an empty string yields `[]`
+ * (not `[0]`), and any `0`/blank token is dropped — set ids are positive.
+ */
+export function parseSetIdsParam(setIds: string): number[] {
+  return setIds.split(',').map(Number).filter(Boolean);
+}
+
+/**
  * Resolve the full set of tappable holds for a board configuration, board-family
  * agnostic. Aurora boards come from the hole-placement pipeline; MoonBoard comes
  * from the grid-backed render data branch.

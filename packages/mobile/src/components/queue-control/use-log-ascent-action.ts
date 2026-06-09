@@ -4,7 +4,7 @@ import type { Climb } from '@boardsesh/queue';
 import { useOptionalBoardProvider } from '@boardsesh/board-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueueSessionId } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { springs } from '../../theme/animations';
@@ -15,7 +15,7 @@ export function useLogAscentAction(climb: Climb) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
-  const { sessionId } = useQueue();
+  const { sessionId } = useQueueSessionId();
   const board = useOptionalBoardProvider();
   const reduceMotion = useReduceMotion();
 

@@ -108,8 +108,11 @@ const resources = {
 /**
  * Detect the best matching locale from the device settings.
  * Falls back to en-US if no supported locale matches.
+ *
+ * Exported so the locale-preference layer can resolve the `'system'` choice
+ * to a concrete language without duplicating the matching logic.
  */
-function detectDeviceLocale(): Locale {
+export function detectDeviceLocale(): Locale {
   const deviceLocales = getLocales();
 
   for (const deviceLocale of deviceLocales) {

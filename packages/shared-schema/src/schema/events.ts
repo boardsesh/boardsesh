@@ -218,6 +218,8 @@ export const eventsTypeDefs = /* GraphQL */ `
     stateHash: String!
     "New current climb (null to clear)"
     item: ClimbQueueItem
+    "Raw Aurora frames for an unknown BLE climb when no database match exists"
+    frames: String
     "ID of the client that made this change"
     clientId: ID
     "Correlation ID for request tracking"

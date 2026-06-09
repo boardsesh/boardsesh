@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useState } from 'react';
 import {
+  type ColorValue,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -18,13 +19,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
+import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { type IconName } from '../icon-map';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow } from '../ClimbListRow';
+import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { GlassIconButton } from '../GlassIconButton';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
 import { buildHeroGradient, shiftLightness } from './playlist-gradient';
@@ -48,6 +52,20 @@ const GRADIENT_END = { x: 1, y: 1 } as const;
  *  enough to contain the floating FABs (which sit `spacing[1]` below the inset),
  *  so they're centered in the bar rather than poking out under it. */
 const NAV_BAR_HEIGHT = glassSize.standard + spacing[1] * 2;
+/** Rows of skeleton placeholder shown while the first page loads. */
+const SKELETON_ROW_COUNT = 8;
+
+/** Optional richer empty state (Material branch only). When omitted, the
+ *  Material branch falls back to the same generic icon + `emptyMessage` the
+ *  glass branch uses, so non-liked playlists keep their existing copy. */
+export type PlaylistDetailEmptyState = {
+  /** Semantic icon name (e.g. `favorite` for the liked-climbs surface). */
+  icon: IconName;
+  /** Headline (already translated). */
+  title: string;
+  /** Supporting line under the headline (already translated). */
+  supporting?: string;
+};
 
 export type PlaylistDetailHero = {
   name: string;
@@ -79,6 +97,9 @@ export type PlaylistDetailViewProps = {
   onActivateClimb: (climb: Climb) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
+  /** Richer Material-branch empty state (e.g. the liked-climbs heart prompt).
+   *  Glass branch ignores this and keeps `emptyMessage`. */
+  emptyState?: PlaylistDetailEmptyState;
   /** Floating top-right controls (follow / pin / more) over the hero, given the
    *  current collapse state so a control can swap to its compact icon form once
    *  the colour header bar takes over. The back FAB on the left is always
@@ -91,6 +112,11 @@ export type PlaylistDetailViewProps = {
  * smart-playlist-detail screens. Renders the colour/emoji hero, then a FlashList
  * of `ClimbListRow`s bound to the user's active board, paginating via
  * `fetchNextPage` as the list nears its end.
+ *
+ * Two presentations: the Liquid Glass variant keeps the full-bleed gradient hero
+ * with white text and floating FABs; the Material 3 variant swaps in a Paper
+ * `Appbar.Header` over a tonal hero band. Both share the scroll math, FlashList,
+ * list state, and row rendering — only the hero chrome + state visuals branch.
  */
 export function PlaylistDetailView({
   hero,
@@ -101,20 +127,23 @@ export function PlaylistDetailView({
   fetchNextPage,
   onActivateClimb,
   emptyMessage,
+  emptyState,
   actions,
 }: PlaylistDetailViewProps) {
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors, variant } = useTheme();
   const { boardConfig } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const listPaddingBottom = bottomChrome.scrollBottomPadding;
+  const isMaterial = variant === 'material';
 
   // Scroll offset + measured hero-banner height drive the collapsed colour header
   // bar (the playlist colour + centered name) that fades in once the hero scrolls
-  // off the top — the Apple Music album-header idiom.
+  // off the top — the Apple Music album-header idiom. The Material branch reuses
+  // the same math to fade its app-bar title in as the hero band scrolls away.
   const scrollY = useSharedValue(0);
   const heroBannerHeight = useSharedValue(0);
   const headerBarHeight = insets.top + NAV_BAR_HEIGHT;
@@ -139,7 +168,8 @@ export function PlaylistDetailView({
   });
 
   // `collapsed` flips when the colour header bar takes over, so action FABs (e.g.
-  // follow) can swap to their compact icon form.
+  // follow) can swap to their compact icon form. On Material it drives the app-bar
+  // title fade-in.
   const [collapsed, setCollapsed] = useState(false);
   useAnimatedReaction(
     () => {
@@ -161,6 +191,14 @@ export function PlaylistDetailView({
   // header `collapsed` flips during scroll) would otherwise re-render every row.
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
 
+  // Activate-all: queue the playlist from the top. Reuses the same row-tap path
+  // (which seeds the suggestion source from the whole list), so swiping the play
+  // drawer walks the playlist. No-op on an empty list.
+  const handleActivateAll = useCallback(() => {
+    const first = climbs[0];
+    if (first) onActivateClimb(first);
+  }, [climbs, onActivateClimb]);
+
   const renderItem = useCallback(
     ({ item }: { item: Climb }) => {
       if (!boardConfig) return null;
@@ -180,6 +218,137 @@ export function PlaylistDetailView({
   );
 
   const baseColor = hero.color && isValidHexColor(hero.color) ? hero.color : PLAYLIST_COLORS[0];
+
+  // Shared list state visuals. The first-page load renders skeleton rows (a far
+  // better "shape of what's coming" cue than a bare spinner). Empty + footer are
+  // shared; the empty body is variant-aware below.
+  const listEmptyComponent = isLoading ? (
+    <View style={styles.skeletonList}>
+      {SKELETON_PLACEHOLDERS.map((key) => (
+        <ClimbListRowSkeleton key={key} />
+      ))}
+    </View>
+  ) : isMaterial ? (
+    <MaterialEmptyState
+      icon={emptyState?.icon ?? 'playlist'}
+      title={emptyState?.title ?? emptyMessage}
+      supporting={emptyState?.supporting}
+      titleColor={systemColors.label}
+      supportingColor={systemColors.secondaryLabel}
+    />
+  ) : (
+    <View style={styles.stateContainer}>
+      <Icon name="playlist" size={44} color={iosSystemColors.systemGray4} />
+      <Text variant="subheadline" style={styles.emptyText}>
+        {emptyMessage}
+      </Text>
+    </View>
+  );
+
+  const listFooterComponent = isFetchingNextPage ? (
+    <View style={styles.footer}>
+      <ActivityIndicator size="small" />
+    </View>
+  ) : null;
+
+  // ── Material 3 branch ───────────────────────────────────────────────────────
+  if (isMaterial) {
+    const accent = brandColors.primary;
+    return (
+      <View style={[styles.container, { backgroundColor: systemColors.background }]}>
+        <FlashList
+          data={climbs}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+          ListHeaderComponent={
+            <View onLayout={handleHeroLayout} style={styles.materialHero}>
+              <View
+                style={[
+                  styles.materialHeroBand,
+                  { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
+                ]}
+              >
+                <View style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}>
+                  {hero.icon ? (
+                    <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
+                      {hero.icon}
+                    </Text>
+                  ) : (
+                    <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
+                  )}
+                </View>
+                <Text variant="title2" numberOfLines={2} color={systemColors.label} style={styles.materialHeroName}>
+                  {hero.name}
+                </Text>
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                  {t('detail.climbCount', { count: hero.climbCount })}
+                </Text>
+                {hero.followerLabel ? (
+                  <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                    {hero.followerLabel}
+                  </Text>
+                ) : null}
+              </View>
+              {hero.description || hero.subtitle ? (
+                <View style={styles.heroBelow}>
+                  {hero.description ? (
+                    <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
+                      {hero.description}
+                    </Text>
+                  ) : null}
+                  {hero.subtitle ? (
+                    <Text variant="footnote" numberOfLines={1} color={systemColors.tertiaryLabel}>
+                      {hero.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          }
+          ListFooterComponent={listFooterComponent}
+          ListEmptyComponent={listEmptyComponent}
+        />
+
+        {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
+            as the band scrolls under it, then the band's name is hidden behind. */}
+        <Appbar.Header
+          statusBarHeight={insets.top}
+          mode="small"
+          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+        >
+          <Appbar.BackAction
+            onPress={() => router.back()}
+            color={systemColors.label as string}
+            rippleColor={withAlpha(accent, 0.16)}
+            accessibilityLabel={tCommon('ariaLabels.back')}
+          />
+          <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
+            <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
+          </Animated.View>
+          {/* Owner / follow / pin controls. The app bar is always present on Material,
+              so we ask for the compact icon form (`actions(true)`) — `GlassIconButton`
+              routes to a Paper `IconButton` here, fitting the bar. */}
+          {actions?.(true)}
+          {climbs.length > 0 ? (
+            <Appbar.Action
+              icon="play"
+              color={accent as string}
+              rippleColor={withAlpha(accent, 0.16)}
+              onPress={handleActivateAll}
+              accessibilityLabel={t('detail.activateAll')}
+            />
+          ) : null}
+        </Appbar.Header>
+      </View>
+    );
+  }
+
+  // ── Liquid Glass branch (unchanged) ─────────────────────────────────────────
   // The collapsed bar uses the gradient's deeper tone so white text stays legible.
   const headerColor = shiftLightness(baseColor, -20);
   const gradient = buildHeroGradient(hero.color);
@@ -283,27 +452,8 @@ export function PlaylistDetailView({
         automaticallyAdjustContentInsets={false}
         contentContainerStyle={{ paddingBottom: listPaddingBottom }}
         ListHeaderComponent={header}
-        ListFooterComponent={
-          isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <View style={styles.stateContainer}>
-              <ActivityIndicator size="large" />
-            </View>
-          ) : (
-            <View style={styles.stateContainer}>
-              <Icon name="playlist" size={44} color={iosSystemColors.systemGray4} />
-              <Text variant="subheadline" style={styles.emptyText}>
-                {emptyMessage}
-              </Text>
-            </View>
-          )
-        }
+        ListFooterComponent={listFooterComponent}
+        ListEmptyComponent={listEmptyComponent}
       />
 
       {/* Collapsed colour header bar — the playlist colour + centered name, fading
@@ -343,9 +493,45 @@ export function PlaylistDetailView({
   );
 }
 
+/** Centered Material empty state: tonal icon + headline + supporting copy. */
+function MaterialEmptyState({
+  icon,
+  title,
+  supporting,
+  titleColor,
+  supportingColor,
+}: {
+  icon: IconName;
+  title: string;
+  supporting?: string;
+  titleColor: ColorValue;
+  supportingColor: ColorValue;
+}) {
+  return (
+    <View style={styles.stateContainer}>
+      <View accessibilityRole="image" accessibilityLabel={title}>
+        <Icon name={icon} size={48} color={supportingColor} />
+      </View>
+      <Text variant="headline" color={titleColor} style={styles.materialEmptyTitle}>
+        {title}
+      </Text>
+      {supporting ? (
+        <Text variant="subheadline" color={supportingColor} style={styles.materialEmptySupporting}>
+          {supporting}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function keyExtractor(item: Climb) {
   return item.uuid;
 }
+
+// Hoisted stable keys for the first-page skeleton rows — never reorder, so index
+// keys are fine and avoid allocating an array on every render. Exported so the
+// route-level early-return skeletons share the same count (no drift from this view).
+export const SKELETON_PLACEHOLDERS = Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => `skeleton-${index}`);
 
 const styles = StyleSheet.create({
   container: {
@@ -434,9 +620,65 @@ const styles = StyleSheet.create({
   heroDescription: {
     opacity: 0.7,
   },
+  // ── Material hero ──────────────────────────────────────────────────────────
+  materialAppbar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    elevation: 0,
+  },
+  // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
+  // band scrolls under the bar, without animating the back / play actions.
+  materialAppbarTitle: {
+    flex: 1,
+  },
+  materialAppbarTitleText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  materialHero: {
+    marginBottom: spacing[2],
+  },
+  materialHeroBand: {
+    alignItems: 'center',
+    paddingHorizontal: spacing[5],
+    paddingBottom: spacing[6],
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+  },
+  materialHeroEmojiCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[3],
+  },
+  materialHeroEmoji: {
+    fontSize: 36,
+    lineHeight: 44,
+  },
+  materialHeroName: {
+    textAlign: 'center',
+  },
+  materialHeroMeta: {
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  materialEmptyTitle: {
+    textAlign: 'center',
+  },
+  materialEmptySupporting: {
+    textAlign: 'center',
+  },
   footer: {
     paddingVertical: 20,
     alignItems: 'center',
+  },
+  skeletonList: {
+    paddingTop: spacing[2],
   },
   stateContainer: {
     alignItems: 'center',

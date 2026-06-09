@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -19,6 +19,7 @@ import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
+import { useSwipeArm } from './use-swipe-arm';
 
 // Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
@@ -186,8 +187,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // Lazy swipe panels: the heavy animated action content (icon interpolation +
   // haptic-detent reaction) only mounts once a drag actually starts on THIS
   // row. While the row is just sitting in the list — the common case during a
-  // scroll — only the cheap panel shells mount.
-  const [dragArmed, setDragArmed] = useState(false);
+  // scroll — only the cheap panel shells mount. The hook resets the machine on
+  // recycle (climb.uuid) and exposes a ref so the render callbacks below can
+  // read the live value without taking it as a dep (see useSwipeArm for why).
+  const { armedRef: dragArmedRef, arm, disarm } = useSwipeArm(climb.uuid);
 
   // FlashList recycles rows (same instance, new climb). Snap any open swipe
   // shut so a recycled row never shows the previous climb's open panel.
@@ -195,11 +198,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // recycle would read as a glitch. The reset lands on the next UI frame, so a
   // row recycled mid-swipe can flash its panel for ~1 frame; the opaque
   // contentRow background occludes the panel once translation returns to 0, so
-  // that background must stay opaque. Disarm the lazy panels too, so a recycled
-  // row returns to the cheap steady state until it's dragged again.
+  // that background must stay opaque. (useSwipeArm disarms the lazy panels on
+  // the same climb.uuid change.)
   useEffect(() => {
     swipeableRef.current?.reset();
-    setDragArmed(false);
   }, [climb.uuid]);
 
   // Stable refs so gesture/worklet callbacks never close over stale props.
@@ -252,14 +254,23 @@ const ClimbListRow = React.memo(function ClimbListRow({
     swipeableRef.current?.close();
   }, []);
 
+  // Once the row has fully settled shut again — whether after a committed swipe
+  // (handleSwipeableOpened → close()) or a sub-threshold swipe that springs back
+  // — drop the lazy panels back to the cheap shell. translation is 0 by now, so
+  // unmounting the heavy inner is invisible, and an idle row that's been swiped
+  // once no longer keeps the animated inner mounted for the rest of its life.
+  const handleSwipeableClosed = useCallback(() => {
+    disarm();
+  }, [disarm]);
+
   // Fired once when a horizontal drag begins (from a resting/closed row). This
   // is the trigger that mounts the heavy animated action panels — the direction
   // doesn't matter (we arm both sides; the non-dragged side stays occluded by
   // the opaque row), so the panel reveal is fully animated by the time any
   // meaningful translation is on screen.
   const handleSwipeStartDrag = useCallback(() => {
-    setDragArmed(true);
-  }, []);
+    arm();
+  }, [arm]);
 
   const handleSwipeWillOpen = useCallback(
     (direction: 'left' | 'right') => {
@@ -302,18 +313,23 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   // Left actions (revealed by a left-to-right swipe) = Queue; right actions
-  // (right-to-left swipe) = Playlist.
+  // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
+  // than the armed state directly so they stay dep-free: a changed render-
+  // callback reference makes ReanimatedSwipeable re-create the action-panel
+  // subtree, which would remount the heavy inner the instant it appears. The
+  // armed state change re-renders the row (and so re-runs these callbacks),
+  // while the stable identity keeps the shell→inner swap in place.
   const renderLeftActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <QueueSwipeAction translation={translation} active={dragArmed} />
+      <QueueSwipeAction translation={translation} active={dragArmedRef.current} />
     ),
-    [dragArmed],
+    [dragArmedRef],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <PlaylistSwipeAction translation={translation} active={dragArmed} />
+      <PlaylistSwipeAction translation={translation} active={dragArmedRef.current} />
     ),
-    [dragArmed],
+    [dragArmedRef],
   );
 
   return (
@@ -330,6 +346,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
         onSwipeableOpenStartDrag={handleSwipeStartDrag}
         onSwipeableWillOpen={handleSwipeWillOpen}
         onSwipeableOpen={handleSwipeableOpened}
+        onSwipeableClose={handleSwipeableClosed}
       >
         <GestureDetector gesture={tapGesture}>
           <View

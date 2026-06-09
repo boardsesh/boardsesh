@@ -30,7 +30,7 @@ import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { useToggleFavorite, useProfile } from '../lib/graphql/hooks';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
-import { useQueue } from './queue-provider';
+import { useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 
 export type BoardConfig = {
@@ -105,8 +105,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // unmounting instead of vanishing instantly.
   const [queueSheetMounted, setQueueSheetMounted] = useState(false);
   const [queueSheetVisible, setQueueSheetVisible] = useState(false);
-  const { addToQueue, setSessionBoardPath, setCurrentClimb, sessionId, driverParticipantId, participantId } =
-    useQueue();
+  const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
+  const { sessionId, driverParticipantId, participantId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
   const { visible: snackbarVisible, nonce: snackbarNonce, dismissSnackbar } = useQueueSnackbar();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();

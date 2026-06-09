@@ -137,8 +137,11 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
         const ringDiameter = ringRadius * 2;
         const color = colorByType.get(filter.type) ?? ANY_HOLD_COLOR;
         return (
+          // Key on type only: each type appears at most once per hold, so an
+          // include↔exclude flip reuses the same ring View instead of
+          // unmounting and recreating it.
           <View
-            key={`${filter.type}-${filter.mode}`}
+            key={filter.type}
             pointerEvents="none"
             style={[
               styles.absolute,

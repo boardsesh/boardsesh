@@ -390,7 +390,6 @@ export function ClimbFilterSheet({
         layoutId: String(boardConfig.layoutId),
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
-        angle: String(boardConfig.angle),
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
       },
     });

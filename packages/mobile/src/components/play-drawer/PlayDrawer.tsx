@@ -1,14 +1,13 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
-  BottomSheetHandle,
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
-  type BottomSheetHandleProps,
+  type BottomSheetBackgroundProps,
 } from '@gorhom/bottom-sheet';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -24,12 +23,13 @@ import { PlayDrawerHeader } from './PlayDrawerHeader';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
+import { computeFirstScreenHeight } from './play-drawer-layout';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { BleControlSheet } from '../ble/BleControlSheet';
 import { GlassSheetBackground } from '../GlassSheetBackground';
 import { Icon } from '../Icon';
-import { useQueue } from '../../providers/queue-provider';
+import { usePlaylistSuggestionSource, useQueue } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useToggleFavorite } from '../../lib/graphql/hooks';
@@ -97,12 +97,24 @@ type PlayDrawerProps = {
   onOpenQueue: () => void;
 };
 
+// Full-screen now-playing takeover: a single 100% snap, no peek detent. The
+// mini-player (PersistentQueueBar) is the collapsed state, like Spotify.
+const SNAP_POINTS = ['100%'];
+// Fallback used for the first-screen reserve before the Beta Videos header has
+// been measured, so the board fits without a visible jump on first open.
+const DEFAULT_BETA_HEADER_HEIGHT = 52;
+// No gorhom handle — at topInset 0 it would sit under the notch. A grabber is
+// rendered inside the content instead; swipe-to-close still works via
+// enablePanDownToClose + enableContentPanningGesture.
+const renderNoHandle = () => null;
+
 export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function PlayDrawer(
   { boardConfig, onAngleChange, isAngleAdjustable = true, onOpenQueue },
   ref,
 ) {
   const { t } = useTranslation('session');
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheetModal>(null);
   const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(null);
   const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] = useState<PlaylistSuggestionSource | null>(
@@ -115,42 +127,23 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
   const [bleControlOpen, setBleControlOpen] = useState(false);
   const [pendingClimbUuid, setPendingClimbUuid] = useState<string | null>(null);
+  const [belowFoldContentRequested, setBelowFoldContentRequested] = useState(false);
   const wallControlPressOperationRef = useRef(0);
   const resetZoomRef = useRef<(() => void) | null>(null);
 
-  // Measured heights driving the peek snap-point. The peek opens the drawer
-  // just far enough to reveal the Beta Videos section header. Because board
-  // carousel height varies by board/layout and the gorhom handle owns its own
-  // padding, every contributor is measured at runtime rather than hardcoded.
-  const [handleHeight, setHandleHeight] = useState(0);
-  const [aboveFoldHeight, setAboveFoldHeight] = useState(0);
+  // Beta Videos section-header height feeds the first-screen reserve so the
+  // header teases at the bottom of the full-screen view (the cue that there's
+  // more to scroll). Measured because it varies with locale / font scaling.
   const [betaHeaderHeight, setBetaHeaderHeight] = useState(0);
-
-  const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
-    setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
-  };
-  const handleHandleLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setHandleHeight, event.nativeEvent.layout.height);
-  }, []);
-  const handleAboveFoldLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setAboveFoldHeight, event.nativeEvent.layout.height);
-  }, []);
   const handleBetaHeaderLayout = useCallback((measured: number) => {
-    setHeightIfChanged(setBetaHeaderHeight, measured);
+    setBetaHeaderHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   }, []);
-
-  // Tracks the last climb the corrective snap fired for. Without this, every
-  // aboveFold re-measurement on climb-switch would yank a user-expanded sheet
-  // back to peek; gating on UUID means the snap fires exactly once per climb
-  // and leaves manual user expansion alone afterwards.
-  const lastSnappedClimbUuidRef = useRef<string | null>(null);
 
   const {
     state,
     setCurrentClimb,
     nextClimb,
     previousClimb,
-    playlistSuggestionSource,
     sessionId,
     addToQueue,
     takeControl,
@@ -159,6 +152,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     participantId,
     lastConnectedBoardSerial,
   } = useQueue();
+  const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   const { formatGrade } = useGradeFormat();
@@ -222,6 +216,13 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   useEffect(() => {
     setIsTickBarActive(false);
   }, [displayedClimbUuid]);
+
+  // Once the user has requested below-fold content in an open sheet, keep it
+  // mounted across climb changes because the scroll view stays below the fold.
+  // Reset only after close so the next fresh open starts cheap again.
+  useEffect(() => {
+    if (!isSheetOpen) setBelowFoldContentRequested(false);
+  }, [isSheetOpen]);
 
   // When the board angle changes, drop the locally-pinned climb so the drawer
   // re-derives the displayed climb from currentClimbQueueItem — which the queue
@@ -310,7 +311,6 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
       setIsTickBarActive(false);
       setIsSheetOpen(true);
       setActiveSubDrawer('none');
-      lastSnappedClimbUuidRef.current = null;
       if (selectedItem && (options?.setAsCurrent ?? true) && !isPartyPreviewOnly) {
         // Fresh activation from the list/search clears any playlist suggestion
         // source (web passes the same null option on every non-playlist set).
@@ -331,7 +331,6 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     setIsTickBarActive(false);
     setIsSheetOpen(false);
     setActiveSubDrawer('none');
-    lastSnappedClimbUuidRef.current = null;
   }, [cancelPendingWallControlAttempt]);
 
   const handlePrev = useCallback(() => {
@@ -532,6 +531,10 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     setActiveSubDrawer('actions');
   }, []);
 
+  const handleScrollTowardBelowFold = useCallback(() => {
+    setBelowFoldContentRequested(true);
+  }, []);
+
   const handleOpenAngleSelector = useCallback(() => {
     setActiveSubDrawer('angleSelector');
   }, []);
@@ -583,47 +586,23 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     [],
   );
 
-  // Custom handle component wraps gorhom's default in a View whose onLayout
-  // reports the actual handle height (depends on indicator style + paddings).
-  // Memoized so gorhom doesn't see a new component identity each render.
-  const HandleComponent = useMemo(
-    () => (props: BottomSheetHandleProps) => (
-      <View onLayout={handleHandleLayout}>
-        <BottomSheetHandle {...props} indicatorStyle={sheetStyles.indicator} />
-      </View>
-    ),
-    [handleHandleLayout],
+  // Glass background with squared-off top corners so the sheet reads as a
+  // full-screen takeover, not a rounded panel.
+  const renderBackground = useCallback(
+    (props: BottomSheetBackgroundProps) => <GlassSheetBackground {...props} flatTop />,
+    [],
   );
 
-  // Sum the contributors so the Beta Videos title is fully revealed at peek
-  // with a small reveal margin below (the cue that there's more to scroll).
-  //   handleHeight     — measured: gorhom sheet handle
-  //   contentPadTop    — BottomSheetScrollView contentContainerStyle paddingTop
-  //   aboveFoldHeight  — measured: drawer header + carousel + action bar
-  //   deferredPadTop   — DeferredSections container.paddingTop (sits above Beta section)
-  //   betaHeaderHeight — measured: Beta Videos CollapsibleSection header row
-  //   revealMargin     — breathing room below the title so it doesn't hug the edge
-  const peekHeight =
-    handleHeight > 0 && aboveFoldHeight > 0 && betaHeaderHeight > 0
-      ? handleHeight + spacing[2] + aboveFoldHeight + spacing[3] + betaHeaderHeight + spacing[3]
-      : 0;
-
-  const snapPoints = useMemo<(number | string)[]>(
-    () => (peekHeight > 0 ? [peekHeight, '100%'] : ['100%']),
-    [peekHeight],
-  );
-
-  // First-frame measurement may land after the sheet has already presented at
-  // 100% — this single corrective snap settles into peek without a perceptible
-  // full-screen flash on subsequent climb opens. Guarded by a per-climb ref so
-  // it fires exactly once per climb (won't yank a user who has manually pulled
-  // the sheet to 100% while reading; subsequent height re-measurements no-op).
-  useEffect(() => {
-    if (peekHeight === 0 || !isSheetOpen || !displayedClimbUuid) return;
-    if (lastSnappedClimbUuidRef.current === displayedClimbUuid) return;
-    lastSnappedClimbUuidRef.current = displayedClimbUuid;
-    sheetRef.current?.snapToIndex(0);
-  }, [peekHeight, isSheetOpen, displayedClimbUuid]);
+  // The first screen is sized so the action bar stays visible and the Beta
+  // Videos header teases at the bottom across board sizes — the carousel fits
+  // the leftover space (SwipeBoardCarousel contains the board). Reserve the
+  // DeferredSections top padding, the beta header, and a small margin so that
+  // header peeks just above the fold. The home-indicator inset belongs to the
+  // scroll view's paddingBottom only — counting it here too would shrink the
+  // board by that inset twice.
+  const firstScreenReserve =
+    spacing[3] + (betaHeaderHeight > 0 ? betaHeaderHeight : DEFAULT_BETA_HEADER_HEIGHT) + spacing[2];
+  const firstScreenHeight = computeFirstScreenHeight(windowHeight, firstScreenReserve);
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
@@ -642,33 +621,38 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     <>
       <BottomSheetModal
         ref={sheetRef}
-        snapPoints={snapPoints}
+        snapPoints={SNAP_POINTS}
         index={0}
-        topInset={insets.top}
+        topInset={0}
         enablePanDownToClose
         enableContentPanningGesture={!subDrawerOpen}
         enableHandlePanningGesture={!subDrawerOpen}
         backdropComponent={renderBackdrop}
-        backgroundComponent={GlassSheetBackground}
-        handleComponent={HandleComponent}
+        backgroundComponent={renderBackground}
+        handleComponent={renderNoHandle}
         onDismiss={handleClose}
       >
         <BottomSheetScrollView
           style={styles.content}
-          contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: insets.bottom }}
+          contentContainerStyle={{ paddingBottom: insets.bottom }}
+          onScrollBeginDrag={handleScrollTowardBelowFold}
         >
-          <Pressable
-            onPress={() => sheetRef.current?.dismiss()}
-            accessibilityRole="button"
-            accessibilityLabel={t('playView.closeAria')}
-            style={styles.closeButton}
-          >
-            <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
-          </Pressable>
-
           {displayedClimb && (
             <>
-              <View onLayout={handleAboveFoldLayout}>
+              <View style={[styles.firstScreen, { height: firstScreenHeight, paddingTop: insets.top }]}>
+                <View style={styles.topRow}>
+                  <View style={sheetStyles.indicator} />
+                  <Pressable
+                    onPress={() => sheetRef.current?.dismiss()}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('playView.closeAria')}
+                    style={styles.closeButton}
+                    hitSlop={8}
+                  >
+                    <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
+                  </Pressable>
+                </View>
+
                 <PlayDrawerHeader
                   name={displayedClimb.name}
                   difficulty={formatGrade(displayedClimb.difficulty) ?? displayedClimb.difficulty}
@@ -755,6 +739,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
                 setIds={setIds}
                 angle={angle}
                 enabled={isSheetOpen}
+                contentEnabled={belowFoldContentRequested}
                 onSimilarClimbPress={handleSimilarClimbPress}
                 onBetaHeaderLayout={handleBetaHeaderLayout}
               />
@@ -842,10 +827,19 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  firstScreen: {
+    width: '100%',
+  },
+  // Centers the grabber; the close button overlays the left edge.
+  topRow: {
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   closeButton: {
     position: 'absolute',
-    top: 8,
-    left: 8,
+    top: 0,
+    left: spacing[2],
     zIndex: 2,
     width: 44,
     height: 44,

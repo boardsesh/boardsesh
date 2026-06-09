@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -27,7 +27,7 @@ export type PlaylistCardProps = {
   onTogglePin?: () => void;
 };
 
-export function PlaylistCard({
+export const PlaylistCard = memo(function PlaylistCard({
   name,
   climbCount,
   color,
@@ -97,7 +97,7 @@ export function PlaylistCard({
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   gridCard: {

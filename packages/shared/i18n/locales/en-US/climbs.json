@@ -665,6 +665,7 @@
       "gradeAction": "Set grade range",
       "gradeOpenHint": "Opens the grade picker",
       "gradeCloseHint": "Closes the grade picker",
+      "boardSwitcherHint": "Opens the board switcher",
       "allClimbs": "All climbs"
     },
     "gradeRail": {

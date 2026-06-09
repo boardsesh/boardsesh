@@ -193,6 +193,7 @@ export const controllerMutations = {
         sequence: currentState.sequence,
         stateHash: currentState.stateHash,
         item: null, // No queue item for unknown climb
+        frames: framesString,
         clientId: clientIdForEvent, // ESP32 compares this with its MAC
         correlationId: null,
       });

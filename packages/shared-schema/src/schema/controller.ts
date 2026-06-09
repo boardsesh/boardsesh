@@ -49,6 +49,8 @@ export const controllerTypeDefs = /* GraphQL */ `
     climbGrade: String
     gradeColor: String
     boardPath: String
+    "Compact Aurora frames string for rendering a climb thumbnail."
+    frames: String
     """
     Board angle in degrees. Nullable - null means angle not specified.
     Note: 0 is a valid angle value, so null should be used to indicate "no angle"

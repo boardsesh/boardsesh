@@ -24,12 +24,20 @@
 #ifdef ENABLE_BOARD_IMAGE
 #include <board_hold_data.h>
 #endif
+#elif defined(ENABLE_WAVESHARE_AMOLED_DISPLAY)
+#include <waveshare_amoled_display.h>
 #elif defined(ENABLE_DISPLAY)
 #include <lilygo_display.h>
 #endif
 
+#ifdef ENABLE_REMOTE_THUMBNAIL
+#include <thumbnail_client.h>
+
+#include <utility>
+#endif
+
 // Unified macro for code that works with any display
-#if defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_DISPLAY)
+#if defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) || defined(ENABLE_DISPLAY)
 #define HAS_DISPLAY 1
 #endif
 
@@ -63,6 +71,11 @@ bool hasCurrentClimb = false;
 // Static buffer for queue sync to avoid heap fragmentation
 // LocalQueueItem is ~88 bytes each, so 150 items = ~13KB
 static LocalQueueItem g_queueSyncBuffer[MAX_QUEUE_SIZE];
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+static ThumbnailClient g_thumbnailClient;
+static String currentThumbnailCacheKey = "";
+#endif
 
 #if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
 // Board image config lookup state
@@ -158,6 +171,61 @@ static uint16_t hexToRgb565Fast(const char* hex) {
     // Convert to RGB565: 5 bits red, 6 bits green, 5 bits blue
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 }
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+// Returns true when this function has left the display in the intended state:
+// fetched thumbnail, preserved duplicate thumbnail, or restored text-only UI
+// after fetch failure. Returns false only when the caller should render fallback UI.
+bool fetchAndDisplayRemoteThumbnail(const char* boardPath,
+                                    const char* frames,
+                                    const char* climbName,
+                                    const char* climbGrade,
+                                    const char* gradeColor,
+                                    int angle,
+                                    const char* climbUuid,
+                                    const char* boardTypeName) {
+    String renderBaseUrl = Config.getString(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
+    RemoteThumbnailDisplayRequest request = {
+        renderBaseUrl.c_str(),
+        boardPath,
+        frames,
+        climbName,
+        climbGrade,
+        gradeColor,
+        angle,
+        climbUuid,
+        boardTypeName,
+    };
+    RemoteThumbnailDisplayHooks hooks = {
+        nullptr,
+        [](void*) { Display.clearThumbnail(); },
+        [](void*,
+           const char* requestClimbName,
+           const char* requestClimbGrade,
+           const char* requestGradeColor,
+           int requestAngle,
+           const char* requestClimbUuid,
+           const char* requestBoardTypeName) {
+            Display.showClimb(requestClimbName,
+                              requestClimbGrade,
+                              requestGradeColor,
+                              requestAngle,
+                              requestClimbUuid,
+                              requestBoardTypeName);
+        },
+        [](void*) { Display.showThumbnailLoading(); },
+        [](void*, std::vector<uint8_t>&& data, const char* cacheKey) {
+            Display.setThumbnailJpeg(std::move(data), cacheKey);
+        },
+        [](void*, const char* url, std::vector<uint8_t>& output) {
+            return g_thumbnailClient.fetchJpeg(url, output);
+        },
+    };
+
+    RemoteThumbnailDisplayResult result = handleRemoteThumbnailDisplay(request, hooks, currentThumbnailCacheKey);
+    return result != RemoteThumbnailDisplayResult::FALLBACK_REQUIRED;
+}
+#endif
 #endif
 
 // Forward declarations
@@ -239,6 +307,9 @@ void setup() {
 #endif
 #ifdef HAS_DISPLAY
     Logger.logln("Display: Enabled");
+#endif
+#ifdef ENABLE_REMOTE_THUMBNAIL
+    Logger.logln("Remote thumbnails: Enabled");
 #endif
     Logger.logln("=================================");
 
@@ -733,7 +804,11 @@ void onGraphQLStateChange(GraphQLConnectionState state) {
                               "subscription ControllerEvents($sessionId: ID!) { "
                               "controllerEvents(sessionId: $sessionId) { "
                               "... on LedUpdate { __typename commands { position r g b } queueItemUuid climbUuid climbName "
-                              "climbGrade gradeColor boardPath angle clientId "
+                              "climbGrade gradeColor boardPath angle "
+#ifdef ENABLE_REMOTE_THUMBNAIL
+                              "frames "
+#endif
+                              "clientId "
                               "navigation { previousClimbs { name grade gradeColor } "
                               "nextClimb { name grade gradeColor } currentIndex totalCount } } "
                               "... on ControllerQueueSync { __typename queue { uuid climbUuid name grade gradeColor } currentIndex } "
@@ -826,6 +901,7 @@ void handleLedUpdateExtended(JsonObject& data) {
     const char* climbGrade = data["climbGrade"];
     const char* gradeColor = data["gradeColor"];
     const char* boardPath = data["boardPath"];
+    const char* frames = data["frames"];
     int angle = data["angle"] | 0;
 
     JsonArray commands = data["commands"];
@@ -861,6 +937,14 @@ void handleLedUpdateExtended(JsonObject& data) {
             currentGrade = climbGrade ? climbGrade : "?";
             currentGradeColor = gradeColor ? gradeColor : "#888888";
 
+            if (boardPath) {
+                String bp = boardPath;
+                int slashPos = bp.indexOf('/');
+                if (slashPos > 0) {
+                    boardType = bp.substring(0, slashPos);
+                }
+            }
+
             // Parse navigation context if present (allows navigating back to known climbs)
             if (data["navigation"].is<JsonObject>()) {
                 JsonObject nav = data["navigation"];
@@ -889,8 +973,21 @@ void handleLedUpdateExtended(JsonObject& data) {
                 Display.clearNavigationContext();
             }
 
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+            if (fetchAndDisplayRemoteThumbnail(boardPath,
+                                               frames,
+                                               climbName,
+                                               currentGrade.c_str(),
+                                               currentGradeColor.c_str(),
+                                               angle,
+                                               "",
+                                               boardType.c_str())) {
+                return;
+            }
+#endif
+
             // Show unknown climb on display
-            Display.showClimb(climbName, currentGrade.c_str(), currentGradeColor.c_str(), 0, "", boardType.c_str());
+            Display.showClimb(climbName, currentGrade.c_str(), currentGradeColor.c_str(), angle, "", boardType.c_str());
             return;
         }
 
@@ -905,6 +1002,10 @@ void handleLedUpdateExtended(JsonObject& data) {
         currentClimbName = "";
         currentGrade = "";
         currentGradeColor = "";
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+        currentThumbnailCacheKey = "";
+        Display.clearThumbnail();
+#endif
 
         Display.showNoClimb();
         return;
@@ -1014,6 +1115,19 @@ void handleLedUpdateExtended(JsonObject& data) {
     } else {
         Display.clearNavigationContext();
     }
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+    if (fetchAndDisplayRemoteThumbnail(boardPath,
+                                       frames,
+                                       climbName,
+                                       climbGrade,
+                                       currentGradeColor.c_str(),
+                                       angle,
+                                       climbUuid,
+                                       boardType.c_str())) {
+        return;
+    }
+#endif
 
     // Update display with gradeColor
     // Note: We always update the display even during rapid navigation.

@@ -19,6 +19,7 @@ public class LiveActivityModule: Module {
     private var observingDarwinNotification = false
     private var observingPushRegistrationStale = false
     private var observingForegroundNotification = false
+    private var observingBleReconnect = false
 
     /// Serial queue protecting push token state accessed from both the JS-call
     /// thread and the LiveActivityManager push token callback.
@@ -61,6 +62,7 @@ public class LiveActivityModule: Module {
             self.stopDarwinObservation()
             self.stopPushRegistrationStaleObservation()
             self.stopForegroundObservation()
+            self.stopBleReconnectObservation()
         }
 
         OnStartObserving {
@@ -205,6 +207,50 @@ public class LiveActivityModule: Module {
             registerPushTokenWithBackend(token: token, sessionId: sessionId, serverUrl: serverUrl, graphqlUrl: graphqlUrl)
         } else {
             logger.warning("Push registration stale notification received but no current session/token to re-register")
+        }
+    }
+
+    // MARK: - BLE reconnect (widget lightbulb fallback)
+
+    /// Observe the Darwin notification ReconnectBoardIntent posts when iOS runs it
+    /// in the widget extension (which can't link BoardBleManager). We reconnect on
+    /// the main app's behalf. In the normal path the intent runs in this process
+    /// and calls BoardBleManager directly, so this observer never fires.
+    private func startBleReconnectObservation() {
+        guard !observingBleReconnect else { return }
+        observingBleReconnect = true
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let name = CFNotificationName(SharedConstants.bleReconnectNotification as CFString)
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+
+        CFNotificationCenterAddObserver(
+            center,
+            observer,
+            { (_, observer, _, _, _) in
+                guard let observer = observer else { return }
+                let module = Unmanaged<LiveActivityModule>.fromOpaque(observer).takeUnretainedValue()
+                module.handleBleReconnectFromWidget()
+            },
+            name.rawValue,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func stopBleReconnectObservation() {
+        guard observingBleReconnect else { return }
+        observingBleReconnect = false
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        let name = CFNotificationName(SharedConstants.bleReconnectNotification as CFString)
+        CFNotificationCenterRemoveObserver(center, observer, name, nil)
+    }
+
+    private func handleBleReconnectFromWidget() {
+        Task { @MainActor in
+            _ = await LiveActivityBleBridge.reconnectForIntent()
         }
     }
 
@@ -620,6 +666,7 @@ public class LiveActivityModule: Module {
         startDarwinObservation()
         startPushRegistrationStaleObservation()
         startForegroundObservation()
+        startBleReconnectObservation()
 
         let initialState = ClimbSessionAttributes.ContentState(
             climbName: "Loading...",
@@ -673,6 +720,7 @@ public class LiveActivityModule: Module {
         stopDarwinObservation()
         stopPushRegistrationStaleObservation()
         stopForegroundObservation()
+        stopBleReconnectObservation()
 
         let (token, sessionId, graphqlUrl) = tokenQueue.sync {
             (_currentPushToken, _currentSessionId, _currentGraphqlUrl)

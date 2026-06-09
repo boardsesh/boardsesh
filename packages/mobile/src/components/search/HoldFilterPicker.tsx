@@ -189,7 +189,11 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   cell: {
-    width: '31%',
+    // Grow to share the row evenly; the minWidth keeps ~3 per row while letting
+    // a short final row (or a board with fewer swatches) stretch to fill.
+    flexGrow: 1,
+    flexBasis: '28%',
+    minWidth: 96,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],

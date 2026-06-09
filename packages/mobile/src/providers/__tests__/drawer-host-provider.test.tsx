@@ -118,10 +118,12 @@ vi.mock('../../components/QueueAddedSnackbar', () => ({
 }));
 
 vi.mock('../queue-provider', () => ({
-  useQueue: () => ({
+  useQueueActions: () => ({
     addToQueue: queue.addToQueue,
     setSessionBoardPath: queue.setSessionBoardPath,
     setCurrentClimb: queue.setCurrentClimb,
+  }),
+  useQueueSessionControls: () => ({
     sessionId: queue.sessionId,
     driverParticipantId: queue.driverParticipantId,
     participantId: queue.participantId,

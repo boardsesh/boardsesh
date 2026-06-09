@@ -13,6 +13,15 @@ type BoardImageNativeProps = {
   boardWidth: number;
   boardHeight: number;
   mirrored?: boolean;
+  /**
+   * Render lit holds as filled dots (filled style) instead of the default
+   * stroke-only outlines. The full-size play view leaves this false — thin
+   * strokes stay legible when large — but small surfaces like the 40×40
+   * accessory thumbnail pass true so holds read as solid dots once scaled
+   * down. Threaded into the render cache key, so the two styles cache as
+   * separate PNGs (see useNativeClimbRender).
+   */
+  filledStyle?: boolean;
   style?: ViewStyle;
 };
 
@@ -36,6 +45,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   boardWidth,
   boardHeight,
   mirrored,
+  filledStyle = false,
   style,
 }: BoardImageNativeProps) {
   const { overlayUri, backgroundPaths, missingBackgroundCount } = useNativeClimbRender({
@@ -44,6 +54,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     layoutId,
     sizeId,
     setIds,
+    filledStyle,
   });
 
   const containerStyle: ViewStyle = {

@@ -51,7 +51,11 @@
       },
       "likedClimbs": {
         "title": "Voies aimées",
-        "description": "Toutes les voies que vous avez aimées."
+        "description": "Toutes les voies que vous avez aimées.",
+        "empty": {
+          "title": "Aucune voie aimée",
+          "supporting": "Touchez le cœur d'une voie pour la garder ici."
+        }
       },
       "crowdFavorites": {
         "title": "Favoris de la communauté",
@@ -93,6 +97,7 @@
   "detail": {
     "share": "Partager la playlist",
     "actions": "Actions de la playlist",
+    "activateAll": "Mettre toutes les voies en file",
     "menu": {
       "generate": "Générer",
       "edit": "Modifier",

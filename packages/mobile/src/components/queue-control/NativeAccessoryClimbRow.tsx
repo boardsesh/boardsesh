@@ -84,6 +84,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
     currentItem,
     previousItem,
     nextItem,
+    canPeek,
     handleNext,
     handlePrevious,
     swipeAccessibilityActions,
@@ -124,7 +125,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
               boardConfig={boardConfig}
             />
           </Animated.View>
-          {nextQueueClimb ? (
+          {nextQueueClimb && canPeek ? (
             <Animated.View style={[styles.peekSlot, nextPeekStyle]} pointerEvents="none">
               <ClimbLabel
                 climb={nextQueueClimb}
@@ -135,7 +136,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
               />
             </Animated.View>
           ) : null}
-          {previousClimb ? (
+          {previousClimb && canPeek ? (
             <Animated.View style={[styles.peekSlot, prevPeekStyle]} pointerEvents="none">
               <ClimbLabel
                 climb={previousClimb}

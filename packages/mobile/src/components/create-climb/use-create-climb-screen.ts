@@ -14,9 +14,12 @@ import {
 } from '@boardsesh/create-climb-react';
 import { useBoardProvider, isDuplicateClimbError } from '@boardsesh/board-react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
+import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
@@ -88,7 +91,7 @@ export function useCreateClimbScreen({
   const { isAuthenticated, saveClimb, updateClimb } = useBoardProvider();
   const auth = useAuth();
   const { data: profile } = useProfile();
-  const { setCurrentClimb } = useQueue();
+  const { setCurrentClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -376,6 +379,14 @@ export function useCreateClimbScreen({
     const frames = generateFramesString();
     // Encode the no-match marker into the description only at save time.
     const fullDescription = withNoMatch(description, noMatch);
+    // The reducer removes OFF-state holds from the map, so key count equals
+    // web's `totalHolds` (non-OFF hold count, used in Climb Created events).
+    const holdCount = Object.keys(litUpHoldsMap).length;
+    // Web sends the human-readable layout name (`boardDetails.layout_name || ''`)
+    // for `boardLayout`; mobile only carries the numeric layout id, so resolve it
+    // to the same name via the shared board-constants table. PostHog groups by
+    // exact value, so the string must match web for these create-climb events.
+    const boardLayout = getLayoutName(board.boardName, board.layoutId);
     try {
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
@@ -394,6 +405,14 @@ export function useCreateClimbScreen({
           publishedAt: result.publishedAt ?? savedClimb.publishedAt,
           isDraft: result.isDraft,
         });
+        // Match web's schema exactly (create-climb-form.tsx) so PostHog funnels
+        // that group by these props line up across platforms. `boardLayout` is the
+        // resolved layout NAME (same value web sends), not the numeric id.
+        track(SHARED_EVENTS.ClimbUpdated, {
+          boardLayout,
+          isDraft: result.isDraft,
+          holdCount,
+        });
         syncSavedToQueue(result.uuid, frames);
       } else {
         const result = await saveClimb({
@@ -411,13 +430,19 @@ export function useCreateClimbScreen({
           publishedAt: result.publishedAt ?? null,
           isDraft,
         });
+        // Match web's schema exactly (create-climb-form.tsx). See ClimbUpdated above.
+        track(SHARED_EVENTS.ClimbCreated, {
+          boardLayout,
+          isDraft,
+          holdCount,
+        });
         syncSavedToQueue(result.uuid, frames);
       }
       await clearDraft(draftKey);
       // Refresh the inline Open Drafts table so the just-saved climb appears /
       // updates (delete already invalidates these keys; save must too).
-      queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
-      queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
       setJustSaved(true);
       showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');
       // A publish is commit-and-done — dismiss the drawer so the toast shows
@@ -426,6 +451,13 @@ export function useCreateClimbScreen({
       if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
       justSavedTimerRef.current = setTimeout(() => setJustSaved(false), JUST_SAVED_MS);
     } catch (err) {
+      // Web emits only `{ boardLayout }` for this event (create-climb-form.tsx);
+      // match that (resolved layout NAME), plus a mobile-only `error_reason` that
+      // doesn't affect any grouping web relies on.
+      track(SHARED_EVENTS.ClimbCreateFailed, {
+        boardLayout,
+        error_reason: isDuplicateClimbError(err) ? 'duplicate' : 'exception',
+      });
       if (isDuplicateClimbError(err)) {
         setPublishDuplicateError(readDuplicateExtensions(err));
       } else {
@@ -442,6 +474,7 @@ export function useCreateClimbScreen({
     name,
     canUpdate,
     savedClimb,
+    litUpHoldsMap,
     generateFramesString,
     updateClimb,
     saveClimb,

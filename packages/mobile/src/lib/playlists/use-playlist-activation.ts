@@ -10,10 +10,10 @@
 // swaps in a richer suggestion source so swiping through the play drawer walks
 // the whole playlist.
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, startTransition } from 'react';
 import { usePlaylistClimbActivation, fetchPlaylistSuggestionClimbs } from '@boardsesh/playlists-react';
 import { getQueueBoardKey, type Climb } from '@boardsesh/queue';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { climbToQueueItem } from '../climb-to-queue-item';
@@ -52,7 +52,7 @@ export function usePlaylistActivation({
   fetchPage,
   refreshErrorMessage,
 }: UsePlaylistActivationOptions): (climb: Climb) => Promise<void> {
-  const { setCurrentClimb, refreshPlaylistSuggestionSource } = useQueue();
+  const { setCurrentClimb, refreshPlaylistSuggestionSource } = useQueueActions();
   const { openPlayDrawer } = useDrawerHost();
   const activeBoard = useActiveBoard().data ?? null;
 
@@ -64,7 +64,11 @@ export function usePlaylistActivation({
     () => ({
       setCurrentClimb: async (climb: Climb, options: Parameters<typeof setCurrentClimb>[1]) => {
         const item = climbToQueueItem(toSchemaClimb(climb));
-        setCurrentClimb(item, options);
+        // Mark as a non-urgent transition so React can flush the drawer's
+        // opening animation frame before processing the queue re-renders.
+        startTransition(() => {
+          setCurrentClimb(item, options);
+        });
         return item;
       },
       refreshPlaylistSuggestionSource,
@@ -111,37 +115,32 @@ export function usePlaylistActivation({
     [activeBoard, fetchPage],
   );
 
-  const onActivated = useCallback(
-    (climb: Climb) => {
-      // setAsCurrent:false — the activation already dispatched setCurrentClimb
-      // with the suggestion source; re-dispatching from the drawer would wipe
-      // that source (it has no suggestion-source argument).
-      openPlayDrawer(toSchemaClimb(climb), { setAsCurrent: false });
-    },
-    [openPlayDrawer],
-  );
-
   const activate = usePlaylistClimbActivation({
     queueApi,
     sourceId,
     allClimbs,
     resolveTarget,
     fetchClimbsForBoard,
-    onActivated,
+    // onActivated is intentionally omitted — the drawer is opened in the
+    // returned callback BEFORE activate() runs, so the BottomSheet animation
+    // starts on the same frame as the tap with no state-update work in between.
     refreshErrorMessage,
   });
 
-  // The synchronous activation phase shouldn't reject in practice (the queue
-  // dispatch is fire-and-forget), but call sites invoke this as
-  // `void activate(climb)`. Guard the floating promise so a future change can't
-  // surface an unhandled rejection; the async suggestion refresh keeps its own
-  // catch inside the shared hook (graceful degradation — the drawer is already
-  // open with the initial source built from the loaded climbs).
+  // Open the drawer immediately, then let the shared hook do its state work.
+  // The drawer receives the climb directly via open() and renders correctly
+  // before DELTA_UPDATE_CURRENT_CLIMB propagates (setAsCurrent:false prevents
+  // the drawer from re-dispatching and wiping the suggestion source).
+  // The queue dispatch inside queueApi.setCurrentClimb is wrapped in
+  // startTransition so React processes those re-renders at low priority after
+  // the animation frame runs.
   return useCallback(
-    (climb: Climb) =>
-      activate(climb).catch((error: unknown) => {
+    (climb: Climb) => {
+      openPlayDrawer(toSchemaClimb(climb), { setAsCurrent: false });
+      return activate(climb).catch((error: unknown) => {
         console.error('Playlist climb activation failed:', error);
-      }),
-    [activate],
+      });
+    },
+    [activate, openPlayDrawer],
   );
 }

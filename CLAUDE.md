@@ -54,7 +54,7 @@ Common commands:
 
 - `vp check` — format + lint (canonical validation; pre-commit)
 - `vp test` / `vp test run --reporter=agent` — tests (always use `--reporter=agent` to save context)
-- `vp test --project web|backend|mobile` — scope tests
+- `vp test run --project web|backend|mobile` — scope tests. **`--project` MUST come after `run`.** `vp test --project mobile run` (flag before `run`) silently treats the name as a filename filter and runs ~1 file — a false green. Prefer the footgun-proof aliases `vp run test:mobile` / `vp run test:web`.
 - `vp run dev` — start DB + backend + web
 - `vp run dev:mobile` — start mobile dev server (Metro)
 - `vp run db:up` / `vp run db:migrate` / `vp run db:studio`
@@ -217,7 +217,7 @@ React Native + Expo SDK 53, React Native 0.79, Expo Router 5.
 After mobile changes:
 
 1. `vp run typecheck:mobile` — always.
-2. `vp test --project mobile` — always.
+2. `vp run test:mobile` (or `vp test run --project mobile`) — always. Do **not** use `vp test --project mobile run` — the flag-before-`run` order runs ~1 file (false green).
 3. `vp run check:mobile-bundle` — Metro bundle check (Linux-safe; highest-value).
 4. `vp run check:mobile-simulator` — macOS only; skips on Linux.
 5. `vp run mobile:screenshot` — macOS only.

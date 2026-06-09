@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PanGesture } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
-import { useQueue, useQueueLiveStats } from '../../providers/queue-provider';
+import { useQueueSessionId, useQueueLiveStats } from '../../providers/queue-provider';
 import { SessionScreenHeader } from './SessionScreenHeader';
 import { PreSessionView } from './pre-session/PreSessionView';
 import { InSessionView } from './in-session/InSessionView';
@@ -27,7 +27,7 @@ type SessionScreenProps = {
  * Record tab; the overlay-only props (drag/pull-to-dismiss) are omitted there.
  */
 export function SessionScreen({ onClose, headerGesture, translateY, screenHeight }: SessionScreenProps) {
-  const { sessionId } = useQueue();
+  const { sessionId } = useQueueSessionId();
   const { sessionUsers } = useQueueLiveStats();
   const insets = useSafeAreaInsets();
   const [showInvite, setShowInvite] = useState(false);

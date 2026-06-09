@@ -51,7 +51,11 @@
       },
       "likedClimbs": {
         "title": "Bloques favoritos",
-        "description": "Todos los bloques que has marcado con corazón."
+        "description": "Todos los bloques que has marcado con corazón.",
+        "empty": {
+          "title": "Aún no hay favoritos",
+          "supporting": "Toca el corazón de un bloque para guardarlo aquí."
+        }
       },
       "crowdFavorites": {
         "title": "Favoritos de todos",
@@ -93,6 +97,7 @@
   "detail": {
     "share": "Compartir playlist",
     "actions": "Acciones de la playlist",
+    "activateAll": "Poner en cola todos los bloques",
     "menu": {
       "generate": "Generar",
       "edit": "Editar",

@@ -38,6 +38,16 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       INPUT_BRANCH: ${{ github.event.inputs.branch }}
       INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
+      # Build-time env inlined into the OTA JS bundle, matching the native build
+      # workflows (ios-testflight-rn.yml / android-apk-rn.yml). Without these, an OTA
+      # update ships a bundle that re-resolves EXPO_PUBLIC_* to its in-code fallbacks
+      # (and undefined for keys that have none) — which is why preview channels never
+      # produced PostHog analytics or Sentry events.
+      EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+      EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+      EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+      EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+      EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
 
     steps:
       - name: Checkout repository
@@ -57,6 +67,17 @@ jobs:
             sanitized=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
           fi
           echo "name=$sanitized" >> "$GITHUB_OUTPUT"
+
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EOF
 
       - name: Publish EAS Update
         working-directory: packages/mobile

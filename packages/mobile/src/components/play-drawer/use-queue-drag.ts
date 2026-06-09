@@ -22,7 +22,12 @@ export type QueueDragShared = {
 };
 
 type UseQueueDragOptions = {
-  /** Optimistically reorder + broadcast (queue-array indices). */
+  /**
+   * Optimistically reorder + broadcast (queue-array indices).
+   *
+   * The hook internalises a ref so an unstable (non-`useCallback`) function
+   * doesn't churn `controls` or re-render memoized rows.
+   */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
   /** flatRows index of the first/last contiguous `future-item` row (-1 when none). */
   firstFutureRowIndex: number;
@@ -87,7 +92,10 @@ export function useQueueDrag({
     lastRowIndexSV.value = lastFutureRowIndex;
   }, [firstFutureRowIndex, lastFutureRowIndex, firstRowIndexSV, lastRowIndexSV]);
 
-  // Latest window mapping read on the JS thread when committing.
+  // Latest callbacks/mappings read on the JS thread when committing. Refs so
+  // commit stays stable regardless of whether the caller wraps in useCallback.
+  const reorderQueueRef = useRef(reorderQueue);
+  reorderQueueRef.current = reorderQueue;
   const windowRef = useRef({ firstRowIndex: firstFutureRowIndex, firstQueueIndex: firstFutureQueueIndex });
   windowRef.current = { firstRowIndex: firstFutureRowIndex, firstQueueIndex: firstFutureQueueIndex };
 
@@ -107,9 +115,9 @@ export function useQueueDrag({
   const commit = useCallback(
     (uuid: string, oldQueueIndex: number, toRowIndex: number) => {
       const move = resolveReorderCommit(uuid, oldQueueIndex, toRowIndex, windowRef.current);
-      if (move) reorderQueue(move.uuid, move.oldIndex, move.newIndex);
+      if (move) reorderQueueRef.current(move.uuid, move.oldIndex, move.newIndex);
     },
-    [reorderQueue],
+    [], // reads refs at call time — stable regardless of reorderQueue identity
   );
 
   const makeHandleGesture = useCallback(

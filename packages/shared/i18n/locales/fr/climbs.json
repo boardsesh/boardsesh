@@ -665,6 +665,7 @@
       "gradeAction": "Définir la plage de cotation",
       "gradeOpenHint": "Ouvre le sélecteur de cotation",
       "gradeCloseHint": "Ferme le sélecteur de cotation",
+      "boardSwitcherHint": "Ouvre le sélecteur de board",
       "allClimbs": "Toutes les voies"
     },
     "gradeRail": {

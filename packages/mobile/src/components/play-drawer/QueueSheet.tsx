@@ -10,7 +10,7 @@ import { QueueList } from './QueueList';
 import { GlassSheetBackground } from '../GlassSheetBackground';
 import { Text } from '../Text';
 import type { QueueItemRowBoard } from '../QueueItemRow';
-import { useQueue } from '../../providers/queue-provider';
+import { usePlaylistSuggestionSource, useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticMedium, hapticWarning } from '../../lib/haptics';
 import { brandColors } from '../../theme/colors';
@@ -51,7 +51,8 @@ export function QueueSheet({
   const { systemColors, sheet } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
 
-  const { state, removeFromQueue, clearQueue, reorderQueue, playlistSuggestionSource } = useQueue();
+  const { state, removeFromQueue, clearQueue, reorderQueue } = useQueue();
+  const playlistSuggestionSource = usePlaylistSuggestionSource();
   const { queue, currentClimbQueueItem } = state;
 
   const [isEditMode, setIsEditMode] = useState(false);

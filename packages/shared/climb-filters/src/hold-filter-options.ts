@@ -1,5 +1,5 @@
-import { HOLD_STATE_MAP, type HoldStateInfo } from '@boardsesh/board-constants/hold-states';
-import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType } from '@boardsesh/shared-schema';
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
 
 /**
  * Hold-type swatch metadata for the search hold filter, shared by web (the
@@ -14,6 +14,10 @@ import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType } from 
 
 // Display order of the named setting roles in the picker.
 const SETTER_STATE_ORDER: readonly HoldFilterType[] = ['STARTING', 'HAND', 'FINISH', 'FOOT'];
+
+// Membership guard for narrowing `HOLD_STATE_MAP` entry names (a `HoldState`,
+// which also includes OFF/NOT/AUX/ANY) down to a selectable `HoldFilterType`.
+const SETTER_STATE_ORDER_SET = new Set<string>(SETTER_STATE_ORDER);
 
 // Per-board allowlist of selectable named states. MoonBoard climbs are
 // STARTING / HAND / FINISH only — its extra HOLD_STATE_MAP entries exist to
@@ -45,7 +49,10 @@ export function buildHoldFilterOptions(boardName: BoardName): HoldFilterOption[]
   const boardMap = HOLD_STATE_MAP[boardName];
   const colorByState = new Map<HoldFilterType, string>();
   if (boardMap) {
-    for (const entry of Object.values(boardMap) as HoldStateInfo[]) {
+    for (const entry of Object.values(boardMap)) {
+      // Skip non-selectable states (OFF / NOT / AUX / ANY) so the narrowing to
+      // HoldFilterType is sound — no unsafe cast.
+      if (!SETTER_STATE_ORDER_SET.has(entry.name)) continue;
       const name = entry.name as HoldFilterType;
       if (!colorByState.has(name)) colorByState.set(name, entry.displayColor ?? entry.color);
     }
@@ -95,4 +102,48 @@ export function countFilteredHolds(holdsFilter: Record<string, HoldFilterEntry> 
     if (entry && Object.keys(entry).length > 0) count += 1;
   }
   return count;
+}
+
+const HOLD_FILTER_MODES = new Set<string>(['include', 'exclude'] satisfies HoldFilterMode[]);
+
+/**
+ * Sanitise a raw `HoldsFilter`-shaped object into one whose leaf values are
+ * guaranteed to be a valid `HoldFilterMode`. Untrusted sources (a serialized
+ * URL/handoff param) can carry an arbitrary string in a leaf slot, which would
+ * otherwise propagate to analytics and the GraphQL search query. Each per-hold
+ * entry is rebuilt keeping only `include`/`exclude` leaves; holds left with no
+ * valid leaf are dropped.
+ */
+export function sanitizeHoldsFilter(raw: Record<string, unknown>): HoldsFilter {
+  const result: HoldsFilter = {};
+  for (const [holdKey, rawEntry] of Object.entries(raw)) {
+    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) continue;
+    const entry: HoldFilterEntry = {};
+    for (const [type, mode] of Object.entries(rawEntry as Record<string, unknown>)) {
+      if (typeof mode === 'string' && HOLD_FILTER_MODES.has(mode)) {
+        entry[type as HoldFilterType] = mode as HoldFilterMode;
+      }
+    }
+    if (Object.keys(entry).length > 0) result[holdKey] = entry;
+  }
+  return result;
+}
+
+/**
+ * Parse a serialized `HoldsFilter` JSON string (e.g. a navigation/handoff param)
+ * into a validated `HoldsFilter`. Returns `{}` for missing, malformed, or
+ * non-object input, and strips any leaf value that isn't a valid
+ * `HoldFilterMode` (see {@link sanitizeHoldsFilter}).
+ */
+export function parseHoldsFilter(raw: string | undefined | null): HoldsFilter {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return sanitizeHoldsFilter(parsed as Record<string, unknown>);
+    }
+  } catch {
+    // Malformed param → start empty rather than crash.
+  }
+  return {};
 }

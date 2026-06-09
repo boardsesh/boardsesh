@@ -32,6 +32,44 @@
         "vGrade": "V grade",
         "font": "French",
         "both": "Both"
+      },
+      "language": {
+        "title": "Language",
+        "system": "System",
+        "description": "System follows your device language."
+      },
+      "diagnostics": {
+        "title": "Diagnostics",
+        "recording": "Help fix Bluetooth",
+        "recordingDescription": "When the board keeps dropping, flip this on. We'll record your screen and the Bluetooth connection so we can see what's going wrong. Your typing stays hidden, and it's off until you turn it on."
+      }
+    },
+    "onboarding": {
+      "skip": "Skip",
+      "next": "Next",
+      "getStarted": "Connect a board",
+      "replaySection": "Walkthrough",
+      "replayTitle": "Replay walkthrough",
+      "replaySubtitle": "See the welcome tour again",
+      "replayError": "Couldn't reopen the walkthrough. Try again.",
+      "pageIndicator": "Page {{current}} of {{total}}",
+      "cards": {
+        "welcome": {
+          "title": "Light up your home board",
+          "body": "Boardsesh drives your wall — search, queue, and play, all from your phone."
+        },
+        "connect": {
+          "title": "Pair over Bluetooth",
+          "body": "Connect your board once and the holds light up as you climb."
+        },
+        "find": {
+          "title": "Search by grade, send the wall",
+          "body": "Filter thousands of problems by grade, angle, and setter to find your next send."
+        },
+        "play": {
+          "title": "Tap a climb, light the holds",
+          "body": "Build a queue, hit play, and the wall shows you exactly where to grab."
+        }
       }
     },
     "nav": {

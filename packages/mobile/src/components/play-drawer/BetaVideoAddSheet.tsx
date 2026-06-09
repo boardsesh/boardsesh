@@ -3,7 +3,9 @@ import { View, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform 
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { isBetaVideoUrl } from '@boardsesh/shared-schema';
+import { isBetaVideoUrl, isInstagramUrl, isTikTokUrl } from '@boardsesh/shared-schema';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
 import { useAttachBetaLink } from '../../lib/graphql/hooks';
@@ -62,6 +64,12 @@ export const BetaVideoAddSheet = forwardRef<BetaVideoAddSheetHandle, Props>(func
       { boardType: boardName, climbUuid, link: trimmed, angle },
       {
         onSuccess: () => {
+          // Match web's attach-beta-link-form `Beta Video Added` props exactly
+          // (boardType, climbUuid, platform) so both platforms aggregate.
+          let platform: 'TikTok' | 'Instagram' | 'Unknown' = 'Unknown';
+          if (isTikTokUrl(trimmed)) platform = 'TikTok';
+          else if (isInstagramUrl(trimmed)) platform = 'Instagram';
+          track(SHARED_EVENTS.BetaVideoAdded, { boardType: boardName, climbUuid, platform });
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           showToast(t('mobile.betaVideos.attachSuccess'), 'success');
           setUrl('');

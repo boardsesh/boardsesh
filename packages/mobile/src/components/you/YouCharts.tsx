@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
 import type { RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
@@ -103,7 +103,7 @@ type StackedBarsProps = {
 };
 
 /** Stacked bars (weekly activity, grade distribution). */
-export function StackedBarChart({
+export const StackedBarChart = memo(function StackedBarChart({
   bars,
   colorBy,
   height = 170,
@@ -112,7 +112,7 @@ export function StackedBarChart({
   legend,
   maxXLabels,
 }: StackedBarsProps) {
-  const { systemColors, colorScheme, variant } = useTheme();
+  const { colorScheme, variant } = useTheme();
   const isEmpty = !bars || bars.length === 0;
   // gifted-charts color props require plain strings (not PlatformColor). On the
   // Material variant resolveSystemColors pulls from materialSurfaces; on glass/
@@ -181,7 +181,7 @@ export function StackedBarChart({
       {legend && !isEmpty ? <Legend items={legend} /> : null}
     </View>
   );
-}
+});
 
 type GroupedBarsProps = {
   bars: RawGroupedBar[] | null;
@@ -196,8 +196,14 @@ type GroupedBarsProps = {
  * API, so we flatten to a single data array: two adjacent bars per grade with a
  * wider gap separating groups, and the grade label centered under each pair.
  */
-export function GroupedBarChart({ bars, height = 150, loading, emptyLabel, legend }: GroupedBarsProps) {
-  const { systemColors, colorScheme, variant } = useTheme();
+export const GroupedBarChart = memo(function GroupedBarChart({
+  bars,
+  height = 150,
+  loading,
+  emptyLabel,
+  legend,
+}: GroupedBarsProps) {
+  const { colorScheme, variant } = useTheme();
   const isEmpty = !bars || bars.length === 0;
   const chartColors = variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme];
   const groupGap = 14;
@@ -245,7 +251,7 @@ export function GroupedBarChart({ bars, height = 150, loading, emptyLabel, legen
       {legend && !isEmpty ? <Legend items={legend} /> : null}
     </View>
   );
-}
+});
 
 type AreaProps = {
   timeline: RawVPointsTimeline | null;
@@ -261,8 +267,14 @@ type AreaProps = {
  * (gifted-charts' multi-area stacking is unreliable; the per-layout breakdown
  * is conveyed by the grade-distribution chart instead).
  */
-export function TotalAreaChart({ timeline, color, height = 170, loading, emptyLabel }: AreaProps) {
-  const { systemColors, colorScheme, variant } = useTheme();
+export const TotalAreaChart = memo(function TotalAreaChart({
+  timeline,
+  color,
+  height = 170,
+  loading,
+  emptyLabel,
+}: AreaProps) {
+  const { colorScheme, variant } = useTheme();
   const chartColors = variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme];
   const isEmpty = !timeline || timeline.series.length === 0;
 
@@ -323,7 +335,7 @@ export function TotalAreaChart({ timeline, color, height = 170, loading, emptyLa
       }}
     </ChartFrame>
   );
-}
+});
 
 const styles = StyleSheet.create({
   frame: {

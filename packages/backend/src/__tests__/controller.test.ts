@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { db } from '../db/client';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, sql } from 'drizzle-orm';
 import { controllerMutations } from '../graphql/resolvers/controller/mutations';
 import { controllerQueries } from '../graphql/resolvers/controller/queries';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { controllerSubscriptions } from '../graphql/resolvers/controller/subscriptions';
+import { pubsub } from '../pubsub';
+import type { ConnectionContext, ControllerEvent } from '@boardsesh/shared-schema';
 
 // Test user ID
 const TEST_USER_ID = 'test-user-controller-tests';
@@ -38,6 +40,27 @@ function createControllerContext(
   };
 }
 
+async function nextControllerEvent(
+  iterator: AsyncIterator<{ controllerEvents: ControllerEvent }>,
+): Promise<{ controllerEvents: ControllerEvent }> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Timed out waiting for controller event')), 2000);
+  });
+
+  try {
+    const result = await Promise.race([iterator.next(), timeout]);
+    if (result.done) {
+      throw new Error('Controller event stream ended unexpectedly');
+    }
+    return result.value;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 describe('Controller Mutations', () => {
   beforeEach(async () => {
     // Create test user if not exists (needed for FK constraint)
@@ -53,6 +76,7 @@ describe('Controller Mutations', () => {
   afterEach(async () => {
     // Clean up test controllers
     await db.execute(sql`DELETE FROM esp32_controllers WHERE user_id = ${TEST_USER_ID}`);
+    vi.restoreAllMocks();
   });
 
   describe('registerController', () => {
@@ -314,6 +338,96 @@ describe('Controller Mutations', () => {
       expect(controller.lastSeenAt).toBeDefined();
     });
   });
+
+  describe('setClimbFromLedPositions', () => {
+    it('publishes raw frames for an unknown BLE climb so controllers can render a thumbnail', async () => {
+      const ctx = createMockContext();
+      const registered = await controllerMutations.registerController(
+        undefined,
+        {
+          input: {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,2,3',
+          },
+        },
+        ctx,
+      );
+      const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+      const controllerCtx = createControllerContext(registered.controllerId, registered.apiKey, {
+        controllerMac: 'AA:BB:CC:DD:EE:FF',
+      });
+      const frames = 'p999991r42,p999992r43';
+
+      const result = await controllerMutations.setClimbFromLedPositions(
+        undefined,
+        { sessionId: TEST_SESSION_ID, frames },
+        controllerCtx,
+      );
+
+      expect(result.matched).toBe(false);
+      expect(publishSpy).toHaveBeenCalledWith(
+        TEST_SESSION_ID,
+        expect.objectContaining({
+          __typename: 'CurrentClimbChanged',
+          item: null,
+          frames,
+          clientId: 'AA:BB:CC:DD:EE:FF',
+        }),
+      );
+    });
+  });
+
+  describe('controllerEvents subscription', () => {
+    it('sends flattened frames for unknown BLE climb thumbnails', async () => {
+      const ctx = createMockContext();
+      const registered = await controllerMutations.registerController(
+        undefined,
+        {
+          input: {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,2,3',
+          },
+        },
+        ctx,
+      );
+      const controllerCtx = createControllerContext(registered.controllerId, registered.apiKey);
+      const stream = controllerSubscriptions.controllerEvents.subscribe(
+        undefined,
+        { sessionId: TEST_SESSION_ID },
+        controllerCtx,
+      );
+      const iterator = stream[Symbol.asyncIterator]();
+
+      try {
+        await nextControllerEvent(iterator);
+        await nextControllerEvent(iterator);
+
+        pubsub.publishQueueEvent(TEST_SESSION_ID, {
+          __typename: 'CurrentClimbChanged',
+          sequence: 1,
+          stateHash: 'test-state-hash',
+          item: null,
+          frames: 'p1r12,p2r13',
+          clientId: 'AA:BB:CC:DD:EE:FF',
+          correlationId: null,
+        });
+
+        const update = await nextControllerEvent(iterator);
+        expect(update.controllerEvents.__typename).toBe('LedUpdate');
+        if (update.controllerEvents.__typename === 'LedUpdate') {
+          expect(update.controllerEvents.frames).toBe('p1r42p2r43');
+          expect(update.controllerEvents.climbName).toBe('Unknown Climb');
+          expect(update.controllerEvents.clientId).toBe('AA:BB:CC:DD:EE:FF');
+        }
+      } finally {
+        await iterator.return?.(undefined);
+      }
+    });
+  });
 });
 
 describe('Controller Queries', () => {
@@ -377,7 +491,11 @@ describe('Controller Queries', () => {
       const result = await controllerQueries.myControllers(undefined, undefined, ctx);
 
       expect(result).toHaveLength(2);
-      expect(result.map((c) => c.name).sort()).toEqual(['Controller 1', 'Controller 2']);
+      expect(
+        result
+          .map((controller) => controller.name ?? '')
+          .sort((leftName, rightName) => leftName.localeCompare(rightName)),
+      ).toEqual(['Controller 1', 'Controller 2']);
     });
 
     it('should require authentication', async () => {

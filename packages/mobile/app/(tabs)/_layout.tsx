@@ -5,7 +5,7 @@ import { Tabs } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
 import { useBluetoothConnectedStatus } from '../../src/lib/ble/bluetooth-status-store';
-import { useQueue } from '../../src/providers/queue-provider';
+import { useQueueSessionId } from '../../src/providers/queue-provider';
 import { QueueBottomAccessory } from '../../src/components/queue-control/QueueBottomAccessory';
 import { MaterialTabBar } from '../../src/components/navigation/MaterialTabBar';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -44,7 +44,10 @@ export default function TabLayout() {
   // Record-tab status cue: a badge when a board is connected over Bluetooth or a
   // session is live.
   const isBluetoothConnected = useBluetoothConnectedStatus();
-  const { sessionId } = useQueue();
+  // sessionId-only subscription: the tab layout renders the whole NativeTabs
+  // tree inline, so reading the volatile useQueue() here re-rendered every tab
+  // on every queue mutation. useQueueSessionId only changes on session start/end.
+  const { sessionId } = useQueueSessionId();
   const showRecordBadge = isBluetoothConnected || sessionId !== null;
 
   if (variant === 'material') {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useClimbFrames, usePlaybackEngine, type ExternalPlaybackState } from '@boardsesh/playback-react';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 
 type UseMobilePlaybackInput = {
@@ -52,7 +52,7 @@ export function useMobilePlayback({
   isOpen,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
-  const { subscribeToQueueEvents, publishPlaybackState } = useQueue();
+  const { subscribeToQueueEvents, publishPlaybackState } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   // Stable per-hook id so the engine can suppress echoes of its own broadcasts.
   const playbackClientId = useId();

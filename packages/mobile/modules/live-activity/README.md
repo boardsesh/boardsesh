@@ -42,6 +42,7 @@ the files listed below have **byte-identical copies** in both folders:
 
 - `ClimbNavigationIntent.swift`, `NextClimbIntent.swift`, `PreviousClimbIntent.swift`
 - `ClimbSessionAttributes.swift`
+- `ReconnectBoardIntent.swift`
 - `SharedConstants.swift`
 - `SharedKeychain.swift`
 - `TakeControlIntent.swift`

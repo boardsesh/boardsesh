@@ -25,12 +25,6 @@ import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 
-// The docked Material bar tucks a couple of px under the tab bar's top edge so the
-// elevated tab bar covers the seam — without this overlap a 1–2px gap shows through.
-// The -2 is reasoned, not yet measured on-device; hardware verification across
-// gesture vs 3-button nav and varying insets is tracked in #2611.
-const MATERIAL_TABBAR_OVERLAP = -2;
-
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
 export { TOOLBAR_RESERVE, TAB_BAR_HEIGHT };
@@ -49,7 +43,7 @@ export function PersistentQueueBar() {
     return (
       <ActiveContextBar
         fillPrimary
-        gapAboveTabBar={MATERIAL_TABBAR_OVERLAP}
+        dockToTabBar
         horizontalInset={0}
         primary={
           <ClimbCapsule

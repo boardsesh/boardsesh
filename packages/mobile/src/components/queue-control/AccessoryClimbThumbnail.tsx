@@ -32,8 +32,13 @@ function getAccessoryThumbnailBoardSize(boardWidth: number, boardHeight: number)
  * backgrounds) — the same warm path the list thumbnails use — rather than the
  * react-native-svg BoardRenderer with a remote `<SvgImage href>`. The accessory
  * bar is always mounted and re-renders on every queue swipe, so the cheap
- * cached-PNG path matters here. Cache keys dedupe across surfaces, so a climb
- * already seen in the list/play view is an instant cache hit. See
+ * cached-PNG path matters here.
+ *
+ * Renders with `filledStyle` so lit holds read as solid dots at the 40×40 slot
+ * size, matching the list thumbnail. That also means the cache key matches the
+ * list view's (both use the filled `_f_` token), so a climb already seen in the
+ * list is an instant cache hit. The play-view full-size render uses the
+ * stroke-only style (`_s_` token) and caches as a separate PNG. See
  * docs/react-native-performance.md §6.
  */
 export function AccessoryClimbThumbnail({ climb, boardConfig }: { climb: Climb; boardConfig: BoardConfig | null }) {
@@ -76,6 +81,7 @@ export function AccessoryClimbThumbnail({ climb, boardConfig }: { climb: Climb; 
         boardWidth={boardRenderData.boardWidth}
         boardHeight={boardRenderData.boardHeight}
         mirrored={climb.mirrored === true}
+        filledStyle
         style={thumbnailBoardStyle}
       />
     </View>

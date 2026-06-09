@@ -15,9 +15,10 @@ import {
 } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
+import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import {
   PlaylistDetailView,
+  SKELETON_PLACEHOLDERS,
   PlaylistFormSheet,
   PlaylistActionsMenu,
   PlaylistFollowButton,
@@ -359,9 +360,13 @@ export default function PlaylistDetail() {
 
   if (metaLoading && allClimbs.length === 0) {
     return (
-      <View style={styles.stateContainer}>
+      <View style={styles.skeletonContainer}>
         <PlaylistBackFab />
-        <ActivityIndicator size="large" />
+        <View style={styles.skeletonList}>
+          {SKELETON_PLACEHOLDERS.map((key) => (
+            <ClimbListRowSkeleton key={key} />
+          ))}
+        </View>
       </View>
     );
   }
@@ -406,6 +411,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
     gap: 8,
+  },
+  skeletonContainer: {
+    flex: 1,
+  },
+  skeletonList: {
+    paddingTop: 64,
   },
   stateTitle: {
     marginTop: 12,

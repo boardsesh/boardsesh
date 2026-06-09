@@ -35,6 +35,17 @@ export const SHARED_EVENTS = {
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',
   RemoveFromPlaylist: 'Remove from Playlist',
+  // Create climb
+  ClimbCreated: 'Climb Created',
+  ClimbUpdated: 'Climb Updated',
+  ClimbCreateFailed: 'Climb Create Failed',
+  // Workout / session-queue generator
+  WorkoutGeneratorOpened: 'Workout Generator Opened',
+  SessionQueueGenerated: 'Session Queue Generated',
+  // Deep-link session join
+  SessionJoined: 'Session Joined',
+  // Logbook
+  LogbookRowClicked: 'Logbook Row Clicked',
   // Ticks / logbook
   TickButtonClicked: 'Tick Button Clicked',
   QuickTickSaved: 'Quick Tick Saved',
@@ -44,6 +55,12 @@ export const SHARED_EVENTS = {
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
   BluetoothConnectionFailed: 'Bluetooth Connection Failed',
   BluetoothDisconnected: 'Bluetooth Disconnected',
+  // BLE lifecycle telemetry — added so a session recording (and PostHog) shows
+  // what the radio actually did. BluetoothConnectionStolen is the tug-of-war
+  // signal: a write failed with a disconnect error while we believed we were
+  // connected (another device grabbed the last-connection-wins board).
+  BluetoothScanStarted: 'Bluetooth Scan Started',
+  BluetoothConnectionStolen: 'Bluetooth Connection Stolen',
   ClimbSentToBoardSuccess: 'Climb Sent to Board Success',
   ClimbSentToBoardFailure: 'Climb Sent to Board Failure',
   // Search
@@ -57,6 +74,15 @@ export const SHARED_EVENTS = {
   // Beta videos
   BetaVideoLinkClicked: 'Beta Video Link Clicked',
   BetaVideoClimbClicked: 'Beta Video Climb Clicked',
+  // Onboarding tour (first-run walkthrough). Web fires the same names from its
+  // step-based guided tour; the mobile welcome carousel reuses them so both
+  // platforms land in one PostHog funnel.
+  OnboardingTourStarted: 'Onboarding Tour Started',
+  OnboardingTourStepViewed: 'Onboarding Tour Step Viewed',
+  OnboardingTourStepAdvanced: 'Onboarding Tour Step Advanced',
+  OnboardingTourCompleted: 'Onboarding Tour Completed',
+  OnboardingTourSkipped: 'Onboarding Tour Skipped',
+  BetaVideoAdded: 'Beta Video Added',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

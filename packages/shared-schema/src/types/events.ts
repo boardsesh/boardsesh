@@ -57,6 +57,7 @@ export type QueueEvent =
       sequence: number;
       stateHash: string;
       item: ClimbQueueItem | null;
+      frames?: string | null;
       clientId: string | null;
       correlationId: string | null;
     }
@@ -97,6 +98,7 @@ export type SubscriptionQueueEvent =
       sequence: number;
       stateHash: string;
       currentItem: ClimbQueueItem | null;
+      frames?: string | null;
       clientId: string | null;
       correlationId: string | null;
     }

@@ -4,6 +4,8 @@ import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -27,6 +29,7 @@ export function LogbookTab({ userId }: { userId: string | undefined }) {
   const items = feed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
 
   const handlePress = useCallback((ascent: AscentFeedItem) => {
+    track(SHARED_EVENTS.LogbookRowClicked, { climbUuid: ascent.climbUuid });
     setEditAscent(ascent);
     editSheetRef.current?.snapToIndex(0);
   }, []);

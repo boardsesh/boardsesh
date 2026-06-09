@@ -48,10 +48,9 @@ type DeferredBoardProps = {
  * the board immediately with no placeholder flash — the carousel stays mounted
  * across in-drawer swipes.
  *
- * The placeholder occupies the board's exact footprint (`width: '100%'` +
- * `aspectRatio`, identical to `BoardImageNative`) so the above-fold measurement
- * that derives the peek snap-point is the same whether or not the board has
- * mounted yet — no full→peek jump.
+ * The placeholder fills the board's flex box (`flex: 1`, the same box the
+ * contained carousel lays out into) so the first-screen layout is identical
+ * whether or not the interactive board has mounted yet — no jump on open.
  */
 export const DeferredBoard = memo(function DeferredBoard({
   open,
@@ -68,7 +67,7 @@ export const DeferredBoard = memo(function DeferredBoard({
   if (!ready) {
     return (
       <View
-        style={[styles.placeholder, { aspectRatio: boardRenderData.boardWidth / boardRenderData.boardHeight }]}
+        style={styles.placeholder}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         testID="deferred-board-placeholder"
@@ -81,7 +80,7 @@ export const DeferredBoard = memo(function DeferredBoard({
 
 const styles = StyleSheet.create({
   placeholder: {
-    width: '100%',
+    flex: 1,
     // Faint board-coloured fill so the present animation lands on a soft skeleton
     // rather than a hard gap. No image decode, no gesture handlers — cheap to
     // mount on the present frame. Matches the section skeleton tint used

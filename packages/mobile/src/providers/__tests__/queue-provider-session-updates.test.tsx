@@ -144,7 +144,7 @@ vi.mock('../queue-snackbar-provider', () => ({
   useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }),
 }));
 
-import { QueueProvider, useQueue, useQueueLiveStats } from '../queue-provider';
+import { QueueProvider, usePlaylistSuggestionSource, useQueue, useQueueLiveStats } from '../queue-provider';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -207,6 +207,7 @@ function createDeferred<T>() {
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
   const queue = useQueue();
+  const playlistSuggestionSource = usePlaylistSuggestionSource();
   // sessionUsers moved out of useQueue() into its own live-stats context so the
   // ≤1/2s party push no longer re-renders every queue consumer; read it here.
   const { sessionUsers } = useQueueLiveStats();
@@ -217,7 +218,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       users: sessionUsers,
       driverParticipantId: queue.driverParticipantId,
       lastConnectedBoardSerial: queue.lastConnectedBoardSerial,
-      playlistSuggestionSource: queue.playlistSuggestionSource,
+      playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       setCurrentClimb: queue.setCurrentClimb,
       nextClimb: queue.nextClimb,
@@ -235,7 +236,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     sessionUsers,
     queue.driverParticipantId,
     queue.lastConnectedBoardSerial,
-    queue.playlistSuggestionSource,
+    playlistSuggestionSource,
     queue.addToQueue,
     queue.setCurrentClimb,
     queue.nextClimb,

@@ -4937,6 +4937,8 @@ type CurrentClimbChanged {
   stateHash: String!
   "New current climb (null to clear)"
   item: ClimbQueueItem
+  "Raw Aurora frames for an unknown BLE climb when no database match exists"
+  frames: String
   "ID of the client that made this change"
   clientId: ID
   "Correlation ID for request tracking"
@@ -5055,6 +5057,8 @@ type LedUpdate {
   climbGrade: String
   gradeColor: String
   boardPath: String
+  "Compact Aurora frames string for rendering a climb thumbnail."
+  frames: String
   """
   Board angle in degrees. Nullable - null means angle not specified.
   Note: 0 is a valid angle value, so null should be used to indicate "no angle"

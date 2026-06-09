@@ -40,8 +40,6 @@ type InteractiveFilterBoardProps = {
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
-  /** Optional chrome (e.g. a floating toolbar) rendered over the board canvas. */
-  children?: ReactNode;
   /**
    * Overlay rendered INSIDE the zoom transform (like the hold filter rings) so it
    * tracks the board at any zoom — used by the zone editor for the draggable
@@ -75,7 +73,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   mirrored = false,
   renderWidth,
   renderHeight,
-  children,
   renderInTransform,
 }: InteractiveFilterBoardProps) {
   const { t } = useTranslation('common');
@@ -94,9 +91,15 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     [pinchGesture, scaleSV, renderWidth, renderHeight],
   );
 
+  const holdById = useMemo(() => {
+    const map = new Map<number, BoardHoldTarget>();
+    for (const hold of holdTargets) map.set(hold.id, hold);
+    return map;
+  }, [holdTargets]);
+
   const activeHighlight = useMemo(() => {
     if (activeHoldId == null || renderWidth <= 0) return null;
-    const hold = holdTargets.find((target) => target.id === activeHoldId);
+    const hold = holdById.get(activeHoldId);
     if (!hold) return null;
     const geometry = holdGeometry(hold, boardWidth, boardHeight, renderWidth, mirrored);
     const diameter = geometry.ringDiameter * 1.5;
@@ -119,7 +122,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
         ]}
       />
     );
-  }, [activeHoldId, holdTargets, boardWidth, boardHeight, renderWidth, mirrored]);
+  }, [activeHoldId, holdById, boardWidth, boardHeight, renderWidth, mirrored]);
 
   return (
     <View style={styles.root}>
@@ -191,7 +194,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
           ) : null}
         </View>
       </GestureDetector>
-      {children}
     </View>
   );
 });

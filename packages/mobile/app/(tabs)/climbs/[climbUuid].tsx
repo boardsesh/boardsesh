@@ -13,7 +13,7 @@ import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { BoardImageNative } from '../../../src/components/BoardImageNative';
 import { LogAscentSheet } from '../../../src/components/LogAscentSheet';
 import { useClimb, useToggleFavorite } from '../../../src/lib/graphql/hooks';
-import { useQueue } from '../../../src/providers/queue-provider';
+import { useQueueSessionId, useQueueActions } from '../../../src/providers/queue-provider';
 import { getBoardRenderData } from '../../../src/lib/board-details';
 import { hapticSuccess } from '../../../src/lib/haptics';
 import { track } from '../../../src/lib/analytics';
@@ -52,7 +52,8 @@ export default function ClimbDetail() {
 
   const { data: climb, isLoading } = useClimb(climbVariables);
   const toggleFavorite = useToggleFavorite();
-  const { sessionId, addToQueue } = useQueue();
+  const { sessionId } = useQueueSessionId();
+  const { addToQueue } = useQueueActions();
   const { formatGrade } = useGradeFormat();
   const [showLogAscent, setShowLogAscent] = useState(false);
 

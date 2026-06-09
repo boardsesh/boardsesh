@@ -37,8 +37,8 @@ vi.mock('../ble-manager', () => ({
 }));
 
 vi.mock('expo-keep-awake', () => ({
-  activateKeepAwakeAsync: vi.fn(),
-  deactivateKeepAwake: vi.fn(),
+  activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
+  deactivateKeepAwake: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@boardsesh/ble-protocol/aurora', () => ({

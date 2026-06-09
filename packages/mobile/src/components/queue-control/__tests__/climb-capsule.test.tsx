@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode, type CSSProperties } from 'react';
+import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { ClimbQueueItem, Climb } from '@boardsesh/queue';
 
 // --- hoisted spies so individual tests can reconfigure provider state ---------
@@ -38,9 +38,26 @@ function backgroundOf(style: unknown): string {
   }
   return '';
 }
+type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
 vi.mock('react-native', () => ({
-  View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: unknown }) =>
-    createElement('div', { 'data-testid': testID, 'data-bg': backgroundOf(style) }, children),
+  View: ({
+    children,
+    testID,
+    style,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    style?: unknown;
+    onLayout?: LayoutHandler;
+  }) => {
+    // jsdom never lays out, so simulate the swipe viewport being measured —
+    // otherwise width stays 0, canPeek is false, and the peek slots never render.
+    useEffect(() => {
+      onLayout?.({ nativeEvent: { layout: { width: 400, height: 48 } } });
+    }, [onLayout]);
+    return createElement('div', { 'data-testid': testID, 'data-bg': backgroundOf(style) }, children);
+  },
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
     absoluteFill: {},
@@ -54,6 +71,7 @@ vi.mock('react-native-reanimated', () => ({
   runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
   useAnimatedStyle: () => ({}),
   useDerivedValue: () => ({ value: 0 }),
+  useSharedValue: (initial: number) => ({ value: initial }),
 }));
 
 // GestureDetector just renders its child; Gesture is a fluent no-op builder so
@@ -119,6 +137,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
+  usePlaylistSuggestionSource: () => null,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({

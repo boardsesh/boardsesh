@@ -1,8 +1,10 @@
-import { Platform, StyleSheet, View } from 'react-native';
+import { useCallback } from 'react';
+import { type LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
+import { useSetMeasuredTabBarHeight } from '../../providers/tab-bar-height-provider';
 import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { TAB_BAR_HEIGHT } from '../../theme/layout';
@@ -25,8 +27,17 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
   const inactiveColor = systemColors.secondaryLabel;
   const indicatorColor = withAlpha(brandColors.primary, 0.1);
 
+  // Publish the real rendered height so the root-level queue bar docks flush against
+  // it (rather than re-deriving the tab-bar top from TAB_BAR_HEIGHT + inset). #2611.
+  const setMeasuredTabBarHeight = useSetMeasuredTabBarHeight();
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => setMeasuredTabBarHeight(event.nativeEvent.layout.height),
+    [setMeasuredTabBarHeight],
+  );
+
   return (
     <View
+      onLayout={handleLayout}
       style={[
         styles.bar,
         {

@@ -55,6 +55,20 @@ export const getLayout = (boardName: BoardName, layoutId: number): LayoutData | 
   return LAYOUTS[boardName]?.[layoutId] ?? null;
 };
 
+/**
+ * Resolve a layout id to its human-readable name (e.g. `1` → "Kilter Board
+ * Original"). Returns `''` for an unknown layout, matching web's
+ * `boardDetails.layout_name || ''` fallback so analytics `boardLayout`
+ * properties carry the same string value on web and mobile.
+ *
+ * Shared by every call site that reports `boardLayout` to analytics
+ * (create-climb events, and the hold/zone filter events) so a numeric layout
+ * id is never sent where web sends a name.
+ */
+export const getLayoutName = (boardName: BoardName, layoutId: number): string => {
+  return LAYOUTS[boardName]?.[layoutId]?.name ?? '';
+};
+
 export const getAllLayouts = (boardName: BoardName): LayoutData[] => {
   const layouts = LAYOUTS[boardName];
   return layouts ? Object.values(layouts) : [];

@@ -158,6 +158,17 @@ export default defineConfig({
       codegen: {
         command:
           'bun packages/shared-schema/scripts/print-schema.ts && graphql-codegen && vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/',
+        input: [
+          'codegen.ts',
+          'packages/shared-schema/scripts/print-schema.ts',
+          'packages/shared-schema/src/schema/**/*.ts',
+          'packages/shared-schema/src/types/**/*.ts',
+          'packages/shared/graphql/src/**/*.ts',
+          '!packages/shared/graphql/src/generated/**',
+          'packages/web/app/**/*.{ts,tsx}',
+          '!packages/web/app/lib/graphql/**',
+          '!packages/web/**/*.test.{ts,tsx}',
+        ],
       },
 
       // --- Build (topological order via dependsOn) ---
@@ -363,6 +374,19 @@ export default defineConfig({
           'typecheck:kilter',
           'typecheck:sync-runtime',
         ],
+      },
+      // Footgun-proof scoped test runs. `vp test --project <name> run` (the
+      // `--project` flag BEFORE the `run` subcommand) silently treats the name
+      // as a filename filter and runs ~1 file — a false green. These aliases
+      // wrap the correct `vp test run --project <name>` form so the order can't
+      // be got wrong. cache:false so tests always re-run.
+      'test:mobile': {
+        command: 'vp test run --project mobile',
+        cache: false,
+      },
+      'test:web': {
+        command: 'vp test run --project web',
+        cache: false,
       },
 
       // --- Mobile validation ---

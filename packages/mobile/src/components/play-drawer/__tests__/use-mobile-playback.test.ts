@@ -73,7 +73,7 @@ mocks.queueValue = {
 };
 
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => mocks.queueValue,
+  useQueueActions: () => mocks.queueValue,
 }));
 
 vi.mock('../../../providers/bluetooth-provider', () => ({

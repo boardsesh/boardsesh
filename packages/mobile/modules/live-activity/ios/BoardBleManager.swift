@@ -59,7 +59,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private let chunkSize = 20
     private let chunkDelay: TimeInterval = 0.005
     private let connectTimeout: TimeInterval = 8
-    private let reconnectDelays: [TimeInterval] = [1, 2, 5, 10, 20, 30]
 
     private lazy var centralManager = CBCentralManager(
         delegate: self,
@@ -75,11 +74,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var connectTimeoutWorkItem: DispatchWorkItem?
     private var scanRequested = false
     private var scanServices: [CBUUID] = []
+    // Set while the Live Activity lightbulb's reconnect-by-last-known-board is
+    // falling back to a scan: connect as soon as this UUID advertises.
+    private var reconnectScanTargetUuid: UUID?
+    private var reconnectScanCompletion: ((Result<Void, Error>) -> Void)?
+    private var reconnectScanTimeoutWorkItem: DispatchWorkItem?
     private var intentionalDisconnectGenerations: [UUID: UInt64] = [:]
-    private var automaticReconnectGenerations: [UUID: UInt64] = [:]
     private var peripheralGenerations: [UUID: UInt64] = [:]
     private var connectionGeneration: UInt64 = 0
-    private var reconnectAttempt = 0
     private var writeQueue: [WriteRequest] = []
     private var writeGeneration: UInt64 = 0
     private var isWriting = false
@@ -152,6 +154,26 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     func disconnect(completion: (() -> Void)? = nil) {
         runOnBleQueue { [weak self] in
             self?.disconnectOnBleQueue(completion: completion)
+        }
+    }
+
+    /// Reconnect to the last successfully connected board (persisted peripheral
+    /// UUID) without a device picker. Drives the Live Activity lightbulb's
+    /// ReconnectBoardIntent. Tries a direct retrieve-by-identifier first (no
+    /// scan, works while backgrounded); falls back to a time-boxed scan that
+    /// connects when the stored UUID advertises.
+    ///
+    /// Known limitation: this reconnects the native layer only. The wall re-lights
+    /// (displaySharedCurrentItemOnBleQueue) and widget next/prev keep driving it,
+    /// but the JS `isConnected` is NOT updated — there's no native→JS "connected"
+    /// event yet — so after a background widget reconnect the in-app lightbulb
+    /// shows disconnected and in-app climb navigation won't push to the wall until
+    /// the user taps it once (which connects JS to the already-connected board, a
+    /// fast no-op on the native side). Follow-up: bridge a `connected` event +
+    /// adopt the connection in NativeIosBleAdapter on app foreground.
+    func reconnectToLastKnownBoard(completion: @escaping (Result<Void, Error>) -> Void) {
+        runOnBleQueue { [weak self] in
+            self?.reconnectToLastKnownBoardOnBleQueue(completion: completion)
         }
     }
 
@@ -261,6 +283,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func connectOnBleQueue(deviceId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        // Supersede any in-flight reconnect-by-last-known scan: this is a no-op
+        // when called from the reconnect path itself (which already nils the scan
+        // state first), but settles a stranded scan immediately when an unrelated
+        // connect interleaves instead of letting it linger until its timeout.
+        failReconnectScan(BoardBleError.notConnected)
+
         guard centralManager.state == .poweredOn else {
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
@@ -281,7 +309,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         failQueuedWrites(BoardBleError.writeCancelled)
         connectionGeneration += 1
         let generation = connectionGeneration
-        automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
         intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
         connectedPeripheral = peripheral
@@ -294,7 +321,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             guard self.pendingConnectCompletion != nil else { return }
             guard self.peripheralGenerations[peripheral.identifier] == generation else { return }
             self.peripheralGenerations.removeValue(forKey: peripheral.identifier)
-            self.automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
             if self.connectedPeripheral?.identifier == peripheral.identifier {
                 self.connectedPeripheral = nil
                 self.writeCharacteristic = nil
@@ -310,9 +336,90 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         ])
     }
 
+    private func reconnectToLastKnownBoardOnBleQueue(completion: @escaping (Result<Void, Error>) -> Void) {
+        // Already connected — re-light the wall and report success.
+        if connectedPeripheral != nil, writeCharacteristic != nil {
+            completion(.success(()))
+            displaySharedCurrentItemOnBleQueue()
+            return
+        }
+        guard centralManager.state == .poweredOn else {
+            completion(.failure(BoardBleError.bluetoothUnavailable))
+            return
+        }
+        guard let defaults = SharedConstants.sharedDefaults,
+              let uuidString = defaults.string(forKey: SharedConstants.bleLastPeripheralUuidKey),
+              let uuid = UUID(uuidString: uuidString)
+        else {
+            completion(.failure(BoardBleError.deviceNotFound))
+            return
+        }
+
+        // Fast path: the system still has this peripheral cached — connect
+        // directly without scanning (works while backgrounded).
+        if let peripheral = centralManager.retrievePeripherals(withIdentifiers: [uuid]).first {
+            discoveredPeripherals[uuidString] = peripheral
+            if let name = peripheral.name {
+                discoveredNames[uuidString] = name
+            }
+            connectOnBleQueue(deviceId: uuidString, completion: completion)
+            return
+        }
+
+        // Fallback: scan, and connect when the stored UUID advertises.
+        beginReconnectScanOnBleQueue(targetUuid: uuid, completion: completion)
+    }
+
+    private func beginReconnectScanOnBleQueue(targetUuid: UUID, completion: @escaping (Result<Void, Error>) -> Void) {
+        reconnectScanTargetUuid = targetUuid
+        reconnectScanCompletion = completion
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.failReconnectScan(BoardBleError.connectTimedOut)
+        }
+        reconnectScanTimeoutWorkItem = timeout
+        bleQueue.asyncAfter(deadline: .now() + connectTimeout, execute: timeout)
+
+        // Filter on both the Aurora advertised service and the UART service so a
+        // MoonBoard (which advertises UART) is matchable too, mirroring the JS
+        // adapter's scan filter.
+        startScanOnBleQueue(serviceUuids: [auroraServiceUuid.uuidString, uartServiceUuid.uuidString]) { [weak self] result in
+            if case .failure(let error) = result {
+                self?.failReconnectScan(error)
+            }
+        }
+    }
+
+    /// Settle a pending reconnect scan with a failure (timeout or scan error),
+    /// firing the stored completion exactly once and tearing down the scan.
+    private func failReconnectScan(_ error: Error) {
+        guard let completion = reconnectScanCompletion else { return }
+        reconnectScanCompletion = nil
+        reconnectScanTargetUuid = nil
+        reconnectScanTimeoutWorkItem?.cancel()
+        reconnectScanTimeoutWorkItem = nil
+        stopScanOnBleQueue()
+        completion(.failure(error))
+    }
+
+    private func persistLastConnectedPeripheral(_ peripheral: CBPeripheral) {
+        SharedConstants.sharedDefaults?.set(
+            peripheral.identifier.uuidString,
+            forKey: SharedConstants.bleLastPeripheralUuidKey
+        )
+    }
+
+    private func clearLastConnectedPeripheral() {
+        SharedConstants.sharedDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
+    }
+
     private func disconnectOnBleQueue(completion: (() -> Void)? = nil) {
         connectionGeneration += 1
-        reconnectAttempt = 0
+        // Settle any in-flight reconnect-by-last-known scan before tearing down.
+        failReconnectScan(BoardBleError.notConnected)
+        // A deliberate disconnect forgets the board so the widget lightbulb won't
+        // silently reconnect to it later. An unexpected drop leaves it intact.
+        clearLastConnectedPeripheral()
         stopScanOnBleQueue()
         failQueuedWrites(BoardBleError.notConnected)
         completePendingConnect(.failure(BoardBleError.notConnected))
@@ -323,7 +430,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
         intentionalDisconnectGenerations[peripheral.identifier] = connectionGeneration
         peripheralGenerations[peripheral.identifier] = connectionGeneration
         centralManager.cancelPeripheralConnection(peripheral)
@@ -490,6 +596,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             discoveredNames[deviceId] = name
         }
         onScanResult?(BoardBleScanResult(deviceId: deviceId, name: name, rssi: RSSI.intValue))
+
+        // Reconnect-by-last-known-board scan fallback: the stored board just
+        // advertised — hand its completion to connectOnBleQueue (which stops the
+        // scan and connects). Fires exactly once.
+        if let targetUuid = reconnectScanTargetUuid, peripheral.identifier == targetUuid,
+           let completion = reconnectScanCompletion {
+            reconnectScanCompletion = nil
+            reconnectScanTargetUuid = nil
+            reconnectScanTimeoutWorkItem?.cancel()
+            reconnectScanTimeoutWorkItem = nil
+            connectOnBleQueue(deviceId: deviceId, completion: completion)
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -497,35 +615,22 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             central.cancelPeripheralConnection(peripheral)
             return
         }
-        automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
-        reconnectAttempt = 0
         peripheral.delegate = self
         peripheral.discoverServices([uartServiceUuid])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else { return }
-        let reconnectGeneration = automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
-
-        if pendingConnectCompletion != nil {
-            peripheralGenerations.removeValue(forKey: peripheral.identifier)
-            if connectedPeripheral?.identifier == peripheral.identifier {
-                connectedPeripheral = nil
-                writeCharacteristic = nil
-            }
-            completePendingConnect(.failure(error ?? BoardBleError.notConnected))
-            return
+        // Every connect attempt (user-initiated picker connect, or the Live Activity
+        // lightbulb's reconnectToLastKnownBoard) sets pendingConnectCompletion, so a
+        // failure here just settles that one attempt. No auto-reconnect: we never
+        // silently retry a board another device may have legitimately taken.
+        peripheralGenerations.removeValue(forKey: peripheral.identifier)
+        if connectedPeripheral?.identifier == peripheral.identifier {
+            connectedPeripheral = nil
+            writeCharacteristic = nil
         }
-
-        guard reconnectGeneration == connectionGeneration else { return }
-        guard connectedPeripheral?.identifier == peripheral.identifier else {
-            peripheralGenerations.removeValue(forKey: peripheral.identifier)
-            return
-        }
-
-        writeCharacteristic = nil
-        failQueuedWrites(error ?? BoardBleError.notConnected)
-        scheduleReconnect(peripheral, generation: connectionGeneration)
+        completePendingConnect(.failure(error ?? BoardBleError.notConnected))
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
@@ -537,13 +642,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             if peripheralGenerations[peripheral.identifier] == intentionalDisconnectGeneration {
                 peripheralGenerations.removeValue(forKey: peripheral.identifier)
             }
-            automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
             return
         }
 
         guard wasCurrentPeripheral else {
             peripheralGenerations.removeValue(forKey: peripheral.identifier)
-            automaticReconnectGenerations.removeValue(forKey: peripheral.identifier)
             return
         }
 
@@ -552,7 +655,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         failQueuedWrites(error ?? BoardBleError.notConnected)
         onDisconnect?(deviceId)
 
-        scheduleReconnect(peripheral, generation: connectionGeneration)
+        // No auto-reconnect. These boards are last-connection-wins, so silently
+        // re-grabbing the link would steal the wall back from whoever took it — a
+        // ping-pong that flickers the LEDs. Reconnection is user-initiated only:
+        // the in-app device picker, or the Live Activity lightbulb
+        // (reconnectToLastKnownBoard).
     }
 
     // MARK: - CBPeripheralDelegate
@@ -586,6 +693,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         connectedPeripheral = peripheral
         writeCharacteristic = characteristic
+        // Remember the board so the Live Activity lightbulb can reconnect to it
+        // by identifier later, no device pick required.
+        persistLastConnectedPeripheral(peripheral)
         completePendingConnect(.success(()))
         logger.info("Connected to board BLE peripheral \(peripheral.identifier.uuidString, privacy: .public)")
         let hadPendingReadyWaiters = readyWaiters.hasPendingWaiters
@@ -669,22 +779,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let completion = pendingConnectCompletion
         pendingConnectCompletion = nil
         completion?(result)
-    }
-
-    private func scheduleReconnect(_ peripheral: CBPeripheral, generation: UInt64) {
-        guard reconnectAttempt < reconnectDelays.count else { return }
-        let delay = reconnectDelays[reconnectAttempt]
-        reconnectAttempt += 1
-        bleQueue.asyncAfter(deadline: .now() + delay) { [weak self, weak peripheral] in
-            guard let self, let peripheral, self.connectionGeneration == generation else { return }
-            self.connectedPeripheral = peripheral
-            peripheral.delegate = self
-            self.peripheralGenerations[peripheral.identifier] = generation
-            self.automaticReconnectGenerations[peripheral.identifier] = generation
-            self.centralManager.connect(peripheral, options: [
-                CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
-            ])
-        }
     }
 
     private func processWriteQueue() {

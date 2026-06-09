@@ -9,6 +9,7 @@ const cfg = vi.hoisted(() => ({
   onClimbsTab: true,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  measuredTabBarHeight: null as number | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -37,6 +38,7 @@ vi.mock('../../../lib/route-segments', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
+  useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
@@ -48,7 +50,13 @@ vi.mock('../../../theme/layout', () => ({
   TOOLBAR_GAP: 8,
   TOOLBAR_FAB_SIZE: 56,
   TOOLBAR_GAP_ABOVE_TABBAR: 10,
+  TABBAR_SEAM_OVERLAP: 1,
   glassSize: { hero: 64, inline: 44 },
+}));
+// The docked Material bar reads the tab bar's measured height to position itself.
+vi.mock('../../../providers/tab-bar-height-provider', () => ({
+  useMeasuredTabBarHeight: () => cfg.measuredTabBarHeight,
+  useSetMeasuredTabBarHeight: () => vi.fn(),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4 } }));
 // Default to the Liquid Glass layout (centered capsule + standalone hero tick).
@@ -96,6 +104,7 @@ describe('PersistentQueueBar', () => {
     cfg.onClimbsTab = true;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.variant = 'liquidGlass';
+    cfg.measuredTabBarHeight = null;
   });
 
   it('renders nothing when no climb is current', () => {
@@ -131,5 +140,13 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"right":0');
     expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('docks the Material bar on the measured tab-bar top, tucked under the hairline', () => {
+    // Measured tab bar = 80px tall → the docked bar sits at 80 - TABBAR_SEAM_OVERLAP(1).
+    cfg.variant = 'material';
+    cfg.measuredTabBarHeight = 80;
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":79');
   });
 });

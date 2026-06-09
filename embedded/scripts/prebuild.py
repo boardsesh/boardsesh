@@ -206,6 +206,16 @@ def check_board_data_codegen():
         print("[Board Data Codegen] Board data is up-to-date")
 
 
+def env_has_define(define_name: str) -> bool:
+    """Return true when the active PlatformIO env has a C/C++ define set."""
+    for define in env.get("CPPDEFINES", []):
+        if define == define_name:
+            return True
+        if isinstance(define, (list, tuple)) and len(define) > 0 and define[0] == define_name:
+            return True
+    return False
+
+
 def before_build(source, target, env):
     """Pre-build hook to check and regenerate types if needed."""
     if _has_codegen_run():
@@ -238,8 +248,11 @@ def before_build(source, target, env):
     else:
         print("[GraphQL Codegen] Types are up-to-date")
 
-    # Also check board data codegen
-    check_board_data_codegen()
+    # Only the local board-image firmware needs generated board image/hold data.
+    if env_has_define("ENABLE_BOARD_IMAGE"):
+        check_board_data_codegen()
+    else:
+        print("[Board Data Codegen] Skipping (ENABLE_BOARD_IMAGE not set)")
 
 
 # Register the pre-build action.
@@ -247,4 +260,3 @@ def before_build(source, target, env):
 # The environment variable deduplication ensures we only run once regardless of which fires first.
 env.AddPreAction("buildprog", before_build)
 env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", before_build)
-

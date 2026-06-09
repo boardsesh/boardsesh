@@ -19,7 +19,7 @@ import { Icon } from '../../Icon';
 import { Text } from '../../Text';
 import { type IconName } from '../../icon-map';
 import { useTheme } from '../../../providers/theme-provider';
-import { useQueue, useQueueLiveStats } from '../../../providers/queue-provider';
+import { useQueueSessionControls, useQueueActions, useQueueLiveStats } from '../../../providers/queue-provider';
 import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
@@ -231,7 +231,8 @@ export function InSessionView({ translateY, screenHeight }: InSessionViewProps) 
   const router = useRouter();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
-  const { sessionId, driverParticipantId, participantId, setCurrentClimb, endSession } = useQueue();
+  const { sessionId, driverParticipantId, participantId } = useQueueSessionControls();
+  const { setCurrentClimb, endSession } = useQueueActions();
   const { liveStats, sessionUsers } = useQueueLiveStats();
 
   // Seed the live view from the full session detail (rich grade split, flashes,

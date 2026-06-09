@@ -15,13 +15,22 @@ import { sheetStyles } from '../theme/tokens';
  * from gorhom positions the fill; the sheet corner radii round the top and
  * `overflow: 'hidden'` clips the blur fallback to those corners.
  */
-export function GlassSheetBackground({ style, pointerEvents }: BottomSheetBackgroundProps) {
+type GlassSheetBackgroundProps = BottomSheetBackgroundProps & {
+  /**
+   * Square off the top corners for full-screen presentations (the play drawer
+   * now-playing takeover). Overrides both the iOS top radius and the Material
+   * 28dp corners so the sheet reads as a screen, not a panel.
+   */
+  flatTop?: boolean;
+};
+
+export function GlassSheetBackground({ style, pointerEvents, flatTop }: GlassSheetBackgroundProps) {
   const { systemColors, sheet } = useTheme();
   return (
     <GlassSurface
       glassEffectStyle="regular"
       fallbackColor={systemColors.secondaryBackground}
-      style={[style, sheetStyles.background, sheet.corners, styles.clip]}
+      style={[style, sheetStyles.background, sheet.corners, flatTop && styles.flatTop, styles.clip]}
       pointerEvents={pointerEvents}
     />
   );
@@ -30,5 +39,9 @@ export function GlassSheetBackground({ style, pointerEvents }: BottomSheetBackgr
 const styles = StyleSheet.create({
   clip: {
     overflow: 'hidden',
+  },
+  flatTop: {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
   },
 });

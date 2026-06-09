@@ -1,9 +1,8 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
   StyleSheet,
   RefreshControl,
-  Image,
   Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -52,7 +51,7 @@ import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-a
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useAuth } from '../../../src/providers/auth-provider';
-import { getBoardRenderData } from '../../../src/lib/board-details';
+import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
 import {
   getRecentFilters,
   addRecentFilter,
@@ -113,6 +112,17 @@ export default function ClimbList() {
   );
 }
 
+// Reads the active-climb selector itself, so navigating climbs re-renders only
+// these cheap row wrappers (and the two ClimbListRows whose `selected` flips) —
+// never ClimbListInner or the FlashList. ClimbListRow stays presentational (a
+// plain `selected` prop), so PlaylistDetailView's rows are unaffected.
+const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
+  props: Omit<ComponentProps<typeof ClimbListRow>, 'selected'>,
+) {
+  const activeClimbUuid = useActiveClimbUuid();
+  return <ClimbListRow {...props} selected={props.climb.uuid === activeClimbUuid} />;
+});
+
 function ClimbListInner() {
   const router = useRouter();
   const { t } = useTranslation('climbs');
@@ -131,11 +141,6 @@ function ClimbListInner() {
     patchFilters,
     patchBoardFilters,
   } = useClimbSearch();
-  // The active climb (driving the board / persistent queue bar). We highlight
-  // its row so the search → tap → change-active loop is always visible. The
-  // selector changes identity only when the active uuid changes, so unrelated
-  // queue mutations / party pushes no longer re-render this screen.
-  const activeClimbUuid = useActiveClimbUuid();
   const { getLogbook } = useBoardProvider();
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
   const nativeSearchRef = useRef<NativeSearchBarRef>(null);
@@ -378,21 +383,18 @@ function ClimbListInner() {
     return () => clearTimeout(handle);
   }, [filters, name, boardFilters, boardConfig, boardKey]);
 
-  // Pre-warm board images so they're cached before the user taps into a climb.
+  // Pre-warm bundled board backgrounds so the first tap into a climb paints
+  // instantly. Backgrounds are bundled file:// assets — never fetch board art
+  // over HTTP (the production CDN/WAF 403s the app's request).
   useEffect(() => {
     if (!activeBoard) return;
     const parsedSetIds = activeBoard.setIds.split(',').map(Number);
-    const renderData = getBoardRenderData({
+    void ensureBackgroundsCached({
       boardName: activeBoard.boardType as BoardName,
       layoutId: activeBoard.layoutId,
       sizeId: activeBoard.sizeId,
       setIds: parsedSetIds,
     });
-    if (renderData?.imageUrls) {
-      for (const url of renderData.imageUrls) {
-        void Image.prefetch(url);
-      }
-    }
   }, [activeBoard]);
 
   const searchInput = useMemo(
@@ -700,7 +702,7 @@ function ClimbListInner() {
 
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (
-      <ClimbListRow
+      <ActiveAwareClimbListRow
         climb={climb}
         boardName={boardName as BoardName}
         layoutId={layoutId}
@@ -711,7 +713,6 @@ function ClimbListInner() {
         onOpenActions={openClimbActions}
         onOpenPlaylist={openAddToPlaylist}
         onAddToQueue={handleAddToQueue}
-        selected={climb.uuid === activeClimbUuid}
       />
     ),
     [
@@ -724,7 +725,6 @@ function ClimbListInner() {
       openClimbActions,
       openAddToPlaylist,
       handleAddToQueue,
-      activeClimbUuid,
     ],
   );
 
