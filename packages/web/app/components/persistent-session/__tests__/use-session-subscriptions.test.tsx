@@ -29,6 +29,7 @@ describe('useSessionSubscriptions — watchdog convergence (issue #2359)', () =>
       isFilteringCorruptedItemsRef: { current: false },
       queueEventSubscribersRef: { current: new Set() },
       sessionEventSubscribersRef: { current: new Set() },
+      offlineBufferRef: { current: [] },
     } as unknown as SubscriptionsArgs['refs'];
 
     renderHook(() =>
