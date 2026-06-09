@@ -85,6 +85,28 @@ function renderRectToGridBox(rect: RenderRect, dims: BoardDimensions, renderWidt
   );
 }
 
+// Clamp a render-pixel rect to the board surface + minimum size on the UI
+// thread. Mirrors clampZoneBox semantics in render-pixel space. Module-level
+// (params instead of closed-over shared values) to match the codebase worklet
+// pattern (see play-drawer/use-zoom-pan-gesture.ts) — keeps it stable and
+// callable from any gesture without a per-render closure.
+function clampRectWorklet(rect: RenderRect, minSize: number, boundWidth: number, boundHeight: number): RenderRect {
+  'worklet';
+  let rectLeft = rect.left;
+  let rectTop = rect.top;
+  let rectWidth = rect.width;
+  let rectHeight = rect.height;
+  if (rectWidth < minSize) rectWidth = minSize;
+  if (rectHeight < minSize) rectHeight = minSize;
+  if (rectWidth > boundWidth) rectWidth = boundWidth;
+  if (rectHeight > boundHeight) rectHeight = boundHeight;
+  if (rectLeft < 0) rectLeft = 0;
+  if (rectTop < 0) rectTop = 0;
+  if (rectLeft + rectWidth > boundWidth) rectLeft = boundWidth - rectWidth;
+  if (rectTop + rectHeight > boundHeight) rectTop = boundHeight - rectHeight;
+  return { left: rectLeft, top: rectTop, width: rectWidth, height: rectHeight };
+}
+
 type Corner = { mode: Exclude<DragMode, 'move'>; anchorX: 'left' | 'right'; anchorY: 'top' | 'bottom' };
 
 const CORNERS: ReadonlyArray<Corner> = [
@@ -179,31 +201,6 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
     [dims, renderWidth, onCommit],
   );
 
-  // Clamp a render-pixel rect to the board surface + minimum size on the UI
-  // thread. Mirrors clampZoneBox semantics in render-pixel space.
-  const clampRectWorklet = useCallback(
-    (rect: RenderRect): RenderRect => {
-      'worklet';
-      const minSize = minRenderSize.value;
-      const boundWidth = renderWidthSV.value;
-      const boundHeight = renderHeightSV.value;
-      let rectLeft = rect.left;
-      let rectTop = rect.top;
-      let rectWidth = rect.width;
-      let rectHeight = rect.height;
-      if (rectWidth < minSize) rectWidth = minSize;
-      if (rectHeight < minSize) rectHeight = minSize;
-      if (rectWidth > boundWidth) rectWidth = boundWidth;
-      if (rectHeight > boundHeight) rectHeight = boundHeight;
-      if (rectLeft < 0) rectLeft = 0;
-      if (rectTop < 0) rectTop = 0;
-      if (rectLeft + rectWidth > boundWidth) rectLeft = boundWidth - rectWidth;
-      if (rectTop + rectHeight > boundHeight) rectTop = boundHeight - rectHeight;
-      return { left: rectLeft, top: rectTop, width: rectWidth, height: rectHeight };
-    },
-    [minRenderSize, renderWidthSV, renderHeightSV],
-  );
-
   const handleRadius = useMemo(() => {
     const renderScale = renderWidth > 0 ? renderWidth / dims.boardWidth : 1;
     return computeHandleRadius(dims) * renderScale;
@@ -228,12 +225,17 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
             'worklet';
             const dx = event.translationX / zoomScale.value;
             const dy = event.translationY / zoomScale.value;
-            const next = clampRectWorklet({
-              left: startLeft.value + dx,
-              top: startTop.value + dy,
-              width: startWidth.value,
-              height: startHeight.value,
-            });
+            const next = clampRectWorklet(
+              {
+                left: startLeft.value + dx,
+                top: startTop.value + dy,
+                width: startWidth.value,
+                height: startHeight.value,
+              },
+              minRenderSize.value,
+              renderWidthSV.value,
+              renderHeightSV.value,
+            );
             left.value = next.left;
             top.value = next.top;
             width.value = next.width;
@@ -247,10 +249,12 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
       ),
     [
       boardPinch,
-      clampRectWorklet,
       commit,
       height,
       left,
+      minRenderSize,
+      renderHeightSV,
+      renderWidthSV,
       startHeight,
       startLeft,
       startTop,
@@ -262,23 +266,33 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
   );
 
   // VoiceOver move: nudge the whole box without a drag, so it's usable without
-  // the gesture. Clamp keeps it on the board.
+  // the gesture. Clamp keeps it on the board. We also seed the live shared rect
+  // locally (in addition to committing up): the parent intentionally keeps
+  // `renderInTransform` stable across box-value changes (so InteractiveFilterBoard
+  // doesn't re-render the board on every drag commit), which means this overlay
+  // is not re-rendered on a11y nudges — so the visual rect would otherwise lag.
   const moveByGrid = useCallback(
     (direction: 1 | -1) => {
       const delta = direction * A11Y_STEP;
-      onCommit(
-        clampZoneBox(
-          {
-            edgeLeft: zoneBox.edgeLeft + delta,
-            edgeRight: zoneBox.edgeRight + delta,
-            edgeBottom: zoneBox.edgeBottom + delta,
-            edgeTop: zoneBox.edgeTop + delta,
-          },
-          dims,
-        ),
+      const nextBox = clampZoneBox(
+        {
+          edgeLeft: zoneBox.edgeLeft + delta,
+          edgeRight: zoneBox.edgeRight + delta,
+          edgeBottom: zoneBox.edgeBottom + delta,
+          edgeTop: zoneBox.edgeTop + delta,
+        },
+        dims,
       );
+      if (renderWidth > 0) {
+        const rect = gridBoxToRenderRect(nextBox, dims, renderWidth);
+        left.value = rect.left;
+        top.value = rect.top;
+        width.value = rect.width;
+        height.value = rect.height;
+      }
+      onCommit(nextBox);
     },
-    [dims, onCommit, zoneBox],
+    [dims, onCommit, zoneBox, renderWidth, left, top, width, height],
   );
 
   const onBodyAccessibilityAction = useCallback(
@@ -357,7 +371,9 @@ export const ZoneOverlay = React.memo(function ZoneOverlay({
           startHeight={startHeight}
           handleRadius={handleRadius}
           zoomScale={zoomScale}
-          clampRectWorklet={clampRectWorklet}
+          minRenderSize={minRenderSize}
+          renderWidthSV={renderWidthSV}
+          renderHeightSV={renderHeightSV}
           commit={commit}
           boardPinch={boardPinch}
           brandColor={brandColor}
@@ -385,7 +401,9 @@ type CornerHandleProps = {
   startHeight: SharedValue<number>;
   handleRadius: number;
   zoomScale: SharedValue<number>;
-  clampRectWorklet: (rect: RenderRect) => RenderRect;
+  minRenderSize: SharedValue<number>;
+  renderWidthSV: SharedValue<number>;
+  renderHeightSV: SharedValue<number>;
   commit: (rect: RenderRect) => void;
   boardPinch: GestureType;
   brandColor: ColorValue;
@@ -409,7 +427,9 @@ const CornerHandle = React.memo(function CornerHandle({
   startHeight,
   handleRadius,
   zoomScale,
-  clampRectWorklet,
+  minRenderSize,
+  renderWidthSV,
+  renderHeightSV,
   commit,
   boardPinch,
   brandColor,
@@ -464,7 +484,12 @@ const CornerHandle = React.memo(function CornerHandle({
               nextTop = anchorY === 'top' ? startTop.value + startHeight.value : startTop.value;
               nextHeight = 0;
             }
-            const next = clampRectWorklet({ left: nextLeft, top: nextTop, width: nextWidth, height: nextHeight });
+            const next = clampRectWorklet(
+              { left: nextLeft, top: nextTop, width: nextWidth, height: nextHeight },
+              minRenderSize.value,
+              renderWidthSV.value,
+              renderHeightSV.value,
+            );
             left.value = next.left;
             top.value = next.top;
             width.value = next.width;
@@ -480,10 +505,12 @@ const CornerHandle = React.memo(function CornerHandle({
       anchorX,
       anchorY,
       boardPinch,
-      clampRectWorklet,
       commit,
       height,
       left,
+      minRenderSize,
+      renderHeightSV,
+      renderWidthSV,
       startHeight,
       startLeft,
       startTop,
@@ -501,7 +528,10 @@ const CornerHandle = React.memo(function CornerHandle({
     return { left: x - MIN_HIT / 2, top: y - MIN_HIT / 2 };
   });
 
-  // VoiceOver resize: grow/shrink the box from this corner without a drag.
+  // VoiceOver resize: grow/shrink the box from this corner without a drag. Also
+  // seeds the live shared rect locally — same reason as the body's moveByGrid:
+  // the overlay isn't re-rendered on a11y commits, so the visual rect would lag
+  // without a direct UI-thread update.
   const adjust = useCallback(
     (direction: 1 | -1) => {
       const next: ZoneBoxInput = { ...zoneBox };
@@ -510,9 +540,18 @@ const CornerHandle = React.memo(function CornerHandle({
       if (mode === 'ne' || mode === 'se') next.edgeRight = zoneBox.edgeRight + delta;
       if (mode === 'nw' || mode === 'ne') next.edgeTop = zoneBox.edgeTop + delta;
       if (mode === 'sw' || mode === 'se') next.edgeBottom = zoneBox.edgeBottom - delta;
-      onCommit(clampZoneBox(next, dims));
+      const clamped = clampZoneBox(next, dims);
+      const renderWidth = renderWidthSV.value;
+      if (renderWidth > 0) {
+        const rect = gridBoxToRenderRect(clamped, dims, renderWidth);
+        left.value = rect.left;
+        top.value = rect.top;
+        width.value = rect.width;
+        height.value = rect.height;
+      }
+      onCommit(clamped);
     },
-    [dims, mode, onCommit, zoneBox],
+    [dims, mode, onCommit, zoneBox, renderWidthSV, left, top, width, height],
   );
 
   const onAccessibilityAction = useCallback(

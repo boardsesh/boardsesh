@@ -250,12 +250,20 @@ export default function ZoneFilterScreen() {
     [t],
   );
 
+  // Whether a zone exists at all — the only `zoneBox` change that must rebuild
+  // this callback (so the overlay mounts/unmounts). The box's *value* updates
+  // every drag commit, but ZoneOverlay re-seeds its shared values from the
+  // `zoneBox` prop in a useEffect, so feeding the live value through the stable
+  // `selectionRef` (instead of the dep array) keeps `renderZoneOverlay` — and
+  // thus InteractiveFilterBoard's memo — stable across drags.
+  const zoneActive = zoneBox != null;
   const renderZoneOverlay = useCallback(
     ({ pinchGesture, scaleSV, renderWidth, renderHeight }: FilterBoardTransformContext) => {
-      if (!zoneBox || !dims) return null;
+      const currentZoneBox = selectionRef.current.zoneBox;
+      if (!currentZoneBox || !dims) return null;
       return (
         <ZoneOverlay
-          zoneBox={zoneBox}
+          zoneBox={currentZoneBox}
           dims={dims}
           renderWidth={renderWidth}
           renderHeight={renderHeight}
@@ -271,7 +279,9 @@ export default function ZoneFilterScreen() {
         />
       );
     },
-    [zoneBox, dims, handleCommitZone, brandColors.primary, t, cornerLabels],
+    // `zoneActive` (not `zoneBox`) so the overlay mounts/unmounts but the
+    // callback stays stable while a zone is being dragged.
+    [zoneActive, dims, handleCommitZone, brandColors.primary, t, cornerLabels],
   );
 
   if (!boardHolds || !boardName || !dims) {
