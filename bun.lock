@@ -80,7 +80,7 @@
         "posthog-node": "^5.34.1",
         "sharp": "^0.34.5",
         "tsx": "^4.21.0",
-        "uuid": "^13.0.0",
+        "uuid": "^14.0.0",
         "winston": "^3.18.3",
         "winston-transport": "^4.9.0",
         "ws": "^8.19.0",
@@ -650,7 +650,7 @@
         "swagger-ui-react": "^5.32.0",
         "undici": "^7.22.0",
         "use-debounce": "^10.1.0",
-        "uuid": "^13.0.0",
+        "uuid": "^14.0.0",
         "web-vitals": "^4.2.4",
         "ws": "^8.19.0",
         "yup": "^1.7.1",
@@ -4252,7 +4252,7 @@
 
     "utils-merge": ["utils-merge@1.0.1", "", {}, "sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA=="],
 
-    "uuid": ["uuid@13.0.2", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-vzi9uRZ926x4XV73S/4qQaTwPXM2JBj6/6lI/byHH1jOpCzb0zDbfytgA9LcN/hzb2l7WQSQnxITOVx5un/wGw=="],
+    "uuid": ["uuid@14.0.0", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-Qo+uWgilfSmAhXCMav1uYFynlQO7fMFiMVZsQqZRMIXp0O7rR7qjkj+cPvBHLgBqi960QCoo/PH2/6ZtVqKvrg=="],
 
     "validate-npm-package-name": ["validate-npm-package-name@5.0.1", "", {}, "sha512-OljLrQ9SQdOUqTaQxqL5dEfZWrXExyyWsozYlAWFawPVNuD83igl7uJD2RTkNMbniIYgt8l81eCJGIdQF7avLQ=="],
 
