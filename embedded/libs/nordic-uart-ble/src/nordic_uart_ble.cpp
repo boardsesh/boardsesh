@@ -39,6 +39,7 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     // A legacy BLE advertisement only has 31 bytes. Advertising both 128-bit UUIDs
     // overflows the packet, so expose Aurora for discovery and keep NUS in GATT.
     pAdvertising->enableScanResponse(true);
+    pAdvertising->setName(deviceName);
     pAdvertising->setPreferredParams(0x06, 0x12);
 
     // Always start the GATT server (required before advertising can work)

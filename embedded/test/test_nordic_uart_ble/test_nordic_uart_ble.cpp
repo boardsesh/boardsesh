@@ -131,6 +131,14 @@ void test_begin_registers_aurora_service_uuid(void) {
     TEST_ASSERT_TRUE(found);
 }
 
+void test_begin_advertises_device_name_in_scan_response(void) {
+    ble->begin("Kilter Board#123456@3");
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+
+    TEST_ASSERT_TRUE(advertising->isScanResponseEnabled());
+    TEST_ASSERT_EQUAL_STRING("Kilter Board#123456@3", advertising->getScanResponseName().c_str());
+}
+
 void test_begin_registers_nus_gatt_service_uuid(void) {
     ble->begin("Test Device");
     TEST_ASSERT_NOT_NULL(NimBLEDevice::getServer()->getServiceByUUID(NUS_SERVICE_UUID));
@@ -531,6 +539,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_can_delay_advertising);
     RUN_TEST(test_start_advertising_tracks_state);
     RUN_TEST(test_begin_registers_aurora_service_uuid);
+    RUN_TEST(test_begin_advertises_device_name_in_scan_response);
     RUN_TEST(test_begin_registers_nus_gatt_service_uuid);
 
     // Callback registration tests

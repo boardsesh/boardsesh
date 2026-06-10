@@ -14,6 +14,10 @@
 namespace {
 
 String getConfigStringOrDefault(const char* key, const char* defaultValue) {
+    if (!Config.hasKey(key)) {
+        return String(defaultValue);
+    }
+
     String value = Config.getString(key);
     value.trim();
     return value.length() == 0 ? String(defaultValue) : value;

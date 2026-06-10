@@ -44,6 +44,7 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void showSetupScreen(const char* apName) override;
     void refresh() override;
     void refreshInfoOnly() override;
+    void showBlePreview(const char* boardType, int angle, bool fullRefresh);
 
 #ifdef ENABLE_BOARD_IMAGE
     struct LedCmd {
@@ -77,6 +78,10 @@ class WaveshareAmoledDisplay : public DisplayBase {
 #ifdef ENABLE_BOARD_IMAGE
     bool _hasBoardImage;
     const BoardConfig* _currentBoardConfig;
+    const BoardConfig* _cachedBoardConfig;
+    uint16_t* _boardImageCache;
+    int _boardImageCacheWidth;
+    int _boardImageCacheHeight;
     LedCmd _ledCommands[MAX_LED_COMMANDS];
     JPEGDEC _jpegDecoder;
     int _ledCommandCount;
@@ -90,6 +95,9 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void drawPreviewFrame();
 #ifdef ENABLE_BOARD_IMAGE
     void drawBoardImageWithHolds();
+    bool ensureBoardImageCache(const BoardConfig* config);
+    bool drawBoardImageDirect(const BoardConfig* config, int imageX, int imageY);
+    void clearBoardImageCache();
 #endif
     void drawFooter();
     void drawCenteredText(const char* text, int y, uint8_t size, uint16_t color);

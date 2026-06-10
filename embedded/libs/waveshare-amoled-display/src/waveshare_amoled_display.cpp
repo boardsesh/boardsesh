@@ -3,6 +3,7 @@
 #include <Wire.h>
 #ifdef ENABLE_BOARD_IMAGE
 #include <board_hold_data.h>
+#include <esp_heap_caps.h>
 #endif
 #include <config_manager.h>
 #include <grade_colors.h>
@@ -12,12 +13,50 @@ WaveshareAmoledDisplay Display;
 namespace {
 
 Arduino_GFX* g_jpegGfx = nullptr;
+uint16_t* g_jpegCache = nullptr;
+int g_jpegCacheWidth = 0;
+int g_jpegCacheHeight = 0;
 int g_jpegBlockCount = 0;
 
-int drawJpegBlock(JPEGDRAW* draw) {
+int drawJpegBlockToDisplay(JPEGDRAW* draw) {
     if (!g_jpegGfx || !draw) return 0;
     g_jpegBlockCount++;
     g_jpegGfx->draw16bitBeRGBBitmap(draw->x, draw->y, draw->pPixels, draw->iWidth, draw->iHeight);
+    yield();
+    return 1;
+}
+
+int drawJpegBlockToCache(JPEGDRAW* draw) {
+    if (!g_jpegCache || !draw) return 0;
+    g_jpegBlockCount++;
+
+    for (int row = 0; row < draw->iHeight; row++) {
+        int destY = draw->y + row;
+        if (destY < 0 || destY >= g_jpegCacheHeight) {
+            continue;
+        }
+
+        int destX = draw->x;
+        int copyWidth = draw->iWidth;
+        const uint16_t* sourcePixels = draw->pPixels + (row * draw->iWidth);
+
+        if (destX < 0) {
+            int clippedPixels = -destX;
+            sourcePixels += clippedPixels;
+            copyWidth -= clippedPixels;
+            destX = 0;
+        }
+        if (destX + copyWidth > g_jpegCacheWidth) {
+            copyWidth = g_jpegCacheWidth - destX;
+        }
+        if (copyWidth <= 0) {
+            continue;
+        }
+
+        memcpy(&g_jpegCache[destY * g_jpegCacheWidth + destX], sourcePixels, copyWidth * sizeof(uint16_t));
+    }
+
+    yield();
     return 1;
 }
 
@@ -75,6 +114,10 @@ WaveshareAmoledDisplay::WaveshareAmoledDisplay()
       ,
       _hasBoardImage(false),
       _currentBoardConfig(nullptr),
+      _cachedBoardConfig(nullptr),
+      _boardImageCache(nullptr),
+      _boardImageCacheWidth(0),
+      _boardImageCacheHeight(0),
       _ledCommandCount(0),
       _lastJpegBlockCount(0),
       _lastJpegDecodeResult(0),
@@ -83,6 +126,9 @@ WaveshareAmoledDisplay::WaveshareAmoledDisplay()
 {}
 
 WaveshareAmoledDisplay::~WaveshareAmoledDisplay() {
+#ifdef ENABLE_BOARD_IMAGE
+    clearBoardImageCache();
+#endif
     delete _gfx;
     delete _bus;
 }
@@ -148,6 +194,10 @@ void WaveshareAmoledDisplay::showSetupScreen(const char* apName) {
 
 #ifdef ENABLE_BOARD_IMAGE
 void WaveshareAmoledDisplay::setBoardConfig(const BoardConfig* config) {
+    if (_currentBoardConfig != config) {
+        clearBoardImageCache();
+    }
+
     _currentBoardConfig = config;
     _hasBoardImage = config != nullptr;
     if (!_hasBoardImage) {
@@ -185,6 +235,24 @@ void WaveshareAmoledDisplay::refresh() {
 
 void WaveshareAmoledDisplay::refreshInfoOnly() {
     refresh();
+}
+
+void WaveshareAmoledDisplay::showBlePreview(const char* boardType, int angle, bool fullRefresh) {
+    _climbName = "BLE Preview";
+    _grade = "";
+    _gradeColor = "";
+    _angle = angle;
+    _climbUuid = "";
+    _boardType = boardType ? boardType : "kilter";
+    _hasClimb = true;
+
+    if (fullRefresh) {
+        refresh();
+        return;
+    }
+
+    if (!_ready) return;
+    drawPreviewFrame();
 }
 
 void WaveshareAmoledDisplay::onStatusChanged() {
@@ -259,27 +327,83 @@ void WaveshareAmoledDisplay::drawPreviewFrame() {
 }
 
 #ifdef ENABLE_BOARD_IMAGE
-void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
-    if (!_currentBoardConfig) return;
+void WaveshareAmoledDisplay::clearBoardImageCache() {
+    if (_boardImageCache) {
+        heap_caps_free(_boardImageCache);
+        _boardImageCache = nullptr;
+    }
 
-    const BoardConfig* cfg = _currentBoardConfig;
-    static const int jpegScaleDenominator = 2;
+    _cachedBoardConfig = nullptr;
+    _boardImageCacheWidth = 0;
+    _boardImageCacheHeight = 0;
+}
 
-    _lastMatchedHoldCount = 0;
+bool WaveshareAmoledDisplay::ensureBoardImageCache(const BoardConfig* config) {
+    if (!config) {
+        return false;
+    }
+    if (_cachedBoardConfig == config && _boardImageCache) {
+        return true;
+    }
+
+    clearBoardImageCache();
+
+    int imageWidth = config->imageWidth / 2;
+    int imageHeight = config->imageHeight / 2;
+    if (imageWidth <= 0 || imageHeight <= 0) {
+        return false;
+    }
+
+    size_t pixelCount = static_cast<size_t>(imageWidth) * static_cast<size_t>(imageHeight);
+    size_t byteCount = pixelCount * sizeof(uint16_t);
+    _boardImageCache = static_cast<uint16_t*>(heap_caps_malloc(byteCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!_boardImageCache) {
+        return false;
+    }
+
+    memset(_boardImageCache, 0, byteCount);
+    _boardImageCacheWidth = imageWidth;
+    _boardImageCacheHeight = imageHeight;
+
     _lastJpegBlockCount = 0;
     _lastJpegDecodeResult = 0;
 
-    int imageWidth = cfg->imageWidth / jpegScaleDenominator;
-    int imageHeight = cfg->imageHeight / jpegScaleDenominator;
-    int imageX = (SCREEN_WIDTH - imageWidth) / 2;
-    int imageY = AMOLED_PREVIEW_Y + (AMOLED_PREVIEW_SIZE - imageHeight) / 2;
-    if (imageY < AMOLED_PREVIEW_Y) {
-        imageY = AMOLED_PREVIEW_Y;
+    if (!_jpegDecoder.openFLASH(config->imageData, static_cast<int>(config->imageSize), drawJpegBlockToCache)) {
+        clearBoardImageCache();
+        return false;
     }
 
-    if (!_jpegDecoder.openFLASH(cfg->imageData, static_cast<int>(cfg->imageSize), drawJpegBlock)) {
-        drawCenteredText("Preview decode failed", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 4, 1, COLOR_STATUS_ERROR);
-        return;
+    _jpegDecoder.setPixelType(RGB565_LITTLE_ENDIAN);
+    g_jpegBlockCount = 0;
+    g_jpegCache = _boardImageCache;
+    g_jpegCacheWidth = _boardImageCacheWidth;
+    g_jpegCacheHeight = _boardImageCacheHeight;
+    _lastJpegDecodeResult = _jpegDecoder.decode(0, 0, JPEG_SCALE_HALF);
+    _lastJpegBlockCount = g_jpegBlockCount;
+    _jpegDecoder.close();
+    g_jpegCache = nullptr;
+    g_jpegCacheWidth = 0;
+    g_jpegCacheHeight = 0;
+
+    if (_lastJpegDecodeResult == 0 || _lastJpegBlockCount == 0) {
+        clearBoardImageCache();
+        return false;
+    }
+
+    _cachedBoardConfig = config;
+    return true;
+}
+
+bool WaveshareAmoledDisplay::drawBoardImageDirect(const BoardConfig* config, int imageX, int imageY) {
+    if (!config) {
+        return false;
+    }
+
+    _lastJpegBlockCount = 0;
+    _lastJpegDecodeResult = 0;
+
+    if (!_jpegDecoder.openFLASH(config->imageData, static_cast<int>(config->imageSize), drawJpegBlockToDisplay)) {
+        return false;
     }
 
     _jpegDecoder.setPixelType(RGB565_BIG_ENDIAN);
@@ -290,7 +414,34 @@ void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
     _jpegDecoder.close();
     g_jpegGfx = nullptr;
 
-    if (_lastJpegDecodeResult == 0 || _lastJpegBlockCount == 0) {
+    return _lastJpegDecodeResult != 0 && _lastJpegBlockCount > 0;
+}
+
+void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
+    if (!_currentBoardConfig) return;
+
+    const BoardConfig* cfg = _currentBoardConfig;
+    static const int jpegScaleDenominator = 2;
+
+    _lastMatchedHoldCount = 0;
+
+    int imageWidth = cfg->imageWidth / jpegScaleDenominator;
+    int imageHeight = cfg->imageHeight / jpegScaleDenominator;
+    int imageX = (SCREEN_WIDTH - imageWidth) / 2;
+    int imageY = AMOLED_PREVIEW_Y + (AMOLED_PREVIEW_SIZE - imageHeight) / 2;
+    if (imageY < AMOLED_PREVIEW_Y) {
+        imageY = AMOLED_PREVIEW_Y;
+    }
+
+    bool imageDrawn = false;
+    if (ensureBoardImageCache(cfg)) {
+        _gfx->draw16bitRGBBitmap(imageX, imageY, _boardImageCache, _boardImageCacheWidth, _boardImageCacheHeight);
+        imageDrawn = true;
+    } else {
+        imageDrawn = drawBoardImageDirect(cfg, imageX, imageY);
+    }
+
+    if (!imageDrawn) {
         drawCenteredText("Preview decode failed", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 4, 1, COLOR_STATUS_ERROR);
         return;
     }
@@ -311,6 +462,9 @@ void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
         _gfx->fillCircle(dx, dy, haloR, 0x0000);
         _gfx->fillCircle(dx, dy, dr, color);
         _lastMatchedHoldCount++;
+        if ((i & 0x0F) == 0) {
+            yield();
+        }
     }
 }
 #endif

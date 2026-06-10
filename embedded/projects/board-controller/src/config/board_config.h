@@ -33,7 +33,9 @@
 #endif
 
 // BLE configuration
-#define BLE_DEVICE_NAME "Kilter Boardsesh"
+// Match the Aurora/Kilter board name format so the official app discovers this
+// debug controller as a test board.
+#define BLE_DEVICE_NAME "Kilter Board#123456@3"
 
 // Backend configuration (defaults)
 #define DEFAULT_BACKEND_HOST "ws.boardsesh.com"

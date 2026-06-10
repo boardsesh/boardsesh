@@ -4,7 +4,13 @@
 
 AuroraProtocol Aurora;
 
-AuroraProtocol::AuroraProtocol() : currentAngle(0), multiPacketInProgress(false), debugEnabled(false) {}
+namespace {
+const size_t MAX_RAW_BUFFER_BYTES = 512;
+const unsigned long RAW_BUFFER_STALE_MS = 750;
+}  // namespace
+
+AuroraProtocol::AuroraProtocol()
+    : currentAngle(0), multiPacketInProgress(false), debugEnabled(false), lastBufferAppendAt(0) {}
 
 void AuroraProtocol::clear() {
     rawBuffer.clear();
@@ -12,6 +18,7 @@ void AuroraProtocol::clear() {
     pendingCommands.clear();
     currentAngle = 0;
     multiPacketInProgress = false;
+    lastBufferAppendAt = 0;
 }
 
 void AuroraProtocol::setDebug(bool enabled) {
@@ -35,10 +42,15 @@ uint8_t AuroraProtocol::calculateChecksum(const uint8_t* data, size_t length) {
 }
 
 bool AuroraProtocol::addData(const uint8_t* data, size_t length) {
+    unsigned long now = millis();
+    resyncBufferIfNeeded(now);
+
     // Add new data to buffer
     for (size_t i = 0; i < length; i++) {
         rawBuffer.push_back(data[i]);
     }
+    lastBufferAppendAt = now;
+    resyncBufferIfNeeded(now);
 
     if (debugEnabled) {
         Logger.logln("[Aurora] Buffer size: %zu bytes (added %zu)", rawBuffer.size(), length);
@@ -53,6 +65,45 @@ bool AuroraProtocol::addData(const uint8_t* data, size_t length) {
 
     // Try to extract and process complete messages
     return tryProcessBuffer();
+}
+
+void AuroraProtocol::resyncBufferIfNeeded(unsigned long now) {
+    if (rawBuffer.empty()) {
+        return;
+    }
+
+    bool staleBuffer = lastBufferAppendAt > 0 && now - lastBufferAppendAt > RAW_BUFFER_STALE_MS;
+    if (staleBuffer) {
+        if (debugEnabled) {
+            Logger.logln("[Aurora] Clearing stale partial buffer (%zu bytes)", rawBuffer.size());
+        }
+        rawBuffer.clear();
+        pendingCommands.clear();
+        multiPacketInProgress = false;
+        return;
+    }
+
+    if (rawBuffer.size() <= MAX_RAW_BUFFER_BYTES) {
+        return;
+    }
+
+    size_t lastSoh = rawBuffer.size();
+    for (size_t index = rawBuffer.size(); index > 0; index--) {
+        if (rawBuffer[index - 1] == FRAME_SOH) {
+            lastSoh = index - 1;
+            break;
+        }
+    }
+
+    if (lastSoh < rawBuffer.size()) {
+        rawBuffer.erase(rawBuffer.begin(), rawBuffer.begin() + lastSoh);
+    }
+
+    if (rawBuffer.size() > MAX_RAW_BUFFER_BYTES) {
+        rawBuffer.clear();
+        pendingCommands.clear();
+        multiPacketInProgress = false;
+    }
 }
 
 bool AuroraProtocol::processPacket(const uint8_t* data, size_t length) {

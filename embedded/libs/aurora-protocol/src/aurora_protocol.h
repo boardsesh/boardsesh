@@ -132,10 +132,15 @@ class AuroraProtocol {
     int currentAngle;
     bool multiPacketInProgress;
     bool debugEnabled;
+    unsigned long lastBufferAppendAt;
 
     // Try to extract and process a complete framed message from the buffer
     // Returns true if a complete LED update is ready
     bool tryProcessBuffer();
+
+    // Drop stale/corrupt buffered bytes so interrupted BLE writes cannot block
+    // later complete frames.
+    void resyncBufferIfNeeded(unsigned long now);
 
     // Calculate checksum for data
     uint8_t calculateChecksum(const uint8_t* data, size_t length);

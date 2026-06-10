@@ -226,6 +226,14 @@ class NimBLEAdvertising {
 
     void setScanResponse(bool enable) { scanResponse_ = enable; }
     void enableScanResponse(bool enable) { setScanResponse(enable); }
+    bool setName(const std::string& name) {
+        if (scanResponse_) {
+            scanResponseName_ = name;
+        } else {
+            advertisementName_ = name;
+        }
+        return true;
+    }
 
     void setMinPreferred(uint8_t minInterval) { minInterval_ = minInterval; }
 
@@ -244,11 +252,17 @@ class NimBLEAdvertising {
 
     // Test helpers
     bool isAdvertising() const { return advertising_; }
+    bool isScanResponseEnabled() const { return scanResponse_; }
+    const std::string& getAdvertisementName() const { return advertisementName_; }
+    const std::string& getScanResponseName() const { return scanResponseName_; }
     const std::vector<std::string>& getServiceUUIDs() const { return serviceUUIDs_; }
     int getStartCount() const { return startCount_; }
     void mockReset() {
         advertising_ = false;
+        scanResponse_ = false;
         startCount_ = 0;
+        advertisementName_.clear();
+        scanResponseName_.clear();
         serviceUUIDs_.clear();
     }
 
@@ -257,6 +271,8 @@ class NimBLEAdvertising {
     bool scanResponse_ = false;
     uint8_t minInterval_ = 0;
     uint8_t maxInterval_ = 0;
+    std::string advertisementName_;
+    std::string scanResponseName_;
     std::vector<std::string> serviceUUIDs_;
     int startCount_ = 0;
 };

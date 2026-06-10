@@ -87,6 +87,8 @@ static LedCommand g_processingBlePreviewCommands[MAX_BLE_PREVIEW_COMMANDS];
 static int g_pendingBlePreviewCount = 0;
 static int g_pendingBlePreviewAngle = 0;
 static bool g_pendingBlePreview = false;
+static unsigned long g_lastBlePreviewRenderAt = 0;
+static const unsigned long BLE_PREVIEW_MIN_RENDER_INTERVAL_MS = 150;
 static portMUX_TYPE g_blePreviewMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
@@ -293,12 +295,17 @@ void renderBlePreviewLocally(const LedCommand* commands, int count, int angle) {
         Display.setLedCommands(nullptr, 0);
     }
 
-    g_localPreviewSeen = true;
+    bool shouldDrawFullPreview = !g_localPreviewSeen;
     g_lastPreviewConfigFound = configFound;
     g_lastPreviewLedCount = count;
     g_lastPreviewConfigKey = extractConfigKey(boardPath.c_str());
 
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY)
+    Display.showBlePreview(previewBoardName.c_str(), angle, shouldDrawFullPreview);
+#else
     Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
+#endif
+    g_localPreviewSeen = true;
     g_lastPreviewMatchedHoldCount = Display.getLastMatchedHoldCount();
     g_lastPreviewJpegBlockCount = Display.getLastJpegBlockCount();
     g_lastPreviewJpegDecodeResult = Display.getLastJpegDecodeResult();
@@ -330,19 +337,25 @@ void queueBlePreviewPayload(const LedCommand* commands, int count, int angle) {
 void processPendingBlePreview() {
     int count = 0;
     int angle = 0;
+    unsigned long now = millis();
 
     portENTER_CRITICAL(&g_blePreviewMux);
     if (g_pendingBlePreview) {
-        count = g_pendingBlePreviewCount;
-        angle = g_pendingBlePreviewAngle;
-        memcpy(g_processingBlePreviewCommands, g_pendingBlePreviewCommands, count * sizeof(LedCommand));
-        g_pendingBlePreview = false;
+        bool renderIntervalElapsed =
+            g_lastBlePreviewRenderAt == 0 || now - g_lastBlePreviewRenderAt >= BLE_PREVIEW_MIN_RENDER_INTERVAL_MS;
+        if (renderIntervalElapsed) {
+            count = g_pendingBlePreviewCount;
+            angle = g_pendingBlePreviewAngle;
+            memcpy(g_processingBlePreviewCommands, g_pendingBlePreviewCommands, count * sizeof(LedCommand));
+            g_pendingBlePreview = false;
+        }
     }
     portEXIT_CRITICAL(&g_blePreviewMux);
 
     if (count > 0) {
         Logger.logln("Main: Rendering queued BLE preview (%d LEDs, angle %d)", count, angle);
         renderBlePreviewLocally(g_processingBlePreviewCommands, count, angle);
+        g_lastBlePreviewRenderAt = millis();
     }
 }
 #endif
@@ -390,6 +403,10 @@ const char* graphqlStateName(GraphQLConnectionState state) {
 }
 
 String getConfigStringOrDefault(const char* key, const char* defaultValue) {
+    if (!Config.hasKey(key)) {
+        return String(defaultValue);
+    }
+
     String value = Config.getString(key);
     value.trim();
     return value.length() == 0 ? String(defaultValue) : value;
