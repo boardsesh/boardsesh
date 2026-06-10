@@ -181,8 +181,7 @@ void ESPWebServer::handleRoot() {
             <div class="status-item"><span class="status-label">BLE</span><span class="status-value" id="bleStatus">Checking...</span></div>
             <div class="status-item"><span class="status-label">Preview Board</span><span class="status-value" id="previewBoardStatus">Checking...</span></div>
             <div class="status-item"><span class="status-label">Last BLE Payload</span><span class="status-value" id="lastBlePayload">None</span></div>
-            <div class="status-item"><span class="status-label">Thumbnail</span><span class="status-value" id="thumbnailStatus">None</span></div>
-            <div class="status-item"><span class="status-label">Render Host</span><span class="status-value" id="renderStatus">Checking...</span></div>
+            <div class="status-item"><span class="status-label">Preview</span><span class="status-value" id="thumbnailStatus">None</span></div>
         </div>
     </div>
 
@@ -254,7 +253,7 @@ void ESPWebServer::handleRoot() {
     <div class="card">
         <h2>BLE Preview Board</h2>
         <p class="hint">
-            Incoming Bluetooth payloads use this board config to render a preview from the web app. No session ID is required.
+            Incoming Bluetooth payloads use this board config to render a local preview. No session ID is required.
         </p>
         <label>Board</label>
         <select id="previewBoardName">
@@ -289,11 +288,6 @@ void ESPWebServer::handleRoot() {
                 <input type="text" id="backendPath" placeholder="/graphql">
             </div>
         </div>
-        <label>Render URL</label>
-        <input type="text" id="renderBaseUrl" placeholder="https://www.boardsesh.com">
-        <p class="hint">
-            Keep this as the web app host. The board image comes from /api/internal/board-render, not the WebSocket host.
-        </p>
     </div>
 
     <div class="card">
@@ -340,7 +334,6 @@ void ESPWebServer::handleRoot() {
                 document.getElementById('backendHost').value = cfg.backend_host || '';
                 document.getElementById('backendPort').value = cfg.backend_port || 443;
                 document.getElementById('backendPath').value = cfg.backend_path || '/graphql';
-                document.getElementById('renderBaseUrl').value = cfg.render_base_url || 'https://www.boardsesh.com';
                 document.getElementById('proxyEnabled').checked = cfg.proxy_enabled || false;
                 document.getElementById('proxyMac').value = cfg.proxy_mac || '';
                 document.getElementById('proxyMacSection').style.display = cfg.proxy_enabled ? 'block' : 'none';
@@ -406,10 +399,9 @@ void ESPWebServer::handleRoot() {
                 document.getElementById('lastBlePayload').textContent = lastBleText;
 
                 const thumbnailText = status.thumbnail_fetch_seen
-                    ? status.thumbnail_status + ' HTTP ' + status.thumbnail_http_status + ' (' + status.thumbnail_bytes + ' bytes)'
+                    ? status.thumbnail_status + ' (' + status.thumbnail_bytes + ' LEDs)'
                     : 'None';
                 document.getElementById('thumbnailStatus').textContent = thumbnailText;
-                document.getElementById('renderStatus').textContent = status.render_base_url || 'https://www.boardsesh.com';
             } catch (e) { console.error('Failed to load controller status:', e); }
         }
 
@@ -472,7 +464,6 @@ void ESPWebServer::handleRoot() {
                 backend_host: document.getElementById('backendHost').value,
                 backend_port: parseInt(document.getElementById('backendPort').value),
                 backend_path: document.getElementById('backendPath').value,
-                render_base_url: document.getElementById('renderBaseUrl').value,
                 proxy_enabled: document.getElementById('proxyEnabled').checked,
                 proxy_mac: document.getElementById('proxyMac').value
             };

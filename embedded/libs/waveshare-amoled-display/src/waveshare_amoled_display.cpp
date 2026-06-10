@@ -1,19 +1,23 @@
 #include "waveshare_amoled_display.h"
 
 #include <Wire.h>
+#ifdef ENABLE_BOARD_IMAGE
+#include <board_hold_data.h>
+#endif
 #include <config_manager.h>
 #include <grade_colors.h>
-#include <utility>
 
 WaveshareAmoledDisplay Display;
 
 namespace {
 
 Arduino_GFX* g_jpegGfx = nullptr;
+int g_jpegBlockCount = 0;
 
 int drawJpegBlock(JPEGDRAW* draw) {
     if (!g_jpegGfx || !draw) return 0;
-    g_jpegGfx->draw16bitRGBBitmap(draw->x, draw->y, draw->pPixels, draw->iWidth, draw->iHeight);
+    g_jpegBlockCount++;
+    g_jpegGfx->draw16bitBeRGBBitmap(draw->x, draw->y, draw->pPixels, draw->iWidth, draw->iHeight);
     return 1;
 }
 
@@ -24,6 +28,29 @@ const char* safeText(const char* value, const char* fallback = "") {
 uint16_t statusColor(bool active) {
     return active ? COLOR_STATUS_OK : COLOR_STATUS_OFF;
 }
+
+#ifdef ENABLE_BOARD_IMAGE
+const HoldMapEntry* findHoldMapEntry(const BoardConfig* cfg, uint16_t target) {
+    if (!cfg || !cfg->holdMap) return nullptr;
+
+    int lo = 0;
+    int hi = cfg->holdCount - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        uint16_t midPos = cfg->holdMap[mid].ledPosition;
+        if (midPos == target) {
+            return &cfg->holdMap[mid];
+        }
+        if (midPos < target) {
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    return nullptr;
+}
+#endif
 
 }  // namespace
 
@@ -43,9 +70,17 @@ WaveshareAmoledDisplay::WaveshareAmoledDisplay()
                               0,
                               0,
                               0)),
-      _ready(false),
-      _hasThumbnail(false),
-      _thumbnailLoading(false) {}
+      _ready(false)
+#ifdef ENABLE_BOARD_IMAGE
+      ,
+      _hasBoardImage(false),
+      _currentBoardConfig(nullptr),
+      _ledCommandCount(0),
+      _lastJpegBlockCount(0),
+      _lastJpegDecodeResult(0),
+      _lastMatchedHoldCount(0)
+#endif
+{}
 
 WaveshareAmoledDisplay::~WaveshareAmoledDisplay() {
     delete _gfx;
@@ -111,47 +146,25 @@ void WaveshareAmoledDisplay::showSetupScreen(const char* apName) {
     showConfigPortal(apName, "192.168.4.1");
 }
 
-void WaveshareAmoledDisplay::showThumbnailLoading() {
-    if (!_ready) return;
-    _thumbnailJpeg.clear();
-    _thumbnailCacheKey = "";
-    _hasThumbnail = false;
-    _thumbnailLoading = true;
-    refresh();
-}
-
-void WaveshareAmoledDisplay::setThumbnailJpeg(const uint8_t* data, size_t len, const char* cacheKey) {
-    if (!_ready) return;
-    _thumbnailJpeg.clear();
-    _thumbnailCacheKey = cacheKey ? cacheKey : "";
-    _thumbnailLoading = false;
-
-    if (!data || len == 0) {
-        _hasThumbnail = false;
-        refresh();
-        return;
+#ifdef ENABLE_BOARD_IMAGE
+void WaveshareAmoledDisplay::setBoardConfig(const BoardConfig* config) {
+    _currentBoardConfig = config;
+    _hasBoardImage = config != nullptr;
+    if (!_hasBoardImage) {
+        _ledCommandCount = 0;
+        _lastMatchedHoldCount = 0;
+        _lastJpegBlockCount = 0;
+        _lastJpegDecodeResult = 0;
     }
-
-    _thumbnailJpeg.assign(data, data + len);
-    _hasThumbnail = true;
-    refresh();
 }
 
-void WaveshareAmoledDisplay::setThumbnailJpeg(std::vector<uint8_t>&& data, const char* cacheKey) {
-    if (!_ready) return;
-    _thumbnailJpeg = std::move(data);
-    _thumbnailCacheKey = cacheKey ? cacheKey : "";
-    _thumbnailLoading = false;
-    _hasThumbnail = !_thumbnailJpeg.empty();
-    refresh();
+void WaveshareAmoledDisplay::setLedCommands(const LedCmd* commands, int count) {
+    _ledCommandCount = min(count, MAX_LED_COMMANDS);
+    if (commands && _ledCommandCount > 0) {
+        memcpy(_ledCommands, commands, _ledCommandCount * sizeof(LedCmd));
+    }
 }
-
-void WaveshareAmoledDisplay::clearThumbnail() {
-    _thumbnailJpeg.clear();
-    _thumbnailCacheKey = "";
-    _hasThumbnail = false;
-    _thumbnailLoading = false;
-}
+#endif
 
 void WaveshareAmoledDisplay::refresh() {
     if (!_ready) return;
@@ -166,7 +179,7 @@ void WaveshareAmoledDisplay::refresh() {
     }
 
     drawClimbHeader();
-    drawThumbnailFrame();
+    drawPreviewFrame();
     drawFooter();
 }
 
@@ -224,7 +237,7 @@ void WaveshareAmoledDisplay::drawClimbHeader() {
     _gfx->print(grade);
 }
 
-void WaveshareAmoledDisplay::drawThumbnailFrame() {
+void WaveshareAmoledDisplay::drawPreviewFrame() {
     int frameX = (SCREEN_WIDTH - AMOLED_PREVIEW_SIZE) / 2;
     _gfx->fillRoundRect(frameX - 6, AMOLED_PREVIEW_Y - 6,
                         AMOLED_PREVIEW_SIZE + 12, AMOLED_PREVIEW_SIZE + 12,
@@ -233,39 +246,74 @@ void WaveshareAmoledDisplay::drawThumbnailFrame() {
                         AMOLED_PREVIEW_SIZE + 12, AMOLED_PREVIEW_SIZE + 12,
                         10, 0x4208);
 
-    if (_thumbnailLoading) {
-        drawCenteredText("Loading preview", AMOLED_PREVIEW_Y + 128, 2, COLOR_TEXT_DIM);
+#ifdef ENABLE_BOARD_IMAGE
+    if (!_hasBoardImage || !_currentBoardConfig) {
+        drawCenteredText("Preview unavailable", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 8, 2, COLOR_TEXT_DIM);
         return;
     }
 
-    if (!_hasThumbnail || _thumbnailJpeg.empty()) {
-        drawCenteredText("Preview unavailable", AMOLED_PREVIEW_Y + 128, 2, COLOR_TEXT_DIM);
-        return;
-    }
-
-    drawThumbnailImage();
+    drawBoardImageWithHolds();
+#else
+    drawCenteredText("Preview unavailable", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 8, 2, COLOR_TEXT_DIM);
+#endif
 }
 
-void WaveshareAmoledDisplay::drawThumbnailImage() {
-    JPEGDEC jpeg;
-    if (!jpeg.openRAM(_thumbnailJpeg.data(), static_cast<int>(_thumbnailJpeg.size()), drawJpegBlock)) {
-        drawCenteredText("Preview decode failed", AMOLED_PREVIEW_Y + 128, 1, COLOR_STATUS_ERROR);
-        return;
-    }
+#ifdef ENABLE_BOARD_IMAGE
+void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
+    if (!_currentBoardConfig) return;
 
-    int imageWidth = jpeg.getWidth();
-    int imageHeight = jpeg.getHeight();
+    const BoardConfig* cfg = _currentBoardConfig;
+    static const int jpegScaleDenominator = 2;
+
+    _lastMatchedHoldCount = 0;
+    _lastJpegBlockCount = 0;
+    _lastJpegDecodeResult = 0;
+
+    int imageWidth = cfg->imageWidth / jpegScaleDenominator;
+    int imageHeight = cfg->imageHeight / jpegScaleDenominator;
     int imageX = (SCREEN_WIDTH - imageWidth) / 2;
     int imageY = AMOLED_PREVIEW_Y + (AMOLED_PREVIEW_SIZE - imageHeight) / 2;
     if (imageY < AMOLED_PREVIEW_Y) {
         imageY = AMOLED_PREVIEW_Y;
     }
 
+    if (!_jpegDecoder.openFLASH(cfg->imageData, static_cast<int>(cfg->imageSize), drawJpegBlock)) {
+        drawCenteredText("Preview decode failed", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 4, 1, COLOR_STATUS_ERROR);
+        return;
+    }
+
+    _jpegDecoder.setPixelType(RGB565_BIG_ENDIAN);
+    g_jpegBlockCount = 0;
     g_jpegGfx = _gfx;
-    jpeg.decode(imageX, imageY, 0);
-    jpeg.close();
+    _lastJpegDecodeResult = _jpegDecoder.decode(imageX, imageY, JPEG_SCALE_HALF);
+    _lastJpegBlockCount = g_jpegBlockCount;
+    _jpegDecoder.close();
     g_jpegGfx = nullptr;
+
+    if (_lastJpegDecodeResult == 0 || _lastJpegBlockCount == 0) {
+        drawCenteredText("Preview decode failed", AMOLED_PREVIEW_Y + AMOLED_PREVIEW_SIZE / 2 - 4, 1, COLOR_STATUS_ERROR);
+        return;
+    }
+
+    for (int i = 0; i < _ledCommandCount; i++) {
+        uint16_t target = _ledCommands[i].position;
+        const HoldMapEntry* hold = findHoldMapEntry(cfg, target);
+        if (!hold && target < UINT16_MAX) {
+            hold = findHoldMapEntry(cfg, target + 1);
+        }
+        if (!hold) continue;
+
+        uint16_t color = _gfx->color565(_ledCommands[i].r, _ledCommands[i].g, _ledCommands[i].b);
+        int dx = imageX + hold->cx / jpegScaleDenominator;
+        int dy = imageY + hold->cy / jpegScaleDenominator;
+        int dr = max(8, hold->radius / jpegScaleDenominator + 2);
+        int haloR = dr + 2;
+        _gfx->fillCircle(dx, dy, haloR, 0x0000);
+        _gfx->fillCircle(dx, dy, dr, color);
+        _lastMatchedHoldCount++;
+    }
 }
+#endif
 
 void WaveshareAmoledDisplay::drawFooter() {
     _gfx->fillRect(0, AMOLED_FOOTER_Y, SCREEN_WIDTH, AMOLED_FOOTER_HEIGHT, 0x0841);

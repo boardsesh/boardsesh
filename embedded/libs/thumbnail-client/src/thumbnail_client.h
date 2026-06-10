@@ -26,18 +26,6 @@ struct ThumbnailUrlOptions {
     ThumbnailUrlOptions() : thumbnail(true), includeBackground(true), format("jpg") {}
 };
 
-struct ThumbnailLedPosition {
-    int32_t position;
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    int role;
-
-    ThumbnailLedPosition() : position(0), r(0), g(0), b(0), role(-1) {}
-    ThumbnailLedPosition(int32_t positionValue, uint8_t red, uint8_t green, uint8_t blue, int roleValue = -1)
-        : position(positionValue), r(red), g(green), b(blue), role(roleValue) {}
-};
-
 enum class ThumbnailFetchStatus {
     OK,
     INVALID_URL,
@@ -102,14 +90,6 @@ String buildBoardRenderThumbnailUrl(const char* renderBaseUrl,
                                     const char* boardPath,
                                     const char* frames,
                                     const ThumbnailUrlOptions& options = ThumbnailUrlOptions());
-String buildBoardRenderLedPositionsThumbnailUrl(const char* renderBaseUrl,
-                                                const char* boardName,
-                                                int layoutId,
-                                                int sizeId,
-                                                const char* setIds,
-                                                const ThumbnailLedPosition* positions,
-                                                int positionCount,
-                                                const ThumbnailUrlOptions& options = ThumbnailUrlOptions());
 const char* thumbnailFetchStatusName(ThumbnailFetchStatus status);
 bool thumbnailUrlMatchesCache(const char* thumbnailUrl, const char* currentCacheKey);
 RemoteThumbnailDisplayResult handleRemoteThumbnailDisplay(const RemoteThumbnailDisplayRequest& request,

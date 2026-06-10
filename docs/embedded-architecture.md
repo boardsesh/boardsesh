@@ -48,6 +48,7 @@ The project uses PlatformIO with multiple build environments defined in `embedde
 | `esp32s3dev-proxy` | ESP32-S3 DevKit         | No          | Yes       | No          |
 | `tdisplay-s3`      | LilyGo T-Display-S3     | 170x320 LCD | Yes       | No          |
 | `waveshare-7inch`  | Waveshare 7" Touch LCD  | 480x800 RGB | Yes       | Yes         |
+| `waveshare-amoled-216` | Waveshare 2.1" AMOLED | 480x480 AMOLED | Yes | Yes |
 | `esp32dev`         | Original ESP32 (legacy) | No          | No        | No          |
 
 Feature flags are controlled via build defines: `ENABLE_BLE_PROXY`, `ENABLE_DISPLAY`, `ENABLE_WAVESHARE_DISPLAY`, `ENABLE_BOARD_IMAGE`.
@@ -176,11 +177,9 @@ Display support uses an abstract base class (`DisplayBase`) with multiple concre
 ### Waveshare 2.1" AMOLED (480x480)
 
 - SPI/QSPI AMOLED display for the portable debug controller
-- Uses the web app board thumbnail endpoint instead of local hold rendering
+- Uses the same generated board image and hold-map data as the 7" Waveshare display
 - BLE payloads are decoded on-device and rendered directly with the local preview board config (`preview_board_name`, `preview_layout_id`, `preview_size_id`, `preview_set_ids`)
-- The web route accepts compact `led_positions` data and uses `@boardsesh/board-constants` placement data to convert LED positions into renderable frames
-- The firmware fetches `https://www.boardsesh.com/api/internal/board-render?...&thumbnail=1&include_background=1&format=jpg` and displays the JPEG from PSRAM
-- `render_base_url` should point at the web app host (`https://www.boardsesh.com`)
+- The board image JPEG is compiled into firmware via `board-data`, decoded at half scale, and overlaid with colored hold rings
 - Backend/session sync is optional; when enabled, `backend_host` should point at the GraphQL WebSocket host (`ws.boardsesh.com`)
 
 Display implementations share common state management in `DisplayBase`:

@@ -21,19 +21,14 @@
 // Display support - include the right display driver
 #ifdef ENABLE_WAVESHARE_DISPLAY
 #include <waveshare_display.h>
-#ifdef ENABLE_BOARD_IMAGE
-#include <board_hold_data.h>
-#endif
 #elif defined(ENABLE_WAVESHARE_AMOLED_DISPLAY)
 #include <waveshare_amoled_display.h>
 #elif defined(ENABLE_DISPLAY)
 #include <lilygo_display.h>
 #endif
 
-#ifdef ENABLE_REMOTE_THUMBNAIL
-#include <thumbnail_client.h>
-
-#include <utility>
+#ifdef ENABLE_BOARD_IMAGE
+#include <board_hold_data.h>
 #endif
 
 // Unified macro for code that works with any display
@@ -78,14 +73,14 @@ bool hasCurrentClimb = false;
 // LocalQueueItem is ~88 bytes each, so 150 items = ~13KB
 static LocalQueueItem g_queueSyncBuffer[MAX_QUEUE_SIZE];
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-static ThumbnailClient g_thumbnailClient;
-static String currentThumbnailCacheKey = "";
-static bool g_thumbnailFetchSeen = false;
-static ThumbnailFetchStatus g_lastThumbnailFetchStatus = ThumbnailFetchStatus::OK;
-static int g_lastThumbnailHttpStatus = 0;
-static size_t g_lastThumbnailBytes = 0;
-static String g_lastThumbnailUrl = "";
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+static bool g_localPreviewSeen = false;
+static bool g_lastPreviewConfigFound = false;
+static int g_lastPreviewLedCount = 0;
+static int g_lastPreviewMatchedHoldCount = 0;
+static int g_lastPreviewJpegBlockCount = 0;
+static int g_lastPreviewJpegDecodeResult = 0;
+static String g_lastPreviewConfigKey = "";
 static const int MAX_BLE_PREVIEW_COMMANDS = 600;
 static LedCommand g_pendingBlePreviewCommands[MAX_BLE_PREVIEW_COMMANDS];
 static LedCommand g_processingBlePreviewCommands[MAX_BLE_PREVIEW_COMMANDS];
@@ -95,10 +90,16 @@ static bool g_pendingBlePreview = false;
 static portMUX_TYPE g_blePreviewMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
-#if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
 // Board image config lookup state
 const BoardConfig* currentBoardConfig = nullptr;
 String currentBoardConfigKey = "";
+
+#if defined(ENABLE_WAVESHARE_DISPLAY)
+using DisplayLedCmd = WaveshareDisplay::LedCmd;
+#elif defined(ENABLE_WAVESHARE_AMOLED_DISPLAY)
+using DisplayLedCmd = WaveshareAmoledDisplay::LedCmd;
+#endif
 
 /**
  * Extract config key from boardPath, stripping the angle segment.
@@ -162,6 +163,79 @@ String extractConfigKey(const char* boardPath) {
     // Build config key: board_name/layout_id/size_id/sorted_set_ids
     return bp.substring(0, slash3 + 1) + sortedSetIds;
 }
+
+bool loadBoardImageConfig(const char* boardPath) {
+    if (!boardPath) {
+        return false;
+    }
+
+    String configKey = extractConfigKey(boardPath);
+    if (configKey.length() == 0) {
+        return false;
+    }
+
+    if (configKey != currentBoardConfigKey) {
+        currentBoardConfigKey = configKey;
+        currentBoardConfig = findBoardConfig(configKey.c_str());
+        if (currentBoardConfig) {
+            Display.setBoardConfig(currentBoardConfig);
+            Logger.logln("Board image: loaded config '%s' (%dx%d, %d holds)",
+                         configKey.c_str(),
+                         currentBoardConfig->imageWidth,
+                         currentBoardConfig->imageHeight,
+                         currentBoardConfig->holdCount);
+        } else {
+            Display.setBoardConfig(nullptr);
+            Logger.logln("Board image: no config found for '%s'", configKey.c_str());
+        }
+    }
+
+    return currentBoardConfig != nullptr;
+}
+
+void clearBoardImagePreview() {
+    currentBoardConfig = nullptr;
+    currentBoardConfigKey = "";
+    Display.setBoardConfig(nullptr);
+    Display.setLedCommands(nullptr, 0);
+}
+
+void setDisplayLedCommands(const LedCommand* commands, int count) {
+    if (!commands || count <= 0 || !currentBoardConfig) {
+        Display.setLedCommands(nullptr, 0);
+        return;
+    }
+
+    static DisplayLedCmd ledCmds[512];
+    int cmdCount = min(count, 512);
+    for (int i = 0; i < cmdCount; i++) {
+        ledCmds[i].position = commands[i].position;
+        ledCmds[i].r = commands[i].r;
+        ledCmds[i].g = commands[i].g;
+        ledCmds[i].b = commands[i].b;
+    }
+    Display.setLedCommands(ledCmds, cmdCount);
+}
+
+void setDisplayLedCommands(JsonArray commands, int count) {
+    if (commands.isNull() || count <= 0 || !currentBoardConfig) {
+        Display.setLedCommands(nullptr, 0);
+        return;
+    }
+
+    static DisplayLedCmd ledCmds[512];
+    int cmdCount = min(count, 512);
+    int idx = 0;
+    for (JsonObject cmd : commands) {
+        if (idx >= cmdCount) break;
+        ledCmds[idx].position = cmd["position"] | 0;
+        ledCmds[idx].r = cmd["r"] | 0;
+        ledCmds[idx].g = cmd["g"] | 0;
+        ledCmds[idx].b = cmd["b"] | 0;
+        idx++;
+    }
+    Display.setLedCommands(ledCmds, idx);
+}
 #endif
 
 /**
@@ -190,129 +264,49 @@ static uint16_t hexToRgb565Fast(const char* hex) {
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 }
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-// Returns true when this function has left the display in the intended state:
-// fetched thumbnail, preserved duplicate thumbnail, or restored text-only UI
-// after fetch failure. Returns false only when the caller should render fallback UI.
-bool fetchAndDisplayRemoteThumbnail(const char* boardPath,
-                                    const char* frames,
-                                    const char* climbName,
-                                    const char* climbGrade,
-                                    const char* gradeColor,
-                                    int angle,
-                                    const char* climbUuid,
-                                    const char* boardTypeName) {
-    String renderBaseUrl = getConfigStringOrDefault(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
-    RemoteThumbnailDisplayRequest request = {
-        renderBaseUrl.c_str(),
-        boardPath,
-        frames,
-        climbName,
-        climbGrade,
-        gradeColor,
-        angle,
-        climbUuid,
-        boardTypeName,
-    };
-    RemoteThumbnailDisplayHooks hooks = {
-        nullptr,
-        [](void*) { Display.clearThumbnail(); },
-        [](void*,
-           const char* requestClimbName,
-           const char* requestClimbGrade,
-           const char* requestGradeColor,
-           int requestAngle,
-           const char* requestClimbUuid,
-           const char* requestBoardTypeName) {
-            Display.showClimb(requestClimbName,
-                              requestClimbGrade,
-                              requestGradeColor,
-                              requestAngle,
-                              requestClimbUuid,
-                              requestBoardTypeName);
-        },
-        [](void*) { Display.showThumbnailLoading(); },
-        [](void*, std::vector<uint8_t>&& data, const char* cacheKey) {
-            Display.setThumbnailJpeg(std::move(data), cacheKey);
-        },
-        [](void*, const char* url, std::vector<uint8_t>& output) {
-            g_lastThumbnailUrl = url ? url : "";
-            ThumbnailFetchResult result = g_thumbnailClient.fetchJpeg(url, output);
-            g_thumbnailFetchSeen = true;
-            g_lastThumbnailFetchStatus = result.status;
-            g_lastThumbnailHttpStatus = result.httpStatus;
-            g_lastThumbnailBytes = result.bytesRead;
-            return result;
-        },
-    };
-
-    RemoteThumbnailDisplayResult result = handleRemoteThumbnailDisplay(request, hooks, currentThumbnailCacheKey);
-    return result != RemoteThumbnailDisplayResult::FALLBACK_REQUIRED;
-}
-
-bool fetchAndDisplayBlePreviewThumbnail(const LedCommand* commands, int count, int angle) {
-    if (!commands || count <= 0) {
-        return false;
-    }
-
-    String renderBaseUrl = getConfigStringOrDefault(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+String buildPreviewBoardPath(int angle) {
     String previewBoardName = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
     int previewLayoutId = Config.getInt("preview_layout_id", DEFAULT_PREVIEW_LAYOUT_ID);
     int previewSizeId = Config.getInt("preview_size_id", DEFAULT_PREVIEW_SIZE_ID);
     String previewSetIds = getConfigStringOrDefault("preview_set_ids", DEFAULT_PREVIEW_SET_IDS);
 
-    std::vector<ThumbnailLedPosition> positions;
-    positions.reserve(count);
-    for (int i = 0; i < count; i++) {
-        positions.push_back(ThumbnailLedPosition(commands[i].position, commands[i].r, commands[i].g, commands[i].b));
+    String boardPath = previewBoardName;
+    boardPath += "/";
+    boardPath += String(previewLayoutId);
+    boardPath += "/";
+    boardPath += String(previewSizeId);
+    boardPath += "/";
+    boardPath += previewSetIds;
+    boardPath += "/";
+    boardPath += String(angle);
+    return boardPath;
+}
+
+void renderBlePreviewLocally(const LedCommand* commands, int count, int angle) {
+    String previewBoardName = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
+    String boardPath = buildPreviewBoardPath(angle);
+    bool configFound = loadBoardImageConfig(boardPath.c_str());
+    if (configFound) {
+        setDisplayLedCommands(commands, count);
+    } else {
+        Display.setLedCommands(nullptr, 0);
     }
 
-    String thumbnailUrl = buildBoardRenderLedPositionsThumbnailUrl(renderBaseUrl.c_str(),
-                                                                  previewBoardName.c_str(),
-                                                                  previewLayoutId,
-                                                                  previewSizeId,
-                                                                  previewSetIds.c_str(),
-                                                                  positions.data(),
-                                                                  static_cast<int>(positions.size()));
-    g_lastThumbnailUrl = thumbnailUrl;
-    g_thumbnailFetchSeen = true;
-
-    if (thumbnailUrl.length() == 0) {
-        g_lastThumbnailFetchStatus = ThumbnailFetchStatus::INVALID_URL;
-        g_lastThumbnailHttpStatus = 0;
-        g_lastThumbnailBytes = 0;
-        currentThumbnailCacheKey = "";
-        Display.clearThumbnail();
-        Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
-        return true;
-    }
+    g_localPreviewSeen = true;
+    g_lastPreviewConfigFound = configFound;
+    g_lastPreviewLedCount = count;
+    g_lastPreviewConfigKey = extractConfigKey(boardPath.c_str());
 
     Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
-
-    if (thumbnailUrlMatchesCache(thumbnailUrl.c_str(), currentThumbnailCacheKey.c_str())) {
-        g_lastThumbnailFetchStatus = ThumbnailFetchStatus::OK;
-        g_lastThumbnailHttpStatus = 200;
-        return true;
-    }
-
-    Display.showThumbnailLoading();
-
-    std::vector<uint8_t> jpegData;
-    ThumbnailFetchResult result = g_thumbnailClient.fetchJpeg(thumbnailUrl.c_str(), jpegData);
-    g_lastThumbnailFetchStatus = result.status;
-    g_lastThumbnailHttpStatus = result.httpStatus;
-    g_lastThumbnailBytes = result.bytesRead;
-
-    if (result.ok()) {
-        currentThumbnailCacheKey = thumbnailUrl;
-        Display.setThumbnailJpeg(std::move(jpegData), currentThumbnailCacheKey.c_str());
-    } else {
-        currentThumbnailCacheKey = "";
-        Display.clearThumbnail();
-        Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
-    }
-
-    return true;
+    g_lastPreviewMatchedHoldCount = Display.getLastMatchedHoldCount();
+    g_lastPreviewJpegBlockCount = Display.getLastJpegBlockCount();
+    g_lastPreviewJpegDecodeResult = Display.getLastJpegDecodeResult();
+    Logger.logln("Main: BLE preview display result config=%d jpeg=%d blocks=%d matched=%d",
+                 configFound ? 1 : 0,
+                 g_lastPreviewJpegDecodeResult,
+                 g_lastPreviewJpegBlockCount,
+                 g_lastPreviewMatchedHoldCount);
 }
 
 void queueBlePreviewPayload(const LedCommand* commands, int count, int angle) {
@@ -334,10 +328,6 @@ void queueBlePreviewPayload(const LedCommand* commands, int count, int angle) {
 }
 
 void processPendingBlePreview() {
-    if (!wifiConnected) {
-        return;
-    }
-
     int count = 0;
     int angle = 0;
 
@@ -352,7 +342,7 @@ void processPendingBlePreview() {
 
     if (count > 0) {
         Logger.logln("Main: Rendering queued BLE preview (%d LEDs, angle %d)", count, angle);
-        fetchAndDisplayBlePreviewThumbnail(g_processingBlePreviewCommands, count, angle);
+        renderBlePreviewLocally(g_processingBlePreviewCommands, count, angle);
     }
 }
 #endif
@@ -429,18 +419,24 @@ void fillWebStatus(JsonDocument& doc) {
         doc["last_ble_age_ms"] = -1;
     }
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-    doc["thumbnail_fetch_seen"] = g_thumbnailFetchSeen;
-    doc["thumbnail_status"] = g_thumbnailFetchSeen ? thumbnailFetchStatusName(g_lastThumbnailFetchStatus) : "none";
-    doc["thumbnail_http_status"] = g_lastThumbnailHttpStatus;
-    doc["thumbnail_bytes"] = static_cast<uint32_t>(g_lastThumbnailBytes);
-    doc["thumbnail_url"] = g_lastThumbnailUrl;
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+    doc["thumbnail_fetch_seen"] = g_localPreviewSeen;
+    doc["thumbnail_status"] = g_localPreviewSeen ? (g_lastPreviewConfigFound ? "local_rendered" : "missing_board_config") : "none";
+    doc["thumbnail_http_status"] = 0;
+    doc["thumbnail_bytes"] = static_cast<uint32_t>(g_lastPreviewLedCount);
+    doc["thumbnail_url"] = g_lastPreviewConfigKey;
+    doc["preview_matched_holds"] = g_lastPreviewMatchedHoldCount;
+    doc["preview_jpeg_blocks"] = g_lastPreviewJpegBlockCount;
+    doc["preview_jpeg_decode_result"] = g_lastPreviewJpegDecodeResult;
 #else
     doc["thumbnail_fetch_seen"] = false;
     doc["thumbnail_status"] = "unsupported";
     doc["thumbnail_http_status"] = 0;
     doc["thumbnail_bytes"] = 0;
     doc["thumbnail_url"] = "";
+    doc["preview_matched_holds"] = 0;
+    doc["preview_jpeg_blocks"] = 0;
+    doc["preview_jpeg_decode_result"] = 0;
 #endif
 }
 
@@ -503,8 +499,8 @@ void setup() {
 #ifdef HAS_DISPLAY
     Logger.logln("Display: Enabled");
 #endif
-#ifdef ENABLE_REMOTE_THUMBNAIL
-    Logger.logln("Remote thumbnails: Enabled");
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+    Logger.logln("Local board preview rendering: Enabled");
 #endif
     Logger.logln("=================================");
 
@@ -633,7 +629,7 @@ void loop() {
     // Process web server
     WebConfig.loop();
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
     processPendingBlePreview();
 #endif
 
@@ -981,7 +977,7 @@ void onBLELedData(const LedCommand* commands, int count, int angle) {
     g_lastBleAngle = angle;
     g_lastBlePayloadAt = millis();
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
     queueBlePreviewPayload(commands, count, angle);
 #endif
 
@@ -1022,9 +1018,6 @@ void onGraphQLStateChange(GraphQLConnectionState state) {
                               "controllerEvents(sessionId: $sessionId) { "
                               "... on LedUpdate { __typename commands { position r g b } queueItemUuid climbUuid climbName "
                               "climbGrade gradeColor boardPath angle "
-#ifdef ENABLE_REMOTE_THUMBNAIL
-                              "frames "
-#endif
                               "clientId "
                               "navigation { previousClimbs { name grade gradeColor } "
                               "nextClimb { name grade gradeColor } currentIndex totalCount } } "
@@ -1118,7 +1111,6 @@ void handleLedUpdateExtended(JsonObject& data) {
     const char* climbGrade = data["climbGrade"];
     const char* gradeColor = data["gradeColor"];
     const char* boardPath = data["boardPath"];
-    const char* frames = data["frames"];
     int angle = data["angle"] | 0;
 
     JsonArray commands = data["commands"];
@@ -1190,19 +1182,6 @@ void handleLedUpdateExtended(JsonObject& data) {
                 Display.clearNavigationContext();
             }
 
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-            if (fetchAndDisplayRemoteThumbnail(boardPath,
-                                               frames,
-                                               climbName,
-                                               currentGrade.c_str(),
-                                               currentGradeColor.c_str(),
-                                               angle,
-                                               "",
-                                               boardType.c_str())) {
-                return;
-            }
-#endif
-
             // Show unknown climb on display
             Display.showClimb(climbName, currentGrade.c_str(), currentGradeColor.c_str(), angle, "", boardType.c_str());
             return;
@@ -1219,9 +1198,8 @@ void handleLedUpdateExtended(JsonObject& data) {
         currentClimbName = "";
         currentGrade = "";
         currentGradeColor = "";
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-        currentThumbnailCacheKey = "";
-        Display.clearThumbnail();
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
+        clearBoardImagePreview();
 #endif
 
         Display.showNoClimb();
@@ -1242,39 +1220,11 @@ void handleLedUpdateExtended(JsonObject& data) {
         }
     }
 
-#if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
-    // Look up board image config from boardPath
-    if (boardPath) {
-        String configKey = extractConfigKey(boardPath);
-        if (configKey.length() > 0 && configKey != currentBoardConfigKey) {
-            currentBoardConfigKey = configKey;
-            currentBoardConfig = findBoardConfig(configKey.c_str());
-            if (currentBoardConfig) {
-                Display.setBoardConfig(currentBoardConfig);
-                Logger.logln("Board image: loaded config '%s' (%dx%d, %d holds)",
-                             configKey.c_str(), currentBoardConfig->imageWidth,
-                             currentBoardConfig->imageHeight, currentBoardConfig->holdCount);
-            } else {
-                Display.setBoardConfig(nullptr);
-                Logger.logln("Board image: no config found for '%s'", configKey.c_str());
-            }
-        }
-    }
-
-    // Pass LED commands to display for hold overlay rendering
-    if (!commands.isNull() && count > 0 && currentBoardConfig) {
-        WaveshareDisplay::LedCmd ledCmds[512];
-        int cmdCount = min(count, 512);
-        int idx = 0;
-        for (JsonObject cmd : commands) {
-            if (idx >= cmdCount) break;
-            ledCmds[idx].position = cmd["position"] | 0;
-            ledCmds[idx].r = cmd["r"] | 0;
-            ledCmds[idx].g = cmd["g"] | 0;
-            ledCmds[idx].b = cmd["b"] | 0;
-            idx++;
-        }
-        Display.setLedCommands(ledCmds, idx);
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
+    if (loadBoardImageConfig(boardPath)) {
+        setDisplayLedCommands(commands, count);
+    } else {
+        Display.setLedCommands(nullptr, 0);
     }
 #endif
 
@@ -1332,19 +1282,6 @@ void handleLedUpdateExtended(JsonObject& data) {
     } else {
         Display.clearNavigationContext();
     }
-
-#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
-    if (fetchAndDisplayRemoteThumbnail(boardPath,
-                                       frames,
-                                       climbName,
-                                       climbGrade,
-                                       currentGradeColor.c_str(),
-                                       angle,
-                                       climbUuid,
-                                       boardType.c_str())) {
-        return;
-    }
-#endif
 
     // Update display with gradeColor
     // Note: We always update the display even during rapid navigation.
@@ -1406,7 +1343,7 @@ void navigatePrevious() {
             Logger.logln("Navigation: Optimistic update to previous - %s (uuid: %s)", newCurrent->name,
                          newCurrent->uuid);
 
-#if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
             // Clear LED commands so stale holds aren't drawn if a full refresh happens
             Display.setLedCommands(nullptr, 0);
 #endif
@@ -1450,7 +1387,7 @@ void navigateNext() {
         if (newCurrent) {
             Logger.logln("Navigation: Optimistic update to next - %s (uuid: %s)", newCurrent->name, newCurrent->uuid);
 
-#if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
             // Clear LED commands so stale holds aren't drawn if a full refresh happens
             Display.setLedCommands(nullptr, 0);
 #endif
@@ -1493,7 +1430,7 @@ void navigateToIndex(int index) {
             Logger.logln("Navigation: Optimistic update to index %d - %s (uuid: %s)",
                          index, newCurrent->name, newCurrent->uuid);
 
-#if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
+#if defined(ENABLE_BOARD_IMAGE) && (defined(ENABLE_WAVESHARE_DISPLAY) || defined(ENABLE_WAVESHARE_AMOLED_DISPLAY))
             Display.setLedCommands(nullptr, 0);
 #endif
             Display.showClimbInfoOnly(newCurrent->name, newCurrent->grade, "", 0, newCurrent->climbUuid, boardType.c_str());

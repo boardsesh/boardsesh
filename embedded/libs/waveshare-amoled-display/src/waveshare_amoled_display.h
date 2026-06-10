@@ -6,8 +6,6 @@
 #include <JPEGDEC.h>
 #include <display_base.h>
 
-#include <vector>
-
 // Pin map from the current Waveshare ESP32-S3-Touch-AMOLED-2.16 docs/BSP.
 #define AMOLED_LCD_SDIO0 4
 #define AMOLED_LCD_SDIO1 5
@@ -25,10 +23,14 @@
 #define AMOLED_TOUCH_RST 40
 
 #define AMOLED_STATUS_BAR_HEIGHT 32
-#define AMOLED_PREVIEW_Y 76
-#define AMOLED_PREVIEW_SIZE 286
-#define AMOLED_FOOTER_Y 384
-#define AMOLED_FOOTER_HEIGHT 82
+#define AMOLED_PREVIEW_Y 78
+#define AMOLED_PREVIEW_SIZE 330
+#define AMOLED_FOOTER_Y 418
+#define AMOLED_FOOTER_HEIGHT 62
+
+#ifdef ENABLE_BOARD_IMAGE
+struct BoardConfig;
+#endif
 
 class WaveshareAmoledDisplay : public DisplayBase {
   public:
@@ -43,10 +45,21 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void refresh() override;
     void refreshInfoOnly() override;
 
-    void showThumbnailLoading();
-    void setThumbnailJpeg(const uint8_t* data, size_t len, const char* cacheKey);
-    void setThumbnailJpeg(std::vector<uint8_t>&& data, const char* cacheKey);
-    void clearThumbnail();
+#ifdef ENABLE_BOARD_IMAGE
+    struct LedCmd {
+        uint16_t position;
+        uint8_t r;
+        uint8_t g;
+        uint8_t b;
+    };
+    static const int MAX_LED_COMMANDS = 512;
+
+    void setBoardConfig(const BoardConfig* config);
+    void setLedCommands(const LedCmd* commands, int count);
+    int getLastJpegBlockCount() const { return _lastJpegBlockCount; }
+    int getLastJpegDecodeResult() const { return _lastJpegDecodeResult; }
+    int getLastMatchedHoldCount() const { return _lastMatchedHoldCount; }
+#endif
 
     Arduino_GFX* getDisplay() { return _gfx; }
 
@@ -59,16 +72,25 @@ class WaveshareAmoledDisplay : public DisplayBase {
   private:
     Arduino_DataBus* _bus;
     Arduino_CO5300* _gfx;
-    std::vector<uint8_t> _thumbnailJpeg;
-    String _thumbnailCacheKey;
     bool _ready;
-    bool _hasThumbnail;
-    bool _thumbnailLoading;
+
+#ifdef ENABLE_BOARD_IMAGE
+    bool _hasBoardImage;
+    const BoardConfig* _currentBoardConfig;
+    LedCmd _ledCommands[MAX_LED_COMMANDS];
+    JPEGDEC _jpegDecoder;
+    int _ledCommandCount;
+    int _lastJpegBlockCount;
+    int _lastJpegDecodeResult;
+    int _lastMatchedHoldCount;
+#endif
 
     void drawStatusBar();
     void drawClimbHeader();
-    void drawThumbnailFrame();
-    void drawThumbnailImage();
+    void drawPreviewFrame();
+#ifdef ENABLE_BOARD_IMAGE
+    void drawBoardImageWithHolds();
+#endif
     void drawFooter();
     void drawCenteredText(const char* text, int y, uint8_t size, uint16_t color);
     void drawTruncatedText(const char* text, int x, int y, uint8_t size, uint16_t color, int maxChars);

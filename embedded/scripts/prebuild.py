@@ -34,7 +34,7 @@ CODEGEN_SCRIPT = SCRIPT_DIR / "generate-graphql-types.mjs"
 BOARD_DATA_SOURCES = [
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "product-sizes-data.ts",
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "led-placements-data.ts",
-    PROJECT_ROOT / "packages" / "web" / "app" / "lib" / "board-data.ts",
+    PROJECT_ROOT / "packages" / "shared" / "board-config" / "src" / "board-data.ts",
 ]
 BOARD_DATA_OUTPUT = SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_hold_data.h"
 BOARD_DATA_HASH_FILE = SCRIPT_DIR.parent / "libs" / "board-data" / ".board_data_hash"
@@ -213,6 +213,23 @@ def env_has_define(define_name: str) -> bool:
             return True
         if isinstance(define, (list, tuple)) and len(define) > 0 and define[0] == define_name:
             return True
+
+    # During dependency scanning PlatformIO can load pre-scripts before every
+    # build flag has been expanded into CPPDEFINES, so also inspect the raw
+    # build flags for -D forms.
+    build_flags = []
+    try:
+        build_flags.extend(env.GetProjectOption("build_flags", []))
+    except Exception:
+        pass
+    build_flags.extend(env.get("BUILD_FLAGS", []))
+
+    for flag in build_flags:
+        flag_text = str(flag)
+        if flag_text == f"-D{define_name}" or flag_text == f"-D {define_name}":
+            return True
+        if flag_text.startswith(f"-D{define_name}=") or flag_text.startswith(f"-D {define_name}="):
+            return True
     return False
 
 
@@ -248,15 +265,17 @@ def before_build(source, target, env):
     else:
         print("[GraphQL Codegen] Types are up-to-date")
 
-    # Only the local board-image firmware needs generated board image/hold data.
-    if env_has_define("ENABLE_BOARD_IMAGE"):
-        check_board_data_codegen()
-    else:
-        print("[Board Data Codegen] Skipping (ENABLE_BOARD_IMAGE not set)")
-
 
 # Register the pre-build action.
 # "buildprog" runs before final linking, "$BUILD_DIR/firmware.elf" catches the build early.
 # The environment variable deduplication ensures we only run once regardless of which fires first.
+#
+# Board data is needed while PlatformIO compiles dependent libraries, so it must
+# be generated when this pre-script is loaded rather than in the link-time hook.
+if env_has_define("ENABLE_BOARD_IMAGE"):
+    check_board_data_codegen()
+else:
+    print("[Board Data Codegen] Skipping (ENABLE_BOARD_IMAGE not set)")
+
 env.AddPreAction("buildprog", before_build)
 env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", before_build)

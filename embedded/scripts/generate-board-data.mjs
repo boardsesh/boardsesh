@@ -26,8 +26,8 @@ const __dirname = path.dirname(__filename);
 
 // Path configuration
 const PROJECT_ROOT = path.join(__dirname, '../..');
-const WEB_LIB = path.join(PROJECT_ROOT, 'packages/web/app/lib');
 const BOARD_CONSTANTS_GENERATED = path.join(PROJECT_ROOT, 'packages/board-constants/src/generated');
+const BOARD_CONFIG_SRC = path.join(PROJECT_ROOT, 'packages/shared/board-config/src');
 const IMAGES_BASE = path.join(PROJECT_ROOT, 'packages/web/public/images');
 const OUTPUT_DIR = path.join(__dirname, '../libs/board-data/src');
 
@@ -107,10 +107,11 @@ function loadBoardData() {
   // Read raw file contents
   const productSizesContent = fs.readFileSync(path.join(BOARD_CONSTANTS_GENERATED, 'product-sizes-data.ts'), 'utf-8');
   const ledPlacementsContent = fs.readFileSync(path.join(BOARD_CONSTANTS_GENERATED, 'led-placements-data.ts'), 'utf-8');
-  const boardDataContent = fs.readFileSync(path.join(WEB_LIB, 'board-data.ts'), 'utf-8');
+  const boardDataContent = fs.readFileSync(path.join(BOARD_CONFIG_SRC, 'board-data.ts'), 'utf-8');
 
   // Extract data objects
-  const PRODUCT_SIZES = extractJsObject(productSizesContent, 'PRODUCT_SIZES');
+  const PRODUCT_SIZES =
+    extractJsObject(productSizesContent, 'PRODUCT_SIZES') ?? extractJsObject(productSizesContent, 'AURORA_PRODUCT_SIZES');
   const LAYOUTS = extractJsObject(productSizesContent, 'LAYOUTS');
   const SETS = extractJsObject(productSizesContent, 'SETS');
   const IMAGE_FILENAMES = extractJsObject(productSizesContent, 'IMAGE_FILENAMES');
