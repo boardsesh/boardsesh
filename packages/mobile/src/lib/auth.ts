@@ -11,11 +11,18 @@ const AUTH_CALLBACK_URL = 'com.boardsesh.app://auth/callback';
 
 // The transfer-token exchange doesn't echo the OAuth provider back, so the
 // callback screen reads the in-flight attempt's provider from here to attribute
-// its Login Succeeded/Failed events. Overwritten by each new attempt.
+// its Login Succeeded/Failed events. Set by startSignIn; cleared when the
+// attempt reaches a terminal outcome (login screen's failure paths, the
+// callback screen's exchange outcomes, sign-out) so a callback mount outside a
+// live flow — stale deep link, hot reload — can't inherit a previous attempt.
 let pendingOAuthProvider: AuthProvider | null = null;
 
 export function getPendingOAuthProvider(): AuthProvider | null {
   return pendingOAuthProvider;
+}
+
+export function clearPendingOAuthProvider(): void {
+  pendingOAuthProvider = null;
 }
 
 // The two platforms deliver the OAuth callback differently:
@@ -39,7 +46,9 @@ export async function startSignIn(provider: AuthProvider): Promise<WebBrowser.We
     {
       addUrlListener: (listener) => Linking.addEventListener('url', listener),
       openBrowser: (browserUrl) => WebBrowser.openBrowserAsync(browserUrl),
-      dismissBrowser: () => WebBrowser.dismissBrowser(),
+      // async so the race always gets a real promise even if a future SDK's
+      // dismissBrowser returns void or throws synchronously.
+      dismissBrowser: async () => WebBrowser.dismissBrowser(),
     },
     url,
     AUTH_CALLBACK_URL,
@@ -115,6 +124,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
 }
 
 export async function signOut(): Promise<void> {
+  clearPendingOAuthProvider();
   const refreshToken = await getRefreshToken();
   if (refreshToken) {
     // Best-effort server-side revocation — don't block on failure

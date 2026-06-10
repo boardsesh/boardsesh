@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { exchangeTransferToken, getPendingOAuthProvider } from '../../src/lib/auth';
+import { clearPendingOAuthProvider, exchangeTransferToken, getPendingOAuthProvider } from '../../src/lib/auth';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
@@ -19,10 +19,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 const exchangedTokens = new Set<string>();
 
 export default function AuthCallback() {
-  const { transferToken, error: serverCallbackError } = useLocalSearchParams<{
-    transferToken: string;
-    error?: string;
-  }>();
+  const { transferToken } = useLocalSearchParams<{ transferToken: string }>();
   const { t } = useTranslation('auth');
   // Holds a translated, user-facing failure message — never raw server text,
   // which the backend returns in English only.
@@ -33,23 +30,20 @@ export default function AuthCallback() {
 
   useEffect(() => {
     // The transfer-token exchange doesn't echo the OAuth provider back, so
-    // attribute events to the attempt startSignIn recorded. Without this,
-    // social Login Succeeded events have no auth_method and disappear from
-    // every per-method funnel.
+    // attribute events to the attempt startSignIn recorded (captured at mount,
+    // before any terminal path clears it). Without this, social Login
+    // Succeeded events have no auth_method and disappear from every
+    // per-method funnel.
     const authMethod = getPendingOAuthProvider() ?? undefined;
 
     if (!transferToken) {
-      // When the server deep-links an explicit error (session_missing /
-      // token_issue_failed), login.tsx already tracked it with the precise
-      // reason from the same URL — expo-router just also routed it here.
-      // Tracking again would double-count one failed attempt.
-      if (!serverCallbackError) {
-        track(SHARED_EVENTS.LoginFailed, {
-          auth_method: authMethod,
-          flow: 'native',
-          failure_reason: 'no_transfer_token',
-        });
-      }
+      // No tracking here: login.tsx owns the no-token outcome — it parses the
+      // same callback URL from the browser result and reports the precise
+      // reason (session_missing / token_issue_failed / no_transfer_token).
+      // This branch can be a second delivery of that URL (expo-router's
+      // auto-route) or a stale deep link outside any flow; tracking either
+      // would double-count or invent a failed attempt.
+      clearPendingOAuthProvider();
       setError(t('callback.noTransferToken'));
       return;
     }
@@ -61,6 +55,7 @@ export default function AuthCallback() {
       .then(async (result) => {
         if (result.success) {
           track(SHARED_EVENTS.LoginSucceeded, { auth_method: authMethod, flow: 'native' });
+          clearPendingOAuthProvider();
           await refreshAuthState();
           router.replace('/(tabs)/climbs');
         } else {
@@ -69,6 +64,7 @@ export default function AuthCallback() {
             flow: 'native',
             failure_reason: classifyNativeAuthFailureReason(result, 'exchange'),
           });
+          clearPendingOAuthProvider();
           // result.error is a raw English/server string; show a translated
           // generic message instead (mirrors login.tsx's networkError pattern).
           setError(t('callback.failed'));
@@ -76,9 +72,10 @@ export default function AuthCallback() {
       })
       .catch(() => {
         track(SHARED_EVENTS.LoginFailed, { auth_method: authMethod, flow: 'native', failure_reason: 'exception' });
+        clearPendingOAuthProvider();
         setError(t('callback.unexpectedError'));
       });
-  }, [transferToken, serverCallbackError, router, refreshAuthState, t]);
+  }, [transferToken, router, refreshAuthState, t]);
 
   if (error) {
     return (

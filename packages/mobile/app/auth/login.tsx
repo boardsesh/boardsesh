@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
+import { clearPendingOAuthProvider } from '../../src/lib/auth';
 import { parseAuthCallbackParams } from '../../src/lib/auth-callback-url';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -133,6 +134,10 @@ export default function LoginScreen() {
     // from the flow dying programmatically (sub-second) — the iOS 26 auth-session
     // bug surfaced as 100–250ms "cancels" that looked like user action.
     const attemptStartedAt = Date.now();
+    // Once we hand off to /auth/callback, that screen owns the pending-provider
+    // lifecycle; on every other (terminal) outcome this handler clears it so a
+    // later stray callback mount can't inherit this attempt's provider.
+    let handedOffToCallback = false;
     try {
       const result = await signIn(provider);
       if (result.type === 'success') {
@@ -142,6 +147,7 @@ export default function LoginScreen() {
         // dedupe the exchange.
         const { transferToken, error: callbackError } = parseAuthCallbackParams(result.url);
         if (transferToken) {
+          handedOffToCallback = true;
           router.replace({ pathname: '/auth/callback', params: { transferToken } });
         } else {
           // callbackError comes from our own server (session_missing /
@@ -177,6 +183,9 @@ export default function LoginScreen() {
       });
       setError(t('nativeStart.oauthError'));
     } finally {
+      if (!handedOffToCallback) {
+        clearPendingOAuthProvider();
+      }
       setOauthInProgress(false);
     }
   }

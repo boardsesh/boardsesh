@@ -11,10 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
-const params = vi.hoisted(() => ({
-  transferToken: undefined as string | undefined,
-  error: undefined as string | undefined,
-}));
+const params = vi.hoisted(() => ({ transferToken: undefined as string | undefined }));
 
 vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
 
@@ -26,7 +23,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ transferToken: params.transferToken, error: params.error }),
+  useLocalSearchParams: () => ({ transferToken: params.transferToken }),
   useRouter: () => router,
 }));
 
@@ -42,6 +39,7 @@ const auth = vi.hoisted(() => ({
 vi.mock('../../../src/lib/auth', () => ({
   exchangeTransferToken: auth.exchangeTransferToken,
   getPendingOAuthProvider: () => 'apple',
+  clearPendingOAuthProvider: vi.fn(),
 }));
 vi.mock('../../../src/lib/native-auth-analytics', () => ({ classifyNativeAuthFailureReason: () => 'invalid_token' }));
 // Stable across renders like the real provider's useCallback — a fresh fn per
@@ -59,7 +57,6 @@ beforeEach(() => {
   router.replace.mockClear();
   auth.exchangeTransferToken.mockClear();
   params.transferToken = undefined;
-  params.error = undefined;
 });
 
 describe('AuthCallback localization', () => {
@@ -71,25 +68,16 @@ describe('AuthCallback localization', () => {
     expect(container.textContent).not.toContain('Signing in');
   });
 
-  it('renders a translated failure message when no transfer token arrives', async () => {
+  it('renders a translated failure message without tracking when no transfer token arrives', async () => {
     params.transferToken = undefined;
     const { container } = render(createElement(AuthCallback));
     await waitFor(() => expect(container.textContent).toContain('callback.noTransferToken'));
     // The old screen prefixed every error with hardcoded 'Sign in failed:'.
     expect(container.textContent).not.toContain('Sign in failed');
     expect(container.textContent).not.toContain('No transfer token received');
-    // A genuinely missing token (no server error param) is this screen's to report.
-    expect(analytics.track).toHaveBeenCalledTimes(1);
-  });
-
-  // When the server deep-links an explicit error (?error=session_missing),
-  // login.tsx tracks it with the precise reason from the same URL; this screen
-  // mounting via expo-router's auto-route must not double-count the attempt.
-  it('shows the error but does not track when the server sent an explicit error param', async () => {
-    params.transferToken = undefined;
-    params.error = 'session_missing';
-    const { container } = render(createElement(AuthCallback));
-    await waitFor(() => expect(container.textContent).toContain('callback.noTransferToken'));
+    // login.tsx owns no-token tracking — it parses the same callback URL from
+    // the browser result. This mount can be expo-router's second delivery of
+    // that URL (or a stale deep link), so tracking here would double-count.
     expect(analytics.track).not.toHaveBeenCalled();
   });
 
@@ -99,6 +87,11 @@ describe('AuthCallback localization', () => {
     await waitFor(() => expect(container.textContent).toContain('callback.failed'));
     // The raw English/server string must never reach the user.
     expect(container.textContent).not.toContain('Invalid or expired transfer token');
+    // The exchange failure is attributed to the provider startSignIn recorded.
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Login Failed',
+      expect.objectContaining({ auth_method: 'apple', flow: 'native' }),
+    );
   });
 
   // This screen mounts twice for one login: expo-router routes the callback
