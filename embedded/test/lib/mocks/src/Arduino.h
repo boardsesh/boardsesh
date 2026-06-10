@@ -9,10 +9,12 @@
 #define ARDUINO_MOCK_H
 
 #include <algorithm>
+#include <cctype>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <type_traits>
@@ -157,6 +159,8 @@ class String {
     bool operator!=(const String& rhs) const { return data_ != rhs.data_; }
     bool operator<(const String& rhs) const { return data_ < rhs.data_; }
 
+    char operator[](unsigned int index) const { return charAt(index); }
+
     char charAt(unsigned int index) const {
         if (index < data_.length())
             return data_[index];
@@ -198,6 +202,35 @@ class String {
         if (prefixLen > data_.length())
             return false;
         return data_.compare(0, prefixLen, prefix) == 0;
+    }
+
+    bool equalsIgnoreCase(const char* value) const {
+        std::string other = value ? value : "";
+        if (other.length() != data_.length())
+            return false;
+        for (size_t i = 0; i < data_.length(); i++) {
+            if (std::tolower(static_cast<unsigned char>(data_[i])) !=
+                std::tolower(static_cast<unsigned char>(other[i]))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int toInt() const { return std::atoi(data_.c_str()); }
+
+    void trim() {
+        size_t start = 0;
+        while (start < data_.length() && std::isspace(static_cast<unsigned char>(data_[start]))) {
+            start++;
+        }
+
+        size_t end = data_.length();
+        while (end > start && std::isspace(static_cast<unsigned char>(data_[end - 1]))) {
+            end--;
+        }
+
+        data_ = data_.substr(start, end - start);
     }
 
     void toCharArray(char* buf, size_t bufsize) const {

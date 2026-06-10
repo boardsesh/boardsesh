@@ -43,6 +43,13 @@
 #define DEFAULT_RENDER_BASE_URL "https://www.boardsesh.com"
 #endif
 
+// Local BLE preview configuration for the 2.1" debug controller.
+// These values can be overridden from the ESP32 configuration page.
+#define DEFAULT_PREVIEW_BOARD_NAME "kilter"
+#define DEFAULT_PREVIEW_LAYOUT_ID 8
+#define DEFAULT_PREVIEW_SIZE_ID 25
+#define DEFAULT_PREVIEW_SET_IDS "26,27,28,29"
+
 // Web server
 #define WEB_SERVER_PORT 80
 

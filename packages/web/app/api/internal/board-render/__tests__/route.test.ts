@@ -26,6 +26,23 @@ vi.mock('@boardsesh/board-renderer-wasm', () => ({
   render_overlay: (config: string) => mockRenderOverlay(config),
 }));
 
+const mockBuildFramesString = vi.fn(
+  (
+    _ledPositions: Array<{ position: number; r: number; g: number; b: number; role?: number }>,
+    _boardName: string,
+    _layoutId: number,
+    _sizeId: number,
+  ) => 'p1073r42p1090r43',
+);
+vi.mock('@boardsesh/board-constants/led-placements', () => ({
+  buildFramesString: (
+    ledPositions: Array<{ position: number; r: number; g: number; b: number; role?: number }>,
+    boardName: string,
+    layoutId: number,
+    sizeId: number,
+  ) => mockBuildFramesString(ledPositions, boardName, layoutId, sizeId),
+}));
+
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => Promise.resolve(new Uint8Array([0]))),
 }));
@@ -196,6 +213,30 @@ describe('board-render API route', () => {
     const configJson = mockRenderOverlay.mock.calls[0][0];
     const config = JSON.parse(configJson);
     expect(config.frames).toBe('');
+  });
+
+  it('builds frames from led_positions when frames is omitted', async () => {
+    const { frames: _, ...params } = validParams;
+    const response = await GET(
+      makeRequest({
+        ...params,
+        led_positions: '98:0:255:0,213:0:255:255:43',
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockBuildFramesString).toHaveBeenCalledWith(
+      [
+        { position: 98, r: 0, g: 255, b: 0 },
+        { position: 213, r: 0, g: 255, b: 255, role: 43 },
+      ],
+      'kilter',
+      1,
+      7,
+    );
+    const configJson = mockRenderOverlay.mock.calls[0][0];
+    const config = JSON.parse(configJson);
+    expect(config.frames).toBe('p1073r42p1090r43');
   });
 
   it('accepts quoted Aurora delta frame segments', async () => {

@@ -45,10 +45,16 @@
 #include "config/board_config.h"
 #include "config/led_placement_map.h"
 
+String getConfigStringOrDefault(const char* key, const char* defaultValue);
+
 // State
 bool wifiConnected = false;
 bool backendConnected = false;
 bool bleInitialized = false;
+static bool g_lastBlePayloadSeen = false;
+static int g_lastBleLedCount = 0;
+static int g_lastBleAngle = 0;
+static unsigned long g_lastBlePayloadAt = 0;
 
 #ifdef HAS_DISPLAY
 // Navigation mutation debounce - wait for rapid presses to stop before sending mutation
@@ -75,6 +81,18 @@ static LocalQueueItem g_queueSyncBuffer[MAX_QUEUE_SIZE];
 #if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
 static ThumbnailClient g_thumbnailClient;
 static String currentThumbnailCacheKey = "";
+static bool g_thumbnailFetchSeen = false;
+static ThumbnailFetchStatus g_lastThumbnailFetchStatus = ThumbnailFetchStatus::OK;
+static int g_lastThumbnailHttpStatus = 0;
+static size_t g_lastThumbnailBytes = 0;
+static String g_lastThumbnailUrl = "";
+static const int MAX_BLE_PREVIEW_COMMANDS = 600;
+static LedCommand g_pendingBlePreviewCommands[MAX_BLE_PREVIEW_COMMANDS];
+static LedCommand g_processingBlePreviewCommands[MAX_BLE_PREVIEW_COMMANDS];
+static int g_pendingBlePreviewCount = 0;
+static int g_pendingBlePreviewAngle = 0;
+static bool g_pendingBlePreview = false;
+static portMUX_TYPE g_blePreviewMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
 #if defined(ENABLE_WAVESHARE_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
@@ -184,7 +202,7 @@ bool fetchAndDisplayRemoteThumbnail(const char* boardPath,
                                     int angle,
                                     const char* climbUuid,
                                     const char* boardTypeName) {
-    String renderBaseUrl = Config.getString(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
+    String renderBaseUrl = getConfigStringOrDefault(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
     RemoteThumbnailDisplayRequest request = {
         renderBaseUrl.c_str(),
         boardPath,
@@ -218,12 +236,124 @@ bool fetchAndDisplayRemoteThumbnail(const char* boardPath,
             Display.setThumbnailJpeg(std::move(data), cacheKey);
         },
         [](void*, const char* url, std::vector<uint8_t>& output) {
-            return g_thumbnailClient.fetchJpeg(url, output);
+            g_lastThumbnailUrl = url ? url : "";
+            ThumbnailFetchResult result = g_thumbnailClient.fetchJpeg(url, output);
+            g_thumbnailFetchSeen = true;
+            g_lastThumbnailFetchStatus = result.status;
+            g_lastThumbnailHttpStatus = result.httpStatus;
+            g_lastThumbnailBytes = result.bytesRead;
+            return result;
         },
     };
 
     RemoteThumbnailDisplayResult result = handleRemoteThumbnailDisplay(request, hooks, currentThumbnailCacheKey);
     return result != RemoteThumbnailDisplayResult::FALLBACK_REQUIRED;
+}
+
+bool fetchAndDisplayBlePreviewThumbnail(const LedCommand* commands, int count, int angle) {
+    if (!commands || count <= 0) {
+        return false;
+    }
+
+    String renderBaseUrl = getConfigStringOrDefault(THUMBNAIL_RENDER_BASE_KEY, DEFAULT_RENDER_BASE_URL);
+    String previewBoardName = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
+    int previewLayoutId = Config.getInt("preview_layout_id", DEFAULT_PREVIEW_LAYOUT_ID);
+    int previewSizeId = Config.getInt("preview_size_id", DEFAULT_PREVIEW_SIZE_ID);
+    String previewSetIds = getConfigStringOrDefault("preview_set_ids", DEFAULT_PREVIEW_SET_IDS);
+
+    std::vector<ThumbnailLedPosition> positions;
+    positions.reserve(count);
+    for (int i = 0; i < count; i++) {
+        positions.push_back(ThumbnailLedPosition(commands[i].position, commands[i].r, commands[i].g, commands[i].b));
+    }
+
+    String thumbnailUrl = buildBoardRenderLedPositionsThumbnailUrl(renderBaseUrl.c_str(),
+                                                                  previewBoardName.c_str(),
+                                                                  previewLayoutId,
+                                                                  previewSizeId,
+                                                                  previewSetIds.c_str(),
+                                                                  positions.data(),
+                                                                  static_cast<int>(positions.size()));
+    g_lastThumbnailUrl = thumbnailUrl;
+    g_thumbnailFetchSeen = true;
+
+    if (thumbnailUrl.length() == 0) {
+        g_lastThumbnailFetchStatus = ThumbnailFetchStatus::INVALID_URL;
+        g_lastThumbnailHttpStatus = 0;
+        g_lastThumbnailBytes = 0;
+        currentThumbnailCacheKey = "";
+        Display.clearThumbnail();
+        Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
+        return true;
+    }
+
+    Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
+
+    if (thumbnailUrlMatchesCache(thumbnailUrl.c_str(), currentThumbnailCacheKey.c_str())) {
+        g_lastThumbnailFetchStatus = ThumbnailFetchStatus::OK;
+        g_lastThumbnailHttpStatus = 200;
+        return true;
+    }
+
+    Display.showThumbnailLoading();
+
+    std::vector<uint8_t> jpegData;
+    ThumbnailFetchResult result = g_thumbnailClient.fetchJpeg(thumbnailUrl.c_str(), jpegData);
+    g_lastThumbnailFetchStatus = result.status;
+    g_lastThumbnailHttpStatus = result.httpStatus;
+    g_lastThumbnailBytes = result.bytesRead;
+
+    if (result.ok()) {
+        currentThumbnailCacheKey = thumbnailUrl;
+        Display.setThumbnailJpeg(std::move(jpegData), currentThumbnailCacheKey.c_str());
+    } else {
+        currentThumbnailCacheKey = "";
+        Display.clearThumbnail();
+        Display.showClimb("BLE Preview", "", "", angle, "", previewBoardName.c_str());
+    }
+
+    return true;
+}
+
+void queueBlePreviewPayload(const LedCommand* commands, int count, int angle) {
+    if (!commands || count <= 0) {
+        return;
+    }
+
+    int copyCount = count < MAX_BLE_PREVIEW_COMMANDS ? count : MAX_BLE_PREVIEW_COMMANDS;
+    if (copyCount < count) {
+        Logger.logln("Main: BLE preview payload truncated from %d to %d LEDs", count, copyCount);
+    }
+
+    portENTER_CRITICAL(&g_blePreviewMux);
+    memcpy(g_pendingBlePreviewCommands, commands, copyCount * sizeof(LedCommand));
+    g_pendingBlePreviewCount = copyCount;
+    g_pendingBlePreviewAngle = angle;
+    g_pendingBlePreview = true;
+    portEXIT_CRITICAL(&g_blePreviewMux);
+}
+
+void processPendingBlePreview() {
+    if (!wifiConnected) {
+        return;
+    }
+
+    int count = 0;
+    int angle = 0;
+
+    portENTER_CRITICAL(&g_blePreviewMux);
+    if (g_pendingBlePreview) {
+        count = g_pendingBlePreviewCount;
+        angle = g_pendingBlePreviewAngle;
+        memcpy(g_processingBlePreviewCommands, g_pendingBlePreviewCommands, count * sizeof(LedCommand));
+        g_pendingBlePreview = false;
+    }
+    portEXIT_CRITICAL(&g_blePreviewMux);
+
+    if (count > 0) {
+        Logger.logln("Main: Rendering queued BLE preview (%d LEDs, angle %d)", count, angle);
+        fetchAndDisplayBlePreviewThumbnail(g_processingBlePreviewCommands, count, angle);
+    }
 }
 #endif
 #endif
@@ -248,6 +378,71 @@ void startupAnimation();
 #ifdef ENABLE_WAVESHARE_DISPLAY
 void updateSettingsDisplay(bool proxyEnabled);
 #endif
+void fillWebStatus(JsonDocument& doc);
+
+const char* graphqlStateName(GraphQLConnectionState state) {
+    switch (state) {
+        case GraphQLConnectionState::DISCONNECTED:
+            return "disconnected";
+        case GraphQLConnectionState::CONNECTING:
+            return "connecting";
+        case GraphQLConnectionState::CONNECTED:
+            return "connected";
+        case GraphQLConnectionState::CONNECTION_INIT:
+            return "connection_init";
+        case GraphQLConnectionState::CONNECTION_ACK:
+            return "connection_ack";
+        case GraphQLConnectionState::SUBSCRIBED:
+            return "subscribed";
+        default:
+            return "unknown";
+    }
+}
+
+String getConfigStringOrDefault(const char* key, const char* defaultValue) {
+    String value = Config.getString(key);
+    value.trim();
+    return value.length() == 0 ? String(defaultValue) : value;
+}
+
+void fillWebStatus(JsonDocument& doc) {
+    String apiKey = Config.getString("api_key");
+    String sessionId = Config.getString("session_id");
+
+    doc["wifi_connected"] = wifiConnected;
+    doc["wifi_ip"] = WiFiMgr.getIP();
+    doc["ble_initialized"] = bleInitialized;
+    doc["ble_connected"] = bleInitialized && BLE.isConnected();
+    doc["ble_advertising"] = bleInitialized && BLE.isAdvertising();
+    doc["ble_advertising_enabled"] = bleInitialized && BLE.isAdvertisingEnabled();
+    doc["backend_connected"] = backendConnected;
+    doc["backend_subscribed"] = GraphQL.isSubscribed();
+    doc["backend_state"] = graphqlStateName(GraphQL.getState());
+    doc["api_key_configured"] = apiKey.length() > 0;
+    doc["session_id_configured"] = sessionId.length() > 0;
+    doc["last_ble_payload_seen"] = g_lastBlePayloadSeen;
+    doc["last_ble_led_count"] = g_lastBleLedCount;
+    doc["last_ble_angle"] = g_lastBleAngle;
+    if (g_lastBlePayloadSeen) {
+        doc["last_ble_age_ms"] = static_cast<uint32_t>(millis() - g_lastBlePayloadAt);
+    } else {
+        doc["last_ble_age_ms"] = -1;
+    }
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+    doc["thumbnail_fetch_seen"] = g_thumbnailFetchSeen;
+    doc["thumbnail_status"] = g_thumbnailFetchSeen ? thumbnailFetchStatusName(g_lastThumbnailFetchStatus) : "none";
+    doc["thumbnail_http_status"] = g_lastThumbnailHttpStatus;
+    doc["thumbnail_bytes"] = static_cast<uint32_t>(g_lastThumbnailBytes);
+    doc["thumbnail_url"] = g_lastThumbnailUrl;
+#else
+    doc["thumbnail_fetch_seen"] = false;
+    doc["thumbnail_status"] = "unsupported";
+    doc["thumbnail_http_status"] = 0;
+    doc["thumbnail_bytes"] = 0;
+    doc["thumbnail_url"] = "";
+#endif
+}
 
 #ifdef ENABLE_BLE_PROXY
 void onBLERawForward(const uint8_t* data, size_t len);
@@ -370,8 +565,7 @@ void setup() {
 #endif
         // Don't initialize BLE yet - wait for WiFi to be configured
     } else {
-        // We have saved WiFi credentials, initialize BLE now
-        initializeBLE();
+        Logger.logln("Saved WiFi credentials found - waiting for connection before BLE init");
     }
 
     // Initialize button pins for LilyGo navigation (Waveshare uses touch instead)
@@ -382,6 +576,7 @@ void setup() {
 
     // Initialize web config server
     Logger.logln("Starting web server...");
+    WebConfig.setStatusProvider(fillWebStatus);
     WebConfig.begin();
 
     Logger.logln("Setup complete!");
@@ -437,6 +632,10 @@ void loop() {
 
     // Process web server
     WebConfig.loop();
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+    processPendingBlePreview();
+#endif
 
 #ifdef HAS_DISPLAY
     // Process debounced navigation mutation (shared across all display types)
@@ -615,14 +814,24 @@ void onWiFiStateChange(WiFiConnectionState state) {
             // Initialize BLE now that WiFi is connected (if not already done)
             initializeBLE();
 
+            if (!Config.getBool("backend_sync", false)) {
+                Logger.logln("Backend session sync disabled - skipping backend connection");
+                break;
+            }
+
             // Get backend config
-            String host = Config.getString("backend_host", DEFAULT_BACKEND_HOST);
+            String host = getConfigStringOrDefault("backend_host", DEFAULT_BACKEND_HOST);
             int port = Config.getInt("backend_port", DEFAULT_BACKEND_PORT);
-            String path = Config.getString("backend_path", DEFAULT_BACKEND_PATH);
+            String path = getConfigStringOrDefault("backend_path", DEFAULT_BACKEND_PATH);
             String apiKey = Config.getString("api_key");
+            String sessionId = Config.getString("session_id");
 
             if (apiKey.length() == 0) {
                 Logger.logln("No API key configured - skipping backend connection");
+                break;
+            }
+            if (sessionId.length() == 0) {
+                Logger.logln("No session ID configured - skipping backend connection");
                 break;
             }
 
@@ -767,12 +976,20 @@ void onWebSocketLedUpdate(const LedCommand* commands, int count) {
  */
 void onBLELedData(const LedCommand* commands, int count, int angle) {
     Logger.logln("Main: Bluetooth LED data received: %d LEDs, angle: %d", count, angle);
+    g_lastBlePayloadSeen = true;
+    g_lastBleLedCount = count;
+    g_lastBleAngle = angle;
+    g_lastBlePayloadAt = millis();
+
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_REMOTE_THUMBNAIL)
+    queueBlePreviewPayload(commands, count, angle);
+#endif
 
     // Forward to backend via WebSocket to match climb
     if (GraphQL.isSubscribed()) {
         GraphQL.sendLedPositions(commands, count, angle);
     } else {
-        Logger.logln("Main: Cannot forward LED data - not subscribed to backend");
+        Logger.logln("Main: Backend forwarding skipped - not subscribed");
     }
 }
 

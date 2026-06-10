@@ -99,6 +99,23 @@ void test_begin_creates_server(void) {
 void test_begin_starts_advertising(void) {
     ble->begin("Test Device");
     TEST_ASSERT_TRUE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertisingEnabled());
+}
+
+void test_begin_can_delay_advertising(void) {
+    ble->begin("Test Device", false);
+    TEST_ASSERT_FALSE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_FALSE(ble->isAdvertising());
+    TEST_ASSERT_FALSE(ble->isAdvertisingEnabled());
+}
+
+void test_start_advertising_tracks_state(void) {
+    ble->begin("Test Device", false);
+    ble->startAdvertising();
+    TEST_ASSERT_TRUE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertisingEnabled());
 }
 
 void test_begin_registers_aurora_service_uuid(void) {
@@ -114,17 +131,9 @@ void test_begin_registers_aurora_service_uuid(void) {
     TEST_ASSERT_TRUE(found);
 }
 
-void test_begin_registers_nus_service_uuid(void) {
+void test_begin_registers_nus_gatt_service_uuid(void) {
     ble->begin("Test Device");
-    const auto& uuids = NimBLEDevice::getAdvertising()->getServiceUUIDs();
-    bool found = false;
-    for (const auto& uuid : uuids) {
-        if (uuid == NUS_SERVICE_UUID) {
-            found = true;
-            break;
-        }
-    }
-    TEST_ASSERT_TRUE(found);
+    TEST_ASSERT_NOT_NULL(NimBLEDevice::getServer()->getServiceByUUID(NUS_SERVICE_UUID));
 }
 
 // =============================================================================
@@ -519,8 +528,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_sets_power_level);
     RUN_TEST(test_begin_creates_server);
     RUN_TEST(test_begin_starts_advertising);
+    RUN_TEST(test_begin_can_delay_advertising);
+    RUN_TEST(test_start_advertising_tracks_state);
     RUN_TEST(test_begin_registers_aurora_service_uuid);
-    RUN_TEST(test_begin_registers_nus_service_uuid);
+    RUN_TEST(test_begin_registers_nus_gatt_service_uuid);
 
     // Callback registration tests
     RUN_TEST(test_set_connect_callback_and_verify_invocation);

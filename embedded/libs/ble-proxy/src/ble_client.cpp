@@ -38,7 +38,7 @@ bool BLEClientConnection::connect(NimBLEAddress address) {
     // Create client if needed
     if (!pClient) {
         pClient = NimBLEDevice::createClient();
-        pClient->setClientCallbacks(this);
+        pClient->setClientCallbacks(this, false);
         pClient->setConnectionParams(12, 12, 0, 51);
         pClient->setConnectTimeout(5);  // 5 seconds - connections should be fast
     }
@@ -133,7 +133,9 @@ void BLEClientConnection::onConnect(NimBLEClient* client) {
     }
 }
 
-void BLEClientConnection::onDisconnect(NimBLEClient* client) {
+void BLEClientConnection::onDisconnect(NimBLEClient* client, int reason) {
+    (void)reason;
+
     Logger.logln("BLEClient: Disconnected from board");
 
     pRxChar = nullptr;

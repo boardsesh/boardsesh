@@ -13,6 +13,7 @@
 #define WEB_SERVER_PORT 80
 
 typedef void (*WebServerRouteHandler)(WebServer& server);
+typedef void (*WebServerStatusProvider)(JsonDocument& doc);
 
 class ESPWebServer {
   public:
@@ -24,6 +25,7 @@ class ESPWebServer {
 
     // Add custom route handlers
     void on(const char* path, HTTPMethod method, WebServerRouteHandler handler);
+    void setStatusProvider(WebServerStatusProvider provider);
 
     // Send JSON response
     void sendJson(int code, JsonDocument& doc);
@@ -38,6 +40,7 @@ class ESPWebServer {
   private:
     WebServer server;
     bool running;
+    WebServerStatusProvider statusProvider;
 
     // Built-in handlers
     void handleRoot();
@@ -45,6 +48,7 @@ class ESPWebServer {
     void handleCaptivePortal();
     void handleGetConfig();
     void handleSetConfig();
+    void handleGetStatus();
     void handleWiFiScan();
     void handleWiFiConnect();
     void handleWiFiStatus();

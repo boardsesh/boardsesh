@@ -127,6 +127,12 @@ Key stored values:
 | `backend_path` | String | Server path                   |
 | `api_key`      | String | Authentication key            |
 | `session_id`   | String | BoardSesh session ID          |
+| `backend_sync` | Bool   | Enable optional session sync  |
+| `render_base_url` | String | Web app host for rendered previews |
+| `preview_board_name` | String | Local BLE preview board name |
+| `preview_layout_id` | Int | Local BLE preview layout ID |
+| `preview_size_id` | Int | Local BLE preview size ID |
+| `preview_set_ids` | String | Local BLE preview hold set IDs |
 | `proxy_en`     | Bool   | BLE proxy enabled             |
 | `proxy_mac`    | String | Target board MAC address      |
 | `brightness`   | Int    | LED brightness                |
@@ -138,7 +144,7 @@ All setter methods (`setString`, `setBool`, `setInt`, `setBytes`) return `bool` 
 
 The device connects to the BoardSesh backend via a WebSocket GraphQL subscription (`graphql-ws-client`):
 
-1. **Connection**: Establishes WebSocket to the configured backend with API key in `connection_init`
+1. **Connection**: When `backend_sync` is enabled, establishes WebSocket to the configured backend with API key in `connection_init`
 2. **Subscription**: Subscribes to `controllerEvents` for the configured session ID
 3. **Events received**:
    - `LedUpdate` — LED commands, climb metadata, navigation context
@@ -152,7 +158,7 @@ Navigation mutations are debounced (100ms) to coalesce rapid button presses into
 
 ## Display Architecture
 
-Display support uses an abstract base class (`DisplayBase`) with two concrete implementations:
+Display support uses an abstract base class (`DisplayBase`) with multiple concrete implementations:
 
 ### LilyGo T-Display-S3 (170x320)
 
@@ -167,7 +173,17 @@ Display support uses an abstract base class (`DisplayBase`) with two concrete im
 - All LilyGo features plus: touch navigation, settings screen, board image rendering
 - Board image: JPEG decoded to PSRAM sprite with LED hold overlay
 
-Both displays share common state management in `DisplayBase`:
+### Waveshare 2.1" AMOLED (480x480)
+
+- SPI/QSPI AMOLED display for the portable debug controller
+- Uses the web app board thumbnail endpoint instead of local hold rendering
+- BLE payloads are decoded on-device and rendered directly with the local preview board config (`preview_board_name`, `preview_layout_id`, `preview_size_id`, `preview_set_ids`)
+- The web route accepts compact `led_positions` data and uses `@boardsesh/board-constants` placement data to convert LED positions into renderable frames
+- The firmware fetches `https://www.boardsesh.com/api/internal/board-render?...&thumbnail=1&include_background=1&format=jpg` and displays the JPEG from PSRAM
+- `render_base_url` should point at the web app host (`https://www.boardsesh.com`)
+- Backend/session sync is optional; when enabled, `backend_host` should point at the GraphQL WebSocket host (`ws.boardsesh.com`)
+
+Display implementations share common state management in `DisplayBase`:
 
 - Current climb (name, grade, color, angle)
 - Queue state (local copy of 150 items, current index)

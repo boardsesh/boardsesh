@@ -230,17 +230,30 @@ void test_api_config_get_route(void) {
     TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
     const std::string& body = webServer->getServer().getLastResponseBody();
     TEST_ASSERT_TRUE(body.find("backend_host") != std::string::npos);
+    TEST_ASSERT_TRUE(body.find("\"backend_sync_enabled\"") != std::string::npos);
+    TEST_ASSERT_TRUE(body.find("\"preview_board_name\"") != std::string::npos);
+    TEST_ASSERT_TRUE(body.find("\"preview_layout_id\"") != std::string::npos);
+    TEST_ASSERT_TRUE(body.find("\"preview_size_id\"") != std::string::npos);
+    TEST_ASSERT_TRUE(body.find("\"preview_set_ids\"") != std::string::npos);
 }
 
 void test_api_config_post_route(void) {
     webServer->begin();
-    webServer->getServer().mockRequest("/api/config", HTTP_POST, "{\"device_name\":\"New Name\",\"brightness\":100}");
+    webServer->getServer().mockRequest(
+        "/api/config",
+        HTTP_POST,
+        "{\"device_name\":\"New Name\",\"brightness\":100,\"backend_sync_enabled\":true,\"preview_board_name\":\"tension\",\"preview_layout_id\":2,\"preview_size_id\":10,\"preview_set_ids\":\"1,2\"}");
 
     TEST_ASSERT_EQUAL(200, webServer->getServer().getLastResponseCode());
 
     // Verify config was updated
     TEST_ASSERT_EQUAL_STRING("New Name", Config.getString("device_name").c_str());
     TEST_ASSERT_EQUAL(100, Config.getInt("brightness"));
+    TEST_ASSERT_TRUE(Config.getBool("backend_sync"));
+    TEST_ASSERT_EQUAL_STRING("tension", Config.getString("preview_board_name").c_str());
+    TEST_ASSERT_EQUAL(2, Config.getInt("preview_layout_id"));
+    TEST_ASSERT_EQUAL(10, Config.getInt("preview_size_id"));
+    TEST_ASSERT_EQUAL_STRING("1,2", Config.getString("preview_set_ids").c_str());
 }
 
 void test_api_config_post_invalid_json(void) {

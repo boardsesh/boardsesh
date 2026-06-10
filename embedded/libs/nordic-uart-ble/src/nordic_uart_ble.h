@@ -33,6 +33,8 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     void startAdvertising();
 
     bool isConnected();
+    bool isAdvertising();
+    bool isAdvertisingEnabled() const;
 
     // Send data to connected client
     void send(const uint8_t* data, size_t len);
@@ -51,9 +53,9 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     void setProtocolDebug(bool enabled);
 
     // NimBLE callbacks
-    void onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) override;
-    void onDisconnect(NimBLEServer* server, ble_gap_conn_desc* desc) override;
-    void onWrite(NimBLECharacteristic* characteristic) override;
+    void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override;
+    void onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) override;
+    void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connInfo) override;
 
     // Get the current connected device's MAC address
     String getConnectedDeviceAddress() { return connectedDeviceAddress; }
@@ -78,6 +80,7 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     bool deviceConnected;
     bool advertising;
     bool advertisingEnabled;  // Whether advertising is allowed (false until proxy connects)
+    unsigned long lastAdvertisingEnsureAt;
     String connectedDeviceAddress;                 // MAC address of currently connected device
     uint16_t connectedDeviceHandle;                // Connection handle for disconnect
     std::map<String, uint32_t> lastSentHashByMac;  // Track last sent hash per MAC address

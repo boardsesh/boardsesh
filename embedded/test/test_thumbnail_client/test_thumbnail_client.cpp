@@ -124,7 +124,8 @@ void test_parse_board_render_route_rejects_missing_segments(void) {
 }
 
 void test_normalize_render_base_url_handles_ws_and_trailing_slashes(void) {
-    TEST_ASSERT_EQUAL_STRING("https://ws.boardsesh.com", normalizeRenderBaseUrl("wss://ws.boardsesh.com/graphql/").c_str());
+    TEST_ASSERT_EQUAL_STRING("https://www.boardsesh.com", normalizeRenderBaseUrl("wss://ws.boardsesh.com/graphql/").c_str());
+    TEST_ASSERT_EQUAL_STRING("https://www.boardsesh.com", normalizeRenderBaseUrl("ws.boardsesh.com").c_str());
     TEST_ASSERT_EQUAL_STRING("http://localhost:3000", normalizeRenderBaseUrl(" http://localhost:3000/ ").c_str());
     TEST_ASSERT_EQUAL_STRING("https://www.boardsesh.com", normalizeRenderBaseUrl("").c_str());
     TEST_ASSERT_EQUAL_STRING("https://preview.boardsesh.com", normalizeRenderBaseUrl("preview.boardsesh.com").c_str());
@@ -141,6 +142,24 @@ void test_build_board_render_thumbnail_url_uses_jpeg_endpoint(void) {
 
     TEST_ASSERT_EQUAL_STRING(
         "https://www.boardsesh.com/api/internal/board-render?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1073r42%2Cp1090r43&thumbnail=1&include_background=1&format=jpg",
+        url.c_str());
+}
+
+void test_build_board_render_led_positions_thumbnail_url_uses_compact_positions(void) {
+    ThumbnailLedPosition positions[] = {
+        ThumbnailLedPosition(98, 0, 255, 0),
+        ThumbnailLedPosition(213, 0, 255, 255, 43),
+    };
+    String url = buildBoardRenderLedPositionsThumbnailUrl("https://www.boardsesh.com/",
+                                                         "kilter",
+                                                         8,
+                                                         25,
+                                                         "26,27,28,29",
+                                                         positions,
+                                                         2);
+
+    TEST_ASSERT_EQUAL_STRING(
+        "https://www.boardsesh.com/api/internal/board-render?board_name=kilter&layout_id=8&size_id=25&set_ids=26%2C27%2C28%2C29&led_positions=98%3A0%3A255%3A0%2C213%3A0%3A255%3A255%3A43&thumbnail=1&include_background=1&format=jpg",
         url.c_str());
 }
 
@@ -234,6 +253,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_normalize_render_base_url_handles_ws_and_trailing_slashes);
     RUN_TEST(test_url_encode_query_value_encodes_frames);
     RUN_TEST(test_build_board_render_thumbnail_url_uses_jpeg_endpoint);
+    RUN_TEST(test_build_board_render_led_positions_thumbnail_url_uses_compact_positions);
     RUN_TEST(test_build_board_render_thumbnail_url_returns_empty_for_bad_path);
     RUN_TEST(test_thumbnail_url_matches_cache_only_for_same_non_empty_url);
     RUN_TEST(test_handle_remote_thumbnail_display_cache_hit_does_not_refresh_display);

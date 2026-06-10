@@ -35,6 +35,15 @@ void stripPathAfterAuthority(char* value) {
     }
 }
 
+bool isBoardseshWebSocketRenderHost(const char* value) {
+    if (!value) return false;
+    return strcmp(value, "ws.boardsesh.com") == 0 ||
+           strcmp(value, "https://ws.boardsesh.com") == 0 ||
+           strcmp(value, "http://ws.boardsesh.com") == 0 ||
+           strcmp(value, "wss://ws.boardsesh.com") == 0 ||
+           strcmp(value, "ws://ws.boardsesh.com") == 0;
+}
+
 void copyTrimmed(const char* source, char* dest, size_t destSize) {
     if (!dest || destSize == 0) return;
     dest[0] = '\0';
@@ -140,6 +149,31 @@ void appendQueryPair(String& url, const char* key, const char* value, bool& hasQ
     url += key;
     url += "=";
     url += urlEncodeQueryValue(value);
+}
+
+String buildLedPositionsQueryValue(const ThumbnailLedPosition* positions, int positionCount) {
+    String value;
+    if (!positions || positionCount <= 0) return value;
+
+    for (int i = 0; i < positionCount; i++) {
+        if (positions[i].position < 0) continue;
+        if (value.length() > 0) {
+            value += ",";
+        }
+        value += String(positions[i].position);
+        value += ":";
+        value += String(positions[i].r);
+        value += ":";
+        value += String(positions[i].g);
+        value += ":";
+        value += String(positions[i].b);
+        if (positions[i].role >= 0) {
+            value += ":";
+            value += String(positions[i].role);
+        }
+    }
+
+    return value;
 }
 
 void clearThumbnail(const RemoteThumbnailDisplayHooks& hooks) {
@@ -256,6 +290,10 @@ String normalizeRenderBaseUrl(const char* baseUrl) {
     }
     stripPathAfterAuthority(trimmed);
 
+    if (isBoardseshWebSocketRenderHost(trimmed)) {
+        return String(DEFAULT_RENDER_BASE_URL);
+    }
+
     if (startsWithLiteral(trimmed, "wss://")) {
         String normalized = "https://";
         normalized += trimmed + 6;
@@ -313,6 +351,44 @@ String buildBoardRenderThumbnailUrl(const char* renderBaseUrl,
     appendQueryPair(url, "size_id", String(route.sizeId).c_str(), hasQuery);
     appendQueryPair(url, "set_ids", route.setIds, hasQuery);
     appendQueryPair(url, "frames", frames ? frames : "", hasQuery);
+    if (options.thumbnail) {
+        appendQueryPair(url, "thumbnail", "1", hasQuery);
+    }
+    if (options.includeBackground) {
+        appendQueryPair(url, "include_background", "1", hasQuery);
+    }
+    appendQueryPair(url, "format", options.format ? options.format : "jpg", hasQuery);
+
+    return url;
+}
+
+String buildBoardRenderLedPositionsThumbnailUrl(const char* renderBaseUrl,
+                                                const char* boardName,
+                                                int layoutId,
+                                                int sizeId,
+                                                const char* setIds,
+                                                const ThumbnailLedPosition* positions,
+                                                int positionCount,
+                                                const ThumbnailUrlOptions& options) {
+    if (!boardName || boardName[0] == '\0' || layoutId <= 0 || sizeId <= 0 ||
+        !setIds || setIds[0] == '\0' || !positions || positionCount <= 0) {
+        return "";
+    }
+
+    String ledPositions = buildLedPositionsQueryValue(positions, positionCount);
+    if (ledPositions.length() == 0) {
+        return "";
+    }
+
+    String url = normalizeRenderBaseUrl(renderBaseUrl);
+    url += "/api/internal/board-render";
+
+    bool hasQuery = false;
+    appendQueryPair(url, "board_name", boardName, hasQuery);
+    appendQueryPair(url, "layout_id", String(layoutId).c_str(), hasQuery);
+    appendQueryPair(url, "size_id", String(sizeId).c_str(), hasQuery);
+    appendQueryPair(url, "set_ids", setIds, hasQuery);
+    appendQueryPair(url, "led_positions", ledPositions.c_str(), hasQuery);
     if (options.thumbnail) {
         appendQueryPair(url, "thumbnail", "1", hasQuery);
     }

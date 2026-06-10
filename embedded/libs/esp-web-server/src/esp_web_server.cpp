@@ -11,9 +11,19 @@
 #define FIRMWARE_BUILD_ENV "unknown"
 #endif
 
+namespace {
+
+String getConfigStringOrDefault(const char* key, const char* defaultValue) {
+    String value = Config.getString(key);
+    value.trim();
+    return value.length() == 0 ? String(defaultValue) : value;
+}
+
+}  // namespace
+
 ESPWebServer WebConfig;
 
-ESPWebServer::ESPWebServer() : server(WEB_SERVER_PORT), running(false) {}
+ESPWebServer::ESPWebServer() : server(WEB_SERVER_PORT), running(false), statusProvider(nullptr) {}
 
 void ESPWebServer::begin() {
     setupRoutes();
@@ -37,6 +47,10 @@ void ESPWebServer::on(const char* path, HTTPMethod method, WebServerRouteHandler
         setCorsHeaders();
         handler(server);
     });
+}
+
+void ESPWebServer::setStatusProvider(WebServerStatusProvider provider) {
+    statusProvider = provider;
 }
 
 void ESPWebServer::sendJson(int code, JsonDocument& doc) {
@@ -63,6 +77,7 @@ void ESPWebServer::setupRoutes() {
     server.on("/", HTTP_GET, [this]() { handleRoot(); });
     server.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
     server.on("/api/config", HTTP_POST, [this]() { handleSetConfig(); });
+    server.on("/api/status", HTTP_GET, [this]() { handleGetStatus(); });
     server.on("/api/wifi/scan", HTTP_GET, [this]() { handleWiFiScan(); });
     server.on("/api/wifi/connect", HTTP_POST, [this]() { handleWiFiConnect(); });
     server.on("/api/wifi/status", HTTP_GET, [this]() { handleWiFiStatus(); });
@@ -141,6 +156,11 @@ void ESPWebServer::handleRoot() {
         .progress-bar { width: 100%; height: 20px; background: #0f3460; border-radius: 10px; overflow: hidden; margin: 10px 0; display: none; }
         .progress-bar-fill { height: 100%; background: #00d9ff; border-radius: 10px; transition: width 0.3s; width: 0%; }
         .firmware-info { color: #888; font-size: 0.9em; margin-bottom: 15px; }
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .status-item { background: #0f3460; border-radius: 8px; padding: 10px; min-height: 58px; }
+        .status-label { display: block; color: #888; font-size: 0.78em; margin-bottom: 5px; }
+        .status-value { color: #fff; font-weight: 600; overflow-wrap: anywhere; }
+        .hint { color: #888; font-size: 0.85em; line-height: 1.4; margin-top: -4px; }
     </style>
 </head>
 <body>
@@ -151,6 +171,19 @@ void ESPWebServer::handleRoot() {
         <h2>WiFi Status</h2>
         <div id="wifiStatus" class="status disconnected">Checking...</div>
         <button onclick="scanNetworks()" class="btn-secondary" id="scanBtn">Scan Networks</button>
+    </div>
+
+    <div class="card">
+        <h2>Controller Status</h2>
+        <div class="status-grid">
+            <div class="status-item"><span class="status-label">Backend</span><span class="status-value" id="backendStatus">Checking...</span></div>
+            <div class="status-item"><span class="status-label">Session</span><span class="status-value" id="sessionStatus">Checking...</span></div>
+            <div class="status-item"><span class="status-label">BLE</span><span class="status-value" id="bleStatus">Checking...</span></div>
+            <div class="status-item"><span class="status-label">Preview Board</span><span class="status-value" id="previewBoardStatus">Checking...</span></div>
+            <div class="status-item"><span class="status-label">Last BLE Payload</span><span class="status-value" id="lastBlePayload">None</span></div>
+            <div class="status-item"><span class="status-label">Thumbnail</span><span class="status-value" id="thumbnailStatus">None</span></div>
+            <div class="status-item"><span class="status-label">Render Host</span><span class="status-value" id="renderStatus">Checking...</span></div>
+        </div>
     </div>
 
     <div class="card" id="networkCard" style="display:none;">
@@ -205,6 +238,13 @@ void ESPWebServer::handleRoot() {
 
     <div class="card">
         <h2>Boardsesh Session</h2>
+        <p class="hint">
+            Session sync is optional. Leave it off when this controller is only previewing BLE payloads.
+        </p>
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <input type="checkbox" id="backendSyncEnabled" style="width: auto; margin: 0;">
+            <span>Enable backend session sync</span>
+        </label>
         <label>Session ID</label>
         <input type="text" id="sessionId" placeholder="Enter session ID from Boardsesh app">
         <label>API Key</label>
@@ -212,9 +252,33 @@ void ESPWebServer::handleRoot() {
     </div>
 
     <div class="card">
+        <h2>BLE Preview Board</h2>
+        <p class="hint">
+            Incoming Bluetooth payloads use this board config to render a preview from the web app. No session ID is required.
+        </p>
+        <label>Board</label>
+        <select id="previewBoardName">
+            <option value="kilter">Kilter</option>
+            <option value="tension">Tension</option>
+        </select>
+        <div class="row">
+            <div>
+                <label>Layout ID</label>
+                <input type="number" id="previewLayoutId" placeholder="8">
+            </div>
+            <div>
+                <label>Size ID</label>
+                <input type="number" id="previewSizeId" placeholder="25">
+            </div>
+        </div>
+        <label>Set IDs</label>
+        <input type="text" id="previewSetIds" placeholder="26,27,28,29">
+    </div>
+
+    <div class="card">
         <h2>Backend Connection</h2>
         <label>Host</label>
-        <input type="text" id="backendHost" placeholder="boardsesh.com">
+        <input type="text" id="backendHost" placeholder="ws.boardsesh.com">
         <div class="row">
             <div>
                 <label>Port</label>
@@ -227,6 +291,9 @@ void ESPWebServer::handleRoot() {
         </div>
         <label>Render URL</label>
         <input type="text" id="renderBaseUrl" placeholder="https://www.boardsesh.com">
+        <p class="hint">
+            Keep this as the web app host. The board image comes from /api/internal/board-render, not the WebSocket host.
+        </p>
     </div>
 
     <div class="card">
@@ -263,8 +330,13 @@ void ESPWebServer::handleRoot() {
                 document.getElementById('displayBrightness').value = cfg.display_brightness || 128;
                 document.getElementById('displayBrightnessValue').textContent = cfg.display_brightness || 128;
                 document.getElementById('displayMode').value = cfg.display_mode || 0;
+                document.getElementById('backendSyncEnabled').checked = cfg.backend_sync_enabled || false;
                 document.getElementById('sessionId').value = cfg.session_id || '';
                 document.getElementById('apiKey').value = cfg.api_key || '';
+                document.getElementById('previewBoardName').value = cfg.preview_board_name || 'kilter';
+                document.getElementById('previewLayoutId').value = cfg.preview_layout_id || 8;
+                document.getElementById('previewSizeId').value = cfg.preview_size_id || 25;
+                document.getElementById('previewSetIds').value = cfg.preview_set_ids || '26,27,28,29';
                 document.getElementById('backendHost').value = cfg.backend_host || '';
                 document.getElementById('backendPort').value = cfg.backend_port || 443;
                 document.getElementById('backendPath').value = cfg.backend_path || '/graphql';
@@ -291,6 +363,54 @@ void ESPWebServer::handleRoot() {
                     el.textContent = 'Not connected';
                 }
             } catch (e) { console.error('Failed to load wifi status:', e); }
+        }
+
+        function yesNo(value) {
+            return value ? 'Yes' : 'No';
+        }
+
+        function ageText(ageMs) {
+            if (ageMs < 0) return '';
+            if (ageMs < 1000) return ' just now';
+            return ' ' + Math.round(ageMs / 1000) + 's ago';
+        }
+
+        async function loadControllerStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const status = await res.json();
+                const backendText = status.backend_connected
+                    ? 'Connected (' + status.backend_state + ')'
+                    : 'Disconnected (' + status.backend_state + ')';
+                document.getElementById('backendStatus').textContent = backendText;
+
+                const sessionText = status.backend_subscribed
+                    ? 'Subscribed'
+                    : 'API key: ' + yesNo(status.api_key_configured) + ', session: ' + yesNo(status.session_id_configured);
+                document.getElementById('sessionStatus').textContent = sessionText;
+
+                const bleText = status.ble_initialized
+                    ? (status.ble_connected ? 'Connected' : (status.ble_advertising ? 'Advertising' : 'Ready'))
+                    : 'Waiting for WiFi';
+                document.getElementById('bleStatus').textContent = bleText;
+
+                document.getElementById('previewBoardStatus').textContent =
+                    (status.preview_board_name || 'kilter') + ' / ' +
+                    (status.preview_layout_id || 8) + ' / ' +
+                    (status.preview_size_id || 25) + ' / ' +
+                    (status.preview_set_ids || '26,27,28,29');
+
+                const lastBleText = status.last_ble_payload_seen
+                    ? status.last_ble_led_count + ' LEDs @ ' + status.last_ble_angle + ' deg' + ageText(status.last_ble_age_ms)
+                    : 'None';
+                document.getElementById('lastBlePayload').textContent = lastBleText;
+
+                const thumbnailText = status.thumbnail_fetch_seen
+                    ? status.thumbnail_status + ' HTTP ' + status.thumbnail_http_status + ' (' + status.thumbnail_bytes + ' bytes)'
+                    : 'None';
+                document.getElementById('thumbnailStatus').textContent = thumbnailText;
+                document.getElementById('renderStatus').textContent = status.render_base_url || 'https://www.boardsesh.com';
+            } catch (e) { console.error('Failed to load controller status:', e); }
         }
 
         async function scanNetworks() {
@@ -342,8 +462,13 @@ void ESPWebServer::handleRoot() {
                 brightness: parseInt(document.getElementById('brightness').value),
                 display_brightness: parseInt(document.getElementById('displayBrightness').value),
                 display_mode: parseInt(document.getElementById('displayMode').value),
+                backend_sync_enabled: document.getElementById('backendSyncEnabled').checked,
                 session_id: document.getElementById('sessionId').value,
                 api_key: document.getElementById('apiKey').value,
+                preview_board_name: document.getElementById('previewBoardName').value,
+                preview_layout_id: parseInt(document.getElementById('previewLayoutId').value),
+                preview_size_id: parseInt(document.getElementById('previewSizeId').value),
+                preview_set_ids: document.getElementById('previewSetIds').value,
                 backend_host: document.getElementById('backendHost').value,
                 backend_port: parseInt(document.getElementById('backendPort').value),
                 backend_path: document.getElementById('backendPath').value,
@@ -469,8 +594,10 @@ void ESPWebServer::handleRoot() {
 
         loadConfig();
         loadWifiStatus();
+        loadControllerStatus();
         loadFirmwareInfo();
         setInterval(loadWifiStatus, 10000);
+        setInterval(loadControllerStatus, 5000);
     </script>
 </body>
 </html>
@@ -499,18 +626,44 @@ void ESPWebServer::handleGetConfig() {
     JsonDocument doc;
 
     doc["wifi_ssid"] = Config.getString(WiFiUtils::KEY_SSID);
-    doc["backend_host"] = Config.getString("backend_host");
-    doc["backend_port"] = Config.getInt("backend_port", 443);
-    doc["backend_path"] = Config.getString("backend_path", "/graphql");
-    doc["render_base_url"] = Config.getString("render_base_url", DEFAULT_RENDER_BASE_URL);
+    doc["backend_host"] = getConfigStringOrDefault("backend_host", DEFAULT_BACKEND_HOST);
+    doc["backend_port"] = Config.getInt("backend_port", DEFAULT_BACKEND_PORT);
+    doc["backend_path"] = getConfigStringOrDefault("backend_path", DEFAULT_BACKEND_PATH);
+    doc["render_base_url"] = getConfigStringOrDefault("render_base_url", DEFAULT_RENDER_BASE_URL);
     doc["device_name"] = Config.getString("device_name", "Boardsesh Controller");
     doc["brightness"] = Config.getInt("brightness", 128);
     doc["display_brightness"] = Config.getInt("disp_br", 128);
     doc["display_mode"] = Config.getInt("disp_mode", 0);
+    doc["backend_sync_enabled"] = Config.getBool("backend_sync", false);
     doc["session_id"] = Config.getString("session_id");
     doc["api_key"] = Config.getString("api_key");
+    doc["preview_board_name"] = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
+    doc["preview_layout_id"] = Config.getInt("preview_layout_id", DEFAULT_PREVIEW_LAYOUT_ID);
+    doc["preview_size_id"] = Config.getInt("preview_size_id", DEFAULT_PREVIEW_SIZE_ID);
+    doc["preview_set_ids"] = getConfigStringOrDefault("preview_set_ids", DEFAULT_PREVIEW_SET_IDS);
     doc["proxy_enabled"] = Config.getBool("proxy_en", false);
     doc["proxy_mac"] = Config.getString("proxy_mac");
+
+    sendJson(200, doc);
+}
+
+void ESPWebServer::handleGetStatus() {
+    setCorsHeaders();
+    JsonDocument doc;
+
+    doc["configured_backend_host"] = getConfigStringOrDefault("backend_host", DEFAULT_BACKEND_HOST);
+    doc["configured_backend_port"] = Config.getInt("backend_port", DEFAULT_BACKEND_PORT);
+    doc["configured_backend_path"] = getConfigStringOrDefault("backend_path", DEFAULT_BACKEND_PATH);
+    doc["render_base_url"] = getConfigStringOrDefault("render_base_url", DEFAULT_RENDER_BASE_URL);
+    doc["backend_sync_enabled"] = Config.getBool("backend_sync", false);
+    doc["preview_board_name"] = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
+    doc["preview_layout_id"] = Config.getInt("preview_layout_id", DEFAULT_PREVIEW_LAYOUT_ID);
+    doc["preview_size_id"] = Config.getInt("preview_size_id", DEFAULT_PREVIEW_SIZE_ID);
+    doc["preview_set_ids"] = getConfigStringOrDefault("preview_set_ids", DEFAULT_PREVIEW_SET_IDS);
+
+    if (statusProvider) {
+        statusProvider(doc);
+    }
 
     sendJson(200, doc);
 }
@@ -532,16 +685,39 @@ void ESPWebServer::handleSetConfig() {
     }
 
     if (doc["backend_host"].is<const char*>()) {
-        Config.setString("backend_host", doc["backend_host"]);
+        String backendHost = doc["backend_host"].as<const char*>();
+        backendHost.trim();
+        if (backendHost.length() == 0) {
+            Config.remove("backend_host");
+        } else {
+            Config.setString("backend_host", backendHost);
+        }
     }
     if (doc["backend_port"].is<int>()) {
-        Config.setInt("backend_port", doc["backend_port"]);
+        int backendPort = doc["backend_port"].as<int>();
+        if (backendPort <= 0) {
+            Config.remove("backend_port");
+        } else {
+            Config.setInt("backend_port", backendPort);
+        }
     }
     if (doc["backend_path"].is<const char*>()) {
-        Config.setString("backend_path", doc["backend_path"]);
+        String backendPath = doc["backend_path"].as<const char*>();
+        backendPath.trim();
+        if (backendPath.length() == 0) {
+            Config.remove("backend_path");
+        } else {
+            Config.setString("backend_path", backendPath);
+        }
     }
     if (doc["render_base_url"].is<const char*>()) {
-        Config.setString("render_base_url", doc["render_base_url"]);
+        String renderBaseUrl = doc["render_base_url"].as<const char*>();
+        renderBaseUrl.trim();
+        if (renderBaseUrl.length() == 0) {
+            Config.remove("render_base_url");
+        } else {
+            Config.setString("render_base_url", renderBaseUrl);
+        }
     }
     if (doc["device_name"].is<const char*>()) {
         Config.setString("device_name", doc["device_name"]);
@@ -560,6 +736,43 @@ void ESPWebServer::handleSetConfig() {
     }
     if (doc["display_mode"].is<int>()) {
         Config.setInt("disp_mode", doc["display_mode"]);
+    }
+    if (doc["backend_sync_enabled"].is<bool>()) {
+        Config.setBool("backend_sync", doc["backend_sync_enabled"].as<bool>());
+    }
+    if (doc["preview_board_name"].is<const char*>()) {
+        String previewBoardName = doc["preview_board_name"].as<const char*>();
+        previewBoardName.trim();
+        if (previewBoardName.length() == 0) {
+            Config.remove("preview_board_name");
+        } else {
+            Config.setString("preview_board_name", previewBoardName);
+        }
+    }
+    if (doc["preview_layout_id"].is<int>()) {
+        int previewLayoutId = doc["preview_layout_id"].as<int>();
+        if (previewLayoutId <= 0) {
+            Config.remove("preview_layout_id");
+        } else {
+            Config.setInt("preview_layout_id", previewLayoutId);
+        }
+    }
+    if (doc["preview_size_id"].is<int>()) {
+        int previewSizeId = doc["preview_size_id"].as<int>();
+        if (previewSizeId <= 0) {
+            Config.remove("preview_size_id");
+        } else {
+            Config.setInt("preview_size_id", previewSizeId);
+        }
+    }
+    if (doc["preview_set_ids"].is<const char*>()) {
+        String previewSetIds = doc["preview_set_ids"].as<const char*>();
+        previewSetIds.trim();
+        if (previewSetIds.length() == 0) {
+            Config.remove("preview_set_ids");
+        } else {
+            Config.setString("preview_set_ids", previewSetIds);
+        }
     }
     if (doc["proxy_enabled"].is<bool>()) {
         Config.setBool("proxy_en", doc["proxy_enabled"].as<bool>());

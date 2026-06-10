@@ -6,8 +6,9 @@ NordicUartBLE BLE;
 
 NordicUartBLE::NordicUartBLE()
     : pServer(nullptr), pTxCharacteristic(nullptr), pRxCharacteristic(nullptr), deviceConnected(false),
-      advertising(false), advertisingEnabled(false), connectedDeviceHandle(BLE_HS_CONN_HANDLE_NONE),
-      connectCallback(nullptr), dataCallback(nullptr), ledDataCallback(nullptr), rawForwardCallback(nullptr) {}
+      advertising(false), advertisingEnabled(false), lastAdvertisingEnsureAt(0),
+      connectedDeviceHandle(BLE_HS_CONN_HANDLE_NONE), connectCallback(nullptr), dataCallback(nullptr),
+      ledDataCallback(nullptr), rawForwardCallback(nullptr) {}
 
 void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     NimBLEDevice::init(deviceName);
@@ -17,7 +18,7 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     advertisingEnabled = startAdv;
 
     pServer = NimBLEDevice::createServer();
-    pServer->setCallbacks(this);
+    pServer->setCallbacks(this, false);
 
     // Create Nordic UART Service
     NimBLEService* pService = pServer->createService(NUS_SERVICE_UUID);
@@ -35,10 +36,10 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     // Always configure advertising data (even if not starting yet)
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
-    pAdvertising->addServiceUUID(NUS_SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);
-    pAdvertising->setMaxPreferred(0x12);
+    // A legacy BLE advertisement only has 31 bytes. Advertising both 128-bit UUIDs
+    // overflows the packet, so expose Aurora for discovery and keep NUS in GATT.
+    pAdvertising->enableScanResponse(true);
+    pAdvertising->setPreferredParams(0x06, 0x12);
 
     // Always start the GATT server (required before advertising can work)
     // This registers the services - must be done even if not advertising yet
@@ -47,25 +48,35 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     pServer->start();
 
     if (startAdv) {
-        pAdvertising->start();
-        advertising = true;
-        advertisingEnabled = true;
-        Logger.logln("BLE: Advertising started");
+        startAdvertising();
     }
 
     Logger.logln("BLE: Server started as '%s'", deviceName);
 }
 
 void NordicUartBLE::loop() {
-    // Restart advertising if disconnected, not currently advertising, and allowed
-    if (advertisingEnabled && !deviceConnected && !advertising) {
-        delay(500);  // Small delay before re-advertising
+    if (!advertisingEnabled || deviceConnected) {
+        return;
+    }
+
+    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+    advertising = pAdvertising->isAdvertising();
+
+    if (!advertising) {
         startAdvertising();
     }
 }
 
 bool NordicUartBLE::isConnected() {
     return deviceConnected;
+}
+
+bool NordicUartBLE::isAdvertising() {
+    return advertising;
+}
+
+bool NordicUartBLE::isAdvertisingEnabled() const {
+    return advertisingEnabled;
 }
 
 void NordicUartBLE::send(const uint8_t* data, size_t len) {
@@ -99,17 +110,14 @@ void NordicUartBLE::setProtocolDebug(bool enabled) {
     protocol.setDebug(enabled);
 }
 
-void NordicUartBLE::onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) {
+void NordicUartBLE::onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) {
     deviceConnected = true;
     advertising = false;
 
     // Get the connected device's MAC address and connection handle
-    connectedDeviceAddress = NimBLEAddress(desc->peer_ota_addr).toString().c_str();
-    connectedDeviceHandle = desc->conn_handle;
+    connectedDeviceAddress = connInfo.getAddress().toString().c_str();
+    connectedDeviceHandle = connInfo.getConnHandle();
     Logger.logln("BLE: Device connected: %s (total: %d)", connectedDeviceAddress.c_str(), pServer->getConnectedCount());
-
-    // Flash green to indicate connection
-    LEDs.blink(0, 255, 0, 2, 100);
 
     if (connectCallback) {
         connectCallback(true);
@@ -117,19 +125,20 @@ void NordicUartBLE::onConnect(NimBLEServer* server, ble_gap_conn_desc* desc) {
 
     // Restart advertising to allow more connections
     if (pServer->getConnectedCount() < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-        NimBLEDevice::getAdvertising()->start();
+        startAdvertising();
         Logger.logln("BLE: Advertising restarted for more connections");
     }
 }
 
-void NordicUartBLE::onDisconnect(NimBLEServer* server, ble_gap_conn_desc* desc) {
-    Logger.logln("BLE: Device disconnected: %s", connectedDeviceAddress.c_str());
+void NordicUartBLE::onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) {
+    (void)server;
+    (void)connInfo;
+
+    Logger.logln("BLE: Device disconnected: %s (reason: %d)", connectedDeviceAddress.c_str(), reason);
     connectedDeviceAddress = "";
     connectedDeviceHandle = BLE_HS_CONN_HANDLE_NONE;
     deviceConnected = false;
-
-    // Flash red to indicate disconnection
-    LEDs.blink(255, 0, 0, 2, 100);
+    advertising = false;
 
     if (connectCallback) {
         connectCallback(false);
@@ -177,7 +186,9 @@ void NordicUartBLE::clearLastSentHash() {
     Logger.logln("BLE: Cleared last sent hash");
 }
 
-void NordicUartBLE::onWrite(NimBLECharacteristic* characteristic) {
+void NordicUartBLE::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connInfo) {
+    (void)connInfo;
+
     if (characteristic != pRxCharacteristic)
         return;
 
@@ -222,10 +233,21 @@ void NordicUartBLE::onWrite(NimBLECharacteristic* characteristic) {
 void NordicUartBLE::startAdvertising() {
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
 
+    if (pAdvertising->isAdvertising()) {
+        advertising = true;
+        lastAdvertisingEnsureAt = millis();
+        return;
+    }
+
     // Start advertising (UUIDs and settings already configured in begin())
     pAdvertising->start();
-    advertising = true;
+    advertising = pAdvertising->isAdvertising();
     advertisingEnabled = true;  // Enable for future restarts in loop()
+    lastAdvertisingEnsureAt = millis();
 
-    Logger.logln("BLE: Advertising started");
+    if (advertising) {
+        Logger.logln("BLE: Advertising started");
+    } else {
+        Logger.logln("BLE: Advertising start requested but stack is not active");
+    }
 }

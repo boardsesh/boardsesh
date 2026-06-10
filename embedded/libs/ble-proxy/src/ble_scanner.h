@@ -37,7 +37,7 @@ typedef void (*ScanCompleteCallback)(const std::vector<DiscoveredBoard>& boards)
  * - 30 second scan timeout
  * - Callback when scan completes
  */
-class BLEScanner : public NimBLEAdvertisedDeviceCallbacks {
+class BLEScanner : public NimBLEScanCallbacks {
   public:
     BLEScanner();
 
@@ -79,7 +79,8 @@ class BLEScanner : public NimBLEAdvertisedDeviceCallbacks {
     const DiscoveredBoard* findByAddress(const String& mac) const;
 
     // NimBLE callback
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) override;
+    void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override;
+    void onScanEnd(const NimBLEScanResults& scanResults, int reason) override;
 
   private:
     NimBLEScan* pScan;
@@ -88,7 +89,6 @@ class BLEScanner : public NimBLEAdvertisedDeviceCallbacks {
     ScanCompleteCallback completeCallback;
     bool scanning;
 
-    static void scanCompleteCB(NimBLEScanResults results);
     static BLEScanner* instance;
 };
 

@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import sharp from 'sharp';
+import { buildFramesString, type LedPositionWithColor } from '@boardsesh/board-constants/led-placements';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { HOLD_STATE_MAP, THUMBNAIL_WIDTH } from '@/app/components/board-renderer/types';
 import type { BoardName } from '@/app/lib/types';
@@ -42,6 +43,8 @@ const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
 const OG_BOARD_PADDING_X = 48;
 const OG_BOARD_PADDING_Y = 48;
 const MAX_FRAMES_LENGTH = 16_384;
+const MAX_LED_POSITIONS_LENGTH = 16_384;
+const MAX_LED_POSITION_COUNT = 600;
 
 // Lazily initialized WASM module with promise lock to prevent thundering herd
 let renderOverlay: ((configJson: string) => Uint8Array) | null = null;
@@ -237,6 +240,87 @@ function isValidFramesString(frames: string): boolean {
   return frames.split(',').every(isValidFrameSegment);
 }
 
+function parseRequiredInteger(value: string | null): number | null {
+  if (value === null || value.trim() === '') return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return null;
+  return parsed;
+}
+
+function parseLedPositions(value: string | null): LedPositionWithColor[] | null {
+  if (value === null || value.length === 0) return null;
+  if (value.length > MAX_LED_POSITIONS_LENGTH) return null;
+
+  const segments = value.split(',');
+  if (segments.length > MAX_LED_POSITION_COUNT) return null;
+
+  const positions: LedPositionWithColor[] = [];
+  for (const segment of segments) {
+    const parts = segment.split(':');
+    if (parts.length !== 4 && parts.length !== 5) return null;
+
+    const [positionText, redText, greenText, blueText, roleText] = parts;
+    const position = Number(positionText);
+    const red = Number(redText);
+    const green = Number(greenText);
+    const blue = Number(blueText);
+    const role = roleText === undefined ? undefined : Number(roleText);
+
+    if (
+      !Number.isInteger(position) ||
+      !Number.isInteger(red) ||
+      !Number.isInteger(green) ||
+      !Number.isInteger(blue) ||
+      position < 0 ||
+      red < 0 ||
+      red > 255 ||
+      green < 0 ||
+      green > 255 ||
+      blue < 0 ||
+      blue > 255
+    ) {
+      return null;
+    }
+
+    if (role !== undefined && (!Number.isInteger(role) || role < 0 || role > 255)) {
+      return null;
+    }
+
+    positions.push({
+      position,
+      r: red,
+      g: green,
+      b: blue,
+      ...(role === undefined ? {} : { role }),
+    });
+  }
+
+  return positions;
+}
+
+function resolveFramesFromRequest(
+  frames: string | null,
+  ledPositions: string | null,
+  boardName: BoardName,
+  layoutId: number,
+  sizeId: number,
+): { frames: string } | { error: string } {
+  if (frames !== null) {
+    if (frames.length > MAX_FRAMES_LENGTH) return { error: 'Frames string is too large' };
+    if (!isValidFramesString(frames)) return { error: 'Invalid frames' };
+    return { frames };
+  }
+
+  const parsedLedPositions = parseLedPositions(ledPositions);
+  if (parsedLedPositions === null) return { error: 'Missing required parameters' };
+
+  const resolvedFrames = buildFramesString(parsedLedPositions, boardName, layoutId, sizeId);
+  if (resolvedFrames.length > MAX_FRAMES_LENGTH) return { error: 'Frames string is too large' };
+  if (!isValidFramesString(resolvedFrames)) return { error: 'Invalid frames' };
+
+  return { frames: resolvedFrames };
+}
+
 function getJpegOptions(thumbnail: boolean): sharp.JpegOptions {
   return thumbnail ? THUMBNAIL_JPEG_OPTIONS : DEFAULT_JPEG_OPTIONS;
 }
@@ -250,13 +334,14 @@ export async function GET(request: NextRequest) {
     const sizeId = searchParams.get('size_id');
     const setIds = searchParams.get('set_ids');
     const frames = searchParams.get('frames');
+    const ledPositions = searchParams.get('led_positions');
     const thumbnail = searchParams.get('thumbnail') === '1';
     const includeBackground = searchParams.get('include_background') === '1';
     const isOgVariant = searchParams.get('variant') === 'og';
     const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
-    if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
+    if (!boardName || !layoutId || !sizeId || !setIds || (frames === null && ledPositions === null)) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
@@ -268,24 +353,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid format' }, { status: 400 });
     }
 
-    if (frames.length > MAX_FRAMES_LENGTH) {
-      return NextResponse.json({ error: 'Frames string is too large' }, { status: 400 });
+    const parsedLayoutId = parseRequiredInteger(layoutId);
+    const parsedSizeId = parseRequiredInteger(sizeId);
+    if (parsedLayoutId === null || parsedSizeId === null) {
+      return NextResponse.json({ error: 'Invalid board configuration' }, { status: 400 });
     }
 
-    if (!isValidFramesString(frames)) {
-      return NextResponse.json({ error: 'Invalid frames' }, { status: 400 });
+    const framesResult = resolveFramesFromRequest(
+      frames,
+      ledPositions,
+      boardName as BoardName,
+      parsedLayoutId,
+      parsedSizeId,
+    );
+    if ('error' in framesResult) {
+      return NextResponse.json({ error: framesResult.error }, { status: 400 });
     }
+    const resolvedFrames = framesResult.frames;
 
     const parsedSetIds = setIds
       .split(',')
       .map(Number)
-      .filter((n) => !isNaN(n));
+      .filter((setId) => Number.isInteger(setId));
 
     // Get board details (pure computation, no DB)
     const boardDetails = getBoardDetailsForBoard({
       board_name: boardName as BoardName,
-      layout_id: Number(layoutId),
-      size_id: Number(sizeId),
+      layout_id: parsedLayoutId,
+      size_id: parsedSizeId,
       set_ids: parsedSetIds,
     });
     const ogScale = isOgVariant
@@ -317,7 +412,7 @@ export async function GET(request: NextRequest) {
       board_width: boardDetails.boardWidth,
       board_height: boardDetails.boardHeight,
       output_width: outputWidth,
-      frames,
+      frames: resolvedFrames,
       mirrored: false,
       thumbnail,
       holds: boardDetails.holdsData.map((h) => ({

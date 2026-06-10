@@ -83,7 +83,7 @@ class BLEClientConnection : public NimBLEClientCallbacks {
 
     // NimBLE client callbacks
     void onConnect(NimBLEClient* pClient) override;
-    void onDisconnect(NimBLEClient* pClient) override;
+    void onDisconnect(NimBLEClient* pClient, int reason) override;
 
   private:
     NimBLEClient* pClient;
