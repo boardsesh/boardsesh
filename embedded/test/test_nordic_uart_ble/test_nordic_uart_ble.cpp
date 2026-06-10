@@ -223,6 +223,39 @@ void test_connection_callback_called_on_connect(void) {
     TEST_ASSERT_TRUE(lastConnectState);
 }
 
+void test_advertising_stops_while_connected(void) {
+    ble->begin("Test Device");
+    TEST_ASSERT_TRUE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertising());
+
+    ble_gap_conn_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.conn_handle = 1;
+
+    NimBLEDevice::getServer()->mockConnect(&desc);
+
+    TEST_ASSERT_TRUE(ble->isConnected());
+    TEST_ASSERT_FALSE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_FALSE(ble->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertisingEnabled());
+}
+
+void test_advertising_restarts_after_disconnect(void) {
+    ble->begin("Test Device");
+
+    ble_gap_conn_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.conn_handle = 1;
+
+    NimBLEDevice::getServer()->mockConnect(&desc);
+    NimBLEDevice::getServer()->mockDisconnect(&desc);
+
+    TEST_ASSERT_FALSE(ble->isConnected());
+    TEST_ASSERT_TRUE(NimBLEDevice::getAdvertising()->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertising());
+    TEST_ASSERT_TRUE(ble->isAdvertisingEnabled());
+}
+
 void test_connection_callback_called_on_disconnect(void) {
     ble->setConnectCallback(testConnectCallback);
     ble->begin("Test Device");
@@ -549,6 +582,8 @@ int main(int argc, char** argv) {
 
     // Connection lifecycle tests
     RUN_TEST(test_connection_callback_called_on_connect);
+    RUN_TEST(test_advertising_stops_while_connected);
+    RUN_TEST(test_advertising_restarts_after_disconnect);
     RUN_TEST(test_connection_callback_called_on_disconnect);
 
     // Device address tests

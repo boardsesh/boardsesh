@@ -112,7 +112,14 @@ void NordicUartBLE::setProtocolDebug(bool enabled) {
 }
 
 void NordicUartBLE::onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) {
+    (void)server;
+
     deviceConnected = true;
+
+    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+    if (pAdvertising->isAdvertising()) {
+        pAdvertising->stop();
+    }
     advertising = false;
 
     // Get the connected device's MAC address and connection handle
@@ -122,12 +129,6 @@ void NordicUartBLE::onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) {
 
     if (connectCallback) {
         connectCallback(true);
-    }
-
-    // Restart advertising to allow more connections
-    if (pServer->getConnectedCount() < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-        startAdvertising();
-        Logger.logln("BLE: Advertising restarted for more connections");
     }
 }
 
