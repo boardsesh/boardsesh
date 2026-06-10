@@ -163,8 +163,16 @@ describe('AuthProvider forced sign-out registration', () => {
     getAuthTokenMock.mockReset();
     isTokenExpiringSoonMock.mockReset();
     setOnForcedSignOutMock.mockReset();
+    authSignOutMock.mockReset();
+    clearStoredSessionIdMock.mockReset();
+    clearStoredActiveBoardMock.mockReset();
+    resetHttpClientMock.mockReset();
+    disposeWsClientMock.mockReset();
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
+    authSignOutMock.mockResolvedValue(undefined);
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    clearStoredActiveBoardMock.mockResolvedValue(undefined);
   });
 
   // The interceptor's null-guard is the safety net, but the provider owns the
@@ -184,6 +192,36 @@ describe('AuthProvider forced sign-out registration', () => {
 
     unmount();
     expect(setOnForcedSignOutMock).toHaveBeenLastCalledWith(null);
+  });
+
+  // Behavioural coverage of the forced path: firing the registered hook must run
+  // the same cleanup a manual sign-out does — minus the token revoke, which the
+  // interceptor already did before invoking the hook (no double-revoke).
+  it('runs the full signed-out cleanup when the registered hook fires, without re-revoking', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'p-1', name: "User A's playlist" }]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forcedCleanup = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as () => void;
+
+    await act(async () => {
+      forcedCleanup();
+      // Let the async runSignedOutCleanup (allSettled store clears → teardown) settle.
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(disposeWsClientMock).toHaveBeenCalledTimes(1));
+    expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
+    expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
+    expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
+    // The interceptor revoked on the forced path; the provider must not revoke again.
+    expect(authSignOutMock).not.toHaveBeenCalled();
   });
 });
 
