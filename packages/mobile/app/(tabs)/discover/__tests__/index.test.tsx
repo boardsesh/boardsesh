@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
+import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -13,6 +13,11 @@ type PlaylistItem = {
   color?: string;
   icon?: string;
   isPinnedByMe?: boolean;
+};
+
+type SmartCountItem = {
+  type: string;
+  count: number;
 };
 
 type DiscoverOptions = {
@@ -42,6 +47,12 @@ const exactForYouHook = vi.hoisted(() => ({
   loadMore: vi.fn(),
   refetch: vi.fn(),
 }));
+const smartCountsHook = vi.hoisted(() => ({
+  data: undefined as SmartCountItem[] | undefined,
+  isLoading: false,
+  isError: false,
+  refetch: vi.fn(),
+}));
 const communityHook = vi.hoisted(() => ({
   popular: [] as PlaylistItem[],
   recent: [] as PlaylistItem[],
@@ -59,6 +70,13 @@ const createPlaylist = vi.hoisted(() => vi.fn());
 const pinPlaylist = vi.hoisted(() => vi.fn());
 const unpinPlaylist = vi.hoisted(() => vi.fn());
 const discoverOptions = vi.hoisted(() => [] as DiscoverOptions[]);
+const asyncStorage = vi.hoisted(() => ({
+  storage: new Map<string, string>(),
+  getItem: vi.fn(async (key: string) => asyncStorage.storage.get(key) ?? null),
+  setItem: vi.fn(async (key: string, value: string) => {
+    asyncStorage.storage.set(key, value);
+  }),
+}));
 
 vi.mock('@boardsesh/playlists-react', () => ({
   useUserPlaylists: () => userHook,
@@ -67,8 +85,15 @@ vi.mock('@boardsesh/playlists-react', () => ({
     return options.generatedRecommendation ? exactForYouHook : communityHook;
   },
   usePinnedPlaylists: () => pinnedHook,
-  useSmartPlaylistCounts: () => ({ data: [], isLoading: false }),
+  useSmartPlaylistCounts: () => smartCountsHook,
   usePlaylistMutations: () => ({ createPlaylist, pinPlaylist, unpinPlaylist }),
+}));
+
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: asyncStorage.getItem,
+    setItem: asyncStorage.setItem,
+  },
 }));
 
 // @tanstack/react-query is NOT mocked — the create flow writes to the real
@@ -132,6 +157,34 @@ vi.mock('../../../../src/lib/smart-playlists', () => ({
   DEFAULT_PINNED_SMART_PLAYLIST_TYPES: ['LIKED_CLIMBS', 'FIVE_STARS'],
   SMART_PLAYLISTS: [
     {
+      type: 'RECOMMENDED_CROWD_FAVORITES',
+      slug: 'crowd-favorites',
+      icon: '🔥',
+      color: '#D65A4F',
+      titleI18nKey: 'library.smart.crowdFavorites.title',
+    },
+    {
+      type: 'RECOMMENDED_HIDDEN_GEMS',
+      slug: 'hidden-gems',
+      icon: '💎',
+      color: '#9C27B0',
+      titleI18nKey: 'library.smart.hiddenGems.title',
+    },
+    {
+      type: 'RECOMMENDED_AT_LEVEL',
+      slug: 'at-your-level',
+      icon: '📈',
+      color: '#5FB27A',
+      titleI18nKey: 'library.smart.atYourLevel.title',
+    },
+    {
+      type: 'RECOMMENDED_FRESH',
+      slug: 'fresh',
+      icon: '🌱',
+      color: '#FBBF24',
+      titleI18nKey: 'library.smart.fresh.title',
+    },
+    {
       type: 'LIKED_CLIMBS',
       slug: 'liked-climbs',
       icon: '❤️',
@@ -144,6 +197,20 @@ vi.mock('../../../../src/lib/smart-playlists', () => ({
       icon: '⭐',
       color: '#FBBF24',
       titleI18nKey: 'library.smart.fiveStars.title',
+    },
+    {
+      type: 'MOST_REPEATED',
+      slug: 'most-repeated',
+      icon: '🔁',
+      color: '#9C27B0',
+      titleI18nKey: 'library.smart.mostRepeated.title',
+    },
+    {
+      type: 'PROJECTS',
+      slug: 'projects',
+      icon: '🎯',
+      color: '#2563EB',
+      titleI18nKey: 'library.smart.projects.title',
     },
   ],
 }));
@@ -217,6 +284,22 @@ beforeEach(() => {
   exactForYouHook.isLoading = false;
   exactForYouHook.hasError = false;
   exactForYouHook.refetch.mockClear();
+  smartCountsHook.data = [
+    { type: 'RECOMMENDED_CROWD_FAVORITES', count: 748 },
+    { type: 'RECOMMENDED_HIDDEN_GEMS', count: 1178 },
+    { type: 'RECOMMENDED_AT_LEVEL', count: 719 },
+    { type: 'RECOMMENDED_FRESH', count: 5485 },
+    { type: 'FIVE_STARS', count: 523 },
+    { type: 'MOST_REPEATED', count: 292 },
+    { type: 'PROJECTS', count: 92 },
+    { type: 'LIKED_CLIMBS', count: 46 },
+  ];
+  smartCountsHook.isLoading = false;
+  smartCountsHook.isError = false;
+  smartCountsHook.refetch.mockClear();
+  asyncStorage.storage.clear();
+  asyncStorage.getItem.mockClear();
+  asyncStorage.setItem.mockClear();
   communityHook.popular = [];
   communityHook.recent = [];
   communityHook.isLoading = false;
@@ -232,6 +315,7 @@ beforeEach(() => {
 
 describe('DiscoverLibrary error handling', () => {
   it('shows a load-error state with a retry (not the empty state) when a section fails and the hub is empty', () => {
+    smartCountsHook.data = undefined;
     userHook.hasError = true;
     const { getByText, queryByText, getByLabelText } = renderHub();
 
@@ -244,6 +328,7 @@ describe('DiscoverLibrary error handling', () => {
   });
 
   it('retries only the community stream when only it failed', () => {
+    smartCountsHook.data = undefined;
     communityHook.hasError = true;
     const { getByLabelText } = renderHub();
 
@@ -253,12 +338,13 @@ describe('DiscoverLibrary error handling', () => {
     expect(userHook.refetch).not.toHaveBeenCalled();
   });
 
-  it('retries only the forYou stream when only it failed', () => {
-    exactForYouHook.hasError = true;
+  it('retries only the for-you smart count stream when only it failed', () => {
+    smartCountsHook.data = undefined;
+    smartCountsHook.isError = true;
     const { getByLabelText } = renderHub();
 
     fireEvent.click(getByLabelText('library.errors.tryAgain'));
-    expect(exactForYouHook.refetch).toHaveBeenCalledTimes(1);
+    expect(smartCountsHook.refetch).toHaveBeenCalledTimes(1);
     expect(communityHook.refetch).not.toHaveBeenCalled();
     expect(userHook.refetch).not.toHaveBeenCalled();
   });
@@ -271,46 +357,59 @@ describe('DiscoverLibrary error handling', () => {
     expect(queryByText('library.errors.loadTitle')).toBeNull();
   });
 
-  it('shows the empty state when all sections succeed with no playlists', () => {
-    const { getByText, queryByText } = renderHub();
-
-    expect(getByText('library.empty.title')).toBeTruthy();
-    expect(queryByText('library.errors.loadTitle')).toBeNull();
-  });
-
-  it('renders for-you and community playlists from separate discover streams', () => {
-    exactForYouHook.popular = [{ uuid: 'generated', name: 'Fresh for you', climbCount: 4 }];
+  it('renders for-you smart cards and community playlists', () => {
     communityHook.popular = [
       { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
     ];
 
     const { getByText } = renderHub();
 
-    expect(getByText('Fresh for you')).toBeTruthy();
+    expect(getByText('library.smart.crowdFavorites.title')).toBeTruthy();
+    expect(getByText('library.smart.hiddenGems.title')).toBeTruthy();
+    expect(getByText('library.smart.atYourLevel.title')).toBeTruthy();
+    expect(getByText('library.smart.fresh.title')).toBeTruthy();
+    expect(getByText('library.smart.fiveStars.title')).toBeTruthy();
+    expect(getByText('library.smart.mostRepeated.title')).toBeTruthy();
+    expect(getByText('library.smart.projects.title')).toBeTruthy();
+    expect(getByText('library.smart.likedClimbs.title')).toBeTruthy();
     expect(getByText('Setter picks library.communityByline')).toBeTruthy();
   });
 
-  it('requests generated playlists for the active board size and angle', () => {
-    renderHub();
+  it('orders for-you smart cards in the mobile product order', () => {
+    const { container } = renderHub();
+    const forYouSection = container.querySelector('[data-scroll-section="library.sections.forYou"]');
+    const sectionText = forYouSection?.textContent ?? '';
+    const expectedTitles = [
+      'library.smart.likedClimbs.title',
+      'library.smart.fiveStars.title',
+      'library.smart.projects.title',
+      'library.smart.mostRepeated.title',
+      'library.smart.crowdFavorites.title',
+      'library.smart.hiddenGems.title',
+      'library.smart.atYourLevel.title',
+      'library.smart.fresh.title',
+    ];
 
-    expect(discoverOptions).toContainEqual(
-      expect.objectContaining({
-        generatedRecommendation: true,
-        boardType: 'kilter',
-        layoutId: 1,
-        sizeId: 10,
-        angle: 40,
-      }),
-    );
+    let previousIndex = -1;
+    for (const title of expectedTitles) {
+      const currentIndex = sectionText.indexOf(title);
+      expect(currentIndex).toBeGreaterThan(previousIndex);
+      previousIndex = currentIndex;
+    }
   });
 
-  it('renders pinned grid, owned playlists, generated, and community in order', () => {
+  it('does not request generated discover playlists for the for-you shelf', () => {
+    renderHub();
+
+    expect(discoverOptions).not.toContainEqual(expect.objectContaining({ generatedRecommendation: true }));
+  });
+
+  it('renders pinned grid, owned playlists, for-you smart cards, and community in order', () => {
     pinnedHook.pinned = [{ uuid: 'pinned', name: 'Pinned list', climbCount: 2, isPinnedByMe: true }];
     userHook.playlists = [
       { uuid: 'pinned', name: 'Pinned list', climbCount: 2, isPinnedByMe: true },
       { uuid: 'owned', name: 'Project drawer', climbCount: 5, isPinnedByMe: false },
     ];
-    exactForYouHook.popular = [{ uuid: 'generated', name: 'Fresh for you', climbCount: 4 }];
     communityHook.popular = [
       { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
     ];
@@ -332,15 +431,16 @@ describe('DiscoverLibrary error handling', () => {
     expect(forYouIndex).toBeLessThan(communityIndex);
   });
 
-  it('does not render an empty generated shelf when generated playlists are empty', () => {
+  it('renders for-you smart cards when generated discover playlists are empty', () => {
     userHook.playlists = [{ uuid: 'owned', name: 'Project drawer', climbCount: 5, isPinnedByMe: false }];
     communityHook.popular = [
       { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
     ];
 
-    const { queryByText } = renderHub();
+    const { getByText } = renderHub();
 
-    expect(queryByText('library.sections.forYou')).toBeNull();
+    expect(getByText('library.sections.forYou')).toBeTruthy();
+    expect(getByText('library.smart.crowdFavorites.title')).toBeTruthy();
   });
 
   it('does not show see all in the pinned header', () => {
@@ -356,8 +456,7 @@ describe('DiscoverLibrary error handling', () => {
     expect(pinnedHeader?.textContent).toBe('library.sections.pinned');
   });
 
-  it('shows pin controls on generated and community playlist cards', async () => {
-    exactForYouHook.popular = [{ uuid: 'generated', name: 'Fresh for you', climbCount: 4 }];
+  it('shows pin controls on community playlist cards', async () => {
     communityHook.popular = [
       { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
     ];
@@ -366,15 +465,76 @@ describe('DiscoverLibrary error handling', () => {
     const { getByLabelText } = renderHub();
 
     await act(async () => {
-      fireEvent.click(getByLabelText('pin-Fresh for you'));
-    });
-    await act(async () => {
       fireEvent.click(getByLabelText('pin-Setter picks'));
     });
 
-    expect(pinPlaylist).toHaveBeenCalledWith('generated');
     expect(pinPlaylist).toHaveBeenCalledWith('community');
-    expect(pinnedHook.refetch).toHaveBeenCalledTimes(2);
+    expect(pinnedHook.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('pins for-you smart cards into the pinned grid without calling playlist pin mutations', async () => {
+    const { container, findByLabelText } = renderHub();
+
+    fireEvent.click(await findByLabelText('pin-library.smart.likedClimbs.title'));
+
+    const bodyText = container.textContent ?? '';
+    const pinnedIndex = bodyText.indexOf('library.sections.pinned');
+    const pinnedSmartIndex = bodyText.indexOf('library.smart.likedClimbs.title');
+    const pinnedSmartLastIndex = bodyText.lastIndexOf('library.smart.likedClimbs.title');
+    const forYouIndex = bodyText.indexOf('library.sections.forYou');
+    const forYouSection = container.querySelector('[data-scroll-section="library.sections.forYou"]');
+
+    expect(pinnedIndex).toBeGreaterThanOrEqual(0);
+    expect(pinnedSmartIndex).toBeGreaterThan(pinnedIndex);
+    expect(pinnedSmartIndex).toBeLessThan(forYouIndex);
+    expect(pinnedSmartLastIndex).toBe(pinnedSmartIndex);
+    expect(forYouSection?.textContent).not.toContain('library.smart.likedClimbs.title');
+    expect(asyncStorage.setItem).toHaveBeenCalledWith(
+      'boardsesh_pinned_smart_playlists_v1_me',
+      JSON.stringify(['LIKED_CLIMBS']),
+    );
+    expect(pinPlaylist).not.toHaveBeenCalled();
+    expect(unpinPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('shows a retry when smart counts fail even with stored smart pins', async () => {
+    smartCountsHook.data = undefined;
+    smartCountsHook.isError = true;
+    asyncStorage.storage.set('boardsesh_pinned_smart_playlists_v1_me', JSON.stringify(['LIKED_CLIMBS']));
+
+    const { findByText, queryByText } = renderHub();
+
+    expect(await findByText('library.errors.loadTitle')).toBeTruthy();
+    expect(queryByText('library.sections.pinned')).toBeNull();
+  });
+
+  it('reserves pinned-grid slots for regular playlist pins when many smart playlists are pinned', async () => {
+    pinnedHook.pinned = Array.from({ length: 8 }, (_, index) => ({
+      uuid: `pinned-${index}`,
+      name: `Pinned ${index + 1}`,
+      climbCount: index,
+      isPinnedByMe: true,
+    }));
+    asyncStorage.storage.set(
+      'boardsesh_pinned_smart_playlists_v1_me',
+      JSON.stringify([
+        'LIKED_CLIMBS',
+        'FIVE_STARS',
+        'PROJECTS',
+        'MOST_REPEATED',
+        'RECOMMENDED_CROWD_FAVORITES',
+        'RECOMMENDED_HIDDEN_GEMS',
+        'RECOMMENDED_AT_LEVEL',
+        'RECOMMENDED_FRESH',
+      ]),
+    );
+
+    const { getByText, queryByText } = renderHub();
+
+    await waitFor(() => expect(getByText('library.smart.mostRepeated.title')).toBeTruthy());
+    expect(getByText('Pinned 1')).toBeTruthy();
+    expect(getByText('Pinned 4')).toBeTruthy();
+    expect(queryByText('Pinned 5')).toBeNull();
   });
 
   it('caps the pinned grid at eight playlists', () => {
