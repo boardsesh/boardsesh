@@ -741,6 +741,7 @@
       "save": {
         "idle": "Save",
         "login": "Sign in to save",
+        "loading": "Loading…",
         "saving": "Saving…",
         "done": "Saved",
         "draftToast": "Draft saved",

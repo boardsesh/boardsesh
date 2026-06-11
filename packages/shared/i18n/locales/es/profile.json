@@ -51,7 +51,6 @@
     "problems": "bloques",
     "send": "encadene",
     "flash": "flash",
-    "redpoint": "trabajado",
     "percentile": "Percentil",
     "topPercent": "Top {{value}}%",
     "moreSentThan": "Más bloques encadenados que el {{value}}% de los escaladores",

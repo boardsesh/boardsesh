@@ -25,6 +25,15 @@ describe('deriveSaveButtonView', () => {
     });
   });
 
+  it('loading: disabled while edit data is loading', () => {
+    expect(deriveSaveButtonView('loading', t)).toEqual({
+      title: 'mobile.create.save.loading',
+      icon: null,
+      disabled: true,
+      tint: 'primary',
+    });
+  });
+
   it('justSaved: green confirmation with a check, re-enabled', () => {
     expect(deriveSaveButtonView('justSaved', t)).toEqual({
       title: 'mobile.create.save.done',
@@ -53,7 +62,7 @@ describe('deriveSaveButtonView', () => {
   });
 
   it('every state is distinct in at least one of label/icon/disabled/tint', () => {
-    const states: SaveButtonState[] = ['ready', 'saving', 'justSaved', 'editLocked', 'login'];
+    const states: SaveButtonState[] = ['ready', 'saving', 'loading', 'justSaved', 'editLocked', 'login'];
     const fingerprints = states.map((state) => {
       const view = deriveSaveButtonView(state, t);
       return `${view.title}|${view.icon}|${view.disabled}|${view.tint}`;

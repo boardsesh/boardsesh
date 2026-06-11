@@ -741,6 +741,7 @@
       "save": {
         "idle": "Guardar",
         "login": "Inicia sesión para guardar",
+        "loading": "Cargando…",
         "saving": "Guardando…",
         "done": "Guardado",
         "draftToast": "Borrador guardado",

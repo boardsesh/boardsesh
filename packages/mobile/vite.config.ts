@@ -47,6 +47,6 @@ export default defineConfig({
     // `// @vitest-environment jsdom` pragma — needed to render React
     // providers in tests. Pure-logic tests stay node-env (faster).
     // app/** covers Expo Router layout/screen tests (e.g. (tabs)/__tests__/).
-    include: ['src/**/*.test.{ts,tsx}', 'app/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'app/**/*.test.{ts,tsx}', 'plugins/**/*.test.{ts,tsx}'],
   },
 });

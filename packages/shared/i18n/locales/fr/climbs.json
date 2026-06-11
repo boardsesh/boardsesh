@@ -741,6 +741,7 @@
       "save": {
         "idle": "Enregistrer",
         "login": "Connectez-vous pour enregistrer",
+        "loading": "Chargement…",
         "saving": "Enregistrement…",
         "done": "Enregistré",
         "draftToast": "Brouillon enregistré",

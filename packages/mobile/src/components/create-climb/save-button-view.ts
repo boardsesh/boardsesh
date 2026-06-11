@@ -8,24 +8,27 @@ export type SaveButtonView = {
   title: string;
   /** Leading icon, or null when the button shows none. */
   icon: 'check.small' | 'lock' | null;
-  /** Whether the press is suppressed (saving in flight / locked from editing). */
+  /** Whether the press is suppressed. */
   disabled: boolean;
   /** Which brand colour the filled button takes. */
   tint: 'primary' | 'success';
 };
 
 /**
- * Map the save state machine to the Save button's appearance. Pure so the five
- * states (ready, saving, justSaved, editLocked, login) can be unit-tested
+ * Map the save state machine to the Save button's appearance. Pure so the six
+ * states (ready, saving, loading, justSaved, editLocked, login) can be unit-tested
  * without a renderer. Each state is visually distinct: `login` prompts sign-in,
- * `editLocked` shows a lock, `justSaved` turns green with a check, `saving`
- * disables, `ready` is the plain primary action. Keys are static literals so the
- * i18n orphan checker still sees them.
+ * `editLocked` shows a lock, `justSaved` turns green with a check, `saving` shows
+ * request progress, `loading` disables while edit data loads, and `ready` is the
+ * plain primary action. Keys are static literals so the i18n orphan checker still
+ * sees them.
  */
 export function deriveSaveButtonView(state: SaveButtonState, t: TranslateSave): SaveButtonView {
   switch (state) {
     case 'saving':
       return { title: t('mobile.create.save.saving'), icon: null, disabled: true, tint: 'primary' };
+    case 'loading':
+      return { title: t('mobile.create.save.loading'), icon: null, disabled: true, tint: 'primary' };
     case 'justSaved':
       return { title: t('mobile.create.save.done'), icon: 'check.small', disabled: false, tint: 'success' };
     case 'editLocked':

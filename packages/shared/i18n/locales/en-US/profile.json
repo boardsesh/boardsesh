@@ -51,7 +51,6 @@
     "problems": "problems",
     "send": "send",
     "flash": "flash",
-    "redpoint": "redpoint",
     "percentile": "Percentile",
     "topPercent": "Top {{value}}%",
     "moreSentThan": "More problems sent than {{value}}% of climbers",

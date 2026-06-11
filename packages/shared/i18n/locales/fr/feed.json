@@ -26,8 +26,6 @@
       "signInTitle": "Connectez-vous pour voir votre fil",
       "signInBody": "Suivez des grimpeurs et des ouvreurs pour voir leurs enchaînements et nouveaux blocs ici.",
       "searchAction": "Chercher des grimpeurs",
-      "closeSearch": "Fermer la recherche de grimpeurs",
-      "findClimbersTitle": "Chercher des grimpeurs",
       "emptyTitle": "Aucune activité pour le moment",
       "emptyBody": "Suivez des grimpeurs et des ouvreurs pour remplir ce fil.",
       "unknownClimb": "Bloc inconnu",

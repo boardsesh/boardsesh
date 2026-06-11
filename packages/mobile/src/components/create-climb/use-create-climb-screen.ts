@@ -35,7 +35,7 @@ import { getPaintRoles, type BrushRole } from './brush-roles';
 
 // The save button's visual state, derived from auth + the saved-climb snapshot +
 // in-flight state. Lives here (the controller computes it) so the UI imports it.
-export type SaveButtonState = 'ready' | 'saving' | 'justSaved' | 'editLocked' | 'login';
+export type SaveButtonState = 'ready' | 'saving' | 'loading' | 'justSaved' | 'editLocked' | 'login';
 
 export type CreateClimbBoard = {
   boardName: BoardName;
@@ -165,6 +165,7 @@ export function useCreateClimbScreen({
   // active" updates the same queue slot instead of appending a new item each tap.
   const previewUuidRef = useRef<string | null>(null);
   if (!previewUuidRef.current) previewUuidRef.current = randomUUID();
+  const previousAngleRef = useRef(board.angle);
   // Tracked so the just-saved confirmation timer is cleared on unmount.
   const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -173,6 +174,24 @@ export function useCreateClimbScreen({
     },
     [],
   );
+
+  // The route keeps this screen mounted across angle-only changes so paint state
+  // and typed metadata remain the current WIP. Saved/provisional climb identities
+  // are angle-scoped; angle-specific draft restore remains mount-only so a later
+  // angle toggle cannot overwrite in-memory edits.
+  useEffect(() => {
+    if (previousAngleRef.current === board.angle) return;
+    previousAngleRef.current = board.angle;
+    if (isEditing) return;
+    setSavedClimb(null);
+    setPublishDuplicateError(null);
+    setJustSaved(false);
+    if (justSavedTimerRef.current) {
+      clearTimeout(justSavedTimerRef.current);
+      justSavedTimerRef.current = null;
+    }
+    previewUuidRef.current = randomUUID();
+  }, [board.angle, isEditing]);
 
   // ---- Edit mode: fetch the climb and seed the editor once. ----
   const editVariables = useMemo(
@@ -404,10 +423,11 @@ export function useCreateClimbScreen({
   const saveState: SaveButtonState = useMemo(() => {
     if (!isAuthenticated) return 'login';
     if (isSaving) return 'saving';
+    if (isEditing && !savedClimb) return 'loading';
     if (justSaved) return 'justSaved';
     if (editLocked) return 'editLocked';
     return 'ready';
-  }, [isAuthenticated, isSaving, justSaved, editLocked]);
+  }, [isAuthenticated, isSaving, isEditing, savedClimb, justSaved, editLocked]);
 
   // Signal the screen should focus the header name field (e.g. on a save with
   // no name yet). The name input lives in the drawer header, not a settings sheet.
@@ -420,6 +440,7 @@ export function useCreateClimbScreen({
       return;
     }
     if (editLocked) return;
+    if (isEditing && !savedClimb) return;
     if (!isValid) return;
     if (name.trim() === '') {
       requestFocusName();
@@ -522,6 +543,7 @@ export function useCreateClimbScreen({
     isAuthenticated,
     router,
     editLocked,
+    isEditing,
     isValid,
     name,
     canUpdate,

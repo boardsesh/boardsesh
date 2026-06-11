@@ -267,6 +267,9 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       'expo-apple-authentication',
       // Native Google Sign-In — only when an iosUrlScheme is resolvable (see above).
       ...googleSignInPlugin,
+      // GoogleSignIn pulls AppCheckCore, a Swift pod whose transitive ObjC deps
+      // need module maps under static-library CocoaPods integration.
+      './plugins/with-google-swift-static-pod-headers',
       'expo-localization',
       [
         'expo-location',
