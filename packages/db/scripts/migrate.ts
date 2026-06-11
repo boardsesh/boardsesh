@@ -8,6 +8,10 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+type AppliedMigrationCountRow = {
+  appliedMigrationCount: number | string | bigint | null;
+};
+
 // Load environment files (same as drizzle.config.ts)
 config({ path: path.resolve(__dirname, '../../../.boardsesh/dev-db.env') });
 config({ path: path.resolve(__dirname, '../../../.env.local') });
@@ -61,6 +65,19 @@ async function runMigrations() {
 
     await migrate(db, { migrationsFolder });
 
+    const appliedMigrationRows = await client<AppliedMigrationCountRow[]>`
+      SELECT COUNT(*)::int AS "appliedMigrationCount"
+      FROM drizzle."__drizzle_migrations"
+    `;
+    const appliedMigrationCount = Number(appliedMigrationRows[0]?.appliedMigrationCount ?? 0);
+    if (appliedMigrationCount !== journal.entries.length) {
+      throw new Error(
+        `Migration count verification failed: database has ${appliedMigrationCount} applied migrations, ` +
+          `but the bundled journal has ${journal.entries.length}.`,
+      );
+    }
+
+    console.info(`✅ Verified ${appliedMigrationCount} applied migrations`);
     console.info('✅ Migrations completed successfully');
   } catch (error) {
     console.error('❌ Migration failed:', error);
