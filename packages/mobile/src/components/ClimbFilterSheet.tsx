@@ -209,6 +209,13 @@ export function ClimbFilterSheet({
       debouncedEdits.boardFilters,
     );
   }, [boardConfig, debouncedEdits, searchName]);
+  const liveHeatmapInput = useMemo(() => {
+    if (!boardConfig) return null;
+    return mergeBoardFilters(
+      toClimbSearchInput(localFilters, boardConfig, { page: 0, pageSize: 1 }, { name: searchName }),
+      localBoardFilters,
+    );
+  }, [boardConfig, localFilters, localBoardFilters, searchName]);
   const { data: previewCount } = useSearchClimbsCount(
     previewInput ?? { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
     !!previewInput,
@@ -859,6 +866,7 @@ export function ClimbFilterSheet({
               visible={activeChildSheet === 'holds'}
               boardConfig={boardConfig}
               holdsFilter={localBoardFilters.holdsFilter ?? {}}
+              heatmapInput={liveHeatmapInput}
               onHoldsFilterChange={handleHoldsFilterChange}
               onClose={closeChildSheet}
               onDismiss={handleChildSheetDismiss}
@@ -871,6 +879,7 @@ export function ClimbFilterSheet({
               zoneBox={localBoardFilters.zoneBox ?? null}
               zoneMode={localBoardFilters.zoneMode ?? 'allHolds'}
               holdsFilter={localBoardFilters.holdsFilter ?? {}}
+              heatmapInput={liveHeatmapInput}
               onZoneFilterChange={handleZoneFilterChange}
               onClose={closeChildSheet}
               onDismiss={handleChildSheetDismiss}

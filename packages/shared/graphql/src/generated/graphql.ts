@@ -1705,6 +1705,34 @@ export type GymMembersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/**
+ * Per-hold aggregate usage for the search heatmap overlay.
+ * Counts respect the same filters supplied to ClimbSearchInput.
+ */
+export type HoldHeatmapPoint = {
+  __typename?: 'HoldHeatmapPoint';
+  /** Average displayed difficulty across matching climbs using this hold */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Number of matching climbs using this hold as a finish */
+  finishUses: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a foot */
+  footUses: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a hand */
+  handUses: Scalars['Int']['output'];
+  /** Board hold identifier */
+  holdId: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a start */
+  startingUses: Scalars['Int']['output'];
+  /** Total community ascents across matching climbs using this hold */
+  totalAscents: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold */
+  totalUses: Scalars['Int']['output'];
+  /** Current user's sends on climbs using this hold, when authenticated */
+  userAscents?: Maybe<Scalars['Int']['output']>;
+  /** Current user's attempts on climbs using this hold, when authenticated */
+  userAttempts?: Maybe<Scalars['Int']['output']>;
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -3094,6 +3122,11 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Per-hold usage aggregates for drawing a search heatmap on the board.
+   * Accepts the same filters as searchClimbs.
+   */
+  holdHeatmap: Array<HoldHeatmapPoint>;
+  /**
    * Check if the current user follows a specific user.
    * Requires authentication.
    */
@@ -3505,6 +3538,11 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: ClimbSearchInput;
 };
 
 /** Root query type for all read operations. */

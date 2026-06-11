@@ -6,13 +6,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getLayout } from '@boardsesh/board-constants/product-sizes';
 import { countFilteredHolds, toggleHoldFilterType, type BoardSearchConfig } from '@boardsesh/climb-filters';
-import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
+import type {
+  BoardName,
+  ClimbSearchInput,
+  HoldFilterEntry,
+  HoldFilterMode,
+  HoldFilterType,
+  HoldsFilter,
+} from '@boardsesh/shared-schema';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { InteractiveFilterBoard } from './InteractiveFilterBoard';
 import { HoldFilterPicker } from './HoldFilterPicker';
+import { HeatmapControls } from './HeatmapControls';
+import type { SearchHeatmapMode } from './SearchHeatmapOverlay';
 import { useTheme } from '../../providers/theme-provider';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../lib/create-board-holds';
 import { track } from '../../lib/analytics';
 import { spacing } from '../../theme/tokens';
@@ -21,6 +31,7 @@ type HoldFilterEditorSheetProps = {
   visible: boolean;
   boardConfig: BoardSearchConfig;
   holdsFilter: HoldsFilter;
+  heatmapInput?: ClimbSearchInput | null;
   onHoldsFilterChange: (holdsFilter: HoldsFilter) => void;
   onClose: () => void;
   onDismiss: () => void;
@@ -34,6 +45,7 @@ export function HoldFilterEditorSheet({
   visible,
   boardConfig,
   holdsFilter,
+  heatmapInput = null,
   onHoldsFilterChange,
   onClose,
   onDismiss,
@@ -48,6 +60,13 @@ export function HoldFilterEditorSheet({
   const [activeHoldId, setActiveHoldId] = useState<number | null>(null);
   const [applyMode, setApplyMode] = useState<HoldFilterMode>('include');
   const [contentReady, setContentReady] = useState(false);
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [heatmapMode, setHeatmapMode] = useState<SearchHeatmapMode>('total');
+  const heatmapAvailable = boardName !== 'moonboard' && heatmapInput != null;
+  const { data: heatmapData, isFetching: heatmapLoading } = useHoldHeatmap(
+    heatmapInput,
+    heatmapEnabled && heatmapAvailable,
+  );
 
   useEffect(() => {
     if (visible) {
@@ -57,6 +76,7 @@ export function HoldFilterEditorSheet({
     } else {
       setActiveHoldId(null);
       setContentReady(false);
+      setHeatmapEnabled(false);
       sheetRef.current?.dismiss();
     }
     return undefined;
@@ -177,10 +197,21 @@ export function HoldFilterEditorSheet({
                   activeHoldId={activeHoldId}
                   onHoldTap={handleHoldTap}
                   showHoldMarkers={false}
+                  heatmapData={heatmapEnabled ? heatmapData : undefined}
+                  heatmapMode={heatmapEnabled ? heatmapMode : undefined}
                   renderWidth={boardRender.width}
                   renderHeight={boardRender.height}
                 />
               </View>
+
+              <HeatmapControls
+                available={heatmapAvailable}
+                enabled={heatmapEnabled}
+                loading={heatmapLoading}
+                mode={heatmapMode}
+                onEnabledChange={setHeatmapEnabled}
+                onModeChange={setHeatmapMode}
+              />
 
               <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerText}>

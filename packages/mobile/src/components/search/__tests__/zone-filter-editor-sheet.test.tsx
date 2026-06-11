@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode } from 'react';
-import type { HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
+import type { HoldsFilter, ZoneBoxInput } from '@boardsesh/shared-schema';
 import type { BoardSearchConfig } from '@boardsesh/climb-filters';
 import type { FilterBoardTransformContext } from '../InteractiveFilterBoard';
 
@@ -62,8 +62,8 @@ vi.mock('../../ActivityIndicator', () => ({
 }));
 
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
+  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, disabled }, title),
 }));
 
 vi.mock('../../SegmentedControl', () => ({
@@ -71,8 +71,8 @@ vi.mock('../../SegmentedControl', () => ({
     options,
     onSelect,
   }: {
-    options: ReadonlyArray<{ key: ZoneMatchMode; label: string }>;
-    onSelect: (key: ZoneMatchMode) => void;
+    options: ReadonlyArray<{ key: string; label: string }>;
+    onSelect: (key: string) => void;
   }) =>
     createElement(
       'div',
@@ -87,12 +87,16 @@ vi.mock('../../GlassSurface', () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-glass': 'true' }, children),
 }));
 
-type BoardMockProps = { renderInTransform?: (context: FilterBoardTransformContext) => ReactNode };
+type BoardMockProps = {
+  renderInTransform?: (context: FilterBoardTransformContext) => ReactNode;
+  heatmapData?: unknown[];
+  heatmapMode?: string;
+};
 vi.mock('../InteractiveFilterBoard', () => ({
-  InteractiveFilterBoard: ({ renderInTransform }: BoardMockProps) =>
+  InteractiveFilterBoard: ({ renderInTransform, heatmapData, heatmapMode }: BoardMockProps) =>
     createElement(
       'div',
-      { 'data-board': 'true' },
+      { 'data-board': 'true', 'data-heatmap-mode': heatmapData?.length ? (heatmapMode ?? '') : '' },
       renderInTransform?.({
         pinchGesture: {},
         scaleSV: {},
@@ -135,6 +139,23 @@ vi.mock('@boardsesh/board-constants', () => ({
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useHoldHeatmap: () => ({
+    data: [
+      {
+        holdId: 10,
+        totalUses: 2,
+        startingUses: 1,
+        totalAscents: 8,
+        handUses: 1,
+        footUses: 1,
+        finishUses: 0,
+      },
+    ],
+    isFetching: false,
+  }),
+}));
+
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: 'rgba(0,0,0,0.35)' },
   spacing: { 2: 8, 3: 12, 4: 16 },
@@ -166,6 +187,15 @@ function renderSheet(overrides: Partial<Parameters<typeof ZoneFilterEditorSheet>
       zoneBox={null}
       zoneMode="allHolds"
       holdsFilter={{}}
+      heatmapInput={{
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        angle: 40,
+        page: 0,
+        pageSize: 1,
+      }}
       onZoneFilterChange={vi.fn()}
       onClose={vi.fn()}
       onDismiss={vi.fn()}
@@ -238,5 +268,18 @@ describe('ZoneFilterEditorSheet', () => {
       zoneMode: 'allHolds',
       holdsFilter: zoneState.prunedFilter,
     });
+  });
+
+  it('passes heatmap data to the board after enabling the overlay', () => {
+    const { container, getByText } = renderSheet();
+
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    expect(container.querySelector('[data-board="true"]')?.getAttribute('data-heatmap-mode')).toBe('');
+
+    fireEvent.click(getByText('mobile.heatmap.show'));
+
+    expect(container.querySelector('[data-board="true"]')?.getAttribute('data-heatmap-mode')).toBe('total');
   });
 });

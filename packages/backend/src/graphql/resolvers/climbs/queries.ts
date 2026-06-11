@@ -3,6 +3,7 @@ import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
   type ConnectionContext,
+  type HoldHeatmapPoint,
   type SetterStat,
   type SetterStatsInput,
   type SimilarClimb,
@@ -17,6 +18,7 @@ import {
   type ClimbSearchParams,
   type ParsedBoardRouteParameters,
   getClimbByUuid,
+  getHoldHeatmapData,
   mapSearchInputToParams,
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
@@ -215,6 +217,44 @@ export const climbQueries = {
       userId,
       _isCacheable: !hasUserSpecificFilters && isCacheableBoard,
     };
+  },
+
+  /**
+   * Aggregate hold usage for the interactive search board heatmap.
+   * Uses the same ClimbSearchInput mapper as searchClimbs so the overlay matches
+   * the currently staged filters in the mobile search sheet.
+   */
+  holdHeatmap: async (
+    _: unknown,
+    { input }: { input: ClimbSearchInput },
+    ctx: ConnectionContext,
+  ): Promise<HoldHeatmapPoint[]> => {
+    await applyRateLimit(ctx, 30, 'hold-heatmap');
+    const validated = validateInput(ClimbSearchInputSchema, input, 'input');
+
+    if (!isValidBoardName(validated.boardName)) {
+      throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+    }
+
+    // MoonBoard search can use typed hold filters, but the heatmap aggregation is
+    // based on unified board_climb_holds rows that MoonBoard imports don't yet guarantee.
+    if (validated.boardName === 'moonboard') return [];
+
+    const setIds = validated.setIds
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => !isNaN(id));
+
+    const params: ParsedBoardRouteParameters = {
+      board_name: validated.boardName,
+      layout_id: validated.layoutId,
+      size_id: validated.sizeId,
+      set_ids: setIds,
+      angle: validated.angle,
+    };
+
+    const searchParams: ClimbSearchParams = mapSearchInputToParams(validated);
+    return getHoldHeatmapData(params, searchParams, ctx.isAuthenticated ? ctx.userId : undefined);
   },
 
   /**

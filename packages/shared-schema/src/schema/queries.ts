@@ -67,6 +67,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     searchClimbs(input: ClimbSearchInput!): ClimbSearchResult!
 
     """
+    Per-hold usage aggregates for drawing a search heatmap on the board.
+    Accepts the same filters as searchClimbs.
+    """
+    holdHeatmap(input: ClimbSearchInput!): [HoldHeatmapPoint!]!
+
+    """
     Check whether MoonBoard climbs with exact hold-role selections already exist.
     Returns one result per submitted candidate.
     """

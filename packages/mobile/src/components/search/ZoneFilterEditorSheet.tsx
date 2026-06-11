@@ -12,7 +12,7 @@ import {
   type HoldPositionLookup,
 } from '@boardsesh/climb-filters';
 import { getLayout } from '@boardsesh/board-constants';
-import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
+import type { BoardName, ClimbSearchInput, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -21,7 +21,10 @@ import { SegmentedControl } from '../SegmentedControl';
 import { GlassSurface } from '../GlassSurface';
 import { InteractiveFilterBoard, type FilterBoardTransformContext } from './InteractiveFilterBoard';
 import { ZoneOverlay, type ZoneCornerLabels } from './ZoneOverlay';
+import { HeatmapControls } from './HeatmapControls';
+import type { SearchHeatmapMode } from './SearchHeatmapOverlay';
 import { useTheme } from '../../providers/theme-provider';
+import { useHoldHeatmap } from '../../lib/graphql/hooks';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../lib/create-board-holds';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
@@ -39,6 +42,7 @@ type ZoneFilterEditorSheetProps = {
   zoneBox: ZoneBoxInput | null;
   zoneMode: ZoneMatchMode;
   holdsFilter: HoldsFilter;
+  heatmapInput?: ClimbSearchInput | null;
   onZoneFilterChange: (selection: ZoneFilterEditorSelection) => void;
   onClose: () => void;
   onDismiss: () => void;
@@ -54,6 +58,7 @@ export function ZoneFilterEditorSheet({
   zoneBox,
   zoneMode,
   holdsFilter,
+  heatmapInput = null,
   onZoneFilterChange,
   onClose,
   onDismiss,
@@ -66,6 +71,13 @@ export function ZoneFilterEditorSheet({
   const boardName = boardConfig.boardName as BoardName;
   const layoutName = getLayout(boardName, boardConfig.layoutId)?.name ?? '';
   const [contentReady, setContentReady] = useState(false);
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [heatmapMode, setHeatmapMode] = useState<SearchHeatmapMode>('total');
+  const heatmapAvailable = boardName !== 'moonboard' && heatmapInput != null;
+  const { data: heatmapData, isFetching: heatmapLoading } = useHoldHeatmap(
+    heatmapInput,
+    heatmapEnabled && heatmapAvailable,
+  );
 
   const selectionRef = useRef({ zoneBox, zoneMode, holdsFilter });
   selectionRef.current = { zoneBox, zoneMode, holdsFilter };
@@ -77,6 +89,7 @@ export function ZoneFilterEditorSheet({
       return () => clearTimeout(timeout);
     } else {
       setContentReady(false);
+      setHeatmapEnabled(false);
       sheetRef.current?.dismiss();
     }
     return undefined;
@@ -261,9 +274,20 @@ export function ZoneFilterEditorSheet({
                 holdTargets={boardHolds.holdTargets}
                 renderWidth={boardRender.width}
                 renderHeight={boardRender.height}
+                heatmapData={heatmapEnabled ? heatmapData : undefined}
+                heatmapMode={heatmapEnabled ? heatmapMode : undefined}
                 renderInTransform={renderZoneOverlay}
               />
             </View>
+
+            <HeatmapControls
+              available={heatmapAvailable}
+              enabled={heatmapEnabled}
+              loading={heatmapLoading}
+              mode={heatmapMode}
+              onEnabledChange={setHeatmapEnabled}
+              onModeChange={setHeatmapMode}
+            />
 
             {zoneEnabled ? (
               <GlassSurface

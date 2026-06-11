@@ -44,10 +44,40 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
 
-type BoardMockProps = { onHoldTap?: (holdId: number) => void };
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, disabled }, title),
+}));
+
+vi.mock('../../SegmentedControl', () => ({
+  SegmentedControl: ({
+    options,
+    onSelect,
+  }: {
+    options: ReadonlyArray<{ key: string; label: string }>;
+    onSelect: (key: string) => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-segmented': 'true' },
+      options.map((option) =>
+        createElement('button', { key: option.key, onClick: () => onSelect(option.key) }, option.label),
+      ),
+    ),
+}));
+
+type BoardMockProps = { onHoldTap?: (holdId: number) => void; heatmapData?: unknown[]; heatmapMode?: string };
 vi.mock('../InteractiveFilterBoard', () => ({
-  InteractiveFilterBoard: ({ onHoldTap }: BoardMockProps) =>
-    createElement('button', { 'data-board': 'true', onClick: () => onHoldTap?.(42) }, 'board'),
+  InteractiveFilterBoard: ({ onHoldTap, heatmapData, heatmapMode }: BoardMockProps) =>
+    createElement(
+      'button',
+      {
+        'data-board': 'true',
+        'data-heatmap-mode': heatmapData?.length ? (heatmapMode ?? '') : '',
+        onClick: () => onHoldTap?.(42),
+      },
+      'board',
+    ),
 }));
 
 type PickerMockProps = {
@@ -93,6 +123,23 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
 
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useHoldHeatmap: () => ({
+    data: [
+      {
+        holdId: 42,
+        totalUses: 2,
+        startingUses: 1,
+        totalAscents: 8,
+        handUses: 1,
+        footUses: 1,
+        finishUses: 0,
+      },
+    ],
+    isFetching: false,
+  }),
+}));
+
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12, 4: 16 },
 }));
@@ -121,6 +168,15 @@ function renderSheet(overrides: Partial<Parameters<typeof HoldFilterEditorSheet>
       visible
       boardConfig={boardConfig}
       holdsFilter={{}}
+      heatmapInput={{
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        angle: 40,
+        page: 0,
+        pageSize: 1,
+      }}
       onHoldsFilterChange={vi.fn()}
       onClose={vi.fn()}
       onDismiss={vi.fn()}
@@ -167,5 +223,18 @@ describe('HoldFilterEditorSheet', () => {
     fireEvent.click(container.querySelector('[data-picker-hold-id="42"]') as HTMLButtonElement);
 
     expect(onHoldsFilterChange).toHaveBeenCalledWith({ 42: { HAND: 'include' } });
+  });
+
+  it('passes heatmap data to the board after enabling the overlay', () => {
+    const { container, getByText } = renderSheet();
+
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    expect(container.querySelector('[data-board="true"]')?.getAttribute('data-heatmap-mode')).toBe('');
+
+    fireEvent.click(getByText('mobile.heatmap.show'));
+
+    expect(container.querySelector('[data-board="true"]')?.getAttribute('data-heatmap-mode')).toBe('total');
   });
 });

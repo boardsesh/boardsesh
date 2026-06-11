@@ -200,6 +200,33 @@ export const climbTypeDefs = /* GraphQL */ `
   }
 
   """
+  Per-hold aggregate usage for the search heatmap overlay.
+  Counts respect the same filters supplied to ClimbSearchInput.
+  """
+  type HoldHeatmapPoint {
+    "Board hold identifier"
+    holdId: Int!
+    "Number of matching climbs using this hold"
+    totalUses: Int!
+    "Number of matching climbs using this hold as a start"
+    startingUses: Int!
+    "Total community ascents across matching climbs using this hold"
+    totalAscents: Int!
+    "Number of matching climbs using this hold as a hand"
+    handUses: Int!
+    "Number of matching climbs using this hold as a foot"
+    footUses: Int!
+    "Number of matching climbs using this hold as a finish"
+    finishUses: Int!
+    "Average displayed difficulty across matching climbs using this hold"
+    averageDifficulty: Float
+    "Current user's sends on climbs using this hold, when authenticated"
+    userAscents: Int
+    "Current user's attempts on climbs using this hold, when authenticated"
+    userAttempts: Int
+  }
+
+  """
   Input for fetching setter usernames with their climb counts.
   Used to power the setter filter autocomplete in the search drawer.
   """

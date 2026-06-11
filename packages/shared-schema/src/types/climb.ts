@@ -160,6 +160,19 @@ export type ClimbSearchResult = {
   hasMore: boolean;
 };
 
+export type HoldHeatmapPoint = {
+  holdId: number;
+  totalUses: number;
+  startingUses: number;
+  totalAscents: number;
+  handUses: number;
+  footUses: number;
+  finishUses: number;
+  averageDifficulty?: number | null;
+  userAscents?: number | null;
+  userAttempts?: number | null;
+};
+
 export type SetterStatsInput = {
   boardName: string;
   layoutId: number;

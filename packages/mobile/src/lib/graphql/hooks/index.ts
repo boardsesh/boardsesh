@@ -44,6 +44,7 @@ import {
   GET_ANGLES,
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
+  HOLD_HEATMAP,
   GET_SETTER_STATS,
   GET_CLIMB,
   GET_SESSION_SUMMARY,
@@ -60,6 +61,7 @@ import {
   type GetAnglesQueryResponse,
   type SearchClimbsQueryResponse,
   type SearchClimbsCountQueryResponse,
+  type HoldHeatmapQueryResponse,
   type GetSetterStatsQueryResponse,
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
@@ -219,6 +221,17 @@ export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
     enabled,
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useHoldHeatmap(input: ClimbSearchInput | null, enabled = true) {
+  return useQuery({
+    queryKey: ['holdHeatmap', input],
+    queryFn: () => getHttpClient().request<HoldHeatmapQueryResponse>(HOLD_HEATMAP, { input: input! }),
+    select: (data) => data.holdHeatmap,
+    enabled: enabled && input != null,
+    staleTime: 5 * 60 * 1000,
     placeholderData: (previous) => previous,
   });
 }

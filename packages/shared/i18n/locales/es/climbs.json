@@ -777,6 +777,17 @@
         "any": "Cualquiera"
       }
     },
+    "heatmap": {
+      "show": "Mostrar mapa",
+      "hide": "Ocultar mapa",
+      "loading": "Cargando mapa",
+      "unavailable": "Mapa no disponible",
+      "modeLabel": "Métrica del mapa",
+      "total": "Todo",
+      "start": "Inicios",
+      "handsFeet": "Manos/pies",
+      "finish": "Finales"
+    },
     "zoneFilter": {
       "title": "Zona del muro",
       "summaryActive": "Activada",

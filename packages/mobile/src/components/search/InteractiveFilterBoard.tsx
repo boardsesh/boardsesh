@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { View, StyleSheet, Pressable } from 'react-native';
 import Animated, { runOnJS, type SharedValue } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
+import type { BoardName, HoldHeatmapPoint, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
@@ -13,6 +13,7 @@ import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/
 import { overlays } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { SearchHoldFilterRings } from './SearchHoldFilterRings';
+import { SearchHeatmapOverlay, type SearchHeatmapMode } from './SearchHeatmapOverlay';
 
 /** Context handed to an overlay rendered inside the board's zoom transform. */
 export type FilterBoardTransformContext = {
@@ -34,6 +35,9 @@ type InteractiveFilterBoardProps = {
   holdTargets: BoardHoldTarget[];
   /** Hold-type filter rings, when this board edits hold types. Omit for zone mode. */
   holdsFilter?: HoldsFilter;
+  /** Optional usage heatmap rendered beneath hold filter rings and tap targets. */
+  heatmapData?: HoldHeatmapPoint[];
+  heatmapMode?: SearchHeatmapMode;
   /** The hold the picker is currently editing — drawn with a bright ring. */
   activeHoldId?: number | null;
   /** Tap handler that opens the hold picker. Omit to disable hold taps (zone mode). */
@@ -75,6 +79,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   boardHeight,
   holdTargets,
   holdsFilter,
+  heatmapData,
+  heatmapMode,
   activeHoldId = null,
   onHoldTap,
   showHoldMarkers = true,
@@ -207,6 +213,17 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               boardHeight={boardHeight}
               mirrored={mirrored}
             />
+            {heatmapData && heatmapMode ? (
+              <SearchHeatmapOverlay
+                heatmapData={heatmapData}
+                mode={heatmapMode}
+                holdTargets={holdTargets}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                measuredWidth={renderWidth}
+                mirrored={mirrored}
+              />
+            ) : null}
             {holdsFilter ? (
               <SearchHoldFilterRings
                 boardName={boardName}

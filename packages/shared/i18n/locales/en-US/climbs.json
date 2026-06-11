@@ -777,6 +777,17 @@
         "any": "Any"
       }
     },
+    "heatmap": {
+      "show": "Show heatmap",
+      "hide": "Hide heatmap",
+      "loading": "Loading heatmap",
+      "unavailable": "Heatmap unavailable",
+      "modeLabel": "Heatmap metric",
+      "total": "All",
+      "start": "Starts",
+      "handsFeet": "Hands/feet",
+      "finish": "Finishes"
+    },
     "zoneFilter": {
       "title": "Board region",
       "summaryActive": "On",

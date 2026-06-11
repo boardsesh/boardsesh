@@ -75,6 +75,10 @@ vi.mock('../SearchHoldFilterRings', () => ({
   SearchHoldFilterRings: () => createElement('div', { 'data-rings': 'true' }),
 }));
 
+vi.mock('../SearchHeatmapOverlay', () => ({
+  SearchHeatmapOverlay: () => createElement('div', { 'data-heatmap': 'true' }),
+}));
+
 vi.mock('../../Text', () => ({
   Text: ({ children }: ChildrenProps) => createElement('span', null, children),
 }));
@@ -122,6 +126,7 @@ type Overrides = {
   activeHoldId?: number | null;
   onHoldTap?: (id: number) => void;
   showHoldMarkers?: boolean;
+  heatmap?: boolean;
 };
 
 function renderBoard(overrides: Overrides = {}) {
@@ -139,6 +144,22 @@ function renderBoard(overrides: Overrides = {}) {
       activeHoldId={overrides.activeHoldId ?? null}
       onHoldTap={onHoldTap}
       showHoldMarkers={overrides.showHoldMarkers}
+      heatmapData={
+        overrides.heatmap
+          ? [
+              {
+                holdId: 10,
+                totalUses: 4,
+                startingUses: 2,
+                totalAscents: 20,
+                handUses: 3,
+                footUses: 1,
+                finishUses: 0,
+              },
+            ]
+          : undefined
+      }
+      heatmapMode={overrides.heatmap ? 'total' : undefined}
       renderWidth={400}
       renderHeight={500}
     />,
@@ -173,6 +194,11 @@ describe('InteractiveFilterBoard', () => {
     expect(holdLayer?.getAttribute('data-show-all-holds')).toBe('true');
     expect(holdLayer?.getAttribute('data-show-hold-markers')).toBe('false');
     expect(container.querySelectorAll('[data-hold-id]').length).toBe(holdTargets.length);
+  });
+
+  it('renders the heatmap overlay when data and mode are provided', () => {
+    const { container } = renderBoard({ heatmap: true });
+    expect(container.querySelector('[data-heatmap="true"]')).not.toBeNull();
   });
 
   it('hides the pan overlay and reset button while not zoomed', () => {

@@ -1708,6 +1708,34 @@ export type GymMembersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/**
+ * Per-hold aggregate usage for the search heatmap overlay.
+ * Counts respect the same filters supplied to ClimbSearchInput.
+ */
+export type HoldHeatmapPoint = {
+  __typename?: 'HoldHeatmapPoint';
+  /** Average displayed difficulty across matching climbs using this hold */
+  averageDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Number of matching climbs using this hold as a finish */
+  finishUses: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a foot */
+  footUses: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a hand */
+  handUses: Scalars['Int']['output'];
+  /** Board hold identifier */
+  holdId: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold as a start */
+  startingUses: Scalars['Int']['output'];
+  /** Total community ascents across matching climbs using this hold */
+  totalAscents: Scalars['Int']['output'];
+  /** Number of matching climbs using this hold */
+  totalUses: Scalars['Int']['output'];
+  /** Current user's sends on climbs using this hold, when authenticated */
+  userAscents?: Maybe<Scalars['Int']['output']>;
+  /** Current user's attempts on climbs using this hold, when authenticated */
+  userAttempts?: Maybe<Scalars['Int']['output']>;
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -3097,6 +3125,11 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Per-hold usage aggregates for drawing a search heatmap on the board.
+   * Accepts the same filters as searchClimbs.
+   */
+  holdHeatmap: Array<HoldHeatmapPoint>;
+  /**
    * Check if the current user follows a specific user.
    * Requires authentication.
    */
@@ -3508,6 +3541,11 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryHoldHeatmapArgs = {
+  input: ClimbSearchInput;
 };
 
 /** Root query type for all read operations. */
@@ -5485,6 +5523,7 @@ export type ResolversTypes = ResolversObject<{
   GymMemberConnection: ResolverTypeWrapper<GymMemberConnection>;
   GymMemberRole: GymMemberRole;
   GymMembersInput: GymMembersInput;
+  HoldHeatmapPoint: ResolverTypeWrapper<HoldHeatmapPoint>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   JSON: ResolverTypeWrapper<Scalars['JSON']['output']>;
@@ -5743,6 +5782,7 @@ export type ResolversParentTypes = ResolversObject<{
   GymMember: GymMember;
   GymMemberConnection: GymMemberConnection;
   GymMembersInput: GymMembersInput;
+  HoldHeatmapPoint: HoldHeatmapPoint;
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
   JSON: Scalars['JSON']['output'];
@@ -6684,6 +6724,23 @@ export type GymMemberConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   members?: Resolver<Array<ResolversTypes['GymMember']>, ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type HoldHeatmapPointResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['HoldHeatmapPoint'] = ResolversParentTypes['HoldHeatmapPoint'],
+> = ResolversObject<{
+  averageDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  finishUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  footUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  handUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startingUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalUses?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  userAscents?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  userAttempts?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -7750,6 +7807,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
+  >;
+  holdHeatmap?: Resolver<
+    Array<ResolversTypes['HoldHeatmapPoint']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryHoldHeatmapArgs, 'input'>
   >;
   isFollowing?: Resolver<
     ResolversTypes['Boolean'],
@@ -8854,6 +8917,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymConnection?: GymConnectionResolvers<ContextType>;
   GymMember?: GymMemberResolvers<ContextType>;
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
+  HoldHeatmapPoint?: HoldHeatmapPointResolvers<ContextType>;
   JSON?: GraphQLScalarType;
   LayoutStats?: LayoutStatsResolvers<ContextType>;
   LeaderChanged?: LeaderChangedResolvers<ContextType>;

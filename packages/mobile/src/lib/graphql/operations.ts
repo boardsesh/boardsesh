@@ -6,6 +6,7 @@ import type {
   Climb,
   ClimbSearchInput,
   Grade,
+  HoldHeatmapPoint,
   SetterStat,
   SetterStatsInput,
   Angle,
@@ -374,6 +375,31 @@ export type SearchClimbsCountQueryResponse = {
   searchClimbs: {
     totalCount: number;
   };
+};
+
+export const HOLD_HEATMAP = gql`
+  query HoldHeatmap($input: ClimbSearchInput!) {
+    holdHeatmap(input: $input) {
+      holdId
+      totalUses
+      startingUses
+      totalAscents
+      handUses
+      footUses
+      finishUses
+      averageDifficulty
+      userAscents
+      userAttempts
+    }
+  }
+`;
+
+export type HoldHeatmapQueryVariables = {
+  input: ClimbSearchInput;
+};
+
+export type HoldHeatmapQueryResponse = {
+  holdHeatmap: HoldHeatmapPoint[];
 };
 
 export const GET_CLIMB = gql`

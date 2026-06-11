@@ -777,6 +777,17 @@
         "any": "Toute"
       }
     },
+    "heatmap": {
+      "show": "Afficher la carte",
+      "hide": "Masquer la carte",
+      "loading": "Chargement",
+      "unavailable": "Carte indisponible",
+      "modeLabel": "Mesure de la carte",
+      "total": "Tout",
+      "start": "Départs",
+      "handsFeet": "Mains/pieds",
+      "finish": "Arrivées"
+    },
     "zoneFilter": {
       "title": "Zone du mur",
       "summaryActive": "Activée",
