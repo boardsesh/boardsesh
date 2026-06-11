@@ -16,7 +16,8 @@
   "tabs": {
     "progress": "Progression",
     "sessions": "Sessions",
-    "logbook": "Carnet"
+    "logbook": "Carnet",
+    "social": "Social"
   },
   "progress": {
     "title": "Progression"
@@ -43,6 +44,27 @@
     },
     "progress": {
       "empty": "Rien d'enregistré pour l'instant — tes stats apparaissent dès que tu coches des voies."
+    },
+    "social": {
+      "title": "Social",
+      "followers": "Abonnés",
+      "following": "Abonnements",
+      "findFriends": "Trouver des amis",
+      "searchPlaceholder": "Chercher des grimpeurs",
+      "clearSearch": "Effacer la recherche",
+      "you": "Vous",
+      "followAction": "Suivre",
+      "followingAction": "Suivi",
+      "followerCount_one": "{{count}} abonné",
+      "followerCount_other": "{{count}} abonnés",
+      "followingCount": "{{count}} abonnements",
+      "recentAscents_one": "{{count}} croix ce mois-ci",
+      "recentAscents_other": "{{count}} croix ce mois-ci",
+      "emptyFollowers": "Aucun abonné pour le moment",
+      "emptyFollowing": "Aucun abonnement pour le moment",
+      "searchHint": "Tape au moins 2 caractères pour chercher des grimpeurs",
+      "emptySearch": "Aucun grimpeur trouvé",
+      "emptySearchBody": "Aucun grimpeur ne correspond à \"{{query}}\"."
     },
     "comments": {
       "title": "Commentaires",

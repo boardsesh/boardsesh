@@ -207,10 +207,10 @@ describe('ProfileTopChrome', () => {
       expect(onOpenFilters).toHaveBeenCalledTimes(1);
     });
 
-    it('passes the three options and selectedKey to the segmented control', () => {
+    it('passes the profile tab options and selectedKey to the segmented control', () => {
       render(<ProfileTopChrome {...makeProps({ activeTab: 'sessions' })} />);
       const segment = segments.entries.at(-1)!;
-      expect(segment.options.map((option) => option.key)).toEqual(['progress', 'sessions', 'logbook']);
+      expect(segment.options.map((option) => option.key)).toEqual(['progress', 'sessions', 'logbook', 'social']);
       expect(segment.selectedKey).toBe('sessions');
     });
 
@@ -279,10 +279,10 @@ describe('ProfileTopChrome', () => {
       expect(onOpenFilters).toHaveBeenCalledTimes(1);
     });
 
-    it('passes the three options and selectedKey to MaterialTabs', () => {
+    it('passes the profile tab options and selectedKey to MaterialTabs', () => {
       render(<ProfileTopChrome {...makeProps({ activeTab: 'sessions' })} />);
       const tabs = materialTabs.entries.at(-1)!;
-      expect(tabs.options.map((option) => option.key)).toEqual(['progress', 'sessions', 'logbook']);
+      expect(tabs.options.map((option) => option.key)).toEqual(['progress', 'sessions', 'logbook', 'social']);
       expect(tabs.selectedKey).toBe('sessions');
     });
 

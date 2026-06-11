@@ -22,6 +22,7 @@ import type {
   SessionStatus,
   SessionFeedParticipant,
   SessionGradeDistributionItem,
+  UserSearchConnection,
 } from '@boardsesh/shared-schema';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
@@ -847,6 +848,35 @@ export type GetFollowingQueryVariables = {
 
 export type GetFollowingQueryResponse = {
   following: FollowConnection;
+};
+
+export const SEARCH_USERS = gql`
+  query SearchUsers($input: SearchUsersInput!) {
+    searchUsers(input: $input) {
+      results {
+        user {
+          id
+          displayName
+          avatarUrl
+          followerCount
+          followingCount
+          isFollowedByMe
+        }
+        recentAscentCount
+        matchReason
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+export type SearchUsersQueryVariables = {
+  input: { query: string; boardType?: string; limit?: number; offset?: number };
+};
+
+export type SearchUsersQueryResponse = {
+  searchUsers: UserSearchConnection;
 };
 
 export const FOLLOW_USER = gql`

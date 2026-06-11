@@ -444,6 +444,16 @@ export {
   useSessionGroupedFeed,
 } from './use-you-data';
 export { useYouProfileData } from './use-you-profile-data';
-export { useVote, useBulkVoteSummaries, useComments, useAddComment } from './use-social';
+export {
+  usePublicProfile,
+  useFollowers,
+  useFollowing,
+  useSearchUsers,
+  useToggleUserFollow,
+  useVote,
+  useBulkVoteSummaries,
+  useComments,
+  useAddComment,
+} from './use-social';
 export { useSessionDetail, useSessionPreview } from './use-session-detail';
 export { useDeleteAccountInfo, useDeleteAccount } from './use-delete-account';
