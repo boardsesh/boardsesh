@@ -10,7 +10,10 @@ import { execute } from '@boardsesh/graphql-client';
 import { useAuth } from './auth-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
+import { getLatestUserSessionTickAt, getNewerTickAt } from './board-adapter-rep-timer';
+import { useProfile } from '../lib/graphql/hooks';
 import { getHttpClient } from '../lib/graphql/client';
+import { useSessionDetail } from '../lib/graphql/hooks/use-session-detail';
 import { getWsClient } from '../lib/graphql/ws-client';
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
@@ -18,6 +21,8 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const { sessionId } = useQueueSessionId();
   const { showToast } = useToast();
   const { t } = useTranslation('climbs');
+  const { data: profile } = useProfile({ enabled: isAuthenticated && sessionId !== null });
+  const sessionDetailQuery = useSessionDetail(sessionId ?? undefined, { enabled: isAuthenticated });
   const [lastSavedSessionTick, setLastSavedSessionTick] = useState<{ sessionId: string; climbedAt: string } | null>(
     null,
   );
@@ -32,7 +37,15 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     setLastSavedSessionTick(null);
   }, [sessionId]);
 
-  const lastSavedTickAt = lastSavedSessionTick?.sessionId === sessionId ? lastSavedSessionTick.climbedAt : null;
+  const localLastSavedTickAt = lastSavedSessionTick?.sessionId === sessionId ? lastSavedSessionTick.climbedAt : null;
+  const hydratedLastSavedTickAt = useMemo(
+    () => getLatestUserSessionTickAt(sessionDetailQuery.data?.ticks, profile?.id),
+    [profile?.id, sessionDetailQuery.data?.ticks],
+  );
+  const lastSavedTickAt = useMemo(
+    () => getNewerTickAt(localLastSavedTickAt, hydratedLastSavedTickAt),
+    [hydratedLastSavedTickAt, localLastSavedTickAt],
+  );
 
   // showToast and t change identity whenever the toast provider or i18n
   // locale re-renders. Reading them at call time via a ref keeps the

@@ -1,6 +1,8 @@
+import { tickTimeMs } from '@boardsesh/profile-stats';
+
 export function getRepTimerElapsedSeconds(lastSavedTickAt: string | null, nowMs: number): number {
   if (!lastSavedTickAt) return 0;
-  const tickMs = Date.parse(lastSavedTickAt);
+  const tickMs = tickTimeMs(lastSavedTickAt);
   if (!Number.isFinite(tickMs)) return 0;
   return Math.max(0, Math.floor((nowMs - tickMs) / 1000));
 }

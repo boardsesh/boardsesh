@@ -7,6 +7,11 @@ describe('rep timer formatting', () => {
     expect(getRepTimerElapsedSeconds('2026-06-12T07:15:00.000Z', nowMs)).toBe(42);
   });
 
+  it('treats naive backend tick timestamps as UTC', () => {
+    const nowMs = Date.parse('2026-06-12T07:15:42.000Z');
+    expect(getRepTimerElapsedSeconds('2026-06-12 07:15:00', nowMs)).toBe(42);
+  });
+
   it('clamps missing, invalid, and future timestamps to zero', () => {
     const nowMs = Date.parse('2026-06-12T07:15:00.000Z');
     expect(getRepTimerElapsedSeconds(null, nowMs)).toBe(0);

@@ -111,6 +111,26 @@ describe('useSaveTick (shared)', () => {
     expect(cache?.[0].uuid).toBe('real-77');
   });
 
+  it('notifies the adapter with the saved tick timestamp and session on success', async () => {
+    const onTickSaved = vi.fn();
+    const executeHttp = vi.fn().mockResolvedValue({
+      saveTick: savedTick({ climbedAt: '2026-06-12 07:15:00' }),
+    });
+    const { wrapper } = createWrapper({
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      onTickSaved,
+    });
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(tickOptions({ sessionId: 'session-1' }));
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(onTickSaved).toHaveBeenCalledWith('climb-1', 40, '2026-06-12 07:15:00', 'session-1');
+  });
+
   it('invalidates the You-page feeds on success so a new tick appears in Logbook and Sessions', async () => {
     const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-feed' }) });
     const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

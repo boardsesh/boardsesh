@@ -11,14 +11,14 @@ const SESSION_DETAIL_STALE_TIME_MS = 30 * 1000;
  * per-climb tick list. Backed by the shared `GET_SESSION_DETAIL` operation,
  * which is reused unchanged from web.
  */
-export function useSessionDetail(sessionId: string | undefined) {
+export function useSessionDetail(sessionId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['sessionDetail', sessionId],
     queryFn: () =>
       getHttpClient()
         .request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, { sessionId })
         .then((response) => response.sessionDetail),
-    enabled: !!sessionId,
+    enabled: !!sessionId && (options?.enabled ?? true),
     staleTime: SESSION_DETAIL_STALE_TIME_MS,
   });
 }
