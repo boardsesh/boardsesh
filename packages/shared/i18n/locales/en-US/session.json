@@ -223,7 +223,8 @@
     "tickHistoryClimb": "Log a tick for {{name}}"
   },
   "queueProvider": {
-    "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs."
+    "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs.",
+    "rateLimitCatchUp": "Slow down — catching up..."
   },
   "driverToast": {
     "firstDriver": "{{newDriver}} is driving the wall.",
@@ -295,6 +296,7 @@
       "removeClimb": "Remove climb",
       "positionLabel": "position {{position}}",
       "syncError": "Queue sync error",
+      "rateLimitCatchUp": "Slow down — catching up...",
       "outOfSyncRefreshed": "Queue was out of sync. Refreshed from your crew.",
       "sessionCreateError": "Couldn't create session",
       "noBoardSelected": "Pick a board first",

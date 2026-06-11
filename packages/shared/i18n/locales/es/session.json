@@ -223,7 +223,8 @@
     "tickHistoryClimb": "Registrar un tick para {{name}}"
   },
   "queueProvider": {
-    "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías."
+    "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías.",
+    "rateLimitCatchUp": "Ve más despacio: poniéndonos al día..."
   },
   "driverToast": {
     "firstDriver": "{{newDriver}} está manejando la pared.",
@@ -295,6 +296,7 @@
       "removeClimb": "Eliminar bloque",
       "positionLabel": "posición {{position}}",
       "syncError": "Error de sincronización de cola",
+      "rateLimitCatchUp": "Ve más despacio: poniéndonos al día...",
       "outOfSyncRefreshed": "La cola estaba desincronizada. Se actualizó con tu grupo.",
       "sessionCreateError": "No se pudo crear la sesión",
       "noBoardSelected": "Selecciona un board primero",

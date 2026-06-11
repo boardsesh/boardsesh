@@ -22,7 +22,7 @@
 // setSessionBoardSerial, setSessionBoardPath) no-op on BOTH platforms when
 // there is no active session.
 
-import type { Client } from '@boardsesh/graphql-client';
+import type { Client, RateLimitRetryEvent } from '@boardsesh/graphql-client';
 import { execute } from '@boardsesh/graphql-client';
 import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
@@ -76,6 +76,8 @@ export type QueueMutationsDeps<TItem> = {
   ensureReady?: (capturedSessionId: string | null) => Promise<string | null>;
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
   onBestEffortError?: (action: string, error: unknown) => void;
+  /** Platform UI hook for rate-limit retry notifications. */
+  onRateLimited?: (event: RateLimitRetryEvent) => void;
 };
 
 export type QueueMutationsActions<TItem> = {
@@ -132,9 +134,17 @@ export type QueueMutationsActions<TItem> = {
 };
 
 export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): QueueMutationsActions<TItem> {
-  const { getClient, getSessionId, toQueueItemInput, ensureReady, onBestEffortError } = deps;
+  const { getClient, getSessionId, toQueueItemInput, ensureReady, onBestEffortError, onRateLimited } = deps;
 
   type Ready = { client: Client; sessionId: string };
+  type Operation<TVariables = Record<string, unknown>> = { query: string; variables?: TVariables };
+
+  function executeQueueMutation<TData = unknown, TVariables = Record<string, unknown>>(
+    client: Client,
+    operation: Operation<TVariables>,
+  ): Promise<TData> {
+    return execute<TData, TVariables>(client, operation, { onRateLimited });
+  }
 
   // Core mutating actions. Web (no ensureReady) THROWS when disconnected;
   // mobile (ensureReady) silently no-ops by returning null. `allowCreate`
@@ -196,7 +206,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         // session is fatal (throws), unlike mobile which lazily creates above.
         throw new Error(NOT_CONNECTED);
       }
-      await execute(client, {
+      await executeQueueMutation(client, {
         query: SET_CURRENT_CLIMB,
         variables: {
           item: args.item ? toQueueItemInput(args.item) : null,
@@ -215,7 +225,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         const sessionId = await ensureReady(capturedSessionId);
         if (!sessionId) return;
       }
-      await execute(client, {
+      await executeQueueMutation(client, {
         query: ADD_QUEUE_ITEM,
         variables: { item: toQueueItemInput(item) },
       });
@@ -228,7 +238,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     addQueueItem: async (item, position) => {
       const ready = await resolveCore({ allowCreate: true });
       if (!ready) return;
-      await execute(ready.client, {
+      await executeQueueMutation(ready.client, {
         query: ADD_QUEUE_ITEM,
         variables: { item: toQueueItemInput(item), position },
       });
@@ -237,13 +247,13 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     removeQueueItem: async (uuid) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await execute(ready.client, { query: REMOVE_QUEUE_ITEM, variables: { uuid } });
+      await executeQueueMutation(ready.client, { query: REMOVE_QUEUE_ITEM, variables: { uuid } });
     },
 
     reorderQueueItem: async (uuid, oldIndex, newIndex) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await execute(ready.client, { query: REORDER_QUEUE_ITEM, variables: { uuid, oldIndex, newIndex } });
+      await executeQueueMutation(ready.client, { query: REORDER_QUEUE_ITEM, variables: { uuid, oldIndex, newIndex } });
     },
 
     setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {
@@ -258,7 +268,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     mirrorCurrentClimb: async (mirrored) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await execute(ready.client, { query: MIRROR_CURRENT_CLIMB, variables: { mirrored } });
+      await executeQueueMutation(ready.client, { query: MIRROR_CURRENT_CLIMB, variables: { mirrored } });
     },
 
     publishPlaybackState: async (input) => {
@@ -268,7 +278,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCurrent();
       if (!ready) return;
       try {
-        await execute(ready.client, { query: PUBLISH_PLAYBACK_STATE, variables: { input } });
+        await executeQueueMutation(ready.client, { query: PUBLISH_PLAYBACK_STATE, variables: { input } });
       } catch (error) {
         // Best-effort — losing one broadcast just means peers briefly run out
         // of sync until the next event. Don't surface to user.
@@ -279,7 +289,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     setQueue: async (queue, currentClimbQueueItem) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await execute(ready.client, {
+      await executeQueueMutation(ready.client, {
         query: SET_QUEUE,
         variables: {
           queue: queue.map(toQueueItemInput),
@@ -291,7 +301,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     replaceQueueItem: async (uuid, item) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await execute(ready.client, {
+      await executeQueueMutation(ready.client, {
         query: REPLACE_QUEUE_ITEM,
         variables: { uuid, item: toQueueItemInput(item) },
       });
@@ -300,7 +310,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     takeControl: async (climb) => {
       const ready = await resolveCurrent();
       if (!ready) return;
-      await execute(ready.client, {
+      await executeQueueMutation(ready.client, {
         query: TAKE_CONTROL,
         variables: { climb: climb ? toQueueItemInput(climb) : null },
       });
@@ -309,14 +319,14 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     releaseControl: async () => {
       const ready = await resolveCurrent();
       if (!ready) return;
-      await execute(ready.client, { query: RELEASE_CONTROL, variables: {} });
+      await executeQueueMutation(ready.client, { query: RELEASE_CONTROL, variables: {} });
     },
 
     confirmClimbOnWall: async (climbUuid) => {
       const ready = await resolveCurrent();
       if (!ready) return;
       try {
-        await execute(ready.client, { query: CONFIRM_CLIMB_ON_WALL, variables: { climbUuid } });
+        await executeQueueMutation(ready.client, { query: CONFIRM_CLIMB_ON_WALL, variables: { climbUuid } });
       } catch (error) {
         onBestEffortError?.('confirmClimbOnWall', error);
       }
@@ -326,7 +336,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCurrent();
       if (!ready) return;
       try {
-        await execute(ready.client, { query: SET_SESSION_BOARD_SERIAL, variables: { serial } });
+        await executeQueueMutation(ready.client, { query: SET_SESSION_BOARD_SERIAL, variables: { serial } });
       } catch (error) {
         onBestEffortError?.('setSessionBoardSerial', error);
       }
@@ -336,7 +346,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCurrent();
       if (!ready) return;
       try {
-        await execute(ready.client, { query: SET_SESSION_BOARD_PATH, variables: { boardPath } });
+        await executeQueueMutation(ready.client, { query: SET_SESSION_BOARD_PATH, variables: { boardPath } });
       } catch (error) {
         onBestEffortError?.('setSessionBoardPath', error);
       }

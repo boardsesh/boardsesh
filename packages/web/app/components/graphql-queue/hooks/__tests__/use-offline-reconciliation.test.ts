@@ -136,6 +136,17 @@ describe('useOfflineReconciliation', () => {
     });
   }
 
+  async function advanceReplayDelay(count: number) {
+    for (let index = 0; index < count; index++) {
+      await act(async () => {
+        vi.advanceTimersByTime(75);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+  }
+
   // --- Additions-only reconciliation (server wins, multi-user, sequence changed) ---
 
   describe('additions-only reconciliation (server wins)', () => {
@@ -196,6 +207,7 @@ describe('useOfflineReconciliation', () => {
           },
         });
       });
+      await advanceReplayDelay(1);
 
       // Should use individual addQueueItem, NOT setQueue
       expect(mockAddQueueItem).toHaveBeenCalledTimes(2);
@@ -223,6 +235,7 @@ describe('useOfflineReconciliation', () => {
           },
         });
       });
+      await advanceReplayDelay(1);
 
       expect(mockAddQueueItem).toHaveBeenCalledTimes(1);
       expect(mockAddQueueItem).toHaveBeenCalledWith(item1);
@@ -253,6 +266,7 @@ describe('useOfflineReconciliation', () => {
           },
         });
       });
+      await advanceReplayDelay(2);
 
       expect(mockAddQueueItem).toHaveBeenCalledTimes(3);
       expect(mockClearBuffer).toHaveBeenCalled();

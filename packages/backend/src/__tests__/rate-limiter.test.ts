@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { GraphQLError } from 'graphql';
 import { checkRateLimit, cleanupRateLimit, getRateLimitStatus } from '../utils/rate-limiter';
 
 describe('In-memory rate limiter', () => {
@@ -44,7 +45,12 @@ describe('In-memory rate limiter', () => {
         checkRateLimit('test-conn', 5, 60_000);
         expect.fail('should have thrown');
       } catch (err) {
-        expect((err as Error).message).toMatch(/Try again in \d+ seconds/);
+        expect(err).toBeInstanceOf(GraphQLError);
+        expect((err as GraphQLError).message).toMatch(/Try again in \d+ seconds/);
+        expect((err as GraphQLError).extensions).toMatchObject({
+          code: 'RATE_LIMITED',
+          retryAfterSeconds: 50,
+        });
       }
     });
 

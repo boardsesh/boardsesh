@@ -3,6 +3,7 @@ import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-sche
 import type { ClimbQueueItem } from '../../queue-control/types';
 
 const RECONCILIATION_TIMEOUT_MS = 15000;
+const REPLAY_MUTATION_DELAY_MS = 75;
 
 export type UseOfflineReconciliationParams = {
   offlineBuffer: {
@@ -124,14 +125,21 @@ export function useOfflineReconciliation({
     async function reconcileAdditionsOnly(serverQueue: ClimbQueueItem[]) {
       const pending = offlineBuffer.getBufferedAdditions();
       const serverUuids = new Set(serverQueue.map((item) => item.uuid));
+      let attemptedSendCount = 0;
 
       for (const item of pending) {
         if (isSuperseded()) return;
         if (serverUuids.has(item.uuid)) continue;
+        if (attemptedSendCount > 0) {
+          await new Promise((resolve) => setTimeout(resolve, REPLAY_MUTATION_DELAY_MS));
+          if (isSuperseded()) return;
+        }
         try {
           await persistentSession.addQueueItem(item);
         } catch (error) {
           console.error('[OfflineReconciliation] Failed to add buffered item:', item.climb?.name, error);
+        } finally {
+          attemptedSendCount++;
         }
       }
 

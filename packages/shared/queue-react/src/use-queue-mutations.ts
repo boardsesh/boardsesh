@@ -35,6 +35,7 @@ export function useQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Queue
           ? (capturedSessionId) => depsRef.current.ensureReady!(capturedSessionId)
           : undefined,
         onBestEffortError: (action, error) => depsRef.current.onBestEffortError?.(action, error),
+        onRateLimited: (event) => depsRef.current.onRateLimited?.(event),
       }),
     [hasEnsureReady],
   );

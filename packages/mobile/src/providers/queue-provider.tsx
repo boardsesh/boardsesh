@@ -88,6 +88,7 @@ export type StartSessionConfig = {
 };
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
+const RATE_LIMIT_TOAST_DEBOUNCE_MS = 10_000;
 
 type QueueContextValue = {
   state: QueueState;
@@ -538,6 +539,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const clearSessionRef = useRef<(options?: { notifyServer?: boolean }) => Promise<void>>(async () => {});
   const locallyEndingSessionIdRef = useRef<string | null>(null);
   const suppressedRemoteEndSessionIdRef = useRef<string | null>(null);
+  const lastRateLimitToastAtRef = useRef(0);
 
   // Transient queue-event listeners. PlaybackStateChanged (route playback
   // party-sync) doesn't mutate queue state, so the play-drawer orchestrator
@@ -853,6 +855,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // failed" on a swipe-to-queue or a rapid current-climb change is noise.
     onBestEffortError: (action, error) => {
       if (__DEV__) console.warn(`[queue] best-effort ${action} failed`, error);
+    },
+    onRateLimited: ({ attempt }) => {
+      if (attempt < 2) return;
+      const now = Date.now();
+      if (now - lastRateLimitToastAtRef.current < RATE_LIMIT_TOAST_DEBOUNCE_MS) return;
+      lastRateLimitToastAtRef.current = now;
+      // i18n-keep session:mobile.queue.rateLimitCatchUp — called through `tRef.current`.
+      showToastRef.current(tRef.current('mobile.queue.rateLimitCatchUp'), 'warning');
     },
   });
 

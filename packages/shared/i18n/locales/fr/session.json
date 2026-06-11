@@ -223,7 +223,8 @@
     "tickHistoryClimb": "Enregistrer une croix pour {{name}}"
   },
   "queueProvider": {
-    "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs."
+    "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs.",
+    "rateLimitCatchUp": "Ralentis : on se remet à jour..."
   },
   "driverToast": {
     "firstDriver": "{{newDriver}} pilote le mur.",
@@ -295,6 +296,7 @@
       "removeClimb": "Supprimer le bloc",
       "positionLabel": "position {{position}}",
       "syncError": "Erreur de synchronisation de la file",
+      "rateLimitCatchUp": "Ralentis : on se remet à jour...",
       "outOfSyncRefreshed": "La file était désynchronisée. Actualisée depuis ton groupe.",
       "sessionCreateError": "Impossible de créer la session",
       "noBoardSelected": "Choisissez d'abord un board",

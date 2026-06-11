@@ -1,4 +1,5 @@
 import type { Client, Sink } from 'graphql-ws';
+import { GraphQLOperationError, parseRateLimitError } from './errors';
 
 /**
  * Subscribe to a GraphQL subscription and receive events via callback.
@@ -19,14 +20,21 @@ export function subscribe<TData = unknown, TVariables = Record<string, unknown>>
           sink.next?.(data.data);
         }
         if (data.errors) {
-          sink.error?.(new Error(data.errors.map((e) => e.message).join(', ')));
+          const operationError = new GraphQLOperationError(data.errors);
+          sink.error?.(parseRateLimitError(operationError) ?? operationError);
         }
       },
       error: (error) => {
         // graphql-ws passes raw DOM Events (ErrorEvent/CloseEvent) when the WebSocket
         // connection fails. Always forward a proper Error so callers and Sentry never
         // receive "Event `Event` (type=error) captured as promise rejection".
-        sink.error?.(error instanceof Error ? error : new Error(String(error)));
+        if (Array.isArray(error) && error.length > 0 && typeof error[0]?.message === 'string') {
+          const operationError = new GraphQLOperationError(error);
+          sink.error?.(parseRateLimitError(operationError) ?? operationError);
+          return;
+        }
+        const normalizedError = error instanceof Error ? error : new Error(String(error));
+        sink.error?.(parseRateLimitError(normalizedError) ?? normalizedError);
       },
       complete: () => {
         sink.complete?.();

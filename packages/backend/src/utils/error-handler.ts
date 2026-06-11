@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { logger } from './logger';
 /**
  * Error handling utilities for preventing information disclosure.
@@ -21,6 +22,10 @@ export async function wrapDatabaseOperation<T>(operation: () => Promise<T>, cont
 
     // Check for specific error types we want to handle specially
     if (error instanceof Error) {
+      if (error instanceof GraphQLError) {
+        throw error;
+      }
+
       // Preserve version conflict errors (these are expected)
       if (error.name === 'VersionConflictError') {
         throw error;

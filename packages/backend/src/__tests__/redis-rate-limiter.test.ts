@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { GraphQLError } from 'graphql';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 // Use vi.hoisted() so mock variables are available when vi.mock factories run
@@ -66,6 +67,21 @@ describe('checkRateLimitRedis', () => {
       mockEval.mockResolvedValue(31); // over limit of 30
 
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).rejects.toThrow('Rate limit exceeded');
+    });
+
+    it('throws a structured GraphQL rate-limit error', async () => {
+      mockEval.mockResolvedValue(31);
+
+      try {
+        await checkRateLimitRedis('user-1', 'vote', 30, 60_000);
+        expect.fail('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(GraphQLError);
+        expect((err as GraphQLError).extensions).toMatchObject({
+          code: 'RATE_LIMITED',
+          retryAfterSeconds: 60,
+        });
+      }
     });
 
     it('uses correct window bucket based on current time', async () => {

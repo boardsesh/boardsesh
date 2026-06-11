@@ -10,10 +10,17 @@ export {
 } from './constants';
 
 export type { GraphQLErrorExtensions } from './errors';
-export { GraphQLOperationError, isClimbDuplicateExtension } from './errors';
+export {
+  GraphQLOperationError,
+  RateLimitError,
+  isClimbDuplicateExtension,
+  isRateLimitExtension,
+  parseRateLimitError,
+} from './errors';
 
 export { getOperationName } from './operation-name';
 
+export type { ExecuteOptions, RateLimitRetryEvent } from './execute';
 export { execute } from './execute';
 export { subscribe } from './subscribe';
 

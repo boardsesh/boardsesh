@@ -1,23 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Client, Sink } from 'graphql-ws';
 import { execute } from '../execute';
-import { GraphQLOperationError } from '../errors';
+import { GraphQLOperationError, RateLimitError } from '../errors';
 
 type FakeClient = Client & {
   emit: (payload: Parameters<NonNullable<Sink['next']>>[0]) => void;
   emitError: (err: unknown) => void;
   emitComplete: () => void;
   unsubscribe: ReturnType<typeof vi.fn>;
+  subscribeMock: ReturnType<typeof vi.fn>;
 };
 
 function makeFakeClient(): FakeClient {
   let currentSink: Sink | null = null;
   const unsubscribe = vi.fn();
+  const subscribeMock = vi.fn((_op: unknown, sink: Sink) => {
+    currentSink = sink;
+    return unsubscribe;
+  });
   const client = {
-    subscribe: (_op: unknown, sink: Sink) => {
-      currentSink = sink;
-      return unsubscribe;
-    },
+    subscribe: subscribeMock,
     on: () => () => {},
     iterate: () => {
       throw new Error('not used');
@@ -30,7 +32,13 @@ function makeFakeClient(): FakeClient {
     emitError: (err: unknown) => currentSink?.error?.(err),
     emitComplete: () => currentSink?.complete?.(),
     unsubscribe,
+    subscribeMock,
   }) as FakeClient;
+}
+
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('execute', () => {
@@ -98,5 +106,92 @@ describe('execute', () => {
     await expect(promise).resolves.toEqual({ ok: true });
     expect(clearSpy).toHaveBeenCalled();
     clearSpy.mockRestore();
+  });
+
+  it('retries structured rate-limit errors and notifies before the next attempt', async () => {
+    const client = makeFakeClient();
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const onRateLimited = vi.fn();
+
+    const promise = execute<{ ok: boolean }>(
+      client,
+      { query: 'mutation Foo { ok }' },
+      {
+        timeoutMs: 100,
+        rateLimitJitterMs: 0,
+        sleep,
+        onRateLimited,
+      },
+    );
+
+    client.emit({
+      data: null,
+      errors: [
+        {
+          message: 'Rate limit exceeded. Try again in 4 seconds.',
+          extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 4 },
+        },
+      ],
+    });
+    await flushMicrotasks();
+
+    expect(sleep).toHaveBeenCalledWith(4000);
+    expect(onRateLimited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        maxAttempts: 2,
+        operationName: 'Foo',
+        retryAfterMs: 4000,
+      }),
+    );
+    expect(client.subscribeMock).toHaveBeenCalledTimes(2);
+
+    client.emit({ data: { ok: true } });
+    client.emitComplete();
+
+    await expect(promise).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects with RateLimitError once the retry budget is exhausted', async () => {
+    const client = makeFakeClient();
+    const promise = execute(
+      client,
+      { query: 'mutation Foo { ok }' },
+      {
+        timeoutMs: 100,
+        rateLimitRetries: 0,
+        rateLimitJitterMs: 0,
+      },
+    );
+
+    client.emit({
+      data: null,
+      errors: [
+        {
+          message: 'Rate limit exceeded. Try again in 9 seconds.',
+          extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 9 },
+        },
+      ],
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(RateLimitError);
+    await expect(promise).rejects.toMatchObject({ retryAfterSeconds: 9 });
+  });
+
+  it('parses legacy plain-message rate-limit errors', async () => {
+    const client = makeFakeClient();
+    const promise = execute(
+      client,
+      { query: 'mutation Foo { ok }' },
+      {
+        timeoutMs: 100,
+        rateLimitRetries: 0,
+      },
+    );
+
+    client.emitError(new Error('Rate limit exceeded. Try again in 2 seconds.'));
+
+    await expect(promise).rejects.toBeInstanceOf(RateLimitError);
+    await expect(promise).rejects.toMatchObject({ retryAfterSeconds: 2 });
   });
 });
