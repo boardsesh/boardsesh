@@ -67,6 +67,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     renderWidth,
   });
 
+  const allowDownscaling = renderWidth == null;
   const containerStyle: ViewStyle = {
     width: '100%',
     aspectRatio: boardWidth / boardHeight,
@@ -80,6 +81,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         backgroundPaths={backgroundPaths}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
+        allowDownscaling={allowDownscaling}
       />
     </View>
   );
