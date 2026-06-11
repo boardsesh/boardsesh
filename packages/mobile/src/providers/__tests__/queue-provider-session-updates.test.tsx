@@ -119,8 +119,16 @@ vi.mock('react-native', () => ({
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
 }));
 
+vi.mock('expo-router', () => ({
+  useSegments: () => ['(tabs)', 'climbs'],
+}));
+
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-correlation-id',
+}));
+
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
 vi.mock('@boardsesh/graphql-client', () => ({
@@ -165,8 +173,16 @@ vi.mock('../toast-provider', () => ({
   useToast: () => ({ showToast: toast.showToast }),
 }));
 
+vi.mock('../theme-provider', () => ({
+  useTheme: () => ({ variant: 'liquidGlass' }),
+}));
+
 vi.mock('../queue-snackbar-provider', () => ({
   useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }),
+}));
+
+vi.mock('../../hooks/use-bottom-accessory', () => ({
+  useNativeAccessoryActive: () => false,
 }));
 
 import {
@@ -179,6 +195,7 @@ import {
   useQueueSessionId,
 } from '../queue-provider';
 import { clearStoredSessionId } from '../../lib/session-store';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -204,6 +221,8 @@ type SelectorSnapshot = {
   sessionIdValue: ReturnType<typeof useQueueSessionId>;
   hasActiveClimb: boolean;
 };
+
+type BottomChromeSnapshot = ReturnType<typeof useBottomChromeMetrics>;
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
   id: 'participant-1',
@@ -323,6 +342,21 @@ function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot
   return null;
 }
 
+function BottomChromeProbe({
+  onRender,
+  onSnapshot,
+}: {
+  onRender: () => void;
+  onSnapshot: (snapshot: BottomChromeSnapshot) => void;
+}) {
+  onRender();
+  const metrics = useBottomChromeMetrics();
+  useEffect(() => {
+    onSnapshot(metrics);
+  }, [metrics, onSnapshot]);
+  return null;
+}
+
 function renderProvider(onSnapshot: (snapshot: Snapshot) => void) {
   return render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot })));
 }
@@ -337,6 +371,24 @@ function renderProviderWithSelectors(
       null,
       createElement(Probe, { onSnapshot }),
       createElement(SelectorProbe, { onSnapshot: onSelectorSnapshot }),
+    ),
+  );
+}
+
+function renderProviderWithBottomChrome(
+  onSnapshot: (snapshot: Snapshot) => void,
+  onBottomChromeSnapshot: (snapshot: BottomChromeSnapshot) => void,
+  onBottomChromeRender: () => void,
+) {
+  return render(
+    createElement(
+      QueueProvider,
+      null,
+      createElement(Probe, { onSnapshot }),
+      createElement(BottomChromeProbe, {
+        onRender: onBottomChromeRender,
+        onSnapshot: onBottomChromeSnapshot,
+      }),
     ),
   );
 }
@@ -594,6 +646,100 @@ describe('QueueProvider session update subscription', () => {
     });
     expect(selectorSnapshots).toHaveLength(selectorSnapshotCount);
     expect(selectorSnapshots.at(-1)?.hasActiveClimb).toBe(true);
+  });
+
+  it('keeps bottom chrome metrics stable when switching between active climbs', async () => {
+    const snapshots: Snapshot[] = [];
+    const bottomChromeSnapshots: BottomChromeSnapshot[] = [];
+    let bottomChromeRenderCount = 0;
+    renderProviderWithBottomChrome(
+      (snapshot) => snapshots.push(snapshot),
+      (snapshot) => bottomChromeSnapshots.push(snapshot),
+      () => {
+        bottomChromeRenderCount += 1;
+      },
+    );
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const firstItem = makeQueueItem('queue-first', 'climb-first');
+    const initialSnapshot = snapshots.at(-1);
+    if (!initialSnapshot) throw new Error('queue snapshot was not captured');
+
+    act(() => {
+      initialSnapshot.setCurrentClimb(firstItem);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('queue-first');
+      expect(bottomChromeSnapshots.at(-1)?.hasCurrentClimb).toBe(true);
+    });
+
+    const bottomChromeSnapshotCount = bottomChromeSnapshots.length;
+    const bottomChromeRenderCountAfterFirstClimb = bottomChromeRenderCount;
+    const stableBottomChromeSnapshot = bottomChromeSnapshots.at(-1);
+    const secondItem = makeQueueItem('queue-second', 'climb-second');
+    const activeSnapshot = snapshots.at(-1);
+    if (!activeSnapshot || !stableBottomChromeSnapshot) throw new Error('active queue snapshot was not captured');
+
+    act(() => {
+      activeSnapshot.setCurrentClimb(secondItem);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('queue-second');
+    });
+    expect(bottomChromeSnapshots).toHaveLength(bottomChromeSnapshotCount);
+    expect(bottomChromeSnapshots.at(-1)).toBe(stableBottomChromeSnapshot);
+    expect(bottomChromeRenderCount).toBe(bottomChromeRenderCountAfterFirstClimb);
+  });
+
+  it('keeps bottom chrome metrics stable across live stats session updates', async () => {
+    const snapshots: Snapshot[] = [];
+    const bottomChromeSnapshots: BottomChromeSnapshot[] = [];
+    let bottomChromeRenderCount = 0;
+    renderProviderWithBottomChrome(
+      (snapshot) => snapshots.push(snapshot),
+      (snapshot) => bottomChromeSnapshots.push(snapshot),
+      () => {
+        bottomChromeRenderCount += 1;
+      },
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    const bottomChromeSnapshotCount = bottomChromeSnapshots.length;
+    const bottomChromeRenderCountBeforeLiveStats = bottomChromeRenderCount;
+    const stableBottomChromeSnapshot = bottomChromeSnapshots.at(-1);
+    if (!sessionUpdatesSink || !stableBottomChromeSnapshot) throw new Error('session update sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionStatsUpdated',
+            stats: {
+              totalAscents: 4,
+              totalAttempts: 7,
+              uniqueClimbs: 3,
+              participantStats: [],
+            },
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+    expect(bottomChromeSnapshots).toHaveLength(bottomChromeSnapshotCount);
+    expect(bottomChromeSnapshots.at(-1)).toBe(stableBottomChromeSnapshot);
+    expect(bottomChromeRenderCount).toBe(bottomChromeRenderCountBeforeLiveStats);
   });
 
   it('applies roster and driver events to public context state', async () => {
