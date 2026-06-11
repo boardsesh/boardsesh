@@ -107,6 +107,19 @@ const queueMutations = vi.hoisted(() => ({
   setSessionBoardPath: vi.fn(async () => {}),
 }));
 
+const crypto = vi.hoisted(() => {
+  let uuidCounter = 0;
+  return {
+    randomUUID: vi.fn(() => {
+      uuidCounter += 1;
+      return `test-uuid-${uuidCounter}`;
+    }),
+    reset: () => {
+      uuidCounter = 0;
+    },
+  };
+});
+
 const wallConfirm = vi.hoisted(() => ({
   emitWallConfirm: vi.fn(),
 }));
@@ -121,7 +134,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('expo-crypto', () => ({
-  randomUUID: () => 'test-correlation-id',
+  randomUUID: crypto.randomUUID,
 }));
 
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
@@ -193,6 +206,7 @@ type Snapshot = {
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
+  previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
   joinSession: (sessionId: string, opts: Parameters<ReturnType<typeof useQueue>['joinSession']>[1]) => Promise<void>;
   endSession: () => Promise<unknown>;
@@ -285,6 +299,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       removeFromQueue: queue.removeFromQueue,
       setCurrentClimb: queue.setCurrentClimb,
       nextClimb: queue.nextClimb,
+      previousClimb: queue.previousClimb,
       setPlaylistSuggestionSource: queue.setPlaylistSuggestionSource,
       joinSession: queue.joinSession,
       endSession: queue.endSession,
@@ -304,6 +319,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.removeFromQueue,
     queue.setCurrentClimb,
     queue.nextClimb,
+    queue.previousClimb,
     queue.setPlaylistSuggestionSource,
     queue.joinSession,
     queue.endSession,
@@ -345,6 +361,8 @@ function renderProviderWithSelectors(
 
 describe('QueueProvider session update subscription', () => {
   beforeEach(() => {
+    crypto.reset();
+    crypto.randomUUID.mockClear();
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -848,6 +866,90 @@ describe('QueueProvider session update subscription', () => {
       expect(latestSnapshot?.state.currentClimbQueueItem?.uuid).not.toBe('playlist-peek:climb-following');
       expect(latestSnapshot?.playlistSuggestionSource).toEqual(playlistSuggestionSource);
     });
+  });
+
+  it('materializes repeated previous playlist suggestions before the current queue item', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const firstItem = makeQueueItem('queue-first-source', 'climb-first', { suggested: true });
+    const previousItem = makeQueueItem('queue-previous-source', 'climb-previous', { suggested: true });
+    const currentItem = makeQueueItem('queue-current', 'climb-current');
+    const playlistSuggestionSource: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist-1',
+      activatedClimbUuid: currentItem.climb.uuid,
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [firstItem.climb, previousItem.climb, currentItem.climb],
+    };
+    const preparedSnapshot = snapshots.at(-1);
+    if (!preparedSnapshot) throw new Error('queue snapshot was not captured');
+
+    act(() => {
+      preparedSnapshot.setCurrentClimb(currentItem, { playlistSuggestionSource });
+    });
+
+    await waitFor(() => {
+      const latestSnapshot = snapshots.at(-1);
+      expect(latestSnapshot?.state.currentClimbQueueItem?.uuid).toBe('queue-current');
+      expect(latestSnapshot?.playlistSuggestionSource).toEqual(playlistSuggestionSource);
+    });
+
+    const activeSnapshot = snapshots.at(-1);
+    if (!activeSnapshot) throw new Error('prepared queue snapshot was not captured');
+    act(() => {
+      activeSnapshot.previousClimb();
+    });
+
+    await waitFor(() => {
+      const latestSnapshot = snapshots.at(-1);
+      expect(latestSnapshot?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-previous');
+      expect(latestSnapshot?.state.currentClimbQueueItem?.uuid).not.toBe('playlist-peek:climb-previous');
+      expect(latestSnapshot?.state.currentClimbQueueItem?.suggested).toBe(true);
+      expect(latestSnapshot?.state.queue.map((item) => item.climb.uuid)).toEqual(['climb-previous', 'climb-current']);
+      expect(latestSnapshot?.playlistSuggestionSource).toEqual(playlistSuggestionSource);
+    });
+
+    const previousSnapshot = snapshots.at(-1);
+    if (!previousSnapshot) throw new Error('previous queue snapshot was not captured');
+    act(() => {
+      previousSnapshot.previousClimb();
+    });
+
+    await waitFor(() => {
+      const latestSnapshot = snapshots.at(-1);
+      expect(latestSnapshot?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-first');
+      expect(latestSnapshot?.state.currentClimbQueueItem?.uuid).not.toBe('playlist-peek:climb-first');
+      expect(latestSnapshot?.state.currentClimbQueueItem?.suggested).toBe(true);
+      expect(latestSnapshot?.state.queue.map((item) => item.climb.uuid)).toEqual([
+        'climb-first',
+        'climb-previous',
+        'climb-current',
+      ]);
+      expect(latestSnapshot?.playlistSuggestionSource).toEqual(playlistSuggestionSource);
+    });
+
+    expect(queueMutations.addQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-previous' }) }),
+      0,
+    );
+    expect(queueMutations.addQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-first' }) }),
+      0,
+    );
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-previous' }) }),
+      false,
+      expect.any(String),
+    );
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-first' }) }),
+      false,
+      expect.any(String),
+    );
   });
 
   it('rolls back optimistic releaseControl state when the mutation fails', async () => {

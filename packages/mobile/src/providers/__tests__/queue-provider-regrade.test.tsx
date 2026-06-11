@@ -189,4 +189,45 @@ describe('QueueProvider angle-change re-grade of the playlist suggestion peek', 
     expect(fetchedUuids).toContain('climb-next');
     expect(fetchedUuids).not.toContain('climb-current');
   });
+
+  it('re-grades the previous source climb to the live board angle and patches the source', async () => {
+    // Current climb is already at the live angle (25); the previous playlist
+    // climb carries a stale grade baked at 40, so it must be re-graded to 25.
+    const previousClimb = makeClimb('climb-previous', 40, 'V8');
+    const currentClimb = makeClimb('climb-current', 25, 'V3');
+    const source: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist-1',
+      activatedClimbUuid: 'climb-current',
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [previousClimb, currentClimb],
+    };
+
+    http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
+      if (variables.climbUuid === 'climb-previous' && variables.angle === 25) {
+        return { climb: makeClimb('climb-previous', 25, 'V6') };
+      }
+      return { climb: null };
+    });
+
+    const snapshots: Snapshot[] = [];
+    render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snap) => snapshots.push(snap) })));
+
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+    await act(async () => {
+      snapshots.at(-1)?.setCurrentClimb(makeItem(currentClimb), { playlistSuggestionSource: source });
+    });
+
+    await waitFor(() => {
+      const patched = snapshots
+        .at(-1)
+        ?.playlistSuggestionSource?.climbs.find((climb) => climb.uuid === 'climb-previous');
+      expect(patched?.angle).toBe(25);
+      expect(patched?.difficulty).toBe('V6');
+    });
+
+    const fetchedUuids = http.request.mock.calls.map((call) => (call[1] as { climbUuid: string }).climbUuid);
+    expect(fetchedUuids).toContain('climb-previous');
+    expect(fetchedUuids).not.toContain('climb-current');
+  });
 });

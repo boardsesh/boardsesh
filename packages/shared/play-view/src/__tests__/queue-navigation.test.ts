@@ -6,6 +6,7 @@ import {
   findPreviousQueueItem,
   computeNavigationState,
   findNextQueueItemWithSuggestions,
+  findPreviousQueueItemWithSuggestions,
   computeNavigationStateWithSuggestions,
 } from '../queue-navigation';
 
@@ -225,6 +226,44 @@ describe('findNextQueueItemWithSuggestions', () => {
   });
 });
 
+describe('findPreviousQueueItemWithSuggestions', () => {
+  it('returns the real previous queue item when one exists', () => {
+    const previous = makeClimb('source-previous');
+    const current = makeClimb('current');
+    const queue = [itemFor(makeClimb('queued-previous')), itemFor(current)];
+    const source = makeSource(current, [previous, current]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBe(queue[0]);
+  });
+
+  it('falls back to the previous playlist climb when the queue has no previous item', () => {
+    const previous = makeClimb('previous');
+    const current = makeClimb('current');
+    const queue = [itemFor(current)];
+    const source = makeSource(current, [previous, current]);
+    const peek = findPreviousQueueItemWithSuggestions(queue, queue[0], source);
+    expect(peek?.uuid).toBe(getPlaylistPeekQueueItemUuid(previous.uuid));
+    expect(peek?.climb.uuid).toBe('previous');
+    expect(peek?.suggested).toBe(true);
+  });
+
+  it('falls back to the previous playlist climb for an orphan current item', () => {
+    const previous = makeClimb('previous');
+    const current = makeClimb('current');
+    const orphan = itemFor(current);
+    const source = makeSource(current, [previous, current]);
+    const peek = findPreviousQueueItemWithSuggestions([], orphan, source);
+    expect(peek?.climb.uuid).toBe('previous');
+  });
+
+  it('returns null when the current playlist climb is first', () => {
+    const current = makeClimb('current');
+    const next = makeClimb('next');
+    const queue = [itemFor(current)];
+    const source = makeSource(current, [current, next]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[0], source)).toBeNull();
+  });
+});
+
 describe('computeNavigationStateWithSuggestions', () => {
   it('matches computeNavigationState when source is null', () => {
     const items = [makeItem('a'), makeItem('b'), makeItem('c')];
@@ -242,9 +281,22 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.canNext).toBe(true);
     expect(state.nextItem?.climb.uuid).toBe('y');
     expect(state.nextItem?.suggested).toBe(true);
-    // previous + remainingCount stay queue-based.
+    // No earlier playlist item, so previous stays unavailable.
     expect(state.canPrevious).toBe(false);
     expect(state.prevItem).toBeNull();
+    expect(state.remainingCount).toBe(0);
+  });
+
+  it('lights up canPrevious from a suggestion at the start of the queue', () => {
+    const previous = makeClimb('previous');
+    const current = makeClimb('current');
+    const queue = [itemFor(current)];
+    const source = makeSource(current, [previous, current]);
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], source);
+    expect(state.canPrevious).toBe(true);
+    expect(state.prevItem?.climb.uuid).toBe('previous');
+    expect(state.prevItem?.suggested).toBe(true);
+    expect(state.canNext).toBe(false);
     expect(state.remainingCount).toBe(0);
   });
 });

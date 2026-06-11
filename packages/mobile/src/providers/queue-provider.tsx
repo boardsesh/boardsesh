@@ -70,7 +70,11 @@ import { getDeviceTimezone } from '../lib/device-timezone';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getStoredSessionId, setStoredSessionId, clearStoredSessionId } from '../lib/session-store';
 import { getStoredQueueSnapshot, setStoredQueueSnapshot, clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
-import { emitWallConfirm, findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import {
+  emitWallConfirm,
+  findNextQueueItemWithSuggestions,
+  findPreviousQueueItemWithSuggestions,
+} from '@boardsesh/play-view';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../lib/queue-conversion';
 import { toMobileSessionRuntimeEvent } from '../lib/session-runtime-event';
 import { climbToQueueItem, toClimbInput } from '../lib/climb-to-queue-item';
@@ -79,6 +83,13 @@ import { reportError } from '../lib/error-reporting';
 import { extractGraphqlMessage, isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
 import { useToast } from './toast-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
+
+const POSITION_BEFORE_CURRENT = 'beforeCurrent';
+
+function materializePlaylistPeekItem(item: ClimbQueueItem): ClimbQueueItem {
+  // Synthetic playlist-peek uuids are UI-only; persistence/sync must receive a real queue item.
+  return climbToQueueItem(item.climb as unknown as Parameters<typeof climbToQueueItem>[0], { suggested: true });
+}
 
 export type StartSessionConfig = {
   name?: string;
@@ -1309,18 +1320,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     };
     state.queue.forEach(consider);
     consider(state.currentClimbQueueItem);
-    // Also re-grade the single displayed playlist peek (the next-up suggestion
-    // shown at the queue tail). It lives in playlistSuggestionSource.climbs —
-    // NOT in state.queue — so the queue-only pass above never touches it, and
-    // the bar/drawer would keep showing the activation-angle grade until the
-    // peek is committed. Only the next-up climb is ever displayed, so re-grade
-    // that one alone; re-grading the whole source could be hundreds of climbs.
-    const peekItem = findNextQueueItemWithSuggestions(
+    // Also re-grade the displayed playlist peeks. They live in
+    // playlistSuggestionSource.climbs — NOT in state.queue — so the queue-only
+    // pass above never touches them, and the bar/drawer would keep showing the
+    // activation-angle grade until a peek is committed. Only immediate
+    // previous/next peeks are ever displayed, so re-grade those alone; re-grading
+    // the whole source could be hundreds of climbs.
+    const nextPeekItem = findNextQueueItemWithSuggestions(
       state.queue,
       state.currentClimbQueueItem,
       playlistSuggestionSourceRef.current,
     );
-    if (peekItem && isPlaylistPeekQueueItemUuid(peekItem.uuid)) consider(peekItem);
+    if (nextPeekItem && isPlaylistPeekQueueItemUuid(nextPeekItem.uuid)) consider(nextPeekItem);
+    const previousPeekItem = findPreviousQueueItemWithSuggestions(
+      state.queue,
+      state.currentClimbQueueItem,
+      playlistSuggestionSourceRef.current,
+    );
+    if (previousPeekItem && isPlaylistPeekQueueItemUuid(previousPeekItem.uuid)) consider(previousPeekItem);
     if (uuids.size === 0) return undefined;
 
     const targetUuids = [...uuids];
@@ -1522,17 +1539,43 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // CurrentClimbChanged event (same id in `serverCorrelationId`) is suppressed
   // instead of re-applied.
   const dispatchSetCurrent = useCallback(
-    (item: ClimbQueueItem, shouldAddToQueue: boolean, playlistSuggestionSource?: PlaylistSuggestionSource | null) => {
+    (
+      item: ClimbQueueItem,
+      shouldAddToQueue: boolean,
+      playlistSuggestionSource?: PlaylistSuggestionSource | null,
+      addPosition?: typeof POSITION_BEFORE_CURRENT,
+    ) => {
       const correlationId = coordinator.generateCorrelationId();
+      const shouldInsertBeforeCurrent = shouldAddToQueue && addPosition === POSITION_BEFORE_CURRENT;
+      const currentQueueIndex = stateRef.current.currentClimbQueueItem
+        ? stateRef.current.queue.findIndex(
+            (queueItem) => queueItem.uuid === stateRef.current.currentClimbQueueItem?.uuid,
+          )
+        : -1;
+      const queuedInsertPosition = currentQueueIndex >= 0 ? currentQueueIndex : undefined;
+      if (shouldInsertBeforeCurrent) {
+        dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item, position: queuedInsertPosition } });
+      }
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
         // reducer sets it + prunes suggested-after-current; when undefined it's
         // left unchanged. It is intentionally NOT sent to the server mutation.
-        payload: { item, shouldAddToQueue, isServerEvent: false, correlationId, playlistSuggestionSource },
+        payload: {
+          item,
+          shouldAddToQueue: shouldInsertBeforeCurrent ? false : shouldAddToQueue,
+          isServerEvent: false,
+          correlationId,
+          playlistSuggestionSource,
+        },
       });
       coordinator.trackPendingMutation(correlationId);
-      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch(() => {
+      const syncCurrentClimb = shouldInsertBeforeCurrent
+        ? mutations
+            .addQueueItem(item, queuedInsertPosition)
+            .then(() => mutations.setCurrentClimb(item, false, correlationId))
+        : mutations.setCurrentClimb(item, shouldAddToQueue, correlationId);
+      syncCurrentClimb.catch(() => {
         // In a party session the current-climb change never reached peers —
         // reconcile against the server (and toast that we refreshed) so this
         // client's current climb can't silently diverge. Solo keeps the prior
@@ -1578,16 +1621,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     );
     if (!nextItem) return;
     if (isPlaylistPeekQueueItemUuid(nextItem.uuid)) {
-      // Mirror web: turn the transient peek into a real queue item with a fresh
-      // uuid so the synthetic `playlist-peek:<uuid>` never reaches the WS
-      // mutation (toQueueItemInput sends item.uuid verbatim). suggested:true so
-      // suggestion pruning still treats it as suggestion-origin. The peek climb
-      // is the queue package's wide Climb; climbToQueueItem only reads the
-      // ClimbInput subset, so the cast is runtime-safe.
-      const realItem = climbToQueueItem(nextItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      dispatchSetCurrent(realItem, true);
+      dispatchSetCurrent(materializePlaylistPeekItem(nextItem), true);
     } else {
       dispatchSetCurrent(nextItem, false);
     }
@@ -1595,8 +1629,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
-    const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem);
-    if (prevItem) dispatchSetCurrent(prevItem, false);
+    const prevItem = findPreviousQueueItemWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      playlistSuggestionSourceRef.current,
+    );
+    if (!prevItem) return;
+    if (isPlaylistPeekQueueItemUuid(prevItem.uuid)) {
+      dispatchSetCurrent(materializePlaylistPeekItem(prevItem), true, undefined, POSITION_BEFORE_CURRENT);
+    } else {
+      dispatchSetCurrent(prevItem, false);
+    }
   }, [dispatchSetCurrent]);
 
   const setPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource | null) => {

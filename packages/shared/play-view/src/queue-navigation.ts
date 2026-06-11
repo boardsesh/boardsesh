@@ -79,6 +79,18 @@ function getNextPlaylistClimb(
   return source.climbs[index + 1] ?? null;
 }
 
+/** The playlist climb immediately before `currentClimbUuid` in the source's
+ * ordered list, or null if the current climb isn't in the playlist or is first. */
+function getPreviousPlaylistClimb(
+  source: PlaylistSuggestionSource | null,
+  currentClimbUuid: string | undefined,
+): Climb | null {
+  if (!source || !currentClimbUuid) return null;
+  const index = source.climbs.findIndex((climb) => climb.uuid === currentClimbUuid);
+  if (index <= 0) return null;
+  return source.climbs[index - 1] ?? null;
+}
+
 /** Wrap a suggested climb as a transient "peek" queue item. */
 function toPeekItem(climb: Climb): ClimbQueueItem {
   return { climb, addedBy: null, uuid: getPlaylistPeekQueueItemUuid(climb.uuid), suggested: true };
@@ -121,10 +133,31 @@ export function findNextQueueItemWithSuggestions(
 }
 
 /**
- * computeNavigationState that lights up canNext/nextItem from playlist
- * suggestions when the queue is exhausted. canPrevious/prevItem stay queue-only
- * (web has no backward suggestion fall-through). remainingCount stays
- * queue-based to match web's action-bar remaining count.
+ * Like findPreviousQueueItem, but when the current item has no real predecessor
+ * in the queue, fall through to the previous playlist climb in the ordered
+ * suggestion source. Queue items still win, so swiping back through existing
+ * history does not duplicate climbs.
+ */
+export function findPreviousQueueItemWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+): ClimbQueueItem | null {
+  if (!currentClimbQueueItem) return null;
+
+  const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
+  if (currentIndex > 0) {
+    return queue[currentIndex - 1];
+  }
+
+  const previousClimb = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
+  return previousClimb ? toPeekItem(previousClimb) : null;
+}
+
+/**
+ * computeNavigationState that lights up next/previous from playlist suggestions
+ * when the queue lacks that neighbor. remainingCount stays queue-based to match
+ * the action-bar count.
  */
 export function computeNavigationStateWithSuggestions(
   queue: ClimbQueue,
@@ -132,7 +165,7 @@ export function computeNavigationStateWithSuggestions(
   source: PlaylistSuggestionSource | null,
 ): NavigationState {
   const nextItem = findNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
-  const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem);
+  const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
 
   const currentIndex = currentClimbQueueItem ? queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid) : -1;
   const remainingCount = currentIndex >= 0 ? queue.length - currentIndex - 1 : queue.length;
