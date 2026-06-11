@@ -335,6 +335,9 @@
       "nextClimb": "Siguiente bloque",
       "previousClimb": "Bloque anterior",
       "alreadyLogged": "Registrado",
+      "repTimerLabel": "Descanso",
+      "repTimerAccessibility": "Temporizador de descanso, {{time}} desde el último tick",
+      "repTimerNoTickAccessibility": "Temporizador de descanso, aún no hay tick registrado",
       "dragHandleAria": "Arrastra para reordenar {{name}}"
     },
     "queueSheet": {

@@ -105,7 +105,7 @@ export function useSaveTick(boardName: BoardName | null) {
         applySavedTickToLogbook(existing ?? [], savedEntry, context?.tempUuid),
       );
 
-      onTickSaved?.(options.climbUuid, options.angle);
+      onTickSaved?.(options.climbUuid, options.angle, savedTick.climbedAt, options.sessionId ?? null);
 
       // Bust the stats caches so the next visit reflects the new tick.
       // React Query does prefix matching on queryKey arrays — the bare root

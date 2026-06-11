@@ -8,6 +8,7 @@ import {
   NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER,
 } from '../../theme/layout';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
+import { NativeAccessoryRepTimerRow } from './NativeAccessoryRepTimerRow';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 
 /**
@@ -18,11 +19,12 @@ import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
   const { width: screenWidth } = useWindowDimensions();
-  const { state } = useQueue();
+  const { state, sessionId } = useQueue();
   // Show the accessory when there's a local queue climb OR a live wall climb
   // (the flag-gated source flip — see useWallOrQueueCurrentClimb). The row itself
   // re-applies the same selector for what it renders + ticks.
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
+  const isSessionActive = sessionId !== null;
 
   const accessoryWidth = useMemo(() => {
     return Math.max(
@@ -37,7 +39,11 @@ export function QueueBottomAccessory() {
     <View
       style={[styles.row, placement === 'inline' ? styles.inlineRow : styles.regularRow, { width: accessoryWidth }]}
     >
-      <NativeAccessoryClimbRow placement={placement} width={accessoryWidth} />
+      {isSessionActive ? (
+        <NativeAccessoryRepTimerRow placement={placement} width={accessoryWidth} climb={currentClimb} />
+      ) : (
+        <NativeAccessoryClimbRow placement={placement} width={accessoryWidth} />
+      )}
     </View>
   );
 }

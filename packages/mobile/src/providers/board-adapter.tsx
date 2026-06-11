@@ -3,7 +3,7 @@
 // mobile's HTTP / WS clients. Mounted in `app/_layout.tsx` between
 // QueueProvider and BoardProvider.
 
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
 import { execute } from '@boardsesh/graphql-client';
@@ -18,12 +18,21 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const { sessionId } = useQueueSessionId();
   const { showToast } = useToast();
   const { t } = useTranslation('climbs');
+  const [lastSavedSessionTick, setLastSavedSessionTick] = useState<{ sessionId: string; climbedAt: string } | null>(
+    null,
+  );
 
   // sessionId lives behind a ref so `resolveActiveSessionId` always returns
   // the latest value at mutation time, without re-rendering the adapter on
   // every queue update (which would churn the context value).
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+
+  useEffect(() => {
+    setLastSavedSessionTick(null);
+  }, [sessionId]);
+
+  const lastSavedTickAt = lastSavedSessionTick?.sessionId === sessionId ? lastSavedSessionTick.climbedAt : null;
 
   // showToast and t change identity whenever the toast provider or i18n
   // locale re-renders. Reading them at call time via a ref keeps the
@@ -43,10 +52,14 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       executeHttp: (query, variables) => getHttpClient().request(query, variables),
       executeWs: ({ query, variables }) => execute(getWsClient(), { query, variables }),
       resolveActiveSessionId: () => sessionIdRef.current,
-      // Mobile has no IndexedDB tick-draft store, so onTickSaved is omitted.
+      onTickSaved: (_climbUuid, _angle, climbedAt, savedSessionId) => {
+        if (!savedSessionId || savedSessionId !== sessionIdRef.current) return;
+        setLastSavedSessionTick({ sessionId: savedSessionId, climbedAt });
+      },
+      lastSavedTickAt,
       showError: (reason) => showErrorRef.current?.(reason),
     }),
-    [isAuthenticated, isLoading],
+    [isAuthenticated, isLoading, lastSavedTickAt],
   );
 
   return <BoardAdapterProvider value={adapter}>{children}</BoardAdapterProvider>;

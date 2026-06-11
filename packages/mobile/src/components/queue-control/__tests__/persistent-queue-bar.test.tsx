@@ -10,6 +10,7 @@ const cfg = vi.hoisted(() => ({
   insideTabs: true,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   wallClimb: null as null | { uuid: string; angle: number },
+  sessionId: null as string | null,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
@@ -41,8 +42,8 @@ vi.mock('../../../lib/route-segments', () => ({
   isTabsRoute: () => cfg.insideTabs,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
-  useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
+  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
+  useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null || cfg.wallClimb != null,
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
@@ -109,6 +110,29 @@ vi.mock('../LogAscentToolbarButton', () => ({
   LogAscentToolbarButton: ({ climb }: { climb: { uuid: string } }) =>
     createElement('div', { 'data-tick-inline': 'true', 'data-climb-uuid': climb.uuid }),
 }));
+vi.mock('../RepTimerCapsule', () => ({
+  RepTimerCapsule: ({
+    fillWidth,
+    height,
+    surfaceTreatment,
+    endAction,
+  }: {
+    fillWidth?: boolean;
+    height?: number;
+    surfaceTreatment?: string;
+    endAction?: ReactNode;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-rep-timer': 'true',
+        'data-fill-width': fillWidth ? 'true' : 'false',
+        'data-height': height == null ? '' : String(height),
+        'data-surface-treatment': surfaceTreatment ?? '',
+      },
+      endAction,
+    ),
+}));
 
 import { PersistentQueueBar } from '../persistent-queue-bar';
 
@@ -118,6 +142,7 @@ describe('PersistentQueueBar', () => {
     cfg.insideTabs = true;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.wallClimb = null;
+    cfg.sessionId = null;
     cfg.variant = 'liquidGlass';
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
@@ -132,6 +157,15 @@ describe('PersistentQueueBar', () => {
   it('shows the capsule and standalone tick when a climb is current', () => {
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+  });
+
+  it('shows the rep timer instead of the climb capsule during an active session', () => {
+    cfg.sessionId = 'session-1';
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
@@ -176,6 +210,20 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"right":0');
     expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('uses the wall climb for the fallback tick when the local queue is empty', () => {
+  it('uses a docked full-width inline-action rep timer on Material during a session', () => {
+    cfg.variant = 'material';
+    cfg.sessionId = 'session-1';
+    const { container } = render(<PersistentQueueBar />);
+    const timer = container.querySelector('[data-rep-timer]');
+    expect(timer).not.toBeNull();
+    expect(timer?.getAttribute('data-fill-width')).toBe('true');
+    expect(timer?.getAttribute('data-height')).toBe('48');
+    expect(timer?.getAttribute('data-surface-treatment')).toBe('docked');
+    expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).toBeNull();
   });
 
   it('uses the wall climb for the fallback tick when the local queue is empty', () => {

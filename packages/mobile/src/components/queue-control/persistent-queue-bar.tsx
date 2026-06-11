@@ -24,6 +24,7 @@ import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
+import { RepTimerCapsule } from './RepTimerCapsule';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 
 // Re-export so layout consumers that already import toolbar metrics from this
@@ -31,11 +32,12 @@ import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 export { TOOLBAR_RESERVE, TAB_BAR_HEIGHT };
 
 export function PersistentQueueBar() {
-  const { state } = useQueue();
+  const { state, sessionId } = useQueue();
   const { variant } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
+  const isSessionActive = sessionId !== null;
 
   if (!currentClimb) return null;
   if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
@@ -47,17 +49,32 @@ export function PersistentQueueBar() {
         dockToTabBar
         horizontalInset={0}
         primary={
-          <ClimbCapsule
-            fillWidth
-            height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
-            surfaceTreatment="docked"
-            endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
-            endActionSize={glassSize.inline}
-          />
+          isSessionActive ? (
+            <RepTimerCapsule
+              fillWidth
+              height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
+              surfaceTreatment="docked"
+              endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
+              endActionSize={glassSize.inline}
+            />
+          ) : (
+            <ClimbCapsule
+              fillWidth
+              height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
+              surfaceTreatment="docked"
+              endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
+              endActionSize={glassSize.inline}
+            />
+          )
         }
       />
     );
   }
 
-  return <ActiveContextBar primary={<ClimbCapsule />} trailing={<LogAscentFab climb={currentClimb} />} />;
+  return (
+    <ActiveContextBar
+      primary={isSessionActive ? <RepTimerCapsule /> : <ClimbCapsule />}
+      trailing={<LogAscentFab climb={currentClimb} />}
+    />
+  );
 }

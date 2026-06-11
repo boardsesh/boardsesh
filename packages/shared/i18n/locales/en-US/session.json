@@ -335,6 +335,9 @@
       "nextClimb": "Next climb",
       "previousClimb": "Previous climb",
       "alreadyLogged": "Logged",
+      "repTimerLabel": "Rest",
+      "repTimerAccessibility": "Rest timer, {{time}} since last tick",
+      "repTimerNoTickAccessibility": "Rest timer, no tick logged yet",
       "dragHandleAria": "Drag to reorder {{name}}"
     },
     "queueSheet": {
