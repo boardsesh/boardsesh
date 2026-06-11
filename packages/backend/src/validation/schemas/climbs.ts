@@ -1,5 +1,12 @@
 import { z } from 'zod';
+import { MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+
+// Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
+// (no trigram index there), so an unbounded record is a cheap amplification vector on
+// an anonymous endpoint. 300 is far above any board layout's usable hold count, so it
+// never rejects a real per-hold selection.
+const MAX_HOLD_FILTER_ENTRIES = 300;
 
 /**
  * Climb validation schema (simplified for input)
@@ -106,7 +113,7 @@ export const ClimbSearchInputSchema = z.object({
   sizeId: z.number().int().positive('Size ID must be positive'),
   setIds: z.string().min(1, 'Set IDs cannot be empty'),
   angle: z.number().int(),
-  page: z.number().int().min(0).optional(),
+  page: z.number().int().min(0).max(MAX_SEARCH_PAGE, 'Page number too large').optional(),
   pageSize: z.number().int().min(1).max(100, 'Page size cannot exceed 100').optional(),
   gradeAccuracy: z.string().optional(),
   minGrade: z.number().int().optional(),
@@ -142,6 +149,9 @@ export const ClimbSearchInputSchema = z.object({
         })
         .strict(),
     )
+    .refine((holds) => Object.keys(holds).length <= MAX_HOLD_FILTER_ENTRIES, {
+      message: 'Too many hold filters',
+    })
     .optional(),
   hideAttempted: z.boolean().optional(),
   hideCompleted: z.boolean().optional(),

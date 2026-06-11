@@ -144,6 +144,10 @@ export const climbQueries = {
     { input }: { input: ClimbSearchInput },
     ctx: ConnectionContext,
   ): Promise<ClimbSearchContext> => {
+    // 120/min/identity. This is the app's hottest query and infinite scroll fires one
+    // request per page, so the limit sits well above any interactive cadence while
+    // capping abuse (deep-OFFSET pages, holdsFilter floods) on an anonymous endpoint.
+    await applyRateLimit(ctx, 120, 'search-climbs');
     validateInput(ClimbSearchInputSchema, input, 'input');
 
     // Validate board name

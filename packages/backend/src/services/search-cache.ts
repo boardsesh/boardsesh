@@ -6,8 +6,12 @@ import { logger } from '../utils/logger';
 /** Default TTL for cached search results: 24 hours. */
 export const DEFAULT_SEARCH_CACHE_TTL = 86400;
 
-/** Bump when the cached data shape changes to invalidate all stale entries. */
-const CACHE_VERSION = 'v2';
+/**
+ * Bump when a code change alters search result *content* for an existing key.
+ * v3: anchored hold LIKE (`%p<id>r%`), minRating compared on the 1-5 scale,
+ * popular-sort counting NULL frames_count, name ILIKE escaping, zone fail-closed.
+ */
+const CACHE_VERSION = 'v3';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

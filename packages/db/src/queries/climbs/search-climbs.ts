@@ -6,6 +6,12 @@ import { getClimbStars } from './climb-stars';
 import { getGradeLabel } from './grade-lookup';
 import type { BoardRouteParams, ClimbSearchParams, ClimbRow, ClimbSearchResult } from './types';
 
+// Runtime shape of a search row. postgres.js returns numeric/bigint columns as
+// JS strings (no `types` parser is configured), so the ROUND(...::numeric) and
+// bigint expressions arrive as strings even though SQL treats them as numbers.
+// These annotations are deliberately `number | string` so downstream code can't
+// assume a JS number and silently string-concatenate. doublePrecision columns
+// (benchmark_difficulty) do come back as real JS numbers.
 type RawSelectResult = {
   uuid: string;
   setter_username: string | null;
@@ -15,9 +21,9 @@ type RawSelectResult = {
   is_draft: boolean | null;
   angle: number | null;
   ascensionist_count: string | null;
-  difficulty_id: number | null;
-  quality_average: number | null;
-  difficulty_error: number | null;
+  difficulty_id: number | string | null;
+  quality_average: number | string | null;
+  difficulty_error: number | string | null;
   benchmark_difficulty: number | null;
   description: string | null;
   created_at: string | null;
@@ -25,6 +31,14 @@ type RawSelectResult = {
   frames_count: number | null;
   frames_pace: number | null;
 };
+
+// difficulty_id arrives as a string like "15" from the driver; coerce to an integer
+// for the GRADE_MAP lookup instead of relying on JS object-key coercion.
+function toIntegerOrNull(value: number | string | null): number | null {
+  if (value === null || value === undefined) return null;
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.round(numeric) : null;
+}
 
 function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams): ClimbRow {
   return {
@@ -35,7 +49,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     frames: result.frames || '',
     angle: params.angle,
     ascensionist_count: Number(result.ascensionist_count || 0),
-    difficulty: getGradeLabel(result.difficulty_id),
+    difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id)),
     quality_average: result.quality_average?.toString() || '0',
     stars: getClimbStars(params.board_name, result.quality_average),
     difficulty_error: result.difficulty_error?.toString() || '0',
@@ -55,6 +69,20 @@ type SearchDb = DbInstance | TransactionDb;
 type SearchDbTransaction = DbInstance['transaction'];
 type SearchDbExecute = (query: unknown) => Promise<unknown>;
 export type StatsDrivenSort = 'ascents' | 'quality';
+
+/**
+ * Upper bound on the page index. 500 pages × the 100-row pageSize cap is a 50k-row
+ * worst-case OFFSET on the index-ordered path — bounded and cheap; legitimate UI
+ * paging never approaches it. The API layer rejects pages past this; the shared
+ * query clamps as a backstop for SSR/direct callers that bypass that validation,
+ * so a crafted `page=10_000_000` can't force an OFFSET-200M serial scan per request.
+ */
+export const MAX_SEARCH_PAGE = 500;
+
+export function clampSearchPage(page: number | undefined): number {
+  if (!Number.isFinite(page)) return 0;
+  return Math.min(Math.max(Math.trunc(page as number), 0), MAX_SEARCH_PAGE);
+}
 
 export function getStatsDrivenSort(sortBy: string, sortOrder: 'asc' | 'desc'): StatsDrivenSort | null {
   if (sortOrder !== 'desc') return null;
@@ -89,16 +117,20 @@ export const searchClimbs = async (
   searchParams: ClimbSearchParams,
   userId?: string,
 ): Promise<ClimbSearchResult> => {
-  const page = searchParams.page ?? 0;
+  const page = clampSearchPage(searchParams.page);
   const pageSize = searchParams.pageSize ?? 20;
 
   const filters = createClimbFilters(params, searchParams, userId);
+  // Derive from the filter builder's unified predicate (onlyDrafts AND a userId),
+  // not `!!searchParams.onlyDrafts` — otherwise onlyDrafts-without-userId makes this
+  // skip the size/stats filters and force creation sort while the filters still
+  // require listed non-drafts. See filters.isOnlyDrafts.
+  const isDraftsQuery = filters.isOnlyDrafts;
 
   // Drafts never have stats, so force creation sort (stats-based sorts would be meaningless)
-  const sortBy = searchParams.onlyDrafts ? 'creation' : searchParams.sortBy || 'ascents';
+  const sortBy = isDraftsQuery ? 'creation' : searchParams.sortBy || 'ascents';
   const sortOrder = searchParams.sortOrder === 'asc' ? 'asc' : 'desc';
   const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder);
-  const isDraftsQuery = !!searchParams.onlyDrafts;
 
   const hasStatsFilters = filters.getClimbStatsConditions().length > 0;
   if (!statsDrivenSort) {
@@ -231,10 +263,11 @@ async function statsDrivenSearch(
     is_draft: boardClimbs.isDraft,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
-    difficulty_id: sql<number | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
-    quality_average: sql<number | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
+    // ROUND(::numeric) returns text over the wire (see RawSelectResult).
+    difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
+    quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
     difficulty_error: sql<
-      number | null
+      number | string | null
     >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
     benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
     description: boardClimbs.description,
@@ -351,7 +384,7 @@ async function runStandardSearch(
             AND ${boardClimbs.layoutId} = ${params.layout_id}
             AND ${boardClimbs.isListed} = true
             AND ${boardClimbs.isDraft} = false
-            AND ${boardClimbs.framesCount} = 1
+            AND (${boardClimbs.framesCount} = 1 OR ${boardClimbs.framesCount} IS NULL)
           )`,
             ),
           )
@@ -389,10 +422,11 @@ async function runStandardSearch(
     is_draft: boardClimbs.isDraft,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
-    difficulty_id: sql<number | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
-    quality_average: sql<number | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
+    // ROUND(::numeric) returns text over the wire (see RawSelectResult).
+    difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
+    quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
     difficulty_error: sql<
-      number | null
+      number | string | null
     >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
     benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
     description: boardClimbs.description,

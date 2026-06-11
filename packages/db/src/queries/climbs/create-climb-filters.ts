@@ -68,6 +68,14 @@ function buildKilterHomewallWideHoldIdsBySet(): ReadonlyMap<number, readonly num
   return wideHoldIdsBySet;
 }
 
+// Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
+// literally. Postgres' default escape character is backslash, so `\%`, `\_`,
+// and `\\` match the literal character. The value is bound as a parameter (not
+// a SQL literal), so this is the only escaping layer needed.
+function escapeLikePattern(input: string): string {
+  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 // Board constants are generated static data in the deployed bundle, so this
 // production cache is intentionally never invalidated.
 let kilterHomewallWideHoldIdsBySet: ReadonlyMap<number, readonly number[]> | null = null;
@@ -207,8 +215,12 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   }
 
   if (searchParams.minRating) {
-    // qualityAverage is stored from 0-1; minRating arrives as whole stars from 1-5.
-    climbStatsConditions.push(sql`${boardClimbStats.qualityAverage} >= ${searchParams.minRating / 5}`);
+    // qualityAverage is canonical 1-5 (migrations 0115/0116 backfilled Aurora's 1-3
+    // scale to 1-5; MoonBoard is native 0-5), and minRating arrives as whole stars
+    // 1-5, so compare directly. The old `/5` divisor assumed a 0-1 scale and made the
+    // filter a near no-op — minRating=4 became threshold 0.8, which kept ~every rated
+    // climb (verified on prod: 348014/348014 kilter rows passed).
+    climbStatsConditions.push(sql`${boardClimbStats.qualityAverage} >= ${searchParams.minRating}`);
   }
 
   if (searchParams.gradeAccuracy) {
@@ -223,8 +235,11 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     climbStatsConditions.push(sql`${boardClimbStats.benchmarkDifficulty} > 0`);
   }
 
-  // Name search condition
-  const nameCondition: SQL[] = searchParams.name ? [sql`${boardClimbs.name} ILIKE ${`%${searchParams.name}%`}`] : [];
+  // Name search condition. Escape LIKE metacharacters so a search for "50%" or
+  // "a_b" matches literally instead of treating %/_ as wildcards.
+  const nameCondition: SQL[] = searchParams.name
+    ? [sql`${boardClimbs.name} ILIKE ${`%${escapeLikePattern(searchParams.name)}%`}`]
+    : [];
 
   // Setter name filter condition
   const setterNameCondition: SQL[] =
@@ -233,9 +248,18 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
       : [];
 
   // Hold filter conditions
+  // Match the exact `p<holdId>r` token, not a bare `<holdId>r` substring. Frames
+  // are concatenated `p<placementId>r<roleCode>` tokens (see board-constants
+  // hold-states), so `%30r%` also matches `p130r…`/`p230r…` — wrongly including
+  // (and via notLike wrongly excluding) climbs that don't use the hold. Anchoring
+  // on the leading `p` fixes it on every board, since every token starts with `p`.
+  // Measured on prod: `hold_1` via the old pattern falsely matched ~230k kilter climbs.
+  // (A future migration may switch this to a board_climb_holds EXISTS probe, but that
+  // table is not yet complete — ~8.9k kilter climbs lack holds rows — so the anchored
+  // LIKE is the correct fix today.)
   const holdConditions: SQL[] = [
-    ...anyHolds.map((holdId) => like(boardClimbs.frames, `%${holdId}r%`)),
-    ...notHolds.map((holdId) => notLike(boardClimbs.frames, `%${holdId}r%`)),
+    ...anyHolds.map((holdId) => like(boardClimbs.frames, `%p${holdId}r%`)),
+    ...notHolds.map((holdId) => notLike(boardClimbs.frames, `%p${holdId}r%`)),
   ];
 
   // State-specific hold conditions — use board_climb_holds. Multiple types
@@ -284,11 +308,16 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   // extend outside the zone while still using an expansion hold inside it.
   // Direct db-layer callers bypass GraphQL validation, so re-check the box.
   const zoneBox = searchParams.zoneBox;
+  const hasZoneBox = !!zoneBox;
   const validZoneBox =
     zoneBox && zoneBox.edgeRight > zoneBox.edgeLeft && zoneBox.edgeTop > zoneBox.edgeBottom ? zoneBox : null;
   const zoneMode = searchParams.zoneMode === 'anyHold' ? 'anyHold' : 'allHolds';
   const zoneConditions: SQL[] = [];
-  if (validZoneBox) {
+  if (hasZoneBox && !validZoneBox) {
+    // A zone was requested but the box is degenerate (crafted/stale params). Fail
+    // closed like the tall/wide filters below rather than returning every climb.
+    zoneConditions.push(sql`false`);
+  } else if (validZoneBox) {
     if (zoneMode === 'anyHold') {
       const zonePlacementSetCondition =
         params.board_name === 'moonboard' || params.set_ids.length === 0
@@ -530,6 +559,13 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   };
 
   return {
+    // True only when this is genuinely a user's drafts query (onlyDrafts AND a
+    // userId to own them). Callers MUST derive their isDraftsQuery flag from this,
+    // not from `!!searchParams.onlyDrafts`: onlyDrafts without a userId is not a
+    // drafts query, and the two predicates disagreeing made searchClimbs skip the
+    // size/stats filters and force creation sort while the filters still required
+    // listed non-drafts. See searchClimbs / countClimbs.
+    isOnlyDrafts: Boolean(isOnlyDrafts),
     getClimbWhereConditions: () => [
       ...baseConditions,
       ...nameCondition,

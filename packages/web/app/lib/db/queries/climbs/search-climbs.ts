@@ -76,7 +76,10 @@ function _getCachedFn(boardName: BoardName, revalidate: number): CachedClimbSear
   const key = `${boardName}:${revalidate}`;
   let fn = _cacheRegistry.get(key);
   if (!fn) {
-    fn = unstable_cache(_executeClimbSearch, [`climb-search-v3:${boardName}`], {
+    // v4: search result content changed (anchored hold LIKE, minRating 1-5 scale,
+    // popular-sort NULL frames_count, name ILIKE escaping, zone fail-closed). Keep in
+    // lockstep with the backend Redis CACHE_VERSION bump.
+    fn = unstable_cache(_executeClimbSearch, [`climb-search-v4:${boardName}`], {
       revalidate,
       tags: ['climb-search', getBoardClimbSearchTag(boardName)],
     });

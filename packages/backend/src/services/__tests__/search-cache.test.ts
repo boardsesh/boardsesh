@@ -77,7 +77,7 @@ describe('SearchCacheService', () => {
       const key = service.buildCacheKey(makeRouteParams(), {}, 'results');
 
       expect(key).toBeTruthy();
-      expect(key.startsWith('boardsesh:climb-search:v2:results:')).toBe(true);
+      expect(key.startsWith('boardsesh:climb-search:v3:results:')).toBe(true);
     });
 
     it('matches expected key format', () => {
@@ -88,7 +88,7 @@ describe('SearchCacheService', () => {
       // boardsesh:climb-search:version:suffix:board:layout:size:sets:angle:hash
       expect(segments[0]).toBe('boardsesh');
       expect(segments[1]).toBe('climb-search');
-      expect(segments[2]).toBe('v2');
+      expect(segments[2]).toBe('v3');
       expect(segments[3]).toBe('results');
       expect(segments[4]).toBe('kilter');
       expect(segments[5]).toBe('1');

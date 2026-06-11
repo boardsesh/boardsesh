@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseSearchPath, getStatsDrivenSort } from '../search-climbs';
+import { chooseSearchPath, getStatsDrivenSort, clampSearchPage, MAX_SEARCH_PAGE } from '../search-climbs';
 
 const baseInput = {
   statsDrivenSort: 'ascents' as const,
@@ -18,6 +18,30 @@ void describe('getStatsDrivenSort', () => {
     assert.equal(getStatsDrivenSort('ascents', 'asc'), null);
     assert.equal(getStatsDrivenSort('quality', 'asc'), null);
     assert.equal(getStatsDrivenSort('creation', 'desc'), null);
+  });
+});
+
+void describe('clampSearchPage', () => {
+  void it('defaults undefined and non-finite input to 0', () => {
+    assert.equal(clampSearchPage(undefined), 0);
+    assert.equal(clampSearchPage(NaN), 0);
+    assert.equal(clampSearchPage(Infinity), 0);
+  });
+
+  void it('floors negative pages to 0', () => {
+    assert.equal(clampSearchPage(-1), 0);
+    assert.equal(clampSearchPage(-9999), 0);
+  });
+
+  void it('passes through valid pages and truncates fractions', () => {
+    assert.equal(clampSearchPage(0), 0);
+    assert.equal(clampSearchPage(7), 7);
+    assert.equal(clampSearchPage(3.9), 3);
+  });
+
+  void it('caps pages above MAX_SEARCH_PAGE to prevent deep-OFFSET abuse', () => {
+    assert.equal(clampSearchPage(MAX_SEARCH_PAGE + 1), MAX_SEARCH_PAGE);
+    assert.equal(clampSearchPage(10_000_000), MAX_SEARCH_PAGE);
   });
 });
 
