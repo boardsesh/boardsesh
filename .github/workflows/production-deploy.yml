@@ -316,6 +316,7 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VERIFY_MIGRATION_JOURNAL: '1'
         run: bun run --filter=@boardsesh/db db:migrate
 
   deploy-web:

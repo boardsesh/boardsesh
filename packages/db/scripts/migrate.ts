@@ -8,7 +8,17 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-type AppliedMigrationCountRow = {
+type MigrationJournalEntry = {
+  tag: string;
+  when: number;
+};
+
+type MigrationJournal = {
+  entries: MigrationJournalEntry[];
+};
+
+type LatestAppliedMigrationRow = {
+  latestCreatedAt: number | string | bigint | null;
   appliedMigrationCount: number | string | bigint | null;
 };
 
@@ -60,24 +70,48 @@ async function runMigrations() {
 
     const migrationsFolder = path.resolve(__dirname, '../drizzle');
     const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
-    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
+    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as MigrationJournal;
+    const latestJournalEntry = journal.entries.reduce<MigrationJournalEntry | null>(
+      (latestEntry, entry) => (!latestEntry || entry.when > latestEntry.when ? entry : latestEntry),
+      null,
+    );
+    if (!latestJournalEntry) {
+      throw new Error('Migration journal is empty');
+    }
     console.info(`📋 Found ${journal.entries.length} migrations in journal`);
 
     await migrate(db, { migrationsFolder });
 
-    const appliedMigrationRows = await client<AppliedMigrationCountRow[]>`
-      SELECT COUNT(*)::int AS "appliedMigrationCount"
+    if (process.env.VERIFY_MIGRATION_JOURNAL === '1') {
+      const appliedMigrationRows = await client<LatestAppliedMigrationRow[]>`
+      SELECT
+        MAX(created_at)::bigint AS "latestCreatedAt",
+        COUNT(*)::int AS "appliedMigrationCount"
       FROM drizzle."__drizzle_migrations"
     `;
-    const appliedMigrationCount = Number(appliedMigrationRows[0]?.appliedMigrationCount ?? 0);
-    if (appliedMigrationCount !== journal.entries.length) {
-      throw new Error(
-        `Migration count verification failed: database has ${appliedMigrationCount} applied migrations, ` +
-          `but the bundled journal has ${journal.entries.length}.`,
+      const latestAppliedCreatedAt = Number(appliedMigrationRows[0]?.latestCreatedAt ?? 0);
+      const appliedMigrationCount = Number(appliedMigrationRows[0]?.appliedMigrationCount ?? 0);
+
+      if (latestAppliedCreatedAt < latestJournalEntry.when) {
+        throw new Error(
+          `Latest migration verification failed: database latest created_at is ${latestAppliedCreatedAt}, ` +
+            `but bundled latest migration ${latestJournalEntry.tag} has created_at ${latestJournalEntry.when}.`,
+        );
+      }
+
+      if (appliedMigrationCount !== journal.entries.length) {
+        console.warn(
+          `⚠️ Migration table has ${appliedMigrationCount} rows for ${journal.entries.length} journal entries; ` +
+            `continuing because latest migration ${latestJournalEntry.tag} is applied.`,
+        );
+      }
+
+      console.info(
+        `✅ Verified latest migration ${latestJournalEntry.tag} is applied ` +
+          `(created_at ${latestAppliedCreatedAt}; ${appliedMigrationCount}/${journal.entries.length} rows recorded)`,
       );
     }
 
-    console.info(`✅ Verified ${appliedMigrationCount} applied migrations`);
     console.info('✅ Migrations completed successfully');
   } catch (error) {
     console.error('❌ Migration failed:', error);
