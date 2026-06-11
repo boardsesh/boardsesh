@@ -97,7 +97,7 @@ export function useCreateClimbScreen({
   const { t } = useTranslation('climbs');
   const { isAuthenticated, saveClimb, updateClimb } = useBoardProvider();
   const auth = useAuth();
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: auth.isAuthenticated });
   const { setCurrentClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();

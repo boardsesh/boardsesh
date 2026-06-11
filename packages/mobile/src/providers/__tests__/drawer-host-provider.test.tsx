@@ -36,6 +36,10 @@ const climbActions = vi.hoisted(() => ({
   props: null as null | Record<string, unknown>,
 }));
 
+const auth = vi.hoisted(() => ({
+  isAuthenticated: true,
+}));
+
 const activeBoard = vi.hoisted(() => ({
   stored: {
     uuid: 'board-1',
@@ -128,6 +132,13 @@ vi.mock('../../components/AddToPlaylistSheet', () => ({
 }));
 vi.mock('../../components/QueueAddedSnackbar', () => ({
   QueueAddedSnackbar: () => createElement('div', { 'data-queue-snackbar': 'true' }),
+}));
+vi.mock('../../components/SignInPromptSheet', () => ({
+  SignInPromptSheet: () => createElement('div', { 'data-sign-in-prompt': 'true' }),
+}));
+
+vi.mock('../auth-provider', () => ({
+  useAuth: () => ({ isAuthenticated: auth.isAuthenticated }),
 }));
 
 vi.mock('../queue-provider', async () => {
@@ -228,6 +239,7 @@ describe('DrawerHostProvider queue sheet wall-control gating', () => {
     queue.setCurrentClimb.mockClear();
     queue.addToQueue.mockClear();
     queue.setSessionBoardPath.mockClear();
+    auth.isAuthenticated = true;
     activeBoard.setActiveBoard.mockClear();
     playDrawer.open.mockClear();
     playDrawer.close.mockClear();

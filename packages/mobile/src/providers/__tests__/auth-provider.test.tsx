@@ -4,13 +4,17 @@ import { renderHook, render, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+const { routeSegments, redirectMock } = vi.hoisted(() => ({
+  routeSegments: { current: [] as string[] },
+  redirectMock: vi.fn((_props: { href: string }) => null),
+}));
+
 // expo-router and react-native both reach for the native runtime; stub the
-// thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
-// provider out of its `<Redirect>` branches so the child tree renders and the
-// auth context becomes readable.
+// thin surface AuthProvider consumes. Tests mutate routeSegments for routing
+// branches; default `[]` renders the child tree.
 vi.mock('expo-router', () => ({
-  useSegments: () => [] as string[],
-  Redirect: () => null,
+  useSegments: () => routeSegments.current,
+  Redirect: (props: { href: string }) => redirectMock(props),
 }));
 
 vi.mock('react-native', () => ({
@@ -49,8 +53,10 @@ vi.mock('../../lib/session-store', () => ({
 }));
 
 const clearStoredActiveBoardMock = vi.fn();
+const clearStoredAuthenticatedActiveBoardMock = vi.fn();
 vi.mock('../../lib/active-board-store', () => ({
   clearStoredActiveBoard: () => clearStoredActiveBoardMock(),
+  clearStoredAuthenticatedActiveBoard: () => clearStoredAuthenticatedActiveBoardMock(),
 }));
 
 const resetHttpClientMock = vi.fn();
@@ -86,6 +92,9 @@ describe('AuthProvider.signOut', () => {
     authSignOutMock.mockReset();
     clearStoredSessionIdMock.mockReset();
     clearStoredActiveBoardMock.mockReset();
+    clearStoredAuthenticatedActiveBoardMock.mockReset();
+    routeSegments.current = [];
+    redirectMock.mockClear();
     resetHttpClientMock.mockReset();
     disposeWsClientMock.mockReset();
     reportErrorMock.mockReset();
@@ -96,6 +105,7 @@ describe('AuthProvider.signOut', () => {
     authSignOutMock.mockResolvedValue(undefined);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
+    clearStoredAuthenticatedActiveBoardMock.mockResolvedValue(undefined);
   });
 
   it('clears every cached React Query so cached data does not bleed into the next user', async () => {
@@ -164,6 +174,8 @@ describe('AuthProvider forced sign-out registration', () => {
     getAuthTokenMock.mockReset();
     isTokenExpiringSoonMock.mockReset();
     setOnForcedSignOutMock.mockReset();
+    routeSegments.current = [];
+    redirectMock.mockClear();
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
   });
@@ -195,6 +207,9 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     authSignOutMock.mockReset();
     clearStoredSessionIdMock.mockReset();
     clearStoredActiveBoardMock.mockReset();
+    clearStoredAuthenticatedActiveBoardMock.mockReset();
+    routeSegments.current = [];
+    redirectMock.mockClear();
     resetHttpClientMock.mockReset();
     disposeWsClientMock.mockReset();
     ensureFreshTokenMock.mockReset();
@@ -207,6 +222,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     ensureFreshTokenMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
+    clearStoredAuthenticatedActiveBoardMock.mockResolvedValue(undefined);
   });
 
   // The #2685 bug: an expiry-triggered logout (token within the expiry window,
@@ -250,11 +266,10 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
   });
 
   // Relaunch guard: if the app is killed before the next user signs in, the
-  // React Query cache is empty but the persisted board/session id survive. A
-  // signed-out cold start must clear those so user B can't inherit user A's
-  // stored board. The heavy in-memory cleanup stays gated behind the
-  // authenticated transition (nothing to wipe on a cold start).
-  it('clears persisted board/session on a signed-out cold start (relaunch guard)', async () => {
+  // React Query cache is empty but persisted auth/session state can survive.
+  // A signed-out cold start clears the session and only clears non-guest active
+  // boards, preserving a local anonymous board choice across launches.
+  it('clears signed-out launch stores without wiping guest boards unconditionally', async () => {
     getAuthTokenMock.mockResolvedValue(null);
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -263,14 +278,44 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
         <AuthProvider>{children}</AuthProvider>
       </QueryClientProvider>
     );
-    // Provider returns its <Redirect> branch (children never mount), so assert
-    // via the mocks rather than a hook snapshot.
     render(wrapper({ children: null }));
 
-    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(clearStoredAuthenticatedActiveBoardMock).toHaveBeenCalledTimes(1));
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
+    expect(clearStoredActiveBoardMock).not.toHaveBeenCalled();
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+  });
+
+  it('renders non-auth children when signed out', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { getByText } = render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <div>guest app</div>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(getByText('guest app')).toBeTruthy());
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it('redirects authenticated users away from auth routes', async () => {
+    routeSegments.current = ['auth', 'login'];
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <div>signed in app</div>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith({ href: '/(tabs)/climbs' }));
   });
 });
 
@@ -280,6 +325,9 @@ describe('AuthProvider.checkAuth keychain read failure', () => {
     isTokenExpiringSoonMock.mockReset();
     clearStoredSessionIdMock.mockReset();
     clearStoredActiveBoardMock.mockReset();
+    clearStoredAuthenticatedActiveBoardMock.mockReset();
+    routeSegments.current = [];
+    redirectMock.mockClear();
     reportErrorMock.mockReset();
     isTokenExpiringSoonMock.mockResolvedValue(false);
   });
@@ -327,6 +375,7 @@ describe('AuthProvider.checkAuth keychain read failure', () => {
 
     await waitFor(() => expect(onReady).toHaveBeenCalled());
     expect(clearStoredActiveBoardMock).not.toHaveBeenCalled();
+    expect(clearStoredAuthenticatedActiveBoardMock).not.toHaveBeenCalled();
     expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
   });
 });

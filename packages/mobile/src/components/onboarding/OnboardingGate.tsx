@@ -3,6 +3,7 @@ import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { hasSeenOnboarding } from '../../lib/onboarding/onboarding-storage';
 import { useProfile } from '../../lib/graphql/hooks';
+import { useAuth } from '../../providers/auth-provider';
 
 type OnboardingGateProps = {
   /** True once auth + fonts are resolved and the splash has hidden. */
@@ -20,9 +21,9 @@ const DEEP_LINK_SEGMENTS = new Set(['join', 'share-beta', 'session', 'auth', 'on
  * First-run gate. Once the app is ready (auth + fonts loaded, splash hidden) it
  * reads the persisted "seen" flag; if the walkthrough is unseen and the user
  * isn't mid deep-link / auth flow, it pushes the onboarding route once. Renders
- * nothing. Mounting it below AuthProvider means it only runs for an
- * authenticated session — an unauthenticated cold start is redirected to login
- * by the auth gate, and the walkthrough shows after they sign in.
+ * nothing. Guests can use the app anonymously, so the gate only evaluates after
+ * an authenticated profile resolves; signed-out users are left on their chosen
+ * route.
  *
  * The decision is keyed on the signed-in profile id, not the app process: on a
  * shared device a user can sign out and a different user sign in without a
@@ -30,6 +31,7 @@ const DEEP_LINK_SEGMENTS = new Set(['join', 'share-beta', 'session', 'auth', 'on
  */
 export function OnboardingGate({ ready }: OnboardingGateProps) {
   const segments = useSegments();
+  const { isAuthenticated } = useAuth();
   // Latest top-level segment for the async check, without re-running the effect
   // on every navigation — the gate decides once per app launch.
   const topSegmentRef = useRef<string | undefined>(segments[0]);
@@ -41,7 +43,7 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
   // relaunch; keying the decision on the profile id lets the new account get its
   // own first-run check. `undefined` while the profile loads — we only reset the
   // decision on a transition between two concrete ids.
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
   const userId = profile?.id;
   const decidedForUserRef = useRef<string | undefined>(userId);
   if (userId !== undefined && userId !== decidedForUserRef.current) {
@@ -50,7 +52,7 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
   }
 
   useEffect(() => {
-    if (!ready || decidedRef.current) return;
+    if (!ready || !isAuthenticated || decidedRef.current) return;
     decidedRef.current = true;
 
     let cancelled = false;
@@ -87,7 +89,7 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
     };
     // `userId` is here so the effect re-runs after a sign-out/sign-in resets
     // `decidedRef` above — the new account gets its own first-run evaluation.
-  }, [ready, userId]);
+  }, [ready, isAuthenticated, userId]);
 
   return null;
 }

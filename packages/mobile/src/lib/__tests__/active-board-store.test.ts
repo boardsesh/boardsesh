@@ -59,6 +59,30 @@ describe('active-board-store', () => {
     await expect(getStoredActiveBoard()).resolves.toBeNull();
   });
 
+  it('clears authenticated active boards on signed-out launch', async () => {
+    const { getStoredActiveBoard, setStoredActiveBoard, clearStoredAuthenticatedActiveBoard } =
+      await import('../active-board-store');
+    await setStoredActiveBoard(board);
+    await clearStoredAuthenticatedActiveBoard();
+    await expect(getStoredActiveBoard()).resolves.toBeNull();
+  });
+
+  it('preserves guest active boards on signed-out launch', async () => {
+    const { getStoredActiveBoard, setStoredActiveBoard, clearStoredAuthenticatedActiveBoard } =
+      await import('../active-board-store');
+    const { createGuestActiveBoard } = await import('../boards/guest-board');
+    const guestBoard = createGuestActiveBoard({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: '3,4',
+      displayName: 'Guest Kilter',
+    });
+    await setStoredActiveBoard(guestBoard);
+    await clearStoredAuthenticatedActiveBoard();
+    await expect(getStoredActiveBoard()).resolves.toEqual(guestBoard);
+  });
+
   it('overwrites a previously stored board on switch', async () => {
     const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
     await setStoredActiveBoard(board);

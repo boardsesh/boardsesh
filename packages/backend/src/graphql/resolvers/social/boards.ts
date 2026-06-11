@@ -225,6 +225,10 @@ async function enrichBoard(
   };
 }
 
+function canReadBoardDirectly(board: typeof dbSchema.userBoards.$inferSelect, ctx: ConnectionContext): boolean {
+  return ctx.isAuthenticated || (board.isPublic && !board.isUnlisted);
+}
+
 /**
  * Batch-enrich multiple boards with computed fields using 6 total queries
  * instead of 6 per board. Used by list endpoints to avoid N+1.
@@ -621,10 +625,17 @@ export const socialBoardQueries = {
     const [board] = await db
       .select()
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+      .where(
+        and(
+          eq(dbSchema.userBoards.uuid, boardUuid),
+          isNull(dbSchema.userBoards.deletedAt),
+          ...(ctx.isAuthenticated ? [] : [eq(dbSchema.userBoards.isPublic, true), eq(dbSchema.userBoards.isUnlisted, false)]),
+        ),
+      )
       .limit(1);
 
     if (!board) return null;
+    if (!canReadBoardDirectly(board, ctx)) return null;
     return enrichBoard(board, ctx.isAuthenticated ? ctx.userId : undefined);
   },
 
@@ -640,10 +651,17 @@ export const socialBoardQueries = {
     const [board] = await db
       .select()
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
+      .where(
+        and(
+          eq(dbSchema.userBoards.slug, slug),
+          isNull(dbSchema.userBoards.deletedAt),
+          ...(ctx.isAuthenticated ? [] : [eq(dbSchema.userBoards.isPublic, true), eq(dbSchema.userBoards.isUnlisted, false)]),
+        ),
+      )
       .limit(1);
 
     if (!board) return null;
+    if (!canReadBoardDirectly(board, ctx)) return null;
     return enrichBoard(board, ctx.isAuthenticated ? ctx.userId : undefined);
   },
 
@@ -1114,6 +1132,7 @@ export const socialBoardQueries = {
    * Get the user's default board
    */
   defaultBoard: async (_: unknown, _args: unknown, ctx: ConnectionContext) => {
+    if (!ctx.isAuthenticated) return null;
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 

@@ -2,8 +2,9 @@
 // single DiscoveryBoardItem the carousel renders. Keeps the screen free of
 // per-shape branching.
 
-import type { BoardName, UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
+import { createGuestActiveBoard } from '../../lib/boards/guest-board';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 
 export function userBoardToItem(board: UserBoard, activeUuid?: string | null): DiscoveryBoardItem | null {
@@ -22,19 +23,42 @@ export function userBoardToItem(board: UserBoard, activeUuid?: string | null): D
   };
 }
 
-export function popularConfigToItem(config: PopularBoardConfig): DiscoveryBoardItem | null {
+export function popularConfigToItem(
+  config: PopularBoardConfig,
+  activeBoard?: UserBoard | null,
+): DiscoveryBoardItem | null {
   const boardName = toBoardName(config.boardType);
   if (boardName === null) return null;
+  const setIds = config.setIds.join(',');
   return {
     // Configs have no uuid — key on the config tuple.
     key: `popular:${config.boardType}:${config.layoutId}:${config.sizeId}:${config.setIds.join('-')}`,
     boardName,
     layoutId: config.layoutId,
     sizeId: config.sizeId,
-    setIds: config.setIds.join(','),
+    setIds,
     title: config.displayName,
     subtitle: config.sizeName ?? config.layoutName ?? config.boardType,
+    isActive:
+      activeBoard != null &&
+      boardMatchesConfig(activeBoard, {
+        boardType: config.boardType,
+        layoutId: config.layoutId,
+        sizeId: config.sizeId,
+        setIds,
+      }),
   };
+}
+
+export function popularItemToGuestBoard(item: DiscoveryBoardItem): UserBoard {
+  return createGuestActiveBoard({
+    boardName: item.boardName,
+    layoutId: item.layoutId,
+    sizeId: item.sizeId,
+    setIds: item.setIds,
+    displayName: item.title,
+    sizeName: item.subtitle,
+  });
 }
 
 /** A board config (the create/popular tuple), used to find an owned match. */
@@ -45,6 +69,15 @@ export type BoardConfigKey = {
   /** Comma-separated set ids, as stored on UserBoard. */
   setIds: string;
 };
+
+function boardMatchesConfig(board: UserBoard, config: BoardConfigKey): boolean {
+  return (
+    board.boardType === config.boardType &&
+    board.layoutId === config.layoutId &&
+    board.sizeId === config.sizeId &&
+    normaliseSetIds(board.setIds) === normaliseSetIds(config.setIds)
+  );
+}
 
 /**
  * The board the user already owns that exactly matches `config`, if any. Used to
@@ -58,11 +91,5 @@ export function findOwnedBoardForConfig(boards: UserBoard[], config: BoardConfig
   // order even for the user's own board. Without normalising, the match misses,
   // CREATE_BOARD fires, and the server inserts a near-duplicate UserBoard.
   const configSetIds = normaliseSetIds(config.setIds);
-  return boards.find(
-    (b) =>
-      b.boardType === config.boardType &&
-      b.layoutId === config.layoutId &&
-      b.sizeId === config.sizeId &&
-      normaliseSetIds(b.setIds) === configSetIds,
-  );
+  return boards.find((b) => boardMatchesConfig(b, { ...config, setIds: configSetIds }));
 }

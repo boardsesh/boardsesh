@@ -27,12 +27,14 @@ import { computeFirstScreenHeight } from './play-drawer-layout';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { BleControlSheet } from '../ble/BleControlSheet';
+import { SignInPromptSheet } from '../SignInPromptSheet';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { GlassSheetBackground } from '../GlassSheetBackground';
 import { Icon } from '../Icon';
 import { useIsPartyPreviewOnly, usePlaylistSuggestionSource, useQueue } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
+import { useAuth } from '../../providers/auth-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useShareClimb } from '../../hooks/use-share-climb';
@@ -132,6 +134,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
+  const [signInPromptVisible, setSignInPromptVisible] = useState(false);
   const [bleControlOpen, setBleControlOpen] = useState(false);
   const [pendingClimbUuid, setPendingClimbUuid] = useState<string | null>(null);
   const [belowFoldContentRequested, setBelowFoldContentRequested] = useState(false);
@@ -161,6 +164,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   } = useQueue();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
+  const { isAuthenticated } = useAuth();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   const { formatGrade } = useGradeFormat();
 
@@ -201,7 +205,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   // on open, and a single tap can't invert reality (the previous always-false
   // local state silently un-favorited already-favorited climbs).
   const { data: serverFavorited } = useFavoriteStatus(boardName, displayedClimb?.uuid ?? null, angle, {
-    enabled: isSheetOpen,
+    enabled: isAuthenticated && isSheetOpen,
   });
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
   const lightbulbState = useMemo(
@@ -454,6 +458,10 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     hapticSuccess();
     const nextIsFavorited = !isFavorited;
     const previousOverride = favoriteOverride;
@@ -491,7 +499,18 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [
+    displayedClimb,
+    isAuthenticated,
+    isFavorited,
+    favoriteOverride,
+    boardName,
+    layoutId,
+    angle,
+    toggleFavoriteMutate,
+    showToast,
+    t,
+  ]);
 
   const handleLightbulb = useCallback(() => {
     const pressAction = derivePlayDrawerLightbulbPressAction({
@@ -674,16 +693,24 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   }, []);
 
   const handleTickFabPress = useCallback(() => {
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     resetZoomRef.current?.();
     setIsTickBarActive(true);
-  }, []);
+  }, [isAuthenticated]);
 
   // Long-press now opens the same QuickTickBar as a short press; LogAscentSheet
   // has been retired in favour of a single ticking surface (see PR #2366).
   const handleTickFabLongPress = useCallback(() => {
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     resetZoomRef.current?.();
     setIsTickBarActive(true);
-  }, []);
+  }, [isAuthenticated]);
 
   const handleTickBarDismiss = useCallback(() => {
     setIsTickBarActive(false);
@@ -963,6 +990,10 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           onClose={() => setBleControlOpen(false)}
         />
       )}
+      <SignInPromptSheet
+        visible={signInPromptVisible}
+        onClose={() => setSignInPromptVisible(false)}
+      />
     </>
   );
 });

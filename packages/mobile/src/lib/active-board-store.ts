@@ -19,6 +19,7 @@
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getPreference, setPreference, removePreference } from './preference-store';
+import { isGuestActiveBoard } from './boards/guest-board-id';
 
 const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
 
@@ -32,4 +33,10 @@ export function setStoredActiveBoard(board: UserBoard): Promise<void> {
 
 export function clearStoredActiveBoard(): Promise<void> {
   return removePreference(ACTIVE_BOARD_KEY);
+}
+
+export async function clearStoredAuthenticatedActiveBoard(): Promise<void> {
+  const activeBoard = await getStoredActiveBoard();
+  if (isGuestActiveBoard(activeBoard)) return;
+  await clearStoredActiveBoard();
 }

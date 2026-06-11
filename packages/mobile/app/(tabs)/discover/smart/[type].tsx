@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSmartPlaylist } from '@boardsesh/playlists-react';
 import {
@@ -11,6 +11,7 @@ import {
 } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../../src/components/Text';
 import { Icon } from '../../../../src/components/Icon';
+import { Button } from '../../../../src/components/Button';
 import { ClimbListRowSkeleton } from '../../../../src/components/ClimbListRowSkeleton';
 import {
   PlaylistDetailView,
@@ -25,6 +26,7 @@ import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
+import { useAuth } from '../../../../src/providers/auth-provider';
 import { iosSystemColors } from '../../../../src/theme/ios-colors';
 
 type SmartParams = {
@@ -33,8 +35,11 @@ type SmartParams = {
 
 export default function SmartPlaylistDetail() {
   const { type } = useLocalSearchParams<SmartParams>();
+  const router = useRouter();
   const { t } = useTranslation('playlists');
-  const { data: profile } = useProfile();
+  const { t: tCommon } = useTranslation('common');
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
   const { isLoading: tokenLoading } = useAuthToken();
 
   const userId = profile?.id ?? '';
@@ -105,6 +110,22 @@ export default function SmartPlaylistDetail() {
         : undefined,
     [preset, t],
   );
+
+  if (!authLoading && !isAuthenticated) {
+    return (
+      <View style={styles.stateContainer}>
+        <PlaylistBackFab />
+        <Icon name="person" size={48} color={iosSystemColors.systemGray4} />
+        <Text variant="headline" style={styles.stateTitle}>
+          {tCommon('userDrawer.signInModalTitle')}
+        </Text>
+        <Text variant="subheadline" style={styles.stateSubtitle}>
+          {tCommon('userDrawer.signInModalDescription')}
+        </Text>
+        <Button title={tCommon('userDrawer.signIn')} onPress={() => router.push('/auth/login')} />
+      </View>
+    );
+  }
 
   if (!preset && !query.isLoading) {
     return (

@@ -18,7 +18,11 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { CustomBoardSheet, type BoardSeed } from '../../src/components/board-discovery/CustomBoardSheet';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
-import { userBoardToItem, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import {
+  userBoardToItem,
+  popularConfigToItem,
+  popularItemToGuestBoard,
+} from '../../src/components/board-discovery/board-items';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
@@ -105,13 +109,16 @@ export default function BoardSelection() {
     [nearby?.boards, activeBoard?.uuid],
   );
   const popularItems = useMemo(
-    () => (popular?.configs ?? []).map(popularConfigToItem).filter((item): item is DiscoveryBoardItem => item !== null),
-    [popular?.configs],
+    () =>
+      (popular?.configs ?? [])
+        .map((config) => popularConfigToItem(config, activeBoard))
+        .filter((item): item is DiscoveryBoardItem => item !== null),
+    [popular?.configs, activeBoard],
   );
 
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
-  // activate. Popular/custom items have no UserBoard, so they go through the
-  // custom sheet (CREATE_BOARD) — see onSelectPopular.
+  // activate. Popular/custom configs synthesize a guest board when signed out,
+  // and persist or reuse a real board when signed in.
   const onSelectMyBoard = useCallback(
     (item: DiscoveryBoardItem) => {
       const board =
@@ -152,18 +159,25 @@ export default function BoardSelection() {
     [activateBoard],
   );
 
-  // A popular config has no UserBoard, so it routes through the custom builder
-  // (pre-seeded with the tapped config) which CREATEs it — or, if the user
-  // already owns that exact config, activates the existing board.
-  const onSelectPopular = useCallback((item: DiscoveryBoardItem) => {
-    setCustomSeed({
-      boardName: item.boardName,
-      layoutId: item.layoutId,
-      sizeId: item.sizeId,
-      setIds: item.setIds,
-    });
-    customSheetRef.current?.expand();
-  }, []);
+  // A popular config has no UserBoard. Guests get a local active board; signed-in
+  // users route through the pre-seeded builder so owned duplicates can be reused
+  // and new boards can be persisted.
+  const onSelectPopular = useCallback(
+    (item: DiscoveryBoardItem) => {
+      if (!isAuthenticated) {
+        void activateBoard(popularItemToGuestBoard(item));
+        return;
+      }
+      setCustomSeed({
+        boardName: item.boardName,
+        layoutId: item.layoutId,
+        sizeId: item.sizeId,
+        setIds: item.setIds,
+      });
+      customSheetRef.current?.expand();
+    },
+    [activateBoard, isAuthenticated],
+  );
 
   // Drive the Find Nearby card off both the location permission and the nearby
   // query: loading while resolving the fix or fetching, 'done' once results are
@@ -181,7 +195,7 @@ export default function BoardSelection() {
             ? 'unavailable'
             : 'idle';
 
-  if (isMyBoardsLoading) {
+  if (isAuthenticated && isMyBoardsLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" />
@@ -189,22 +203,7 @@ export default function BoardSelection() {
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
-        <Icon name="person" size={40} color={iosSystemColors.systemGray} />
-        <Text variant="headline" style={styles.stateTitle}>
-          {t('mobile.signInTitle')}
-        </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
-          {t('mobile.signInSubtitle')}
-        </Text>
-        <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
-      </ScrollView>
-    );
-  }
-
-  if (isError) {
+  if (isAuthenticated && isError) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
         <Icon name="error" size={40} color={iosSystemColors.systemRed} />
@@ -260,7 +259,7 @@ export default function BoardSelection() {
           </Section>
         ) : null}
 
-        {myBoardItems.length > 0 ? (
+        {isAuthenticated && myBoardItems.length > 0 ? (
           <Section title={t('mobile.discovery.yourBoardsTitle')}>
             <BoardCarousel items={myBoardItems} onSelect={onSelectMyBoard} />
           </Section>
@@ -272,7 +271,7 @@ export default function BoardSelection() {
           </Section>
         ) : null}
 
-        {myBoardItems.length === 0 && popularItems.length === 0 ? (
+        {nearbyItems.length === 0 && myBoardItems.length === 0 && popularItems.length === 0 ? (
           <View style={styles.emptyState}>
             <Text variant="headline" style={styles.emptyTitle}>
               {t('mobile.emptyTitle')}
@@ -290,6 +289,7 @@ export default function BoardSelection() {
         existingBoards={myBoards}
         onCreated={onCustomBoardResolved}
         onSelectExisting={onCustomBoardResolved}
+        isAuthenticated={isAuthenticated}
         onError={() => showToast(t('mobile.custom.createError'), 'error')}
       />
       <BluetoothQuickstartSheet

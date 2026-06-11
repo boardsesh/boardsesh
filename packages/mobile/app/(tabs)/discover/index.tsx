@@ -82,7 +82,7 @@ export default function DiscoverLibrary() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data: token = null, isLoading: tokenLoading } = useAuthToken();
-  const { data: profile, isLoading: profileLoading } = useProfile();
+  const { data: profile, isLoading: profileLoading } = useProfile({ enabled: isAuthenticated });
   const { data: activeBoard, isLoading: activeBoardLoading } = useActiveBoard();
   const queryClient = useQueryClient();
 

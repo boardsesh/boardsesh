@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { userBoardToItem, popularConfigToItem, findOwnedBoardForConfig } from '../board-items';
+import { userBoardToItem, popularConfigToItem, popularItemToGuestBoard, findOwnedBoardForConfig } from '../board-items';
 
 const board = {
   uuid: 'b-1',
@@ -73,6 +73,37 @@ describe('popularConfigToItem', () => {
   it('drops a config whose board type is unsupported', () => {
     const bad = { ...config, boardType: 'xyz' } as unknown as PopularBoardConfig;
     expect(popularConfigToItem(bad)).toBeNull();
+  });
+
+  it('flags a popular config active when the active board matches the same tuple', () => {
+    const active = {
+      ...board,
+      uuid: 'guest-board:kilter:9:8:6,7',
+      boardType: 'tension',
+      layoutId: 9,
+      sizeId: 8,
+      setIds: '6,7',
+    } as unknown as UserBoard;
+    expect(popularConfigToItem(config, active)?.isActive).toBe(true);
+  });
+});
+
+describe('popularItemToGuestBoard', () => {
+  it('creates a local UserBoard for anonymous popular setup selection', () => {
+    const item = popularConfigToItem(config);
+    expect(item).not.toBeNull();
+    const guestBoard = popularItemToGuestBoard(item!);
+
+    expect(guestBoard).toMatchObject({
+      uuid: 'guest-board:tension:9:8:6,7',
+      boardType: 'tension',
+      layoutId: 9,
+      sizeId: 8,
+      setIds: '6,7',
+      name: 'Tension 8x10',
+      isOwned: false,
+      isPublic: true,
+    });
   });
 });
 

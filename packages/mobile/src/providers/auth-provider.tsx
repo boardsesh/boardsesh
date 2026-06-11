@@ -18,7 +18,7 @@ import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
-import { clearStoredActiveBoard } from '../lib/active-board-store';
+import { clearStoredActiveBoard, clearStoredAuthenticatedActiveBoard } from '../lib/active-board-store';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
 
 type AuthState = {
@@ -61,11 +61,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   // Persisted (SecureStore/AsyncStorage-backed) per-user state that outlives a
   // relaunch. allSettled (not all) so one failing delete can't abort the rest.
-  // These are the only sign-out leftovers that can carry a previous user across
-  // a cold start on a shared device, so a signed-out checkAuth clears them even
-  // when there's no live in-session cache to wipe (see handleSignedOutTransition).
+  // The active board is user-scoped during an authenticated session, so real
+  // auth transitions clear it. A logged-out cold start preserves deliberately
+  // local guest boards, but still clears any real board left behind by a prior
+  // authenticated user.
   const clearPersistedUserStores = useCallback(
     () => Promise.allSettled([clearStoredSessionId(), clearStoredActiveBoard()]),
+    [],
+  );
+  const clearSignedOutLaunchStores = useCallback(
+    () => Promise.allSettled([clearStoredSessionId(), clearStoredAuthenticatedActiveBoard()]),
     [],
   );
 
@@ -105,10 +110,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       await runSignedOutCleanup();
     } else {
       resetAnalyticsForSignedOutTransition();
-      await clearPersistedUserStores();
+      await clearSignedOutLaunchStores();
       setIsAuthenticated(false);
     }
-  }, [runSignedOutCleanup, clearPersistedUserStores, resetAnalyticsForSignedOutTransition]);
+  }, [runSignedOutCleanup, clearSignedOutLaunchStores, resetAnalyticsForSignedOutTransition]);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -248,9 +253,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   const inAuthGroup = segments[0] === 'auth';
 
-  if (!isAuthenticated && !inAuthGroup) {
-    return <Redirect href="/auth/login" />;
-  }
   if (isAuthenticated && inAuthGroup) {
     return <Redirect href="/(tabs)/climbs" />;
   }

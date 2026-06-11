@@ -2,20 +2,30 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import { useProfile, useYouProfileData } from '../../../src/lib/graphql/hooks';
+import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { Icon } from '../../../src/components/Icon';
+import { Text } from '../../../src/components/Text';
+import { Button } from '../../../src/components/Button';
 import { ProfileTopChrome, type ProfileTabKey } from '../../../src/components/you/ProfileTopChrome';
 import { YouFilterSheet } from '../../../src/components/you/YouFilterSheet';
 import { ProgressTab } from '../../../src/components/you/ProgressTab';
 import { SessionsTab } from '../../../src/components/you/SessionsTab';
 import { LogbookTab } from '../../../src/components/you/LogbookTab';
+import { spacing } from '../../../src/theme/tokens';
 
 export default function YouScreen() {
   const { systemColors } = useTheme();
+  const router = useRouter();
+  const { t } = useTranslation('common');
+  const { isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
 
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
   const userId = profile?.id;
   const youData = useYouProfileData(userId);
 
@@ -73,6 +83,21 @@ export default function YouScreen() {
     filterSheetRef.current?.snapToIndex(0);
   }, []);
 
+  if (!isAuthenticated) {
+    return (
+      <View style={[styles.signInContainer, { backgroundColor: systemColors.background }]}>
+        <Icon name="person" size={48} color={systemColors.secondaryLabel} />
+        <Text variant="title3" style={styles.signInTitle}>
+          {t('userDrawer.signInModalTitle')}
+        </Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInDescription}>
+          {t('userDrawer.signInModalDescription')}
+        </Text>
+        <Button title={t('userDrawer.signIn')} onPress={() => router.push('/auth/login')} style={styles.signInButton} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       <View style={styles.page}>
@@ -126,4 +151,21 @@ export default function YouScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   page: { flex: 1 },
+  signInContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[6],
+  },
+  signInTitle: {
+    marginTop: spacing[3],
+    textAlign: 'center',
+  },
+  signInDescription: {
+    marginTop: spacing[2],
+    textAlign: 'center',
+  },
+  signInButton: {
+    marginTop: spacing[5],
+  },
 });

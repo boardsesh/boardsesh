@@ -12,8 +12,10 @@ import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { BoardImageNative } from '../../../src/components/BoardImageNative';
 import { LogAscentSheet } from '../../../src/components/LogAscentSheet';
+import { SignInPromptSheet } from '../../../src/components/SignInPromptSheet';
 import { useClimb, useToggleFavorite } from '../../../src/lib/graphql/hooks';
 import { useQueueSessionId, useQueueActions } from '../../../src/providers/queue-provider';
+import { useAuth } from '../../../src/providers/auth-provider';
 import { getBoardRenderData } from '../../../src/lib/board-details';
 import { hapticSuccess } from '../../../src/lib/haptics';
 import { track } from '../../../src/lib/analytics';
@@ -52,10 +54,12 @@ export default function ClimbDetail() {
 
   const { data: climb, isLoading } = useClimb(climbVariables);
   const toggleFavorite = useToggleFavorite();
+  const { isAuthenticated } = useAuth();
   const { sessionId } = useQueueSessionId();
   const { addToQueue } = useQueueActions();
   const { formatGrade } = useGradeFormat();
   const [showLogAscent, setShowLogAscent] = useState(false);
+  const [signInPromptVisible, setSignInPromptVisible] = useState(false);
 
   const boardDimensions = useMemo(() => {
     if (!boardName || !layoutId || !sizeId || !setIds) return null;
@@ -85,6 +89,10 @@ export default function ClimbDetail() {
 
   const handleToggleFavorite = useCallback(() => {
     if (!climb || !boardName) return;
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     hapticSuccess();
     toggleFavorite.mutate({
       input: {
@@ -93,7 +101,15 @@ export default function ClimbDetail() {
         angle: Number(angle),
       },
     });
-  }, [climb, boardName, angle, toggleFavorite]);
+  }, [climb, boardName, angle, isAuthenticated, toggleFavorite]);
+
+  const handleLogAscentPress = useCallback(() => {
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
+    setShowLogAscent(true);
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -244,7 +260,7 @@ export default function ClimbDetail() {
               icon="tick.outline"
               variant="outlined"
               size="medium"
-              onPress={() => setShowLogAscent(true)}
+              onPress={handleLogAscentPress}
               style={styles.secondaryButton}
             />
           </View>
@@ -268,6 +284,10 @@ export default function ClimbDetail() {
           consensusGradeName={climb.difficulty}
         />
       )}
+      <SignInPromptSheet
+        visible={signInPromptVisible}
+        onClose={() => setSignInPromptVisible(false)}
+      />
     </>
   );
 }

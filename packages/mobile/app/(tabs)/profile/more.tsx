@@ -32,8 +32,8 @@ export default function MoreScreen() {
   const { t: tProfile } = useTranslation('profile');
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSettings } = useTranslation('settings');
-  const { signOut } = useAuth();
-  const { data: profile } = useProfile();
+  const { signOut, isAuthenticated } = useAuth();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const glassCapable = useGlassCapability();
   const { localePreference, setLocalePreference } = useLocalePreference();
@@ -246,26 +246,40 @@ export default function MoreScreen() {
             {profile.email}
           </Text>
         ) : null}
-        <Pressable
-          style={[styles.signOut, { borderColor: systemColors.separator }]}
-          onPress={() => {
-            void signOut();
-          }}
-          accessibilityRole="button"
-        >
-          <Text variant="body" color={brandColors.error}>
-            {tProfile('mobile.signOut')}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={styles.deleteAccount}
-          onPress={() => router.push('/(tabs)/profile/delete-account')}
-          accessibilityRole="button"
-        >
-          <Text variant="body" color={brandColors.error}>
-            {tSettings('deleteAccount.button')}
-          </Text>
-        </Pressable>
+        {isAuthenticated ? (
+          <>
+            <Pressable
+              style={[styles.signOut, { borderColor: systemColors.separator }]}
+              onPress={() => {
+                void signOut();
+              }}
+              accessibilityRole="button"
+            >
+              <Text variant="body" color={brandColors.error}>
+                {tProfile('mobile.signOut')}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.deleteAccount}
+              onPress={() => router.push('/(tabs)/profile/delete-account')}
+              accessibilityRole="button"
+            >
+              <Text variant="body" color={brandColors.error}>
+                {tSettings('deleteAccount.button')}
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            style={[styles.signOut, { borderColor: systemColors.separator }]}
+            onPress={() => router.push('/auth/login')}
+            accessibilityRole="button"
+          >
+            <Text variant="body" color={brandColors.primary}>
+              {t('userDrawer.signIn')}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </ScrollView>
   );

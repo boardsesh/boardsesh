@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import { SUPPORTED_BOARDS, ANGLES, normaliseSetIds } from '@boardsesh/board-config';
 import { useCreateBoard } from '../../lib/graphql/hooks';
+import { createGuestActiveBoard } from '../../lib/boards/guest-board';
 import {
   getBoardLayouts,
   getBoardSizesForLayoutId,
@@ -40,19 +41,19 @@ type CustomBoardSheetProps = {
   onCreated: (board: UserBoard) => void;
   /** The picked config matches a board the user already owns — activate it. */
   onSelectExisting: (board: UserBoard) => void;
+  isAuthenticated: boolean;
   onError: () => void;
 };
 
 /**
  * Custom-board builder: cascading board → layout → size → sets → angle, driven
  * entirely by static `@boardsesh/board-config` + `@boardsesh/board-constants`
- * data (no server query). Confirming persists the config via CREATE_BOARD —
- * the active board needs a real UserBoard (uuid/slug), matching the web flow —
- * unless the user already owns that exact config, in which case it activates
- * the existing board.
+ * data (no server query). Signed-in users persist the config via CREATE_BOARD
+ * unless they already own that exact config; guests get a local active board
+ * with a synthetic uuid so they can browse and drive a wall without an account.
  */
 export const CustomBoardSheet = forwardRef<BottomSheet, CustomBoardSheetProps>(function CustomBoardSheet(
-  { seed, existingBoards, onCreated, onSelectExisting, onError },
+  { seed, existingBoards, onCreated, onSelectExisting, isAuthenticated, onError },
   ref,
 ) {
   const { systemColors, brandColors: themeBrandColors } = useTheme();
@@ -121,7 +122,8 @@ export const CustomBoardSheet = forwardRef<BottomSheet, CustomBoardSheetProps>(f
     setSetIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   };
 
-  const canCreate = layoutId != null && sizeId != null && setIds.length > 0 && !createBoard.isPending;
+  const canCreate =
+    layoutId != null && sizeId != null && setIds.length > 0 && (!isAuthenticated || !createBoard.isPending);
 
   const handleCreate = async () => {
     if (layoutId == null || sizeId == null || setIds.length === 0) return;
@@ -144,6 +146,27 @@ export const CustomBoardSheet = forwardRef<BottomSheet, CustomBoardSheetProps>(f
     }
 
     const layoutName = layouts.find((l) => l.id === layoutId)?.name ?? boardName;
+    const size = sizes.find((s) => s.id === sizeId);
+    const selectedSetIds = new Set(wireSetIds.split(','));
+    const setNames = sets.filter((set) => selectedSetIds.has(String(set.id))).map((set) => set.name);
+    if (!isAuthenticated) {
+      onCreated(
+        createGuestActiveBoard({
+          boardName,
+          layoutId,
+          sizeId,
+          setIds: wireSetIds,
+          angle,
+          displayName: layoutName,
+          layoutName,
+          sizeName: size?.name ?? null,
+          sizeDescription: size?.description ?? null,
+          setNames,
+        }),
+      );
+      return;
+    }
+
     try {
       const board = await createBoard.mutateAsync({
         boardType: boardName,
@@ -274,7 +297,7 @@ export const CustomBoardSheet = forwardRef<BottomSheet, CustomBoardSheetProps>(f
           variant="filled"
           size="large"
           disabled={!canCreate}
-          loading={createBoard.isPending}
+          loading={isAuthenticated && createBoard.isPending}
           style={styles.cta}
         />
       </ScrollView>

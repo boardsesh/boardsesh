@@ -77,6 +77,15 @@ function setupDbSelect(rows: unknown[]) {
   mockDb.select.mockReturnValue({ from: mockFrom });
 }
 
+function setupDbSelectWithLimit(rows: unknown[]) {
+  const terminal = Object.assign(Promise.resolve(rows), {
+    limit: vi.fn().mockResolvedValue(rows),
+  });
+  const mockWhere = vi.fn().mockReturnValue(terminal);
+  const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
+  mockDb.select.mockReturnValue({ from: mockFrom });
+}
+
 // Set up multiple sequential select calls (for enrichBoards which does many queries).
 // Each call to db.select().from()... resolves to the corresponding entry in `calls`.
 function setupDbSelectSequence(calls: unknown[][]) {
@@ -88,11 +97,12 @@ function setupDbSelectSequence(calls: unknown[][]) {
 
     // Build a chainable mock that supports .from().where(), .from().leftJoin().where(),
     // and .from().where().groupBy() — all resolving to `rows`.
+    const limitResult = Object.assign(Promise.resolve(rows), {
+      offset: vi.fn().mockResolvedValue(rows),
+    });
     const terminal = Object.assign(Promise.resolve(rows), {
       groupBy: vi.fn().mockResolvedValue(rows),
-      limit: vi.fn().mockImplementation(() => ({
-        offset: vi.fn().mockResolvedValue(rows),
-      })),
+      limit: vi.fn().mockReturnValue(limitResult),
     });
     const mockWhere = vi.fn().mockReturnValue(terminal);
     const mockLeftJoin = vi.fn().mockReturnValue({ where: mockWhere });
@@ -119,6 +129,111 @@ function setupDbLeftJoin(rows: unknown[]) {
   mockDb.select.mockReturnValue({ from: mockFrom });
   return { mockWhere, mockLeftJoin, mockFrom };
 }
+
+describe('direct board lookup privacy', () => {
+  const VALID_BOARD_UUID = '11111111-1111-4111-8111-111111111111';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns null for defaultBoard when caller is anonymous and does no DB work', async () => {
+    const result = await socialBoardQueries.defaultBoard(null, {}, makeUnauthCtx());
+
+    expect(result).toBeNull();
+    expect(mockDb.select).not.toHaveBeenCalled();
+  });
+
+  it('returns null for private direct UUID lookup when caller is anonymous', async () => {
+    setupDbSelectWithLimit([makeDbBoard({ uuid: VALID_BOARD_UUID, isPublic: false, isUnlisted: false })]);
+
+    const result = await socialBoardQueries.board(null, { boardUuid: VALID_BOARD_UUID }, makeUnauthCtx());
+
+    expect(result).toBeNull();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null for unlisted direct UUID lookup when caller is anonymous', async () => {
+    setupDbSelectWithLimit([makeDbBoard({ uuid: VALID_BOARD_UUID, isPublic: true, isUnlisted: true })]);
+
+    const result = await socialBoardQueries.board(null, { boardUuid: VALID_BOARD_UUID }, makeUnauthCtx());
+
+    expect(result).toBeNull();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns public listed boards by UUID for anonymous callers', async () => {
+    const publicBoard = makeDbBoard({
+      uuid: VALID_BOARD_UUID,
+      isPublic: true,
+      isUnlisted: false,
+      name: 'Public Gym Board',
+      description: 'Open wall',
+      locationName: 'Downtown Gym',
+    });
+    setupDbSelectSequence([
+      [publicBoard],
+      [{ userId: 'owner-123', name: 'Owner', image: null, displayName: 'The Owner', avatarUrl: null }],
+      [{ totalAscents: 12, uniqueClimbers: 4 }],
+      [{ count: 3 }],
+      [{ count: 2 }],
+    ]);
+
+    const result = await socialBoardQueries.board(null, { boardUuid: VALID_BOARD_UUID }, makeUnauthCtx());
+
+    expect(result).toMatchObject({
+      uuid: VALID_BOARD_UUID,
+      name: 'Public Gym Board',
+      isPublic: true,
+      isUnlisted: false,
+      totalAscents: 12,
+      uniqueClimbers: 4,
+      followerCount: 3,
+      commentCount: 2,
+      isFollowedByMe: false,
+    });
+  });
+
+  it('returns null for private direct slug lookup when caller is anonymous', async () => {
+    setupDbSelectWithLimit([makeDbBoard({ slug: 'secret-board', isPublic: false, isUnlisted: false })]);
+
+    const result = await socialBoardQueries.boardBySlug(null, { slug: 'secret-board' }, makeUnauthCtx());
+
+    expect(result).toBeNull();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null for unlisted direct slug lookup when caller is anonymous', async () => {
+    setupDbSelectWithLimit([makeDbBoard({ slug: 'hidden-board', isPublic: true, isUnlisted: true })]);
+
+    const result = await socialBoardQueries.boardBySlug(null, { slug: 'hidden-board' }, makeUnauthCtx());
+
+    expect(result).toBeNull();
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps authenticated direct UUID lookup behavior unchanged', async () => {
+    const privateBoard = makeDbBoard({ uuid: VALID_BOARD_UUID, isPublic: false, isUnlisted: true });
+    setupDbSelectSequence([
+      [privateBoard],
+      [{ userId: 'owner-123', name: 'Owner', image: null, displayName: 'The Owner', avatarUrl: null }],
+      [{ totalAscents: 1, uniqueClimbers: 1 }],
+      [{ count: 0 }],
+      [{ count: 0 }],
+      [{ count: 1 }],
+    ]);
+
+    const result = await socialBoardQueries.board(null, { boardUuid: VALID_BOARD_UUID }, makeAuthCtx('user-1'));
+
+    expect(result).toMatchObject({
+      uuid: VALID_BOARD_UUID,
+      name: 'Secret Home Wall',
+      isPublic: false,
+      isUnlisted: true,
+      isFollowedByMe: true,
+    });
+  });
+});
 
 describe('boardsBySerialNumbers privacy', () => {
   beforeEach(() => {

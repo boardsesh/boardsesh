@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { BluetoothProvider } from './bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
+import { isGuestActiveBoard } from '../lib/boards/guest-board-id';
 import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
 
 /**
@@ -25,6 +26,7 @@ import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  const boardUuid = activeBoard && !isGuestActiveBoard(activeBoard) ? activeBoard.uuid : undefined;
 
   return (
     <BluetoothProvider
@@ -32,7 +34,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       layoutId={activeBoard?.layoutId}
       sizeId={activeBoard?.sizeId}
       setIds={activeBoard?.setIds}
-      boardUuid={activeBoard?.uuid}
+      boardUuid={boardUuid}
     >
       {activeBoard ? (
         <LiveActivityBridge

@@ -26,11 +26,13 @@ import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-boa
 import { track } from '../lib/analytics';
 import { ClimbActionsSheet } from '../components/ClimbActionsSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
+import { SignInPromptSheet } from '../components/SignInPromptSheet';
 import { useToggleFavorite, useProfile } from '../lib/graphql/hooks';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useIsPartyPreviewOnly, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
+import { useAuth } from './auth-provider';
 
 export type BoardConfig = {
   boardName: string;
@@ -103,13 +105,15 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const [logAscentInput, setLogAscentInput] = useState<LogAscentInput | null>(null);
   const [climbActions, setClimbActions] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
   const [playlistClimb, setPlaylistClimb] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  const [signInPromptVisible, setSignInPromptVisible] = useState(false);
+  const { isAuthenticated } = useAuth();
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const isPartyPreviewOnly = useIsPartyPreviewOnly();
   const setActiveBoard = useSetActiveBoard();
   const { visible: snackbarVisible, nonce: snackbarNonce, dismissSnackbar } = useQueueSnackbar();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
 
   // Climb to open after the boardConfig override has committed. We can't
   // open synchronously inside openPlayDrawer when an override is supplied
@@ -211,9 +215,16 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [activeBoard, boardConfigOverride, sessionId, setActiveBoard, setSessionBoardPath],
   );
 
-  const openLogAscent = useCallback((input: LogAscentInput) => {
-    setLogAscentInput(input);
-  }, []);
+  const openLogAscent = useCallback(
+    (input: LogAscentInput) => {
+      if (!isAuthenticated) {
+        setSignInPromptVisible(true);
+        return;
+      }
+      setLogAscentInput(input);
+    },
+    [isAuthenticated],
+  );
 
   const dismissLogAscent = useCallback(() => setLogAscentInput(null), []);
 
@@ -247,6 +258,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const handleClimbActionsToggleFavorite = useCallback(() => {
     if (!climbActions) return;
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     const isNowFavorited = !favoritesStore.getIsFavorited(climbActions.climb.uuid);
     track(SHARED_EVENTS.FavoriteToggle, {
       action: isNowFavorited ? 'added' : 'removed',
@@ -262,10 +277,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         angle: climbActions.boardConfig.angle,
       },
     });
-  }, [climbActions, toggleFavoriteMutate]);
+  }, [climbActions, isAuthenticated, toggleFavoriteMutate]);
 
   const handleClimbActionsTick = useCallback(() => {
     if (!climbActions) return;
+    if (!isAuthenticated) {
+      setSignInPromptVisible(true);
+      return;
+    }
     setLogAscentInput({
       climbUuid: climbActions.climb.uuid,
       boardName: climbActions.boardConfig.boardName,
@@ -277,7 +296,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       setIds: climbActions.boardConfig.setIds,
       consensusGradeName: climbActions.climb.difficulty,
     });
-  }, [climbActions]);
+  }, [climbActions, isAuthenticated]);
 
   // Present the always-mounted queue sheet imperatively. Calling `present()`
   // synchronously from the handler (rather than from a `visible`-prop effect)
@@ -355,6 +374,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     (item: ClimbQueueItem) => {
       const boardConfig = activeBoardConfigRef.current;
       if (!boardConfig) return;
+      if (!isAuthenticated) {
+        setSignInPromptVisible(true);
+        return;
+      }
       setLogAscentInput({
         climbUuid: item.climb.uuid,
         boardName: boardConfig.boardName,
@@ -368,7 +391,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         consensusGradeName: item.climb.difficulty,
       });
     },
-    [sessionId],
+    [isAuthenticated, sessionId],
   );
 
   const value = useMemo<DrawerHostValue>(
@@ -463,6 +486,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         nonce={snackbarNonce}
         onDismiss={dismissSnackbar}
         onOpen={handleSnackbarOpen}
+      />
+      <SignInPromptSheet
+        visible={signInPromptVisible}
+        onClose={() => setSignInPromptVisible(false)}
       />
     </DrawerHostContext.Provider>
   );

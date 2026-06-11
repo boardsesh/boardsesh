@@ -40,7 +40,7 @@ export default function ShareBetaScreen() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
-  const { data: profile } = useProfile();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
   const attach = useAttachBetaLink();
 
   // Best-effort: fetch the reel's thumbnail + caption so we can preview the post

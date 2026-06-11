@@ -9,6 +9,7 @@ const getInitialURLMock = vi.hoisted(() => vi.fn());
 // Controllable signed-in profile: the gate keys its first-run decision on the
 // profile id, so tests drive sign-out/sign-in by swapping this id.
 const profileCtrl = vi.hoisted(() => ({ id: undefined as string | undefined }));
+const authCtrl = vi.hoisted(() => ({ isAuthenticated: true }));
 
 vi.mock('expo-router', () => ({
   router: { push: pushMock },
@@ -23,6 +24,9 @@ vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: profileCtrl.id ? { id: profileCtrl.id } : undefined }),
 }));
+vi.mock('../../../providers/auth-provider', () => ({
+  useAuth: () => ({ isAuthenticated: authCtrl.isAuthenticated }),
+}));
 
 import { OnboardingGate } from '../OnboardingGate';
 
@@ -35,11 +39,21 @@ describe('OnboardingGate', () => {
     getInitialURLMock.mockResolvedValue(null);
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
     profileCtrl.id = undefined;
+    authCtrl.isAuthenticated = true;
   });
 
   it('does nothing until the app is ready', async () => {
     hasSeenMock.mockResolvedValue(false);
     render(<OnboardingGate ready={false} />);
+    await Promise.resolve();
+    expect(hasSeenMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('does nothing while signed out', async () => {
+    hasSeenMock.mockResolvedValue(false);
+    authCtrl.isAuthenticated = false;
+    render(<OnboardingGate ready />);
     await Promise.resolve();
     expect(hasSeenMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
