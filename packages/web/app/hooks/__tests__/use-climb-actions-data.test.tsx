@@ -79,6 +79,10 @@ describe('useClimbActionsData', () => {
     await waitFor(() => {
       expect(result.current.favoritesProviderProps.favorites.has('climb-1')).toBe(true);
     });
+
+    expect(mockRequest).toHaveBeenCalledWith('GET_FAVORITES', {
+      climbUuids: ['climb-1', 'climb-2'],
+    });
   });
 
   it('disabled when not authenticated', () => {
@@ -144,6 +148,9 @@ describe('useClimbActionsData', () => {
     });
 
     expect(toggleResult).toBe(true);
+    expect(mockRequest).toHaveBeenCalledWith('TOGGLE_FAVORITE', {
+      input: { climbUuid: 'climb-1' },
+    });
   });
 
   it('optimistic update: adds uuid on toggle', async () => {
@@ -558,6 +565,8 @@ describe('useClimbActionsData', () => {
     // Second favorites call should only contain the new UUID
     const lastFavCall = favCalls[favCalls.length - 1];
     expect(lastFavCall[1].climbUuids).toEqual(['climb-3']);
+    expect(lastFavCall[1]).not.toHaveProperty('boardName');
+    expect(lastFavCall[1]).not.toHaveProperty('angle');
 
     // Original favorites should still be available
     expect(result.current.favoritesProviderProps.favorites.has('climb-1')).toBe(true);

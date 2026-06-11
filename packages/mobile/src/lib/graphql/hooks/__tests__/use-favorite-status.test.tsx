@@ -9,8 +9,8 @@ import { GET_FAVORITES } from '@boardsesh/graphql/operations/favorites';
 // so it never reflected real favorite status and a single tap on an already-
 // favorited climb silently un-favorited it. useFavoriteStatus is the server-truth
 // seam the drawer now reads. These tests pin: it reports the real favorite state
-// keyed on (boardName, climbUuid, angle), stays disabled while the sheet is closed
-// or before a climb is selected, and a toggle busts its cache.
+// keyed by climb UUID, stays disabled while the sheet is closed or before a
+// climb is selected, and a toggle busts its cache.
 
 const requestMock = vi.fn();
 vi.mock('../../client', () => ({
@@ -69,12 +69,8 @@ describe('useFavoriteStatus', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBe(true);
-    // The query keys the favorite on the supplied angle (favorites are per-angle
-    // on the backend).
     expect(requestMock).toHaveBeenCalledWith(GET_FAVORITES, {
-      boardName: 'kilter',
       climbUuids: ['climb-1'],
-      angle: 40,
     });
   });
 
@@ -120,7 +116,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
 
     const response = await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
     });
 
     // A toggle on an already-favorited climb returns favorited:false — the heart
@@ -143,11 +139,11 @@ describe('useToggleFavorite', () => {
     requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
     const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await toggleHook.result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40],
+      queryKey: ['favoriteStatus', 'climb-1'],
     });
   });
 });

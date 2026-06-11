@@ -7,12 +7,8 @@ export const favoritesTypeDefs = /* GraphQL */ `
   Input for toggling a climb as favorite.
   """
   input ToggleFavoriteInput {
-    "Board type"
-    boardName: String!
     "Climb UUID to favorite/unfavorite"
     climbUuid: String!
-    "Board angle"
-    angle: Int!
   }
 
   """

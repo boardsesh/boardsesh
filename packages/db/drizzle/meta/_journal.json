@@ -862,6 +862,13 @@
       "when": 1781145433936,
       "tag": "0122_add_search_covering_indexes_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1781217521696,
+      "tag": "0123_late_nuke",
+      "breakpoints": true
     }
   ]
 }

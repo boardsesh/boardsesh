@@ -1147,15 +1147,6 @@ export type EventsReplayResponse = {
   events: Array<QueueEvent>;
 };
 
-/** Count of favorited climbs per board. */
-export type FavoritesCount = {
-  __typename?: 'FavoritesCount';
-  /** Board name */
-  boardName: Scalars['String']['output'];
-  /** Number of favorited climbs */
-  count: Scalars['Int']['output'];
-};
-
 /**
  * Free-form debug context attached to a feedback submission. Stored as jsonb.
  * Every field is optional — anonymous submissions made outside a board route
@@ -3261,11 +3252,6 @@ export type Query = {
   /** Get unread notification count for the current user. */
   unreadNotificationCount: Scalars['Int']['output'];
   /**
-   * Get board names where the current user has playlists or favorites.
-   * Requires authentication.
-   */
-  userActiveBoards: Array<Scalars['String']['output']>;
-  /**
    * Get public ascent activity feed for a user.
    * Includes enriched climb data for display.
    */
@@ -3289,11 +3275,6 @@ export type Query = {
    * Requires authentication.
    */
   userFavoriteClimbs: PlaylistClimbsResult;
-  /**
-   * Get count of favorited climbs per board for the current user.
-   * Requires authentication.
-   */
-  userFavoritesCounts: Array<FavoritesCount>;
   /**
    * Get public ascent feed grouped by climb and day.
    * Useful for summary displays.
@@ -3449,8 +3430,6 @@ export type QueryEventsReplayArgs = {
 
 /** Root query type for all read operations. */
 export type QueryFavoritesArgs = {
-  angle: Scalars['Int']['input'];
-  boardName: Scalars['String']['input'];
   climbUuids: Array<Scalars['String']['input']>;
 };
 
@@ -4847,10 +4826,6 @@ export type TimePeriod = 'all' | 'day' | 'hour' | 'month' | 'week' | 'year';
 
 /** Input for toggling a climb as favorite. */
 export type ToggleFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
   /** Climb UUID to favorite/unfavorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -5442,7 +5417,6 @@ export type ResolversTypes = ResolversObject<{
   EventsReplayResponse: ResolverTypeWrapper<
     Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversTypes['QueueEvent']> }
   >;
-  FavoritesCount: ResolverTypeWrapper<FavoritesCount>;
   FeedbackContextInput: FeedbackContextInput;
   Float: ResolverTypeWrapper<Scalars['Float']['output']>;
   FollowBoardInput: FollowBoardInput;
@@ -5701,7 +5675,6 @@ export type ResolversParentTypes = ResolversObject<{
   DiscoverableSession: DiscoverableSession;
   DriverChanged: DriverChanged;
   EventsReplayResponse: Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversParentTypes['QueueEvent']> };
-  FavoritesCount: FavoritesCount;
   FeedbackContextInput: FeedbackContextInput;
   Float: Scalars['Float']['output'];
   FollowBoardInput: FollowBoardInput;
@@ -6446,15 +6419,6 @@ export type EventsReplayResponseResolvers<
 > = ResolversObject<{
   currentSequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   events?: Resolver<Array<ResolversTypes['QueueEvent']>, ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type FavoritesCountResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['FavoritesCount'] = ResolversParentTypes['FavoritesCount'],
-> = ResolversObject<{
-  boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -7688,7 +7652,7 @@ export type QueryResolvers<
     Array<ResolversTypes['String']>,
     ParentType,
     ContextType,
-    RequireFields<QueryFavoritesArgs, 'angle' | 'boardName' | 'climbUuids'>
+    RequireFields<QueryFavoritesArgs, 'climbUuids'>
   >;
   followers?: Resolver<
     ResolversTypes['FollowConnection'],
@@ -7953,7 +7917,6 @@ export type QueryResolvers<
     Partial<QueryTrendingFeedArgs>
   >;
   unreadNotificationCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  userActiveBoards?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   userAscentsFeed?: Resolver<
     ResolversTypes['AscentFeedResult'],
     ParentType,
@@ -7984,7 +7947,6 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryUserFavoriteClimbsArgs, 'input'>
   >;
-  userFavoritesCounts?: Resolver<Array<ResolversTypes['FavoritesCount']>, ParentType, ContextType>;
   userGroupedAscentsFeed?: Resolver<
     ResolversTypes['GroupedAscentFeedResult'],
     ParentType,
@@ -8837,7 +8799,6 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   DiscoverableSession?: DiscoverableSessionResolvers<ContextType>;
   DriverChanged?: DriverChangedResolvers<ContextType>;
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
-  FavoritesCount?: FavoritesCountResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;

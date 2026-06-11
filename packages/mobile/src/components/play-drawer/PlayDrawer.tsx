@@ -195,7 +195,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   const displayedClimbUuidRef = useRef<string | null>(null);
   displayedClimbUuidRef.current = displayedClimb?.uuid ?? null;
 
-  // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
+  // Real favorite status for the heart, keyed by climb UUID.
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
   // The displayed state is the local optimistic override when set, otherwise the
   // server's truth — so the heart reflects whether the climb is already a favorite
@@ -469,9 +469,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     toggleFavoriteMutate(
       {
         input: {
-          boardName,
           climbUuid: displayedClimb.uuid,
-          angle,
         },
       },
       {
@@ -492,7 +490,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, toggleFavoriteMutate, showToast, t]);
 
   const handleLightbulb = useCallback(() => {
     const pressAction = derivePlayDrawerLightbulbPressAction({

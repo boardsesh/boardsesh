@@ -31,10 +31,8 @@ type Documents = {
   '\n  mutation DeleteComment($commentUuid: ID!) {\n    deleteComment(commentUuid: $commentUuid)\n  }\n': typeof types.DeleteCommentDocument;
   '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n': typeof types.VoteDocument;
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n': typeof types.CreateSessionDocument;
-  '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n': typeof types.FavoritesDocument;
+  '\n  query Favorites($climbUuids: [String!]!) {\n    favorites(climbUuids: $climbUuids)\n  }\n': typeof types.FavoritesDocument;
   '\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n': typeof types.ToggleFavoriteDocument;
-  '\n  query UserFavoritesCounts {\n    userFavoritesCounts {\n      boardName\n      count\n    }\n  }\n': typeof types.UserFavoritesCountsDocument;
-  '\n  query UserActiveBoards {\n    userActiveBoards\n  }\n': typeof types.UserActiveBoardsDocument;
   '\n  query GetUserFavoriteClimbs($input: GetUserFavoriteClimbsInput!) {\n    userFavoriteClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetUserFavoriteClimbsDocument;
   '\n  mutation SubmitAppFeedback($input: SubmitAppFeedbackInput!) {\n    submitAppFeedback(input: $input)\n  }\n': typeof types.SubmitAppFeedbackDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
@@ -159,13 +157,10 @@ const documents: Documents = {
     types.VoteDocument,
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n':
     types.CreateSessionDocument,
-  '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n':
+  '\n  query Favorites($climbUuids: [String!]!) {\n    favorites(climbUuids: $climbUuids)\n  }\n':
     types.FavoritesDocument,
   '\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n':
     types.ToggleFavoriteDocument,
-  '\n  query UserFavoritesCounts {\n    userFavoritesCounts {\n      boardName\n      count\n    }\n  }\n':
-    types.UserFavoritesCountsDocument,
-  '\n  query UserActiveBoards {\n    userActiveBoards\n  }\n': types.UserActiveBoardsDocument,
   '\n  query GetUserFavoriteClimbs($input: GetUserFavoriteClimbsInput!) {\n    userFavoriteClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetUserFavoriteClimbsDocument,
   '\n  mutation SubmitAppFeedback($input: SubmitAppFeedbackInput!) {\n    submitAppFeedback(input: $input)\n  }\n':
@@ -460,26 +455,14 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n',
-): (typeof documents)['\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n'];
+  source: '\n  query Favorites($climbUuids: [String!]!) {\n    favorites(climbUuids: $climbUuids)\n  }\n',
+): (typeof documents)['\n  query Favorites($climbUuids: [String!]!) {\n    favorites(climbUuids: $climbUuids)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
   source: '\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n',
 ): (typeof documents)['\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  query UserFavoritesCounts {\n    userFavoritesCounts {\n      boardName\n      count\n    }\n  }\n',
-): (typeof documents)['\n  query UserFavoritesCounts {\n    userFavoritesCounts {\n      boardName\n      count\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  query UserActiveBoards {\n    userActiveBoards\n  }\n',
-): (typeof documents)['\n  query UserActiveBoards {\n    userActiveBoards\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -241,11 +241,8 @@ export async function buildUserAuroraJsonExport(userId: string, boardType: Auror
         createdAt: userFavorites.createdAt,
       })
       .from(userFavorites)
-      .innerJoin(
-        boardClimbs,
-        and(eq(userFavorites.boardName, boardClimbs.boardType), eq(userFavorites.climbUuid, boardClimbs.uuid)),
-      )
-      .where(and(eq(userFavorites.userId, userId), eq(userFavorites.boardName, boardType)))
+      .innerJoin(boardClimbs, and(eq(boardClimbs.boardType, boardType), eq(userFavorites.climbUuid, boardClimbs.uuid)))
+      .where(eq(userFavorites.userId, userId))
       .orderBy(asc(userFavorites.createdAt)),
     dbRead
       .select({

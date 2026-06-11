@@ -26,7 +26,6 @@ export default function FavoriteButton({
   boardName,
   climbUuid,
   climbName,
-  angle,
   className,
   showLabel = false,
   size = 'default',
@@ -74,9 +73,7 @@ export default function FavoriteButton({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          boardName,
           climbUuid,
-          angle,
         }),
       });
       if (response.ok) {

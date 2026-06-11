@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import { isRecommendationType, RECOMMENDATION_TYPES, type RecommendationType } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
@@ -8,6 +8,7 @@ import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
 import { resolveRecommendationBoardTarget } from '../helpers/recommendation-board-target';
 import { selectRecommendationClimbRefs, countRecommendationClimbRefs } from '../helpers/recommendation-refs';
+import { UNIFIED_TABLES } from '../../../../db/queries/util/table-select';
 
 // Logbook-derived smart playlists (computed from the user's own ticks).
 type LogbookPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
@@ -118,18 +119,20 @@ async function selectSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
+    const climbs = UNIFIED_TABLES.climbs;
     const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(climbs.boardType, boardName));
     }
     const rows = await db
       .select({
         climbUuid: dbSchema.userFavorites.climbUuid,
-        boardType: dbSchema.userFavorites.boardName,
+        boardType: climbs.boardType,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(climbs, eq(climbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions))
-      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName)
+      .groupBy(dbSchema.userFavorites.climbUuid, climbs.boardType)
       .orderBy(desc(max(dbSchema.userFavorites.createdAt)))
       .limit(pageSize)
       .offset(offset);
@@ -193,15 +196,17 @@ async function countSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
+    const climbs = UNIFIED_TABLES.climbs;
     const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
     if (boardName) {
-      favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+      favConditions.push(eq(climbs.boardType, boardName));
     }
     const [row] = await db
       .select({
-        count: sql<number>`COUNT(DISTINCT (${dbSchema.userFavorites.boardName}, ${dbSchema.userFavorites.climbUuid}))::int`,
+        count: sql<number>`COUNT(DISTINCT (${climbs.boardType}, ${dbSchema.userFavorites.climbUuid}))::int`,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(climbs, eq(climbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions));
     return row?.count ?? 0;
   }
@@ -401,9 +406,10 @@ export const mySmartPlaylistCounts = async (
       )
     ),
     liked_climbs AS (
-      SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
-      FROM ${dbSchema.userFavorites}
-      WHERE user_id = ${userId}
+      SELECT COUNT(DISTINCT (c.board_type, uf.climb_uuid))::int AS count
+      FROM ${dbSchema.userFavorites} uf
+      INNER JOIN ${dbSchema.boardClimbs} c ON c.uuid = uf.climb_uuid
+      WHERE uf.user_id = ${userId}
     )
     SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
     UNION ALL

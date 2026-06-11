@@ -44,16 +44,6 @@ export const playlistsTypeDefs = /* GraphQL */ `
   }
 
   """
-  Count of favorited climbs per board.
-  """
-  type FavoritesCount {
-    "Board name"
-    boardName: String!
-    "Number of favorited climbs"
-    count: Int!
-  }
-
-  """
   A climb within a playlist.
   """
   type PlaylistClimb {

@@ -1,18 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
-  UserBoard,
-  UserBoardConnection,
-  Climb,
   ClimbSearchInput,
-  Grade,
-  Angle,
   MyBoardsInput,
   SearchBoardsInput,
   PopularBoardConfigsInput,
   CreateBoardInput,
   SetterStatsInput,
-  UserProfile,
-  SessionSummary,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -305,32 +298,28 @@ export function useToggleFavorite() {
       // Bust the per-climb favorite-status cache so a re-open reflects the new
       // state from the server, not a stale 5-min-cached value.
       void queryClient.invalidateQueries({
-        queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
+        queryKey: ['favoriteStatus', variables.input.climbUuid],
       });
     },
   });
 }
 
 /**
- * Server-side favorite status for a single climb at the given angle. The
- * favorite key is (userId, boardName, climbUuid, angle) on the backend, so the
- * angle matters — favoriting at 40° is distinct from 25°. Disabled until a
- * `climbUuid` is supplied (and via `enabled`, so callers can gate it on a sheet
- * being open). Returns `true` when the climb is favorited at this angle.
+ * Server-side favorite status for a single climb. Disabled until a `climbUuid`
+ * is supplied (and via `enabled`, so callers can gate it on a sheet being open).
+ * Returns `true` when the climb is favorited.
  */
 export function useFavoriteStatus(
-  boardName: string,
+  _boardName: string,
   climbUuid: string | null,
-  angle: number,
+  _angle: number,
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: ['favoriteStatus', boardName, climbUuid, angle],
+    queryKey: ['favoriteStatus', climbUuid],
     queryFn: () =>
       getHttpClient().request<FavoritesQueryResponse, FavoritesQueryVariables>(GET_FAVORITES, {
-        boardName,
         climbUuids: [climbUuid!],
-        angle,
       }),
     select: (data) => data.favorites.includes(climbUuid!),
     enabled: (options?.enabled ?? true) && !!climbUuid,
@@ -426,7 +415,7 @@ export function useAttachBetaLink() {
         input,
       }),
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
     },
   });
 }

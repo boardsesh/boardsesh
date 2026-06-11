@@ -8,11 +8,6 @@
 // from the boards tab the cache invalidates and subsequent mutations land
 // against the new board.
 //
-// `toggleFavorite` is also wired against the active board today only because
-// the current GraphQL schema requires `boardName` + `angle` on the input.
-// Tracked in #2449 as a backend cleanup — favorites should be keyed by climb
-// UUID alone. Once #2449 lands, drop those args from the mutation.
-//
 // Favorites Set is left empty: the current `GET_FAVORITES` query takes a
 // `climbUuids` list (web batches it as the user scrolls a climb list), and
 // mobile has no equivalent batched fetcher today. When a mobile screen needs
@@ -117,16 +112,8 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async (climbUuid: string): Promise<{ uuid: string; favorited: boolean }> => {
-      const { activeBoard: board } = mutationDepsRef.current;
-      if (!board) throw new Error('Cannot toggle favorite: no active board selected.');
-      // The favorite key is (userId, boardName, climbUuid, angle) on the
-      // backend today. Defaulting a missing angle to 0 would silently file
-      // the favorite under the wrong climb variant — better to surface the
-      // problem at the call site than write bad data. Stops being relevant
-      // once #2449 lands and the key collapses to (userId, climbUuid).
-      if (board.angle == null) throw new Error('Cannot toggle favorite: active board has no angle.');
       const response = await getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, {
-        input: { boardName: board.boardType, climbUuid, angle: board.angle },
+        input: { climbUuid },
       });
       return { uuid: climbUuid, favorited: response.toggleFavorite.favorited };
     },

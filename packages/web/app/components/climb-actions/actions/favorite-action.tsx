@@ -14,7 +14,6 @@ import { buildActionResult, computeActionDisplay, ActionListElement } from '../a
 export function FavoriteAction({
   climb,
   boardDetails,
-  angle,
   viewMode,
   size = 'default',
   showLabel,
@@ -36,9 +35,7 @@ export function FavoriteAction({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          boardName: boardDetails.board_name,
           climbUuid: climb.uuid,
-          angle,
         }),
       });
       if (response.ok) {
@@ -51,7 +48,7 @@ export function FavoriteAction({
     } catch {
       // Silently fail
     }
-  }, [boardDetails.board_name, climb.uuid, angle]);
+  }, [boardDetails.board_name, climb.uuid]);
 
   const handleClick = useCallback(
     async (e?: React.MouseEvent) => {

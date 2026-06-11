@@ -115,6 +115,7 @@ function makeChain(resolveValue: unknown = []) {
       return chain;
     });
   }
+  // eslint-disable-next-line unicorn/no-thenable -- Drizzle resolver mocks are awaited query builders.
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
   return { chain, calls };
 }
@@ -278,14 +279,11 @@ describe('smartPlaylist resolver', () => {
     expect(notInArraySpy).not.toHaveBeenCalled();
   });
 
-  it('LIKED_CLIMBS reads user_favorites, applies board filter, dedups across angles, orders by latest like', async () => {
+  it('LIKED_CLIMBS reads user_favorites, derives board type from climbs, and orders by latest like', async () => {
     const ctx = makeCtx();
 
     // user lookup
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
-    // page query — favorites have an angle column, so we dedupe via GROUP BY
-    // (board_name, climb_uuid) to avoid returning the same climb twice when a
-    // user has favourited it at multiple angles.
     const { chain: pageChain, calls: pageCalls } = makeChain([
       { climbUuid: 'fav1', boardType: 'kilter' },
       { climbUuid: 'fav2', boardType: 'kilter' },
@@ -309,22 +307,22 @@ describe('smartPlaylist resolver', () => {
     expect(pageCalls.limit[0]).toEqual([5]);
     expect(pageCalls.offset[0]).toEqual([5]);
 
-    // Dedup: GROUP BY (climbUuid, boardName)
+    // Dedup: GROUP BY (climbUuid, boardType) — boardType is derived by joining
+    // the unified climbs table because favorites are board-agnostic.
     expect(pageCalls.groupBy.length).toBe(1);
-    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName]);
+    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, 'boardType']);
     // Ordered (by max(createdAt) DESC); we just assert orderBy was called
     expect(pageCalls.orderBy.length).toBe(1);
 
-    // Both page and count must filter by both userId and boardName — a missing
-    // boardName filter on either side would make the count card show all-boards
-    // while the detail page is board-scoped (or vice versa).
+    expect(pageCalls.innerJoin.length).toBe(1);
+
+    // Both page and count must filter by userId, while board scoping is applied
+    // through the joined climbs boardType.
     const userIdFilters = eqSpy.mock.calls.filter(
       ([col, val]) => col === dbSchema.userFavorites.userId && val === 'user-123',
     );
     expect(userIdFilters.length).toBeGreaterThanOrEqual(2);
-    const boardFilters = eqSpy.mock.calls.filter(
-      ([col, val]) => col === dbSchema.userFavorites.boardName && val === 'kilter',
-    );
+    const boardFilters = eqSpy.mock.calls.filter(([col, val]) => col === 'boardType' && val === 'kilter');
     expect(boardFilters.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -333,9 +331,6 @@ describe('smartPlaylist resolver', () => {
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
     mockDb.select.mockReturnValueOnce(makeChain([]).chain);
     mockDb.select.mockReturnValueOnce(makeChain([{ count: 0 }]).chain);
-    // Defensive: hydrate currently short-circuits on an empty refs[], so this
-    // mock is unused today. Kept so the test doesn't blow up cryptically if
-    // that short-circuit is ever removed.
     mockDb.select.mockReturnValueOnce(makeChain([]).chain);
 
     await playlistQueries.smartPlaylist(
@@ -346,7 +341,7 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === dbSchema.userFavorites.boardName);
+    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === 'boardType');
     expect(boardFilters.length).toBe(0);
   });
 
@@ -563,6 +558,23 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(rendered.toUpperCase()).toContain('NOT EXISTS');
     expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*base\.climb_uuid/i);
     expect(rendered).toMatch(/sent\.board_type\s*=\s*base\.board_type/i);
+  });
+
+  it('liked_climbs CTE joins boardClimbs to derive board_type', async () => {
+    const ctx = makeCtx();
+    mockDb.execute.mockResolvedValueOnce([]);
+
+    await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
+
+    const sqlArg = mockDb.execute.mock.calls[0][0] as { queryChunks?: unknown[] } | undefined;
+    const rendered = (sqlArg?.queryChunks ?? [])
+      .map((chunk) => (typeof chunk === 'string' ? chunk : ((chunk as { value?: string }).value ?? '')))
+      .join(' ');
+
+    expect(rendered).not.toMatch(/board_name/i);
+    expect(rendered).toMatch(/liked_climbs\s+AS\s*\(/i);
+    expect(rendered).toMatch(/COUNT\s*\(\s*DISTINCT\s*\(\s*c\.board_type\s*,\s*uf\.climb_uuid\s*\)\s*\)/i);
+    expect(rendered).toMatch(/INNER\s+JOIN[\s\S]*?ON\s+c\.uuid\s*=\s*uf\.climb_uuid/i);
   });
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {
