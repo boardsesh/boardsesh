@@ -53,6 +53,12 @@ export const RULES: readonly PatchRule[] = [
     sentinels: ['rnscreens_contentScrollViewForEdge', 'findScrollViewDeepFirstFrom'],
     patchedKey: 'react-native-screens@4.25.2',
   },
+  {
+    package: 'react-native-screens',
+    file: 'ios/tabs/host/RNSTabsHostComponentView.mm',
+    sentinels: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
+    patchedKey: 'react-native-screens@4.25.2',
+  },
 ];
 
 /**
