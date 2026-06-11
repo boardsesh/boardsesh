@@ -304,6 +304,7 @@
       "climbCount_one": "{{count}} climb",
       "climbCount_other": "{{count}} climbs",
       "logAscent": "Log ascent",
+      "returnToSession": "Return to session",
       "nextClimb": "Next climb",
       "previousClimb": "Previous climb",
       "alreadyLogged": "Logged",

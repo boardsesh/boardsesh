@@ -9,6 +9,8 @@ import { brandColors as staticBrandColors } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
 
+type RecordBadgeKind = 'session' | 'bluetooth';
+
 /**
  * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
  * (the Liquid Glass variant uses the native `NativeTabs` instead). Built from the
@@ -56,6 +58,8 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
         const label = typeof options.title === 'string' ? options.title : route.name;
         const iconColor = focused ? activeIconColor : inactiveColor;
         const labelColor = focused ? activeLabelColor : inactiveColor;
+        const badgeKind: RecordBadgeKind | null =
+          options.tabBarBadge === 'session' ? 'session' : options.tabBarBadge != null ? 'bluetooth' : null;
 
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -82,14 +86,18 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
           >
             <View style={[styles.indicator, focused && { backgroundColor: indicatorColor }]}>
               {options.tabBarIcon?.({ focused, color: iconColor, size: 24 })}
-              {options.tabBarBadge != null ? (
+              {badgeKind ? (
                 <View
                   testID="badge"
                   style={[
-                    styles.badge,
-                    // Badge dot is a FILL (no text on it) → static light brand
-                    // success, not the scheme-lifted theme value.
-                    { backgroundColor: staticBrandColors.success, borderColor: systemColors.elevatedSurface },
+                    badgeKind === 'session' ? styles.sessionBadge : styles.bluetoothBadge,
+                    {
+                      // Bluetooth remains the established green dot; a live
+                      // session gets the brand-filled pill so the Record tab no
+                      // longer uses one green indicator for two states.
+                      backgroundColor: badgeKind === 'session' ? brandColors.primaryFill : staticBrandColors.success,
+                      borderColor: systemColors.elevatedSurface,
+                    },
                   ]}
                 />
               ) : null}
@@ -129,11 +137,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badge: {
+  bluetoothBadge: {
     position: 'absolute',
     top: 2,
     right: 10,
     width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
+  },
+  sessionBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 8,
+    width: 16,
     height: 9,
     borderRadius: 5,
     borderWidth: 1.5,

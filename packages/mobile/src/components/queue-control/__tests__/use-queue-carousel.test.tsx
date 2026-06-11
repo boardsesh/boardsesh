@@ -10,10 +10,15 @@ const queue = vi.hoisted(() => ({
     currentClimbQueueItem: null as ClimbQueueItem | null,
     queue: [] as ClimbQueueItem[],
   },
+  sessionId: null as string | null,
   nextClimb: vi.fn(),
   previousClimb: vi.fn(),
   isPartyPreviewOnly: false,
 }));
+
+const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
+const router = vi.hoisted(() => ({ navigate: vi.fn() }));
+const route = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 
 const nav = vi.hoisted(() => ({
   result: {
@@ -31,12 +36,18 @@ const gestureCalls = vi.hoisted(() => ({ last: null as Record<string, unknown> |
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   usePlaylistSuggestionSource: () => null,
   useIsPartyPreviewOnly: () => queue.isPartyPreviewOnly,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openPlayDrawer: vi.fn() }),
+  useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer }),
+}));
+
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useSegments: () => route.segments,
 }));
 
 vi.mock('@boardsesh/play-view', () => ({
@@ -96,7 +107,11 @@ describe('useQueueCarousel party-preview gating', () => {
   beforeEach(() => {
     queue.nextClimb.mockClear();
     queue.previousClimb.mockClear();
+    queue.sessionId = null;
     queue.isPartyPreviewOnly = false;
+    drawer.openPlayDrawer.mockClear();
+    router.navigate.mockClear();
+    route.segments = ['(tabs)', 'climbs'];
     gestureCalls.last = null;
     const current = makeItem('current');
     const next = makeItem('next');
@@ -157,5 +172,43 @@ describe('useQueueCarousel party-preview gating', () => {
     // Preview, not blackout: the next/previous peek items still render.
     expect(result.current.nextItem?.uuid).toBe('next');
     expect(result.current.previousItem?.uuid).toBe('current');
+  });
+
+  it('returns to the Record tab on primary tap during an active session outside Record', () => {
+    queue.sessionId = 'session-1';
+    const { result } = renderHook(() => useQueueCarousel());
+
+    result.current.handlePrimaryPress();
+
+    expect(router.navigate).toHaveBeenCalledWith('/(tabs)/record');
+    expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
+    expect(result.current.returnToSessionAvailable).toBe(true);
+    expect(result.current.swipeAccessibilityActions.map((action) => action.name)).toContain('returnToSession');
+  });
+
+  it('keeps primary tap on the play drawer when no session is active', () => {
+    const { result } = renderHook(() => useQueueCarousel());
+
+    result.current.handlePrimaryPress();
+
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(queue.state.currentClimbQueueItem?.climb, {
+      setAsCurrent: false,
+    });
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(result.current.returnToSessionAvailable).toBe(false);
+  });
+
+  it('keeps primary tap on the play drawer when already on the Record tab', () => {
+    queue.sessionId = 'session-1';
+    route.segments = ['(tabs)', 'record'];
+    const { result } = renderHook(() => useQueueCarousel());
+
+    result.current.handlePrimaryPress();
+
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(queue.state.currentClimbQueueItem?.climb, {
+      setAsCurrent: false,
+    });
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(result.current.returnToSessionAvailable).toBe(false);
   });
 });

@@ -10,7 +10,7 @@ const cfg = vi.hoisted(() => ({
   hasCurrentClimb: false,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   platformOS: 'ios' as 'ios' | 'android',
-  materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean } }>,
+  materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; tabBarBadge?: unknown } }>,
 }));
 
 vi.mock('react-native', () => ({
@@ -39,7 +39,7 @@ vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
 }));
 
 vi.mock('../../../src/theme/colors', () => ({
-  brandColors: { success: '#047857' },
+  brandColors: { primaryFill: '#6D28D9', success: '#047857' },
 }));
 
 vi.mock('../../../src/providers/theme-provider', () => ({
@@ -55,7 +55,7 @@ vi.mock('expo-router', () => {
   const Tabs = Object.assign(
     ({ children }: { children?: ReactNode }) => createElement('nav', { 'data-tabs-material': 'true' }, children),
     {
-      Screen: ({ name, options }: { name: string; options?: { lazy?: boolean } }) => {
+      Screen: ({ name, options }: { name: string; options?: { lazy?: boolean; tabBarBadge?: unknown } }) => {
         const screen = { name, options };
         const existingIndex = cfg.materialScreens.findIndex((entry) => entry.name === name);
         if (existingIndex === -1) cfg.materialScreens.push(screen);
@@ -83,7 +83,8 @@ vi.mock('expo-router/unstable-native-tabs', () => {
     {
       Icon: () => createElement('span', { 'data-icon': 'true' }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
-      Badge: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-badge': 'true' }, children),
+      Badge: ({ children, selectedBackgroundColor }: { children?: ReactNode; selectedBackgroundColor?: string }) =>
+        createElement('span', { 'data-badge': 'true', 'data-bg': selectedBackgroundColor ?? '' }, children),
     },
   );
 
@@ -178,15 +179,49 @@ describe('TabLayout', () => {
     cfg.sessionId = 'session-1';
     const { container } = render(<TabLayout />);
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
 
-    expect(recordTrigger.querySelector('[data-badge="true"]')).not.toBeNull();
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute('data-bg')).toBe('#6D28D9');
+    expect(badge?.textContent).toBe('•');
   });
 
   it('renders the Record badge when Bluetooth is connected', () => {
     cfg.bluetoothConnected = true;
     const { container } = render(<TabLayout />);
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
 
-    expect(recordTrigger.querySelector('[data-badge="true"]')).not.toBeNull();
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute('data-bg')).toBe('#047857');
+    expect(badge?.textContent).toBe(' ');
+  });
+
+  it('prefers the live-session Record badge when Bluetooth is also connected', () => {
+    cfg.bluetoothConnected = true;
+    cfg.sessionId = 'session-1';
+    const { container } = render(<TabLayout />);
+    const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
+    const badge = recordTrigger.querySelector('[data-badge="true"]');
+
+    expect(badge?.getAttribute('data-bg')).toBe('#6D28D9');
+  });
+
+  it('passes the session badge kind to the Material tab bar', () => {
+    cfg.variant = 'material';
+    cfg.sessionId = 'session-1';
+
+    render(<TabLayout />);
+
+    expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options?.tabBarBadge).toBe('session');
+  });
+
+  it('passes the bluetooth badge kind to the Material tab bar', () => {
+    cfg.variant = 'material';
+    cfg.bluetoothConnected = true;
+
+    render(<TabLayout />);
+
+    expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options?.tabBarBadge).toBe('bluetooth');
   });
 });

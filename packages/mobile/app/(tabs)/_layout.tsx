@@ -19,6 +19,7 @@ export const unstable_settings = { initialRouteName: 'climbs' };
 
 type TabIconProps = { focused: boolean; color: ColorValue; size: number };
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+type RecordBadgeKind = 'session' | 'bluetooth';
 
 // Material (MaterialCommunityIcons) glyphs for the JS tab bar, mirroring the
 // SF Symbols / md hints used by the native tab bar. Rendered on all platforms in
@@ -43,8 +44,8 @@ export default function TabLayout() {
   const { variant } = useTheme();
   const nativeAccessoryActive = useNativeAccessoryActive();
 
-  // Record-tab status cue: a badge when a board is connected over Bluetooth or a
-  // session is live.
+  // Record-tab status cue. A live session is the stronger signal; Bluetooth-only
+  // keeps the existing green dot.
   const isBluetoothConnected = useBluetoothConnectedStatus();
   // sessionId-only subscription: the tab layout renders the whole NativeTabs
   // tree inline, so reading the volatile useQueue() here re-rendered every tab
@@ -54,7 +55,9 @@ export default function TabLayout() {
   // queue mutations or climb-to-climb nav), so gating the accessory mount on it
   // doesn't re-render the tab tree on every queue change.
   const hasCurrentClimb = useHasActiveClimb();
-  const showRecordBadge = isBluetoothConnected || sessionId !== null;
+  const recordBadgeKind: RecordBadgeKind | null =
+    sessionId !== null ? 'session' : isBluetoothConnected ? 'bluetooth' : null;
+  const recordBadgeColor = recordBadgeKind === 'session' ? brandColors.primaryFill : brandColors.success;
   const eagerMountRecord = Platform.OS === 'android';
 
   if (variant === 'material') {
@@ -69,7 +72,7 @@ export default function TabLayout() {
           options={{
             title: tSession('mobile.session.recordTab'),
             tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
-            tabBarBadge: showRecordBadge ? '' : undefined,
+            tabBarBadge: recordBadgeKind ?? undefined,
             // Android can stall the first lazy mount of this nested stack,
             // leaving the Record tab blank until another tab forces a remount.
             lazy: eagerMountRecord ? false : undefined,
@@ -113,8 +116,10 @@ export default function TabLayout() {
       <NativeTabs.Trigger name="record">
         <NativeTabs.Trigger.Icon sf="record.circle" md="radio_button_checked" />
         <NativeTabs.Trigger.Label>{tSession('mobile.session.recordTab')}</NativeTabs.Trigger.Label>
-        {showRecordBadge ? (
-          <NativeTabs.Trigger.Badge selectedBackgroundColor={brandColors.success}> </NativeTabs.Trigger.Badge>
+        {recordBadgeKind ? (
+          <NativeTabs.Trigger.Badge selectedBackgroundColor={recordBadgeColor}>
+            {recordBadgeKind === 'session' ? '•' : ' '}
+          </NativeTabs.Trigger.Badge>
         ) : null}
       </NativeTabs.Trigger>
 

@@ -28,11 +28,29 @@ type ClimbLabelProps = {
   gradeColor: string;
   showThumbnail: boolean;
   boardConfig: BoardConfig | null;
+  showSessionReturnCue?: boolean;
+  sessionCueColor: ColorValue;
 };
 
-function ClimbLabel({ climb, labelColor, formattedGrade, gradeColor, showThumbnail, boardConfig }: ClimbLabelProps) {
+function ClimbLabel({
+  climb,
+  labelColor,
+  formattedGrade,
+  gradeColor,
+  showThumbnail,
+  boardConfig,
+  showSessionReturnCue = false,
+  sessionCueColor,
+}: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
+      {showSessionReturnCue ? (
+        <View
+          testID="session-return-cue"
+          pointerEvents="none"
+          style={[styles.sessionReturnCue, { backgroundColor: sessionCueColor }]}
+        />
+      ) : null}
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
       <Text
         variant="subheadline"
@@ -76,7 +94,7 @@ export function ClimbCapsule({
   endActionSize = 0,
   surfaceTreatment = 'floating',
 }: ClimbCapsuleProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { formatGrade } = useGradeFormat();
   const {
@@ -91,6 +109,8 @@ export function ClimbCapsule({
     canPeek,
     handleNext,
     handlePrevious,
+    handleReturnToSession,
+    returnToSessionAvailable,
     swipeAccessibilityActions,
   } = useQueueCarousel();
 
@@ -150,6 +170,7 @@ export function ClimbCapsule({
           onAccessibilityAction={(event) => {
             if (event.nativeEvent.actionName === 'next') handleNext();
             else if (event.nativeEvent.actionName === 'previous') handlePrevious();
+            else if (event.nativeEvent.actionName === 'returnToSession') handleReturnToSession();
           }}
         >
           <Animated.View style={[styles.labelSlot, { right: labelRight }, currentLabelStyle]}>
@@ -160,6 +181,8 @@ export function ClimbCapsule({
               gradeColor={grades.currentColor}
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
+              showSessionReturnCue={returnToSessionAvailable}
+              sessionCueColor={brandColors.primaryFill}
             />
           </Animated.View>
           {nextClimb && canPeek ? (
@@ -171,6 +194,7 @@ export function ClimbCapsule({
                 gradeColor={grades.nextColor}
                 showThumbnail={showThumbnail}
                 boardConfig={boardConfig}
+                sessionCueColor={brandColors.primaryFill}
               />
             </Animated.View>
           ) : null}
@@ -183,6 +207,7 @@ export function ClimbCapsule({
                 gradeColor={grades.previousColor}
                 showThumbnail={showThumbnail}
                 boardConfig={boardConfig}
+                sessionCueColor={brandColors.primaryFill}
               />
             </Animated.View>
           ) : null}
@@ -240,6 +265,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  sessionReturnCue: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
   },
   gradeText: {
     // Colorized like the list rows; right-aligned with a reserved min width

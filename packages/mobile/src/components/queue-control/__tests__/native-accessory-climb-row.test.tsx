@@ -10,6 +10,7 @@ const queue = vi.hoisted(() => ({
     currentClimbQueueItem: null as ClimbQueueItem | null,
     queue: [] as ClimbQueueItem[],
   },
+  sessionId: null as string | null,
   nextClimb: vi.fn(),
   previousClimb: vi.fn(),
 }));
@@ -18,6 +19,9 @@ const drawer = vi.hoisted(() => ({
   boardConfig: null as BoardConfig | null,
   openPlayDrawer: vi.fn(),
 }));
+
+const router = vi.hoisted(() => ({ navigate: vi.fn() }));
+const route = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 
 const boardRender = vi.hoisted(() => ({
   boardWidth: 1080,
@@ -54,6 +58,7 @@ vi.mock('react-native', () => ({
     accessibilityLabel,
     accessibilityActions,
     onLayout,
+    testID,
   }: {
     children?: ReactNode;
     style?: unknown;
@@ -61,6 +66,7 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
     accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
     onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+    testID?: string;
   }) => {
     // jsdom never lays out, so simulate the swipe viewport being measured —
     // otherwise width stays 0, canPeek is false, and the peek slots never render.
@@ -104,6 +110,7 @@ vi.mock('react-native', () => ({
         'data-actions': Array.isArray(accessibilityActions)
           ? accessibilityActions.map((action) => action.name).join(',')
           : '',
+        ...(testID ? { 'data-testid': testID } : {}),
       },
       children,
     );
@@ -177,6 +184,7 @@ vi.mock('../../Text', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { label: '#111111' },
+    brandColors: { primaryFill: '#6D28D9' },
   }),
 }));
 
@@ -186,6 +194,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: queue.nextClimb,
     previousClimb: queue.previousClimb,
   }),
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   usePlaylistSuggestionSource: () => null,
   // Default to driver (not preview-only); these tests encode the bar's wiring,
   // not party gating — that is covered in use-queue-carousel.test.tsx.
@@ -194,6 +203,11 @@ vi.mock('../../../providers/queue-provider', () => ({
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ boardConfig: drawer.boardConfig, openPlayDrawer: drawer.openPlayDrawer }),
+}));
+
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useSegments: () => route.segments,
 }));
 
 vi.mock('../../../hooks/use-grade-format', () => ({
@@ -327,6 +341,9 @@ describe('NativeAccessoryClimbRow', () => {
     drawer.boardConfig = makeBoardConfig();
     boardRender.boardWidth = 1080;
     boardRender.boardHeight = 1920;
+    queue.sessionId = null;
+    route.segments = ['(tabs)', 'climbs'];
+    router.navigate.mockClear();
     queue.nextClimb.mockClear();
     queue.previousClimb.mockClear();
     drawer.openPlayDrawer.mockClear();
@@ -443,6 +460,23 @@ describe('NativeAccessoryClimbRow', () => {
 
     expect(tick).not.toBeNull();
     expect(tick?.closest('[data-gesture="true"]')).toBeNull();
+  });
+
+  it('shows a session-return cue when a live session can be resumed from another tab', () => {
+    queue.sessionId = 'session-1';
+
+    const { container } = render(<NativeAccessoryClimbRow placement="regular" width={344} />);
+
+    expect(container.querySelector('[data-testid="session-return-cue"]')).not.toBeNull();
+  });
+
+  it('hides the session-return cue on the Record tab', () => {
+    queue.sessionId = 'session-1';
+    route.segments = ['(tabs)', 'record'];
+
+    const { container } = render(<NativeAccessoryClimbRow placement="regular" width={344} />);
+
+    expect(container.querySelector('[data-testid="session-return-cue"]')).toBeNull();
   });
 
   it('surfaces the suggestion-aware next item as a peek and a "next" accessibility action', () => {

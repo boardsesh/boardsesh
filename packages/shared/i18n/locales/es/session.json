@@ -304,6 +304,7 @@
       "climbCount_one": "{{count}} bloque",
       "climbCount_other": "{{count}} bloques",
       "logAscent": "Registrar ascenso",
+      "returnToSession": "Volver a la sesión",
       "nextClimb": "Siguiente bloque",
       "previousClimb": "Bloque anterior",
       "alreadyLogged": "Registrado",

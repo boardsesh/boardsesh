@@ -97,7 +97,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
     // MaterialTabBar now reads the scheme-aware brand from the theme (lifted
     // tint in dark) rather than the static import.
-    brandColors: { primary: '#FF3B30', success: '#6B9080' },
+    brandColors: { primary: '#FF3B30', primaryFill: '#B3261E', success: '#6B9080' },
     // M3 navigation-bar roles: active icon on a secondaryContainer pill, active
     // label onSurface, inactive icon+label onSurfaceVariant.
     m3: {
@@ -110,7 +110,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../theme/colors', () => ({
-  brandColors: { primary: '#FF3B30', success: '#6B9080' },
+  brandColors: { primary: '#FF3B30', primaryFill: '#B3261E', success: '#6B9080' },
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -189,11 +189,35 @@ beforeEach(() => {
 describe('MaterialTabBar', () => {
   describe('badge rendering', () => {
     it('renders a badge dot when tabBarBadge is set', () => {
-      const props = makeProps({ tabBarBadge: '' });
+      const props = makeProps({ tabBarBadge: 'bluetooth' });
       const { queryByTestId } = render(
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       expect(queryByTestId('badge')).not.toBeNull();
+    });
+
+    it('renders the bluetooth badge as the established green dot', () => {
+      const props = makeProps({ tabBarBadge: 'bluetooth' });
+      const { queryByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const badgeStyle = queryByTestId('badge')?.getAttribute('data-style') ?? '';
+
+      expect(badgeStyle).toContain('"width":9');
+      expect(badgeStyle).toContain('"height":9');
+      expect(badgeStyle).toContain('"backgroundColor":"#6B9080"');
+    });
+
+    it('renders the session badge as a primary pill', () => {
+      const props = makeProps({ tabBarBadge: 'session' });
+      const { queryByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const badgeStyle = queryByTestId('badge')?.getAttribute('data-style') ?? '';
+
+      expect(badgeStyle).toContain('"width":16');
+      expect(badgeStyle).toContain('"height":9');
+      expect(badgeStyle).toContain('"backgroundColor":"#B3261E"');
     });
 
     it('does not render a badge when tabBarBadge is undefined', () => {

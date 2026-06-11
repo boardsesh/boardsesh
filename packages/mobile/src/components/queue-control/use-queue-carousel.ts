@@ -1,12 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { type LayoutChangeEvent } from 'react-native';
+import { useRouter, useSegments } from 'expo-router';
 import { Gesture, type ComposedGesture } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue, type AnimatedStyle } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
-import { useIsPartyPreviewOnly, usePlaylistSuggestionSource, useQueue } from '../../providers/queue-provider';
+import {
+  useIsPartyPreviewOnly,
+  usePlaylistSuggestionSource,
+  useQueue,
+  useQueueSessionId,
+} from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { hapticLight, hapticSelection } from '../../lib/haptics';
 import { useCarouselGesture } from '../play-drawer/use-carousel-gesture';
@@ -40,7 +46,10 @@ export type QueueCarousel = {
   canNext: boolean;
   handleNext: () => void;
   handlePrevious: () => void;
-  /** Prev/next exposed as a11y actions (swipe is invisible to VoiceOver). */
+  handlePrimaryPress: () => void;
+  handleReturnToSession: () => void;
+  returnToSessionAvailable: boolean;
+  /** Return-to-session + prev/next exposed as a11y actions for hidden gestures. */
   swipeAccessibilityActions: AccessibilityAction[];
 };
 
@@ -55,6 +64,9 @@ export function useQueueCarousel(): QueueCarousel {
   // previousClimb and overwrite the driver's wall climb for everyone.
   const isPartyPreviewOnly = useIsPartyPreviewOnly();
   const { openPlayDrawer } = useDrawerHost();
+  const { sessionId } = useQueueSessionId();
+  const router = useRouter();
+  const segments = useSegments();
   const { t } = useTranslation('session');
   const reduceMotion = useReduceMotion();
 
@@ -104,6 +116,22 @@ export function useQueueCarousel(): QueueCarousel {
     openPlayDrawer(currentClimbQueueItem.climb, { setAsCurrent: false });
   }, [openPlayDrawer, currentClimbQueueItem]);
 
+  const returnToSessionAvailable = sessionId !== null && !segments.includes('record');
+
+  const handleReturnToSession = useCallback(() => {
+    if (sessionId === null) return;
+    hapticLight();
+    router.navigate('/(tabs)/record');
+  }, [router, sessionId]);
+
+  const handlePrimaryPress = useCallback(() => {
+    if (returnToSessionAvailable) {
+      handleReturnToSession();
+      return;
+    }
+    handleOpenPlay();
+  }, [handleOpenPlay, handleReturnToSession, returnToSessionAvailable]);
+
   const { gesture: panGesture, translateX } = useCarouselGesture({
     onSwipeNext: handleNext,
     onSwipePrevious: handlePrevious,
@@ -120,9 +148,9 @@ export function useQueueCarousel(): QueueCarousel {
         .maxDuration(250)
         .onEnd(() => {
           'worklet';
-          runOnJS(handleOpenPlay)();
+          runOnJS(handlePrimaryPress)();
         }),
-    [handleOpenPlay],
+    [handlePrimaryPress],
   );
 
   // Swipe up to open the drawer — a quick alternative to tapping (like dragging a
@@ -176,6 +204,7 @@ export function useQueueCarousel(): QueueCarousel {
   });
 
   const swipeAccessibilityActions: AccessibilityAction[] = [
+    ...(returnToSessionAvailable ? [{ name: 'returnToSession', label: t('mobile.queue.returnToSession') }] : []),
     ...(canPrevious ? [{ name: 'previous', label: t('mobile.queue.previousClimb') }] : []),
     ...(canNext ? [{ name: 'next', label: t('mobile.queue.nextClimb') }] : []),
   ];
@@ -194,6 +223,9 @@ export function useQueueCarousel(): QueueCarousel {
     canNext,
     handleNext,
     handlePrevious,
+    handlePrimaryPress,
+    handleReturnToSession,
+    returnToSessionAvailable,
     swipeAccessibilityActions,
   };
 }

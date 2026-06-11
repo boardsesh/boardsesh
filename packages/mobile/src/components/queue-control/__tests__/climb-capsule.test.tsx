@@ -10,10 +10,13 @@ const queue = vi.hoisted(() => ({
     currentClimbQueueItem: null as ClimbQueueItem | null,
     queue: [] as ClimbQueueItem[],
   },
+  sessionId: null as string | null,
   nextClimb: vi.fn(),
   previousClimb: vi.fn(),
 }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
+const router = vi.hoisted(() => ({ navigate: vi.fn() }));
+const route = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 
 // Injectable navigation result so tests drive the suggestion-aware canNext/nextItem
 // the capsule reads from computeNavigationStateWithSuggestions.
@@ -132,11 +135,13 @@ vi.mock('../../GlassSurface', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { label: '#111111', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
+    brandColors: { primaryFill: '#6D28D9' },
   }),
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   usePlaylistSuggestionSource: () => null,
   // Default to driver (not preview-only); these tests encode the bar's wiring,
   // not party gating — that is covered in use-queue-carousel.test.tsx.
@@ -145,6 +150,11 @@ vi.mock('../../../providers/queue-provider', () => ({
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer, boardConfig: null }),
+}));
+
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useSegments: () => route.segments,
 }));
 
 // The board thumbnail pulls in board-details/native render deps; the capsule
@@ -207,6 +217,9 @@ describe('ClimbCapsule', () => {
     nav.result = { canNext: false, canPrevious: false, nextItem: null, prevItem: null, remainingCount: 0 };
     queue.state.currentClimbQueueItem = null;
     queue.state.queue = [];
+    queue.sessionId = null;
+    route.segments = ['(tabs)', 'climbs'];
+    router.navigate.mockClear();
     drawer.openPlayDrawer.mockClear();
     queue.nextClimb.mockClear();
     queue.previousClimb.mockClear();
@@ -227,6 +240,29 @@ describe('ClimbCapsule', () => {
     const { container } = render(<ClimbCapsule />);
     expect(container.textContent).toContain('The Crimp Ladder');
     expect(container.querySelector('[data-glass]')).not.toBeNull();
+  });
+
+  it('shows a session-return cue when a live session can be resumed from another tab', () => {
+    const item = makeItem(makeClimb({ name: 'The Crimp Ladder' }));
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+    queue.sessionId = 'session-1';
+
+    const { container } = render(<ClimbCapsule />);
+
+    expect(container.querySelector('[data-testid="session-return-cue"]')).not.toBeNull();
+  });
+
+  it('hides the session-return cue on the Record tab', () => {
+    const item = makeItem(makeClimb({ name: 'The Crimp Ladder' }));
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+    queue.sessionId = 'session-1';
+    route.segments = ['(tabs)', 'record'];
+
+    const { container } = render(<ClimbCapsule />);
+
+    expect(container.querySelector('[data-testid="session-return-cue"]')).toBeNull();
   });
 
   it('colorizes the grade text with the grade colour (not a white-on-pill style)', () => {

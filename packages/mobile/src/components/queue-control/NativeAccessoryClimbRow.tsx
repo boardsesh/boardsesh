@@ -29,11 +29,28 @@ type ClimbLabelProps = {
   formattedGrade: string | null;
   showThumbnail: boolean;
   boardConfig: BoardConfig | null;
+  showSessionReturnCue?: boolean;
+  sessionCueColor: ColorValue;
 };
 
-function ClimbLabel({ climb, labelColor, formattedGrade, showThumbnail, boardConfig }: ClimbLabelProps) {
+function ClimbLabel({
+  climb,
+  labelColor,
+  formattedGrade,
+  showThumbnail,
+  boardConfig,
+  showSessionReturnCue = false,
+  sessionCueColor,
+}: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
+      {showSessionReturnCue ? (
+        <View
+          testID="session-return-cue"
+          pointerEvents="none"
+          style={[styles.sessionReturnCue, { backgroundColor: sessionCueColor }]}
+        />
+      ) : null}
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
       <Text
         variant="subheadline"
@@ -73,7 +90,7 @@ function climbFromItem(item: ClimbQueueItem | null | undefined): Climb | null {
  */
 export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryClimbRowProps) {
   const { boardConfig } = useDrawerHost();
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const {
     onLayout,
@@ -87,6 +104,8 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
     canPeek,
     handleNext,
     handlePrevious,
+    handleReturnToSession,
+    returnToSessionAvailable,
     swipeAccessibilityActions,
   } = useQueueCarousel();
 
@@ -114,6 +133,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
           onAccessibilityAction={(event) => {
             if (event.nativeEvent.actionName === 'next') handleNext();
             else if (event.nativeEvent.actionName === 'previous') handlePrevious();
+            else if (event.nativeEvent.actionName === 'returnToSession') handleReturnToSession();
           }}
         >
           <Animated.View style={[styles.labelSlot, currentLabelStyle]}>
@@ -123,6 +143,8 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
               formattedGrade={currentFormattedGrade}
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
+              showSessionReturnCue={returnToSessionAvailable}
+              sessionCueColor={brandColors.primaryFill}
             />
           </Animated.View>
           {nextQueueClimb && canPeek ? (
@@ -133,6 +155,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
                 formattedGrade={nextFormattedGrade}
                 showThumbnail={showThumbnail}
                 boardConfig={boardConfig}
+                sessionCueColor={brandColors.primaryFill}
               />
             </Animated.View>
           ) : null}
@@ -144,6 +167,7 @@ export function NativeAccessoryClimbRow({ placement, width }: NativeAccessoryCli
                 formattedGrade={previousFormattedGrade}
                 showThumbnail={showThumbnail}
                 boardConfig={boardConfig}
+                sessionCueColor={brandColors.primaryFill}
               />
             </Animated.View>
           ) : null}
@@ -189,6 +213,12 @@ const styles = StyleSheet.create({
     gap: spacing[2],
     paddingLeft: spacing[2],
     paddingRight: spacing[1],
+  },
+  sessionReturnCue: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
   },
   name: {
     flex: 1,
