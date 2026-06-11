@@ -44,6 +44,7 @@ type SocialTabProps = {
 };
 
 const EMPTY_PEOPLE: SocialPerson[] = [];
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop }: SocialTabProps) {
   const { t } = useTranslation('you');
@@ -54,6 +55,12 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
   const [mode, setMode] = useState<SocialMode>('followers');
   const [searchQuery, setSearchQuery] = useState('');
   const trimmedSearchQuery = searchQuery.trim();
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearchQuery(trimmedSearchQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [trimmedSearchQuery]);
 
   const listRef = useRef<FlashListRef<SocialPerson>>(null);
   useEffect(() => {
@@ -65,7 +72,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
   const publicProfile = usePublicProfile(userId);
   const followers = useFollowers(userId, mode === 'followers');
   const following = useFollowing(userId, mode === 'following');
-  const search = useSearchUsers(trimmedSearchQuery, mode === 'search');
+  const search = useSearchUsers(debouncedSearchQuery, mode === 'search');
   const toggleFollow = useToggleUserFollow(userId);
 
   const followerCount = publicProfile.data?.followerCount ?? 0;
@@ -92,8 +99,12 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
 
   const activeQuery = mode === 'followers' ? followers : mode === 'following' ? following : search;
   const showSearchHint = mode === 'search' && trimmedSearchQuery.length < 2;
-  const showInitialSpinner = !showSearchHint && activeQuery.isPending && people.length === 0;
-  const isRefreshing = publicProfile.isRefetching || activeQuery.isRefetching;
+  const searchIsDebouncing =
+    mode === 'search' && trimmedSearchQuery.length >= 2 && debouncedSearchQuery !== trimmedSearchQuery;
+  const canRefetchActiveQuery = mode !== 'search' || (debouncedSearchQuery.length >= 2 && !searchIsDebouncing);
+  const showInitialSpinner = searchIsDebouncing || (!showSearchHint && activeQuery.isPending && people.length === 0);
+  const showError = !showSearchHint && !searchIsDebouncing && activeQuery.isError && people.length === 0;
+  const isRefreshing = publicProfile.isRefetching || (canRefetchActiveQuery && activeQuery.isRefetching);
 
   const segmentOptions = useMemo(
     () => [
@@ -106,12 +117,14 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
 
   const handleRefresh = useCallback(() => {
     void publicProfile.refetch();
-    void activeQuery.refetch();
-  }, [activeQuery, publicProfile]);
+    if (canRefetchActiveQuery) void activeQuery.refetch();
+  }, [activeQuery, canRefetchActiveQuery, publicProfile]);
 
   const handleEndReached = useCallback(() => {
-    if (activeQuery.hasNextPage && !activeQuery.isFetchingNextPage) void activeQuery.fetchNextPage();
-  }, [activeQuery]);
+    if (canRefetchActiveQuery && activeQuery.hasNextPage && !activeQuery.isFetchingNextPage) {
+      void activeQuery.fetchNextPage();
+    }
+  }, [activeQuery, canRefetchActiveQuery]);
 
   const handleToggleFollow = useCallback(
     (person: PublicUserProfile) => {
@@ -252,7 +265,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
     <View style={styles.flex}>
       <FlashList
         ref={listRef}
-        data={showInitialSpinner || showSearchHint ? EMPTY_PEOPLE : people}
+        data={showInitialSpinner || showSearchHint || showError ? EMPTY_PEOPLE : people}
         renderItem={renderItem}
         keyExtractor={(person) => person.id}
         onScroll={onScroll}
@@ -271,6 +284,8 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
             <View style={styles.stateBlock}>
               <ActivityIndicator size="large" />
             </View>
+          ) : showError ? (
+            <SocialErrorState onRetry={handleRefresh} />
           ) : (
             <SocialEmptyState mode={mode} query={trimmedSearchQuery} />
           )
@@ -367,6 +382,34 @@ function SocialEmptyState({ mode, query }: { mode: SocialMode; query: string }) 
   );
 }
 
+function SocialErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation('you');
+  const { systemColors, brandColors } = useTheme();
+
+  return (
+    <View style={styles.stateBlock}>
+      <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+      <Text variant="headline" style={styles.stateTitle}>
+        {t('mobile.social.loadError')}
+      </Text>
+      <Pressable
+        onPress={onRetry}
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.social.retry')}
+        style={({ pressed }) => [
+          styles.retryButton,
+          { borderColor: brandColors.primary },
+          pressed && { backgroundColor: `${brandColors.primary}1A` },
+        ]}
+      >
+        <Text variant="footnote" color={brandColors.primary}>
+          {t('mobile.social.retry')}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -431,5 +474,12 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: spacing[5],
     alignItems: 'center',
+  },
+  retryButton: {
+    marginTop: spacing[3],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.full,
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

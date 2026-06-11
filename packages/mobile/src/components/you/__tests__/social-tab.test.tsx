@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 
 const social = vi.hoisted(() => ({
   mutate: vi.fn(),
   latestSearchQuery: '',
+  publicProfileRefetch: vi.fn(),
+  followersRefetch: vi.fn(),
+  followingRefetch: vi.fn(),
+  searchRefetch: vi.fn(),
+  refresh: null as (() => void) | null,
+  searchError: false,
 }));
 
 const follower = {
@@ -58,6 +64,8 @@ vi.mock('react-i18next', () => ({
         'mobile.social.emptyFollowing': 'Not following anyone yet',
         'mobile.social.searchHint': 'Type at least 2 characters to search climbers',
         'mobile.social.emptySearch': 'No climbers found',
+        'mobile.social.loadError': "Couldn't load climbers",
+        'mobile.social.retry': 'Try again',
       };
       if (key === 'mobile.social.followerCount') return `${count} follower${count === 1 ? '' : 's'}`;
       if (key === 'mobile.social.followingCount') return `${count} following`;
@@ -92,7 +100,10 @@ vi.mock('react-native', () => ({
       placeholder,
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
     }),
-  RefreshControl: () => null,
+  RefreshControl: ({ onRefresh }: { onRefresh?: () => void }) => {
+    social.refresh = onRefresh ?? null;
+    return null;
+  },
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 
@@ -102,12 +113,14 @@ vi.mock('@shopify/flash-list', () => ({
       {
         data,
         renderItem,
+        refreshControl,
         ListHeaderComponent,
         ListEmptyComponent,
         ListFooterComponent,
       }: {
         data?: unknown[];
         renderItem: (input: { item: unknown; index: number }) => ReactNode;
+        refreshControl?: ReactNode;
         ListHeaderComponent?: ReactNode;
         ListEmptyComponent?: ReactNode;
         ListFooterComponent?: ReactNode;
@@ -119,6 +132,7 @@ vi.mock('@shopify/flash-list', () => ({
         'div',
         null,
         ListHeaderComponent,
+        refreshControl,
         data?.length
           ? data.map((item, index) => createElement('div', { key: index }, renderItem({ item, index })))
           : ListEmptyComponent,
@@ -147,7 +161,7 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 8: 32, 16: 64 },
-  borderRadius: { lg: 12 },
+  borderRadius: { lg: 12, full: 9999 },
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#999' } }));
 vi.mock('../../Text', () => ({
@@ -195,35 +209,41 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   usePublicProfile: () => ({
     data: { followerCount: 1, followingCount: 1 },
     isRefetching: false,
-    refetch: vi.fn(),
+    refetch: social.publicProfileRefetch,
   }),
   useFollowers: () => ({
     data: { pages: [{ users: [follower], hasMore: false, totalCount: 1 }] },
     isPending: false,
+    isError: false,
     isRefetching: false,
     isFetchingNextPage: false,
     hasNextPage: false,
-    refetch: vi.fn(),
+    refetch: social.followersRefetch,
     fetchNextPage: vi.fn(),
   }),
   useFollowing: () => ({
     data: { pages: [{ users: [following], hasMore: false, totalCount: 1 }] },
     isPending: false,
+    isError: false,
     isRefetching: false,
     isFetchingNextPage: false,
     hasNextPage: false,
-    refetch: vi.fn(),
+    refetch: social.followingRefetch,
     fetchNextPage: vi.fn(),
   }),
   useSearchUsers: (query: string) => {
     social.latestSearchQuery = query;
     return {
-      data: query.length >= 2 ? { pages: [{ results: [searchResult], hasMore: false, totalCount: 1 }] } : undefined,
+      data:
+        query.length >= 2 && !social.searchError
+          ? { pages: [{ results: [searchResult], hasMore: false, totalCount: 1 }] }
+          : undefined,
       isPending: false,
+      isError: social.searchError,
       isRefetching: false,
       isFetchingNextPage: false,
       hasNextPage: false,
-      refetch: vi.fn(),
+      refetch: social.searchRefetch,
       fetchNextPage: vi.fn(),
     };
   },
@@ -238,8 +258,19 @@ import { SocialTab } from '../SocialTab';
 
 describe('SocialTab', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     social.mutate.mockReset();
     social.latestSearchQuery = '';
+    social.publicProfileRefetch.mockReset();
+    social.followersRefetch.mockReset();
+    social.followingRefetch.mockReset();
+    social.searchRefetch.mockReset();
+    social.refresh = null;
+    social.searchError = false;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('shows follower rows by default', () => {
@@ -249,13 +280,18 @@ describe('SocialTab', () => {
     expect(getByText('1 follower · 2 following')).toBeTruthy();
   });
 
-  it('searches climbers and follows a result from the Find friends segment', () => {
+  it('debounces climber search and follows a result from the Find friends segment', () => {
     const { getByText, getByPlaceholderText } = render(<SocialTab userId="me" />);
 
     fireEvent.click(getByText('Find friends'));
     expect(getByText('Type at least 2 characters to search climbers')).toBeTruthy();
 
     fireEvent.change(getByPlaceholderText('Search climbers'), { target: { value: 'ma' } });
+    expect(social.latestSearchQuery).toBe('');
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
 
     expect(social.latestSearchQuery).toBe('ma');
     expect(getByText('Marco')).toBeTruthy();
@@ -263,5 +299,36 @@ describe('SocialTab', () => {
 
     fireEvent.click(getByText('Follow'));
     expect(social.mutate).toHaveBeenCalledWith({ userId: 'friend-1', isFollowedByMe: false });
+  });
+
+  it('does not refetch disabled search queries on pull-to-refresh', () => {
+    const { getByText, getByPlaceholderText } = render(<SocialTab userId="me" />);
+
+    fireEvent.click(getByText('Find friends'));
+    fireEvent.change(getByPlaceholderText('Search climbers'), { target: { value: 'm' } });
+
+    act(() => {
+      social.refresh?.();
+    });
+
+    expect(social.publicProfileRefetch).toHaveBeenCalledOnce();
+    expect(social.searchRefetch).not.toHaveBeenCalled();
+  });
+
+  it('shows a retryable error state for failed searches', () => {
+    social.searchError = true;
+    const { getByText, getByPlaceholderText } = render(<SocialTab userId="me" />);
+
+    fireEvent.click(getByText('Find friends'));
+    fireEvent.change(getByPlaceholderText('Search climbers'), { target: { value: 'ma' } });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    expect(getByText("Couldn't load climbers")).toBeTruthy();
+
+    fireEvent.click(getByText('Try again'));
+    expect(social.publicProfileRefetch).toHaveBeenCalledOnce();
+    expect(social.searchRefetch).toHaveBeenCalledOnce();
   });
 });

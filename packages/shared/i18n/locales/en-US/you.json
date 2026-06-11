@@ -64,7 +64,9 @@
       "emptyFollowing": "Not following anyone yet",
       "searchHint": "Type at least 2 characters to search climbers",
       "emptySearch": "No climbers found",
-      "emptySearchBody": "No climbers match \"{{query}}\"."
+      "emptySearchBody": "No climbers match \"{{query}}\".",
+      "loadError": "Couldn't load climbers",
+      "retry": "Try again"
     },
     "comments": {
       "title": "Comments",

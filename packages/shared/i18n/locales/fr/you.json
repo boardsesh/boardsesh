@@ -64,7 +64,9 @@
       "emptyFollowing": "Aucun abonnement pour le moment",
       "searchHint": "Tape au moins 2 caractères pour chercher des grimpeurs",
       "emptySearch": "Aucun grimpeur trouvé",
-      "emptySearchBody": "Aucun grimpeur ne correspond à \"{{query}}\"."
+      "emptySearchBody": "Aucun grimpeur ne correspond à \"{{query}}\".",
+      "loadError": "Impossible de charger les grimpeurs",
+      "retry": "Réessaie"
     },
     "comments": {
       "title": "Commentaires",

@@ -64,7 +64,9 @@
       "emptyFollowing": "Aún no sigues a nadie",
       "searchHint": "Escribe al menos 2 caracteres para buscar escaladores",
       "emptySearch": "No se encontraron escaladores",
-      "emptySearchBody": "Ningún escalador coincide con \"{{query}}\"."
+      "emptySearchBody": "Ningún escalador coincide con \"{{query}}\".",
+      "loadError": "No se pudieron cargar los escaladores",
+      "retry": "Inténtalo de nuevo"
     },
     "comments": {
       "title": "Comentarios",
