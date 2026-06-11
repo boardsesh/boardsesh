@@ -9,3 +9,15 @@ export type ToggleFavoriteInput = {
 export type ToggleFavoriteResult = {
   favorited: boolean;
 };
+
+export type AddFavoriteInput = {
+  boardName: string;
+  climbUuid: string;
+  angle: number;
+};
+
+export type RemoveFavoriteInput = {
+  boardName: string;
+  climbUuid: string;
+  angle: number;
+};

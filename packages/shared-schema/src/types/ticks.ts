@@ -42,6 +42,7 @@ export type Tick = {
 };
 
 export type SaveTickInput = {
+  uuid?: string;
   boardType: string;
   climbUuid: string;
   angle: number;

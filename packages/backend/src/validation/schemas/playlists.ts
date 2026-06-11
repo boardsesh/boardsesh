@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 
 export const PlaylistNameSchema = z.string().min(1, 'Playlist name cannot be empty').max(100, 'Playlist name too long');
 
@@ -16,6 +16,7 @@ export const PlaylistColorSchema = z
 export const PlaylistIconSchema = z.string().max(50, 'Icon name too long').optional();
 
 export const CreatePlaylistInputSchema = z.object({
+  uuid: z.string().uuid('Invalid UUID format').optional(),
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive(),
   name: PlaylistNameSchema,

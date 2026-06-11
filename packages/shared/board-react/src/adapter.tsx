@@ -1,4 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
+import type { QueryClient } from '@tanstack/react-query';
+import type { SaveTickMutationResponse, SaveTickMutationVariables } from '@boardsesh/graphql/operations';
 
 // HTTP transport for tick + logbook operations. Query is a `string` since
 // the `gql` template tag in `graphql-request` returns the source string at
@@ -32,6 +34,15 @@ export type BoardAdapter = {
    * captured for the next mutation without re-renders.
    */
   resolveActiveSessionId: () => string | null | undefined;
+  /**
+   * Optional platform-local save path. Mobile uses this to commit a tick to
+   * SQLite and enqueue the GraphQL replay before falling back to network-only
+   * behavior when no local database is available. Web omits it.
+   */
+  saveTickOffline?: (
+    variables: SaveTickMutationVariables,
+    helpers: { queryClient: QueryClient; executeHttp: ExecuteHttp },
+  ) => Promise<SaveTickMutationResponse['saveTick'] | null>;
   /**
    * Optional post-save side-effect. Web wires `clearTickDraft` (IndexedDB);
    * mobile has no tick-draft store today and may omit it.

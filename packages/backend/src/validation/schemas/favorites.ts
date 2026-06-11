@@ -10,6 +10,18 @@ export const ToggleFavoriteInputSchema = z.object({
   angle: z.number().int(),
 });
 
+export const AddFavoriteInputSchema = z.object({
+  boardName: BoardNameSchema,
+  climbUuid: ExternalUUIDSchema,
+  angle: z.number().int(),
+});
+
+export const RemoveFavoriteInputSchema = z.object({
+  boardName: BoardNameSchema,
+  climbUuid: ExternalUUIDSchema,
+  angle: z.number().int(),
+});
+
 /**
  * Favorites query climbUuids validation schema (matches playlistsForClimbs limit)
  */

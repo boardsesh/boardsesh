@@ -45,7 +45,7 @@ function nextTempUuid(): string {
  * surfaces refresh without a manual reload.
  */
 export function useSaveTick(boardName: BoardName | null) {
-  const { isAuthenticated, executeHttp, onTickSaved } = useBoardAdapter();
+  const { isAuthenticated, executeHttp, onTickSaved, saveTickOffline } = useBoardAdapter();
   const queryClient = useQueryClient();
   const accumulatedKey = accumulatedLogbookQueryKey(boardName);
 
@@ -80,6 +80,11 @@ export function useSaveTick(boardName: BoardName | null) {
           videoUrl: options.videoUrl,
         },
       };
+
+      const offlineSavedTick = await saveTickOffline?.(variables, { queryClient, executeHttp });
+      if (offlineSavedTick) {
+        return offlineSavedTick;
+      }
 
       const response = await executeHttp<SaveTickMutationResponse, SaveTickMutationVariables>(SAVE_TICK, variables);
       return response.saveTick;

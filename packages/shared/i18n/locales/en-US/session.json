@@ -294,6 +294,8 @@
       "sendsAndAttempts": "{{sends}} sends, {{attempts}} attempts",
       "sendsOnly": "{{sends}} sends",
       "attemptsOnly": "{{attempts}} attempts",
+      "pendingSync_one": "{{count}} waiting to sync",
+      "pendingSync_other": "{{count}} waiting to sync",
       "tries_one": "{{count}} try",
       "tries_other": "{{count}} tries",
       "mirroredTag": "Mirror",

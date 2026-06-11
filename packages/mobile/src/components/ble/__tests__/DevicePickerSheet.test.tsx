@@ -149,9 +149,7 @@ describe('DevicePickerSheet', () => {
     // while more may still arrive. Distinct from the zero-device path, which
     // waits for the scan to finish (the bug fixed here).
     stats.noneMatchedSelectedType = true;
-    const { container } = render(
-      <DevicePickerSheet {...makeProps({ isScanning: true, devices: [device('a')] })} />,
-    );
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, devices: [device('a')] })} />);
     expect(hasText(container, 'ble.differentBoardType')).toBe(true);
     expect(hasText(container, 'ble.troubleshootTitle')).toBe(true);
   });

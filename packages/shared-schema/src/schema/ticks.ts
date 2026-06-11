@@ -79,6 +79,8 @@ export const ticksTypeDefs = /* GraphQL */ `
   Input for recording a climb attempt.
   """
   input SaveTickInput {
+    "Optional client-generated UUID for offline idempotent replay"
+    uuid: ID
     "Board type"
     boardType: String!
     "Climb UUID"

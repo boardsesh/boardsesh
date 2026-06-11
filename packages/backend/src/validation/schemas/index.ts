@@ -15,3 +15,4 @@ export * from './gyms';
 export * from './feedback';
 export * from './board-presence';
 export * from './integrations';
+export * from './sync';

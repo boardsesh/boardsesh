@@ -101,6 +101,7 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ enabled: false, boardId: null }),
 }));
+vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { success: '#047857' } }));

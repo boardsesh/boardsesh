@@ -350,9 +350,12 @@ export const boardClimbs = pgTable(
     // migration — like compatible_size_ids' GIN index (migration 0073), kept out
     // of the schema so drizzle-kit generate never emits a destructive diff for it.
     characteristics: text('characteristics').array(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
     boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),
+    syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
     // Dedup hot path: look up an existing canonical row for an incoming climb
     // by (board_type, layout_id, fingerprint) before deciding whether to
     // insert as canonical or upsert as an alias.
@@ -591,9 +594,12 @@ export const boardClimbStats = pgTable(
     qualityNormalized: boolean('quality_normalized').notNull().default(false),
     faUsername: text('fa_username'),
     faAt: timestamp('fa_at', { mode: 'string' }),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.angle] }),
+    syncCursorIdx: index('board_climb_stats_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
     // Note: the ascents/quality covering indexes are created in custom migrations
     // (0068/0121, and the v2 climb_uuid-as-key variants in 0122) with DESC NULLS LAST
     // + INCLUDE columns that Drizzle can't express.

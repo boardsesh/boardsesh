@@ -24,3 +24,4 @@ export * from './feedback';
 export * from './integrations';
 export * from './instagram-beta-import';
 export * from './ota';
+export * from './sync';

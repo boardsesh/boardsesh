@@ -53,6 +53,10 @@ vi.mock('@boardsesh/board-react', () => ({
   useLogbook: () => logbookState,
 }));
 
+// LogbookSection reads locally-queued (offline) tick counts via a React Query
+// hook; mock it so the test doesn't need a QueryClientProvider.
+vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
+
 import { LogbookSection } from '../LogbookSection';
 
 function makeEntry(overrides: Partial<LogbookEntry>): LogbookEntry {

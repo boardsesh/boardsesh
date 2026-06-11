@@ -25,6 +25,7 @@ import { feedbackTypeDefs } from './feedback';
 import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
 import { otaTypeDefs } from './ota';
+import { syncTypeDefs } from './sync';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -47,6 +48,7 @@ export const typeDefs = [
   betaLinksTypeDefs,
   integrationsTypeDefs,
   otaTypeDefs,
+  syncTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

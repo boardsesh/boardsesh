@@ -332,6 +332,31 @@ export async function resolveBetaLinkTickContext(
   return { tickUuid: tick.uuid, boardId: tick.boardId, angle: tick.angle };
 }
 
+function tickResult(tick: dbSchema.BoardseshTick): Record<string, unknown> {
+  return {
+    uuid: tick.uuid,
+    userId: tick.userId,
+    boardType: tick.boardType,
+    climbUuid: tick.climbUuid,
+    angle: tick.angle,
+    isMirror: tick.isMirror,
+    status: tick.status,
+    attemptCount: tick.attemptCount,
+    quality: tick.quality,
+    difficulty: tick.difficulty,
+    isBenchmark: tick.isBenchmark,
+    comment: tick.comment,
+    climbedAt: tick.climbedAt,
+    createdAt: tick.createdAt,
+    updatedAt: tick.updatedAt,
+    sessionId: tick.sessionId,
+    boardId: tick.boardId,
+    auroraType: tick.auroraType,
+    auroraId: tick.auroraId,
+    auroraSyncedAt: tick.auroraSyncedAt,
+  };
+}
+
 export const tickMutations = {
   /**
    * Delete a tick (climb attempt/ascent) for the authenticated user.
@@ -435,9 +460,26 @@ export const tickMutations = {
         `status=${validatedInput.status}` +
         (validatedInput.sessionId ? ` session=${validatedInput.sessionId}` : ''),
     );
-    const uuid = uuidv4();
+    const uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date().toISOString();
     const climbedAt = new Date(validatedInput.climbedAt).toISOString();
+
+    if (validatedInput.uuid) {
+      const [existingTick] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.uuid, validatedInput.uuid))
+        .limit(1);
+
+      if (existingTick) {
+        if (existingTick.userId !== userId) {
+          throw new GraphQLError('Tick UUID is already in use', {
+            extensions: { code: 'TICK_UUID_CONFLICT' },
+          });
+        }
+        return tickResult(existingTick);
+      }
+    }
 
     // Resolve the tick's board_id. Two explicit-board inputs feed the same FK,
     // each from a different surface:
@@ -547,7 +589,9 @@ export const tickMutations = {
         )
       : { action: 'no-url' };
 
-    // Insert into database
+    // Insert into database. When the client supplied a uuid that already exists
+    // (offline replay), the insert is a no-op and `createdTick` is undefined —
+    // we detect that, return the original row, and skip every side effect below.
     const [tick] = await db.transaction(async (tx) => {
       const [createdTick] = await tx
         .insert(dbSchema.boardseshTicks)
@@ -575,7 +619,12 @@ export const tickMutations = {
           auroraSyncedAt: null,
           auroraSyncError: null,
         })
+        .onConflictDoNothing({
+          target: dbSchema.boardseshTicks.uuid,
+        })
         .returning();
+
+      if (!createdTick) return [];
 
       if (validatedInput.sessionId) {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, validatedInput.sessionId));
@@ -609,6 +658,18 @@ export const tickMutations = {
       return [createdTick];
     });
 
+    if (!tick) {
+      const [existingTick] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.uuid, uuid))
+        .limit(1);
+      if (existingTick?.userId === userId) return tickResult(existingTick);
+      throw new GraphQLError('Tick UUID is already in use', {
+        extensions: { code: 'TICK_UUID_CONFLICT' },
+      });
+    }
+
     // Bust the home-strip cache so newly-attached beta links surface on the
     // next read. Skip when the tick path didn't insert (no video URL, or
     // same-climb dup that was silently skipped) so we don't churn the cache
@@ -619,28 +680,7 @@ export const tickMutations = {
       });
     }
 
-    const result = {
-      uuid: tick.uuid,
-      userId: tick.userId,
-      boardType: tick.boardType,
-      climbUuid: tick.climbUuid,
-      angle: tick.angle,
-      isMirror: tick.isMirror,
-      status: tick.status,
-      attemptCount: tick.attemptCount,
-      quality: tick.quality,
-      difficulty: tick.difficulty,
-      isBenchmark: tick.isBenchmark,
-      comment: tick.comment,
-      climbedAt: tick.climbedAt,
-      createdAt: tick.createdAt,
-      updatedAt: tick.updatedAt,
-      sessionId: tick.sessionId,
-      boardId: tick.boardId,
-      auroraType: tick.auroraType,
-      auroraId: tick.auroraId,
-      auroraSyncedAt: tick.auroraSyncedAt,
-    };
+    const result = tickResult(tick);
 
     // Publish ascent.logged event for feed fan-out (only for successful ascents)
     if (tick.status === 'flash' || tick.status === 'send') {

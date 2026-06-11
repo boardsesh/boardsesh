@@ -22,3 +22,4 @@ export * from './activity-push-tokens';
 export * from './recommendation-stats';
 export * from './integration-exports';
 export * from './location-sync';
+export * from './sync-deletions';

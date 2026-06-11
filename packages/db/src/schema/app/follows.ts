@@ -14,11 +14,13 @@ export const userFollows = pgTable(
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_user_follow').on(table.followerId, table.followingId),
     followerIdx: index('user_follows_follower_idx').on(table.followerId),
     followingIdx: index('user_follows_following_idx').on(table.followingId),
+    syncCursorIdx: index('user_follows_sync_cursor_idx').on(table.followerId, table.updatedAt, table.id),
     noSelfFollow: check('no_self_follow', sql`${table.followerId} != ${table.followingId}`),
   }),
 );
@@ -35,11 +37,13 @@ export const setterFollows = pgTable(
       .notNull(),
     setterUsername: text('setter_username').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_setter_follow').on(table.followerId, table.setterUsername),
     followerIdx: index('setter_follows_follower_idx').on(table.followerId),
     setterIdx: index('setter_follows_setter_idx').on(table.setterUsername),
+    syncCursorIdx: index('setter_follows_sync_cursor_idx').on(table.followerId, table.updatedAt, table.id),
   }),
 );
 
@@ -57,11 +61,13 @@ export const playlistFollows = pgTable(
       .references(() => playlists.uuid, { onDelete: 'cascade' })
       .notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniqueFollow: uniqueIndex('unique_playlist_follow').on(table.followerId, table.playlistUuid),
     followerIdx: index('playlist_follows_follower_idx').on(table.followerId),
     playlistIdx: index('playlist_follows_playlist_idx').on(table.playlistUuid),
+    syncCursorIdx: index('playlist_follows_sync_cursor_idx').on(table.followerId, table.updatedAt, table.id),
   }),
 );
 

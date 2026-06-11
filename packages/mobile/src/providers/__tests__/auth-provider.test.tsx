@@ -67,6 +67,20 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   ACTIVE_BOARD_QUERY_KEY: ['activeBoard'] as const,
 }));
 
+vi.mock('../../db', () => ({
+  getDatabaseHandle: () => null,
+  clearUserData: vi.fn(),
+}));
+
+vi.mock('../../mutation-queue', () => ({
+  drainMutationQueue: vi.fn(),
+  setSigningOut: vi.fn(),
+}));
+
+vi.mock('../../notifications', () => ({
+  stopTokenManagement: vi.fn(async () => {}),
+}));
+
 // The provider registers its forced-sign-out cleanup against this lib-layer hook
 // (and lazily imports ensureFreshToken in checkAuth). Record the register/clear
 // calls so the lifecycle test can assert the contract.

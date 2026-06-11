@@ -471,6 +471,14 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         },
       ],
       'react-native-ble-plx',
+      // Brand tint #8C4A52 matches brandColors.tint — kept as a literal here
+      // because app.config.ts runs at build time, before any theme provider.
+      [
+        'expo-notifications',
+        {
+          color: '#8C4A52',
+        },
+      ],
       // Makes Boardsesh a share target so a beta video link shared from
       // Instagram/TikTok (the OS share sheet) opens the app. iOS gets a no-UI
       // Share Extension that redirects into the host app; Android gets an

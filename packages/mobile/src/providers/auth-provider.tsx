@@ -19,11 +19,14 @@ import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screensh
 import { reset as resetAnalytics, track } from '../lib/analytics';
 import { reportError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
-import { resetHttpClient } from '../lib/graphql/client';
+import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
+import { clearUserData, getDatabaseHandle } from '../db';
+import { drainMutationQueue, setSigningOut } from '../mutation-queue';
+import { stopTokenManagement } from '../notifications';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -53,6 +56,8 @@ type AuthProviderProps = {
   onReady?: () => void;
 };
 
+const SIGN_OUT_DRAIN_TIMEOUT_MS = 3000;
+
 export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -78,6 +83,40 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     [],
   );
 
+  const drainLocalMutationQueueBestEffort = useCallback(async () => {
+    const localDb = getDatabaseHandle();
+    if (!localDb) return;
+
+    try {
+      const graphqlFetch = (query: string, variables?: Record<string, unknown>) =>
+        getHttpClient().request(query, variables);
+      await Promise.race([
+        drainMutationQueue(localDb, queryClient, graphqlFetch),
+        new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_DRAIN_TIMEOUT_MS)),
+      ]);
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[Auth] best-effort offline queue drain during sign-out failed:', error);
+      }
+    }
+  }, [queryClient]);
+
+  const clearLocalOfflineUserData = useCallback(async () => {
+    const localDb = getDatabaseHandle();
+    if (!localDb) return;
+
+    setSigningOut(true);
+    try {
+      await clearUserData(localDb);
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
+      }
+    } finally {
+      setSigningOut(false);
+    }
+  }, []);
+
   // The shared signed-out cleanup, used by the manual `signOut`, the
   // interceptor's forced sign-out (failed-refresh 401), and checkAuth's
   // proactive expiry path. It deliberately omits the two caller-specific steps:
@@ -86,7 +125,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // here would double-revoke.
   const runSignedOutCleanup = useCallback(async () => {
     resetAnalytics();
+    await stopTokenManagement(async () => {});
     await clearPersistedUserStores();
+    await clearLocalOfflineUserData();
     // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
     // without this the next user to sign in on a shared device would inherit the
     // previous user's board until a manual switch.
@@ -100,7 +141,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     // boundary keeps the rest of the hooks simple.
     queryClient.clear();
     setIsAuthenticated(false);
-  }, [clearPersistedUserStores, queryClient]);
+  }, [clearPersistedUserStores, clearLocalOfflineUserData, queryClient]);
 
   // checkAuth lands here when a token read/refresh shows the session is gone. If
   // we were authenticated this session, run the full cleanup (cache + clients are
@@ -266,10 +307,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const signOut = useCallback(
     async (method: 'manual' | 'account_deleted' = 'manual') => {
       track(SHARED_EVENTS.Logout, { method });
+      await drainLocalMutationQueueBestEffort();
       await authSignOut();
       await runSignedOutCleanup();
     },
-    [runSignedOutCleanup],
+    [drainLocalMutationQueueBestEffort, runSignedOutCleanup],
   );
 
   // Let the lib-layer 401 interceptor drive the same cleanup. On a failed-refresh

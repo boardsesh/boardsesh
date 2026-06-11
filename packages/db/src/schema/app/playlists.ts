@@ -51,6 +51,13 @@ export const playlists = pgTable(
     uuidIdx: index('playlists_uuid_idx').on(table.uuid),
     // Index for ordering by updatedAt (used in userPlaylists query)
     updatedAtIdx: index('playlists_updated_at_idx').on(table.updatedAt),
+    // Composite-cursor index for syncPlaylists (offline sync pull). The resolver
+    // drives off playlist_ownership (po.user_id = $userId, served by
+    // unique_playlist_ownership) and joins to playlists, then walks
+    // (playlists.updated_at, playlists.id) row-value pairs. This (updated_at, id)
+    // index lets the planner satisfy the cursor comparison + ORDER BY without a
+    // separate sort over the owned-playlist set.
+    syncCursorIdx: index('playlists_sync_cursor_idx').on(table.updatedAt, table.id),
     // Index for ordering by lastAccessedAt (used in library view)
     lastAccessedAtIdx: index('playlists_last_accessed_at_idx').on(table.lastAccessedAt),
     // Index for Aurora sync conflict resolution
@@ -78,6 +85,7 @@ export const playlistClimbs = pgTable(
 
     // Timestamps
     addedAt: timestamp('added_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     // Ensure unique climb per playlist
@@ -86,6 +94,7 @@ export const playlistClimbs = pgTable(
     climbIdx: index('playlist_climbs_climb_idx').on(table.climbUuid),
     // Index for ordered retrieval
     playlistPositionIdx: index('playlist_climbs_position_idx').on(table.playlistId, table.position),
+    syncCursorIdx: index('playlist_climbs_sync_cursor_idx').on(table.updatedAt, table.id),
   }),
 );
 
@@ -135,6 +144,7 @@ export const userPlaylistPins = pgTable(
       .notNull()
       .references(() => playlists.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     uniquePin: uniqueIndex('unique_user_playlist_pin').on(table.userId, table.playlistId),

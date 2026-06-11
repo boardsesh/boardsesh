@@ -312,6 +312,7 @@ export type GetPlaylistsForClimbsQueryResponse = {
 };
 
 export type CreatePlaylistInput = {
+  uuid?: string;
   boardType: string;
   layoutId: number;
   name: string;

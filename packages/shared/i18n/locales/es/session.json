@@ -294,6 +294,8 @@
       "sendsAndAttempts": "{{sends}} encadenes, {{attempts}} intentos",
       "sendsOnly": "{{sends}} encadenes",
       "attemptsOnly": "{{attempts}} intentos",
+      "pendingSync_one": "{{count}} pendiente de sincronizar",
+      "pendingSync_other": "{{count}} pendientes de sincronizar",
       "tries_one": "{{count}} intento",
       "tries_other": "{{count}} intentos",
       "mirroredTag": "Espejo",

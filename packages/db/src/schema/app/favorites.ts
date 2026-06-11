@@ -13,6 +13,7 @@ export const userFavorites = pgTable(
     climbUuid: text('climb_uuid').notNull(),
     angle: integer('angle').notNull(), // The angle at which the climb was favorited
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     // Ensure unique favorite per user per climb per angle
@@ -21,5 +22,6 @@ export const userFavorites = pgTable(
     userFavoritesIdx: index('user_favorites_user_idx').on(table.userId),
     // Index for checking if a climb is favorited
     climbFavoriteIdx: index('user_favorites_climb_idx').on(table.boardName, table.climbUuid, table.angle),
+    syncCursorIdx: index('user_favorites_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
   }),
 );

@@ -304,7 +304,9 @@
       "lifetimeSends_one": "{{count}} croix",
       "lifetimeSends_other": "{{count}} croix",
       "lifetimeRecap": "{{tries}} {{sessions}}",
-      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}",
+      "pendingSync_one": "{{count}} en attente de synchronisation",
+      "pendingSync_other": "{{count}} en attente de synchronisation"
     },
     "similarClimbs": {
       "title": "Voies similaires",

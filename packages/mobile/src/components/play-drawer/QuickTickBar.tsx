@@ -33,6 +33,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
 import { brandColors } from '../../theme/colors';
@@ -123,15 +124,19 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   // re-runs an O(logbook) scan. Same index `useAscentStatus` reads.
   const boardActions = useOptionalBoardActions();
   const boardLogbook = useOptionalBoardLogbook();
+  const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
   useEffect(() => {
     if (!boardActions) return;
     void boardActions.getLogbook([climbUuid]);
   }, [boardActions, climbUuid]);
   const hasPriorHistory = useMemo(() => {
+    // A locally-queued tick that hasn't drained yet still counts as history so
+    // the label stays `Send` while offline.
+    if (localPendingTicks > 0) return true;
     // No provider → assume history so the label stays `Send` (failure mode 1).
     if (!boardLogbook) return true;
     return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
-  }, [boardLogbook, climbUuid, angle]);
+  }, [boardLogbook, climbUuid, angle, localPendingTicks]);
 
   const [tickState, setTickState] = useState(createInitialTickState);
   const [comment, setComment] = useState('');

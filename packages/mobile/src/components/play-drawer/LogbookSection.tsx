@@ -7,6 +7,7 @@ import { groupEntriesByAngle } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { LogbookEntryRow } from './LogbookEntryRow';
+import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
@@ -25,6 +26,7 @@ export const LogbookSection = memo(function LogbookSection({
 }: LogbookSectionProps) {
   const { t } = useTranslation('session');
   const { logbook, isLoading } = useLogbook(boardName as BoardName, [climbUuid]);
+  const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
   const entries = useMemo(
     () =>
@@ -36,6 +38,15 @@ export const LogbookSection = memo(function LogbookSection({
 
   // Only Tension/Decoy log mirrored sends, so the mirror tag is board-gated.
   const showMirrorTag = boardName === 'tension' || boardName === 'decoy';
+  const pendingRow =
+    pendingTicks > 0 ? (
+      <View style={styles.row}>
+        <Icon name="history" size={20} color={iosSystemColors.systemOrange} />
+        <Text variant="subheadline" color={iosSystemColors.systemOrange}>
+          {t('mobile.logbook.pendingSync', { count: pendingTicks })}
+        </Text>
+      </View>
+    ) : null;
 
   // Entries bucketed under per-angle headers, steepest angle first (the
   // hardest version of the climb leads). Each header recaps the lifetime at
@@ -86,6 +97,7 @@ export const LogbookSection = memo(function LogbookSection({
             </View>
           );
         })}
+        {pendingRow}
       </View>
     );
   }
@@ -93,8 +105,11 @@ export const LogbookSection = memo(function LogbookSection({
   // Guard the fetch so the summary fallback never flashes before entries land.
   if (isLoading) {
     return (
-      <View style={styles.emptyContainer}>
-        <ActivityIndicator size="small" color={iosSystemColors.systemGray} />
+      <View style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="small" color={iosSystemColors.systemGray} />
+        </View>
+        {pendingRow}
       </View>
     );
   }
@@ -105,11 +120,14 @@ export const LogbookSection = memo(function LogbookSection({
 
   if (sends === 0 && attempts === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Icon name="history" size={20} color={iosSystemColors.systemGray} />
-        <Text variant="subheadline" color={iosSystemColors.systemGray}>
-          {t('mobile.logbook.noEntries')}
-        </Text>
+      <View style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <Icon name="history" size={20} color={iosSystemColors.systemGray} />
+          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+            {t('mobile.logbook.noEntries')}
+          </Text>
+        </View>
+        {pendingRow}
       </View>
     );
   }
@@ -124,9 +142,12 @@ export const LogbookSection = memo(function LogbookSection({
   }
 
   return (
-    <View style={styles.row}>
-      <Icon name="tick" size={20} color={iosSystemColors.systemGreen} />
-      <Text variant="body">{summaryText}</Text>
+    <View style={styles.container}>
+      <View style={styles.row}>
+        <Icon name="tick" size={20} color={iosSystemColors.systemGreen} />
+        <Text variant="body">{summaryText}</Text>
+      </View>
+      {pendingRow}
     </View>
   );
 });

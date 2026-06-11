@@ -35,6 +35,7 @@ const TABLES_TO_RESET = [
   'mobile_refresh_tokens',
   'integration_credentials',
   'integration_exports',
+  'sync_deletions',
   'users',
 ];
 

@@ -22,4 +22,28 @@ export const favoritesTypeDefs = /* GraphQL */ `
     "Whether the climb is now favorited"
     favorited: Boolean!
   }
+
+  """
+  Input for adding a climb to favorites (idempotent, sync-safe).
+  """
+  input AddFavoriteInput {
+    "Board type"
+    boardName: String!
+    "Climb UUID to favorite"
+    climbUuid: String!
+    "Board angle"
+    angle: Int!
+  }
+
+  """
+  Input for removing a climb from favorites (idempotent, sync-safe).
+  """
+  input RemoveFavoriteInput {
+    "Board type"
+    boardName: String!
+    "Climb UUID to unfavorite"
+    climbUuid: String!
+    "Board angle"
+    angle: Int!
+  }
 `;

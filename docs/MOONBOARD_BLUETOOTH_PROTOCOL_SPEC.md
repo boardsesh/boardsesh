@@ -31,19 +31,19 @@ Each claim is tagged so you can separate what was observed in the app from what 
 
 ## TL;DR
 
-| Question                               | Answer                                                                                                                  | Tag |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --- |
-| BLE library                            | `flutter_reactive_ble` (not `flutter_blue_plus`).                                                                       | ✅  |
-| How many controller generations?       | **Two.** The app carries UUIDs for both an original **RedBearLab** service and the newer **Nordic UART** one.           | ✅  |
-| Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                            | ✅  |
-| Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                             | ✅  |
-| Subscribes to board notifications?     | **No.** Neither notify characteristic (`713d0002`, `6e400003`) is referenced — the app is write-only.                   | ✅  |
-| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.         | ✅  |
-| Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                              | ✅  |
-| LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                          | 🔁  |
-| LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                      | 🔁  |
-| Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).            | 🔁❓ |
-| Two extra 128-bit UUIDs in the binary  | Present, but match **neither** BLE service family; they live in the app's `uuid`-package / SDK realm, not the LED path. | ❓  |
+| Question                               | Answer                                                                                                                  | Tag  |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---- |
+| BLE library                            | `flutter_reactive_ble` (not `flutter_blue_plus`).                                                                       | ✅   |
+| How many controller generations?       | **Two.** The app carries UUIDs for both an original **RedBearLab** service and the newer **Nordic UART** one.           | ✅   |
+| Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                            | ✅   |
+| Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                             | ✅   |
+| Subscribes to board notifications?     | **No.** Neither notify characteristic (`713d0002`, `6e400003`) is referenced — the app is write-only.                   | ✅   |
+| Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.         | ✅   |
+| Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                              | ✅   |
+| LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                          | 🔁   |
+| LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                      | 🔁   |
+| Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).           | 🔁❓ |
+| Two extra 128-bit UUIDs in the binary  | Present, but match **neither** BLE service family; they live in the app's `uuid`-package / SDK realm, not the LED path. | ❓   |
 
 ---
 

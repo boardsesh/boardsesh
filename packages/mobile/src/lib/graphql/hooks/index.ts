@@ -32,6 +32,10 @@ import {
   type FavoritesQueryVariables,
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
+import { getDatabaseHandle } from '../../../db';
+import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
+import { drainMutationQueue } from '../../../mutation-queue';
+import type { GraphQLFetch } from '../../../mutation-queue/handlers';
 import {
   DELETE_DRAFT_CLIMB_MUTATION,
   type DeleteDraftClimbMutationVariables,
@@ -101,6 +105,25 @@ import {
   type ToggleFavoriteMutationVariables,
   type ToggleFavoriteMutationResponse,
 } from '../operations';
+
+type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
+  currentlyFavorited?: boolean;
+};
+
+function graphqlFetchFromClient(): GraphQLFetch {
+  return (query, variables) => getHttpClient().request(query, variables);
+}
+
+function scheduleDrain(
+  db: NonNullable<ReturnType<typeof getDatabaseHandle>>,
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  void drainMutationQueue(db, queryClient, graphqlFetchFromClient()).catch((error: unknown) => {
+    if (__DEV__) {
+      console.warn('[MutationQueue] drain failed after local write:', error);
+    }
+  });
+}
 
 // ============================================
 // User Profile
@@ -615,8 +638,24 @@ export function useToggleFavorite() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: ToggleFavoriteMutationVariables) =>
-      getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, variables),
+    mutationFn: async (variables: ToggleFavoriteVariables) => {
+      const db = getDatabaseHandle();
+      if (db && typeof variables.currentlyFavorited === 'boolean') {
+        if (variables.currentlyFavorited) {
+          await removeFavoriteLocal(db, variables.input);
+        } else {
+          await addFavoriteLocal(db, variables.input);
+        }
+
+        scheduleDrain(db, queryClient);
+
+        return { toggleFavorite: { favorited: !variables.currentlyFavorited } };
+      }
+
+      return getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, {
+        input: variables.input,
+      });
+    },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       // Bust the per-climb favorite-status cache so a re-open reflects the new
@@ -654,9 +693,6 @@ export function useFavoriteStatus(
     staleTime: 5 * 60 * 1000,
   });
 }
-
-// `useSaveTick` moved to `@boardsesh/board-react` — call sites import the
-// shared hook (with optimistic updates + stats invalidations) directly.
 
 // ============================================
 // Beta Videos (Instagram + TikTok per climb)

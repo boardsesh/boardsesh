@@ -16,6 +16,7 @@ export const TickStatusSchema = z.enum(['flash', 'send', 'attempt'], {
  */
 export const SaveTickInputSchema = z
   .object({
+    uuid: z.string().uuid('Invalid UUID format').optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
     angle: z.number().int().min(0).max(90),

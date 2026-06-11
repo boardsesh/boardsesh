@@ -119,6 +119,7 @@ export const boardseshTicks = pgTable(
       table.angle,
       table.climbUuid,
     ),
+    syncCursorIdx: index('boardsesh_ticks_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
   }),
 );
 

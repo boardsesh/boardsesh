@@ -1,0 +1,40 @@
+import * as Notifications from 'expo-notifications';
+
+type RouterLike = {
+  push: (href: never) => void;
+};
+
+export type NotificationRoute = {
+  path: string;
+  params?: Record<string, string>;
+};
+
+function resolveNotificationRoute(notification: Notifications.Notification): NotificationRoute | null {
+  const data = notification.request.content.data;
+  if (!data) return null;
+
+  const type = data.type as string | undefined;
+  switch (type) {
+    case 'session_invite':
+      return data.sessionId ? { path: '/(tabs)/queue', params: { sessionId: data.sessionId as string } } : null;
+    case 'climb_comment':
+      return data.climbUuid ? { path: '/(tabs)/climbs', params: { climbUuid: data.climbUuid as string } } : null;
+    case 'follow':
+      return data.userId ? { path: '/(tabs)/profile', params: { userId: data.userId as string } } : null;
+    default:
+      return null;
+  }
+}
+
+export function setupNotificationHandlers(router: RouterLike): () => void {
+  const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+    const route = resolveNotificationRoute(response.notification);
+    if (route) {
+      router.push((route.params ? { pathname: route.path, params: route.params } : route.path) as never);
+    }
+  });
+
+  return () => {
+    responseSubscription.remove();
+  };
+}

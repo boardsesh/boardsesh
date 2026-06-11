@@ -111,6 +111,39 @@ describe('useSaveTick (shared)', () => {
     expect(cache?.[0].uuid).toBe('real-77');
   });
 
+  it('uses the adapter offline save path before falling back to HTTP', async () => {
+    const executeHttp = vi.fn();
+    const saveTickOffline = vi.fn().mockResolvedValue(savedTick({ uuid: 'local-1' }));
+    const { wrapper, queryClient } = createWrapper({
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      saveTickOffline,
+    });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(tickOptions({ climbUuid: 'climb-local' }));
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(saveTickOffline).toHaveBeenCalledWith(
+      {
+        input: expect.objectContaining({
+          boardType: 'kilter',
+          climbUuid: 'climb-local',
+          angle: 40,
+          climbedAt: '2026-05-30T00:00:00.000Z',
+        }),
+      },
+      { queryClient, executeHttp },
+    );
+    expect(executeHttp).not.toHaveBeenCalled();
+
+    const cache = queryClient.getQueryData<LogbookEntry[]>(accumulatedLogbookQueryKey('kilter'));
+    expect(cache?.[0].uuid).toBe('local-1');
+  });
+
   it('invalidates the You-page feeds on success so a new tick appears in Logbook and Sessions', async () => {
     const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-feed' }) });
     const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

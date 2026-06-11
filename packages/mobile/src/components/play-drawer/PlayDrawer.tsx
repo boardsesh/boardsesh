@@ -591,6 +591,7 @@ export function PlayDrawer({
           climbUuid: displayedClimb.uuid,
           angle,
         },
+        currentlyFavorited: isFavorited,
       },
       {
         // Reconcile to the server's authoritative result — the backend toggles

@@ -17,6 +17,27 @@ import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
 import { computePlaylistReorderWrites } from './helpers/reorder';
 
+function playlistResult(playlist: dbSchema.Playlist, climbCount: number): Record<string, unknown> {
+  return {
+    id: playlist.id.toString(),
+    uuid: playlist.uuid,
+    boardType: playlist.boardType,
+    layoutId: playlist.layoutId,
+    name: playlist.name,
+    description: playlist.description,
+    isPublic: playlist.isPublic,
+    color: playlist.color,
+    icon: playlist.icon,
+    createdAt: playlist.createdAt.toISOString(),
+    updatedAt: playlist.updatedAt.toISOString(),
+    climbCount,
+    userRole: 'owner',
+    followerCount: 0,
+    isFollowedByMe: false,
+    isPinnedByMe: false,
+  };
+}
+
 export const playlistMutations = {
   /**
    * Create a new playlist with the authenticated user as owner
@@ -26,8 +47,32 @@ export const playlistMutations = {
     const validatedInput = validateInput(CreatePlaylistInputSchema, input, 'input');
 
     const userId = ctx.userId!;
-    const uuid = uuidv4();
+    const uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date();
+
+    if (validatedInput.uuid) {
+      const [existingOwnedPlaylist] = await db
+        .select({ playlist: dbSchema.playlists })
+        .from(dbSchema.playlists)
+        .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
+        .where(
+          and(
+            eq(dbSchema.playlists.uuid, validatedInput.uuid),
+            eq(dbSchema.playlistOwnership.userId, userId),
+            eq(dbSchema.playlistOwnership.role, 'owner'),
+          ),
+        )
+        .limit(1);
+
+      if (existingOwnedPlaylist) {
+        const [climbCount] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(dbSchema.playlistClimbs)
+          .where(eq(dbSchema.playlistClimbs.playlistId, existingOwnedPlaylist.playlist.id))
+          .limit(1);
+        return playlistResult(existingOwnedPlaylist.playlist, climbCount?.count ?? 0);
+      }
+    }
 
     // Create playlist
     const [playlist] = await db
@@ -44,7 +89,36 @@ export const playlistMutations = {
         createdAt: now,
         updatedAt: now,
       })
+      .onConflictDoNothing({
+        target: dbSchema.playlists.uuid,
+      })
       .returning();
+
+    if (!playlist) {
+      const [existingOwnedPlaylist] = await db
+        .select({ playlist: dbSchema.playlists })
+        .from(dbSchema.playlists)
+        .innerJoin(dbSchema.playlistOwnership, eq(dbSchema.playlistOwnership.playlistId, dbSchema.playlists.id))
+        .where(
+          and(
+            eq(dbSchema.playlists.uuid, uuid),
+            eq(dbSchema.playlistOwnership.userId, userId),
+            eq(dbSchema.playlistOwnership.role, 'owner'),
+          ),
+        )
+        .limit(1);
+
+      if (!existingOwnedPlaylist) {
+        throw new Error('Playlist UUID is already in use');
+      }
+
+      const [climbCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(dbSchema.playlistClimbs)
+        .where(eq(dbSchema.playlistClimbs.playlistId, existingOwnedPlaylist.playlist.id))
+        .limit(1);
+      return playlistResult(existingOwnedPlaylist.playlist, climbCount?.count ?? 0);
+    }
 
     // Create ownership
     await db.insert(dbSchema.playlistOwnership).values({
@@ -54,24 +128,7 @@ export const playlistMutations = {
       createdAt: now,
     });
 
-    return {
-      id: playlist.id.toString(),
-      uuid: playlist.uuid,
-      boardType: playlist.boardType,
-      layoutId: playlist.layoutId,
-      name: playlist.name,
-      description: playlist.description,
-      isPublic: playlist.isPublic,
-      color: playlist.color,
-      icon: playlist.icon,
-      createdAt: playlist.createdAt.toISOString(),
-      updatedAt: playlist.updatedAt.toISOString(),
-      climbCount: 0,
-      userRole: 'owner',
-      followerCount: 0,
-      isFollowedByMe: false,
-      isPinnedByMe: false,
-    };
+    return playlistResult(playlist, 0);
   },
 
   /**
