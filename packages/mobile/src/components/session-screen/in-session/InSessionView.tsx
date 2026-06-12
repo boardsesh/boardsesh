@@ -44,10 +44,10 @@ import { gradeBadgeColor } from '../../you/profile-chart-colors';
 import { hapticSelection } from '../../../lib/haptics';
 import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
-import { RepTimerSettingsCard } from './RepTimerSettingsCard';
 import { SessionAnalytics } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
+import { SessionSettingsSheet } from './SessionSettingsSheet';
 import { sortHardestSends, type HardestSend } from './hardest-sends';
 
 type InSessionViewProps = {
@@ -456,6 +456,13 @@ export function InSessionView({
   const handleOpenBoardSwitcher = useCallback(() => {
     router.push('/boards');
   }, [router]);
+  const [sessionSettingsVisible, setSessionSettingsVisible] = useState(false);
+  const handleOpenSessionSettings = useCallback(() => {
+    setSessionSettingsVisible(true);
+  }, []);
+  const handleCloseSessionSettings = useCallback(() => {
+    setSessionSettingsVisible(false);
+  }, []);
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
@@ -591,8 +598,6 @@ export function InSessionView({
         </Card>
       ) : null}
 
-      {showChrome ? <RepTimerSettingsCard /> : null}
-
       <SessionAnalytics
         sends={sends}
         flashes={flashes}
@@ -666,8 +671,13 @@ export function InSessionView({
           scrollY={scrollOffset}
           onPressTitle={handleScrollToTop}
           onShare={onShare}
+          onOpenSettings={handleOpenSessionSettings}
           onEndSession={onRequestEndSession}
         />
+      ) : null}
+
+      {showChrome ? (
+        <SessionSettingsSheet visible={sessionSettingsVisible} onClose={handleCloseSessionSettings} />
       ) : null}
 
       <EndSessionSheet

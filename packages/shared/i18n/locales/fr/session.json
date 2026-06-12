@@ -437,6 +437,8 @@
       "inStatsDuration": "Durée",
       "inStatsHardest": "Plus dure enchaînée",
       "inStatsGrades": "Répartition par cotation",
+      "settings": "Réglages de la session",
+      "settingsTitle": "Réglages de la session",
       "repTimerTitle": "Minuteur de repos",
       "repTimerTarget": "Objectif",
       "repTimerTargetAria": "Objectif du minuteur de repos",

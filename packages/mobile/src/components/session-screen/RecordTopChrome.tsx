@@ -31,6 +31,8 @@ type RecordTopChromeProps = {
   /** Open the invite sheet. Provided only while a session is live; the share
    *  glyph then docks at the far right of the chrome's right toolbar. */
   onShare?: () => void;
+  /** Open session-specific settings. Provided only while a session is live. */
+  onOpenSettings?: () => void;
   /** Open the End-session confirmation. Provided only while a session is live; the
    *  End glyph docks beside the share control (destructive tint) so the session's
    *  stop lives in the nav-bar trailing slot, off the bottom edge. */
@@ -61,6 +63,7 @@ export function RecordTopChrome({
   scrollY,
   onPressTitle,
   onShare,
+  onOpenSettings,
   onEndSession,
 }: RecordTopChromeProps) {
   const { t } = useTranslation('session');
@@ -96,6 +99,14 @@ export function RecordTopChrome({
           {/* Invite/share docks on the LEFT (leading) while a session is live; the
               destructive Stop sits on the right. */}
           <UserAvatarToolbarAction variant="material" />
+          {onOpenSettings ? (
+            <Appbar.Action
+              icon={iconMap.settings.android}
+              color={systemColors.label as string}
+              onPress={onOpenSettings}
+              accessibilityLabel={t('mobile.session.settings')}
+            />
+          ) : null}
           {onShare ? (
             <Appbar.Action
               icon={iconMap['person.badge.plus'].android}
@@ -119,16 +130,27 @@ export function RecordTopChrome({
   }
 
   // Liquid-glass variant: the shared collapsing chrome. While a session is live the
-  // invite/share control docks on the LEFT and a single destructive Stop control on
-  // the RIGHT, with no lightbulb — so the active header reads invite | title | stop.
-  // End sits up here rather than as a bottom bar, keeping the bottom edge to the tab
-  // bar + climb accessory.
+  // settings + invite/share controls dock on the LEFT and a single destructive Stop
+  // control on the RIGHT, with no lightbulb — so the active header reads settings /
+  // invite | title | stop. End sits up here rather than as a bottom bar, keeping the
+  // bottom edge to the tab bar + climb accessory.
   const inSession = onEndSession !== undefined;
-  const leadingAction = onShare ? (
-    <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
-      <Icon name="person.badge.plus" size={22} color={systemColors.label} />
-    </GlassToolbarAction>
-  ) : undefined;
+  const leadingActionCount = (onOpenSettings ? 1 : 0) + (onShare ? 1 : 0);
+  const leadingAction =
+    leadingActionCount > 0 ? (
+      <>
+        {onOpenSettings ? (
+          <GlassToolbarAction onPress={onOpenSettings} accessibilityLabel={t('mobile.session.settings')}>
+            <Icon name="settings" size={22} color={systemColors.label} />
+          </GlassToolbarAction>
+        ) : null}
+        {onShare ? (
+          <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
+            <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+          </GlassToolbarAction>
+        ) : null}
+      </>
+    ) : undefined;
   // Stop is a labelled glass pill (icon + "Stop"), not an icon-only slot, so it reads
   // clearly as the session-ending control. It occupies two toolbar slots to fit the
   // label.
@@ -162,7 +184,7 @@ export function RecordTopChrome({
       scrollY={scrollY}
       onPressTitle={onPressTitle}
       leadingAction={leadingAction}
-      leadingActionCount={onShare ? 1 : 0}
+      leadingActionCount={leadingActionCount}
       trailingAction={trailingAction}
       // The Stop pill spans two icon-slots so its "Stop" label fits the toolbar width.
       trailingActionCount={onEndSession ? 2 : 0}

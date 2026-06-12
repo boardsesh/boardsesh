@@ -437,6 +437,8 @@
       "inStatsDuration": "Duration",
       "inStatsHardest": "Hardest send",
       "inStatsGrades": "Grade distribution",
+      "settings": "Session settings",
+      "settingsTitle": "Session settings",
       "repTimerTitle": "Rest timer",
       "repTimerTarget": "Target",
       "repTimerTargetAria": "Rest timer target",

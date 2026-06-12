@@ -437,6 +437,8 @@
       "inStatsDuration": "Duración",
       "inStatsHardest": "Encadene más duro",
       "inStatsGrades": "Distribución de grados",
+      "settings": "Ajustes de la sesión",
+      "settingsTitle": "Ajustes de la sesión",
       "repTimerTitle": "Temporizador de descanso",
       "repTimerTarget": "Objetivo",
       "repTimerTargetAria": "Objetivo del temporizador de descanso",

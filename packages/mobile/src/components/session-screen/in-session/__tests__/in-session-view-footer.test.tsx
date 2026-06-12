@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +32,7 @@ const theme = vi.hoisted(() => ({
 // error path (endSession rejects) can assert the spinner clears.
 const queue = vi.hoisted(() => ({ endSession: vi.fn() }));
 const sheet = vi.hoisted(() => ({ isEnding: false as boolean, onConfirm: null as (() => void) | null }));
+const sessionSettingsSheet = vi.hoisted(() => ({ visible: false }));
 
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
@@ -95,7 +96,12 @@ vi.mock('../../../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
-vi.mock('../../RecordTopChrome', () => ({ RecordTopChrome: () => null }));
+vi.mock('../../RecordTopChrome', () => ({
+  RecordTopChrome: ({ onOpenSettings }: { onOpenSettings?: () => void }) =>
+    onOpenSettings
+      ? createElement('button', { 'data-testid': 'open-session-settings', onClick: onOpenSettings })
+      : null,
+}));
 vi.mock('../../../ClimbListItemContent', () => ({ ClimbListItemContent: () => null }));
 vi.mock('../../../EndSessionSheet', () => ({
   EndSessionSheet: ({ isEnding, onConfirm }: { isEnding?: boolean; onConfirm?: () => void }) => {
@@ -161,8 +167,17 @@ vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../SessionAnalytics', () => ({ SessionAnalytics: () => null }));
 vi.mock('../SessionLeaderboard', () => ({ SessionLeaderboard: () => null }));
 vi.mock('../SessionPresenceRow', () => ({ SessionPresenceRow: () => null }));
-vi.mock('../RepTimerSettingsCard', () => ({
-  RepTimerSettingsCard: () => createElement('div', { 'data-testid': 'rep-timer-settings-card' }),
+vi.mock('../SessionSettingsSheet', () => ({
+  SessionSettingsSheet: ({ visible }: { visible: boolean }) => {
+    sessionSettingsSheet.visible = visible;
+    return visible
+      ? createElement(
+          'div',
+          { 'data-testid': 'session-settings-sheet' },
+          createElement('div', { 'data-testid': 'rep-timer-settings-card' }),
+        )
+      : null;
+  },
 }));
 
 import { InSessionView } from '../InSessionView';
@@ -182,6 +197,7 @@ describe('InSessionView footer', () => {
     queue.endSession.mockResolvedValue(null);
     sheet.isEnding = false;
     sheet.onConfirm = null;
+    sessionSettingsSheet.visible = false;
     integrations.runSessionEndExports.mockReset();
   });
 
@@ -244,12 +260,19 @@ describe('InSessionView footer', () => {
     expect(queryByTestId('in-session-footer')).toBeNull();
   });
 
-  it('shows rep timer settings only in the active session tab chrome', () => {
+  it('opens rep timer settings from the active session settings sheet', () => {
     const overlay = render(createElement(InSessionView));
+    expect(overlay.queryByTestId('open-session-settings')).toBeNull();
     expect(overlay.queryByTestId('rep-timer-settings-card')).toBeNull();
     overlay.unmount();
 
     const tab = render(createElement(InSessionView, { showChrome: true }));
+    expect(tab.queryByTestId('rep-timer-settings-card')).toBeNull();
+
+    fireEvent.click(tab.getByTestId('open-session-settings'));
+
+    expect(sessionSettingsSheet.visible).toBe(true);
+    expect(tab.queryByTestId('session-settings-sheet')).not.toBeNull();
     expect(tab.queryByTestId('rep-timer-settings-card')).not.toBeNull();
   });
 
