@@ -3,9 +3,10 @@ import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
   TAB_BAR_HEIGHT,
+  TOOLBAR_CAPSULE_HEIGHT,
+  TOOLBAR_GAP,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
-  glassSize,
 } from '../theme/layout';
 
 /**
@@ -27,6 +28,10 @@ export type BottomChromeInputs = {
   insideTabs: boolean;
   /** Whether a climb is currently set (drives the toolbar / accessory). */
   hasCurrentClimb: boolean;
+  /** Whether an active session should reserve the rest-timer capsule above the climb chrome. */
+  hasRepTimer: boolean;
+  /** Current rendered height of the native accessory when mounted. */
+  nativeAccessoryHeight: number;
   /** Whether the iOS 26 native bottom accessory is mounted (it replaces the JS toolbar). */
   nativeAccessoryMounted: boolean;
 };
@@ -39,9 +44,11 @@ export type BottomChromeMetrics = {
   jsQueueToolbarVisible: boolean;
   tabBarHeight: number;
   tabBarBottom: number;
+  /** Extra JS-owned reserve for the active-session rest timer capsule. */
+  repTimerReserve: number;
   jsQueueReserve: number;
   nativeAccessoryReserve: number;
-  /** Bottom padding for scroll views so the last row clears the tab bar + JS toolbar. */
+  /** Bottom padding for scroll views so the last row clears the tab bar + JS-owned chrome. */
   scrollBottomPadding: number;
   /** Bottom offset for floating controls (FABs, snackbar) so they clear all chrome. */
   floatingControlBottom: number;
@@ -57,9 +64,11 @@ export type BottomChromeMetrics = {
  * Pure bottom-chrome arbitration. `nativeAccessoryVisible` and
  * `jsQueueToolbarVisible` are mutually exclusive (the JS toolbar only mounts
  * when the native accessory does not). The native accessory is UIKit-owned and
- * adds its own content inset, so `scrollBottomPadding` reserves only for the JS
- * toolbar. Liquid Glass reserves the taller floating island stack; Material
- * reserves the docked active-context bar height. `scrollBottomPadding` remains
+ * adds its own accessory inset, so `scrollBottomPadding` reserves only for the
+ * JS-owned chrome: the JS toolbar, plus the rest-timer capsule when it renders
+ * above a native accessory. Liquid Glass reserves the taller floating island
+ * stack; Material reserves the docked active-context bar height.
+ * `scrollBottomPadding` remains
  * conservative for list/scroll consumers and keeps tab-bar clearance on both
  * tab implementations; fixed footers use `fixedFooterBottom` because they need
  * the in-flow-vs-overlay tab-bar distinction. `floatingControlBottom` clears
@@ -70,6 +79,8 @@ export function computeBottomChromeMetrics({
   insetsBottom,
   insideTabs,
   hasCurrentClimb,
+  hasRepTimer,
+  nativeAccessoryHeight,
   nativeAccessoryMounted,
 }: BottomChromeInputs): BottomChromeMetrics {
   const nativeAccessoryVisible = nativeAccessoryMounted && hasCurrentClimb;
@@ -86,8 +97,13 @@ export function computeBottomChromeMetrics({
   // intentional slack — imperceptible, and not worth threading the overlap through
   // this pure arbitration. Don't "fix" it by subtracting the overlap here.
   const jsQueueToolbarReserve = uiVariant === 'material' ? MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT : TOOLBAR_RESERVE;
-  const jsQueueReserve = jsQueueToolbarVisible ? jsQueueToolbarReserve : 0;
-  const nativeAccessoryReserve = nativeAccessoryVisible ? glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR : 0;
+  const repTimerGap = uiVariant === 'material' ? TOOLBAR_GAP_ABOVE_TABBAR : TOOLBAR_GAP;
+  const repTimerReserve = hasCurrentClimb && hasRepTimer ? TOOLBAR_CAPSULE_HEIGHT + repTimerGap : 0;
+  const jsQueueReserve = jsQueueToolbarVisible ? jsQueueToolbarReserve + repTimerReserve : 0;
+  const nativeAccessoryReserve = nativeAccessoryVisible
+    ? nativeAccessoryHeight + TOOLBAR_GAP_ABOVE_TABBAR + repTimerReserve
+    : 0;
+  const nativeRepTimerScrollReserve = nativeAccessoryVisible ? repTimerReserve : 0;
   const tabBarBottom = insetsBottom + tabBarHeight;
   const activeQueueChromeReserve = Math.max(jsQueueReserve, nativeAccessoryReserve);
   const contentInsetBottom = tabBarOverlaysContent || !insideTabs ? tabBarBottom : 0;
@@ -101,9 +117,10 @@ export function computeBottomChromeMetrics({
     jsQueueToolbarVisible,
     tabBarHeight,
     tabBarBottom,
+    repTimerReserve,
     jsQueueReserve,
     nativeAccessoryReserve,
-    scrollBottomPadding: insetsBottom + tabBarHeight + jsQueueReserve,
+    scrollBottomPadding: insetsBottom + tabBarHeight + jsQueueReserve + nativeRepTimerScrollReserve,
     floatingControlBottom: insetsBottom + tabBarHeight + Math.max(jsQueueReserve, nativeAccessoryReserve),
     fixedFooterBottom,
   };

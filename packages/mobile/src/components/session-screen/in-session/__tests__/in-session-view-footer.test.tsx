@@ -18,6 +18,8 @@ const bottomChrome = vi.hoisted(() => ({
   metrics: {
     fixedFooterBottom: 88,
     jsQueueReserve: 0,
+    nativeAccessoryVisible: false,
+    repTimerReserve: 0,
     tabBarBottom: 50,
   },
 }));
@@ -159,13 +161,22 @@ vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../SessionAnalytics', () => ({ SessionAnalytics: () => null }));
 vi.mock('../SessionLeaderboard', () => ({ SessionLeaderboard: () => null }));
 vi.mock('../SessionPresenceRow', () => ({ SessionPresenceRow: () => null }));
+vi.mock('../RepTimerSettingsCard', () => ({
+  RepTimerSettingsCard: () => createElement('div', { 'data-testid': 'rep-timer-settings-card' }),
+}));
 
 import { InSessionView } from '../InSessionView';
 
 describe('InSessionView footer', () => {
   beforeEach(() => {
     list.contentContainerStyle = null;
-    bottomChrome.metrics = { fixedFooterBottom: 88, jsQueueReserve: 0, tabBarBottom: 50 };
+    bottomChrome.metrics = {
+      fixedFooterBottom: 88,
+      jsQueueReserve: 0,
+      nativeAccessoryVisible: false,
+      repTimerReserve: 0,
+      tabBarBottom: 50,
+    };
     theme.variant = 'liquidGlass';
     queue.endSession.mockReset();
     queue.endSession.mockResolvedValue(null);
@@ -184,7 +195,13 @@ describe('InSessionView footer', () => {
   });
 
   it('adds the JS queue capsule reserve on Liquid Glass fallback devices', () => {
-    bottomChrome.metrics = { fixedFooterBottom: 196, jsQueueReserve: 66, tabBarBottom: 50 };
+    bottomChrome.metrics = {
+      fixedFooterBottom: 196,
+      jsQueueReserve: 66,
+      nativeAccessoryVisible: false,
+      repTimerReserve: 0,
+      tabBarBottom: 50,
+    };
 
     render(createElement(InSessionView));
 
@@ -193,9 +210,29 @@ describe('InSessionView footer', () => {
     expect(list.contentContainerStyle?.paddingBottom).toBe(196);
   });
 
+  it('adds the JS rep timer reserve above the native accessory on Liquid Glass', () => {
+    bottomChrome.metrics = {
+      fixedFooterBottom: 220,
+      jsQueueReserve: 0,
+      nativeAccessoryVisible: true,
+      repTimerReserve: 60,
+      tabBarBottom: 50,
+    };
+
+    render(createElement(InSessionView));
+
+    expect(list.contentContainerStyle?.paddingBottom).toBe(190);
+  });
+
   it('uses the fixed-footer reserve for the Material active-context bar', () => {
     theme.variant = 'material';
-    bottomChrome.metrics = { fixedFooterBottom: 88, jsQueueReserve: 48, tabBarBottom: 50 };
+    bottomChrome.metrics = {
+      fixedFooterBottom: 88,
+      jsQueueReserve: 48,
+      nativeAccessoryVisible: false,
+      repTimerReserve: 0,
+      tabBarBottom: 50,
+    };
 
     render(createElement(InSessionView));
 
@@ -205,6 +242,15 @@ describe('InSessionView footer', () => {
   it('renders no in-session bottom action bar', () => {
     const { queryByTestId } = render(createElement(InSessionView));
     expect(queryByTestId('in-session-footer')).toBeNull();
+  });
+
+  it('shows rep timer settings only in the active session tab chrome', () => {
+    const overlay = render(createElement(InSessionView));
+    expect(overlay.queryByTestId('rep-timer-settings-card')).toBeNull();
+    overlay.unmount();
+
+    const tab = render(createElement(InSessionView, { showChrome: true }));
+    expect(tab.queryByTestId('rep-timer-settings-card')).not.toBeNull();
   });
 
   it('clears the ending spinner even when endSession rejects', async () => {

@@ -7,7 +7,6 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 const cfg = vi.hoisted(() => ({
   placement: 'regular' as 'regular' | 'inline',
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
-  sessionId: null as string | null,
 }));
 
 function dataValue(value: unknown): string {
@@ -36,25 +35,20 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
+  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
 }));
 vi.mock('../../../theme/layout', () => ({
   glassSize: { standard: 56, inline: 44, capsule: 52 },
   NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH: 344,
   NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER: 32,
 }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useReportNativeAccessoryPlacement: vi.fn(),
+}));
 vi.mock('../NativeAccessoryClimbRow', () => ({
   NativeAccessoryClimbRow: ({ placement, width }: { placement: 'regular' | 'inline'; width: number }) =>
     createElement('div', {
       'data-native-row': 'true',
-      'data-placement': placement,
-      'data-row-width': String(width),
-    }),
-}));
-vi.mock('../NativeAccessoryRepTimerRow', () => ({
-  NativeAccessoryRepTimerRow: ({ placement, width }: { placement: 'regular' | 'inline'; width: number }) =>
-    createElement('div', {
-      'data-native-timer-row': 'true',
       'data-placement': placement,
       'data-row-width': String(width),
     }),
@@ -72,7 +66,6 @@ describe('QueueBottomAccessory', () => {
   beforeEach(() => {
     cfg.placement = 'regular';
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
-    cfg.sessionId = null;
   });
 
   it('renders the native accessory row in regular placement', () => {
@@ -83,12 +76,11 @@ describe('QueueBottomAccessory', () => {
     expect(container.querySelector('[data-native-timer-row]')).toBeNull();
   });
 
-  it('renders the native rep timer row during an active session', () => {
-    cfg.sessionId = 'session-1';
+  it('keeps the climb row in the native accessory', () => {
     const { container } = render(<QueueBottomAccessory />);
-    expect(container.querySelector('[data-native-timer-row="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-native-row="true"]')).not.toBeNull();
     expect(container.querySelector('[data-placement="regular"]')).not.toBeNull();
-    expect(container.querySelector('[data-native-row]')).toBeNull();
+    expect(container.querySelector('[data-native-timer-row]')).toBeNull();
   });
 
   it('renders the native accessory row in inline placement', () => {

@@ -4,15 +4,22 @@ import { useTranslation } from 'react-i18next';
 import { useOptionalBoardProvider } from '@boardsesh/board-react';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { useRepTimerPreference } from '../../lib/rep-timer-preference';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
-import { formatRepTimerElapsed, getRepTimerElapsedSeconds } from './rep-timer';
+import {
+  formatRepTimerElapsed,
+  formatRepTimerTarget,
+  getRepTimerElapsedSeconds,
+  isRepTimerTargetReached,
+} from './rep-timer';
 
 type RepTimerDisplayProps = {
   lastSavedTickAt: string | null;
   labelColor: ColorValue;
   valueColor: ColorValue;
+  targetReachedColor?: ColorValue;
   align?: 'left' | 'center';
 };
 
@@ -33,14 +40,24 @@ function useRepTimerNowMs(lastSavedTickAt: string | null): number {
   return nowMs;
 }
 
-export function RepTimerDisplay({ lastSavedTickAt, labelColor, valueColor, align = 'center' }: RepTimerDisplayProps) {
+export function RepTimerDisplay({
+  lastSavedTickAt,
+  labelColor,
+  valueColor,
+  targetReachedColor = valueColor,
+  align = 'center',
+}: RepTimerDisplayProps) {
   const { t } = useTranslation('session');
+  const { targetSeconds } = useRepTimerPreference();
   const nowMs = useRepTimerNowMs(lastSavedTickAt);
   const elapsedSeconds = getRepTimerElapsedSeconds(lastSavedTickAt, nowMs);
   const elapsedLabel = formatRepTimerElapsed(elapsedSeconds);
+  const targetLabel = formatRepTimerTarget(targetSeconds);
   const accessibilityLabel = lastSavedTickAt
-    ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel })
-    : t('mobile.queue.repTimerNoTickAccessibility');
+    ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel, target: targetLabel })
+    : t('mobile.queue.repTimerNoTickAccessibility', { target: targetLabel });
+  const resolvedValueColor =
+    lastSavedTickAt && isRepTimerTargetReached(elapsedSeconds, targetSeconds) ? targetReachedColor : valueColor;
 
   return (
     <View
@@ -55,11 +72,11 @@ export function RepTimerDisplay({ lastSavedTickAt, labelColor, valueColor, align
         maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
         style={styles.label}
       >
-        {t('mobile.queue.repTimerLabel')}
+        {t('mobile.queue.repTimerLabel', { target: targetLabel })}
       </Text>
       <Text
         variant="headline"
-        color={valueColor}
+        color={resolvedValueColor}
         numberOfLines={1}
         maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
         style={styles.value}
@@ -86,7 +103,7 @@ export function RepTimerCapsule({
   surfaceTreatment = 'floating',
 }: RepTimerCapsuleProps) {
   const board = useOptionalBoardProvider();
-  const { systemColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const capsuleRadius = surfaceTreatment === 'docked' ? 0 : height / 2;
   const endActionReservedWidth = endAction ? endActionSize + 8 : 0;
 
@@ -110,6 +127,7 @@ export function RepTimerCapsule({
           lastSavedTickAt={board?.lastSavedTickAt ?? null}
           labelColor={systemColors.secondaryLabel}
           valueColor={systemColors.label}
+          targetReachedColor={brandColors.success}
         />
       </View>
       {endAction ? <View style={[styles.endActionSlot, { width: endActionSize, height }]}>{endAction}</View> : null}

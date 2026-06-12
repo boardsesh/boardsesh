@@ -7,6 +7,16 @@ export function getRepTimerElapsedSeconds(lastSavedTickAt: string | null, nowMs:
   return Math.max(0, Math.floor((nowMs - tickMs) / 1000));
 }
 
+export function isRepTimerTargetReached(elapsedSeconds: number, targetSeconds: number): boolean {
+  return elapsedSeconds >= targetSeconds;
+}
+
+export function formatRepTimerTarget(targetSeconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(targetSeconds));
+  if (totalSeconds % 60 === 0) return `${totalSeconds / 60}m`;
+  return formatRepTimerElapsed(totalSeconds);
+}
+
 export function formatRepTimerElapsed(elapsedSeconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(elapsedSeconds));
   const hours = Math.floor(totalSeconds / 3600);

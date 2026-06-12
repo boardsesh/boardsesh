@@ -45,6 +45,8 @@ type ActiveContextBarProps = {
   /** Dock flush against the tab bar (Material) rather than floating above it. Positions
    *  the bar's bottom on the tab bar's *measured* top, tucked under its hairline. */
   dockToTabBar?: boolean;
+  /** Extra lift from the measured tab-bar top when docked. */
+  dockOffset?: number;
   /** Horizontal inset from the screen edge; Material uses 0 for a docked bar. */
   horizontalInset?: number;
 };
@@ -57,6 +59,7 @@ export function ActiveContextBar({
   fillPrimary = false,
   gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR,
   dockToTabBar = false,
+  dockOffset = 0,
   horizontalInset = TOOLBAR_SIDE_MARGIN,
 }: ActiveContextBarProps) {
   const reduceMotion = useReduceMotion();
@@ -68,7 +71,7 @@ export function ActiveContextBar({
   // (≤2px off for a single frame, then it snaps to the truth). Floating (glass) keeps
   // its lift above the tab bar.
   const bottom = dockToTabBar
-    ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP
+    ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP + dockOffset
     : bottomChrome.tabBarBottom + gapAboveTabBar;
 
   return (

@@ -12,14 +12,27 @@
  *   Material                  [ ▢ grade · name              ✓ ]
  *     one full-width opaque active-context bar docked above the tab bar
  *
+ *   Active session            [ Rest timer ]
+ *                             [ grade · name ]        [ ✓ tick ]
+ *
  * On the Liquid Glass variant on iOS 26 the native bottom accessory owns this
- * pair, so `jsQueueToolbarVisible` is false here and this returns null.
+ * pair, so `jsQueueToolbarVisible` is false and this mounts only the optional
+ * rest-timer capsule above the native accessory.
  */
 
-import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import {
+  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
+  TOOLBAR_GAP,
+  TOOLBAR_GAP_ABOVE_TABBAR,
+  TOOLBAR_RESERVE,
+  TAB_BAR_HEIGHT,
+  glassSize,
+} from '../../theme/layout';
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
+import { useNativeAccessoryPlacement } from '../../hooks/use-bottom-accessory';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useRepTimerPreference } from '../../lib/rep-timer-preference';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -35,29 +48,38 @@ export function PersistentQueueBar() {
   const { state, sessionId } = useQueue();
   const { variant } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
+  const nativeAccessoryPlacement = useNativeAccessoryPlacement();
+  useRepTimerPreference();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
   const isSessionActive = sessionId !== null;
+  const showRepTimer = isSessionActive;
+  const nativeAccessoryHeight = nativeAccessoryPlacement === 'inline' ? glassSize.inline : glassSize.standard;
 
   if (!currentClimb) return null;
-  if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
+  if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) {
+    return showRepTimer ? (
+      <ActiveContextBar
+        primary={<RepTimerCapsule />}
+        gapAboveTabBar={nativeAccessoryHeight + TOOLBAR_GAP_ABOVE_TABBAR + TOOLBAR_GAP}
+      />
+    ) : null;
+  }
+
+  const liquidRepTimerGapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR + glassSize.hero + TOOLBAR_GAP;
+  const materialRepTimerDockOffset = MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR;
 
   if (variant === 'material') {
     return (
-      <ActiveContextBar
-        fillPrimary
-        dockToTabBar
-        horizontalInset={0}
-        primary={
-          isSessionActive ? (
-            <RepTimerCapsule
-              fillWidth
-              height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
-              surfaceTreatment="docked"
-              endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
-              endActionSize={glassSize.inline}
-            />
-          ) : (
+      <>
+        {showRepTimer ? (
+          <ActiveContextBar dockToTabBar dockOffset={materialRepTimerDockOffset} primary={<RepTimerCapsule />} />
+        ) : null}
+        <ActiveContextBar
+          fillPrimary
+          dockToTabBar
+          horizontalInset={0}
+          primary={
             <ClimbCapsule
               fillWidth
               height={MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT}
@@ -65,16 +87,18 @@ export function PersistentQueueBar() {
               endAction={<LogAscentToolbarButton climb={currentClimb} size={glassSize.inline} />}
               endActionSize={glassSize.inline}
             />
-          )
-        }
-      />
+          }
+        />
+      </>
     );
   }
 
   return (
-    <ActiveContextBar
-      primary={isSessionActive ? <RepTimerCapsule /> : <ClimbCapsule />}
-      trailing={<LogAscentFab climb={currentClimb} />}
-    />
+    <>
+      {showRepTimer ? (
+        <ActiveContextBar primary={<RepTimerCapsule />} gapAboveTabBar={liquidRepTimerGapAboveTabBar} />
+      ) : null}
+      <ActiveContextBar primary={<ClimbCapsule />} trailing={<LogAscentFab climb={currentClimb} />} />
+    </>
   );
 }

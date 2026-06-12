@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useQueue } from '../../providers/queue-provider';
+import { useReportNativeAccessoryPlacement } from '../../hooks/use-bottom-accessory';
 import {
   glassSize,
   NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH,
   NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER,
 } from '../../theme/layout';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
-import { NativeAccessoryRepTimerRow } from './NativeAccessoryRepTimerRow';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 
 /**
@@ -18,13 +18,13 @@ import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
  */
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
+  useReportNativeAccessoryPlacement(placement);
   const { width: screenWidth } = useWindowDimensions();
-  const { state, sessionId } = useQueue();
+  const { state } = useQueue();
   // Show the accessory when there's a local queue climb OR a live wall climb
   // (the flag-gated source flip — see useWallOrQueueCurrentClimb). The row itself
   // re-applies the same selector for what it renders + ticks.
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
-  const isSessionActive = sessionId !== null;
 
   const accessoryWidth = useMemo(() => {
     return Math.max(
@@ -39,11 +39,7 @@ export function QueueBottomAccessory() {
     <View
       style={[styles.row, placement === 'inline' ? styles.inlineRow : styles.regularRow, { width: accessoryWidth }]}
     >
-      {isSessionActive ? (
-        <NativeAccessoryRepTimerRow placement={placement} width={accessoryWidth} climb={currentClimb} />
-      ) : (
-        <NativeAccessoryClimbRow placement={placement} width={accessoryWidth} />
-      )}
+      <NativeAccessoryClimbRow placement={placement} width={accessoryWidth} />
     </View>
   );
 }

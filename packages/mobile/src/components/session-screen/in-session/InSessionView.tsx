@@ -44,6 +44,7 @@ import { gradeBadgeColor } from '../../you/profile-chart-colors';
 import { hapticSelection } from '../../../lib/haptics';
 import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
+import { RepTimerSettingsCard } from './RepTimerSettingsCard';
 import { SessionAnalytics } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
@@ -487,7 +488,11 @@ export function InSessionView({
   // When the native accessory is unavailable, the JS queue capsule still floats
   // above that inset, so add only its reserve and avoid double-counting the tab bar.
   const listBottomPadding =
-    variant === 'material' ? bottomChrome.fixedFooterBottom : insets.bottom + bottomChrome.jsQueueReserve;
+    variant === 'material'
+      ? bottomChrome.fixedFooterBottom
+      : insets.bottom +
+        bottomChrome.jsQueueReserve +
+        (bottomChrome.nativeAccessoryVisible ? bottomChrome.repTimerReserve : 0);
 
   const handleConfirmEnd = useCallback(async () => {
     setIsEnding(true);
@@ -585,6 +590,8 @@ export function InSessionView({
           </View>
         </Card>
       ) : null}
+
+      {showChrome ? <RepTimerSettingsCard /> : null}
 
       <SessionAnalytics
         sends={sends}

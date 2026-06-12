@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatRepTimerElapsed, getRepTimerElapsedSeconds } from '../rep-timer';
+import {
+  formatRepTimerElapsed,
+  formatRepTimerTarget,
+  getRepTimerElapsedSeconds,
+  isRepTimerTargetReached,
+} from '../rep-timer';
 
 describe('rep timer formatting', () => {
   it('derives elapsed whole seconds from the latest saved tick timestamp', () => {
@@ -24,5 +29,12 @@ describe('rep timer formatting', () => {
     expect(formatRepTimerElapsed(9)).toBe('0:09');
     expect(formatRepTimerElapsed(75)).toBe('1:15');
     expect(formatRepTimerElapsed(3725)).toBe('1:02:05');
+  });
+
+  it('formats and evaluates configured target durations', () => {
+    expect(formatRepTimerTarget(180)).toBe('3m');
+    expect(formatRepTimerTarget(95)).toBe('1:35');
+    expect(isRepTimerTargetReached(179, 180)).toBe(false);
+    expect(isRepTimerTargetReached(180, 180)).toBe(true);
   });
 });

@@ -335,9 +335,9 @@
       "nextClimb": "Bloc suivant",
       "previousClimb": "Bloc précédent",
       "alreadyLogged": "Enregistré",
-      "repTimerLabel": "Repos",
-      "repTimerAccessibility": "Minuteur de repos, {{time}} depuis le dernier tick",
-      "repTimerNoTickAccessibility": "Minuteur de repos, aucun tick enregistré",
+      "repTimerLabel": "Repos · {{target}}",
+      "repTimerAccessibility": "Minuteur de repos, {{time}} depuis le dernier tick, objectif {{target}}",
+      "repTimerNoTickAccessibility": "Minuteur de repos, aucun tick enregistré, objectif {{target}}",
       "dragHandleAria": "Glisser pour réorganiser {{name}}"
     },
     "queueSheet": {
@@ -437,6 +437,9 @@
       "inStatsDuration": "Durée",
       "inStatsHardest": "Plus dure enchaînée",
       "inStatsGrades": "Répartition par cotation",
+      "repTimerTitle": "Minuteur de repos",
+      "repTimerTarget": "Objectif",
+      "repTimerTargetAria": "Objectif du minuteur de repos",
       "inHistoryTitle": "Historique de la session",
       "inHistoryEmpty": "Enregistre des blocs pour construire l'historique de ta session.",
       "historyRowAria": "{{name}}, {{status}}",
