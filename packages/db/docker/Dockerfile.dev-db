@@ -19,7 +19,9 @@
 FROM postgres:17 AS postgres-postgis
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends postgresql-17-postgis-3 && \
+    apt-get install -y --no-install-recommends \
+      postgresql-17-postgis-3 \
+      postgresql-17-hypopg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
