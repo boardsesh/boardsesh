@@ -77,6 +77,7 @@ function makeRow(overrides: {
       thumbnail: null,
       isListed: true,
       createdAt: null,
+      attachedByUser: null,
     },
   };
 }

@@ -21,6 +21,7 @@ describe('mapBetaLinksResponse — thumbnail absolutization', () => {
       thumbnail,
       isListed: true,
       createdAt: '2026-04-26T00:00:00Z',
+      attachedByUser: null,
     };
   }
 

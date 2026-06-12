@@ -11,6 +11,11 @@ export const GET_BETA_LINKS = gql`
       thumbnail
       isListed
       createdAt
+      attachedByUser {
+        id
+        displayName
+        avatarUrl
+      }
     }
   }
 `;
@@ -26,6 +31,15 @@ export const ATTACH_BETA_LINK = gql`
 
 export type AttachBetaLinkMutationVariables = { input: AttachBetaLinkInput };
 export type AttachBetaLinkMutationResponse = { attachBetaLink: boolean };
+
+export const DELETE_BETA_LINK = gql`
+  mutation DeleteBetaLink($boardType: String!, $climbUuid: String!, $link: String!) {
+    deleteBetaLink(boardType: $boardType, climbUuid: $climbUuid, link: $link)
+  }
+`;
+
+export type DeleteBetaLinkMutationVariables = { boardType: string; climbUuid: string; link: string };
+export type DeleteBetaLinkMutationResponse = { deleteBetaLink: boolean };
 
 export const GET_RECENT_BETA_LINKS = gql`
   query GetRecentBetaLinks($limit: Int, $boardType: String) {

@@ -1,5 +1,15 @@
 export const betaLinksTypeDefs = /* GraphQL */ `
   """
+  The Boardsesh user who attached a beta link, when attribution is available.
+  Null for Aurora-synced rows and links attached before attribution was introduced.
+  """
+  type BetaLinkAttacher {
+    id: ID!
+    displayName: String
+    avatarUrl: String
+  }
+
+  """
   An external Instagram or TikTok beta link attached to a climb.
   Thumbnail (when present) is served from our own S3 bucket.
   """
@@ -11,6 +21,7 @@ export const betaLinksTypeDefs = /* GraphQL */ `
     thumbnail: String
     isListed: Boolean
     createdAt: String
+    attachedByUser: BetaLinkAttacher
   }
 
   """

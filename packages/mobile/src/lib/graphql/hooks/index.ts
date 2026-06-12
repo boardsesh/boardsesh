@@ -348,10 +348,13 @@ export function useFavoriteStatus(
 import {
   GET_BETA_LINKS,
   ATTACH_BETA_LINK,
+  DELETE_BETA_LINK,
   type GetBetaLinksQueryResponse,
   type GetBetaLinksQueryVariables,
   type AttachBetaLinkMutationVariables,
   type AttachBetaLinkMutationResponse,
+  type DeleteBetaLinkMutationVariables,
+  type DeleteBetaLinkMutationResponse,
 } from '@boardsesh/graphql/operations/beta-links';
 import { dedupeBetaLinks } from '@boardsesh/shared-schema';
 import { mapBetaLinks } from '../../beta-video-url';
@@ -425,6 +428,18 @@ export function useAttachBetaLink() {
       getHttpClient().request<AttachBetaLinkMutationResponse, AttachBetaLinkMutationVariables>(ATTACH_BETA_LINK, {
         input,
       }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
+    },
+  });
+}
+
+export function useDeleteBetaLink() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (vars: DeleteBetaLinkMutationVariables) =>
+      getHttpClient().request<DeleteBetaLinkMutationResponse, DeleteBetaLinkMutationVariables>(DELETE_BETA_LINK, vars),
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
     },

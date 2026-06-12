@@ -287,7 +287,14 @@
       "shareClose": "Cerrar",
       "shareReadingCaption": "Leyendo la descripción…",
       "shareSuggestedTitle": "Encontrado en la descripción",
-      "shareOtherAscents": "Tus otros ascensos"
+      "shareOtherAscents": "Tus otros ascensos",
+      "deleteLink": "Eliminar",
+      "deleteConfirmTitle": "¿Eliminar enlace de beta?",
+      "deleteConfirmBody": "Esta acción no se puede deshacer.",
+      "deleteCancel": "Cancelar",
+      "deleteSuccess": "Enlace de beta eliminado",
+      "deleteError": "No se pudo eliminar. Inténtalo de nuevo.",
+      "viaHandle": "vía @{{handle}}"
     },
     "angleSelector": {
       "title": "Elegir ángulo",

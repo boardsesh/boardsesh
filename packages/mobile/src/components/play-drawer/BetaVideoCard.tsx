@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react';
-import { Pressable, View, StyleSheet, Linking } from 'react-native';
+import { Pressable, View, StyleSheet, Linking, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ import { useToast } from '../../providers/toast-provider';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { useDeleteBetaLink } from '../../lib/graphql/hooks';
 
 export const BETA_CARD_WIDTH = 140;
 const BETA_CARD_ASPECT_RATIO = 9 / 16;
@@ -20,12 +21,16 @@ export const BETA_CARD_HEIGHT = BETA_CARD_WIDTH / BETA_CARD_ASPECT_RATIO;
 
 type Props = {
   link: BetaLink;
+  boardName?: string;
+  climbUuid?: string;
+  currentUserId?: string | null;
 };
 
-export const BetaVideoCard = memo(function BetaVideoCard({ link }: Props) {
+export const BetaVideoCard = memo(function BetaVideoCard({ link, boardName, climbUuid, currentUserId }: Props) {
   const { t } = useTranslation('session');
   const { showToast } = useToast();
   const [imageFailed, setImageFailed] = useState(false);
+  const deleteMutation = useDeleteBetaLink();
 
   const onPress = useCallback(async () => {
     void Haptics.selectionAsync();
@@ -45,8 +50,33 @@ export const BetaVideoCard = memo(function BetaVideoCard({ link }: Props) {
     }
   }, [link.climb_uuid, link.link, showToast, t]);
 
+  const attachedByUser = link.attached_by_user;
+  const isOwner = attachedByUser && currentUserId && attachedByUser.id === currentUserId;
+
+  const onLongPress = useCallback(() => {
+    if (!isOwner || !boardName || !climbUuid) return;
+    void Haptics.selectionAsync();
+    Alert.alert(t('mobile.betaVideos.deleteConfirmTitle'), t('mobile.betaVideos.deleteConfirmBody'), [
+      { text: t('mobile.betaVideos.deleteCancel'), style: 'cancel' },
+      {
+        text: t('mobile.betaVideos.deleteLink'),
+        style: 'destructive',
+        onPress: () => {
+          deleteMutation.mutate(
+            { boardType: boardName, climbUuid, link: link.link },
+            {
+              onSuccess: () => showToast(t('mobile.betaVideos.deleteSuccess'), 'success'),
+              onError: () => showToast(t('mobile.betaVideos.deleteError'), 'error'),
+            },
+          );
+        },
+      },
+    ]);
+  }, [isOwner, boardName, climbUuid, link.link, t, deleteMutation, showToast]);
+
   const platform = detectPlatform(link.link);
   const username = link.foreign_username?.trim();
+  const displayName = attachedByUser?.displayName;
   const accessibilityLabel = username
     ? t('mobile.betaVideos.cardLabelWithUser', { username })
     : t('mobile.betaVideos.cardLabel');
@@ -54,6 +84,7 @@ export const BetaVideoCard = memo(function BetaVideoCard({ link }: Props) {
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={isOwner ? onLongPress : undefined}
       accessibilityRole="link"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
@@ -83,11 +114,24 @@ export const BetaVideoCard = memo(function BetaVideoCard({ link }: Props) {
         </View>
       )}
 
-      {username && (
+      {(displayName || username) && (
         <View style={styles.usernamePill}>
-          <Text variant="caption2" color={iosSystemColors.white} numberOfLines={1}>
-            @{username}
-          </Text>
+          {displayName ? (
+            <>
+              <Text variant="caption2" color={iosSystemColors.white} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {username && (
+                <Text variant="caption2" color={iosSystemColors.systemGray} numberOfLines={1}>
+                  {t('mobile.betaVideos.viaHandle', { handle: username })}
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text variant="caption2" color={iosSystemColors.white} numberOfLines={1}>
+              @{username}
+            </Text>
+          )}
         </View>
       )}
     </Pressable>

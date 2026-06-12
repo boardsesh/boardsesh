@@ -42,7 +42,11 @@
       "step1Title": "Ouvrez Instagram et copiez votre légende",
       "step2Title": "Depuis votre publication, copiez le lien de partage",
       "step3Title": "Collez le lien ci-dessous"
-    }
+    },
+    "viaHandle": "via @{{handle}}",
+    "deleteLink": "Supprimer",
+    "deleteSuccess": "Lien bêta supprimé",
+    "deleteError": "Impossible de supprimer le lien. Réessayez."
   },
   "commentFeed": {
     "empty": "Aucun commentaire pour l'instant",

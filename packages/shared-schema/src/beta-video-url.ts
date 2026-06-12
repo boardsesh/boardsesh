@@ -48,6 +48,16 @@ export function getTikTokVideoId(url: string): string | null {
 }
 
 /**
+ * Boardsesh user who attached a beta link. Present only on rows written after
+ * attribution was introduced; null for Aurora-synced rows and older entries.
+ */
+export type BetaLinkAttacher = {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
+/**
  * Canonical shape used by web and mobile after mapping a GraphQL response.
  * Snake-case is preserved for backwards compatibility with existing call sites
  * — Aurora's sync API uses these names and a lot of UI code already destructures
@@ -61,6 +71,7 @@ export type BetaLink = {
   thumbnail: string | null;
   is_listed: boolean;
   created_at: string;
+  attached_by_user: BetaLinkAttacher | null;
 };
 
 /**
@@ -74,6 +85,7 @@ export type BetaLinksGqlRow = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  attachedByUser: BetaLinkAttacher | null;
 };
 
 /**
@@ -131,6 +143,7 @@ export function mapBetaLinkRow(
     thumbnail: absolutizeThumbnail(row.thumbnail),
     is_listed: row.isListed ?? false,
     created_at: row.createdAt ?? '',
+    attached_by_user: row.attachedByUser ?? null,
   };
 }
 

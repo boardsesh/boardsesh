@@ -666,6 +666,14 @@ export const boardBetaLinks = pgTable(
     //   this table could emit a migration that drops it. If you change
     //   this column, double-check the generated SQL and preserve the FK.
     createdByUserId: text('created_by_user_id'),
+    // Boardsesh tick UUID that caused this beta link to be attached (populated
+    // by the saveTick path when the user provides a videoUrl on a send/flash).
+    // NULL for links attached via the standalone attachBetaLink mutation and
+    // for Aurora-synced rows. FK managed manually — references
+    // boardsesh_ticks(uuid) ON DELETE SET NULL, added alongside this column
+    // in the migration that introduced it. Not declared via `.references()`
+    // for the same cross-package reason as createdByUserId above.
+    attachedByTickId: text('attached_by_tick_id'),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.link] }),
@@ -681,6 +689,10 @@ export const boardBetaLinks = pgTable(
     createdByIdx: index('board_beta_links_created_by_idx')
       .on(table.createdByUserId, table.createdAt)
       .where(sql`${table.createdByUserId} IS NOT NULL`),
+    // Partial index for tick-sourced attribution lookups.
+    attachedByTickIdx: index('board_beta_links_attached_by_tick_idx')
+      .on(table.attachedByTickId)
+      .where(sql`${table.attachedByTickId} IS NOT NULL`),
     // Note: No FK to board_climbs - beta links may arrive before their corresponding climbs during sync
   }),
 );

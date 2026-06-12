@@ -13,6 +13,11 @@ type BoardseshBetaListProps = {
   links: BetaLink[];
   isLoading: boolean;
   /**
+   * Board type (e.g. "kilter", "tension"). Passed to each card so the delete
+   * action knows which board the link belongs to.
+   */
+  boardType?: string | null;
+  /**
    * When set, each card renders a top-anchored climb-name chip resolved
    * from this function. Used by the home-screen slider where the cards
    * come from many different climbs.
@@ -29,6 +34,7 @@ type BoardseshBetaListProps = {
 const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
   links,
   isLoading,
+  boardType,
   getClimbName,
   getClimbHref,
   source = 'drawer',
@@ -51,6 +57,7 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
               <BoardseshBetaCard
                 key={link.link}
                 link={link}
+                boardType={boardType}
                 climbName={getClimbName?.(link) ?? null}
                 climbHref={getClimbHref?.(link) ?? null}
                 source={source}

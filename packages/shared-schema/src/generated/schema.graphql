@@ -3509,6 +3509,16 @@ type SimilarClimb {
 }
 
 """
+The Boardsesh user who attached a beta link, when attribution is available.
+Null for Aurora-synced rows and links attached before attribution was introduced.
+"""
+type BetaLinkAttacher {
+  id: ID!
+  displayName: String
+  avatarUrl: String
+}
+
+"""
 An external Instagram or TikTok beta link attached to a climb.
 Thumbnail (when present) is served from our own S3 bucket.
 """
@@ -3520,6 +3530,7 @@ type BetaLink {
   thumbnail: String
   isListed: Boolean
   createdAt: String
+  attachedByUser: BetaLinkAttacher
 }
 
 """
@@ -4407,6 +4418,11 @@ type Mutation {
   (boardType, climbUuid, link).
   """
   attachBetaLink(input: AttachBetaLinkInput!): Boolean!
+
+  """
+  Delete a beta link the current user attached. Only the attacher can delete.
+  """
+  deleteBetaLink(boardType: String!, climbUuid: String!, link: String!): Boolean!
 
   # ============================================
   # Climb Mutations (require auth)

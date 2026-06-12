@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext, TickStatus } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -468,8 +468,21 @@ export const tickMutations = {
             foreignUsername: betaPlan.foreignUsername,
             createdAt: now,
             createdByUserId: userId,
+            attachedByTickId: uuid,
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [
+              dbSchema.boardBetaLinks.boardType,
+              dbSchema.boardBetaLinks.climbUuid,
+              dbSchema.boardBetaLinks.link,
+            ],
+            set: {
+              // Only fill in attribution when the existing row has no attribution yet —
+              // preserve any attribution already set by a different user or path.
+              createdByUserId: sql`CASE WHEN ${dbSchema.boardBetaLinks.createdByUserId} IS NULL THEN EXCLUDED.created_by_user_id ELSE ${dbSchema.boardBetaLinks.createdByUserId} END`,
+              attachedByTickId: sql`CASE WHEN ${dbSchema.boardBetaLinks.attachedByTickId} IS NULL THEN EXCLUDED.attached_by_tick_id ELSE ${dbSchema.boardBetaLinks.attachedByTickId} END`,
+            },
+          });
       }
 
       return [createdTick];

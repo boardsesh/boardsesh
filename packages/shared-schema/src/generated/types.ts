@@ -308,12 +308,24 @@ export type AuroraCredentialStatus = {
 export type BetaLink = {
   __typename?: 'BetaLink';
   angle?: Maybe<Scalars['Int']['output']>;
+  attachedByUser?: Maybe<BetaLinkAttacher>;
   climbUuid: Scalars['String']['output'];
   createdAt?: Maybe<Scalars['String']['output']>;
   foreignUsername?: Maybe<Scalars['String']['output']>;
   isListed?: Maybe<Scalars['Boolean']['output']>;
   link: Scalars['String']['output'];
   thumbnail?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * The Boardsesh user who attached a beta link, when attribution is available.
+ * Null for Aurora-synced rows and links attached before attribution was introduced.
+ */
+export type BetaLinkAttacher = {
+  __typename?: 'BetaLinkAttacher';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
 };
 
 /**
@@ -1898,6 +1910,8 @@ export type Mutation = {
   deleteAccount: Scalars['Boolean']['output'];
   /** Delete stored Aurora credentials for a board type. */
   deleteAuroraCredential: Scalars['Boolean']['output'];
+  /** Delete a beta link the current user attached. Only the attacher can delete. */
+  deleteBetaLink: Scalars['Boolean']['output'];
   /** Soft-delete a board. */
   deleteBoard: Scalars['Boolean']['output'];
   /** Delete a comment (soft-delete if it has replies). */
@@ -2227,6 +2241,13 @@ export type MutationDeleteAccountArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteBetaLinkArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  link: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5482,6 +5503,7 @@ export type ResolversTypes = ResolversObject<{
   AuroraCredential: ResolverTypeWrapper<AuroraCredential>;
   AuroraCredentialStatus: ResolverTypeWrapper<AuroraCredentialStatus>;
   BetaLink: ResolverTypeWrapper<BetaLink>;
+  BetaLinkAttacher: ResolverTypeWrapper<BetaLinkAttacher>;
   BetaLinkPreview: ResolverTypeWrapper<BetaLinkPreview>;
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
@@ -5747,6 +5769,7 @@ export type ResolversParentTypes = ResolversObject<{
   AuroraCredential: AuroraCredential;
   AuroraCredentialStatus: AuroraCredentialStatus;
   BetaLink: BetaLink;
+  BetaLinkAttacher: BetaLinkAttacher;
   BetaLinkPreview: BetaLinkPreview;
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
@@ -6109,12 +6132,23 @@ export type BetaLinkResolvers<
   ParentType extends ResolversParentTypes['BetaLink'] = ResolversParentTypes['BetaLink'],
 > = ResolversObject<{
   angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  attachedByUser?: Resolver<Maybe<ResolversTypes['BetaLinkAttacher']>, ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   createdAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   foreignUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isListed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   thumbnail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BetaLinkAttacherResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BetaLinkAttacher'] = ResolversParentTypes['BetaLinkAttacher'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -6974,6 +7008,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteAuroraCredentialArgs, 'boardType'>
+  >;
+  deleteBetaLink?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteBetaLinkArgs, 'boardType' | 'climbUuid' | 'link'>
   >;
   deleteBoard?: Resolver<
     ResolversTypes['Boolean'],
@@ -8955,6 +8995,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   AuroraCredential?: AuroraCredentialResolvers<ContextType>;
   AuroraCredentialStatus?: AuroraCredentialStatusResolvers<ContextType>;
   BetaLink?: BetaLinkResolvers<ContextType>;
+  BetaLinkAttacher?: BetaLinkAttacherResolvers<ContextType>;
   BetaLinkPreview?: BetaLinkPreviewResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;

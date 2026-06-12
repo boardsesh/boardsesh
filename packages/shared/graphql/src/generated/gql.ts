@@ -16,8 +16,9 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
 type Documents = {
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n': typeof types.GetDeleteAccountInfoDocument;
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n': typeof types.DeleteAccountDocument;
-  '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n    }\n  }\n': typeof types.GetBetaLinksDocument;
+  '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      attachedByUser {\n        id\n        displayName\n        avatarUrl\n      }\n    }\n  }\n': typeof types.GetBetaLinksDocument;
   '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n': typeof types.AttachBetaLinkDocument;
+  '\n  mutation DeleteBetaLink($boardType: String!, $climbUuid: String!, $link: String!) {\n    deleteBetaLink(boardType: $boardType, climbUuid: $climbUuid, link: $link)\n  }\n': typeof types.DeleteBetaLinkDocument;
   '\n  query GetRecentBetaLinks($limit: Int, $boardType: String) {\n    recentBetaLinks(limit: $limit, boardType: $boardType) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n      }\n    }\n  }\n': typeof types.GetRecentBetaLinksDocument;
   '\n  query GetUserBetaLinks($userId: String!, $limit: Int) {\n    userBetaLinks(userId: $userId, limit: $limit) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n      }\n    }\n  }\n': typeof types.GetUserBetaLinksDocument;
   '\n  query BetaLinkPreview($link: String!) {\n    betaLinkPreview(link: $link) {\n      link\n      thumbnail\n      username\n      caption\n    }\n  }\n': typeof types.BetaLinkPreviewDocument;
@@ -129,10 +130,12 @@ const documents: Documents = {
     types.GetDeleteAccountInfoDocument,
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n':
     types.DeleteAccountDocument,
-  '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n    }\n  }\n':
+  '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      attachedByUser {\n        id\n        displayName\n        avatarUrl\n      }\n    }\n  }\n':
     types.GetBetaLinksDocument,
   '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n':
     types.AttachBetaLinkDocument,
+  '\n  mutation DeleteBetaLink($boardType: String!, $climbUuid: String!, $link: String!) {\n    deleteBetaLink(boardType: $boardType, climbUuid: $climbUuid, link: $link)\n  }\n':
+    types.DeleteBetaLinkDocument,
   '\n  query GetRecentBetaLinks($limit: Int, $boardType: String) {\n    recentBetaLinks(limit: $limit, boardType: $boardType) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n      }\n    }\n  }\n':
     types.GetRecentBetaLinksDocument,
   '\n  query GetUserBetaLinks($userId: String!, $limit: Int) {\n    userBetaLinks(userId: $userId, limit: $limit) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n      }\n    }\n  }\n':
@@ -370,14 +373,20 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n    }\n  }\n',
-): (typeof documents)['\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n    }\n  }\n'];
+  source: '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      attachedByUser {\n        id\n        displayName\n        avatarUrl\n      }\n    }\n  }\n',
+): (typeof documents)['\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      attachedByUser {\n        id\n        displayName\n        avatarUrl\n      }\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
   source: '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n',
 ): (typeof documents)['\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeleteBetaLink($boardType: String!, $climbUuid: String!, $link: String!) {\n    deleteBetaLink(boardType: $boardType, climbUuid: $climbUuid, link: $link)\n  }\n',
+): (typeof documents)['\n  mutation DeleteBetaLink($boardType: String!, $climbUuid: String!, $link: String!) {\n    deleteBetaLink(boardType: $boardType, climbUuid: $climbUuid, link: $link)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

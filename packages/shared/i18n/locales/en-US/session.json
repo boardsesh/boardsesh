@@ -287,7 +287,14 @@
       "shareClose": "Close",
       "shareReadingCaption": "Reading the caption…",
       "shareSuggestedTitle": "Matched from the caption",
-      "shareOtherAscents": "Your other ascents"
+      "shareOtherAscents": "Your other ascents",
+      "deleteLink": "Delete",
+      "deleteConfirmTitle": "Remove beta link?",
+      "deleteConfirmBody": "This can't be undone.",
+      "deleteCancel": "Cancel",
+      "deleteSuccess": "Beta link removed",
+      "deleteError": "Couldn't remove beta link. Try again.",
+      "viaHandle": "via @{{handle}}"
     },
     "angleSelector": {
       "title": "Choose Angle",

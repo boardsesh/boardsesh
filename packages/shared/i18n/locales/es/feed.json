@@ -42,7 +42,11 @@
     "instagramCopyFailed": "No se pudo copiar la descripción. Inténtalo de nuevo.",
     "instagramCopiedAndOpened": "Descripción copiada — pégala en Instagram.",
     "instagramCopiedOnly": "Descripción copiada al portapapeles.",
-    "addSubmit": "Añadir"
+    "addSubmit": "Añadir",
+    "viaHandle": "vía @{{handle}}",
+    "deleteLink": "Eliminar",
+    "deleteSuccess": "Enlace de beta eliminado",
+    "deleteError": "No se pudo eliminar el enlace. Inténtalo de nuevo."
   },
   "commentFeed": {
     "empty": "Sin comentarios todavía",

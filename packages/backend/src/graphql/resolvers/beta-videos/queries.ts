@@ -17,6 +17,12 @@ import { logger } from '../../../utils/logger';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
+type BetaLinkAttacher = {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
 type BetaLinkResult = {
   climbUuid: string;
   link: string;
@@ -25,6 +31,7 @@ type BetaLinkResult = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  attachedByUser: BetaLinkAttacher | null;
 };
 
 type RecentBetaLinkResult = {
@@ -121,7 +128,7 @@ const TIKTOK_ENRICH: EnrichConfig = {
 
 const ENRICH_CONCURRENCY = 5;
 
-function passthroughResult(row: Row): BetaLinkResult {
+function passthroughResult(row: Row, attachedByUser: BetaLinkAttacher | null = null): BetaLinkResult {
   return {
     climbUuid: row.climbUuid,
     link: row.link,
@@ -130,6 +137,7 @@ function passthroughResult(row: Row): BetaLinkResult {
     thumbnail: isOurS3Url(row.thumbnail) ? row.thumbnail : null,
     isListed: row.isListed,
     createdAt: row.createdAt,
+    attachedByUser,
   };
 }
 
@@ -168,7 +176,11 @@ async function persistEnriched(row: Row, persistedThumbnail: string | null, newU
  * `gone` heuristic miss — those signals can flap when IG rate-limits us or
  * serves a login wall.
  */
-async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | null> {
+async function enrichRow(
+  row: Row,
+  cfg: EnrichConfig,
+  attachedByUser: BetaLinkAttacher | null,
+): Promise<BetaLinkResult | null> {
   const haveCachedThumbnail = isOurS3Url(row.thumbnail);
 
   // Short-circuit: once we've cached the thumbnail we have everything we
@@ -187,6 +199,7 @@ async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | 
       thumbnail: row.thumbnail,
       isListed: row.isListed,
       createdAt: row.createdAt,
+      attachedByUser,
     };
   }
 
@@ -200,7 +213,7 @@ async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | 
   if (meta.status === 'transient_error') {
     // No cached thumbnail; passthroughResult will return thumbnail: null but
     // keeps the row visible in the slider with whatever metadata we have.
-    return passthroughResult(row);
+    return passthroughResult(row, attachedByUser);
   }
 
   // haveCachedThumbnail is necessarily false past the short-circuit above —
@@ -227,6 +240,7 @@ async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | 
     thumbnail,
     isListed: row.isListed,
     createdAt: row.createdAt,
+    attachedByUser,
   };
 }
 
@@ -263,13 +277,13 @@ function makeLimiter(concurrency: number): <T>(task: () => Promise<T>) => Promis
   };
 }
 
-async function enrichRowSafe(row: Row): Promise<BetaLinkResult | null> {
+async function enrichRowSafe(row: Row, attachedByUser: BetaLinkAttacher | null): Promise<BetaLinkResult | null> {
   if (isKayaClimbUrl(row.link)) return null;
-  if (isInstagramUrl(row.link)) return enrichRow(row, INSTAGRAM_ENRICH);
-  if (isTikTokUrl(row.link)) return enrichRow(row, TIKTOK_ENRICH);
+  if (isInstagramUrl(row.link)) return enrichRow(row, INSTAGRAM_ENRICH, attachedByUser);
+  if (isTikTokUrl(row.link)) return enrichRow(row, TIKTOK_ENRICH, attachedByUser);
   // Unknown platform: serve only an already-cached thumbnail (don't hot-link
   // an arbitrary URL).
-  return passthroughResult(row);
+  return passthroughResult(row, attachedByUser);
 }
 
 // snake_case shape returned by the raw SQL CTE; we cache the row set in this
@@ -421,12 +435,24 @@ export const betaLinkQueries = {
     { boardType, climbUuid }: { boardType: string; climbUuid: string },
   ): Promise<BetaLinkResult[]> => {
     const rows = await db
-      .select()
+      .select({
+        betaLink: dbSchema.boardBetaLinks,
+        displayName: dbSchema.userProfiles.displayName,
+        avatarUrl: dbSchema.userProfiles.avatarUrl,
+      })
       .from(dbSchema.boardBetaLinks)
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.boardBetaLinks.createdByUserId, dbSchema.userProfiles.userId))
       .where(and(eq(dbSchema.boardBetaLinks.boardType, boardType), eq(dbSchema.boardBetaLinks.climbUuid, climbUuid)));
 
     const limit = makeLimiter(ENRICH_CONCURRENCY);
-    const enriched = await Promise.all(rows.map((row) => limit(() => enrichRowSafe(row))));
+    const enriched = await Promise.all(
+      rows.map(({ betaLink, displayName, avatarUrl }) => {
+        const attachedByUser = betaLink.createdByUserId
+          ? { id: betaLink.createdByUserId, displayName: displayName ?? null, avatarUrl: avatarUrl ?? null }
+          : null;
+        return limit(() => enrichRowSafe(betaLink, attachedByUser));
+      }),
+    );
 
     return enriched.filter((r): r is BetaLinkResult => r !== null);
   },
@@ -515,6 +541,7 @@ export const betaLinkQueries = {
           thumbnail: r.thumbnail,
           isListed: r.is_listed,
           createdAt: r.created_at,
+          attachedByUser: null,
         },
         climbName: r.climb_name,
         boardType: r.board_type,

@@ -205,6 +205,11 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     attachBetaLink(input: AttachBetaLinkInput!): Boolean!
 
+    """
+    Delete a beta link the current user attached. Only the attacher can delete.
+    """
+    deleteBetaLink(boardType: String!, climbUuid: String!, link: String!): Boolean!
+
     # ============================================
     # Climb Mutations (require auth)
     # ============================================

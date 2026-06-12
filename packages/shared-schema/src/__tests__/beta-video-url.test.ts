@@ -139,6 +139,7 @@ function makeLink(overrides: Partial<BetaLink> = {}): BetaLink {
     thumbnail: '/static/beta-link-thumbnails/abc.jpg',
     is_listed: true,
     created_at: '2026-01-01T00:00:00Z',
+    attached_by_user: null,
     ...overrides,
   };
 }
@@ -210,6 +211,7 @@ function makeRow(overrides: Partial<BetaLinksGqlRow> = {}): BetaLinksGqlRow {
     thumbnail: '/static/beta-link-thumbnails/abc.jpg',
     isListed: true,
     createdAt: '2026-01-01T00:00:00Z',
+    attachedByUser: null,
     ...overrides,
   };
 }
@@ -225,7 +227,14 @@ describe('mapBetaLinkRow', () => {
       thumbnail: '/static/beta-link-thumbnails/abc.jpg',
       is_listed: true,
       created_at: '2026-01-01T00:00:00Z',
+      attached_by_user: null,
     });
+  });
+
+  it('passes through attachedByUser to attached_by_user', () => {
+    const attacher = { id: 'user-1', displayName: 'Alice Sends', avatarUrl: 'https://cdn.example.com/alice.jpg' };
+    const result = mapBetaLinkRow(makeRow({ attachedByUser: attacher }));
+    expect(result.attached_by_user).toEqual(attacher);
   });
 
   it('defaults isListed to false when null', () => {

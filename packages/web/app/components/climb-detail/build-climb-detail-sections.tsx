@@ -134,7 +134,7 @@ export function useBuildClimbDetailSections({
               onSuccess={() => setIsAddingBeta(false)}
             />
           ) : (
-            <BoardseshBetaList links={dedupedBetaLinks} isLoading={betaLinksLoading} />
+            <BoardseshBetaList links={dedupedBetaLinks} isLoading={betaLinksLoading} boardType={boardType} />
           )}
         </Box>
       ),

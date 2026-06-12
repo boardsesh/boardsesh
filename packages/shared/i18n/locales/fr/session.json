@@ -287,7 +287,14 @@
       "shareClose": "Fermer",
       "shareReadingCaption": "Lecture de la description...",
       "shareSuggestedTitle": "Trouve dans la description",
-      "shareOtherAscents": "Tes autres ascensions"
+      "shareOtherAscents": "Tes autres ascensions",
+      "deleteLink": "Supprimer",
+      "deleteConfirmTitle": "Supprimer ce lien bêta ?",
+      "deleteConfirmBody": "Cette action est irréversible.",
+      "deleteCancel": "Annuler",
+      "deleteSuccess": "Lien bêta supprimé",
+      "deleteError": "Impossible de supprimer. Réessayez.",
+      "viaHandle": "via @{{handle}}"
     },
     "angleSelector": {
       "title": "Choisir l'angle",

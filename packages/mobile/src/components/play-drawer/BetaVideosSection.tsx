@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { useBetaLinks } from '../../lib/graphql/hooks';
+import { useBetaLinks, useProfile } from '../../lib/graphql/hooks';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -32,6 +32,8 @@ export const BetaVideosSection = memo(function BetaVideosSection({
   const { brandColors } = useTheme();
   const addSheetRef = useRef<BetaVideoAddSheetHandle>(null);
   const { data: links, isLoading, isError, refetch, isRefetching } = useBetaLinks(boardName, climbUuid);
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const currentUserId = profile?.id ?? null;
 
   const handleOpenAddSheet = useCallback(() => {
     void Haptics.selectionAsync();
@@ -118,7 +120,13 @@ export const BetaVideosSection = memo(function BetaVideosSection({
           snapToAlignment="start"
         >
           {links.map((link) => (
-            <BetaVideoCard key={betaLinkIdentity(link.link)} link={link} />
+            <BetaVideoCard
+              key={betaLinkIdentity(link.link)}
+              link={link}
+              boardName={boardName}
+              climbUuid={climbUuid}
+              currentUserId={currentUserId}
+            />
           ))}
         </ScrollView>
       )}

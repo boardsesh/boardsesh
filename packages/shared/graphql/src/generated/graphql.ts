@@ -305,12 +305,24 @@ export type AuroraCredentialStatus = {
 export type BetaLink = {
   __typename?: 'BetaLink';
   angle?: Maybe<Scalars['Int']['output']>;
+  attachedByUser?: Maybe<BetaLinkAttacher>;
   climbUuid: Scalars['String']['output'];
   createdAt?: Maybe<Scalars['String']['output']>;
   foreignUsername?: Maybe<Scalars['String']['output']>;
   isListed?: Maybe<Scalars['Boolean']['output']>;
   link: Scalars['String']['output'];
   thumbnail?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * The Boardsesh user who attached a beta link, when attribution is available.
+ * Null for Aurora-synced rows and links attached before attribution was introduced.
+ */
+export type BetaLinkAttacher = {
+  __typename?: 'BetaLinkAttacher';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
 };
 
 /**
@@ -1895,6 +1907,8 @@ export type Mutation = {
   deleteAccount: Scalars['Boolean']['output'];
   /** Delete stored Aurora credentials for a board type. */
   deleteAuroraCredential: Scalars['Boolean']['output'];
+  /** Delete a beta link the current user attached. Only the attacher can delete. */
+  deleteBetaLink: Scalars['Boolean']['output'];
   /** Soft-delete a board. */
   deleteBoard: Scalars['Boolean']['output'];
   /** Delete a comment (soft-delete if it has replies). */
@@ -2224,6 +2238,13 @@ export type MutationDeleteAccountArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteAuroraCredentialArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteBetaLinkArgs = {
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  link: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5392,6 +5413,12 @@ export type GetBetaLinksQuery = {
     thumbnail?: string | null;
     isListed?: boolean | null;
     createdAt?: string | null;
+    attachedByUser?: {
+      __typename?: 'BetaLinkAttacher';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    } | null;
   }>;
 };
 
@@ -5400,6 +5427,14 @@ export type AttachBetaLinkMutationVariables = Exact<{
 }>;
 
 export type AttachBetaLinkMutation = { __typename?: 'Mutation'; attachBetaLink: boolean };
+
+export type DeleteBetaLinkMutationVariables = Exact<{
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  link: Scalars['String']['input'];
+}>;
+
+export type DeleteBetaLinkMutation = { __typename?: 'Mutation'; deleteBetaLink: boolean };
 
 export type GetRecentBetaLinksQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -7668,6 +7703,18 @@ export const GetBetaLinksDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'attachedByUser' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                    ],
+                  },
+                },
               ],
             },
           },
@@ -7712,6 +7759,59 @@ export const AttachBetaLinkDocument = {
     },
   ],
 } as unknown as DocumentNode<AttachBetaLinkMutation, AttachBetaLinkMutationVariables>;
+export const DeleteBetaLinkDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteBetaLink' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'link' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteBetaLink' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'climbUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'link' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'link' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteBetaLinkMutation, DeleteBetaLinkMutationVariables>;
 export const GetRecentBetaLinksDocument = {
   kind: 'Document',
   definitions: [

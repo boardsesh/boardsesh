@@ -42,7 +42,11 @@
       "step1Title": "Open Instagram and copy your caption",
       "step2Title": "From your post, copy the share link",
       "step3Title": "Paste the link below"
-    }
+    },
+    "viaHandle": "via @{{handle}}",
+    "deleteLink": "Delete",
+    "deleteSuccess": "Beta link removed",
+    "deleteError": "Couldn't remove beta link. Try again."
   },
   "commentFeed": {
     "empty": "No comments yet",

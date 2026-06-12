@@ -71,11 +71,13 @@
   color: white;
   font-size: 11px;
   padding: 2px 6px;
-  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .climbChip {
@@ -109,6 +111,18 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+
+.kebabButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--overlay-dark) !important;
+  border-radius: 4px !important;
+  padding: 2px !important;
+  width: 20px;
+  height: 20px;
+  z-index: 1;
 }
 
 .emptyText {
