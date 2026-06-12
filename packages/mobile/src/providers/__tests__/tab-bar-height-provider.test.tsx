@@ -2,11 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import {
-  TabBarHeightProvider,
-  useMeasuredTabBarHeight,
-  useSetMeasuredTabBarHeight,
-} from '../tab-bar-height-provider';
+import { TabBarHeightProvider, useMeasuredTabBarHeight, useSetMeasuredTabBarHeight } from '../tab-bar-height-provider';
 
 function wrapper({ children }: { children: ReactNode }) {
   return createElement(TabBarHeightProvider, null, children);

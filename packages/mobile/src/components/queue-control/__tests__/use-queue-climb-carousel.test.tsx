@@ -183,7 +183,7 @@ describe('useQueueClimbCarousel party-preview gating', () => {
       result.current.onLayout({ nativeEvent: { layout: { width: 0 } } } as LayoutChangeEvent);
     });
 
-    expect(result.current.canPeek).toBe(true);      // configuredWidth=320 still in effect
+    expect(result.current.canPeek).toBe(true); // configuredWidth=320 still in effect
     expect(gestureCalls.last?.boardWidth).toBe(320); // widthSV not overwritten to 0
   });
 

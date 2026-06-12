@@ -36,7 +36,11 @@ export function BoardSummaryCard({ onPress, board }: BoardSummaryCardProps) {
   const { systemColors } = useTheme();
 
   const summary = board
-    ? [board.name || formatBoardDisplayName(board.boardType), board.sizeName, board.angle != null ? `${board.angle}°` : null]
+    ? [
+        board.name || formatBoardDisplayName(board.boardType),
+        board.sizeName,
+        board.angle != null ? `${board.angle}°` : null,
+      ]
         .filter((part): part is string => !!part)
         .join(' · ')
     : null;

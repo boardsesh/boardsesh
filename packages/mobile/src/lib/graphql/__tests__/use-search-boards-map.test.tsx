@@ -13,7 +13,9 @@ import { useSearchBoardsMap, type SearchBoardsMapInput } from '../use-search-boa
 
 function wrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
 }
 
 /** The `input` object the hook handed to the GraphQL client on its last call. */

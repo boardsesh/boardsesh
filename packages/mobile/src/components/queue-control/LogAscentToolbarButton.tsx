@@ -18,7 +18,11 @@ type LogAscentToolbarButtonProps = {
  * toolbar provides the visible container, so this uses the plain checkmark SF
  * Symbol instead of the circular tick glyph used by standalone FABs.
  */
-export function LogAscentToolbarButton({ climb, size = glassSize.standard, iconSize = 26 }: LogAscentToolbarButtonProps) {
+export function LogAscentToolbarButton({
+  climb,
+  size = glassSize.standard,
+  iconSize = 26,
+}: LogAscentToolbarButtonProps) {
   const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(climb);
 
   return (

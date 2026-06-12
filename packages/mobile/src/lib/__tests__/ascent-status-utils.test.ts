@@ -89,7 +89,11 @@ describe('countSentAscents', () => {
   });
 
   it('derives flash/send from is_ascent + tries when status is absent', () => {
-    const entries = [make({ is_ascent: true, tries: 1 }), make({ is_ascent: true, tries: 5 }), make({ is_ascent: false })];
+    const entries = [
+      make({ is_ascent: true, tries: 1 }),
+      make({ is_ascent: true, tries: 5 }),
+      make({ is_ascent: false }),
+    ];
     expect(countSentAscents(entries, climb, angle)).toBe(2);
   });
 

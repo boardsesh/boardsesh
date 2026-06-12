@@ -52,6 +52,4 @@ describe('useGlassCapability', () => {
     const { result } = renderHook(() => useGlassCapability());
     expect(result.current).toBe(false);
   });
-
-
 });

@@ -17,10 +17,6 @@ export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angl
   return useCallback(async () => {
     if (!climb) return;
     const url = `${WEB_BASE_URL}${buildClimbViewPath(boardName, layoutId, sizeId, setIds, angle, climb.uuid)}`;
-    await Share.share(
-      Platform.OS === 'ios'
-        ? { message: climb.name, url }
-        : { message: `${climb.name}\n${url}` },
-    );
+    await Share.share(Platform.OS === 'ios' ? { message: climb.name, url } : { message: `${climb.name}\n${url}` });
   }, [climb, boardName, layoutId, sizeId, setIds, angle]);
 }

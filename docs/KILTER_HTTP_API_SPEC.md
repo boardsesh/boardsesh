@@ -39,12 +39,12 @@
 
 Networking splits into four planes:
 
-| Plane | Host | Transport | Purpose |
-| --- | --- | --- | --- |
-| **Identity** | `idp.kiltergrips.com` | HTTPS (Keycloak OIDC) | Login, registration, refresh, logout |
-| **REST API** | `portal.kiltergrips.com` | HTTPS / JSON | Mutations (create climb, log ascent, follow user, etc.) and on-demand reads |
-| **Realtime sync** | `sync1.kiltergrips.com` | HTTPS streaming + WebSocket (PowerSync) | Bidirectional sync of the Postgres-backed catalog into a local SQLite mirror |
-| **Maps** | `places.googleapis.com` | HTTPS / JSON | Gym/wall location autocomplete |
+| Plane             | Host                     | Transport                               | Purpose                                                                      |
+| ----------------- | ------------------------ | --------------------------------------- | ---------------------------------------------------------------------------- |
+| **Identity**      | `idp.kiltergrips.com`    | HTTPS (Keycloak OIDC)                   | Login, registration, refresh, logout                                         |
+| **REST API**      | `portal.kiltergrips.com` | HTTPS / JSON                            | Mutations (create climb, log ascent, follow user, etc.) and on-demand reads  |
+| **Realtime sync** | `sync1.kiltergrips.com`  | HTTPS streaming + WebSocket (PowerSync) | Bidirectional sync of the Postgres-backed catalog into a local SQLite mirror |
+| **Maps**          | `places.googleapis.com`  | HTTPS / JSON                            | Gym/wall location autocomplete                                               |
 
 Most reads go to a **local SQLite mirror**, but that mirror is filled by **two different mechanisms**, and the split matters for interop:
 
@@ -82,12 +82,12 @@ A `/v2/users/` path also exists alongside the `/api/users/` routes. Its purpose 
 
 Authentication is delegated to Keycloak, with Authorization Code + PKCE.
 
-| Endpoint | URL |
-| --- | --- |
-| Issuer / discovery | `https://idp.kiltergrips.com/realms/kilter` |
-| Authorization | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/auth` |
-| Token | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token` |
-| Logout | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/logout` |
+| Endpoint           | URL                                                                        |
+| ------------------ | -------------------------------------------------------------------------- |
+| Issuer / discovery | `https://idp.kiltergrips.com/realms/kilter`                                |
+| Authorization      | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/auth`   |
+| Token              | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token`  |
+| Logout             | `https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/logout` |
 
 **Redirect URI scheme**: `com.kiltergrips:/oauthredirect`.
 
@@ -121,12 +121,12 @@ Authentication is delegated to Keycloak, with Authorization Code + PKCE.
 
 ## 4. HTTP conventions
 
-| Header | Value |
-| --- | --- |
-| `Authorization` | `Bearer <access_token>` (Keycloak access JWT) |
-| `Content-Type` | `application/json` for POST/PUT/PATCH bodies; `multipart/form-data` for image upload |
-| `Accept` | `application/json` |
-| `User-Agent` | Stock HTTP-client default; no custom UA |
+| Header          | Value                                                                                |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `Authorization` | `Bearer <access_token>` (Keycloak access JWT)                                        |
+| `Content-Type`  | `application/json` for POST/PUT/PATCH bodies; `multipart/form-data` for image upload |
+| `Accept`        | `application/json`                                                                   |
+| `User-Agent`    | Stock HTTP-client default; no custom UA                                              |
 
 Path conventions:
 
@@ -145,35 +145,35 @@ For each endpoint, **path** is well-established. **Method** is inferred from sem
 
 ### 5.1 Users
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/users/` | Get current authenticated user |
-| `GET` | `/api/users/find` | Search users (by email / username / display name) |
-| `POST` | `/api/users/register?redirectUrl=<frontend_url>` | Server-side user creation; redirects browser to the frontend on success |
-| `POST` | `/api/users/email/verification` | Trigger an email-verification message for the current user |
-| `GET` | `/api/users/email/verify/{token}` | Email-confirmation landing endpoint (called via deeplink) |
-| `POST` | `/api/users/resend/id/{userId}` | Resend verification or reset email for a user |
-| `GET` | `/api/users/user-settings` | Read the current user's settings |
-| `PUT` | `/api/users/user-settings` | Update the current user's settings |
-| `GET` | `/api/users/user-analytics` | Aggregated user stats (totals, distributions, last-session date) |
-| `POST` | `/api/users/block-climb` | Hide a climb from the current user's feed |
-| `DELETE` | `/api/users/unblock-climb/{climbUuid}?angle=<deg>` | Un-hide a previously blocked climb |
-| `GET` | `/v2/users/` | Unknown v2 namespace — possibly paginated user listing or admin variant |
+| Method   | Path                                               | Purpose                                                                 |
+| -------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `GET`    | `/api/users/`                                      | Get current authenticated user                                          |
+| `GET`    | `/api/users/find`                                  | Search users (by email / username / display name)                       |
+| `POST`   | `/api/users/register?redirectUrl=<frontend_url>`   | Server-side user creation; redirects browser to the frontend on success |
+| `POST`   | `/api/users/email/verification`                    | Trigger an email-verification message for the current user              |
+| `GET`    | `/api/users/email/verify/{token}`                  | Email-confirmation landing endpoint (called via deeplink)               |
+| `POST`   | `/api/users/resend/id/{userId}`                    | Resend verification or reset email for a user                           |
+| `GET`    | `/api/users/user-settings`                         | Read the current user's settings                                        |
+| `PUT`    | `/api/users/user-settings`                         | Update the current user's settings                                      |
+| `GET`    | `/api/users/user-analytics`                        | Aggregated user stats (totals, distributions, last-session date)        |
+| `POST`   | `/api/users/block-climb`                           | Hide a climb from the current user's feed                               |
+| `DELETE` | `/api/users/unblock-climb/{climbUuid}?angle=<deg>` | Un-hide a previously blocked climb                                      |
+| `GET`    | `/v2/users/`                                       | Unknown v2 namespace — possibly paginated user listing or admin variant |
 
 **User DTO** (camelCase, inferred):
 
 ```jsonc
 {
   "userUuid": "uuid",
-  "username": "string",        // unique handle
+  "username": "string", // unique handle
   "email": "string",
   "firstName": "string",
   "lastName": "string",
-  "displayName": "string",     // optional, derived
+  "displayName": "string", // optional, derived
   "profilePictureUrl": "string",
   "bio": "string",
   "createdAt": "ISO-8601",
-  "updatedAt": "ISO-8601"
+  "updatedAt": "ISO-8601",
 }
 ```
 
@@ -183,7 +183,7 @@ For each endpoint, **path** is well-established. **Method** is inferred from sem
 {
   "errorCode": "EMAIL_TAKEN | USERNAME_TAKEN | INVALID_EMAIL | …",
   "message": "human-readable",
-  "field": "email | username | …"
+  "field": "email | username | …",
 }
 ```
 
@@ -191,44 +191,44 @@ For each endpoint, **path** is well-established. **Method** is inferred from sem
 
 ### 5.2 Climbs
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/climbs/` | Paginated climb list (filtered by query params) |
-| `GET` | `/api/climbs/all/` | Full climb listing (used by initial sync / catalog warm-up) |
-| `GET` | `/api/climbs/single/{climbUuid}` | Fetch one climb |
-| `GET` | `/api/climbs/curated` | Curated/featured climbs |
-| `GET` | `/api/climbs/logged` | Climbs the current user has logged |
-| `GET` | `/api/climbs/delteduuids` | UUIDs of deleted climbs (sync cleanup; note the typo) |
-| `GET` | `/api/climbs/climbdetails/` | Climb details (joined with rating/log info) |
-| `GET` | `/api/climbs/climbdetails/user` | Current user's climbs with stats |
-| `GET` | `/api/climbs/climbdetails/{productName}/edges?edgeLeft=&edgeRight=&edgeBottom=&edgeTop=&limit=&offset=` | Paginated climbs for a wall, filtered by frame region |
-| `GET` | `/api/climbs/climbdetails/{productName}/edges/count` | Count for the above (for pagination UI) |
-| `POST` | `/api/climbs/create-climb/transaction` | Atomic create — writes the climb + mounting holes + stats rows in one transaction |
-| `POST` | `/api/climbs/update-climb/transaction` | Atomic update of climb + mounting holes |
+| Method | Path                                                                                                    | Purpose                                                                           |
+| ------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET`  | `/api/climbs/`                                                                                          | Paginated climb list (filtered by query params)                                   |
+| `GET`  | `/api/climbs/all/`                                                                                      | Full climb listing (used by initial sync / catalog warm-up)                       |
+| `GET`  | `/api/climbs/single/{climbUuid}`                                                                        | Fetch one climb                                                                   |
+| `GET`  | `/api/climbs/curated`                                                                                   | Curated/featured climbs                                                           |
+| `GET`  | `/api/climbs/logged`                                                                                    | Climbs the current user has logged                                                |
+| `GET`  | `/api/climbs/delteduuids`                                                                               | UUIDs of deleted climbs (sync cleanup; note the typo)                             |
+| `GET`  | `/api/climbs/climbdetails/`                                                                             | Climb details (joined with rating/log info)                                       |
+| `GET`  | `/api/climbs/climbdetails/user`                                                                         | Current user's climbs with stats                                                  |
+| `GET`  | `/api/climbs/climbdetails/{productName}/edges?edgeLeft=&edgeRight=&edgeBottom=&edgeTop=&limit=&offset=` | Paginated climbs for a wall, filtered by frame region                             |
+| `GET`  | `/api/climbs/climbdetails/{productName}/edges/count`                                                    | Count for the above (for pagination UI)                                           |
+| `POST` | `/api/climbs/create-climb/transaction`                                                                  | Atomic create — writes the climb + mounting holes + stats rows in one transaction |
+| `POST` | `/api/climbs/update-climb/transaction`                                                                  | Atomic update of climb + mounting holes                                           |
 
 **Climb DTO** — JSON key on the wire (camelCase, inferred) mapped to the snake_case Postgres column that PowerSync mirrors:
 
-| JSON key | Postgres column | Type | Notes |
-| --- | --- | --- | --- |
-| `climbUuid` | `climb_uuid` | string | PK |
-| `name` | `name` | string | display name |
-| `description` | `description` | string? | |
-| `userUuid` | `user_uuid` | string | setter |
-| `username` | `username` | string | setter username (denormalized) |
-| `productName` | `product_name` | string | e.g. `Kilter Board Original`, `Kilter Board Homewall` |
-| `productLayoutUuid` | `product_layout_uuid` | string | specific board+set combo |
-| `edgeLeft`,`edgeRight`,`edgeBottom`,`edgeTop` | `edge_*` | integer | bounding box on the board |
-| `frameCount` | `frame_count` | integer | for multi-frame climbs |
-| `framesPace` | `frames_pace` | integer | ms per frame |
-| `angle` | `angle` | integer? | preferred angle, optional |
-| `allowMatch` | `allow_match` | bool | matching hands on a hold permitted |
-| `isDraft` | `is_draft` | bool | |
-| `isListed` | `is_listed` | bool | public vs unlisted |
-| `accumulatedHoldSetValue` | `accumulated_hold_set_value` | integer | sum of "value" across hold sets used |
-| `curated` | `curated` | bool? | featured |
-| `isDeleted` | `is_deleted` | bool | soft-delete; cleared via `/delteduuids` |
-| `createdAt`,`updatedAt` | `created_at`,`updated_at` | ISO-8601 | |
-| `climbConcat` | `climb_concat` | string | canonical placement-encoded string (same encoding used by the LED protocol — see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](AURORA_BLUETOOTH_PROTOCOL_SPEC.md)) |
+| JSON key                                      | Postgres column              | Type     | Notes                                                                                                                                                      |
+| --------------------------------------------- | ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `climbUuid`                                   | `climb_uuid`                 | string   | PK                                                                                                                                                         |
+| `name`                                        | `name`                       | string   | display name                                                                                                                                               |
+| `description`                                 | `description`                | string?  |                                                                                                                                                            |
+| `userUuid`                                    | `user_uuid`                  | string   | setter                                                                                                                                                     |
+| `username`                                    | `username`                   | string   | setter username (denormalized)                                                                                                                             |
+| `productName`                                 | `product_name`               | string   | e.g. `Kilter Board Original`, `Kilter Board Homewall`                                                                                                      |
+| `productLayoutUuid`                           | `product_layout_uuid`        | string   | specific board+set combo                                                                                                                                   |
+| `edgeLeft`,`edgeRight`,`edgeBottom`,`edgeTop` | `edge_*`                     | integer  | bounding box on the board                                                                                                                                  |
+| `frameCount`                                  | `frame_count`                | integer  | for multi-frame climbs                                                                                                                                     |
+| `framesPace`                                  | `frames_pace`                | integer  | ms per frame                                                                                                                                               |
+| `angle`                                       | `angle`                      | integer? | preferred angle, optional                                                                                                                                  |
+| `allowMatch`                                  | `allow_match`                | bool     | matching hands on a hold permitted                                                                                                                         |
+| `isDraft`                                     | `is_draft`                   | bool     |                                                                                                                                                            |
+| `isListed`                                    | `is_listed`                  | bool     | public vs unlisted                                                                                                                                         |
+| `accumulatedHoldSetValue`                     | `accumulated_hold_set_value` | integer  | sum of "value" across hold sets used                                                                                                                       |
+| `curated`                                     | `curated`                    | bool?    | featured                                                                                                                                                   |
+| `isDeleted`                                   | `is_deleted`                 | bool     | soft-delete; cleared via `/delteduuids`                                                                                                                    |
+| `createdAt`,`updatedAt`                       | `created_at`,`updated_at`    | ISO-8601 |                                                                                                                                                            |
+| `climbConcat`                                 | `climb_concat`               | string   | canonical placement-encoded string (same encoding used by the LED protocol — see [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](AURORA_BLUETOOTH_PROTOCOL_SPEC.md)) |
 
 The `create-climb/transaction` and `update-climb/transaction` request bodies are presumed to include the parent climb fields plus an array of `mountingHoles` (see [§5.5](#55-climb-mounting-holes)).
 
@@ -236,25 +236,25 @@ The `create-climb/transaction` and `update-climb/transaction` request bodies are
 
 ### 5.3 Climb statistics
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/climb-stat/` | Per-climb stats for a single climb+angle |
-| `GET` | `/api/climb-stat/all/` | Bulk stats listing |
+| Method | Path                   | Purpose                                  |
+| ------ | ---------------------- | ---------------------------------------- |
+| `GET`  | `/api/climb-stat/`     | Per-climb stats for a single climb+angle |
+| `GET`  | `/api/climb-stat/all/` | Bulk stats listing                       |
 
 **ClimbStat DTO**:
 
-| JSON key | Postgres column | Type |
-| --- | --- | --- |
-| `climbUuid` | `climb_uuid` | string |
-| `angle` | `angle` | integer |
-| `ascentCount` | `ascent_count` | integer |
-| `currentDifficultyId` | `current_difficulty_id` | integer (FK into difficulty_grades) |
-| `officialKilterDifficulty` | `official_kilter_difficulty` | integer? |
-| `difficultyAverage` | `difficulty_average` | float |
-| `qualityAverage` | `quality_average` | float |
-| `faUsername` | `fa_username` | string? — first-ascent username |
-| `faAt` | `fa_at` | ISO-8601? |
-| `curated` | `curated` | bool? |
+| JSON key                   | Postgres column              | Type                                |
+| -------------------------- | ---------------------------- | ----------------------------------- |
+| `climbUuid`                | `climb_uuid`                 | string                              |
+| `angle`                    | `angle`                      | integer                             |
+| `ascentCount`              | `ascent_count`               | integer                             |
+| `currentDifficultyId`      | `current_difficulty_id`      | integer (FK into difficulty_grades) |
+| `officialKilterDifficulty` | `official_kilter_difficulty` | integer?                            |
+| `difficultyAverage`        | `difficulty_average`         | float                               |
+| `qualityAverage`           | `quality_average`            | float                               |
+| `faUsername`               | `fa_username`                | string? — first-ascent username     |
+| `faAt`                     | `fa_at`                      | ISO-8601?                           |
+| `curated`                  | `curated`                    | bool?                               |
 
 Primary key is `(climb_uuid, angle)`.
 
@@ -262,13 +262,13 @@ Primary key is `(climb_uuid, angle)`.
 
 ### 5.4 Climb ratings
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/climb-rating/` | List the current user's ratings (likely filterable by `climbUuid` / `angle`) |
-| `GET` | `/api/climb-rating/{climbRatingUuid}` | Fetch a single rating |
-| `POST` | `/api/climb-rating/` | Create a rating |
-| `PUT` | `/api/climb-rating/{climbRatingUuid}` | Update a rating |
-| `DELETE` | `/api/climb-rating/{climbRatingUuid}` | Delete a rating |
+| Method   | Path                                  | Purpose                                                                      |
+| -------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET`    | `/api/climb-rating/`                  | List the current user's ratings (likely filterable by `climbUuid` / `angle`) |
+| `GET`    | `/api/climb-rating/{climbRatingUuid}` | Fetch a single rating                                                        |
+| `POST`   | `/api/climb-rating/`                  | Create a rating                                                              |
+| `PUT`    | `/api/climb-rating/{climbRatingUuid}` | Update a rating                                                              |
+| `DELETE` | `/api/climb-rating/{climbRatingUuid}` | Delete a rating                                                              |
 
 **ClimbRating DTO** (inferred):
 
@@ -278,12 +278,12 @@ Primary key is `(climb_uuid, angle)`.
   "userUuid": "uuid",
   "climbUuid": "uuid",
   "angle": 40,
-  "rating": 4,                  // 1–5 stars
-  "difficultyGradeId": 16,      // user's perceived difficulty
+  "rating": 4, // 1–5 stars
+  "difficultyGradeId": 16, // user's perceived difficulty
   "comment": "Great moves on the crux",
-  "weight": 1.0,                // optional, confidence/ascent-count weight
+  "weight": 1.0, // optional, confidence/ascent-count weight
   "createdAt": "ISO-8601",
-  "updatedAt": "ISO-8601"
+  "updatedAt": "ISO-8601",
 }
 ```
 
@@ -291,9 +291,9 @@ Primary key is `(climb_uuid, angle)`.
 
 ### 5.5 Climb mounting holes
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/climb-mounting-holes/{climbUuid}?angle=&productLayoutUuid=` | Hold placements for one climb on a specific layout |
+| Method | Path                                                              | Purpose                                            |
+| ------ | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `GET`  | `/api/climb-mounting-holes/{climbUuid}?angle=&productLayoutUuid=` | Hold placements for one climb on a specific layout |
 
 **ClimbMountingHole DTO**:
 
@@ -302,10 +302,10 @@ Primary key is `(climb_uuid, angle)`.
   "climbMountingHoleUuid": "uuid",
   "climbUuid": "uuid",
   "productLayoutUuid": "uuid",
-  "mountingHoleId": 123,        // FK into the static hole catalog
-  "placementTypeId": 12,        // start / hand / foot / finish — same enum used by the LED protocol
-  "x": 0.42,                    // sometimes inlined; otherwise resolved from mounting_hole_id
-  "y": 0.71
+  "mountingHoleId": 123, // FK into the static hole catalog
+  "placementTypeId": 12, // start / hand / foot / finish — same enum used by the LED protocol
+  "x": 0.42, // sometimes inlined; otherwise resolved from mounting_hole_id
+  "y": 0.71,
 }
 ```
 
@@ -315,14 +315,14 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 
 ### 5.6 Logs (ascents and attempts)
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/logs/` | List the current user's logs |
-| `GET` | `/api/logs/{logUuid}` | Fetch a single log |
-| `POST` | `/api/logs/` | Create one log |
-| `POST` | `/api/logs/bulk` | Bulk-upload logs (offline-first sync of pending entries) |
-| `PUT` | `/api/logs/{logUuid}` | Update a log |
-| `DELETE` | `/api/logs/{logUuid}` | Delete a log |
+| Method   | Path                  | Purpose                                                  |
+| -------- | --------------------- | -------------------------------------------------------- |
+| `GET`    | `/api/logs/`          | List the current user's logs                             |
+| `GET`    | `/api/logs/{logUuid}` | Fetch a single log                                       |
+| `POST`   | `/api/logs/`          | Create one log                                           |
+| `POST`   | `/api/logs/bulk`      | Bulk-upload logs (offline-first sync of pending entries) |
+| `PUT`    | `/api/logs/{logUuid}` | Update a log                                             |
+| `DELETE` | `/api/logs/{logUuid}` | Delete a log                                             |
 
 **Log DTO**:
 
@@ -333,13 +333,13 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
   "climbUuid": "uuid",
   "productLayoutUuid": "uuid",
   "angle": 40,
-  "topped": true,                // sent the route
-  "flashed": false,              // sent on first session/with beta
-  "sentimentValue": 4,           // emoji rating, 1–5
-  "rating": 4,                   // overlaps with ClimbRating; bulk endpoint may write both
+  "topped": true, // sent the route
+  "flashed": false, // sent on first session/with beta
+  "sentimentValue": 4, // emoji rating, 1–5
+  "rating": 4, // overlaps with ClimbRating; bulk endpoint may write both
   "difficultyGradeId": 18,
   "comment": "string",
-  "createdAt": "ISO-8601"
+  "createdAt": "ISO-8601",
 }
 ```
 
@@ -347,18 +347,18 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 
 ### 5.7 Circuits and circuit climbs
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/circuits` | List circuits (optionally filtered by `userUuid`, `isPublic`) |
-| `GET` | `/api/circuits/{circuitUuid}` | One circuit with its climbs |
-| `GET` | `/api/circuits/get-circuit/{circuitUuid}` | Alternative single-fetch endpoint (legacy or alias) |
-| `POST` | `/api/circuits` | Create circuit |
-| `PUT` | `/api/circuits/{circuitUuid}` | Update circuit metadata |
-| `DELETE` | `/api/circuits/{circuitUuid}` | Delete circuit |
-| `GET` | `/api/circuit-climbs?circuitUuid=` | List climbs in a circuit |
-| `POST` | `/api/circuit-climbs` | Add a climb to a circuit |
-| `PUT` | `/api/circuit-climbs/{circuitClimbUuid}` | Reorder a climb within a circuit |
-| `DELETE` | `/api/circuit-climbs/{circuitClimbUuid}` | Remove a climb from a circuit |
+| Method   | Path                                      | Purpose                                                       |
+| -------- | ----------------------------------------- | ------------------------------------------------------------- |
+| `GET`    | `/api/circuits`                           | List circuits (optionally filtered by `userUuid`, `isPublic`) |
+| `GET`    | `/api/circuits/{circuitUuid}`             | One circuit with its climbs                                   |
+| `GET`    | `/api/circuits/get-circuit/{circuitUuid}` | Alternative single-fetch endpoint (legacy or alias)           |
+| `POST`   | `/api/circuits`                           | Create circuit                                                |
+| `PUT`    | `/api/circuits/{circuitUuid}`             | Update circuit metadata                                       |
+| `DELETE` | `/api/circuits/{circuitUuid}`             | Delete circuit                                                |
+| `GET`    | `/api/circuit-climbs?circuitUuid=`        | List climbs in a circuit                                      |
+| `POST`   | `/api/circuit-climbs`                     | Add a climb to a circuit                                      |
+| `PUT`    | `/api/circuit-climbs/{circuitClimbUuid}`  | Reorder a climb within a circuit                              |
+| `DELETE` | `/api/circuit-climbs/{circuitClimbUuid}`  | Remove a climb from a circuit                                 |
 
 **Circuit DTO**:
 
@@ -370,11 +370,11 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
   "color": "#FF5733",
   "isPublic": false,
   "userUuid": "uuid",
-  "creatorName": "string",       // denormalized
+  "creatorName": "string", // denormalized
   "creatorProfilePicture": "url",
-  "count": 12,                   // climbs in circuit (joined)
+  "count": 12, // climbs in circuit (joined)
   "createdAt": "ISO-8601",
-  "updatedAt": "ISO-8601"
+  "updatedAt": "ISO-8601",
 }
 ```
 
@@ -386,7 +386,7 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
   "circuitUuid": "uuid",
   "climbUuid": "uuid",
   "order": 3,
-  "addedAt": "ISO-8601"
+  "addedAt": "ISO-8601",
 }
 ```
 
@@ -394,13 +394,13 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 
 ### 5.8 Walls (boards)
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/walls` | List walls (filtered by `gymUuid` and/or `productName`) |
-| `GET` | `/api/walls/climbcount` | Climb counts per wall |
-| `POST` | `/api/walls/custom-wall` | Register a user-owned custom wall (homewall) |
-| `PUT` | `/api/walls/custom-wall/{wallUuid}` | Update a custom wall |
-| `DELETE` | `/api/walls/custom-wall/{wallUuid}` | Delete a custom wall |
+| Method   | Path                                | Purpose                                                 |
+| -------- | ----------------------------------- | ------------------------------------------------------- |
+| `GET`    | `/api/walls`                        | List walls (filtered by `gymUuid` and/or `productName`) |
+| `GET`    | `/api/walls/climbcount`             | Climb counts per wall                                   |
+| `POST`   | `/api/walls/custom-wall`            | Register a user-owned custom wall (homewall)            |
+| `PUT`    | `/api/walls/custom-wall/{wallUuid}` | Update a custom wall                                    |
+| `DELETE` | `/api/walls/custom-wall/{wallUuid}` | Delete a custom wall                                    |
 
 **Wall DTO**:
 
@@ -408,17 +408,17 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 {
   "wallUuid": "uuid",
   "name": "Main Wall",
-  "gymUuid": "uuid",             // null for homewalls
+  "gymUuid": "uuid", // null for homewalls
   "productName": "Kilter Board Original",
   "productLayoutUuid": "uuid",
-  "serialNumber": "string",      // hardware Bluetooth serial
+  "serialNumber": "string", // hardware Bluetooth serial
   "isAdjustable": true,
   "minAngle": 0,
   "maxAngle": 70,
   "angleIncrements": 5,
-  "angle": 40,                   // currently set angle
+  "angle": 40, // currently set angle
   "isListed": true,
-  "boardDisplayName": "string"   // branded label
+  "boardDisplayName": "string", // branded label
 }
 ```
 
@@ -426,14 +426,14 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 
 ### 5.9 Gyms and followers
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/followers/` | Followers of the current user |
-| `GET` | `/api/followers/user` | Users the current user follows |
-| `GET` | `/api/followers/user/following` | Following list (variant — likely `?userUuid=` parameterized) |
-| `GET` | `/api/followers/gym/?gymUuid=` | Followers of a gym |
-| `POST` | `/api/followers/` | Follow a user or gym |
-| `DELETE` | `/api/followers/` | Unfollow |
+| Method   | Path                            | Purpose                                                      |
+| -------- | ------------------------------- | ------------------------------------------------------------ |
+| `GET`    | `/api/followers/`               | Followers of the current user                                |
+| `GET`    | `/api/followers/user`           | Users the current user follows                               |
+| `GET`    | `/api/followers/user/following` | Following list (variant — likely `?userUuid=` parameterized) |
+| `GET`    | `/api/followers/gym/?gymUuid=`  | Followers of a gym                                           |
+| `POST`   | `/api/followers/`               | Follow a user or gym                                         |
+| `DELETE` | `/api/followers/`               | Unfollow                                                     |
 
 Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **read exclusively from the PowerSync SQLite mirror** (see [§7](#7-local-sqlite-schema-client-side-mirror)). Discovery / "find gym near me" is handled client-side by querying the local DB after Google Places autocomplete narrows the geographic region (see [§8](#8-third-party-integrations)).
 
@@ -441,24 +441,24 @@ Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **re
 
 ### 5.10 Notifications
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/notifications/` | List notifications |
-| `PUT` | `/api/notifications/{notificationUuid}` | Mark read |
-| `DELETE` | `/api/notifications/{notificationUuid}` | Dismiss |
+| Method   | Path                                    | Purpose            |
+| -------- | --------------------------------------- | ------------------ |
+| `GET`    | `/api/notifications/`                   | List notifications |
+| `PUT`    | `/api/notifications/{notificationUuid}` | Mark read          |
+| `DELETE` | `/api/notifications/{notificationUuid}` | Dismiss            |
 
 **Notification DTO** (inferred):
 
 ```jsonc
 {
   "notificationUuid": "uuid",
-  "userUuid": "uuid",            // recipient
+  "userUuid": "uuid", // recipient
   "type": "climb_rated | comment_added | followed | wall_added | …",
   "relatedUserUuid": "uuid",
   "relatedClimbUuid": "uuid",
   "message": "string",
   "isRead": false,
-  "createdAt": "ISO-8601"
+  "createdAt": "ISO-8601",
 }
 ```
 
@@ -466,8 +466,8 @@ Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **re
 
 ### 5.11 Reporting and moderation
 
-| Method | Path | Purpose |
-| --- | --- | --- |
+| Method | Path                | Purpose                                                     |
+| ------ | ------------------- | ----------------------------------------------------------- |
 | `POST` | `/api/report-climb` | Flag a climb (inappropriate content, broken hardware, etc.) |
 
 **Report DTO**:
@@ -477,7 +477,7 @@ Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **re
   "climbUuid": "uuid",
   "angle": 40,
   "reason": "inappropriate | broken_holds | offensive_name | other",
-  "comment": "string"
+  "comment": "string",
 }
 ```
 
@@ -485,10 +485,10 @@ Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **re
 
 ### 5.12 Image upload
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/image` | Upload an image (multipart/form-data) |
-| `GET` | `/api/image/user` | List the current user's uploaded images |
+| Method | Path              | Purpose                                 |
+| ------ | ----------------- | --------------------------------------- |
+| `POST` | `/api/image`      | Upload an image (multipart/form-data)   |
+| `GET`  | `/api/image/user` | List the current user's uploaded images |
 
 > Confidence: HIGH for paths; MEDIUM for multipart shape.
 

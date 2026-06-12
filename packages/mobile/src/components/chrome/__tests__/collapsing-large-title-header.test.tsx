@@ -67,8 +67,7 @@ vi.mock('../../PressableSurface', () => ({
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) =>
-    createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
+  }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),

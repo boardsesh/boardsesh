@@ -75,11 +75,7 @@ export function PlaylistFollowButton({ isFollowing, onToggle, loading, collapsed
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        {loading ? (
-          <ActivityIndicator size="small" />
-        ) : (
-          <Icon name={iconName} size={18} color={systemColors.label} />
-        )}
+        {loading ? <ActivityIndicator size="small" /> : <Icon name={iconName} size={18} color={systemColors.label} />}
         <Text variant="subheadline" color={systemColors.label} style={styles.label}>
           {label}
         </Text>
