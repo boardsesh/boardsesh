@@ -41,7 +41,6 @@ export function RepTimerSettingsCard() {
   const { systemColors, brandColors } = useTheme();
   const { targetSeconds, loaded, setTargetSeconds } = useRepTimerPreference();
   const offLabel = t('mobile.session.repTimerOff');
-  const currentTargetLabel = targetSeconds === null ? offLabel : formatRepTimerTarget(targetSeconds);
   const options = useMemo<RepTimerTargetOption[]>(
     () => [
       { key: REP_TIMER_OFF_KEY, label: offLabel },
@@ -71,18 +70,6 @@ export function RepTimerSettingsCard() {
           <Text variant="headline" style={styles.title}>
             {t('mobile.session.repTimerTitle')}
           </Text>
-          {loaded ? (
-            <View
-              style={[
-                styles.currentPill,
-                { backgroundColor: systemColors.tertiaryBackground, borderColor: brandColors.primary },
-              ]}
-            >
-              <Text variant="footnote" color={brandColors.primary} style={styles.currentPillText}>
-                {currentTargetLabel}
-              </Text>
-            </View>
-          ) : null}
         </View>
         <View style={styles.targetRow}>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.targetLabel}>
@@ -125,15 +112,6 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontWeight: '600',
-  },
-  currentPill: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 999,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-  },
-  currentPillText: {
-    fontWeight: '700',
   },
   targetRow: {
     flexDirection: 'row',

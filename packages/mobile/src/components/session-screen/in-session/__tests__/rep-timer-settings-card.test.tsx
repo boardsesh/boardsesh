@@ -35,7 +35,7 @@ vi.mock('../../../SegmentedControl', () => ({
     selectedTextColor,
   }: {
     options: Array<{ key: string; label: string }>;
-    selectedKey: string;
+    selectedKey: string | null;
     onSelect: (key: string) => void;
     accessibilityLabel?: string;
     selectedTrackColor?: string;
