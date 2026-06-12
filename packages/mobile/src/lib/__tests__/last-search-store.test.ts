@@ -156,6 +156,15 @@ describe('saveLastSearch no-op on default/empty', () => {
     expect((await getLastSearch(kilterBoard))?.filters.minGrade).toBe(15);
   });
 
+  it('persists explicit boulders-only as an active filter in the current schema', async () => {
+    const { saveLastSearch, getLastSearch } = await import('../last-search-store');
+    await saveLastSearch(kilterBoard, { ...defaultFilters, boulders: true, routes: false }, '');
+    const restored = await getLastSearch(kilterBoard);
+    expect(restored?.filterSchemaVersion).toBe(2);
+    expect(restored?.filters.boulders).toBe(true);
+    expect(restored?.filters.routes).toBe(false);
+  });
+
   it('deletes the saved entry when the search is reset to the clean default', async () => {
     const { saveLastSearch, getLastSearch } = await import('../last-search-store');
     await saveLastSearch(kilterBoard, activeFilters, 'crimps');
@@ -230,6 +239,36 @@ describe('getLastSearch defensive validation', () => {
     const restored = await getLastSearch(kilterBoard);
     expect(restored?.filters.status).toBe('any');
     expect(restored?.filters.minGrade).toBe(10);
+  });
+
+  it('strips the legacy implicit boulders-only default from unversioned entries', async () => {
+    const { boardConfigKey, getLastSearch } = await import('../last-search-store');
+    await seedRaw({
+      [boardConfigKey(kilterBoard)]: {
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', minGrade: 10, boulders: true, routes: false },
+        searchText: 'x',
+        updatedAt: 1,
+      },
+    });
+    const restored = await getLastSearch(kilterBoard);
+    expect(restored?.filters.minGrade).toBe(10);
+    expect(restored?.filters.boulders).toBeUndefined();
+    expect(restored?.filters.routes).toBeUndefined();
+  });
+
+  it('keeps explicit boulders-only filters from current-schema entries', async () => {
+    const { boardConfigKey, getLastSearch } = await import('../last-search-store');
+    await seedRaw({
+      [boardConfigKey(kilterBoard)]: {
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: false },
+        searchText: 'x',
+        updatedAt: 1,
+        filterSchemaVersion: 2,
+      },
+    });
+    const restored = await getLastSearch(kilterBoard);
+    expect(restored?.filters.boulders).toBe(true);
+    expect(restored?.filters.routes).toBe(false);
   });
 
   it('keeps valid entries while dropping malformed siblings', async () => {

@@ -15,6 +15,8 @@ import type { Grade } from '@boardsesh/shared-schema';
 import {
   getGradeName,
   applyStatusChange,
+  climbTypeOf,
+  climbTypePatch,
   countFilteredHolds,
   DEFAULT_CLIMB_FILTER_STATE,
   type ClimbFilterState,
@@ -189,13 +191,16 @@ export function getActiveFilterTokens({
     });
   }
 
-  // Climb type — default is boulders-only; a token appears when routes are on or
-  // boulders are off. Clearing returns to the boulders-only default.
-  const bouldersOn = filters.boulders ?? true;
-  const routesOn = filters.routes ?? false;
-  if (bouldersOn !== true || routesOn !== false) {
-    const label = routesOn && !bouldersOn ? t('search.summary.routesOnly') : t('search.summary.bouldersAndRoutes');
-    tokens.push({ key: 'climbType', label, clear: () => patchFilters({ boulders: true, routes: false }) });
+  const hasExplicitClimbType = filters.boulders != null || filters.routes != null;
+  if (hasExplicitClimbType) {
+    const climbType = climbTypeOf(filters);
+    const label =
+      climbType === 'boulders'
+        ? t('mobile.filter.climbType.boulders')
+        : climbType === 'routes'
+          ? t('mobile.filter.climbType.routes')
+          : t('mobile.filter.climbType.all');
+    tokens.push({ key: 'climbType', label, clear: () => patchFilters(climbTypePatch('all')) });
   }
 
   // Board-renderer filters: benchmark, hold types, and board region are all

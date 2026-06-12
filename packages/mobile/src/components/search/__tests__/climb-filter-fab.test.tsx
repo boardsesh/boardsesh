@@ -8,10 +8,53 @@ vi.mock('react-native', () => ({
   Pressable: ({ onPress }: { onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-dismiss': 'true' }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
+vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}@${alpha}` }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({
+    systemColors: { fill: '#eee', label: '#111' },
+    brandColors: { primary: '#6D28D9' },
+  }),
+}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, params?: { count?: number }) => (params?.count != null ? `${key}:${params.count}` : key),
+  }),
+}));
+vi.mock('react-native-paper', () => ({
+  Chip: ({
+    children,
+    onPress,
+    onClose,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    onClose?: () => void;
+    accessibilityLabel?: string;
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, 'data-chip': accessibilityLabel ?? '' },
+      children,
+      onClose
+        ? createElement(
+            'span',
+            {
+              'data-chip-close': accessibilityLabel ?? '',
+              onClick: (event: { stopPropagation: () => void }) => {
+                event.stopPropagation();
+                onClose();
+              },
+            },
+            'close',
+          )
+        : null,
+    ),
+}));
 vi.mock('../FilterButton', () => ({
   FILTER_FAB_SIZE: 48,
   FilterButton: ({
@@ -82,5 +125,30 @@ describe('ClimbFilterFab', () => {
     expect(container.querySelector('[data-grade-rail="true"]')).not.toBeNull();
     fireEvent.click(container.querySelector('[data-dismiss="true"]') as HTMLElement);
     expect(onCloseGrade).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the live count and removable filter chips above the FAB', () => {
+    const onClearRoutes = vi.fn();
+    const { container } = renderFab({
+      totalCount: 27,
+      filterTokens: [{ key: 'climbType', label: 'Routes', clear: onClearRoutes }],
+    });
+
+    expect(container.querySelector('[data-chip="mobile.search.climbsCount:27"]')?.textContent).toContain(
+      'mobile.search.climbsCount:27',
+    );
+    fireEvent.click(container.querySelector('[data-chip-close="Routes"]') as HTMLElement);
+    expect(onClearRoutes).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the chip strip while the grade rail is open', () => {
+    const { container } = renderFab({
+      gradeRailVisible: true,
+      totalCount: 27,
+      filterTokens: [{ key: 'climbType', label: 'Routes', clear: vi.fn() }],
+    });
+
+    expect(container.querySelector('[data-chip="mobile.search.climbsCount:27"]')).toBeNull();
+    expect(container.querySelector('[data-chip="Routes"]')).toBeNull();
   });
 });

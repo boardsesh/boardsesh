@@ -39,4 +39,9 @@ describe('countActiveFilters', () => {
     const filters = { ...DEFAULT_CLIMB_FILTER_STATE, minGrade: 10 };
     expect(countActiveFilters(filters, { onlyBenchmarks: true })).toBe(2);
   });
+
+  it('counts an explicit climb type as one filter', () => {
+    expect(countActiveFilters({ ...DEFAULT_CLIMB_FILTER_STATE, boulders: true, routes: false })).toBe(1);
+    expect(countActiveFilters({ ...DEFAULT_CLIMB_FILTER_STATE, boulders: false, routes: true })).toBe(1);
+  });
 });

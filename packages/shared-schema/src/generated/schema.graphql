@@ -181,9 +181,9 @@ input ClimbSearchInput {
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
-  "Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only."
+  "Include single-frame climbs (boulders). Omit both boulders and routes for all climbs; pair boulders=true with routes=false for boulders only."
   boulders: Boolean
-  "Include multi-frame climbs (routes). Default false. Set to true to include or filter to routes."
+  "Include multi-frame climbs (routes). Omit both boulders and routes for all climbs; pair boulders=false with routes=true for routes only."
   routes: Boolean
   "Restrict results using this drawn zone"
   zoneBox: ZoneBoxInput

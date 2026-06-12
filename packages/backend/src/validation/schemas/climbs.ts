@@ -162,11 +162,10 @@ export const ClimbSearchInputSchema = z.object({
   showOnlyCompleted: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
-  // Default to boulders-only so non-web GraphQL callers (mobile, scripts)
-  // get the same shape as the web UI when the field is omitted. Web sends
-  // explicit values from URL state, so its behaviour is unchanged.
-  boulders: z.boolean().optional().default(true),
-  routes: z.boolean().optional().default(false),
+  // Omitted means all climbs. Explicit false is meaningful for the 3-way
+  // All / Boulders / Routes filter and must survive validation.
+  boulders: z.boolean().optional(),
+  routes: z.boolean().optional(),
   zoneBox: z
     .object({
       edgeLeft: z.number().int(),

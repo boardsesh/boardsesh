@@ -35,11 +35,10 @@ export type ClimbFilterState = {
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
   onlyWithBetaVideos?: boolean;
-  // Climb-type toggles. Default is boulders-only (routes hidden) — see
-  // DEFAULT_CLIMB_FILTER_STATE. Both-on or both-off means "no preference" and
-  // omits the frames_count constraint. Maps to ClimbSearchInput.boulders/routes,
-  // whose SQL lives in @boardsesh/db create-climb-filters.ts (boulders →
-  // frames_count = 1 or NULL, routes → frames_count > 1).
+  // Climb-type filter. Both undefined = show everything (no frames_count
+  // filter); boulders=true/routes=false = boulders only; boulders=false/
+  // routes=true = routes only. Explicit false is meaningful, so callers must
+  // null-check rather than truthy-check.
   boulders?: boolean;
   routes?: boolean;
   status: StatusFilter;
@@ -53,9 +52,6 @@ export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
   sortBy: 'ascents',
   sortOrder: 'desc',
   status: 'any',
-  // Match web: show boulders, hide routes until the user opts in.
-  boulders: true,
-  routes: false,
 };
 
 /**
@@ -78,9 +74,8 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.hideCompleted) return true;
   if (state.showOnlyAttempted) return true;
   if (state.showOnlyCompleted) return true;
-  // Default is boulders-only, so "active" means routes turned on or boulders off.
-  if ((state.boulders ?? true) !== true) return true;
-  if ((state.routes ?? false) !== false) return true;
+  if (state.boulders != null) return true;
+  if (state.routes != null) return true;
   return false;
 }
 
@@ -130,6 +125,25 @@ export function normalizeRetiredStatus(state: ClimbFilterState): ClimbFilterStat
   return state.status === 'established' ? { ...state, status: 'any' } : state;
 }
 
+/**
+ * Climb-type as a single 3-way choice for the UI, mapping to the boulders/
+ * routes pair the DB expects: 'all' = no filter, 'boulders' = single-frame,
+ * 'routes' = multi-frame. Avoids the two-switch "at least one on" invariant.
+ */
+export type ClimbType = 'all' | 'boulders' | 'routes';
+
+export function climbTypeOf(state: Pick<ClimbFilterState, 'boulders' | 'routes'>): ClimbType {
+  if (state.boulders === true && state.routes !== true) return 'boulders';
+  if (state.routes === true && state.boulders !== true) return 'routes';
+  return 'all';
+}
+
+export function climbTypePatch(type: ClimbType): Pick<ClimbFilterState, 'boulders' | 'routes'> {
+  if (type === 'boulders') return { boulders: true, routes: false };
+  if (type === 'routes') return { boulders: false, routes: true };
+  return { boulders: undefined, routes: undefined };
+}
+
 export type BoardSearchConfig = {
   boardName: string;
   layoutId: number;
@@ -176,16 +190,8 @@ export function toClimbSearchInput(
   if (state.showOnlyAttempted) input.showOnlyAttempted = true;
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
 
-  // Climb-type filter: apply only when exactly one of boulders/routes is
-  // selected. Both-on and both-off mean "no preference" → omit entirely (the
-  // backend treats a missing frames_count constraint as all climbs). Mirrors
-  // create-climb-filters.ts and web's never-both-off toggle behaviour.
-  const bouldersOn = state.boulders ?? true;
-  const routesOn = state.routes ?? false;
-  if (bouldersOn !== routesOn) {
-    if (bouldersOn) input.boulders = true;
-    if (routesOn) input.routes = true;
-  }
+  if (state.boulders != null) input.boulders = state.boulders;
+  if (state.routes != null) input.routes = state.routes;
 
   const statusFlags = statusToFlags(state.status);
   if (statusFlags.onlyDrafts) input.onlyDrafts = true;

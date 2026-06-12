@@ -12,9 +12,10 @@ import { type SharedValue } from 'react-native-reanimated';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { Appbar, Chip } from 'react-native-paper';
+import { Appbar } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound } from '@boardsesh/climb-filters';
+import type { FilterToken } from '../../lib/filter-tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-board';
 import { spacing } from '../../theme/tokens';
@@ -28,6 +29,7 @@ import { GradeRangeRail } from '../grade';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
 import { FilterButton } from './FilterButton';
 import { GradeFilterControl } from './GradeFilterControl';
+import { ActiveFilterStrip } from './ActiveFilterStrip';
 
 // One 48dp baseline shared by the search field, the grade control, and the filter
 // button so the row reads as a matched set (M3 docked/inline height).
@@ -59,9 +61,10 @@ type ClimbTopChromeProps = {
    *  host). Liquid Glass keeps the bottom filter FAB instead. */
   activeFilterCount?: number;
   onOpenFilters?: () => void;
-  /** Active-filter summary shown as a chip in the Material quick row. Tapping it
-   *  clears the (non-grade) filters. Absent = no filters. */
-  filterSummary?: { text: string; onClear: () => void };
+  /** Live result count for the current committed search/filter set. */
+  totalCount?: number;
+  /** Removable non-grade filter chips for the Material quick row. */
+  filterTokens?: readonly FilterToken[];
   gradeBound?: GradeBound;
   grades?: readonly Grade[];
   gradeRailVisible?: boolean;
@@ -88,7 +91,8 @@ export function ClimbTopChrome({
   onCloseGrade,
   activeFilterCount = 0,
   onOpenFilters,
-  filterSummary,
+  totalCount,
+  filterTokens = [],
   gradeBound,
   grades = [],
   gradeRailVisible = false,
@@ -126,10 +130,8 @@ export function ClimbTopChrome({
   if (variant === 'material') {
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
-    const hasNonGradeFilters = nonGradeFilterCount > 0;
-    const shouldShowFilterSummary = filterSummary != null && hasNonGradeFilters;
-    const visibleFilterSummary = shouldShowFilterSummary ? filterSummary : null;
     const visibleGradeLabel = gradeChip?.label ?? t('mobile.filter.gradeRange');
+    const shouldShowFilterStrip = totalCount != null || filterTokens.length > 0;
 
     return (
       <View
@@ -198,21 +200,9 @@ export function ClimbTopChrome({
               {onOpenFilters ? <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} /> : null}
             </View>
 
-            {visibleFilterSummary ? (
+            {shouldShowFilterStrip ? (
               <View pointerEvents="box-none" style={styles.materialQuickRow}>
-                <Chip
-                  compact
-                  mode="flat"
-                  icon={iconMap.filter.android}
-                  onPress={visibleFilterSummary.onClear}
-                  onClose={visibleFilterSummary.onClear}
-                  closeIcon={iconMap.close.android}
-                  accessibilityLabel={visibleFilterSummary.text}
-                  style={styles.materialChip}
-                  textStyle={styles.materialChipText}
-                >
-                  {visibleFilterSummary.text}
-                </Chip>
+                <ActiveFilterStrip totalCount={totalCount} tokens={filterTokens} />
               </View>
             ) : null}
 
@@ -390,12 +380,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: spacing[2],
-  },
-  materialChip: {
-    minHeight: 32,
-  },
-  materialChipText: {
-    fontWeight: '600',
   },
   materialGradeRail: {
     marginTop: spacing[1],

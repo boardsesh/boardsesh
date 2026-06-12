@@ -22,6 +22,9 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
     'mobile.filter.sort.name': 'Name',
     'mobile.filter.sort.popular': 'Popular',
     'mobile.filter.sort.creation': 'Newest',
+    'mobile.filter.climbType.all': 'All',
+    'mobile.filter.climbType.boulders': 'Boulders',
+    'mobile.filter.climbType.routes': 'Routes',
   };
   if (translations[key]) return translations[key];
 
@@ -111,6 +114,11 @@ describe('getFilterSummary', () => {
   it('shows the setter count when multiple setters are selected', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, setter: ['marco', 'jules'] };
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('2 setters');
+  });
+
+  it('shows explicit climb type filters', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, boulders: true, routes: false };
+    expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('Boulders');
   });
 });
 

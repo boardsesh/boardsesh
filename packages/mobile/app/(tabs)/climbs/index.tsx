@@ -43,7 +43,7 @@ import { type SearchHeaderHandle } from '../../../src/components/SearchHeader';
 import { RecentFilterPills } from '../../../src/components/RecentFilterPills';
 import { useNativeAccessoryActive } from '../../../src/hooks/use-bottom-accessory';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
-import { useGrades } from '../../../src/lib/graphql/hooks';
+import { useGrades, useSearchClimbsCount } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
@@ -451,6 +451,7 @@ function ClimbListInner() {
     hasNextPage,
     refetch,
   } = useInfiniteSearchClimbs(searchInput, searchReady);
+  const { data: totalCount } = useSearchClimbsCount(searchInput, searchReady);
   const isLoadingMoreRef = useRef(false);
 
   const visibleClimbs = useMemo(() => {
@@ -607,21 +608,6 @@ function ClimbListInner() {
       .then(() => setRecentFilters([]))
       .catch(() => {});
   }, []);
-
-  // Material filter-summary chip clears the non-grade refinements (the dedicated
-  // grade chip owns the grade), keeping the typed name query. The glass variant
-  // has no chrome clear-all — it clears via the filter sheet's Reset.
-  const handleClearNonGradeFilters = useCallback(() => {
-    replaceSearch(
-      {
-        ...DEFAULT_CLIMB_FILTER_STATE,
-        minGrade: filters.minGrade,
-        maxGrade: filters.maxGrade,
-      },
-      name,
-      DEFAULT_CLIMB_BOARD_FILTER_STATE,
-    );
-  }, [replaceSearch, name, filters.minGrade, filters.maxGrade]);
 
   const handleGradeChange = useCallback(
     (next: GradeBound) => {
@@ -898,11 +884,8 @@ function ClimbListInner() {
         onCloseGrade={handleDismissGrade}
         activeFilterCount={activeFilterCount}
         onOpenFilters={handleOpenFilters}
-        filterSummary={
-          variant === 'material' && filterSummary
-            ? { text: filterSummary, onClear: handleClearNonGradeFilters }
-            : undefined
-        }
+        totalCount={totalCount}
+        filterTokens={variant === 'material' ? nonGradeFilterTokens : filterTokens}
         gradeBound={gradeBound}
         grades={grades}
         gradeRailVisible={showGrade}
@@ -915,6 +898,8 @@ function ClimbListInner() {
         <ClimbFilterFab
           activeFilterCount={activeFilterCount}
           bottom={filterFabBottom}
+          totalCount={totalCount}
+          filterTokens={filterTokens}
           bound={gradeBound}
           grades={grades}
           gradeRailVisible={showGrade}

@@ -69,7 +69,9 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, params?: { count?: number }) => (params?.count != null ? `${key}:${params.count}` : key),
+  }),
 }));
 
 vi.mock('react-native-paper', () => ({
@@ -579,16 +581,15 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-glass-icon="filter"]')?.getAttribute('data-badge')).toBe('0');
   });
 
-  it('omits the Material summary chip when only grade is active', () => {
+  it('omits Material filter token chips when only grade is active', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
-    const onClearSummary = vi.fn();
     const { container } = render(
       <ClimbTopChrome
         {...makeProps({
           onOpenFilters: vi.fn(),
           activeFilterCount: 1,
-          filterSummary: { text: 'V6+', onClear: onClearSummary },
+          filterTokens: [],
           gradeChip: { label: 'V6+', active: true, onClear: vi.fn() },
           gradeBound: { minGradeId: 20, maxGradeId: undefined },
           onOpenGrade: vi.fn(),
@@ -600,17 +601,22 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-chip="V6+"]')).toBeNull();
   });
 
-  it('clears only the Material summary chip callback for non-grade filters', () => {
+  it('renders Material result count and clears individual non-grade filter chips', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const onClearGrade = vi.fn();
-    const onClearSummary = vi.fn();
+    const onClearBenchmark = vi.fn();
+    const onClearRoutes = vi.fn();
     const { container } = render(
       <ClimbTopChrome
         {...makeProps({
           onOpenFilters: vi.fn(),
-          activeFilterCount: 2,
-          filterSummary: { text: 'Benchmarks', onClear: onClearSummary },
+          activeFilterCount: 3,
+          totalCount: 42,
+          filterTokens: [
+            { key: 'benchmark', label: 'Benchmarks', clear: onClearBenchmark },
+            { key: 'climbType', label: 'Routes', clear: onClearRoutes },
+          ],
           gradeChip: { label: 'V6+', active: true, onClear: onClearGrade },
           gradeBound: { minGradeId: 20, maxGradeId: undefined },
           onOpenGrade: vi.fn(),
@@ -619,12 +625,17 @@ describe('ClimbTopChrome', () => {
       />,
     );
 
+    expect(container.querySelector('[data-chip="mobile.search.climbsCount:42"]')?.textContent).toContain(
+      'mobile.search.climbsCount:42',
+    );
     fireEvent.click(container.querySelector('[data-chip="Benchmarks"]') as HTMLButtonElement);
-    expect(onClearSummary).toHaveBeenCalledTimes(1);
+    expect(onClearBenchmark).toHaveBeenCalledTimes(1);
+    expect(onClearRoutes).not.toHaveBeenCalled();
     expect(onClearGrade).not.toHaveBeenCalled();
 
-    fireEvent.click(container.querySelector('[data-chip-close="Benchmarks"]') as HTMLSpanElement);
-    expect(onClearSummary).toHaveBeenCalledTimes(2);
+    fireEvent.click(container.querySelector('[data-chip-close="Routes"]') as HTMLSpanElement);
+    expect(onClearRoutes).toHaveBeenCalledTimes(1);
+    expect(onClearBenchmark).toHaveBeenCalledTimes(1);
     expect(onClearGrade).not.toHaveBeenCalled();
   });
 

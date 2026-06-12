@@ -11,12 +11,14 @@ import {
 } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { AUTH_GATED_FIELDS } from './recent-filter-store';
+import { CURRENT_FILTER_SCHEMA_VERSION, normalizePersistedClimbFilters } from './filter-persistence';
 
 export type LastSearch = {
   filters: ClimbFilters;
   boardFilters: ClimbBoardFilterState;
   searchText: string;
   updatedAt: number;
+  filterSchemaVersion?: number;
 };
 
 // One secure-store key holds a JSON map of boardConfigKey -> LastSearch so we
@@ -69,7 +71,11 @@ function normalizeEntry(entry: LastSearch): LastSearch {
   }
   // Retire legacy status='established' → 'any' (keeping minAscents) so restored
   // state never carries a status the UI can't show / clear.
-  next = { ...next, filters: normalizeRetiredStatus(next.filters) };
+  next = {
+    ...next,
+    filterSchemaVersion: CURRENT_FILTER_SCHEMA_VERSION,
+    filters: normalizePersistedClimbFilters(normalizeRetiredStatus(next.filters), next.filterSchemaVersion),
+  };
   if (next.boardFilters == null || typeof next.boardFilters !== 'object' || Array.isArray(next.boardFilters)) {
     next = { ...next, boardFilters: DEFAULT_CLIMB_BOARD_FILTER_STATE };
   }
@@ -156,7 +162,13 @@ export async function saveLastSearch(
       return;
     }
     const map = await readMap();
-    map[key] = { filters, boardFilters, searchText, updatedAt: Date.now() };
+    map[key] = {
+      filters,
+      boardFilters,
+      searchText,
+      updatedAt: Date.now(),
+      filterSchemaVersion: CURRENT_FILTER_SCHEMA_VERSION,
+    };
     const capped = capMap(map);
     await SecureStore.setItemAsync(LAST_SEARCH_KEY, JSON.stringify(capped));
   } catch {

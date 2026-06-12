@@ -129,8 +129,8 @@ export type ClimbSearchInput = {
   showOnlyCompleted?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
-  // Climb-type toggles. Both undefined / both true → no frames_count filter.
-  // Boulders only → `frames_count = 1`. Routes only → `frames_count > 1`.
+  // Climb-type toggles. Both undefined or both true means all climbs.
+  // Boulders only means `frames_count = 1`. Routes only means `frames_count > 1`.
   boulders?: boolean;
   routes?: boolean;
   // Zone filter — restrict climbs based on a user-drawn bounding box.

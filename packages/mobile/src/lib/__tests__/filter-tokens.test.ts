@@ -23,8 +23,9 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.search.rating') return `${text(options?.count)}+ ⭐`;
   if (key === 'mobile.search.setterName') return `By ${text(options?.setter)}`;
   if (key === 'mobile.search.settersCount') return `${text(options?.count)} setters`;
-  if (key === 'search.summary.routesOnly') return 'Routes only';
-  if (key === 'search.summary.bouldersAndRoutes') return 'Boulders & routes';
+  if (key === 'mobile.filter.climbType.all') return 'All';
+  if (key === 'mobile.filter.climbType.boulders') return 'Boulders';
+  if (key === 'mobile.filter.climbType.routes') return 'Routes';
   if (key === 'mobile.filter.sort.quality') return 'Quality';
   if (key === 'mobile.filter.benchmark') return 'Benchmarks only';
   if (key === 'mobile.filter.status.drafts') return 'Drafts';
@@ -110,12 +111,17 @@ describe('getActiveFilterTokens', () => {
     expect(patchFilters).toHaveBeenCalledWith({ setter: undefined });
   });
 
-  it('builds a Routes-only climb-type token and clears to boulders-only default', () => {
+  it('builds a routes-only climb-type token and clears to all-climbs default', () => {
     const { tokens, patchFilters } = build({ ...DEFAULT_FILTERS, boulders: false, routes: true });
     const climbType = tokens.find((token) => token.key === 'climbType');
-    expect(climbType?.label).toBe('Routes only');
+    expect(climbType?.label).toBe('Routes');
     climbType?.clear();
-    expect(patchFilters).toHaveBeenCalledWith({ boulders: true, routes: false });
+    expect(patchFilters).toHaveBeenCalledWith({ boulders: undefined, routes: undefined });
+  });
+
+  it('builds a boulders-only climb-type token', () => {
+    const { tokens } = build({ ...DEFAULT_FILTERS, boulders: true, routes: false });
+    expect(tokens.find((token) => token.key === 'climbType')?.label).toBe('Boulders');
   });
 
   it('builds a benchmark token from board filters and clears via patchBoardFilters', () => {

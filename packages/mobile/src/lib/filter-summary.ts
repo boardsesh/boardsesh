@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { Grade } from '@boardsesh/shared-schema';
-import { getBaseFilterParts, formatFilterSummary } from '@boardsesh/climb-filters';
+import { getBaseFilterParts, formatFilterSummary, climbTypeOf } from '@boardsesh/climb-filters';
 import { DEFAULT_FILTERS, type ClimbFilters } from './climb-filter-types';
 import { buildFilterLabels, buildSortLabel, formatSettersLabel } from './filter-labels';
 
@@ -44,6 +44,12 @@ export function getFilterSummary(
     labels,
     buildSortLabel(t),
   );
+  const hasExplicitClimbType = filters.boulders != null || filters.routes != null;
+  if (hasExplicitClimbType) {
+    const climbType = climbTypeOf(filters);
+    // i18n-keep mobile.filter.climbType.all mobile.filter.climbType.boulders mobile.filter.climbType.routes
+    parts.push(t(`mobile.filter.climbType.${climbType}`));
+  }
 
   return formatFilterSummary(parts, labels) ?? t('mobile.filter.title');
 }

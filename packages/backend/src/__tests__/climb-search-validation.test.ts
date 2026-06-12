@@ -42,3 +42,17 @@ describe('ClimbSearchInputSchema holdsFilter cap', () => {
     }
   });
 });
+
+describe('ClimbSearchInputSchema climb type fields', () => {
+  it('leaves omitted boulders/routes undefined so callers get all climbs by default', () => {
+    const result = ClimbSearchInputSchema.parse(base);
+    expect(result.boulders).toBeUndefined();
+    expect(result.routes).toBeUndefined();
+  });
+
+  it('preserves explicit false values for boulders/routes', () => {
+    const result = ClimbSearchInputSchema.parse({ ...base, boulders: false, routes: true });
+    expect(result.boulders).toBe(false);
+    expect(result.routes).toBe(true);
+  });
+});

@@ -1,13 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
-import {
-  SORT_OPTIONS,
-  STATUS_FILTER_VALUES,
-  normalizeRetiredStatus,
-  type SortOption,
-  type StatusFilter,
-} from '@boardsesh/climb-filters';
+import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredStatus } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
+import { CURRENT_FILTER_SCHEMA_VERSION, normalizePersistedClimbFilters } from './filter-persistence';
 
 export { getFilterKey };
 
@@ -17,6 +12,7 @@ export type RecentFilter = {
   filters: ClimbFilters;
   searchText: string;
   timestamp: number;
+  filterSchemaVersion?: number;
 };
 
 const RECENT_FILTERS_KEY = 'boardsesh_recent_filters';
@@ -57,7 +53,14 @@ function normalizeEntry(entry: RecentFilter): RecentFilter {
   // Backfill a missing status and retire legacy 'established' → 'any' (the
   // Popularity control reflects minAscents), so replayed pills never carry a
   // status the UI can't show.
-  return { ...entry, filters: normalizeRetiredStatus({ ...entry.filters, status }) };
+  return {
+    ...entry,
+    filterSchemaVersion: CURRENT_FILTER_SCHEMA_VERSION,
+    filters: normalizePersistedClimbFilters(
+      normalizeRetiredStatus({ ...entry.filters, status }),
+      entry.filterSchemaVersion,
+    ),
+  };
 }
 
 function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
@@ -104,6 +107,7 @@ export async function addRecentFilter(label: string, filters: ClimbFilters, sear
       filters,
       searchText,
       timestamp: Date.now(),
+      filterSchemaVersion: CURRENT_FILTER_SCHEMA_VERSION,
     };
 
     const updated = [newEntry, ...deduplicated].slice(0, MAX_ITEMS);

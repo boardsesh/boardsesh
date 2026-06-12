@@ -38,8 +38,6 @@ const currentFilters: ClimbFilters = {
   sortBy: 'popular',
   sortOrder: 'desc',
   status: 'any',
-  boulders: true,
-  routes: false,
   setter: ['draft-setter'],
 };
 
@@ -125,14 +123,23 @@ vi.mock('@boardsesh/climb-filters', () => ({
     sortBy: 'popular',
     sortOrder: 'desc',
     status: 'any',
-    boulders: true,
-    routes: false,
   },
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
   hasActiveClimbFilters: () => false,
   hasActiveBoardFilters: () => false,
   applyStatusChange: (_filters: unknown, status: string) => ({ status }),
   normalizeRetiredStatus: (filters: unknown) => filters,
+  climbTypeOf: (filters: { boulders?: boolean; routes?: boolean }) => {
+    if (filters.boulders === true && filters.routes !== true) return 'boulders';
+    if (filters.routes === true && filters.boulders !== true) return 'routes';
+    return 'all';
+  },
+  climbTypePatch: (type: 'all' | 'boulders' | 'routes') =>
+    type === 'boulders'
+      ? { boulders: true, routes: false }
+      : type === 'routes'
+        ? { boulders: false, routes: true }
+        : { boulders: undefined, routes: undefined },
   toClimbSearchInput: () => ({}),
   mergeBoardFilters: (input: unknown) => input,
   formatMinAscentsFilterCount: (count: number) => String(count),
@@ -189,7 +196,32 @@ vi.mock('../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
-vi.mock('../SegmentedControl', () => ({ SegmentedControl: () => null }));
+vi.mock('../SegmentedControl', () => ({
+  SegmentedControl: ({
+    options,
+    selectedKey,
+    onSelect,
+  }: {
+    options: Array<{ key: string; label: string }>;
+    selectedKey: string;
+    onSelect: (key: string) => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'segmented-control', 'data-selected': selectedKey },
+      options.map((option) =>
+        createElement(
+          'button',
+          {
+            key: option.key,
+            onClick: () => onSelect(option.key),
+            'aria-pressed': selectedKey === option.key,
+          },
+          option.label,
+        ),
+      ),
+    ),
+}));
 vi.mock('../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../CollapsibleSection', () => ({
   CollapsibleSection: ({
@@ -348,6 +380,16 @@ describe('ClimbFilterSheet child filters', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('applies climb type changes from the segmented control', () => {
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByText('mobile.filter.climbType.routes'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+
+    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, boulders: false, routes: true }, currentBoardFilters);
   });
 
   it('opens the setters sheet above the filter sheet and keeps draft edits local until Apply', () => {

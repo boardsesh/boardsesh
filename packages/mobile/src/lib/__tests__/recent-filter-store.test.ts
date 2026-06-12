@@ -149,6 +149,40 @@ describe('getRecentFilters sanitizer', () => {
     expect(result[0]?.filters.status).toBe('any');
   });
 
+  it('strips the legacy implicit boulders-only default from unversioned entries', async () => {
+    const { getRecentFilters } = await import('../recent-filter-store');
+    await seed([
+      {
+        id: '1',
+        label: 'legacy-boulders-default',
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: false, minGrade: 10 },
+        searchText: '',
+        timestamp: 0,
+      },
+    ]);
+    const result = await getRecentFilters();
+    expect(result[0]?.filters.minGrade).toBe(10);
+    expect(result[0]?.filters.boulders).toBeUndefined();
+    expect(result[0]?.filters.routes).toBeUndefined();
+  });
+
+  it('keeps explicit boulders-only filters from current-schema entries', async () => {
+    const { getRecentFilters } = await import('../recent-filter-store');
+    await seed([
+      {
+        id: '1',
+        label: 'Boulders',
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: false },
+        searchText: '',
+        timestamp: 0,
+        filterSchemaVersion: 2,
+      },
+    ]);
+    const result = await getRecentFilters();
+    expect(result[0]?.filters.boulders).toBe(true);
+    expect(result[0]?.filters.routes).toBe(false);
+  });
+
   it('keeps auth-gated fields when isAuthenticated=true', async () => {
     const { getRecentFilters } = await import('../recent-filter-store');
     await seed([
