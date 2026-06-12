@@ -12,6 +12,7 @@ import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
   BottomSheetView,
+  type BottomSheetBackgroundProps,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { FullWindowOverlay } from 'react-native-screens';
@@ -19,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSheetBackground } from './GlassSheetBackground';
 import { hapticMedium } from '../lib/haptics';
 import { sheetStyles, spacing } from '../theme/tokens';
-import { useTheme } from '../providers/theme-provider';
+import { ThemeProviderBridge, useTheme } from '../providers/theme-provider';
 
 // iOS renders the modal in a native window overlay so it sits above the queue
 // bar; Android's modal portal already covers it.
@@ -65,7 +66,8 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
   },
   ref,
 ) {
-  const { systemColors, sheet } = useTheme();
+  const theme = useTheme();
+  const { systemColors, sheet } = theme;
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
@@ -80,6 +82,15 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
       />
     ),
     [sheet.scrimOpacity],
+  );
+
+  const renderBackground = useCallback(
+    (props: BottomSheetBackgroundProps) => (
+      <ThemeProviderBridge theme={theme}>
+        <GlassSheetBackground {...props} />
+      </ThemeProviderBridge>
+    ),
+    [theme],
   );
 
   const handleChange = useCallback(
@@ -111,6 +122,9 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
     </View>
   ) : null;
 
+  const themedChildren = <ThemeProviderBridge theme={theme}>{children}</ThemeProviderBridge>;
+  const themedFooter = footerNode ? <ThemeProviderBridge theme={theme}>{footerNode}</ThemeProviderBridge> : null;
+
   return (
     <BottomSheetModal
       ref={ref}
@@ -120,7 +134,7 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
       enablePanDownToClose={enablePanDownToClose}
       stackBehavior={stackBehavior}
       backdropComponent={renderBackdrop}
-      backgroundComponent={glass ? GlassSheetBackground : undefined}
+      backgroundComponent={glass ? renderBackground : undefined}
       backgroundStyle={glass ? undefined : backgroundStyle}
       handleIndicatorStyle={sheet.handleStyle}
       containerComponent={modalContainerComponent}
@@ -141,12 +155,12 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             >
-              {children}
+              {themedChildren}
             </BottomSheetScrollView>
           ) : (
-            children
+            themedChildren
           )}
-          {footerNode}
+          {themedFooter}
         </BottomSheetView>
       ) : scrollable ? (
         <BottomSheetScrollView
@@ -156,10 +170,10 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {children}
+          {themedChildren}
         </BottomSheetScrollView>
       ) : (
-        <BottomSheetView style={styles.content}>{children}</BottomSheetView>
+        <BottomSheetView style={styles.content}>{themedChildren}</BottomSheetView>
       )}
     </BottomSheetModal>
   );
