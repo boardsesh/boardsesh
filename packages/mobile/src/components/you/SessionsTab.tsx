@@ -8,7 +8,7 @@ import type { SessionFeedItem } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
-import { ActivityIndicator } from '../ActivityIndicator';
+import { Card } from '../Card';
 import { SessionFeedCard } from './SessionFeedCard';
 import { SessionsFeedHeader } from './SessionsFeedHeader';
 import { FeedSectionLabel } from './FeedSectionLabel';
@@ -16,12 +16,14 @@ import { CommentSheet } from './CommentSheet';
 import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
 import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/hooks';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { spacing } from '../../theme/tokens';
+import { borderRadius, spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
 type FeedRow = { type: 'header'; bucket: FeedRecencyBucket } | { type: 'session'; item: SessionFeedItem };
 
 type TFunc = (key: string) => string;
+
+const SESSION_FEED_SKELETON_KEYS = ['session-feed-skeleton-1', 'session-feed-skeleton-2', 'session-feed-skeleton-3'];
 
 type SessionsTabProps = {
   userId: string | undefined;
@@ -40,6 +42,48 @@ function sectionLabel(bucket: FeedRecencyBucket, t: TFunc): string {
   if (bucket === 'today') return t('mobile.sessions.sectionToday');
   if (bucket === 'thisWeek') return t('mobile.sessions.sectionThisWeek');
   return t('mobile.sessions.sectionEarlier');
+}
+
+function SessionFeedCardSkeleton() {
+  const { systemColors } = useTheme();
+  const blockStyle = { backgroundColor: systemColors.fill };
+
+  return (
+    <View
+      style={styles.skeletonWrapper}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID="session-feed-skeleton-card"
+    >
+      <Card>
+        <View style={styles.skeletonHeader}>
+          <View style={[styles.skeletonAvatarGroup, blockStyle]} />
+          <View style={styles.skeletonHeaderText}>
+            <View style={[styles.skeletonTitleBlock, blockStyle]} />
+            <View style={[styles.skeletonMetaBlock, blockStyle]} />
+          </View>
+          <View style={[styles.skeletonBadgeBlock, blockStyle]} />
+        </View>
+        <View style={styles.skeletonHeroRow}>
+          <View style={[styles.skeletonHeroBlock, blockStyle]} />
+          <View style={styles.skeletonHeroStats}>
+            <View style={[styles.skeletonStatBlock, blockStyle]} />
+            <View style={[styles.skeletonStatBlock, blockStyle]} />
+          </View>
+        </View>
+        <View style={styles.skeletonChipRow}>
+          <View style={[styles.skeletonChipBlock, blockStyle]} />
+          <View style={[styles.skeletonChipBlock, blockStyle]} />
+          <View style={[styles.skeletonChipBlockShort, blockStyle]} />
+        </View>
+        <View style={[styles.skeletonChartBlock, blockStyle]} />
+        <View style={styles.skeletonBoardRow}>
+          <View style={[styles.skeletonBoardBlock, blockStyle]} />
+          <View style={[styles.skeletonBoardBlockShort, blockStyle]} />
+        </View>
+      </Card>
+    </View>
+  );
 }
 
 export function SessionsTab({ userId, onScroll, topInset = 0, registerScrollToTop }: SessionsTabProps) {
@@ -159,8 +203,15 @@ export function SessionsTab({ userId, onScroll, topInset = 0, registerScrollToTo
 
   if (!userId || feed.isPending) {
     return (
-      <View style={[styles.centered, { paddingTop: topInset }]}>
-        <ActivityIndicator size="large" />
+      <View style={[styles.loadingContent, { paddingTop: topInset }]}>
+        {variant === 'material' ? null : (
+          <Text variant="largeTitle" style={styles.screenTitle}>
+            {t('metadata.dashboard.title')}
+          </Text>
+        )}
+        {SESSION_FEED_SKELETON_KEYS.map((key) => (
+          <SessionFeedCardSkeleton key={key} />
+        ))}
       </View>
     );
   }
@@ -195,7 +246,7 @@ export function SessionsTab({ userId, onScroll, topInset = 0, registerScrollToTo
         ListFooterComponent={
           feed.isFetchingNextPage ? (
             <View style={styles.footer}>
-              <ActivityIndicator size="small" />
+              <SessionFeedCardSkeleton />
             </View>
           ) : null
         }
@@ -223,8 +274,8 @@ export function SessionsTab({ userId, onScroll, topInset = 0, registerScrollToTo
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  footer: { paddingVertical: spacing[5], alignItems: 'center' },
+  loadingContent: { flex: 1 },
+  footer: { paddingBottom: spacing[3] },
   screenTitle: {
     paddingHorizontal: spacing[4],
     paddingTop: 0,
@@ -240,4 +291,101 @@ const styles = StyleSheet.create({
   emptyTitle: { marginTop: spacing[3], textAlign: 'center' },
   emptyBody: { textAlign: 'center' },
   emptyCta: { marginTop: spacing[4] },
+  skeletonWrapper: {
+    marginHorizontal: spacing[4],
+    marginTop: spacing[3],
+  },
+  skeletonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  skeletonAvatarGroup: {
+    width: 52,
+    height: 36,
+    borderRadius: borderRadius.full,
+    opacity: 0.46,
+  },
+  skeletonHeaderText: {
+    flex: 1,
+    gap: spacing[2],
+  },
+  skeletonTitleBlock: {
+    width: '64%',
+    height: 18,
+    borderRadius: borderRadius.full,
+    opacity: 0.55,
+  },
+  skeletonMetaBlock: {
+    width: '42%',
+    height: 12,
+    borderRadius: borderRadius.full,
+    opacity: 0.4,
+  },
+  skeletonBadgeBlock: {
+    width: 46,
+    height: 24,
+    borderRadius: borderRadius.full,
+    opacity: 0.42,
+  },
+  skeletonHeroRow: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[4],
+  },
+  skeletonHeroBlock: {
+    flex: 1,
+    height: 84,
+    borderRadius: borderRadius.md,
+    opacity: 0.42,
+  },
+  skeletonHeroStats: {
+    width: 88,
+    gap: spacing[2],
+  },
+  skeletonStatBlock: {
+    flex: 1,
+    borderRadius: borderRadius.md,
+    opacity: 0.38,
+  },
+  skeletonChipRow: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[3],
+  },
+  skeletonChipBlock: {
+    width: 76,
+    height: 24,
+    borderRadius: borderRadius.full,
+    opacity: 0.42,
+  },
+  skeletonChipBlockShort: {
+    width: 52,
+    height: 24,
+    borderRadius: borderRadius.full,
+    opacity: 0.36,
+  },
+  skeletonChartBlock: {
+    height: 52,
+    borderRadius: borderRadius.md,
+    marginTop: spacing[4],
+    opacity: 0.34,
+  },
+  skeletonBoardRow: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[3],
+  },
+  skeletonBoardBlock: {
+    flex: 1,
+    height: 14,
+    borderRadius: borderRadius.full,
+    opacity: 0.35,
+  },
+  skeletonBoardBlockShort: {
+    width: 96,
+    height: 14,
+    borderRadius: borderRadius.full,
+    opacity: 0.28,
+  },
 });
