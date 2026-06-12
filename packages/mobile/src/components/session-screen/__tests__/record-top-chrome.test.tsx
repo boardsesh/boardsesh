@@ -10,6 +10,7 @@ type ChromeProps = {
   createAccessibilityLabel?: string;
   onOpenBoardSwitcher?: () => void;
   boardPillAccessibilityHint?: string;
+  compactBoardControl?: boolean;
   onHeightChange?: (height: number) => void;
   scrollY?: unknown;
   onPressTitle?: () => void;
@@ -155,6 +156,11 @@ describe('RecordTopChrome', () => {
     expect(chrome.props?.onHeightChange).toBe(onHeightChange);
     expect(chrome.props?.onPressTitle).toBe(onPressTitle);
     expect(chrome.props?.onOpenBoardSwitcher).toBe(onOpenBoardSwitcher);
+  });
+
+  it('keeps the board selector in its compact toolbar form', () => {
+    render(<RecordTopChrome {...makeProps()} />);
+    expect(chrome.props?.compactBoardControl).toBe(true);
   });
 
   it('omits both leading and trailing actions and keeps the light before a session is live', () => {

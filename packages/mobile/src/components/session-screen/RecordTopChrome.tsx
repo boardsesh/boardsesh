@@ -20,7 +20,7 @@ const noop = () => {};
 type RecordTopChromeProps = {
   /** The session title — the large in-body title and the collapsed capsule. */
   title: string;
-  /** Open the full board switcher; the board pill doubles as the board picker. */
+  /** Open the full board switcher; the compact board glyph doubles as the board picker. */
   onOpenBoardSwitcher: () => void;
   /** Report the measured chrome height so the list can inset its top padding. */
   onHeightChange: (height: number) => void;
@@ -46,8 +46,8 @@ type RecordTopChromeProps = {
  * `DiscoverTopChrome`) that injects the session title plus the board / invite
  * i18n strings. Record's primary action is the Start/End footer button, so
  * there's no create "+"; instead, while a session is live it docks a
- * share/invite control as the chrome's `trailingAction`. The board pill, angle,
- * and light islands come for free from `CollapsingTopChrome`.
+ * share/invite control as the chrome's `leadingAction`. The compact board glyph,
+ * angle, and light islands come for free from `CollapsingTopChrome`.
  *
  * Material: an absolutely-positioned, `onHeightChange`-measured M3 small app bar
  * (mirroring `ClimbTopChrome`) — the session title via `Appbar.Content` and (only
@@ -180,6 +180,7 @@ export function RecordTopChrome({
       createAccessibilityLabel={title}
       onOpenBoardSwitcher={onOpenBoardSwitcher}
       boardPillAccessibilityHint={tBoards('boardPill.switchHint')}
+      compactBoardControl
       onHeightChange={onHeightChange}
       scrollY={scrollY}
       onPressTitle={onPressTitle}
