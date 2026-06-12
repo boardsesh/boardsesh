@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHasActiveClimb, useQueueSessionId } from '../providers/queue-provider';
 import { useTheme } from '../providers/theme-provider';
 import { isTabsRoute } from '../lib/route-segments';
+import { useRepTimerPreference } from '../lib/rep-timer-preference';
 import { glassSize } from '../theme/layout';
 import { useNativeAccessoryActive, useNativeAccessoryPlacement } from './use-bottom-accessory';
 import { computeBottomChromeMetrics } from './bottom-chrome-metrics';
@@ -23,12 +24,13 @@ export function useBottomChromeMetrics() {
   const hasCurrentClimb = useHasActiveClimb();
   const { variant } = useTheme();
   const { sessionId } = useQueueSessionId();
+  const { targetSeconds, loaded: repTimerPreferenceLoaded } = useRepTimerPreference();
   const insideTabs = isTabsRoute(segments);
   const nativeAccessoryActive = useNativeAccessoryActive();
   const nativeAccessoryPlacement = useNativeAccessoryPlacement();
   const nativeAccessoryMounted = insideTabs && nativeAccessoryActive;
   const nativeAccessoryHeight = nativeAccessoryPlacement === 'inline' ? glassSize.inline : glassSize.standard;
-  const hasRepTimer = sessionId !== null;
+  const hasRepTimer = sessionId !== null && repTimerPreferenceLoaded && targetSeconds !== null;
 
   return useMemo(
     () =>

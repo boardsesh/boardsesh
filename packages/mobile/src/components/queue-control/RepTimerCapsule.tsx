@@ -48,10 +48,13 @@ export function RepTimerDisplay({
   align = 'center',
 }: RepTimerDisplayProps) {
   const { t } = useTranslation('session');
-  const { targetSeconds } = useRepTimerPreference();
+  const { targetSeconds, loaded } = useRepTimerPreference();
   const nowMs = useRepTimerNowMs(lastSavedTickAt);
   const elapsedSeconds = getRepTimerElapsedSeconds(lastSavedTickAt, nowMs);
   const elapsedLabel = formatRepTimerElapsed(elapsedSeconds);
+
+  if (!loaded || targetSeconds === null) return null;
+
   const targetLabel = formatRepTimerTarget(targetSeconds);
   const accessibilityLabel = lastSavedTickAt
     ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel, target: targetLabel })

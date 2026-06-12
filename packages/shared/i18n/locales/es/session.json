@@ -440,6 +440,7 @@
       "repTimerTitle": "Temporizador de descanso",
       "repTimerTarget": "Objetivo",
       "repTimerTargetAria": "Objetivo del temporizador de descanso",
+      "repTimerOff": "Desactivado",
       "inHistoryTitle": "Historial de la sesión",
       "inHistoryEmpty": "Registra bloques para crear el historial de tu sesión.",
       "historyRowAria": "{{name}}, {{status}}",

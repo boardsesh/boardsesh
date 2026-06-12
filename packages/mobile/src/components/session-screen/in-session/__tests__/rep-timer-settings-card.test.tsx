@@ -4,7 +4,8 @@ import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const preference = vi.hoisted(() => ({
-  targetSeconds: 180,
+  targetSeconds: 180 as 180 | null,
+  loaded: true,
   setTargetSeconds: vi.fn(),
 }));
 
@@ -30,15 +31,24 @@ vi.mock('../../../SegmentedControl', () => ({
     selectedKey,
     onSelect,
     accessibilityLabel,
+    selectedTrackColor,
+    selectedTextColor,
   }: {
     options: Array<{ key: string; label: string }>;
     selectedKey: string;
     onSelect: (key: string) => void;
     accessibilityLabel?: string;
+    selectedTrackColor?: string;
+    selectedTextColor?: string;
   }) =>
     createElement(
       'div',
-      { role: 'radiogroup', 'aria-label': accessibilityLabel },
+      {
+        role: 'radiogroup',
+        'aria-label': accessibilityLabel,
+        'data-selected-track-color': selectedTrackColor ?? '',
+        'data-selected-text-color': selectedTextColor ?? '',
+      },
       options.map((option) =>
         createElement(
           'button',
@@ -56,14 +66,15 @@ vi.mock('../../../SegmentedControl', () => ({
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { tertiaryBackground: '#eee', secondaryLabel: '#666' },
-    brandColors: { primary: '#123' },
+    brandColors: { primary: '#123', primaryFill: '#456', onPrimary: '#fff' },
   }),
 }));
-vi.mock('../../../../theme/tokens', () => ({ spacing: { 3: 12 } }));
+vi.mock('../../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
 vi.mock('../../../../lib/rep-timer-preference', () => ({
   REP_TIMER_TARGET_SECONDS: [60, 120, 180, 300],
   useRepTimerPreference: () => ({
     targetSeconds: preference.targetSeconds,
+    loaded: preference.loaded,
     setTargetSeconds: preference.setTargetSeconds,
   }),
 }));
@@ -73,6 +84,7 @@ import { RepTimerSettingsCard } from '../RepTimerSettingsCard';
 describe('RepTimerSettingsCard', () => {
   beforeEach(() => {
     preference.targetSeconds = 180;
+    preference.loaded = true;
     preference.setTargetSeconds.mockClear();
   });
 
@@ -80,10 +92,34 @@ describe('RepTimerSettingsCard', () => {
     const { getByRole, getByText } = render(<RepTimerSettingsCard />);
 
     expect(getByText('mobile.session.repTimerTitle')).not.toBeNull();
+    const group = getByRole('radiogroup', { name: 'mobile.session.repTimerTargetAria' });
+    expect(group.getAttribute('data-selected-track-color')).toBe('#456');
+    expect(group.getAttribute('data-selected-text-color')).toBe('#fff');
     expect(getByRole('button', { name: '3m' }).getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(getByRole('button', { name: '5m' }));
 
     expect(preference.setTargetSeconds).toHaveBeenCalledWith(300);
+  });
+
+  it('supports turning the timer off', () => {
+    preference.targetSeconds = null;
+    const { getByRole } = render(<RepTimerSettingsCard />);
+
+    expect(getByRole('button', { name: 'mobile.session.repTimerOff' }).getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(getByRole('button', { name: '2m' }));
+    expect(preference.setTargetSeconds).toHaveBeenCalledWith(120);
+
+    fireEvent.click(getByRole('button', { name: 'mobile.session.repTimerOff' }));
+    expect(preference.setTargetSeconds).toHaveBeenCalledWith(null);
+  });
+
+  it('does not show a selected target before the preference loads', () => {
+    preference.loaded = false;
+    const { getByRole } = render(<RepTimerSettingsCard />);
+
+    expect(getByRole('button', { name: '3m' }).getAttribute('aria-pressed')).toBe('false');
+    expect(getByRole('button', { name: 'mobile.session.repTimerOff' }).getAttribute('aria-pressed')).toBe('false');
   });
 });

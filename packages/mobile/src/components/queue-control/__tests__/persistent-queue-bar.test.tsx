@@ -15,6 +15,8 @@ const cfg = vi.hoisted(() => ({
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
   nativeAccessoryPlacement: 'regular' as 'regular' | 'inline',
+  repTimerTargetSeconds: 180 as 180 | null,
+  repTimerPreferenceLoaded: true,
 }));
 
 function animatedStyles(container: HTMLElement): string[] {
@@ -77,7 +79,11 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4 } }));
 // Default to the Liquid Glass layout (centered capsule + standalone hero tick).
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant: cfg.variant }) }));
 vi.mock('../../../lib/rep-timer-preference', () => ({
-  useRepTimerPreference: () => ({ targetSeconds: 180, loaded: true, setTargetSeconds: vi.fn() }),
+  useRepTimerPreference: () => ({
+    targetSeconds: cfg.repTimerTargetSeconds,
+    loaded: cfg.repTimerPreferenceLoaded,
+    setTargetSeconds: vi.fn(),
+  }),
 }));
 // The floating bar renders only where the native bottom accessory doesn't
 // (Material variant / iOS < 26 / Android) — force that path so the capsule/tick
@@ -160,6 +166,8 @@ describe('PersistentQueueBar', () => {
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
     cfg.nativeAccessoryPlacement = 'regular';
+    cfg.repTimerTargetSeconds = 180;
+    cfg.repTimerPreferenceLoaded = true;
   });
 
   it('renders nothing when no climb is current', () => {
@@ -183,6 +191,26 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
+  it('keeps climb controls without the rep timer when the timer is off', () => {
+    cfg.sessionId = 'session-1';
+    cfg.repTimerTargetSeconds = null;
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+  });
+
+  it('keeps climb controls without the rep timer before the timer preference loads', () => {
+    cfg.sessionId = 'session-1';
+    cfg.repTimerPreferenceLoaded = false;
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+  });
+
   it('does not render the JS toolbar when the native bottom accessory is active', () => {
     cfg.nativeAccessoryActive = true;
     cfg.insideTabs = true;
@@ -202,6 +230,19 @@ describe('PersistentQueueBar', () => {
 
     expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
     expect(animatedStyles(container).some((style) => style.includes('"bottom":123'))).toBe(true);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('renders no JS chrome above the native bottom accessory when the timer is off', () => {
+    cfg.nativeAccessoryActive = true;
+    cfg.insideTabs = true;
+    cfg.sessionId = 'session-1';
+    cfg.repTimerTargetSeconds = null;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });

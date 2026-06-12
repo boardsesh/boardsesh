@@ -49,11 +49,11 @@ export function PersistentQueueBar() {
   const { variant } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
   const nativeAccessoryPlacement = useNativeAccessoryPlacement();
-  useRepTimerPreference();
+  const { targetSeconds, loaded: repTimerPreferenceLoaded } = useRepTimerPreference();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
   const isSessionActive = sessionId !== null;
-  const showRepTimer = isSessionActive;
+  const showRepTimer = isSessionActive && repTimerPreferenceLoaded && targetSeconds !== null;
   const nativeAccessoryHeight = nativeAccessoryPlacement === 'inline' ? glassSize.inline : glassSize.standard;
 
   if (!currentClimb) return null;

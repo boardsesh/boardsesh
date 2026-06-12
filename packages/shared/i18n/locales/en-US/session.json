@@ -440,6 +440,7 @@
       "repTimerTitle": "Rest timer",
       "repTimerTarget": "Target",
       "repTimerTargetAria": "Rest timer target",
+      "repTimerOff": "Off",
       "inHistoryTitle": "Session history",
       "inHistoryEmpty": "Log climbs to build your session history.",
       "historyRowAria": "{{name}}, {{status}}",

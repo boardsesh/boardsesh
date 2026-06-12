@@ -440,6 +440,7 @@
       "repTimerTitle": "Minuteur de repos",
       "repTimerTarget": "Objectif",
       "repTimerTargetAria": "Objectif du minuteur de repos",
+      "repTimerOff": "Désactivé",
       "inHistoryTitle": "Historique de la session",
       "inHistoryEmpty": "Enregistre des blocs pour construire l'historique de ta session.",
       "historyRowAria": "{{name}}, {{status}}",
