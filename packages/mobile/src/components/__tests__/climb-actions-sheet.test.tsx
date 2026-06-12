@@ -10,7 +10,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 // exposes the present/dismiss it would call through the forwarded ref.
 const modal = vi.hoisted(() => ({ present: vi.fn(), dismiss: vi.fn() }));
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
-const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material', canUpdate: false }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -49,7 +49,7 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: vi.fn() }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn() }));
 vi.mock('@boardsesh/play-view', () => ({ buildClimbViewPath: () => '/view/x' }));
-vi.mock('@boardsesh/create-climb-react', () => ({ computeCanUpdate: () => false }));
+vi.mock('@boardsesh/create-climb-react', () => ({ computeCanUpdate: () => ctrl.canUpdate }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../providers/theme-provider', () => ({
@@ -74,6 +74,12 @@ const climb = {
   quality_average: '3.0',
 } as unknown as Climb;
 
+const ownerClimb = {
+  ...climb,
+  userId: 'user-1',
+  is_draft: true,
+} as unknown as Climb;
+
 const baseProps = {
   climb,
   boardName: 'kilter' as const,
@@ -89,6 +95,7 @@ beforeEach(() => {
   modal.dismiss.mockClear();
   preview.props = null;
   ctrl.variant = 'liquidGlass';
+  ctrl.canUpdate = false;
 });
 
 describe('ClimbActionsSheet present-on-visible (always-mounted toggle)', () => {
@@ -135,11 +142,15 @@ describe('ClimbActionsSheet present-on-visible (always-mounted toggle)', () => {
     });
   });
 
-  it('uses neutral adaptive icons for Liquid Glass action rows', () => {
+  it('uses neutral adaptive icons for ordinary Liquid Glass action rows', () => {
+    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
+        climb={ownerClimb}
+        boardName="tension"
+        currentUserId="user-1"
         onAddToQueue={vi.fn()}
         onToggleFavorite={vi.fn()}
         onTick={vi.fn()}
@@ -151,15 +162,21 @@ describe('ClimbActionsSheet present-on-visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-icon="tick"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="branch"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="copy"]')?.getAttribute('data-color')).toBe('#fff');
-    expect(container.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#fff');
+    expect(container.querySelector('[data-icon="edit"]')?.getAttribute('data-color')).toBe('#fff');
+    expect(container.querySelector('[data-icon="open.external"]')?.getAttribute('data-color')).toBe('#fff');
+    expect(container.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#f80');
   });
 
   it('keeps Material action rows on their semantic/action colors', () => {
     ctrl.variant = 'material';
+    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
+        climb={ownerClimb}
+        boardName="tension"
+        currentUserId="user-1"
         onAddToQueue={vi.fn()}
         onToggleFavorite={vi.fn()}
         onTick={vi.fn()}
@@ -171,6 +188,8 @@ describe('ClimbActionsSheet present-on-visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-icon="tick"]')?.getAttribute('data-color')).toBe('#0a0');
     expect(container.querySelector('[data-icon="branch"]')?.getAttribute('data-color')).toBe('#00f');
     expect(container.querySelector('[data-icon="copy"]')?.getAttribute('data-color')).toBe('#00f');
+    expect(container.querySelector('[data-icon="edit"]')?.getAttribute('data-color')).toBe('#00f');
+    expect(container.querySelector('[data-icon="open.external"]')?.getAttribute('data-color')).toBe('#00f');
     expect(container.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#f80');
   });
 });

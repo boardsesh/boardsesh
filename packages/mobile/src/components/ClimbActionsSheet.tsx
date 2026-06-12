@@ -191,7 +191,7 @@ function ClimbActionsSheet({
   const successActionIconColor = theme.variant === 'liquidGlass' ? neutralActionIconColor : theme.brandColors.success;
   const favoriteActionIconColor = theme.variant === 'liquidGlass' ? neutralActionIconColor : iosSystemColors.systemRed;
   const accentActionIconColor = theme.variant === 'liquidGlass' ? neutralActionIconColor : theme.systemColors.accent;
-  const reportActionIconColor = theme.variant === 'liquidGlass' ? neutralActionIconColor : iosSystemColors.systemOrange;
+  const reportActionIconColor = iosSystemColors.systemOrange;
 
   return (
     <ModalSheet ref={sheetRef} snapPoints={snapPoints} onDismiss={handleDismiss} enablePanDownToClose>

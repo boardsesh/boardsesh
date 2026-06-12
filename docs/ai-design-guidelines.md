@@ -322,12 +322,13 @@ lightbulb:       { ios: 'lightbulb',       android: 'lightbulb-on-outline' },
 Filled/outline pairs follow the `name` / `name.fill` convention (e.g. `boards` / `boards.fill`). A
 typo'd SF Symbol fails `vp run typecheck:mobile`.
 
-**Liquid Glass chrome icon colour.** Bottom tabs, floating glass toolbars, glass header controls and
+**Liquid Glass chrome icon colour.** Bottom tabs, neutral glass header controls and ordinary
 action-sheet row icons should use adaptive neutral glyphs: `systemColors.label` for selected or
 primary actions, `systemColors.secondaryLabel` for inactive actions. Carry state with icon shape,
 labels, badges, filled surfaces or selection affordances before reaching for brand colour. Keep
 semantic colour for cases where colour is the content: destructive actions, warnings/errors, success
-status summaries, grade colours, chart series and filled primary buttons.
+status summaries, connected-light state, grade colours, chart series, filled primary buttons and
+glass controls floating over coloured/photo content where white is required for contrast.
 
 ---
 

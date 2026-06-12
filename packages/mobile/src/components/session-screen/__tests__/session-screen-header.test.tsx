@@ -21,7 +21,8 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: unknown }) =>
+    createElement('span', { 'data-text-color': typeof color === 'string' ? color : '' }, children),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: unknown }) =>
@@ -62,10 +63,11 @@ describe('SessionScreenHeader', () => {
 
   it('docks the share control (calling onShare) when onShare is provided', () => {
     const onShare = vi.fn();
-    const { container } = render(<SessionScreenHeader sessionActive onShare={onShare} />);
+    const { container } = render(<SessionScreenHeader sessionActive onShare={onShare} inviteHint />);
     const share = container.querySelector(SHARE) as HTMLButtonElement | null;
     expect(share).not.toBeNull();
     expect(share?.querySelector('[data-icon="share"]')?.getAttribute('data-color')).toBe('#000');
+    expect(share?.querySelector('[data-text-color]')?.getAttribute('data-text-color')).toBe('#000');
     share!.click();
     expect(onShare).toHaveBeenCalledTimes(1);
   });
