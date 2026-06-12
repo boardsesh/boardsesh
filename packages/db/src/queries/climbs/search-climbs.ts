@@ -4,7 +4,13 @@ import { boardClimbs, boardClimbStats } from '../../schema/index';
 import { createClimbFilters } from './create-climb-filters';
 import { getClimbStars } from './climb-stars';
 import { getGradeLabel } from './grade-lookup';
-import type { BoardRouteParams, ClimbSearchParams, ClimbRow, ClimbSearchResult } from './types';
+import {
+  normalizeSearchSortBy,
+  type BoardRouteParams,
+  type ClimbSearchParams,
+  type ClimbRow,
+  type ClimbSearchResult,
+} from './types';
 
 // Runtime shape of a search row. postgres.js returns numeric/bigint columns as
 // JS strings (no `types` parser is configured), so the ROUND(...::numeric) and
@@ -128,7 +134,7 @@ export const searchClimbs = async (
   const isDraftsQuery = filters.isOnlyDrafts;
 
   // Drafts never have stats, so force creation sort (stats-based sorts would be meaningless)
-  const sortBy = isDraftsQuery ? 'creation' : searchParams.sortBy || 'ascents';
+  const sortBy = isDraftsQuery ? 'creation' : normalizeSearchSortBy(searchParams.sortBy);
   const sortOrder = searchParams.sortOrder === 'asc' ? 'asc' : 'desc';
   const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder);
 

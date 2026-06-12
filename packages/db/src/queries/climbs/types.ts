@@ -111,6 +111,22 @@ export type ClimbSearchInputLike = {
   zoneMode?: ZoneMatchMode | null;
 };
 
+const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy']>> = {
+  ascents: 'ascents',
+  difficulty: 'difficulty',
+  name: 'name',
+  quality: 'quality',
+  popular: 'popular',
+  creation: 'creation',
+  created_at: 'creation',
+  published_at: 'creation',
+};
+
+export function normalizeSearchSortBy(sortBy: string | null | undefined): NonNullable<ClimbSearchParams['sortBy']> {
+  if (!sortBy) return 'ascents';
+  return SEARCH_SORT_ALIASES[sortBy] ?? 'creation';
+}
+
 /**
  * Map an input shape (GraphQL `ClimbSearchInput` or web
  * `SearchRequestPagination`) onto the `ClimbSearchParams` shape consumed by
@@ -141,7 +157,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     maxGrade: input.maxGrade || undefined,
     minAscents: input.minAscents || undefined,
     minRating: input.minRating || undefined,
-    sortBy: input.sortBy || 'ascents',
+    sortBy: normalizeSearchSortBy(input.sortBy),
     sortOrder: input.sortOrder || 'desc',
     name: input.name || undefined,
     settername: setter && setter.length > 0 ? setter : undefined,

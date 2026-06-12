@@ -116,6 +116,12 @@ void describe('createClimbFilters: size filter', () => {
     assert.match(rendered, /ARRAY\[/);
     assert.match(rendered, /::int\[\]/);
   });
+
+  void it('omits size filtering for MoonBoard', () => {
+    const filters = createClimbFilters({ ...params, board_name: 'moonboard', size_id: 1, set_ids: [] }, baseSearch);
+
+    assert.equal(filters.sizeConditions.length, 0);
+  });
 });
 
 void describe('createClimbFilters: minRating', () => {

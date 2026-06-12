@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseSearchPath, getStatsDrivenSort, clampSearchPage, MAX_SEARCH_PAGE } from '../search-climbs';
+import { mapSearchInputToParams, normalizeSearchSortBy } from '../types';
 
 const baseInput = {
   statsDrivenSort: 'ascents' as const,
@@ -123,5 +124,29 @@ void describe('chooseSearchPath', () => {
         'standard-only',
       );
     });
+  });
+});
+
+void describe('normalizeSearchSortBy', () => {
+  void it('keeps known search sort keys', () => {
+    assert.equal(normalizeSearchSortBy('ascents'), 'ascents');
+    assert.equal(normalizeSearchSortBy('quality'), 'quality');
+    assert.equal(normalizeSearchSortBy('popular'), 'popular');
+  });
+
+  void it('maps legacy timestamp keys to creation sort', () => {
+    assert.equal(normalizeSearchSortBy('created_at'), 'creation');
+    assert.equal(normalizeSearchSortBy('published_at'), 'creation');
+  });
+
+  void it('uses ascents by default and explicit creation for unknown sort keys', () => {
+    assert.equal(normalizeSearchSortBy(undefined), 'ascents');
+    assert.equal(normalizeSearchSortBy(null), 'ascents');
+    assert.equal(normalizeSearchSortBy('newest'), 'creation');
+  });
+
+  void it('normalizes sortBy while mapping raw search input', () => {
+    assert.equal(mapSearchInputToParams({ sortBy: 'published_at' }).sortBy, 'creation');
+    assert.equal(mapSearchInputToParams({ sortBy: 'unknown' }).sortBy, 'creation');
   });
 });
