@@ -54,6 +54,10 @@ class RoomManager {
   // of truth, and parallel-writing here just creates read-after-write
   // skew windows. Same rationale for the board-serial map below.
   private localDriverBySession = new Map<string, string>();
+  // Single-instance fallback for the wall-connection holders: sessionId ->
+  // { boardId -> holder participantId }. Mirrors localDriverBySession; only the
+  // no-Redis path touches it (Redis is the source of truth otherwise).
+  private localWallConnectionsBySession = new Map<string, Map<number, string>>();
   private localBoardSerialBySession = new Map<string, string>();
   // In-memory recent-climbs ring buffer (per session). Same rationale as the
   // other local shadows: tests and single-instance dev don't have Redis. The
@@ -83,6 +87,7 @@ class RoomManager {
     this.sessions.clear();
     this.sessionParticipants.clear();
     this.localDriverBySession.clear();
+    this.localWallConnectionsBySession.clear();
     this.localBoardSerialBySession.clear();
     this.localRecentClimbsBySession.clear();
     this.redisStore = null;
@@ -367,6 +372,18 @@ class RoomManager {
           previousDriverParticipantId: participantId,
         });
       }
+
+      // Same disconnect, same liveness gate: free any board the departing
+      // member held the BLE connection for, so the shared "wall connected"
+      // indicator clears and the next connector can claim the writer slot.
+      const releasedBoards = await this.releaseAllWallConnectionsForParticipant(sessionId, participantId);
+      for (const boardId of releasedBoards) {
+        pubsub.publishSessionEvent(sessionId, {
+          __typename: 'WallConnectionChanged',
+          boardId,
+          holderParticipantId: null,
+        });
+      }
     } catch (error) {
       logger.error(
         `[RoomManager] Failed to release driver for departing participant ${participantId.slice(0, 8)} in session ${sessionId.slice(0, 8)}:`,
@@ -508,6 +525,73 @@ class RoomManager {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Claim-if-free the wall-connection slot for a board: the first member with a
+   * live BLE link holds it and writes frames; later connectors to the same
+   * board don't steal it. Returns the resulting holder and whether THIS call
+   * claimed it (so `announceWallLink` only broadcasts on an actual transition).
+   */
+  async claimWallConnection(
+    sessionId: string,
+    boardId: number,
+    participantId: string,
+  ): Promise<{ holderParticipantId: string; didClaim: boolean }> {
+    if (this.distributedState) {
+      return this.distributedState.claimWallConnection(sessionId, boardId, participantId);
+    }
+    let board = this.localWallConnectionsBySession.get(sessionId);
+    if (!board) {
+      board = new Map();
+      this.localWallConnectionsBySession.set(sessionId, board);
+    }
+    const existing = board.get(boardId);
+    if (existing === undefined) {
+      board.set(boardId, participantId);
+      return { holderParticipantId: participantId, didClaim: true };
+    }
+    return { holderParticipantId: existing, didClaim: false };
+  }
+
+  /** Release a board's wall-connection slot when the caller holds it. */
+  async releaseWallConnection(sessionId: string, boardId: number, expectedParticipantId: string): Promise<boolean> {
+    if (this.distributedState) {
+      return this.distributedState.releaseWallConnection(sessionId, boardId, expectedParticipantId);
+    }
+    const board = this.localWallConnectionsBySession.get(sessionId);
+    if (board?.get(boardId) === expectedParticipantId) {
+      board.delete(boardId);
+      if (board.size === 0) this.localWallConnectionsBySession.delete(sessionId);
+      return true;
+    }
+    return false;
+  }
+
+  /** All current wall-connection holders for a session, keyed by boardId. */
+  async getWallConnections(sessionId: string): Promise<Map<number, string>> {
+    if (this.distributedState) {
+      return this.distributedState.getWallConnections(sessionId);
+    }
+    return new Map(this.localWallConnectionsBySession.get(sessionId) ?? []);
+  }
+
+  /** Release every board this participant held (disconnect cleanup); returns freed boardIds. */
+  async releaseAllWallConnectionsForParticipant(sessionId: string, participantId: string): Promise<number[]> {
+    if (this.distributedState) {
+      return this.distributedState.releaseAllWallConnectionsForParticipant(sessionId, participantId);
+    }
+    const board = this.localWallConnectionsBySession.get(sessionId);
+    if (!board) return [];
+    const released: number[] = [];
+    for (const [boardId, holder] of board) {
+      if (holder === participantId) {
+        board.delete(boardId);
+        released.push(boardId);
+      }
+    }
+    if (board.size === 0) this.localWallConnectionsBySession.delete(sessionId);
+    return released;
   }
 
   /**
@@ -718,6 +802,7 @@ class RoomManager {
     // `cleanupEmptySession` when the session set drains; this is the
     // single-instance / single-process equivalent.
     this.localDriverBySession.delete(sessionId);
+    this.localWallConnectionsBySession.delete(sessionId);
     this.localBoardSerialBySession.delete(sessionId);
     this.localRecentClimbsBySession.delete(sessionId);
     return endSessionFn(

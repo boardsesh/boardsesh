@@ -32,6 +32,7 @@ export type SessionPayloadInputs = {
   queueState?: SessionQueueState;
   sessionData?: SessionDbRow | null;
   driverParticipantId?: string | null;
+  wallConnections?: { boardId: number; holderParticipantId: string }[];
   lastConnectedBoardSerial?: string | null;
   leaderConnectionId?: string | null;
   name?: string | null;
@@ -53,7 +54,7 @@ function override<T>(value: T | undefined, fetch: () => Promise<T>): Promise<T> 
 }
 
 /**
- * Build the 16-field Session GraphQL payload, fanning the four-to-six
+ * Build the 17-field Session GraphQL payload, fanning the four-to-seven
  * independent Redis reads into a single `Promise.all`. Replaces the verbatim
  * `id`/`name`/`boardPath`/`users`/`queueState`/`isLeader`/...-shaped return
  * objects in every Session-returning resolver. Pass `inputs.X` to short-
@@ -74,15 +75,27 @@ export async function buildSessionPayload(
       ? Promise.resolve<string | null>(null)
       : override(inputs.leaderConnectionId, () => roomManager.getSessionLeaderConnectionId(sessionId));
 
-  const [users, queueState, sessionData, driverParticipantId, lastConnectedBoardSerial, leaderConnectionId] =
-    await Promise.all([
-      override(inputs.users, () => roomManager.getSessionUsers(sessionId)),
-      override(inputs.queueState, () => roomManager.getQueueState(sessionId)),
-      override(inputs.sessionData, () => roomManager.getSessionById(sessionId)),
-      override(inputs.driverParticipantId, () => roomManager.getSessionDriverParticipantId(sessionId)),
-      override(inputs.lastConnectedBoardSerial, () => roomManager.getSessionBoardSerial(sessionId)),
-      leaderFetch,
-    ]);
+  const [
+    users,
+    queueState,
+    sessionData,
+    driverParticipantId,
+    lastConnectedBoardSerial,
+    leaderConnectionId,
+    wallConnections,
+  ] = await Promise.all([
+    override(inputs.users, () => roomManager.getSessionUsers(sessionId)),
+    override(inputs.queueState, () => roomManager.getQueueState(sessionId)),
+    override(inputs.sessionData, () => roomManager.getSessionById(sessionId)),
+    override(inputs.driverParticipantId, () => roomManager.getSessionDriverParticipantId(sessionId)),
+    override(inputs.lastConnectedBoardSerial, () => roomManager.getSessionBoardSerial(sessionId)),
+    leaderFetch,
+    override(inputs.wallConnections, () =>
+      roomManager
+        .getWallConnections(sessionId)
+        .then((map) => Array.from(map, ([boardId, holderParticipantId]) => ({ boardId, holderParticipantId }))),
+    ),
+  ]);
 
   return {
     id: sessionId,
@@ -101,6 +114,7 @@ export async function buildSessionPayload(
     },
     isLeader: inputs.isLeader !== undefined ? inputs.isLeader : leaderConnectionId === ctx.connectionId,
     driverParticipantId,
+    wallConnections,
     lastConnectedBoardSerial,
     clientId: inputs.clientId !== undefined ? inputs.clientId : ctx.connectionId,
     participantId: inputs.participantId ?? ctx.participantId ?? ctx.connectionId ?? '',

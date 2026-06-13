@@ -99,6 +99,23 @@ export const mutationsTypeDefs = /* GraphQL */ `
     releaseControl: Session!
 
     """
+    Announce that this client now holds a live BLE connection to \`boardId\` in the
+    current session. Claim-if-free: the first connector becomes the board's frame
+    writer; a later connector to the same board does not steal the slot. Lights the
+    shared "wall connected" indicator for the session. Publishes
+    \`WallConnectionChanged\` when the holder changes. Idempotent for the same holder.
+    Session identity comes from the WebSocket connection context.
+    """
+    announceWallLink(boardId: Int!): Session!
+
+    """
+    Revoke this client's BLE-connection claim for \`boardId\` (manual disconnect).
+    Frees the slot for the next connector and, when this client was the holder,
+    publishes \`WallConnectionChanged { holderParticipantId: null }\`. Idempotent.
+    """
+    revokeWallLink(boardId: Int!): Boolean!
+
+    """
     Confirm to all session participants that a climb was successfully relayed to the wall
     over BLE from this client's phone. Any session participant may call (no driver
     requirement) — the BLE-capable phone that handled the send is the source of truth for

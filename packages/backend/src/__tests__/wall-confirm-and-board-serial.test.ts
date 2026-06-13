@@ -49,6 +49,7 @@ vi.mock('../services/room-manager', () => ({
     // Individual tests override per-call when they want a different
     // authoritative answer.
     getSessionBoardSerial: vi.fn().mockResolvedValue(null),
+    getWallConnections: vi.fn().mockResolvedValue(new Map()),
     // Used by the setSessionBoardPath mutation. Returns the previous
     // boardPath when the value changed; null on no-op writes.
     updateSessionBoardPathIfChanged: vi.fn(),

@@ -58,6 +58,7 @@ vi.mock('../services/room-manager', () => ({
     // peers which physical board is paired. Default to "no board" so this
     // existing test suite needn't model BLE pairing.
     getSessionBoardSerial: vi.fn().mockResolvedValue(null),
+    getWallConnections: vi.fn().mockResolvedValue(new Map()),
   },
 }));
 

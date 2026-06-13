@@ -47,6 +47,11 @@ export const KEYS = {
   // pivot's lightbulb gesture. Empty / missing key means "no driver" — the
   // wall is unclaimed.
   sessionDriver: (sessionId: string) => `boardsesh:session:${sessionId}:driver`,
+  // Hash: sessionId -> { boardId -> participantId of the member holding the BLE
+  // connection to that board }. The connection IS the writer token, so it's a
+  // claim-if-free slot (HSETNX), not a yank like the driver. Drives the shared
+  // "wall is connected" indicator and elects the single frame-writer per board.
+  sessionWallConnections: (sessionId: string) => `boardsesh:session:${sessionId}:wallConnections`,
   // String: sessionId -> last-connected BLE board serial. Set by
   // `setSessionBoardSerial`; consumed by mobile clients on join so a second
   // phone can auto-pair with the same physical board as the first.

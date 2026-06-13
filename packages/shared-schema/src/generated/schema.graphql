@@ -337,6 +337,17 @@ type SessionUser {
 }
 
 """
+A board's current BLE connection holder within a session. The holder is the
+single member whose phone writes frames to that board's LEDs.
+"""
+type WallConnection {
+  "The board this connection is for (userBoards.id)"
+  boardId: Int!
+  "Stable participant id holding the BLE connection to the board"
+  holderParticipantId: ID!
+}
+
+"""
 An active climbing session where users can collaborate on a queue.
 """
 type Session {
@@ -354,6 +365,8 @@ type Session {
   isLeader: Boolean!
   "Stable participant id of the user currently driving the wall. Set via takeControl, cleared via releaseControl or driver disconnect. Distinct from isLeader, which is presentation/legacy only."
   driverParticipantId: ID
+  "Per-board BLE connection holders. In the simplified model the holder is the single frame-writer for that board, and any entry means the shared 'wall connected' indicator is lit. Maintained via announceWallLink / revokeWallLink; empty when no member is connected."
+  wallConnections: [WallConnection!]!
   "Most recently observed BLE board serial for this session. Set when a participant pairs their phone to a physical board; broadcast as SessionBoardSerialChanged so late-joiners can auto-connect to the same board. Null when no board has been recorded."
   lastConnectedBoardSerial: String
   "Unique identifier for this client's connection"
@@ -4380,6 +4393,23 @@ type Mutation {
   releaseControl: Session!
 
   """
+  Announce that this client now holds a live BLE connection to `boardId` in the
+  current session. Claim-if-free: the first connector becomes the board's frame
+  writer; a later connector to the same board does not steal the slot. Lights the
+  shared "wall connected" indicator for the session. Publishes
+  `WallConnectionChanged` when the holder changes. Idempotent for the same holder.
+  Session identity comes from the WebSocket connection context.
+  """
+  announceWallLink(boardId: Int!): Session!
+
+  """
+  Revoke this client's BLE-connection claim for `boardId` (manual disconnect).
+  Frees the slot for the next connector and, when this client was the holder,
+  publishes `WallConnectionChanged { holderParticipantId: null }`. Idempotent.
+  """
+  revokeWallLink(boardId: Int!): Boolean!
+
+  """
   Confirm to all session participants that a climb was successfully relayed to the wall
   over BLE from this client's phone. Any session participant may call (no driver
   requirement) — the BLE-capable phone that handled the send is the source of truth for
@@ -4969,6 +4999,7 @@ union SessionEvent =
   | UserPresenceChanged
   | LeaderChanged
   | DriverChanged
+  | WallConnectionChanged
   | WallConfirmedClimb
   | SessionBoardSerialChanged
   | SessionBoardPathChanged
@@ -5017,6 +5048,19 @@ type DriverChanged {
   driverParticipantId: ID
   "Stable participant id of the previous driver, or null when there was none (e.g. the very first take of the session, or after a release). Lets clients render 'X took the wall from Y' toasts and populate the Phase 5 previousDriver analytics property without local bookkeeping."
   previousDriverParticipantId: ID
+}
+
+"""
+Event when the member holding the BLE connection to a board changes. In the
+simplified collaboration model the connection holder is the single frame
+writer, and any holder existing means the shared "wall is connected"
+indicator lights up for everyone in the session.
+"""
+type WallConnectionChanged {
+  "The board whose connection holder changed (userBoards.id)"
+  boardId: Int!
+  "Stable participant id now holding the BLE connection to the board, or null when nobody holds it"
+  holderParticipantId: ID
 }
 
 """

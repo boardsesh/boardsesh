@@ -588,6 +588,100 @@ export async function clearSessionDriverIf(
 }
 
 /**
+ * Claim the wall-connection slot for a board in a session. Claim-if-free
+ * (HSETNX): the first connector holds the slot; a later connector to the same
+ * board does NOT steal it. Returns the resulting holder and whether THIS call
+ * claimed it (so the resolver can gate the WallConnectionChanged broadcast).
+ */
+export async function claimWallConnection(
+  redis: Redis,
+  sessionId: string,
+  boardId: number,
+  participantId: string,
+): Promise<{ holderParticipantId: string; didClaim: boolean }> {
+  validateSessionId(sessionId);
+  validateParticipantId(participantId);
+  const key = KEYS.sessionWallConnections(sessionId);
+  const field = String(boardId);
+  const set = await redis.hsetnx(key, field, participantId);
+  await redis.expire(key, TTL.sessionMembership);
+  if (set === 1) {
+    return { holderParticipantId: participantId, didClaim: true };
+  }
+  const holder = (await redis.hget(key, field)) ?? participantId;
+  return { holderParticipantId: holder, didClaim: false };
+}
+
+/**
+ * Release a board's wall-connection slot, but only when the caller currently
+ * holds it. WATCH-guarded so a concurrent re-claim isn't clobbered. Returns
+ * true when the slot was actually freed.
+ */
+export async function releaseWallConnection(
+  redis: Redis,
+  sessionId: string,
+  boardId: number,
+  expectedParticipantId: string,
+): Promise<boolean> {
+  validateSessionId(sessionId);
+  validateParticipantId(expectedParticipantId);
+  const key = KEYS.sessionWallConnections(sessionId);
+  const field = String(boardId);
+  await redis.watch(key);
+  try {
+    const current = await redis.hget(key, field);
+    if (current !== expectedParticipantId) {
+      await redis.unwatch();
+      return false;
+    }
+    const result = await redis.multi().hdel(key, field).exec();
+    if (result === null) return false;
+    const [delErr, delCount] = result[0] as [Error | null, number];
+    if (delErr) throw delErr;
+    return delCount === 1;
+  } catch (err) {
+    await redis.unwatch().catch(() => undefined);
+    throw err;
+  }
+}
+
+/** All current wall-connection holders for a session, keyed by boardId. */
+export async function getWallConnections(redis: Redis, sessionId: string): Promise<Map<number, string>> {
+  validateSessionId(sessionId);
+  const raw = await redis.hgetall(KEYS.sessionWallConnections(sessionId));
+  const result = new Map<number, string>();
+  for (const [field, participantId] of Object.entries(raw)) {
+    const boardId = Number(field);
+    if (Number.isInteger(boardId) && participantId) {
+      result.set(boardId, participantId);
+    }
+  }
+  return result;
+}
+
+/**
+ * Release every board this participant held the wall connection for (used on
+ * disconnect). Returns the boardIds actually freed so the caller can broadcast
+ * a WallConnectionChanged(null) per board.
+ */
+export async function releaseAllWallConnectionsForParticipant(
+  redis: Redis,
+  sessionId: string,
+  participantId: string,
+): Promise<number[]> {
+  validateSessionId(sessionId);
+  validateParticipantId(participantId);
+  const held = await getWallConnections(redis, sessionId);
+  const released: number[] = [];
+  for (const [boardId, holder] of held) {
+    if (holder === participantId && (await releaseWallConnection(redis, sessionId, boardId, participantId))) {
+      released.push(boardId);
+    }
+  }
+  return released;
+}
+
+/**
  * Get the last-connected BLE board serial for a session, or null when unset.
  */
 export async function getSessionBoardSerial(redis: Redis, sessionId: string): Promise<string | null> {

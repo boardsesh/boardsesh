@@ -40,6 +40,7 @@ const getQueueStateMock = vi.fn();
 const getSessionDriverParticipantIdMock = vi.fn();
 const getSessionBoardSerialMock = vi.fn();
 const getSessionLeaderConnectionIdMock = vi.fn();
+const getWallConnectionsMock = vi.fn();
 
 vi.mock('../services/room-manager', () => ({
   roomManager: {
@@ -49,6 +50,7 @@ vi.mock('../services/room-manager', () => ({
     getSessionDriverParticipantId: (...args: unknown[]) => getSessionDriverParticipantIdMock(...args),
     getSessionBoardSerial: (...args: unknown[]) => getSessionBoardSerialMock(...args),
     getSessionLeaderConnectionId: (...args: unknown[]) => getSessionLeaderConnectionIdMock(...args),
+    getWallConnections: (...args: unknown[]) => getWallConnectionsMock(...args),
   },
 }));
 
@@ -97,11 +99,12 @@ beforeEach(() => {
   getQueueStateMock.mockReset().mockResolvedValue(sampleQueueState);
   getSessionDriverParticipantIdMock.mockReset().mockResolvedValue('participant-2');
   getSessionBoardSerialMock.mockReset().mockResolvedValue('SERIAL-123');
+  getWallConnectionsMock.mockReset().mockResolvedValue(new Map([[7, 'participant-2']]));
   getSessionLeaderConnectionIdMock.mockReset().mockResolvedValue('conn-1');
 });
 
 describe('buildSessionPayload — defaults (no overrides)', () => {
-  it('returns the full 16-field Session shape with values from the room manager', async () => {
+  it('returns the full 17-field Session shape with values from the room manager', async () => {
     const payload = await buildSessionPayload('session-1', makeCtx());
 
     expect(payload).toEqual({
@@ -117,6 +120,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
       },
       isLeader: true, // leaderConnectionId === ctx.connectionId
       driverParticipantId: 'participant-2',
+      wallConnections: [{ boardId: 7, holderParticipantId: 'participant-2' }],
       lastConnectedBoardSerial: 'SERIAL-123',
       clientId: 'conn-1',
       participantId: 'participant-1',
@@ -129,7 +133,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
     });
   });
 
-  it('fires all six room-manager reads in parallel', async () => {
+  it('fires all seven room-manager reads in parallel', async () => {
     await buildSessionPayload('session-1', makeCtx());
 
     expect(getSessionUsersMock).toHaveBeenCalledWith('session-1');
@@ -138,6 +142,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
     expect(getSessionDriverParticipantIdMock).toHaveBeenCalledWith('session-1');
     expect(getSessionBoardSerialMock).toHaveBeenCalledWith('session-1');
     expect(getSessionLeaderConnectionIdMock).toHaveBeenCalledWith('session-1');
+    expect(getWallConnectionsMock).toHaveBeenCalledWith('session-1');
   });
 });
 

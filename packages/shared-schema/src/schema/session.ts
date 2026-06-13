@@ -26,6 +26,17 @@ export const sessionTypeDefs = /* GraphQL */ `
   }
 
   """
+  A board's current BLE connection holder within a session. The holder is the
+  single member whose phone writes frames to that board's LEDs.
+  """
+  type WallConnection {
+    "The board this connection is for (userBoards.id)"
+    boardId: Int!
+    "Stable participant id holding the BLE connection to the board"
+    holderParticipantId: ID!
+  }
+
+  """
   An active climbing session where users can collaborate on a queue.
   """
   type Session {
@@ -43,6 +54,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     isLeader: Boolean!
     "Stable participant id of the user currently driving the wall. Set via takeControl, cleared via releaseControl or driver disconnect. Distinct from isLeader, which is presentation/legacy only."
     driverParticipantId: ID
+    "Per-board BLE connection holders. In the simplified model the holder is the single frame-writer for that board, and any entry means the shared 'wall connected' indicator is lit. Maintained via announceWallLink / revokeWallLink; empty when no member is connected."
+    wallConnections: [WallConnection!]!
     "Most recently observed BLE board serial for this session. Set when a participant pairs their phone to a physical board; broadcast as SessionBoardSerialChanged so late-joiners can auto-connect to the same board. Null when no board has been recorded."
     lastConnectedBoardSerial: String
     "Unique identifier for this client's connection"

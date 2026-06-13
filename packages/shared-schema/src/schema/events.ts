@@ -8,6 +8,7 @@ export const eventsTypeDefs = /* GraphQL */ `
     | UserPresenceChanged
     | LeaderChanged
     | DriverChanged
+    | WallConnectionChanged
     | WallConfirmedClimb
     | SessionBoardSerialChanged
     | SessionBoardPathChanged
@@ -56,6 +57,19 @@ export const eventsTypeDefs = /* GraphQL */ `
     driverParticipantId: ID
     "Stable participant id of the previous driver, or null when there was none (e.g. the very first take of the session, or after a release). Lets clients render 'X took the wall from Y' toasts and populate the Phase 5 previousDriver analytics property without local bookkeeping."
     previousDriverParticipantId: ID
+  }
+
+  """
+  Event when the member holding the BLE connection to a board changes. In the
+  simplified collaboration model the connection holder is the single frame
+  writer, and any holder existing means the shared "wall is connected"
+  indicator lights up for everyone in the session.
+  """
+  type WallConnectionChanged {
+    "The board whose connection holder changed (userBoards.id)"
+    boardId: Int!
+    "Stable participant id now holding the BLE connection to the board, or null when nobody holds it"
+    holderParticipantId: ID
   }
 
   """

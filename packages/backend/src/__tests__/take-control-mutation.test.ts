@@ -55,6 +55,7 @@ vi.mock('../services/room-manager', () => ({
     // session payload, so this needs to resolve to a value (null is fine —
     // the test doesn't assert on it).
     getSessionBoardSerial: vi.fn().mockResolvedValue(null),
+    getWallConnections: vi.fn().mockResolvedValue(new Map()),
   },
 }));
 

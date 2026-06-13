@@ -687,6 +687,63 @@ export const sessionMutations = {
   },
 
   /**
+   * Announce a live BLE connection to a board: claim-if-free the per-board
+   * wall-connection slot (the holder is the single frame writer + lights the
+   * shared "wall connected" indicator). Publishes WallConnectionChanged only on
+   * an actual transition. The simplified replacement for take/release control —
+   * the physical connection is the writer token, so there's nothing to "claim"
+   * beyond having connected.
+   */
+  announceWallLink: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
+    const sessionId = requireSession(ctx);
+    await requireSessionMember(ctx, sessionId);
+    if (!Number.isInteger(boardId) || boardId <= 0) {
+      throw new Error('announceWallLink requires a positive integer boardId.');
+    }
+    if (!ctx.participantId) {
+      throw new Error('announceWallLink requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+    const participantId = ctx.participantId;
+    const { holderParticipantId, didClaim } = await roomManager.claimWallConnection(sessionId, boardId, participantId);
+    if (didClaim) {
+      pubsub.publishSessionEvent(sessionId, {
+        __typename: 'WallConnectionChanged',
+        boardId,
+        holderParticipantId,
+      });
+    }
+    return buildSessionPayload(sessionId, ctx, { participantId });
+  },
+
+  /**
+   * Revoke this client's BLE-connection claim for a board (manual disconnect).
+   * Frees the slot and broadcasts WallConnectionChanged(null) when this client
+   * was the holder. Returns whether the slot was actually freed.
+   */
+  revokeWallLink: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
+    const sessionId = requireSession(ctx);
+    await requireSessionMember(ctx, sessionId);
+    if (!Number.isInteger(boardId) || boardId <= 0) {
+      throw new Error('revokeWallLink requires a positive integer boardId.');
+    }
+    if (!ctx.participantId) {
+      throw new Error('revokeWallLink requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+    const participantId = ctx.participantId;
+    const released = await roomManager.releaseWallConnection(sessionId, boardId, participantId);
+    if (released) {
+      pubsub.publishSessionEvent(sessionId, {
+        __typename: 'WallConnectionChanged',
+        boardId,
+        holderParticipantId: null,
+      });
+    }
+    return released;
+  },
+
+  /**
    * End a session explicitly.
    * Validates the caller is the creator or current leader.
    * Returns a session summary with stats, or null if no ticks.

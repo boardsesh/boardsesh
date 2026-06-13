@@ -1963,6 +1963,15 @@ export type Mutation = {
    */
   addQueueItem: ClimbQueueItem;
   /**
+   * Announce that this client now holds a live BLE connection to `boardId` in the
+   * current session. Claim-if-free: the first connector becomes the board's frame
+   * writer; a later connector to the same board does not steal the slot. Lights the
+   * shared "wall connected" indicator for the session. Publishes
+   * `WallConnectionChanged` when the holder changes. Idempotent for the same holder.
+   * Session identity comes from the WebSocket connection context.
+   */
+  announceWallLink: Session;
+  /**
    * Attach an Instagram post or reel as beta for a climb. Idempotent on
    * (boardType, climbUuid, link).
    */
@@ -2145,6 +2154,12 @@ export type Mutation = {
   /** Revoke a community role from a user (admin only). */
   revokeRole: Scalars['Boolean']['output'];
   /**
+   * Revoke this client's BLE-connection claim for `boardId` (manual disconnect).
+   * Frees the slot for the next connector and, when this client was the holder,
+   * publishes `WallConnectionChanged { holderParticipantId: null }`. Idempotent.
+   */
+  revokeWallLink: Scalars['Boolean']['output'];
+  /**
    * Save Aurora climbing credentials.
    * Validates with Aurora API before saving.
    */
@@ -2303,6 +2318,11 @@ export type MutationAddGymMemberArgs = {
 export type MutationAddQueueItemArgs = {
   item: ClimbQueueItemInput;
   position?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationAnnounceWallLinkArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -2592,6 +2612,11 @@ export type MutationResolveProposalArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRevokeRoleArgs = {
   input: RevokeRoleInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRevokeWallLinkArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4436,6 +4461,8 @@ export type Session = {
   startedAt?: Maybe<Scalars['String']['output']>;
   /** Users currently in the session */
   users: Array<SessionUser>;
+  /** Per-board BLE connection holders. In the simplified model the holder is the single frame-writer for that board, and any entry means the shared 'wall connected' indicator is lit. Maintained via announceWallLink / revokeWallLink; empty when no member is connected. */
+  wallConnections: Array<WallConnection>;
 };
 
 /**
@@ -4544,7 +4571,8 @@ export type SessionEvent =
   | UserJoined
   | UserLeft
   | UserPresenceChanged
-  | WallConfirmedClimb;
+  | WallConfirmedClimb
+  | WallConnectionChanged;
 
 /** A session feed card representing a group of ticks from a climbing session. */
 export type SessionFeedItem = {
@@ -5623,6 +5651,32 @@ export type WallConfirmedClimb = {
   confirmedByParticipantId: Scalars['ID']['output'];
   /** UUID of the queue item that triggered this send, or null when the BLE-capable phone reported only a climb UUID. Lets clients disambiguate when the same climb is queued twice — without this, both queue entries' pending lightbulbs would clear on a single confirmation. */
   queueItemUuid?: Maybe<Scalars['ID']['output']>;
+};
+
+/**
+ * A board's current BLE connection holder within a session. The holder is the
+ * single member whose phone writes frames to that board's LEDs.
+ */
+export type WallConnection = {
+  __typename?: 'WallConnection';
+  /** The board this connection is for (userBoards.id) */
+  boardId: Scalars['Int']['output'];
+  /** Stable participant id holding the BLE connection to the board */
+  holderParticipantId: Scalars['ID']['output'];
+};
+
+/**
+ * Event when the member holding the BLE connection to a board changes. In the
+ * simplified collaboration model the connection holder is the single frame
+ * writer, and any holder existing means the shared "wall is connected"
+ * indicator lights up for everyone in the session.
+ */
+export type WallConnectionChanged = {
+  __typename?: 'WallConnectionChanged';
+  /** The board whose connection holder changed (userBoards.id) */
+  boardId: Scalars['Int']['output'];
+  /** Stable participant id now holding the BLE connection to the board, or null when nobody holds it */
+  holderParticipantId?: Maybe<Scalars['ID']['output']>;
 };
 
 /**

@@ -17,6 +17,10 @@ import {
   getSessionDriver,
   setSessionDriverAndReturnPrevious,
   clearSessionDriverIf,
+  claimWallConnection,
+  releaseWallConnection,
+  getWallConnections,
+  releaseAllWallConnectionsForParticipant,
   getSessionBoardSerial,
   setSessionBoardSerialAndReturnPrevious,
   pushRecentClimb,
@@ -196,6 +200,30 @@ export class DistributedStateManager {
    */
   async clearSessionDriverIf(sessionId: string, expectedParticipantId: string): Promise<boolean> {
     return clearSessionDriverIf(this.redis, sessionId, expectedParticipantId);
+  }
+
+  /** Claim-if-free the wall-connection slot for a board; returns holder + whether this call claimed it. */
+  async claimWallConnection(
+    sessionId: string,
+    boardId: number,
+    participantId: string,
+  ): Promise<{ holderParticipantId: string; didClaim: boolean }> {
+    return claimWallConnection(this.redis, sessionId, boardId, participantId);
+  }
+
+  /** Release a board's wall-connection slot when the caller holds it. */
+  async releaseWallConnection(sessionId: string, boardId: number, expectedParticipantId: string): Promise<boolean> {
+    return releaseWallConnection(this.redis, sessionId, boardId, expectedParticipantId);
+  }
+
+  /** All current wall-connection holders for a session, keyed by boardId. */
+  async getWallConnections(sessionId: string): Promise<Map<number, string>> {
+    return getWallConnections(this.redis, sessionId);
+  }
+
+  /** Release every board this participant held (disconnect cleanup); returns freed boardIds. */
+  async releaseAllWallConnectionsForParticipant(sessionId: string, participantId: string): Promise<number[]> {
+    return releaseAllWallConnectionsForParticipant(this.redis, sessionId, participantId);
   }
 
   /** Get the session's last-connected BLE board serial, or null when unset. */
