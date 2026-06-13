@@ -147,6 +147,19 @@ describe('useSaveTick (shared)', () => {
     expect(executeHttp.mock.calls[0][1].input.boardId).toBe(4242);
   });
 
+  it('forwards a selected boardId when provided', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-board' }) });
+    const { wrapper } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(tickOptions({ boardId: 77 }));
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(executeHttp.mock.calls[0][1].input.boardId).toBe(77);
+  });
+
   it('rolls back the optimistic entry on error', async () => {
     const executeHttp = vi.fn().mockRejectedValue(new Error('Server exploded'));
     const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

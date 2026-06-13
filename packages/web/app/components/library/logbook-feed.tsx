@@ -119,9 +119,9 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
   // Build board list from layout stats (boards the user has ticks for)
   const logbookBoards: UserBoard[] = useMemo(
     () =>
-      layoutStats.map((ls) => {
-        const layoutId = ls.layoutId ?? 0;
-        const boardName = ls.boardType as BoardName;
+      layoutStats.map((layoutStat, layoutStatIndex) => {
+        const layoutId = layoutStat.layoutId ?? 0;
+        const boardName = layoutStat.boardType as BoardName;
 
         let sizeId = 0;
         let setIds = '';
@@ -132,14 +132,14 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
           if (layoutEntry) {
             const [layoutKey] = layoutEntry;
             const moonSets = MOONBOARD_SETS[layoutKey as MoonBoardLayoutKey] ?? [];
-            setIds = moonSets.map((s) => s.id).join(',');
+            setIds = moonSets.map((moonSet) => moonSet.id).join(',');
           }
         } else {
           const defaultSize = getDefaultSizeForLayout(boardName, layoutId);
           if (defaultSize !== null) {
             sizeId = defaultSize;
             const sets = getSetsForLayoutAndSize(boardName, layoutId, sizeId);
-            setIds = sets.map((s) => s.id).join(',');
+            setIds = sets.map((set) => set.id).join(',');
           } else {
             const fallback = boardName === 'kilter' ? ORPHANED_KILTER_LAYOUT_DEFAULTS[layoutId] : undefined;
             if (fallback) {
@@ -154,14 +154,15 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
         }
 
         return {
-          uuid: `logbook-${ls.boardType}-${layoutId}`,
+          id: -(layoutStatIndex + 1),
+          uuid: `logbook-${layoutStat.boardType}-${layoutId}`,
           slug: '',
           ownerId: '',
-          boardType: ls.boardType,
+          boardType: layoutStat.boardType,
           layoutId,
           sizeId,
           setIds,
-          name: getLayoutDisplayName(ls.boardType, ls.layoutId),
+          name: getLayoutDisplayName(layoutStat.boardType, layoutStat.layoutId),
           isPublic: false,
           isUnlisted: false,
           hideLocation: false,
@@ -169,7 +170,7 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
           angle: 0,
           isAngleAdjustable: false,
           createdAt: '',
-          totalAscents: ls.distinctClimbCount,
+          totalAscents: layoutStat.distinctClimbCount,
           uniqueClimbers: 0,
           followerCount: 0,
           commentCount: 0,

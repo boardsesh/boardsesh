@@ -755,7 +755,7 @@ describe('board-presence resolvers', () => {
       return row ? Number((row as { board_id: number | null }).board_id) : null;
     }
 
-    it('stamps a valid explicit presence boardId over the caller config board', async () => {
+    it('stamps a valid explicit boardId over the caller config board', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const ownBoardId = await createOwnConfigBoard();
 
@@ -781,7 +781,7 @@ describe('board-presence resolvers', () => {
       expect(await latestTickBoardId()).toBe(ownBoardId);
     });
 
-    it('ignores explicit boardId while board presence is disabled', async () => {
+    it('stamps explicit boardId while board presence is disabled', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const ownBoardId = await createOwnConfigBoard();
       process.env.BOARD_PRESENCE_ENABLED = 'false';
@@ -791,7 +791,8 @@ describe('board-presence resolvers', () => {
         process.env.BOARD_PRESENCE_ENABLED = 'true';
       }
 
-      expect(await latestTickBoardId()).toBe(ownBoardId);
+      expect(await latestTickBoardId()).toBe(sharedBoardId);
+      expect(await latestTickBoardId()).not.toBe(ownBoardId);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {

@@ -48,6 +48,7 @@ const boardSheet = vi.hoisted(() => ({
 
 const activeBoard = vi.hoisted(() => {
   const defaultStored = {
+    id: 1,
     uuid: 'board-1',
     slug: 'board-1',
     ownerId: 'owner-1',

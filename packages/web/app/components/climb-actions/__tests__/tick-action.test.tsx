@@ -83,6 +83,7 @@ function createMockUserBoard(overrides?: Partial<UserBoard>): UserBoard {
     sizeDescription: 'Full',
     setNames: ['Standard'],
     ...overrides,
+    id: overrides?.id ?? 1,
   };
 }
 

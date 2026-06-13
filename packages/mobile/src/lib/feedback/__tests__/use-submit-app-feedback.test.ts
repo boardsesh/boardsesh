@@ -4,6 +4,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { buildMobileFeedbackEnrichment, clipFeedbackString } from '../feedback-enrichment';
 
 const activeBoard: UserBoard = {
+  id: 1,
   uuid: 'board-uuid',
   slug: 'home-board',
   ownerId: 'user-1',

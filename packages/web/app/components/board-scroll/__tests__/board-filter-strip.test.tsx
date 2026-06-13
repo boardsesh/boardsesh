@@ -54,6 +54,7 @@ vi.mock('../board-scroll.module.css', () => ({
 
 function makeBoard(overrides?: Partial<UserBoard>): UserBoard {
   return {
+    id: 1,
     uuid: 'board-1',
     slug: 'my-kilter',
     ownerId: 'user-1',

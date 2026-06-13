@@ -5434,6 +5434,8 @@ export type UserBoard = {
   gymUuid?: Maybe<Scalars['String']['output']>;
   /** Whether hidden from proximity/nearby search */
   hideLocation: Scalars['Boolean']['output'];
+  /** Numeric database identifier used for board-scoped ticks and stats */
+  id: Scalars['Int']['output'];
   /** Whether the board's angle is physically adjustable */
   isAngleAdjustable: Scalars['Boolean']['output'];
   /** Whether the current user follows this board */
@@ -9303,6 +9305,7 @@ export type UserBoardResolvers<
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   gymUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hideLocation?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   isAngleAdjustable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isOwned?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;

@@ -3,6 +3,7 @@ import { findMatchingBoard } from '../find-matching-board';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const makeBoard = (overrides: Partial<UserBoard> = {}): UserBoard => ({
+  id: 1,
   uuid: 'board-1',
   slug: 'my-kilter',
   ownerId: 'user-1',

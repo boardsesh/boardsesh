@@ -27,6 +27,7 @@ import { resolveBleSerialNumbers, serialsFromDiscoveredDevices } from '../resolv
 
 function makeBoard(serialNumber: string, overrides: Partial<UserBoard> = {}): UserBoard {
   return {
+    id: 1,
     uuid: `board-${serialNumber}`,
     slug: `board-${serialNumber}`,
     ownerId: 'owner-1',

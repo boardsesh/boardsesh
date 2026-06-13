@@ -20,7 +20,7 @@
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getPreference, setPreference, removePreference } from './preference-store';
 
-const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
+const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v3';
 
 export function getStoredActiveBoard(): Promise<UserBoard | null> {
   return getPreference<UserBoard>(ACTIVE_BOARD_KEY);

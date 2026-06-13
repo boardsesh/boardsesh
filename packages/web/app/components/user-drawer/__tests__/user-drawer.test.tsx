@@ -170,6 +170,7 @@ function makeUserBoard(overrides: Partial<UserBoard> = {}): UserBoard {
     commentCount: 0,
     isFollowedByMe: false,
     ...overrides,
+    id: overrides.id ?? 1,
   };
 }
 

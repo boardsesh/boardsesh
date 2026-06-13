@@ -313,9 +313,9 @@ export const tickMutations = {
     //     seeded gym board owned by the system user). Best-effort: a deleted or
     //     stale uuid records the tick unassociated rather than rejecting it, and
     //     does NOT fall back to config resolution.
-    //  2. boardId — the board-presence connected wall (resolveBoardForSerial),
-    //     flag-gated. On a stale/mismatched id we warn and fall back to the
-    //     config lookup rather than surfacing a raw FK/type mismatch.
+    //  2. boardId — the selected/connected wall's user_boards.id. On a
+    //     stale/mismatched id we warn and fall back to the config lookup rather
+    //     than surfacing a raw FK/type mismatch.
     // Absent both, the legacy `/[board_name]/[layout_id]/...` config lookup runs.
     let boardId: number | null = null;
     if (validatedInput.boardUuid) {
@@ -337,7 +337,7 @@ export const tickMutations = {
       if (board) {
         boardId = board.id;
       }
-    } else if (validatedInput.boardId != null && isBoardPresenceEnabled()) {
+    } else if (validatedInput.boardId != null) {
       const explicitBoard = await findActiveBoardById(validatedInput.boardId);
       // Accept the explicit wall board only when its FULL config matches the
       // tick's target (type + layout + size + set). A stale presence boardId

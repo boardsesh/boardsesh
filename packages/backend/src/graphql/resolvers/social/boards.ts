@@ -196,6 +196,7 @@ async function enrichBoard(
   const gymInfo = (gymInfoResult as Array<{ uuid: string; name: string }>)[0];
 
   return {
+    id: Number(board.id),
     uuid: board.uuid,
     slug: board.slug,
     ownerId: board.ownerId,
@@ -342,6 +343,7 @@ async function enrichBoards(
     const gym = board.gymId ? gymMap.get(board.gymId) : undefined;
 
     return {
+      id: Number(board.id),
       uuid: board.uuid,
       slug: board.slug,
       ownerId: board.ownerId,
@@ -687,6 +689,7 @@ export const socialBoardQueries = {
     if (!ctx.isAuthenticated) {
       return boards.map((board) => {
         return {
+          id: Number(board.id),
           uuid: board.uuid,
           slug: board.slug,
           ownerId: '',

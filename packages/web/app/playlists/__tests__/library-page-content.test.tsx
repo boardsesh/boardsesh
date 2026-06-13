@@ -210,6 +210,7 @@ vi.mock('@/app/components/library/create-playlist-drawer', () => ({
 
 function makeBoard(uuid: string, overrides?: Partial<UserBoard>): UserBoard {
   return {
+    id: 1,
     uuid,
     slug: `slug-${uuid}`,
     ownerId: 'owner',

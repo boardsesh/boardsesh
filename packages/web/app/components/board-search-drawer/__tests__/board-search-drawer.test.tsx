@@ -93,6 +93,7 @@ vi.mock('@boardsesh/graphql/operations', () => ({
 
 function makeBoard(uuid: string, overrides: Partial<UserBoard> = {}): UserBoard {
   return {
+    id: 1,
     uuid,
     name: `Board ${uuid}`,
     boardType: 'kilter',

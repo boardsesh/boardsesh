@@ -26,6 +26,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
 import { brandColors } from '../../theme/colors';
@@ -70,6 +71,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const insets = useSafeAreaInsets();
   const saveTick = useSaveTick(toBoardName(boardName));
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
+  const { data: activeBoard } = useActiveBoard();
   const { data: grades } = useGrades(boardName);
 
   // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
@@ -119,6 +121,19 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 
   const ascentType = deriveAscentType(hasPriorHistory, tickState.attemptCount);
   const minAttempts = useMemo(() => getMinAttempts(ascentType), [ascentType]);
+  const activeBoardIdForTick = useMemo(() => {
+    if (!activeBoard) return null;
+    if (activeBoard.boardType !== boardName) return null;
+    if (layoutId == null || sizeId == null || !setIds) return null;
+    const activeSetIds = normalizeSetIdsForTick(activeBoard.setIds);
+    const tickSetIds = normalizeSetIdsForTick(setIds);
+    if (activeBoard.layoutId !== layoutId || activeBoard.sizeId !== sizeId || activeSetIds !== tickSetIds) {
+      return null;
+    }
+    return activeBoard.id;
+  }, [activeBoard, boardName, layoutId, sizeId, setIds]);
+  const tickBoardId =
+    boardPresenceEnabled && boardPresenceBoardId != null ? boardPresenceBoardId : activeBoardIdForTick;
 
   // Reset form state when the climb context changes underneath an open
   // sheet (e.g. user swiped to next while the sheet was already open).
@@ -164,7 +179,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
           ...(setIds ? { setIds } : {}),
-          ...(boardPresenceEnabled && boardPresenceBoardId != null ? { boardId: boardPresenceBoardId } : {}),
+          ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
         },
         {
           onSuccess: () => {
@@ -206,8 +221,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
       layoutId,
       sizeId,
       setIds,
-      boardPresenceEnabled,
-      boardPresenceBoardId,
+      tickBoardId,
       tickState,
       comment,
       onDismiss,
@@ -343,6 +357,19 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     </View>
   );
 });
+
+function normalizeSetIdsForTick(setIds: string): string {
+  return [
+    ...new Set(
+      setIds
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => /^\d+$/.test(token)),
+    ),
+  ]
+    .sort((first, second) => Number(first) - Number(second))
+    .join(',');
+}
 
 const styles = StyleSheet.create({
   container: {

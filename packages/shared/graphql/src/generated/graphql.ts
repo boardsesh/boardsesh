@@ -5431,6 +5431,8 @@ export type UserBoard = {
   gymUuid?: Maybe<Scalars['String']['output']>;
   /** Whether hidden from proximity/nearby search */
   hideLocation: Scalars['Boolean']['output'];
+  /** Numeric database identifier used for board-scoped ticks and stats */
+  id: Scalars['Int']['output'];
   /** Whether the board's angle is physically adjustable */
   isAngleAdjustable: Scalars['Boolean']['output'];
   /** Whether the current user follows this board */

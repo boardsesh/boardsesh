@@ -631,6 +631,7 @@ export function BluetoothProvider({
       overrides: Partial<UserBoard> &
         Pick<UserBoard, 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'name' | 'serialNumber'>,
     ): UserBoard => ({
+      id: 1,
       uuid: `demo-${overrides.serialNumber}`,
       slug: `demo-${overrides.serialNumber}`,
       ownerId: 'demo-owner',

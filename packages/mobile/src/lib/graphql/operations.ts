@@ -31,6 +31,7 @@ import type { SubscriptionQueueItem } from '../queue-conversion';
 // ============================================
 
 const BOARD_FIELDS = `
+  id
   uuid
   slug
   ownerId

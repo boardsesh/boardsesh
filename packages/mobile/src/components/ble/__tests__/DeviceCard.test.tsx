@@ -87,6 +87,7 @@ import { DeviceCard, describeSavedBoard, getPreviewImageStyle } from '../DeviceC
 
 function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
+    id: 1,
     uuid: 'board-1',
     slug: 'board-1',
     ownerId: 'owner-1',

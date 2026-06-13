@@ -18,6 +18,7 @@ import type {
 // ============================================
 
 const BOARD_FIELDS = `
+  id
   uuid
   slug
   ownerId

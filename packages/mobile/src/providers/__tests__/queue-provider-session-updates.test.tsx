@@ -62,6 +62,7 @@ const queueSnapshotStore = vi.hoisted(() => ({
 
 const activeBoard = vi.hoisted(() => ({
   stored: {
+    id: 1,
     uuid: 'board-1',
     slug: 'board-1',
     ownerId: 'owner-1',
@@ -349,6 +350,7 @@ describe('QueueProvider session update subscription', () => {
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
     activeBoard.stored = {
+      id: 1,
       uuid: 'board-1',
       slug: 'board-1',
       ownerId: 'owner-1',

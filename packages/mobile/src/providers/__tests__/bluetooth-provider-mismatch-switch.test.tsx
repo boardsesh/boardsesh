@@ -219,6 +219,7 @@ function makePresenceClimb(overrides: Partial<BoardPresenceClimb> = {}): BoardPr
 
 function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
+    id: 1,
     uuid: 'board-tension',
     slug: 'garage-tension',
     ownerId: 'owner-1',

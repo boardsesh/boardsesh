@@ -7,6 +7,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   A named physical board installation (board type + layout + size + hold sets).
   """
   type UserBoard {
+    "Numeric database identifier used for board-scoped ticks and stats"
+    id: Int!
     "Unique identifier"
     uuid: ID!
     "URL slug for this board"

@@ -22,6 +22,7 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 // Minimal UserBoard stand-in — only the fields the active-board readers consume
 // plus uuid (used for the picker highlight). Cast covers the unused remainder.
 const board = {
+  id: 1,
   uuid: 'board-1',
   boardType: 'kilter',
   layoutId: 1,

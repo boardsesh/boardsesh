@@ -1,6 +1,7 @@
 // Board entity types
 
 export type UserBoard = {
+  id: number;
   uuid: string;
   slug: string;
   ownerId: string;
