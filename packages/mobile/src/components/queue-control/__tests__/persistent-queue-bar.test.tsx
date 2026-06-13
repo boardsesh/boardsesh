@@ -10,10 +10,20 @@ const cfg = vi.hoisted(() => ({
   insideTabs: true,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   wallClimb: null as null | { uuid: string; angle: number },
+  sessionId: null as string | null,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
+  nativeAccessoryPlacement: 'regular' as 'regular' | 'inline',
+  repTimerTargetSeconds: 180 as 180 | null,
+  repTimerPreferenceLoaded: true,
 }));
+
+function animatedStyles(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('[data-animated]')).map(
+    (element) => element.getAttribute('data-style') ?? '',
+  );
+}
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -41,8 +51,9 @@ vi.mock('../../../lib/route-segments', () => ({
   isTabsRoute: () => cfg.insideTabs,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
-  useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
+  useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
+  useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null || cfg.wallClimb != null,
+  useQueueSessionId: () => ({ sessionId: cfg.sessionId }),
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
@@ -50,13 +61,14 @@ vi.mock('../../../theme/layout', () => ({
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT: 48,
   MATERIAL_TAB_BAR_HEIGHT: 80,
   TAB_BAR_HEIGHT: 49,
+  TOOLBAR_CAPSULE_HEIGHT: 52,
   TOOLBAR_RESERVE: 74,
   TOOLBAR_SIDE_MARGIN: 16,
   TOOLBAR_GAP: 8,
   TOOLBAR_FAB_SIZE: 56,
   TOOLBAR_GAP_ABOVE_TABBAR: 10,
   TABBAR_SEAM_OVERLAP: 1,
-  glassSize: { hero: 64, inline: 44 },
+  glassSize: { hero: 64, standard: 56, inline: 44 },
 }));
 // The docked Material bar reads the tab bar's measured height to position itself.
 vi.mock('../../../providers/tab-bar-height-provider', () => ({
@@ -66,6 +78,13 @@ vi.mock('../../../providers/tab-bar-height-provider', () => ({
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4 } }));
 // Default to the Liquid Glass layout (centered capsule + standalone hero tick).
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant: cfg.variant }) }));
+vi.mock('../../../lib/rep-timer-preference', () => ({
+  useRepTimerPreference: () => ({
+    targetSeconds: cfg.repTimerTargetSeconds,
+    loaded: cfg.repTimerPreferenceLoaded,
+    setTargetSeconds: vi.fn(),
+  }),
+}));
 // The floating bar renders only where the native bottom accessory doesn't
 // (Material variant / iOS < 26 / Android) — force that path so the capsule/tick
 // assertions hold. `useNativeAccessoryActive` is what use-bottom-chrome-metrics
@@ -73,6 +92,7 @@ vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant
 vi.mock('../../../hooks/use-bottom-accessory', () => ({
   isBottomAccessoryAvailable: () => false,
   useNativeAccessoryActive: () => cfg.nativeAccessoryActive,
+  useNativeAccessoryPlacement: () => cfg.nativeAccessoryPlacement,
 }));
 vi.mock('../ClimbCapsule', () => ({
   ClimbCapsule: ({
@@ -109,6 +129,29 @@ vi.mock('../LogAscentToolbarButton', () => ({
   LogAscentToolbarButton: ({ climb }: { climb: { uuid: string } }) =>
     createElement('div', { 'data-tick-inline': 'true', 'data-climb-uuid': climb.uuid }),
 }));
+vi.mock('../RepTimerCapsule', () => ({
+  RepTimerCapsule: ({
+    fillWidth,
+    height,
+    surfaceTreatment,
+    endAction,
+  }: {
+    fillWidth?: boolean;
+    height?: number;
+    surfaceTreatment?: string;
+    endAction?: ReactNode;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-rep-timer': 'true',
+        'data-fill-width': fillWidth ? 'true' : 'false',
+        'data-height': height == null ? '' : String(height),
+        'data-surface-treatment': surfaceTreatment ?? '',
+      },
+      endAction,
+    ),
+}));
 
 import { PersistentQueueBar } from '../persistent-queue-bar';
 
@@ -118,9 +161,13 @@ describe('PersistentQueueBar', () => {
     cfg.insideTabs = true;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.wallClimb = null;
+    cfg.sessionId = null;
     cfg.variant = 'liquidGlass';
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
+    cfg.nativeAccessoryPlacement = 'regular';
+    cfg.repTimerTargetSeconds = 180;
+    cfg.repTimerPreferenceLoaded = true;
   });
 
   it('renders nothing when no climb is current', () => {
@@ -133,6 +180,35 @@ describe('PersistentQueueBar', () => {
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).not.toBeNull();
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+  });
+
+  it('shows the rep timer above the climb capsule during an active session', () => {
+    cfg.sessionId = 'session-1';
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+  });
+
+  it('keeps climb controls without the rep timer when the timer is off', () => {
+    cfg.sessionId = 'session-1';
+    cfg.repTimerTargetSeconds = null;
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+  });
+
+  it('keeps climb controls without the rep timer before the timer preference loads', () => {
+    cfg.sessionId = 'session-1';
+    cfg.repTimerPreferenceLoaded = false;
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
   it('does not render the JS toolbar when the native bottom accessory is active', () => {
@@ -141,6 +217,46 @@ describe('PersistentQueueBar', () => {
 
     const { container } = render(<PersistentQueueBar />);
 
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('renders only the JS rep timer above the native bottom accessory during an active session', () => {
+    cfg.nativeAccessoryActive = true;
+    cfg.insideTabs = true;
+    cfg.sessionId = 'session-1';
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
+    expect(animatedStyles(container).some((style) => style.includes('"bottom":123'))).toBe(true);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('renders no JS chrome above the native bottom accessory when the timer is off', () => {
+    cfg.nativeAccessoryActive = true;
+    cfg.insideTabs = true;
+    cfg.sessionId = 'session-1';
+    cfg.repTimerTargetSeconds = null;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('places the JS rep timer above the inline native bottom accessory during an active session', () => {
+    cfg.nativeAccessoryActive = true;
+    cfg.nativeAccessoryPlacement = 'inline';
+    cfg.insideTabs = true;
+    cfg.sessionId = 'session-1';
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
+    expect(animatedStyles(container).some((style) => style.includes('"bottom":111'))).toBe(true);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
@@ -176,6 +292,20 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"right":0');
     expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('uses a docked full-width inline-action rep timer on Material during a session', () => {
+    cfg.variant = 'material';
+    cfg.sessionId = 'session-1';
+    cfg.measuredTabBarHeight = 80;
+    const { container } = render(<PersistentQueueBar />);
+    const timer = container.querySelector('[data-rep-timer]');
+    const styles = animatedStyles(container);
+    expect(timer).not.toBeNull();
+    expect(styles.some((style) => style.includes('"bottom":137'))).toBe(true);
+    expect(styles.some((style) => style.includes('"bottom":79'))).toBe(true);
+    expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
   });
 
   it('uses the wall climb for the fallback tick when the local queue is empty', () => {

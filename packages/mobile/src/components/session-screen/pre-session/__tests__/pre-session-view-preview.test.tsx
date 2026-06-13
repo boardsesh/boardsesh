@@ -54,6 +54,8 @@ const bottomChrome = vi.hoisted(() => ({
   },
 }));
 
+const headerOrder = vi.hoisted(() => ({ rendered: [] as string[] }));
+
 vi.mock('react-native', () => ({
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', testID ? { 'data-testid': testID } : null, children),
@@ -153,8 +155,24 @@ vi.mock('../../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => bottomChrome.metrics,
 }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 }, borderRadius: { lg: 16 } }));
-vi.mock('../BoardSummaryCard', () => ({ BoardSummaryCard: () => null }));
-vi.mock('../GeneratorPickerCard', () => ({ GeneratorPickerCard: () => null }));
+vi.mock('../../in-session/RepTimerSettingsCard', () => ({
+  RepTimerSettingsCard: () => {
+    headerOrder.rendered.push('rep-timer');
+    return createElement('div', { 'data-testid': 'rep-timer-settings-card' });
+  },
+}));
+vi.mock('../BoardSummaryCard', () => ({
+  BoardSummaryCard: () => {
+    headerOrder.rendered.push('board');
+    return createElement('div', { 'data-testid': 'board-summary-card' });
+  },
+}));
+vi.mock('../GeneratorPickerCard', () => ({
+  GeneratorPickerCard: () => {
+    headerOrder.rendered.push('generator');
+    return createElement('div', { 'data-testid': 'generator-picker-card' });
+  },
+}));
 vi.mock('../use-workout-preview', () => ({ useWorkoutPreview: () => preview.result }));
 vi.mock('../WorkoutPreviewRow', () => ({
   WorkoutPreviewRow: ({
@@ -200,6 +218,7 @@ beforeEach(() => {
   preview.result.refreshingUuids = new Set<string>();
   fab.onHeightChange = null;
   fab.bottomOffset = null;
+  headerOrder.rendered = [];
 });
 
 describe('PreSessionView preview rows', () => {
@@ -257,6 +276,15 @@ describe('PreSessionView preview rows', () => {
 
     expect(list.props.at(-1)).toMatchObject({ dataLength: 0, hasHeaderComponent: true });
     expect(rows.rendered).toEqual([]);
+  });
+
+  it('shows rep timer settings after the board card and before the workout generator', () => {
+    const { getByTestId } = render(createElement(PreSessionView));
+
+    expect(getByTestId('board-summary-card')).not.toBeNull();
+    expect(getByTestId('rep-timer-settings-card')).not.toBeNull();
+    expect(getByTestId('generator-picker-card')).not.toBeNull();
+    expect(headerOrder.rendered.slice(0, 3)).toEqual(['board', 'rep-timer', 'generator']);
   });
 
   it('reserves the Start FAB height + bottom offset as the list bottom padding', () => {

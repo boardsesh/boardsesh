@@ -58,6 +58,7 @@ function createBoardContextValue({
     error: null,
     isInitialized: true,
     logbook,
+    lastSavedTickAt: null,
     logbookByClimbAngle,
     getLogbook: async () => {},
     saveTick: async () => {},

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useQueue } from '../../providers/queue-provider';
+import { useReportNativeAccessoryPlacement } from '../../hooks/use-bottom-accessory';
 import {
   glassSize,
   NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH,
@@ -17,6 +18,7 @@ import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
  */
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
+  useReportNativeAccessoryPlacement(placement);
   const { width: screenWidth } = useWindowDimensions();
   const { state } = useQueue();
   // Show the accessory when there's a local queue climb OR a live wall climb

@@ -33,6 +33,8 @@ export type BoardContextType = {
   error: string | null;
   isInitialized: boolean;
   logbook: LogbookEntry[];
+  /** Timestamp for the latest tick this client saved in the active session. */
+  lastSavedTickAt: string | null;
   /**
    * The logbook grouped by `${climb_uuid}:${angle}` (see `logbookClimbAngleKey`).
    * Built once per logbook change so per-row consumers (the climb-list
@@ -63,7 +65,7 @@ export function BoardProvider({
   boardUuid?: string;
   children: ReactNode;
 }) {
-  const { isAuthenticated, isAuthLoading, resolveActiveSessionId } = useBoardAdapter();
+  const { isAuthenticated, isAuthLoading, resolveActiveSessionId, lastSavedTickAt = null } = useBoardAdapter();
   const [isInitialized, setIsInitialized] = useState(false);
   const [climbUuids, setClimbUuids] = useState<string[]>([]);
 
@@ -153,6 +155,7 @@ export function BoardProvider({
       error: null,
       isInitialized,
       logbook,
+      lastSavedTickAt,
       logbookByClimbAngle,
       getLogbook,
       saveTick,
@@ -166,6 +169,7 @@ export function BoardProvider({
       isAuthLoading,
       isInitialized,
       logbook,
+      lastSavedTickAt,
       logbookByClimbAngle,
       getLogbook,
       saveTick,

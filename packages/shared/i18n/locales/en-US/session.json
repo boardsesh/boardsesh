@@ -335,6 +335,9 @@
       "nextClimb": "Next climb",
       "previousClimb": "Previous climb",
       "alreadyLogged": "Logged",
+      "repTimerLabel": "Rest · {{target}}",
+      "repTimerAccessibility": "Rest timer, {{time}} since last tick, {{target}} target",
+      "repTimerNoTickAccessibility": "Rest timer, no tick logged yet, {{target}} target",
       "dragHandleAria": "Drag to reorder {{name}}"
     },
     "queueSheet": {
@@ -434,6 +437,12 @@
       "inStatsDuration": "Duration",
       "inStatsHardest": "Hardest send",
       "inStatsGrades": "Grade distribution",
+      "settings": "Session settings",
+      "settingsTitle": "Session settings",
+      "repTimerTitle": "Rest timer",
+      "repTimerTarget": "Target",
+      "repTimerTargetAria": "Rest timer target",
+      "repTimerOff": "Off",
       "inHistoryTitle": "Session history",
       "inHistoryEmpty": "Log climbs to build your session history.",
       "historyRowAria": "{{name}}, {{status}}",

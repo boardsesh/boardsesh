@@ -143,6 +143,7 @@ vi.mock('../../../../hooks/use-bottom-chrome-metrics', () => ({
 }));
 vi.mock('../../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 }, borderRadius: { lg: 16 } }));
+vi.mock('../../in-session/RepTimerSettingsCard', () => ({ RepTimerSettingsCard: () => null }));
 vi.mock('../BoardSummaryCard', () => ({ BoardSummaryCard: () => null }));
 vi.mock('../WorkoutPreviewRow', () => ({ WorkoutPreviewRow: () => null }));
 vi.mock('../use-workout-preview', () => ({ useWorkoutPreview: () => preview.result }));

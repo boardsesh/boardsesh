@@ -13,7 +13,13 @@ vi.mock('react-native', () => ({
 }));
 
 // Paper SegmentedButtons → <div> exposing the props the test asserts on.
-type PaperButton = { value: string; label?: string; disabled?: boolean };
+type PaperButton = {
+  value: string;
+  label?: string;
+  disabled?: boolean;
+  checkedColor?: string;
+  style?: unknown;
+};
 vi.mock('react-native-paper', () => ({
   SegmentedButtons: ({
     value,
@@ -32,6 +38,8 @@ vi.mock('react-native-paper', () => ({
           key: button.value,
           'data-segment-value': button.value,
           'data-disabled': button.disabled ? 'true' : 'false',
+          'data-checked-color': button.checkedColor ?? '',
+          'data-style': JSON.stringify(button.style ?? null),
           // Real Paper never fires onValueChange for a disabled button.
           onClick: button.disabled ? undefined : () => onValueChange(button.value),
         }),
@@ -41,10 +49,13 @@ vi.mock('react-native-paper', () => ({
 
 // Glass-path deps — the PressableSurface fallback renders a plain div.
 vi.mock('../PressableSurface', () => ({
-  PressableSurface: ({ children }: { children?: ReactNode }) =>
-    createElement('div', { 'data-pressable': 'true' }, children),
+  PressableSurface: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-pressable': 'true', 'data-style': JSON.stringify(style ?? null) }, children),
 }));
-vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
+vi.mock('../Text', () => ({
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color ?? '' }, children),
+}));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: hapticSelectionMock }));
 vi.mock('../../theme/colors', () => ({ brandColors: { primary: '#6D28D9' } }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8 } }));
@@ -115,6 +126,61 @@ describe('SegmentedControl', () => {
     expect(hapticSelectionMock).not.toHaveBeenCalled();
   });
 
+  it('passes custom selected colors to the Material selected segment', () => {
+    ctrl.variant = 'material';
+    const { container } = render(
+      <SegmentedControl
+        options={[...options]}
+        selectedKey="a"
+        onSelect={() => {}}
+        trackColor="#eee"
+        selectedTrackColor="#123456"
+        selectedTextColor="#ffffff"
+      />,
+    );
+
+    const selected = container.querySelector('[data-segment-value="a"]');
+    const unselected = container.querySelector('[data-segment-value="b"]');
+    expect(selected?.getAttribute('data-style')).toContain('#123456');
+    expect(selected?.getAttribute('data-checked-color')).toBe('#ffffff');
+    expect(unselected?.getAttribute('data-style')).toBe('null');
+  });
+
+  it('supports rendering without a selected segment on the Material variant', () => {
+    ctrl.variant = 'material';
+    const { container } = render(
+      <SegmentedControl
+        options={[...options]}
+        selectedKey={null}
+        onSelect={() => {}}
+        trackColor="#eee"
+        selectedTrackColor="#123456"
+        selectedTextColor="#ffffff"
+      />,
+    );
+
+    expect(container.querySelector('[data-paper-segmented]')?.getAttribute('data-value')).toBe('');
+    expect(container.querySelector('[data-segment-value="a"]')?.getAttribute('data-style')).toBe('null');
+  });
+
+  it('supports rendering without a selected segment on the Liquid Glass variant', () => {
+    ctrl.variant = 'liquidGlass';
+    const { container } = render(
+      <SegmentedControl
+        options={[...options]}
+        selectedKey={null}
+        onSelect={() => {}}
+        trackColor="#eee"
+        selectedTrackColor="#123456"
+        selectedTextColor="#ffffff"
+      />,
+    );
+
+    const firstSegment = container.querySelector('[data-pressable]');
+    expect(firstSegment?.getAttribute('data-style')).not.toContain('#123456');
+    expect(firstSegment?.querySelector('span')?.getAttribute('data-color')).toBe('');
+  });
+
   it('renders the Liquid Glass (PressableSurface) control on the Liquid Glass variant', () => {
     ctrl.variant = 'liquidGlass';
     const { container } = render(
@@ -122,5 +188,23 @@ describe('SegmentedControl', () => {
     );
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(container.querySelector('[data-paper-segmented]')).toBeNull();
+  });
+
+  it('uses custom selected colors on the Liquid Glass selected segment', () => {
+    ctrl.variant = 'liquidGlass';
+    const { container } = render(
+      <SegmentedControl
+        options={[...options]}
+        selectedKey="a"
+        onSelect={() => {}}
+        trackColor="#eee"
+        selectedTrackColor="#123456"
+        selectedTextColor="#ffffff"
+      />,
+    );
+
+    const selected = container.querySelector('[data-pressable]');
+    expect(selected?.getAttribute('data-style')).toContain('#123456');
+    expect(selected?.querySelector('span')?.getAttribute('data-color')).toBe('#ffffff');
   });
 });

@@ -335,6 +335,9 @@
       "nextClimb": "Siguiente bloque",
       "previousClimb": "Bloque anterior",
       "alreadyLogged": "Registrado",
+      "repTimerLabel": "Descanso · {{target}}",
+      "repTimerAccessibility": "Temporizador de descanso, {{time}} desde el último tick, objetivo {{target}}",
+      "repTimerNoTickAccessibility": "Temporizador de descanso, aún no hay tick registrado, objetivo {{target}}",
       "dragHandleAria": "Arrastra para reordenar {{name}}"
     },
     "queueSheet": {
@@ -434,6 +437,12 @@
       "inStatsDuration": "Duración",
       "inStatsHardest": "Encadene más duro",
       "inStatsGrades": "Distribución de grados",
+      "settings": "Ajustes de la sesión",
+      "settingsTitle": "Ajustes de la sesión",
+      "repTimerTitle": "Temporizador de descanso",
+      "repTimerTarget": "Objetivo",
+      "repTimerTargetAria": "Objetivo del temporizador de descanso",
+      "repTimerOff": "Desactivado",
       "inHistoryTitle": "Historial de la sesión",
       "inHistoryEmpty": "Registra bloques para crear el historial de tu sesión.",
       "historyRowAria": "{{name}}, {{status}}",

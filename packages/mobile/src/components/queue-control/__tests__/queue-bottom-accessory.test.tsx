@@ -9,6 +9,12 @@ const cfg = vi.hoisted(() => ({
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
 }));
 
+function dataValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
 vi.mock('expo-router/unstable-native-tabs', () => ({
   NativeTabs: { BottomAccessory: { usePlacement: () => cfg.placement } },
 }));
@@ -22,8 +28,7 @@ vi.mock('react-native', () => ({
         ? (styleEntry as { width?: unknown }).width
         : null;
     }, null);
-    const dataWidth = typeof width === 'number' || typeof width === 'string' ? String(width) : '';
-    return createElement('div', { 'data-width': dataWidth }, children);
+    return createElement('div', { 'data-width': dataValue(width) }, children);
   },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   useWindowDimensions: () => ({ width: 402, height: 874, scale: 3, fontScale: 1 }),
@@ -36,6 +41,9 @@ vi.mock('../../../theme/layout', () => ({
   glassSize: { standard: 56, inline: 44, capsule: 52 },
   NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH: 344,
   NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER: 32,
+}));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useReportNativeAccessoryPlacement: vi.fn(),
 }));
 vi.mock('../NativeAccessoryClimbRow', () => ({
   NativeAccessoryClimbRow: ({ placement, width }: { placement: 'regular' | 'inline'; width: number }) =>
@@ -65,6 +73,14 @@ describe('QueueBottomAccessory', () => {
     expect(container.querySelector('[data-native-row="true"]')).not.toBeNull();
     expect(container.querySelector('[data-placement="regular"]')).not.toBeNull();
     expect(container.querySelector('[data-icon="search"]')).toBeNull();
+    expect(container.querySelector('[data-native-timer-row]')).toBeNull();
+  });
+
+  it('keeps the climb row in the native accessory', () => {
+    const { container } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-placement="regular"]')).not.toBeNull();
+    expect(container.querySelector('[data-native-timer-row]')).toBeNull();
   });
 
   it('renders the native accessory row in inline placement', () => {

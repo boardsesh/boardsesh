@@ -1,10 +1,12 @@
-import { type ReactNode, isValidElement } from 'react';
+import { useCallback, type ReactNode, isValidElement } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { type SharedValue, Extrapolation, interpolate, useAnimatedStyle } from 'react-native-reanimated';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
+import { hapticLight } from '../../lib/haptics';
 import { shadows } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { GlassSurface } from '../GlassSurface';
@@ -33,6 +35,8 @@ type CollapsingTopChromeProps = {
   onOpenBoardSwitcher: () => void;
   /** Optional VoiceOver hint for the board pill. */
   boardPillAccessibilityHint?: string;
+  /** Keep the active board as the compact toolbar glyph instead of the centered board pill. */
+  compactBoardControl?: boolean;
   /** Report the measured chrome height so the list can inset its top padding. */
   onHeightChange: (height: number) => void;
   /** List scroll offset, driving the title collapse. */
@@ -83,6 +87,7 @@ export function CollapsingTopChrome({
   createAccessibilityLabel,
   onOpenBoardSwitcher,
   boardPillAccessibilityHint,
+  compactBoardControl = false,
   onHeightChange,
   scrollY,
   onPressTitle,
@@ -98,6 +103,11 @@ export function CollapsingTopChrome({
   const { data: activeBoard } = useActiveBoard();
   const bluetooth = useOptionalBluetoothContext();
   const { progress, collapsed } = useCollapseProgress(scrollY);
+  const boardGlyphLabel = formatActiveBoardLabel(activeBoard) ?? title;
+  const handleOpenBoardSwitcher = useCallback(() => {
+    hapticLight();
+    onOpenBoardSwitcher();
+  }, [onOpenBoardSwitcher]);
 
   const canOpenAngle = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
   // A fragment/element of leading actions reads as one element, so callers passing
@@ -106,16 +116,16 @@ export function CollapsingTopChrome({
   const leftActionCount = 1 + leadingActions + (canCreate ? 1 : 0) + (canOpenAngle ? 1 : 0);
 
   // The right glass toolbar holds the lightbulb (and an optional trailing action)
-  // at rest, and grows to also hold a compact board glyph once collapsed (board
-  // sits left of the light). The trailing action stays visible throughout. The
-  // lightbulb is hidden when `hideLight` (e.g. the active-session header).
+  // at rest, and grows to also hold a compact board glyph once collapsed. Screens
+  // that need more horizontal space can keep that board glyph visible at rest.
   const lightActions = bluetooth && !hideLight ? 1 : 0;
   // Reserve a slot only for a real element — a `false`/`null` from a `cond && <…>`
   // caller must not widen the toolbar by a phantom 48px. Callers passing a fragment
   // of several actions supply `trailingActionCount` explicitly (a fragment reads as
   // one element), so the island widens to fit them all.
   const trailingActions = trailingActionCount ?? (isValidElement(trailingAction) ? 1 : 0);
-  const expandedRightActions = lightActions + trailingActions;
+  const toolbarBoardActions = activeBoard && compactBoardControl ? 1 : 0;
+  const expandedRightActions = toolbarBoardActions + lightActions + trailingActions;
   const collapsedRightActions = (activeBoard ? 1 : 0) + lightActions + trailingActions;
   const expandedRightWidth = expandedRightActions * TOP_ACTION_SIZE;
   const collapsedRightWidth = collapsedRightActions * TOP_ACTION_SIZE;
@@ -124,7 +134,7 @@ export function CollapsingTopChrome({
     width: interpolate(progress.value, [0.4, 1], [expandedRightWidth, collapsedRightWidth], Extrapolation.CLAMP),
   }));
   const boardGlyphStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0.55, 1], [0, 1], Extrapolation.CLAMP),
+    opacity: compactBoardControl ? 1 : interpolate(progress.value, [0.55, 1], [0, 1], Extrapolation.CLAMP),
   }));
 
   const leftActions = (
@@ -141,8 +151,9 @@ export function CollapsingTopChrome({
   );
 
   // Right glass toolbar: lightbulb (+ trailing action) at rest, widening to dock
-  // the board glyph once collapsed. The glass surface stays at full opacity (its
-  // width animates), so it reads as live glass like the left island.
+  // the board glyph once collapsed unless the caller keeps the compact board
+  // control visible at rest. The glass surface stays at full opacity (its width
+  // animates), so it reads as live glass like the left island.
   const rightActions =
     collapsedRightWidth > 0 ? (
       <Animated.View
@@ -161,8 +172,12 @@ export function CollapsingTopChrome({
           pointerEvents="none"
         />
         {activeBoard ? (
-          <Animated.View pointerEvents={collapsed ? 'auto' : 'none'} style={boardGlyphStyle}>
-            <GlassToolbarAction onPress={onOpenBoardSwitcher} accessibilityLabel={boardPillAccessibilityHint ?? title}>
+          <Animated.View pointerEvents={compactBoardControl || collapsed ? 'auto' : 'none'} style={boardGlyphStyle}>
+            <GlassToolbarAction
+              onPress={handleOpenBoardSwitcher}
+              accessibilityLabel={boardGlyphLabel}
+              accessibilityHint={boardPillAccessibilityHint}
+            >
               <Icon name="boards" size={20} color={systemColors.label} />
             </GlassToolbarAction>
           </Animated.View>
@@ -181,7 +196,11 @@ export function CollapsingTopChrome({
       onHeightChange={onHeightChange}
       leftActions={leftActions}
       rightActions={rightActions}
-      centerContent={<BoardPill onPress={onOpenBoardSwitcher} accessibilityHint={boardPillAccessibilityHint} />}
+      centerContent={
+        compactBoardControl ? undefined : (
+          <BoardPill onPress={onOpenBoardSwitcher} accessibilityHint={boardPillAccessibilityHint} />
+        )
+      }
     >
       {children}
     </CollapsingLargeTitleHeader>

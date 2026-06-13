@@ -85,15 +85,20 @@ vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44
 
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
 
-type PressMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
+type PressMockProps = {
+  children?: ReactNode;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+};
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress, accessibilityLabel }: PressMockProps) =>
+  PressableSurface: ({ children, onPress, accessibilityLabel, accessibilityHint }: PressMockProps) =>
     createElement(
       'button',
       {
         onClick: onPress,
         'data-pressable': accessibilityLabel ?? '',
-        'data-capsule': accessibilityLabel?.includes('•') ? accessibilityLabel : '',
+        'data-hint': accessibilityHint ?? '',
       },
       children,
     ),
@@ -137,8 +142,14 @@ const createAction = (root: HTMLElement) =>
 const lightbulb = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="ble.connectBoard"]') ??
     root.querySelector('[data-pressable="lightControl.disconnect"]')) as HTMLButtonElement | null;
-const capsule = (root: HTMLElement) =>
-  root.querySelector('[data-capsule]:not([data-capsule=""])') as HTMLButtonElement | null;
+const centeredBoardPill = (root: HTMLElement, label = 'Display:kilter • M • 40°') =>
+  (Array.from(root.querySelectorAll<HTMLButtonElement>('[data-pressable]')).find(
+    (element) => element.getAttribute('data-pressable') === label && element.textContent?.includes(label),
+  ) ?? null) as HTMLButtonElement | null;
+const boardGlyph = (root: HTMLElement, label = 'Display:kilter • M • 40°') =>
+  (Array.from(root.querySelectorAll<HTMLButtonElement>('[data-pressable]')).find(
+    (element) => element.getAttribute('data-pressable') === label && !element.textContent?.includes(label),
+  ) ?? null) as HTMLButtonElement | null;
 
 const board: BoardFields = {
   name: '',
@@ -160,20 +171,43 @@ describe('CollapsingTopChrome', () => {
   it('renders the board pill for the active board', () => {
     ctrl.board = board;
     const { container } = render(<CollapsingTopChrome {...makeProps()} />);
-    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Display:kilter • M • 40°');
+    expect(centeredBoardPill(container)?.getAttribute('data-pressable')).toBe('Display:kilter • M • 40°');
   });
 
   it('renders no board pill when there is no active board', () => {
     const { container } = render(<CollapsingTopChrome {...makeProps()} />);
-    expect(capsule(container)).toBeNull();
+    expect(centeredBoardPill(container)).toBeNull();
   });
 
   it('opens the board switcher when the pill is pressed', () => {
     ctrl.board = board;
     const onOpenBoardSwitcher = vi.fn();
     const { container } = render(<CollapsingTopChrome {...makeProps({ onOpenBoardSwitcher })} />);
-    fireEvent.click(capsule(container)!);
+    fireEvent.click(centeredBoardPill(container)!);
     expect(onOpenBoardSwitcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses only the compact board glyph when compactBoardControl is set', () => {
+    ctrl.board = board;
+    const onOpenBoardSwitcher = vi.fn();
+    const { container } = render(
+      <CollapsingTopChrome
+        {...makeProps({
+          title: 'Session',
+          boardPillAccessibilityHint: 'Opens board switcher',
+          compactBoardControl: true,
+          onOpenBoardSwitcher,
+        })}
+      />,
+    );
+
+    expect(centeredBoardPill(container)).toBeNull();
+    const glyph = boardGlyph(container);
+    expect(glyph).not.toBeNull();
+    expect(glyph?.getAttribute('data-hint')).toBe('Opens board switcher');
+    fireEvent.click(glyph!);
+    expect(onOpenBoardSwitcher).toHaveBeenCalledTimes(1);
+    expect(haptics.light).toHaveBeenCalledTimes(1);
   });
 
   it('gates the create action on canCreate and fires onCreate with its label', () => {
@@ -186,11 +220,11 @@ describe('CollapsingTopChrome', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('docks a board glyph labelled by the title into the toolbar, opening the switcher', () => {
+  it('docks a board glyph labelled by the active board into the toolbar, opening the switcher', () => {
     ctrl.board = board;
     const onOpenBoardSwitcher = vi.fn();
     const { container } = render(<CollapsingTopChrome {...makeProps({ title: 'V4–V6', onOpenBoardSwitcher })} />);
-    const glyph = container.querySelector('[data-pressable="V4–V6"]') as HTMLButtonElement | null;
+    const glyph = boardGlyph(container);
     expect(glyph).not.toBeNull();
     fireEvent.click(glyph!);
     expect(onOpenBoardSwitcher).toHaveBeenCalledTimes(1);

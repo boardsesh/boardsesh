@@ -34,9 +34,11 @@ export type BoardAdapter = {
   resolveActiveSessionId: () => string | null | undefined;
   /**
    * Optional post-save side-effect. Web wires `clearTickDraft` (IndexedDB);
-   * mobile has no tick-draft store today and may omit it.
+   * mobile records the timestamp for the active-session rep timer.
    */
-  onTickSaved?: (climbUuid: string, angle: number) => void;
+  onTickSaved?: (climbUuid: string, angle: number, climbedAt: string, sessionId?: string | null) => void;
+  /** Latest tick saved by this client in the active session, if the platform tracks it. */
+  lastSavedTickAt?: string | null;
   /**
    * Optional fallback error UI for save-climb/update-climb. Web uses a
    * snackbar; mobile uses a toast. Shared code emits a stable reason

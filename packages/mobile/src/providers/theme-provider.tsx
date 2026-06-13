@@ -290,6 +290,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   return <ThemeContext value={theme}>{children}</ThemeContext>;
 }
 
+export function ThemeProviderBridge({ theme, children }: { theme: Theme; children: ReactNode }) {
+  return <ThemeContext value={theme}>{children}</ThemeContext>;
+}
+
 /**
  * Access the current theme. Must be called inside a ThemeProvider.
  */

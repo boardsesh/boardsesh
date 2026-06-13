@@ -10,6 +10,7 @@ type ChromeProps = {
   createAccessibilityLabel?: string;
   onOpenBoardSwitcher?: () => void;
   boardPillAccessibilityHint?: string;
+  compactBoardControl?: boolean;
   onHeightChange?: (height: number) => void;
   scrollY?: unknown;
   onPressTitle?: () => void;
@@ -61,6 +62,7 @@ vi.mock('react-native-paper', () => ({
 }));
 vi.mock('../../icon-map', () => ({
   iconMap: {
+    settings: { ios: 'gearshape', android: 'cog-outline' },
     'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
     flag: { ios: 'flag', android: 'flag-outline' },
   },
@@ -156,6 +158,11 @@ describe('RecordTopChrome', () => {
     expect(chrome.props?.onOpenBoardSwitcher).toBe(onOpenBoardSwitcher);
   });
 
+  it('keeps the board selector in its compact toolbar form', () => {
+    render(<RecordTopChrome {...makeProps()} />);
+    expect(chrome.props?.compactBoardControl).toBe(true);
+  });
+
   it('omits both leading and trailing actions and keeps the light before a session is live', () => {
     render(<RecordTopChrome {...makeProps()} />);
     expect(chrome.props?.leadingAction).toBeUndefined();
@@ -178,17 +185,37 @@ describe('RecordTopChrome', () => {
     expect(onShare).toHaveBeenCalledTimes(1);
   });
 
-  it('docks invite on the left and a labelled Stop pill on the right (no light) while a session is live', () => {
-    const onShare = vi.fn();
-    const onEndSession = vi.fn();
-    const { container } = render(<RecordTopChrome {...makeProps({ onShare, onEndSession })} />);
+  it('docks session settings as a leading action, calling onOpenSettings', () => {
+    const onOpenSettings = vi.fn();
+    const { container } = render(<RecordTopChrome {...makeProps({ onOpenSettings })} />);
 
-    // Invite is the lone left slot; the Stop pill reserves two slots for its label;
-    // the light is hidden.
+    expect(isValidElement(chrome.props?.leadingAction)).toBe(true);
     expect(chrome.props?.leadingActionCount).toBe(1);
+    const settingsButton = container.querySelector(
+      '[data-action="mobile.session.settings"]',
+    ) as HTMLButtonElement | null;
+    expect(settingsButton).not.toBeNull();
+    expect(settingsButton?.querySelector('[data-icon="settings"]')?.getAttribute('data-color')).toBe('#000');
+    settingsButton!.click();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('docks settings + invite on the left and a labelled Stop pill on the right (no light) while a session is live', () => {
+    const onShare = vi.fn();
+    const onOpenSettings = vi.fn();
+    const onEndSession = vi.fn();
+    const { container } = render(<RecordTopChrome {...makeProps({ onShare, onOpenSettings, onEndSession })} />);
+
+    // Settings + invite are the left slots; the Stop pill reserves two slots for
+    // its label; the light is hidden.
+    expect(chrome.props?.leadingActionCount).toBe(2);
     expect(chrome.props?.trailingActionCount).toBe(2);
     expect(chrome.props?.hideLight).toBe(true);
 
+    const settingsButton = container.querySelector(
+      '[data-action="mobile.session.settings"]',
+    ) as HTMLButtonElement | null;
+    expect(settingsButton).not.toBeNull();
     const shareButton = container.querySelector('[data-action="mobile.session.invite"]') as HTMLButtonElement | null;
     expect(shareButton).not.toBeNull();
     const stopButton = container.querySelector(
@@ -197,7 +224,9 @@ describe('RecordTopChrome', () => {
     expect(stopButton).not.toBeNull();
     // The Stop control carries a visible "Stop" label, not just an icon.
     expect(stopButton?.textContent).toContain('mobile.session.inStop');
+    settingsButton!.click();
     stopButton!.click();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
     expect(onEndSession).toHaveBeenCalledTimes(1);
   });
 
@@ -227,6 +256,15 @@ describe('RecordTopChrome', () => {
       appbar.actions = [];
       rerender(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
       expect(appbar.actions).toContain('mobile.session.invite');
+    });
+
+    it('shows the settings app-bar action only when provided', () => {
+      const { rerender } = render(<RecordTopChrome {...makeProps()} />);
+      expect(appbar.actions).not.toContain('mobile.session.settings');
+
+      appbar.actions = [];
+      rerender(<RecordTopChrome {...makeProps({ onOpenSettings: vi.fn() })} />);
+      expect(appbar.actions).toContain('mobile.session.settings');
     });
 
     it('shows the End app-bar action only while a session is live (onEndSession set)', () => {

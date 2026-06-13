@@ -1,8 +1,9 @@
-import { StyleSheet } from 'react-native';
+import { Appearance, Platform, PlatformColor, StyleSheet, View } from 'react-native';
 import type { BottomSheetBackgroundProps } from '@gorhom/bottom-sheet';
 import { GlassSurface } from './GlassSurface';
-import { useTheme } from '../providers/theme-provider';
+import { useOptionalTheme } from '../providers/theme-provider';
 import { sheetStyles } from '../theme/tokens';
+import { androidFallbackColors } from '../theme/colors';
 
 /**
  * Shared frosted-glass background for bottom sheets — the same Liquid-Glass
@@ -24,13 +25,27 @@ type GlassSheetBackgroundProps = BottomSheetBackgroundProps & {
   flatTop?: boolean;
 };
 
+function getDetachedFallbackColor() {
+  if (Platform.OS === 'ios') return PlatformColor('secondarySystemBackground');
+  return Appearance.getColorScheme() === 'dark'
+    ? androidFallbackColors.dark.secondaryBackground
+    : androidFallbackColors.light.secondaryBackground;
+}
+
 export function GlassSheetBackground({ style, pointerEvents, flatTop }: GlassSheetBackgroundProps) {
-  const { systemColors, sheet } = useTheme();
+  const theme = useOptionalTheme();
+  const backgroundStyle = [style, sheetStyles.background, theme?.sheet.corners, flatTop && styles.flatTop, styles.clip];
+  const fallbackColor = theme?.systemColors.secondaryBackground ?? getDetachedFallbackColor();
+
+  if (!theme) {
+    return <View style={[backgroundStyle, { backgroundColor: fallbackColor }]} pointerEvents={pointerEvents} />;
+  }
+
   return (
     <GlassSurface
       glassEffectStyle="regular"
-      fallbackColor={systemColors.secondaryBackground}
-      style={[style, sheetStyles.background, sheet.corners, flatTop && styles.flatTop, styles.clip]}
+      fallbackColor={fallbackColor}
+      style={backgroundStyle}
       pointerEvents={pointerEvents}
     />
   );

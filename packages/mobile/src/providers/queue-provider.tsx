@@ -43,7 +43,7 @@ import {
 } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { SessionSummary, SubscriptionQueueEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
-import { execute, GraphQLOperationError, isRateLimitedExtension } from '@boardsesh/graphql-client';
+import { execute } from '@boardsesh/graphql-client';
 import { buildBoardPath, parseBoardPath } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, LEAVE_SESSION } from '@boardsesh/graphql/operations/queue-session';
@@ -101,7 +101,7 @@ function showQueueMutationErrorToast(
   t: (key: string) => string,
   showToast: (message: string, variant: 'error') => void,
 ): void {
-  if (error instanceof GraphQLOperationError && isRateLimitedExtension(error.extensions)) {
+  if (isGraphqlRateLimitedError(error)) {
     showToast(t('mobile.queue.rateLimited'), 'error');
   } else {
     showToast(t('mobile.queue.actionFailed'), 'error');
@@ -427,6 +427,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // burst (e.g. clearQueue removes N items, the WS is down). Coalesce them into
   // one in-flight fetch so we don't hammer the server or thrash the reducer.
   const resyncInFlightRef = useRef(false);
+  const resyncQueueAfterMutationFailureRef = useRef<(error?: unknown) => void | Promise<void>>(() => undefined);
 
   // The active board is the angle source of truth. Read it here so the
   // self-healing re-grade effect can compare each queued climb's display angle
@@ -867,11 +868,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       return capturedSessionId;
     },
     // Best-effort sync failures (coalescer drains for setCurrent / superseded
-    // queue-adds) must not alarm: the local reducer already applied the change
-    // and the WS subscription reconciles. Dev-log only — a user-facing "Action
-    // failed" on a swipe-to-queue or a rapid current-climb change is noise.
+    // queue-adds) can still leave a party session locally ahead of the server.
+    // Reuse the same reconciliation/toast classifier as direct mutation
+    // failures so rate limits don't show as "queue out of sync".
     onBestEffortError: (action, error) => {
       if (__DEV__) console.warn(`[queue] best-effort ${action} failed`, error);
+      if (action === 'setCurrentClimb' || action === 'addQueueItem') {
+        void resyncQueueAfterMutationFailureRef.current(error);
+      }
     },
   });
 
@@ -1143,11 +1147,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // server and tell the user their queue was refreshed. In solo (no session)
   // the local queue is authoritative, so keep the existing best-effort
   // behaviour: dev-log only, no resync, no toast.
-  const resyncQueueAfterMutationFailure = useCallback(async () => {
-    if (!sessionIdRef.current) return;
-    const refreshed = await resyncQueueFromServerRef.current();
-    if (refreshed) showToast(t('mobile.queue.outOfSyncRefreshed'), 'error');
-  }, [showToast, t]);
+  const resyncQueueAfterMutationFailure = useCallback(
+    async (error?: unknown) => {
+      if (!sessionIdRef.current) return;
+      if (error !== undefined && isGraphqlRateLimitedError(error)) {
+        await resyncQueueFromServerRef.current();
+        showQueueMutationErrorToast(error, t, showToast);
+        return;
+      }
+      const refreshed = await resyncQueueFromServerRef.current();
+      if (refreshed) showToast(t('mobile.queue.outOfSyncRefreshed'), 'error');
+    },
+    [showToast, t],
+  );
+  resyncQueueAfterMutationFailureRef.current = resyncQueueAfterMutationFailure;
 
   const takeControl = useCallback(
     async (item?: ClimbQueueItem | null, options?: TakeControlOptions) => {
@@ -1426,7 +1439,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         if (__DEV__) console.warn('[queue] addQueueItem sync failed', error);
         // In a party session the add never reached peers — reconcile against the
         // server so this client doesn't silently diverge. Solo is a true no-op.
-        void resyncQueueAfterMutationFailure();
+        void resyncQueueAfterMutationFailure(error);
       });
       // Surface the "Climb added to queue · Open" snackbar for every add path.
       showQueueAddedSnackbar();
@@ -1452,7 +1465,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         if (__DEV__) console.warn('[queue] removeQueueItem sync failed', error);
         // The remove never reached peers in a party session — reconcile so the
         // dropped item doesn't linger on peers (or come back here). Solo no-ops.
-        void resyncQueueAfterMutationFailure();
+        void resyncQueueAfterMutationFailure(error);
       });
     },
     [mutations, resyncQueueAfterMutationFailure],
@@ -1496,9 +1509,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // coalesces the burst) and tell the user we refreshed. Solo: the local
     // clear is authoritative, so resync no-ops and no toast fires.
     void Promise.allSettled(itemsToRemove.map((item) => mutations.removeQueueItem(item.uuid))).then((results) => {
-      if (results.some((result) => result.status === 'rejected')) {
-        void resyncQueueAfterMutationFailure();
-      }
+      const rejectedResults = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      const rejected = rejectedResults.find((result) => isGraphqlRateLimitedError(result.reason)) ?? rejectedResults[0];
+      if (rejected) void resyncQueueAfterMutationFailure(rejected.reason);
     });
   }, [mutations, resyncQueueAfterMutationFailure]);
 
@@ -1532,15 +1545,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         payload: { item, shouldAddToQueue, isServerEvent: false, correlationId, playlistSuggestionSource },
       });
       coordinator.trackPendingMutation(correlationId);
-      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch(() => {
+      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error) => {
+        if (__DEV__) console.warn('[queue] setCurrentClimb sync failed', error);
         // In a party session the current-climb change never reached peers —
         // reconcile against the server (and toast that we refreshed) so this
         // client's current climb can't silently diverge. Solo keeps the prior
         // best-effort "Action failed" toast (there's no server to reconcile).
         if (sessionIdRef.current) {
-          void resyncQueueAfterMutationFailure();
+          void resyncQueueAfterMutationFailure(error);
         } else {
-          showToast(t('mobile.queue.actionFailed'), 'error');
+          showQueueMutationErrorToast(error, t, showToast);
         }
       });
     },

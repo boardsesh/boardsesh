@@ -107,6 +107,12 @@ const queueMutations = vi.hoisted(() => ({
   setSessionBoardPath: vi.fn(async () => {}),
 }));
 
+const queueReact = vi.hoisted(() => ({
+  latestDeps: null as {
+    onBestEffortError?: (action: string, error: unknown) => void;
+  } | null,
+}));
+
 const wallConfirm = vi.hoisted(() => ({
   emitWallConfirm: vi.fn(),
 }));
@@ -130,7 +136,10 @@ vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
 }));
 
 vi.mock('@boardsesh/queue-react', () => ({
-  useQueueMutations: () => queueMutations,
+  useQueueMutations: (deps: { onBestEffortError?: (action: string, error: unknown) => void }) => {
+    queueReact.latestDeps = deps;
+    return queueMutations;
+  },
 }));
 
 vi.mock('@boardsesh/play-view', async (importOriginal) => ({
@@ -191,6 +200,7 @@ type Snapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
+  clearQueue: ReturnType<typeof useQueue>['clearQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
@@ -283,6 +293,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       removeFromQueue: queue.removeFromQueue,
+      clearQueue: queue.clearQueue,
       setCurrentClimb: queue.setCurrentClimb,
       nextClimb: queue.nextClimb,
       setPlaylistSuggestionSource: queue.setPlaylistSuggestionSource,
@@ -302,6 +313,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     playlistSuggestionSource,
     queue.addToQueue,
     queue.removeFromQueue,
+    queue.clearQueue,
     queue.setCurrentClimb,
     queue.nextClimb,
     queue.setPlaylistSuggestionSource,
@@ -378,6 +390,7 @@ describe('QueueProvider session update subscription', () => {
       mutation.mockReset();
       mutation.mockResolvedValue(undefined);
     }
+    queueReact.latestDeps = null;
     wallConfirm.emitWallConfirm.mockClear();
     sessionStore.getStoredSessionId.mockReset();
     sessionStore.getStoredSessionId.mockResolvedValue('session-1');
@@ -1391,6 +1404,15 @@ describe('QueueProvider mutation-failure resync', () => {
     toast.showToast.mockClear();
   });
 
+  function rateLimitedError() {
+    return new GraphQLOperationError([
+      {
+        message: 'Rate limit exceeded. Try again in 22 seconds.',
+        extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 22 },
+      },
+    ]);
+  }
+
   // The harness routes both endSession and the queueState query through
   // http.request. Branch on the operation text so the resync query returns the
   // authoritative snapshot while everything else keeps the default endSession
@@ -1487,6 +1509,69 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
+  it('resyncs but shows the rate-limit toast when addToQueue is throttled in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.addQueueItem.mockRejectedValueOnce(rateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.addToQueue(makeQueueItem('local-add', 'climb-local'));
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('resyncs but shows the rate-limit toast when removeFromQueue is throttled in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.removeQueueItem.mockRejectedValueOnce(rateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('to-remove', 'climb-remove'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toContain('to-remove');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.removeFromQueue('to-remove');
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-kept']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
   it('resyncs and replaces current climb when setCurrentClimb fails in a session', async () => {
     const snapshots: Snapshot[] = [];
     const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
@@ -1515,6 +1600,137 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
     // Solo's "Action failed" toast must NOT fire in a party session.
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  it('resyncs but shows the rate-limit toast when setCurrentClimb is throttled in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverCurrent], serverCurrent), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(rateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('server-current');
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('resyncs but shows the rate-limit toast for coalesced setCurrentClimb failures', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverCurrent], serverCurrent), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      queueReact.latestDeps?.onBestEffortError?.('setCurrentClimb', rateLimitedError());
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('server-current');
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('resyncs but shows the rate-limit toast when clearQueue remove sync is throttled', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('to-clear-a', 'climb-a'));
+      prepared.addToQueue(makeQueueItem('to-clear-b', 'climb-b'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['to-clear-a', 'to-clear-b']);
+    });
+    queueMutations.removeQueueItem.mockRejectedValueOnce(rateLimitedError()).mockResolvedValueOnce(undefined);
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.clearQueue();
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-kept']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('prefers the rate-limit toast when a later clearQueue remove sync is throttled', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('to-clear-a', 'climb-a'));
+      prepared.addToQueue(makeQueueItem('to-clear-b', 'climb-b'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['to-clear-a', 'to-clear-b']);
+    });
+    queueMutations.removeQueueItem
+      .mockRejectedValueOnce(new Error('remove failed'))
+      .mockRejectedValueOnce(rateLimitedError());
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.clearQueue();
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-kept']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
   it('does not resync or toast when a mutation fails with no active session', async () => {
