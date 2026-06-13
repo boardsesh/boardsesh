@@ -214,6 +214,30 @@ export const CONFIRM_CLIMB_ON_WALL = `
   }
 `;
 
+// Wall-link mutations — the connection-holder model's simpler replacement for
+// take/release control. A client announces it now holds a live BLE connection
+// to a board (claim-if-free: the first connector becomes the sole frame writer);
+// it revokes on disconnect. announceWallLink returns the Session (with
+// wallConnections) so callers can learn immediately whether they hold the slot.
+export const ANNOUNCE_WALL_LINK = `
+  mutation AnnounceWallLink($boardId: Int!) {
+    announceWallLink(boardId: $boardId) {
+      id
+      participantId
+      wallConnections {
+        boardId
+        holderParticipantId
+      }
+    }
+  }
+`;
+
+export const REVOKE_WALL_LINK = `
+  mutation RevokeWallLink($boardId: Int!) {
+    revokeWallLink(boardId: $boardId)
+  }
+`;
+
 // Session board serial — when a phone pairs with a physical board over BLE,
 // it records the serial on the session so other (mobile) participants can
 // auto-connect without picking from a list. Returns Session! for optimistic-UI
@@ -332,6 +356,10 @@ export const SESSION_UPDATES = `
       ... on DriverChanged {
         driverParticipantId
         previousDriverParticipantId
+      }
+      ... on WallConnectionChanged {
+        boardId
+        holderParticipantId
       }
       ... on WallConfirmedClimb {
         climbUuid

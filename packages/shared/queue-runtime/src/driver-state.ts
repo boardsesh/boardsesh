@@ -43,3 +43,37 @@ export function derivePreviewOnly(args: {
     driverParticipantId: args.driverParticipantId,
   });
 }
+
+/**
+ * Whether the session currently has a live BLE connection to a board — drives
+ * the shared "wall connected" indicator. False when solo, no board is resolved,
+ * or nobody holds the connection.
+ */
+export function deriveSessionWallConnected(args: {
+  isPersistentSessionActive: boolean;
+  wallConnectionsByBoard: Record<number, string> | null | undefined;
+  boardId: number | null;
+}): boolean {
+  if (!args.isPersistentSessionActive || args.boardId === null) return false;
+  return Boolean(args.wallConnectionsByBoard?.[args.boardId]);
+}
+
+/**
+ * Whether THIS client should physically write frames to the board. The BLE
+ * connection is the writer token, so:
+ *  - solo (no session) or no resolved board → always write (no election);
+ *  - in a session with a resolved board, write only when this client holds the
+ *    connection slot. Until a holder is recorded, fall back to "write" so a
+ *    session whose holder hasn't propagated yet never goes write-less.
+ */
+export function deriveIsWallWriter(args: {
+  isPersistentSessionActive: boolean;
+  participantId: string | null;
+  wallConnectionsByBoard: Record<number, string> | null | undefined;
+  boardId: number | null;
+}): boolean {
+  if (!args.isPersistentSessionActive || args.boardId === null) return true;
+  const holder = args.wallConnectionsByBoard?.[args.boardId];
+  if (!holder) return true;
+  return args.participantId !== null && holder === args.participantId;
+}

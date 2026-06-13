@@ -12,6 +12,14 @@ export type RuntimeSessionState<TUser extends RuntimeSessionUser = RuntimeSessio
   isLeader: boolean;
   clientId: string;
   driverParticipantId: string | null;
+  /**
+   * Per-board BLE connection holders: boardId -> stable participantId. The
+   * holder is the single member whose phone writes frames to that board, and
+   * any entry means the shared "wall connected" indicator is lit. Optional so
+   * existing session constructors that predate the connection-holder model
+   * don't have to set it (treated as empty).
+   */
+  wallConnectionsByBoard?: Record<number, string>;
   lastConnectedBoardSerial: string | null;
   boardPath: string;
 };
@@ -22,6 +30,7 @@ export type RuntimeSessionEvent<TUser extends RuntimeSessionUser = RuntimeSessio
   | { __typename: 'UserLeft'; userId: string }
   | { __typename: 'LeaderChanged'; leaderId: string; leaderConnectionId?: string | null }
   | { __typename: 'DriverChanged'; driverParticipantId?: string | null; previousDriverParticipantId?: string | null }
+  | { __typename: 'WallConnectionChanged'; boardId: number; holderParticipantId?: string | null }
   | { __typename: 'SessionBoardSerialChanged'; lastConnectedBoardSerial?: string | null }
   | { __typename: 'SessionBoardPathChanged'; boardPath: string; changedByParticipantId?: string | null }
   | { __typename: 'SessionEnded'; reason?: string | null; newPath?: string | null };
@@ -65,6 +74,15 @@ export function applySessionRuntimeEvent<
     }
     case 'DriverChanged':
       return { ...prev, driverParticipantId: event.driverParticipantId ?? null };
+    case 'WallConnectionChanged': {
+      const next = { ...prev.wallConnectionsByBoard };
+      if (event.holderParticipantId) {
+        next[event.boardId] = event.holderParticipantId;
+      } else {
+        delete next[event.boardId];
+      }
+      return { ...prev, wallConnectionsByBoard: next };
+    }
     case 'SessionBoardSerialChanged':
       return { ...prev, lastConnectedBoardSerial: event.lastConnectedBoardSerial ?? null };
     case 'SessionBoardPathChanged':

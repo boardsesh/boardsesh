@@ -37,6 +37,8 @@ import {
   REPLACE_QUEUE_ITEM,
   TAKE_CONTROL,
   RELEASE_CONTROL,
+  ANNOUNCE_WALL_LINK,
+  REVOKE_WALL_LINK,
   CONFIRM_CLIMB_ON_WALL,
   SET_SESSION_BOARD_SERIAL,
   SET_SESSION_BOARD_PATH,
@@ -110,6 +112,17 @@ export type QueueMutationsActions<TItem> = {
    * isn't the driver. Backend no-op in solo.
    */
   releaseControl: () => Promise<void>;
+  /**
+   * Announce this client now holds a live BLE connection to `boardId`, making it
+   * the board's sole frame writer (claim-if-free). Lights the shared "wall
+   * connected" indicator. Best-effort; no-op in solo.
+   */
+  announceWallLink: (boardId: number) => Promise<void>;
+  /**
+   * Revoke this client's BLE-connection claim for `boardId` (disconnect).
+   * Best-effort; no-op in solo.
+   */
+  revokeWallLink: (boardId: number) => Promise<void>;
   /**
    * Tell the backend this client just relayed `climbUuid` to the wall over BLE
    * so it can broadcast `WallConfirmedClimb` to the other party members.
@@ -310,6 +323,26 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCurrent();
       if (!ready) return;
       await execute(ready.client, { query: RELEASE_CONTROL, variables: {} });
+    },
+
+    announceWallLink: async (boardId) => {
+      const ready = await resolveCurrent();
+      if (!ready) return;
+      try {
+        await execute(ready.client, { query: ANNOUNCE_WALL_LINK, variables: { boardId } });
+      } catch (error) {
+        onBestEffortError?.('announceWallLink', error);
+      }
+    },
+
+    revokeWallLink: async (boardId) => {
+      const ready = await resolveCurrent();
+      if (!ready) return;
+      try {
+        await execute(ready.client, { query: REVOKE_WALL_LINK, variables: { boardId } });
+      } catch (error) {
+        onBestEffortError?.('revokeWallLink', error);
+      }
     },
 
     confirmClimbOnWall: async (climbUuid) => {

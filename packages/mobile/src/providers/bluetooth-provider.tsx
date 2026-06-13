@@ -23,6 +23,7 @@ import { GET_BOARD } from '../lib/graphql/operations';
 import type { GetBoardQueryResponse } from '../lib/graphql/operations';
 import { getBoardRenderData } from '../lib/board-details';
 import { registerBluetoothConnection } from '../lib/ble/bluetooth-status-store';
+import { deriveIsWallWriter } from '@boardsesh/queue-runtime';
 import { useIsPartyPreviewOnly, useQueue, useQueueSessionControls } from './queue-provider';
 import { useBoardPresenceControls } from './board-presence-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
@@ -315,7 +316,16 @@ export function BluetoothProvider({
   boardUuid,
   children,
 }: BluetoothProviderProps) {
-  const { sessionId, confirmClimbOnWall, setSessionBoardSerial, lastConnectedBoardSerial } = useQueueSessionControls();
+  const {
+    sessionId,
+    participantId,
+    confirmClimbOnWall,
+    setSessionBoardSerial,
+    lastConnectedBoardSerial,
+    announceWallLink,
+    revokeWallLink,
+    wallConnectionsByBoard,
+  } = useQueueSessionControls();
   const isPartyPreviewOnly = useIsPartyPreviewOnly();
   const { t } = useTranslation('settings');
   // Board presence ("now on the wall"). All of these are inert when the
@@ -329,6 +339,21 @@ export function BluetoothProvider({
     resolveAndBindBoardByConfig,
     reportClimbForBoard,
   } = useBoardPresenceControls();
+
+  // The BLE connection is the writer token: the member holding the connection to
+  // this board is the single frame writer. deriveIsWallWriter falls back to
+  // "writer" when solo, no board is resolved, or nobody holds the slot — so this
+  // only suppresses writes when a confirmed OTHER member holds the connection.
+  // Belt-and-suspenders with isPartyPreviewOnly while the driver model coexists.
+  const isWallWriter = deriveIsWallWriter({
+    isPersistentSessionActive: sessionId !== null,
+    participantId,
+    wallConnectionsByBoard,
+    boardId: presenceBoardId,
+  });
+  // The board this phone announced a wall link for, so disconnect can revoke it
+  // (the backend only frees the slot on session-leave, not on BLE drop).
+  const announcedWallBoardIdRef = useRef<number | null>(null);
   const { currentClimb: wallCurrentClimb } = useBoardPresenceCurrent();
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
@@ -596,6 +621,13 @@ export function BluetoothProvider({
             if (!resolved) return;
             resolvedPresenceBoardIdRef.current = resolved.boardId;
             replayPendingWallReport(resolved.boardId);
+            // Claim the wall-connection slot so this phone is the board's sole
+            // frame writer for the session (no-op solo). The backend gates the
+            // claim on session membership.
+            if (sessionIdRef.current) {
+              announcedWallBoardIdRef.current = resolved.boardId;
+              void announceWallLink(resolved.boardId);
+            }
           })
           .catch((error: unknown) => {
             console.warn('[board-presence] board resolve failed', error);
@@ -617,7 +649,14 @@ export function BluetoothProvider({
         boardId: resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current ?? undefined,
       });
     },
-    [boardName, setSessionBoardSerial, resolveAndBindBoard, resolveAndBindBoardByConfig, replayPendingWallReport],
+    [
+      boardName,
+      setSessionBoardSerial,
+      resolveAndBindBoard,
+      resolveAndBindBoardByConfig,
+      replayPendingWallReport,
+      announceWallLink,
+    ],
   );
 
   // Hold placements for the active board, required by the hook's
@@ -908,6 +947,11 @@ export function BluetoothProvider({
   // Wrap disconnect to track user-initiated disconnects
   const wrappedDisconnect = useCallback(async () => {
     clearPendingWallReportAndUndoToastArm();
+    const heldBoardId = announcedWallBoardIdRef.current;
+    if (heldBoardId !== null) {
+      announcedWallBoardIdRef.current = null;
+      void revokeWallLink(heldBoardId);
+    }
     isUserDisconnectRef.current = true;
     track(SHARED_EVENTS.BluetoothDisconnected, { boardName, reason: 'user', inSession: sessionIdRef.current != null });
     try {
@@ -921,7 +965,7 @@ export function BluetoothProvider({
     } finally {
       isUserDisconnectRef.current = false;
     }
-  }, [clearPendingWallReportAndUndoToastArm, disconnect, boardName]);
+  }, [clearPendingWallReportAndUndoToastArm, disconnect, boardName, revokeWallLink]);
 
   // Register with the module-level status store so consumers rendered outside
   // this provider (e.g. the root tab bar, the long-press BLE controls sheet) can
@@ -944,6 +988,13 @@ export function BluetoothProvider({
   useEffect(() => {
     if (wasConnectedRef.current && !isConnected && !isUserDisconnectRef.current) {
       clearPendingWallReportAndUndoToastArm();
+      // Free the wall-connection slot on an unexpected drop too, so a peer can
+      // become the writer instead of being suppressed by a dead holder.
+      const heldBoardId = announcedWallBoardIdRef.current;
+      if (heldBoardId !== null) {
+        announcedWallBoardIdRef.current = null;
+        void revokeWallLink(heldBoardId);
+      }
       track(SHARED_EVENTS.BluetoothDisconnected, {
         boardName,
         reason: 'unexpected',
@@ -951,7 +1002,7 @@ export function BluetoothProvider({
       });
     }
     wasConnectedRef.current = isConnected;
-  }, [clearPendingWallReportAndUndoToastArm, isConnected, boardName]);
+  }, [clearPendingWallReportAndUndoToastArm, isConnected, boardName, revokeWallLink]);
 
   const value = useMemo<BluetoothContextValue>(
     () => ({
@@ -982,7 +1033,7 @@ export function BluetoothProvider({
 
   return (
     <BluetoothContext.Provider value={value}>
-      {isConnected && !isPartyPreviewOnly && (
+      {isConnected && !isPartyPreviewOnly && isWallWriter && (
         <BluetoothAutoSender
           sendFramesToBoard={sendFramesToBoard}
           onWallConfirmed={handleWallConfirmed}

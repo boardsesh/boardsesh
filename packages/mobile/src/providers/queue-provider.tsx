@@ -174,6 +174,20 @@ type QueueContextValue = {
    */
   confirmClimbOnWall: (climbUuid: string) => Promise<void>;
   /**
+   * Announce this phone now holds the BLE connection to `boardId` in the active
+   * session — claim-if-free, so the holder is the board's sole frame writer.
+   * Best-effort no-op when no session is active.
+   */
+  announceWallLink: (boardId: number) => Promise<void>;
+  /** Revoke this phone's BLE-connection claim for `boardId` on disconnect. */
+  revokeWallLink: (boardId: number) => Promise<void>;
+  /**
+   * Per-board BLE connection holders (boardId -> stable participantId) for the
+   * active session. Used to decide which phone writes frames + to light the
+   * shared "wall connected" indicator. Empty when solo or nobody is connected.
+   */
+  wallConnectionsByBoard: Record<number, string>;
+  /**
    * Store the connected board serial on the active session so native peers can
    * reconnect to the same physical wall without showing the picker.
    */
@@ -214,6 +228,9 @@ type QueueSessionControlContextValue = Pick<
   | 'lastConnectedBoardSerial'
   | 'takeControl'
   | 'releaseControl'
+  | 'announceWallLink'
+  | 'revokeWallLink'
+  | 'wallConnectionsByBoard'
   | 'confirmClimbOnWall'
   | 'setSessionBoardSerial'
 >;
@@ -297,6 +314,7 @@ type QueueActionsContextValue = Omit<
   | 'driverParticipantId'
   | 'lastConnectedBoardSerial'
   | 'participantId'
+  | 'wallConnectionsByBoard'
 >;
 
 const QueueActionsContext = createContext<QueueActionsContextValue | null>(null);
@@ -1280,6 +1298,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }
   }, [mutations, showToast, t]);
   const confirmClimbOnWall = useCallback((climbUuid: string) => mutations.confirmClimbOnWall(climbUuid), [mutations]);
+  const announceWallLink = useCallback((boardId: number) => mutations.announceWallLink(boardId), [mutations]);
+  const revokeWallLink = useCallback((boardId: number) => mutations.revokeWallLink(boardId), [mutations]);
+  const wallConnectionsByBoard = useMemo(
+    () => sessionRuntimeState.wallConnectionsByBoard ?? {},
+    [sessionRuntimeState.wallConnectionsByBoard],
+  );
   const setSessionBoardSerial = useCallback((serial: string) => mutations.setSessionBoardSerial(serial), [mutations]);
 
   // Self-healing re-grade: a climb's difficulty/quality/sends are angle-specific
@@ -1725,6 +1749,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setSessionBoardPath,
       takeControl,
       releaseControl,
+      announceWallLink,
+      revokeWallLink,
       confirmClimbOnWall,
       setSessionBoardSerial,
       subscribeToQueueEvents,
@@ -1748,6 +1774,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setSessionBoardPath,
       takeControl,
       releaseControl,
+      announceWallLink,
+      revokeWallLink,
       confirmClimbOnWall,
       setSessionBoardSerial,
       subscribeToQueueEvents,
@@ -1764,9 +1792,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       driverParticipantId,
       lastConnectedBoardSerial,
       participantId,
+      wallConnectionsByBoard,
       ...actionsValue,
     }),
-    [state, sessionId, driverParticipantId, lastConnectedBoardSerial, participantId, actionsValue],
+    [
+      state,
+      sessionId,
+      driverParticipantId,
+      lastConnectedBoardSerial,
+      participantId,
+      wallConnectionsByBoard,
+      actionsValue,
+    ],
   );
 
   // Active-climb selector: identity changes ONLY when the active climb uuid
@@ -1822,6 +1859,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       lastConnectedBoardSerial,
       takeControl,
       releaseControl,
+      announceWallLink,
+      revokeWallLink,
+      wallConnectionsByBoard,
       confirmClimbOnWall,
       setSessionBoardSerial,
     }),
@@ -1832,6 +1872,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       lastConnectedBoardSerial,
       takeControl,
       releaseControl,
+      announceWallLink,
+      revokeWallLink,
+      wallConnectionsByBoard,
       confirmClimbOnWall,
       setSessionBoardSerial,
     ],
