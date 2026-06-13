@@ -1,14 +1,26 @@
 import { tickTimeMs } from '@boardsesh/profile-stats';
 
-export function getRepTimerElapsedSeconds(lastSavedTickAt: string | null, nowMs: number): number {
-  if (!lastSavedTickAt) return 0;
+export function getRepTimerStartMs(lastSavedTickAt: string | null): number | null {
+  if (!lastSavedTickAt) return null;
   const tickMs = tickTimeMs(lastSavedTickAt);
-  if (!Number.isFinite(tickMs)) return 0;
-  return Math.max(0, Math.floor((nowMs - tickMs) / 1000));
+  return Number.isFinite(tickMs) ? tickMs : null;
+}
+
+export function getRepTimerElapsedSecondsFromStart(startMs: number | null, nowMs: number): number {
+  if (startMs === null) return 0;
+  return Math.max(0, Math.floor((nowMs - startMs) / 1000));
+}
+
+export function getRepTimerElapsedSeconds(lastSavedTickAt: string | null, nowMs: number): number {
+  return getRepTimerElapsedSecondsFromStart(getRepTimerStartMs(lastSavedTickAt), nowMs);
 }
 
 export function isRepTimerTargetReached(elapsedSeconds: number, targetSeconds: number): boolean {
   return elapsedSeconds >= targetSeconds;
+}
+
+export function isRepTimerTargetExceeded(elapsedSeconds: number, targetSeconds: number): boolean {
+  return elapsedSeconds > targetSeconds;
 }
 
 export function formatRepTimerTarget(targetSeconds: number): string {

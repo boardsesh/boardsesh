@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { StyleSheet, View, type ColorValue } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useOptionalBoardProvider } from '@boardsesh/board-react';
-import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH } from '../../theme/layout';
+import { TOOLBAR_CAPSULE_HEIGHT } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useRepTimerPreference } from '../../lib/rep-timer-preference';
 import { Text } from '../Text';
@@ -11,63 +11,79 @@ import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './Access
 import {
   formatRepTimerElapsed,
   formatRepTimerTarget,
-  getRepTimerElapsedSeconds,
-  isRepTimerTargetReached,
+  getRepTimerElapsedSecondsFromStart,
+  getRepTimerStartMs,
+  isRepTimerTargetExceeded,
 } from './rep-timer';
 
+const REP_TIMER_CAPSULE_MAX_WIDTH = 220;
+const DOUBLE_TAP_RESET_DELAY_MS = 240;
+
+type RepTimerControlState = {
+  startedAtMs: number | null;
+  isRunning: boolean;
+  pausedElapsedSeconds: number;
+};
+
 type RepTimerDisplayProps = {
-  lastSavedTickAt: string | null;
+  elapsedSeconds: number;
+  hasReferenceTime: boolean;
+  isRunning: boolean;
   labelColor: ColorValue;
   valueColor: ColorValue;
-  targetReachedColor?: ColorValue;
+  targetExceededColor?: ColorValue;
   align?: 'left' | 'center';
 };
 
-function useRepTimerNowMs(lastSavedTickAt: string | null): number {
+function createRepTimerControlState(lastSavedTickAt: string | null): RepTimerControlState {
+  const startedAtMs = getRepTimerStartMs(lastSavedTickAt);
+  return {
+    startedAtMs,
+    isRunning: startedAtMs !== null,
+    pausedElapsedSeconds: 0,
+  };
+}
+
+function useRepTimerNowMs(isRunning: boolean): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     setNowMs(Date.now());
-    if (!lastSavedTickAt) return undefined;
+    if (!isRunning) return undefined;
 
     const timer = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [lastSavedTickAt]);
+  }, [isRunning]);
 
   return nowMs;
 }
 
 export function RepTimerDisplay({
-  lastSavedTickAt,
+  elapsedSeconds,
+  hasReferenceTime,
+  isRunning,
   labelColor,
   valueColor,
-  targetReachedColor = valueColor,
+  targetExceededColor = valueColor,
   align = 'center',
 }: RepTimerDisplayProps) {
   const { t } = useTranslation('session');
   const { targetSeconds, loaded } = useRepTimerPreference();
-  const nowMs = useRepTimerNowMs(lastSavedTickAt);
-  const elapsedSeconds = getRepTimerElapsedSeconds(lastSavedTickAt, nowMs);
   const elapsedLabel = formatRepTimerElapsed(elapsedSeconds);
 
   if (!loaded || targetSeconds === null) return null;
 
   const targetLabel = formatRepTimerTarget(targetSeconds);
-  const accessibilityLabel = lastSavedTickAt
-    ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel, target: targetLabel })
-    : t('mobile.queue.repTimerNoTickAccessibility', { target: targetLabel });
   const resolvedValueColor =
-    lastSavedTickAt && isRepTimerTargetReached(elapsedSeconds, targetSeconds) ? targetReachedColor : valueColor;
+    (hasReferenceTime || isRunning) && isRepTimerTargetExceeded(elapsedSeconds, targetSeconds)
+      ? targetExceededColor
+      : valueColor;
 
   return (
-    <View
-      accessible
-      accessibilityLabel={accessibilityLabel}
-      style={[styles.timerText, align === 'left' ? styles.timerTextLeft : styles.timerTextCenter]}
-    >
+    <View style={[styles.timerText, align === 'left' ? styles.timerTextLeft : styles.timerTextCenter]}>
       <Text
         variant="caption2"
         color={labelColor}
@@ -107,8 +123,96 @@ export function RepTimerCapsule({
 }: RepTimerCapsuleProps) {
   const board = useOptionalBoardProvider();
   const { brandColors, systemColors } = useTheme();
+  const { t } = useTranslation('session');
+  const { targetSeconds } = useRepTimerPreference();
   const capsuleRadius = surfaceTreatment === 'docked' ? 0 : height / 2;
   const endActionReservedWidth = endAction ? endActionSize + 8 : 0;
+  const lastSavedTickAt = board?.lastSavedTickAt ?? null;
+  const [timerState, setTimerState] = useState(() => createRepTimerControlState(lastSavedTickAt));
+  const singlePressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstPressStartedAtRef = useRef<number | null>(null);
+  const ignoreNextPressRef = useRef(false);
+  const nowMs = useRepTimerNowMs(timerState.isRunning);
+  const elapsedSeconds = timerState.isRunning
+    ? getRepTimerElapsedSecondsFromStart(timerState.startedAtMs, nowMs)
+    : timerState.pausedElapsedSeconds;
+  const hasReferenceTime = timerState.startedAtMs !== null || timerState.pausedElapsedSeconds > 0;
+  const elapsedLabel = formatRepTimerElapsed(elapsedSeconds);
+  const targetLabel = targetSeconds === null ? null : formatRepTimerTarget(targetSeconds);
+  const accessibilityLabel =
+    targetLabel === null
+      ? undefined
+      : hasReferenceTime || timerState.isRunning
+        ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel, target: targetLabel })
+        : t('mobile.queue.repTimerNoTickAccessibility', { target: targetLabel });
+
+  useEffect(() => {
+    setTimerState(createRepTimerControlState(lastSavedTickAt));
+  }, [lastSavedTickAt]);
+
+  useEffect(() => {
+    return () => {
+      if (singlePressTimeoutRef.current) clearTimeout(singlePressTimeoutRef.current);
+      firstPressStartedAtRef.current = null;
+    };
+  }, []);
+
+  const toggleTimer = useCallback((pressedAtMs: number) => {
+    setTimerState((current) => {
+      if (current.isRunning) {
+        return {
+          ...current,
+          isRunning: false,
+          pausedElapsedSeconds: getRepTimerElapsedSecondsFromStart(current.startedAtMs, pressedAtMs),
+        };
+      }
+      return {
+        startedAtMs: pressedAtMs - current.pausedElapsedSeconds * 1000,
+        isRunning: true,
+        pausedElapsedSeconds: current.pausedElapsedSeconds,
+      };
+    });
+  }, []);
+
+  const resetTimer = useCallback((pressedAtMs: number) => {
+    setTimerState((current) =>
+      current.isRunning
+        ? { startedAtMs: pressedAtMs, isRunning: true, pausedElapsedSeconds: 0 }
+        : { startedAtMs: null, isRunning: false, pausedElapsedSeconds: 0 },
+    );
+  }, []);
+
+  const handleTimerPressIn = useCallback(() => {
+    const pressedAtMs = Date.now();
+    if (singlePressTimeoutRef.current) {
+      clearTimeout(singlePressTimeoutRef.current);
+      singlePressTimeoutRef.current = null;
+      firstPressStartedAtRef.current = null;
+      ignoreNextPressRef.current = true;
+      resetTimer(pressedAtMs);
+      return;
+    }
+    firstPressStartedAtRef.current = pressedAtMs;
+  }, [resetTimer]);
+
+  const handleTimerPress = useCallback(() => {
+    if (ignoreNextPressRef.current) {
+      ignoreNextPressRef.current = false;
+      return;
+    }
+    const pressedAtMs = firstPressStartedAtRef.current ?? Date.now();
+    firstPressStartedAtRef.current = null;
+    if (singlePressTimeoutRef.current) {
+      clearTimeout(singlePressTimeoutRef.current);
+      singlePressTimeoutRef.current = null;
+      resetTimer(pressedAtMs);
+      return;
+    }
+    singlePressTimeoutRef.current = setTimeout(() => {
+      singlePressTimeoutRef.current = null;
+      toggleTimer(pressedAtMs);
+    }, DOUBLE_TAP_RESET_DELAY_MS);
+  }, [resetTimer, toggleTimer]);
 
   return (
     <AccessoryBarSurface
@@ -117,9 +221,13 @@ export function RepTimerCapsule({
       treatment={surfaceTreatment}
       style={[styles.capsule, fillWidth ? null : styles.capsuleCap]}
     >
-      <View
+      <Pressable
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        onPressIn={handleTimerPressIn}
+        onPress={handleTimerPress}
         style={[
-          styles.content,
+          styles.pressTarget,
           {
             height,
             paddingRight: 16 + endActionReservedWidth,
@@ -127,12 +235,14 @@ export function RepTimerCapsule({
         ]}
       >
         <RepTimerDisplay
-          lastSavedTickAt={board?.lastSavedTickAt ?? null}
+          elapsedSeconds={elapsedSeconds}
+          hasReferenceTime={hasReferenceTime}
+          isRunning={timerState.isRunning}
           labelColor={systemColors.secondaryLabel}
           valueColor={systemColors.label}
-          targetReachedColor={brandColors.success}
+          targetExceededColor={brandColors.error}
         />
-      </View>
+      </Pressable>
       {endAction ? <View style={[styles.endActionSlot, { width: endActionSize, height }]}>{endAction}</View> : null}
     </AccessoryBarSurface>
   );
@@ -143,9 +253,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   capsuleCap: {
-    maxWidth: TOOLBAR_CAPSULE_MAX_WIDTH,
+    maxWidth: REP_TIMER_CAPSULE_MAX_WIDTH,
   },
-  content: {
+  pressTarget: {
     justifyContent: 'center',
     paddingLeft: 16,
   },

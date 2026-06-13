@@ -3,6 +3,9 @@ import {
   formatRepTimerElapsed,
   formatRepTimerTarget,
   getRepTimerElapsedSeconds,
+  getRepTimerElapsedSecondsFromStart,
+  getRepTimerStartMs,
+  isRepTimerTargetExceeded,
   isRepTimerTargetReached,
 } from '../rep-timer';
 
@@ -17,11 +20,19 @@ describe('rep timer formatting', () => {
     expect(getRepTimerElapsedSeconds('2026-06-12 07:15:00', nowMs)).toBe(42);
   });
 
+  it('exposes a reusable timer start timestamp for local controls', () => {
+    const startMs = getRepTimerStartMs('2026-06-12 07:15:00');
+    expect(startMs).toBe(Date.parse('2026-06-12T07:15:00.000Z'));
+    expect(getRepTimerElapsedSecondsFromStart(startMs, Date.parse('2026-06-12T07:16:05.000Z'))).toBe(65);
+  });
+
   it('clamps missing, invalid, and future timestamps to zero', () => {
     const nowMs = Date.parse('2026-06-12T07:15:00.000Z');
     expect(getRepTimerElapsedSeconds(null, nowMs)).toBe(0);
     expect(getRepTimerElapsedSeconds('not-a-date', nowMs)).toBe(0);
     expect(getRepTimerElapsedSeconds('2026-06-12T07:15:01.000Z', nowMs)).toBe(0);
+    expect(getRepTimerStartMs(null)).toBeNull();
+    expect(getRepTimerStartMs('not-a-date')).toBeNull();
   });
 
   it('formats sub-hour and hour-long rests with stable tabular fields', () => {
@@ -36,5 +47,7 @@ describe('rep timer formatting', () => {
     expect(formatRepTimerTarget(95)).toBe('1:35');
     expect(isRepTimerTargetReached(179, 180)).toBe(false);
     expect(isRepTimerTargetReached(180, 180)).toBe(true);
+    expect(isRepTimerTargetExceeded(180, 180)).toBe(false);
+    expect(isRepTimerTargetExceeded(181, 180)).toBe(true);
   });
 });
