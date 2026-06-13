@@ -26,6 +26,7 @@ import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics
 import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
 import { SESSION_START_FAB_HEIGHT, SessionStartFab } from '../SessionStartFab';
+import { RepTimerSettingsCard } from '../in-session/RepTimerSettingsCard';
 import { BoardSummaryCard } from './BoardSummaryCard';
 import { GeneratorPickerCard, type GeneratorSelection } from './GeneratorPickerCard';
 import { WorkoutPreviewRow } from './WorkoutPreviewRow';
@@ -249,6 +250,10 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
             board is set, and prompts to pick one when none is. */}
         <View style={styles.cardInset}>
           <BoardSummaryCard onPress={handleOpenBoardSwitcher} board={activeBoard ?? null} />
+        </View>
+
+        <View style={styles.cardInset}>
+          <RepTimerSettingsCard />
         </View>
 
         <GeneratorPickerCard
