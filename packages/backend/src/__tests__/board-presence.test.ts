@@ -731,7 +731,18 @@ describe('board-presence resolvers', () => {
         { serial: `TICK-${Date.now()}`, boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' },
         authCtx({ userId: SECOND_USER_ID }),
       );
+      await db.execute(sql`UPDATE user_boards SET is_public = false WHERE id = ${resolved.boardId}`);
       return resolved.boardId;
+    }
+
+    async function createSecondUserPublicBoard(): Promise<number> {
+      const slug = `public-config-${Date.now()}`;
+      const [row] = await db.execute(sql`
+        INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public)
+        VALUES (${`uuid-${slug}`}, ${slug}, ${SECOND_USER_ID}, 'kilter', 1, 10, '1,2', 'Public Config', true)
+        RETURNING id
+      `);
+      return Number((row as { id: number }).id);
     }
 
     async function createOwnConfigBoard(): Promise<number> {
@@ -755,9 +766,10 @@ describe('board-presence resolvers', () => {
       return row ? Number((row as { board_id: number | null }).board_id) : null;
     }
 
-    it('stamps a valid explicit boardId over the caller config board', async () => {
+    it('stamps a valid explicit boardId over the caller config board when caller has board membership', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const ownBoardId = await createOwnConfigBoard();
+      await pubsub.stampBoardMembership(String(sharedBoardId), TEST_USER_ID);
 
       await tickMutations.saveTick(undefined, { input: baseTickInput({ boardId: sharedBoardId }) }, authCtx());
 
@@ -781,22 +793,33 @@ describe('board-presence resolvers', () => {
       expect(await latestTickBoardId()).toBe(ownBoardId);
     });
 
-    it('stamps explicit boardId while board presence is disabled', async () => {
+    it('ignores private explicit boardId without ownership, visibility, or board membership', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
+      const ownBoardId = await createOwnConfigBoard();
+
+      await tickMutations.saveTick(undefined, { input: baseTickInput({ boardId: sharedBoardId }) }, authCtx());
+
+      expect(await latestTickBoardId()).toBe(ownBoardId);
+      expect(await latestTickBoardId()).not.toBe(sharedBoardId);
+    });
+
+    it('stamps reachable explicit boardId while board presence is disabled', async () => {
+      const publicBoardId = await createSecondUserPublicBoard();
       const ownBoardId = await createOwnConfigBoard();
       process.env.BOARD_PRESENCE_ENABLED = 'false';
       try {
-        await tickMutations.saveTick(undefined, { input: baseTickInput({ boardId: sharedBoardId }) }, authCtx());
+        await tickMutations.saveTick(undefined, { input: baseTickInput({ boardId: publicBoardId }) }, authCtx());
       } finally {
         process.env.BOARD_PRESENCE_ENABLED = 'true';
       }
 
-      expect(await latestTickBoardId()).toBe(sharedBoardId);
+      expect(await latestTickBoardId()).toBe(publicBoardId);
       expect(await latestTickBoardId()).not.toBe(ownBoardId);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
+      await pubsub.stampBoardMembership(String(sharedBoardId), TEST_USER_ID);
 
       // A second climber's ATTEMPT on a different (never-sent) climb, at a
       // HARDER difficulty. It must count toward distinctClimbersCount but must
@@ -862,6 +885,7 @@ describe('board-presence resolvers', () => {
       // recompute+publish (which could pair a stale snapshot with a higher seq
       // and regress the tiles). One trailing push per board, reflecting all.
       const sharedBoardId = await createSecondUserSharedBoard();
+      await pubsub.stampBoardMembership(String(sharedBoardId), TEST_USER_ID);
       const received: BoardPresenceEvent[] = [];
       const unsubscribe = await pubsub.subscribeBoardPresence(String(sharedBoardId), (event) => received.push(event));
       try {

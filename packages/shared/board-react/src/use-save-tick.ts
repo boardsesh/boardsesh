@@ -119,6 +119,16 @@ export function useSaveTick(boardName: BoardName | null) {
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
 
+      // Named-board sends can change board summary counts shown in board
+      // pickers/details. Bust those caches when the tick was associated with a
+      // concrete board row rather than only a board config.
+      if (options.boardId != null || options.boardUuid) {
+        void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+        void queryClient.invalidateQueries({ queryKey: ['board'] });
+        void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
+        void queryClient.invalidateQueries({ queryKey: ['boardsBySerialNumbers'] });
+      }
+
       // The You-page Logbook tab feed and the Sessions feed/detail are separate
       // cache families from the optimistically-updated accumulated logbook, so
       // a new tick won't appear there without busting them. Matches the

@@ -13,14 +13,14 @@
 //
 // Schema migration note: `getPreference` silently returns null when JSON.parse
 // fails, but a stale value whose shape no longer matches `UserBoard` will parse
-// successfully and be cast to the wrong type. If `UserBoard` gains required
-// fields in a future migration, bump `ACTIVE_BOARD_KEY` so stale values are
-// ignored rather than misread.
+// successfully and be cast to the wrong type. `useActiveBoard()` hydrates old
+// v2 boards that predate `UserBoard.id` by UUID before board-id-dependent
+// ticking uses them.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getPreference, setPreference, removePreference } from './preference-store';
 
-const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v3';
+const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
 
 export function getStoredActiveBoard(): Promise<UserBoard | null> {
   return getPreference<UserBoard>(ACTIVE_BOARD_KEY);

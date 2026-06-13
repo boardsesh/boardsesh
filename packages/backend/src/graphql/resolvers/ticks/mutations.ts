@@ -12,6 +12,7 @@ import { resolveBoardFromPath } from '../social/boards';
 import { findActiveBoardById, isBoardPresenceEnabled, normalizeSetIds } from '../board-presence/shared';
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
+import { pubsub } from '../../../pubsub/index';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
 import { queueClimbStatsRecompute } from './debounced-climb-stats-publisher';
 import { getInstagramMediaId, isInstagramUrl } from '../../../lib/instagram-meta';
@@ -350,11 +351,17 @@ export const tickMutations = {
         explicitBoard.layoutId === validatedInput.layoutId &&
         explicitBoard.sizeId === validatedInput.sizeId &&
         normalizeSetIds(explicitBoard.setIds) === normalizeSetIds(validatedInput.setIds);
-      if (configMatches) {
+      const canUseExplicitBoard =
+        explicitBoard != null &&
+        configMatches &&
+        (explicitBoard.ownerId === userId ||
+          explicitBoard.isPublic === true ||
+          (isBoardPresenceEnabled() && (await pubsub.hasBoardMembership(String(explicitBoard.id), userId))));
+      if (canUseExplicitBoard) {
         boardId = explicitBoard.id;
       } else {
         logger.warn(
-          `[board-presence] Ignoring tick boardId ${validatedInput.boardId} — config mismatch for ${validatedInput.boardType}`,
+          `[board-presence] Ignoring tick boardId ${validatedInput.boardId} — unavailable or invalid for ${validatedInput.boardType}`,
         );
       }
     }

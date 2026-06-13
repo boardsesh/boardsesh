@@ -39,6 +39,7 @@ import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-pre
 import { useOptionalBluetoothContext } from './bluetooth-provider';
 
 export type BoardConfig = {
+  boardId?: number;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -56,6 +57,7 @@ export type LogAscentInput = {
   sizeId?: number;
   setIds?: string;
   sessionId?: string | null;
+  boardId?: number;
   // Climb's consensus grade name (just `Climb.difficulty`). Forwarded to
   // GradeSingleSelectRail so the consensus chip is centered and outlined
   // without being preselected. Optional — callers that don't have a
@@ -67,6 +69,7 @@ function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig | null):
   if (!left || !right) return false;
   return (
     left.boardName === right.boardName &&
+    left.boardId === right.boardId &&
     left.layoutId === right.layoutId &&
     left.sizeId === right.sizeId &&
     left.setIds === right.setIds &&
@@ -162,6 +165,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     if (boardConfigOverride) return boardConfigOverride;
     if (!activeBoard) return null;
     return {
+      boardId: typeof activeBoard.id === 'number' ? activeBoard.id : undefined,
       boardName: activeBoard.boardType,
       layoutId: activeBoard.layoutId,
       sizeId: activeBoard.sizeId,
@@ -321,6 +325,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     setLogAscentInput({
       climbUuid: climbActions.climb.uuid,
       boardName: climbActions.boardConfig.boardName,
+      boardId: climbActions.boardConfig.boardId,
       angle: climbActions.boardConfig.angle,
       isMirror: false,
       isBenchmark: !!climbActions.climb.benchmark_difficulty,
@@ -430,6 +435,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       setLogAscentInput({
         climbUuid: item.climb.uuid,
         boardName: boardConfig.boardName,
+        boardId: boardConfig.boardId,
         angle: boardConfig.angle,
         isMirror: item.climb.mirrored === true,
         isBenchmark: !!item.climb.benchmark_difficulty,
@@ -552,6 +558,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onDismiss={dismissLogAscent}
           climbUuid={logAscentInput.climbUuid}
           boardName={logAscentInput.boardName}
+          boardId={logAscentInput.boardId}
           angle={logAscentInput.angle}
           isMirror={logAscentInput.isMirror}
           isBenchmark={logAscentInput.isBenchmark}

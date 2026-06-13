@@ -28,6 +28,7 @@ type LogAscentSheetProps = {
   onDismiss: () => void;
   climbUuid: string;
   boardName: string;
+  boardId?: number;
   angle: number;
   isMirror: boolean;
   isBenchmark: boolean;
@@ -49,6 +50,7 @@ export function LogAscentSheet({
   onDismiss,
   climbUuid,
   boardName,
+  boardId,
   angle,
   isMirror,
   isBenchmark,
@@ -135,6 +137,7 @@ export function LogAscentSheet({
         <QuickTickBar
           climbUuid={climbUuid}
           boardName={boardName}
+          boardId={boardId}
           angle={angle}
           isMirror={isMirror}
           isBenchmark={isBenchmark}

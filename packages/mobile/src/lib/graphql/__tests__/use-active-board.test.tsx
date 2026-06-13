@@ -4,6 +4,17 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { GET_BOARD } from '../operations';
+
+const graphqlClientState = vi.hoisted(() => ({
+  request: vi.fn(),
+}));
+
+vi.mock('../client', () => ({
+  getHttpClient: () => ({
+    request: graphqlClientState.request,
+  }),
+}));
 
 // AsyncStorage-backed preference store (in-memory).
 vi.mock('@react-native-async-storage/async-storage', () => {
@@ -25,6 +36,7 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 });
 
 const storedBoard = {
+  id: 1,
   uuid: 'stored-1',
   boardType: 'tension',
   layoutId: 9,
@@ -33,6 +45,7 @@ const storedBoard = {
   angle: 25,
 } as unknown as UserBoard;
 const otherBoard = {
+  id: 2,
   uuid: 'other-1',
   boardType: 'kilter',
   layoutId: 1,
@@ -58,6 +71,7 @@ async function resetAsyncStorage() {
 describe('useActiveBoard', () => {
   beforeEach(async () => {
     vi.resetModules();
+    graphqlClientState.request.mockReset();
     await resetAsyncStorage();
   });
 
@@ -69,6 +83,30 @@ describe('useActiveBoard', () => {
     const { result } = renderHook(() => useActiveBoard(), { wrapper: wrapper() });
 
     await waitFor(() => expect(result.current.data).toEqual(storedBoard));
+    expect(graphqlClientState.request).not.toHaveBeenCalled();
+  });
+
+  it('hydrates a stored v2 board without id by uuid and persists the full board', async () => {
+    const legacyStoredBoard = {
+      uuid: 'legacy-1',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+      angle: 40,
+    } as unknown as UserBoard;
+    const resolvedBoard = { ...legacyStoredBoard, id: 42 } as UserBoard;
+    graphqlClientState.request.mockResolvedValueOnce({ board: resolvedBoard });
+
+    const { setStoredActiveBoard, getStoredActiveBoard } = await import('../../active-board-store');
+    await setStoredActiveBoard(legacyStoredBoard);
+
+    const { useActiveBoard } = await import('../use-active-board');
+    const { result } = renderHook(() => useActiveBoard(), { wrapper: wrapper() });
+
+    await waitFor(() => expect(result.current.data).toEqual(resolvedBoard));
+    expect(graphqlClientState.request).toHaveBeenCalledWith(GET_BOARD, { boardUuid: 'legacy-1' });
+    await expect(getStoredActiveBoard()).resolves.toEqual(resolvedBoard);
   });
 
   it('returns null when nothing is stored — no server fallback', async () => {

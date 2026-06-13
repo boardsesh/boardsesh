@@ -177,7 +177,7 @@ describe('QuickTickBar hasPriorHistory', () => {
     expect(saveTickState.mutate.mock.calls[0][0]).toMatchObject({ boardId: 77 });
   });
 
-  it('prefers the resolved presence board id when one is available', () => {
+  it('prefers the selected active board id over a resolved presence board id', () => {
     presenceState.enabled = true;
     presenceState.boardId = 99;
     activeBoardState.data = {
@@ -197,7 +197,43 @@ describe('QuickTickBar hasPriorHistory', () => {
     sendButton?.click();
 
     expect(saveTickState.mutate).toHaveBeenCalledTimes(1);
+    expect(saveTickState.mutate.mock.calls[0][0]).toMatchObject({ boardId: 77 });
+  });
+
+  it('falls back to the resolved presence board id when no selected board id matches', () => {
+    presenceState.enabled = true;
+    presenceState.boardId = 99;
+
+    const { container } = renderBar({ layoutId: 1, sizeId: 10, setIds: '1,2' });
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+
+    sendButton?.click();
+
+    expect(saveTickState.mutate).toHaveBeenCalledTimes(1);
     expect(saveTickState.mutate.mock.calls[0][0]).toMatchObject({ boardId: 99 });
+  });
+
+  it('uses a captured board id from the sheet context before ambient state', () => {
+    activeBoardState.data = {
+      id: 77,
+      uuid: 'board-uuid-77',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    };
+
+    const { container } = renderBar({ boardId: 55, layoutId: 1, sizeId: 10, setIds: '1,2' });
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+
+    sendButton?.click();
+
+    expect(saveTickState.mutate).toHaveBeenCalledTimes(1);
+    expect(saveTickState.mutate.mock.calls[0][0]).toMatchObject({ boardId: 55 });
   });
 
   it('does not stamp a mismatched active board id', () => {

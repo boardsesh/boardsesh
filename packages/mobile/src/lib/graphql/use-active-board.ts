@@ -14,8 +14,33 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard } from '../active-board-store';
+import { getHttpClient } from './client';
+import { GET_BOARD, type GetBoardQueryResponse } from './operations';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
+
+function hasNumericBoardId(board: UserBoard): boolean {
+  return typeof (board as { id?: unknown }).id === 'number';
+}
+
+async function hydrateStoredActiveBoard(): Promise<UserBoard | null> {
+  const storedBoard = await getStoredActiveBoard();
+  if (!storedBoard) return null;
+  if (hasNumericBoardId(storedBoard)) return storedBoard;
+
+  try {
+    const response = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid: storedBoard.uuid });
+    if (response.board && hasNumericBoardId(response.board)) {
+      await setStoredActiveBoard(response.board);
+      return response.board;
+    }
+  } catch {
+    // Keep the existing v2 selection available for board config consumers. It
+    // just won't be used as a tick boardId until a network fetch hydrates it.
+  }
+
+  return storedBoard;
+}
 
 /**
  * Read the active board from storage. Returns `null` when the user hasn't
@@ -24,7 +49,7 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 export function useActiveBoard() {
   return useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
-    queryFn: () => getStoredActiveBoard(),
+    queryFn: () => hydrateStoredActiveBoard(),
     // The stored board is authoritative until the user explicitly switches
     // (which calls setActiveBoard and updates the cache directly), so there's
     // no value in background refetching here.

@@ -111,7 +111,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     setIds: String
     "Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board)."
     boardUuid: String
-    "Resolved shared board id (from resolveBoardForSerial) for the BLE-connected wall everyone is logging to. Used when no boardUuid is given; falls back to board-config resolution if it doesn't match the payload."
+    "Numeric user_boards.id for the selected or connected board. Used when no boardUuid is given; accepted only when the board config matches and the climber owns, can see, or is connected to that board."
     boardId: Int
     "Optional Instagram post or reel URL to attach as beta for the climb"
     videoUrl: String

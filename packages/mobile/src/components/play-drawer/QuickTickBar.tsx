@@ -36,6 +36,7 @@ import { spacing } from '../../theme/tokens';
 type QuickTickBarProps = {
   climbUuid: string;
   boardName: string;
+  boardId?: number;
   angle: number;
   isMirror: boolean;
   isBenchmark: boolean;
@@ -54,6 +55,7 @@ type QuickTickBarProps = {
 export const QuickTickBar = React.memo(function QuickTickBar({
   climbUuid,
   boardName,
+  boardId,
   angle,
   isMirror,
   isBenchmark,
@@ -121,8 +123,10 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 
   const ascentType = deriveAscentType(hasPriorHistory, tickState.attemptCount);
   const minAttempts = useMemo(() => getMinAttempts(ascentType), [ascentType]);
+  const capturedBoardIdForTick = typeof boardId === 'number' ? boardId : null;
   const activeBoardIdForTick = useMemo(() => {
     if (!activeBoard) return null;
+    if (typeof activeBoard.id !== 'number') return null;
     if (activeBoard.boardType !== boardName) return null;
     if (layoutId == null || sizeId == null || !setIds) return null;
     const activeSetIds = normalizeSetIdsForTick(activeBoard.setIds);
@@ -133,7 +137,9 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     return activeBoard.id;
   }, [activeBoard, boardName, layoutId, sizeId, setIds]);
   const tickBoardId =
-    boardPresenceEnabled && boardPresenceBoardId != null ? boardPresenceBoardId : activeBoardIdForTick;
+    capturedBoardIdForTick ??
+    activeBoardIdForTick ??
+    (boardPresenceEnabled && boardPresenceBoardId != null ? boardPresenceBoardId : null);
 
   // Reset form state when the climb context changes underneath an open
   // sheet (e.g. user swiped to next while the sheet was already open).
@@ -214,6 +220,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     [
       saveTick,
       climbUuid,
+      capturedBoardIdForTick,
       angle,
       isMirror,
       isBenchmark,

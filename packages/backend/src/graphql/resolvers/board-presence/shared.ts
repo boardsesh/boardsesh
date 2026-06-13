@@ -40,7 +40,7 @@ const SYSTEM_BOARD_OWNER_EMAIL = 'system@boardsesh.com';
 
 export type ActivePresenceBoard = Pick<
   typeof dbSchema.userBoards.$inferSelect,
-  'id' | 'name' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'serialNumber' | 'angle'
+  'id' | 'name' | 'ownerId' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'serialNumber' | 'angle' | 'isPublic'
 >;
 
 export function toResolvedBoard(board: ActivePresenceBoard): ResolvedBoard {
@@ -59,12 +59,14 @@ export async function findActiveBoardBySerial(serial: string): Promise<ActivePre
     .select({
       id: dbSchema.userBoards.id,
       name: dbSchema.userBoards.name,
+      ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
       sizeId: dbSchema.userBoards.sizeId,
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      isPublic: dbSchema.userBoards.isPublic,
     })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.serialNumber, serial), isNull(dbSchema.userBoards.deletedAt)))
@@ -77,12 +79,14 @@ export async function findActiveBoardById(boardId: number): Promise<ActivePresen
     .select({
       id: dbSchema.userBoards.id,
       name: dbSchema.userBoards.name,
+      ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
       sizeId: dbSchema.userBoards.sizeId,
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      isPublic: dbSchema.userBoards.isPublic,
     })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
@@ -98,12 +102,14 @@ export async function findReachableActiveBoardByUuid(
     .select({
       id: dbSchema.userBoards.id,
       name: dbSchema.userBoards.name,
+      ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
       sizeId: dbSchema.userBoards.sizeId,
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      isPublic: dbSchema.userBoards.isPublic,
     })
     .from(dbSchema.userBoards)
     .where(
@@ -157,12 +163,14 @@ export async function findOwnActiveBoardByConfig(
     .select({
       id: dbSchema.userBoards.id,
       name: dbSchema.userBoards.name,
+      ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
       sizeId: dbSchema.userBoards.sizeId,
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      isPublic: dbSchema.userBoards.isPublic,
     })
     .from(dbSchema.userBoards)
     .where(

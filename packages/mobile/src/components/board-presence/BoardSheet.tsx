@@ -85,6 +85,7 @@ function rowBoardForBoardConfig(boardConfig: BoardConfig): BoardSheetRowBoard {
 
 function actionCacheKey(boardConfig: BoardConfig, climbUuid: string): string {
   return [
+    boardConfig.boardId ?? 'none',
     boardConfig.boardName,
     boardConfig.layoutId,
     boardConfig.sizeId,
@@ -96,9 +97,14 @@ function actionCacheKey(boardConfig: BoardConfig, climbUuid: string): string {
 
 function boardConfigActionSignature(boardConfig: BoardConfig | null): string {
   if (!boardConfig) return 'none';
-  return [boardConfig.boardName, boardConfig.layoutId, boardConfig.sizeId, boardConfig.setIds, boardConfig.angle].join(
-    ':',
-  );
+  return [
+    boardConfig.boardId ?? 'none',
+    boardConfig.boardName,
+    boardConfig.layoutId,
+    boardConfig.sizeId,
+    boardConfig.setIds,
+    boardConfig.angle,
+  ].join(':');
 }
 
 function actionContextForPresenceClimb(

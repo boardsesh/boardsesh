@@ -57,6 +57,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 
 type BoardConfig = {
+  boardId?: number;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -971,6 +972,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           onDismiss={handleTickBarDismiss}
           climbUuid={displayedClimb.uuid}
           boardName={boardName}
+          boardId={boardConfig.boardId}
           angle={angle}
           isMirror={isMirrored}
           isBenchmark={displayedClimb.benchmark_difficulty != null}

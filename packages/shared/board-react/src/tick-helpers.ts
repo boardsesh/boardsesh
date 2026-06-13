@@ -24,8 +24,8 @@ export type SaveTickOptions = {
    * attach to a board the climber doesn't own (e.g. a seeded gym board).
    */
   boardUuid?: string;
-  // Resolved shared board id (from resolveBoardForSerial) for the BLE-connected
-  // wall; used when no boardUuid is given.
+  // Numeric user_boards.id for the selected or connected board; used when no
+  // boardUuid is given.
   boardId?: number | null;
   videoUrl?: string;
 };
