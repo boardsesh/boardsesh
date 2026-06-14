@@ -154,6 +154,7 @@ const AddBetaVideoDialog: React.FC<AddBetaVideoDialogProps> = ({
                 submitLabel={t('betaVideos.addSubmit')}
                 helperText={t('betaVideos.manualLinkHelper')}
                 compact
+                showInstagramButton={false}
                 onSuccess={onClose}
               />
             </AccordionDetails>

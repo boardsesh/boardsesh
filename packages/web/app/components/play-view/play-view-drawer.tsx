@@ -12,6 +12,7 @@ import type { ClimbQueueItem } from '../queue-control/types';
 import { usePathname } from 'next/navigation';
 import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
 import { ClimbActions } from '../climb-actions';
+import { ACTION_SHEET_ACTION_ORDER } from '../climb-actions/types';
 import { useDoubleTapFavorite } from '../climb-actions/use-double-tap-favorite';
 import HeartAnimationOverlay from '../climb-card/heart-animation-overlay';
 import PlaylistSelectionContent from '../climb-actions/playlist-selection-content';
@@ -1167,6 +1168,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
                 angle={currentAngle}
                 currentPathname={pathname}
                 viewMode="list"
+                include={ACTION_SHEET_ACTION_ORDER}
                 onOpenPlaylistSelector={() => {
                   setIsActionsOpen(false);
                   setIsPlaylistSelectorOpen(true);

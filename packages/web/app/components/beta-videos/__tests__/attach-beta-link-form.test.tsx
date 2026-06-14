@@ -92,6 +92,12 @@ describe('AttachBetaLinkForm — showStepsGuide', () => {
     expect(screen.getByRole('button', { name: 'betaVideos.copyAndOpenInstagram' })).toBeTruthy();
   });
 
+  it('can hide the Copy & open Instagram button in manual fallback flows', () => {
+    renderForm({ showInstagramButton: false });
+
+    expect(screen.queryByRole('button', { name: 'betaVideos.copyAndOpenInstagram' })).toBeNull();
+  });
+
   it('omits the Instagram button when angle is missing, but keeps all three steps numbered', () => {
     renderForm({ showStepsGuide: true, angle: null });
 

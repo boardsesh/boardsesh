@@ -134,8 +134,15 @@ vi.mock('../../board-scroll/board-scroll-card', () => ({
   default: () => null,
 }));
 
+const mockAddBetaVideoDialogProps = vi.hoisted(() => ({
+  latest: null as { open: boolean; layoutId?: number | null } | null,
+}));
+
 vi.mock('@/app/components/beta-videos/add-beta-video-dialog', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="add-beta-video-dialog" /> : null),
+  default: (props: { open: boolean; layoutId?: number | null }) => {
+    mockAddBetaVideoDialogProps.latest = props;
+    return props.open ? <div data-testid="add-beta-video-dialog" /> : null;
+  },
 }));
 
 // Import after mocks
@@ -211,6 +218,7 @@ beforeEach(() => {
   mockUseOptionalCurrentClimb.mockReturnValue({
     currentClimb: null,
   });
+  mockAddBetaVideoDialogProps.latest = null;
 });
 
 // =============================================================================
@@ -373,6 +381,23 @@ describe('Action label text', () => {
       });
 
       expect(result.available).toBe(false);
+    });
+
+    it('passes the current board layout id to the dialog', () => {
+      mockUseSession.mockReturnValue({
+        status: 'authenticated',
+        data: { user: { id: 'user-1' }, expires: '' },
+        update: vi.fn(),
+      });
+
+      renderAction(AddBetaVideoAction, {
+        ...defaultProps,
+        boardDetails: createMockBoardDetails({ layout_id: 42 }),
+        climb: createMockClimb({ layoutId: undefined }),
+        viewMode: 'list',
+      });
+
+      expect(mockAddBetaVideoDialogProps.latest?.layoutId).toBe(42);
     });
   });
 });

@@ -57,7 +57,7 @@ export function AddBetaVideoAction({
       angle={angle}
       grade={climb.difficulty}
       setter={climb.setter_username}
-      layoutId={climb.layoutId}
+      layoutId={boardDetails.layout_id}
       surface="climb-actions"
     />
   );

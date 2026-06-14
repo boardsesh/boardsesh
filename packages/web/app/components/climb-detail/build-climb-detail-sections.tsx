@@ -131,7 +131,7 @@ export function useBuildClimbDetailSections({
             angle={angle}
             grade={climb.difficulty}
             setter={climb.setter_username}
-            layoutId={climb.layoutId}
+            layoutId={layoutId}
             surface="play-view"
           />
         </Box>

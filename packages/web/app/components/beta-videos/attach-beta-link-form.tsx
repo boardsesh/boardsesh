@@ -47,6 +47,7 @@ type AttachBetaLinkFormProps = {
   autoFocus?: boolean;
   compact?: boolean;
   showStepsGuide?: boolean;
+  showInstagramButton?: boolean;
 };
 
 const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
@@ -67,6 +68,7 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
   autoFocus = false,
   compact = false,
   showStepsGuide = false,
+  showInstagramButton = true,
 }) => {
   const { t } = useTranslation('feed');
   const resolvedSubmitLabel = submitLabel ?? t('betaVideos.shareBeta');
@@ -191,17 +193,18 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
     />
   );
 
-  const instagramButton = instagramCaption ? (
-    <Button
-      variant="outlined"
-      onClick={handleCopyAndOpenInstagram}
-      disabled={isLaunchingInstagram || mutation.isPending}
-      startIcon={isLaunchingInstagram ? <CircularProgress size={16} /> : <InstagramIcon />}
-      sx={showStepsGuide ? { alignSelf: 'flex-start' } : { mr: 'auto' }}
-    >
-      {t('betaVideos.copyAndOpenInstagram')}
-    </Button>
-  ) : null;
+  const instagramButton =
+    showInstagramButton && instagramCaption ? (
+      <Button
+        variant="outlined"
+        onClick={handleCopyAndOpenInstagram}
+        disabled={isLaunchingInstagram || mutation.isPending}
+        startIcon={isLaunchingInstagram ? <CircularProgress size={16} /> : <InstagramIcon />}
+        sx={showStepsGuide ? { alignSelf: 'flex-start' } : { mr: 'auto' }}
+      >
+        {t('betaVideos.copyAndOpenInstagram')}
+      </Button>
+    ) : null;
 
   const cancelButton =
     showCancel && onCancel ? (

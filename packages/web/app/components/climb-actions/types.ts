@@ -150,6 +150,24 @@ export const DEFAULT_ACTION_ORDER: ClimbActionType[] = [
   'queue',
   'goToQueue',
   'share',
+  'favorite',
+  'tick',
+  'playlist',
+  'fork',
+  'viewDetails',
+  'openInApp',
+];
+
+/**
+ * Full climb action sheet order. Includes larger workflow actions that do
+ * not belong on compact card/icon surfaces.
+ */
+export const ACTION_SHEET_ACTION_ORDER: ClimbActionType[] = [
+  'mirror',
+  'setActive',
+  'queue',
+  'goToQueue',
+  'share',
   'addBetaVideo',
   'favorite',
   'tick',

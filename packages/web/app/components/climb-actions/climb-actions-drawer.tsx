@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 import { ClimbActions } from './climb-actions';
-import type { ClimbActionType } from './types';
+import { ACTION_SHEET_ACTION_ORDER, type ClimbActionType } from './types';
 import DrawerClimbHeader from '@/app/components/climb-card/drawer-climb-header';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import drawerCss from '@/app/components/swipeable-drawer/swipeable-drawer.module.css';
@@ -88,6 +88,7 @@ export default function ClimbActionsDrawer({
         angle={angle ?? climb.angle}
         currentPathname={pathname}
         viewMode="list"
+        include={ACTION_SHEET_ACTION_ORDER}
         exclude={resolvedExclude}
         onOpenPlaylistSelector={onOpenPlaylistSelector}
         onActionComplete={onClose}

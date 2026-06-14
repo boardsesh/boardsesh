@@ -17,6 +17,10 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
 }));
 
+const mockAddBetaVideoDialogProps = vi.hoisted(() => ({
+  latest: null as { open: boolean; layoutId?: number | null } | null,
+}));
+
 // Mock child components to avoid pulling in their dependency trees
 vi.mock('@/app/components/logbook/logbook-section', () => ({
   LogbookSection: () => null,
@@ -35,7 +39,10 @@ vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({
   default: () => <div data-testid="beta-list" />,
 }));
 vi.mock('@/app/components/beta-videos/add-beta-video-dialog', () => ({
-  default: ({ open }: { open: boolean }) => (open ? <div data-testid="beta-add-dialog" /> : null),
+  default: (props: { open: boolean; layoutId?: number | null }) => {
+    mockAddBetaVideoDialogProps.latest = props;
+    return props.open ? <div data-testid="beta-add-dialog" /> : null;
+  },
 }));
 // Render the add-button as a real <button> wired to its onClick prop so
 // integration tests can drive the dialog via fireEvent.click rather than
@@ -127,6 +134,7 @@ describe('useBuildClimbDetailSections', () => {
     vi.restoreAllMocks();
     mockSearchParams = new URLSearchParams();
     mockBetaLinks = [];
+    mockAddBetaVideoDialogProps.latest = null;
   });
 
   it('returns 6 sections when enabled (default)', () => {
@@ -293,5 +301,6 @@ describe('useBuildClimbDetailSections', () => {
     rerender(renderBeta());
     expect(screen.queryByTestId('beta-list')).not.toBeNull();
     expect(screen.queryByTestId('beta-add-dialog')).not.toBeNull();
+    expect(mockAddBetaVideoDialogProps.latest?.layoutId).toBe(BASE_PROPS.layoutId);
   });
 });
