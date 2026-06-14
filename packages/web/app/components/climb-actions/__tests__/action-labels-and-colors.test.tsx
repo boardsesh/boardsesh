@@ -8,6 +8,7 @@ import { TickAction } from '../actions/tick-action';
 import { FavoriteAction } from '../actions/favorite-action';
 import { QueueAction } from '../actions/queue-action';
 import { MirrorAction } from '../actions/mirror-action';
+import { AddBetaVideoAction } from '../actions/add-beta-video-action';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('react-i18next', () => ({
@@ -131,6 +132,10 @@ vi.mock('../../board-scroll/board-scroll-section', () => ({
 
 vi.mock('../../board-scroll/board-scroll-card', () => ({
   default: () => null,
+}));
+
+vi.mock('@/app/components/beta-videos/add-beta-video-dialog', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="add-beta-video-dialog" /> : null),
 }));
 
 // Import after mocks
@@ -341,6 +346,33 @@ describe('Action label text', () => {
       const result = captureActionResult(TickAction, defaultProps);
 
       expect(result.menuItem.label).toBe('Log ascent (1)');
+    });
+  });
+
+  describe('AddBetaVideoAction', () => {
+    it('returns the add beta video label for authenticated users', () => {
+      mockUseSession.mockReturnValue({
+        status: 'authenticated',
+        data: { user: { id: 'user-1' }, expires: '' },
+        update: vi.fn(),
+      });
+
+      const result = captureActionResult(AddBetaVideoAction, {
+        ...defaultProps,
+        viewMode: 'dropdown',
+      });
+
+      expect(result.available).toBe(true);
+      expect(result.menuItem.label).toBe(tFromCatalog('climbs', 'actions.addBetaVideo.label'));
+    });
+
+    it('is unavailable when the user is signed out', () => {
+      const result = captureActionResult(AddBetaVideoAction, {
+        ...defaultProps,
+        viewMode: 'dropdown',
+      });
+
+      expect(result.available).toBe(false);
     });
   });
 });

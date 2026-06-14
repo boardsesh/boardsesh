@@ -2,9 +2,11 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test'
 import {
   buildInstagramCaption,
   copyAndOpenInstagram,
+  copyInstagramCaption,
   getBoardDisplayName,
   getInstagramPostingPlatform,
   isInstagramPostingSupported,
+  openInstagramCamera,
 } from '../instagram-posting';
 
 const originalNavigator = global.navigator;
@@ -197,6 +199,22 @@ describe('instagram-posting', () => {
 
     expect(global.document.execCommand).toHaveBeenCalledWith('copy'); // eslint-disable-line @typescript-eslint/unbound-method -- vi.fn() mock, no `this` concern
     expect(result).toEqual({ copied: true, opened: true });
+    expect(global.window.location.href).toBe('instagram://camera');
+  });
+
+  it('copies the Instagram caption without opening Instagram', async () => {
+    const copied = await copyInstagramCaption('"There, There" @ 40° on the Kilter Board.');
+
+    expect(global.document.execCommand).toHaveBeenCalledWith('copy'); // eslint-disable-line @typescript-eslint/unbound-method -- vi.fn() mock, no `this` concern
+    expect(copied).toBe(true);
+    expect(global.window.location.href).toBe('');
+  });
+
+  it('opens Instagram camera without copying a caption', async () => {
+    const opened = await openInstagramCamera();
+
+    expect(opened).toBe(true);
+    expect(global.document.execCommand).not.toHaveBeenCalled();
     expect(global.window.location.href).toBe('instagram://camera');
   });
 

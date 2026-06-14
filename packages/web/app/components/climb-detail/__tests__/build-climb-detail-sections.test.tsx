@@ -34,15 +34,15 @@ vi.mock('@/app/components/charts/climb-analytics', () => ({
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({
   default: () => <div data-testid="beta-list" />,
 }));
-vi.mock('@/app/components/beta-videos/boardsesh-beta-add-panel', () => ({
-  default: () => <div data-testid="beta-add-panel" />,
+vi.mock('@/app/components/beta-videos/add-beta-video-dialog', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="beta-add-dialog" /> : null),
 }));
-// Render the add-button as a real <button> wired to its onToggle prop so
-// integration tests can drive add-mode via fireEvent.click rather than
+// Render the add-button as a real <button> wired to its onClick prop so
+// integration tests can drive the dialog via fireEvent.click rather than
 // reaching into React element props.
 vi.mock('@/app/components/beta-videos/boardsesh-beta-add-button', () => ({
-  default: ({ onToggle }: { isAdding: boolean; onToggle: () => void }) => (
-    <button type="button" data-testid="beta-add-toggle" onClick={onToggle}>
+  default: ({ onClick }: { onClick: () => void }) => (
+    <button type="button" data-testid="beta-add-toggle" onClick={onClick}>
       toggle
     </button>
   ),
@@ -270,7 +270,7 @@ describe('useBuildClimbDetailSections', () => {
     });
   });
 
-  it('beta content swaps from list to add panel when the user clicks the toggle button', () => {
+  it('beta content keeps the list visible and opens the add dialog from the action button', () => {
     const { result } = renderHook(() => useBuildClimbDetailSections(BASE_PROPS), {
       wrapper: createWrapper(),
     });
@@ -287,16 +287,11 @@ describe('useBuildClimbDetailSections', () => {
 
     const { rerender } = render(renderBeta());
     expect(screen.queryByTestId('beta-list')).not.toBeNull();
-    expect(screen.queryByTestId('beta-add-panel')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('beta-add-toggle'));
-    rerender(renderBeta());
-    expect(screen.queryByTestId('beta-add-panel')).not.toBeNull();
-    expect(screen.queryByTestId('beta-list')).toBeNull();
+    expect(screen.queryByTestId('beta-add-dialog')).toBeNull();
 
     fireEvent.click(screen.getByTestId('beta-add-toggle'));
     rerender(renderBeta());
     expect(screen.queryByTestId('beta-list')).not.toBeNull();
-    expect(screen.queryByTestId('beta-add-panel')).toBeNull();
+    expect(screen.queryByTestId('beta-add-dialog')).not.toBeNull();
   });
 });

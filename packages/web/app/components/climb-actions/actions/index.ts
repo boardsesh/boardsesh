@@ -8,5 +8,5 @@ export { TickAction } from './tick-action';
 export { OpenInAppAction } from './open-in-app-action';
 export { MirrorAction } from './mirror-action';
 export { ShareAction } from './share-action';
-export { InstagramAction } from './instagram-action';
+export { AddBetaVideoAction } from './add-beta-video-action';
 export { PlaylistAction } from './playlist-action';

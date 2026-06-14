@@ -380,7 +380,7 @@ The sections, in order:
 - **Key**: `beta`
 - **Label/Title**: Camera icon + "Beta" text.
 - **Default behavior**: `keepExpanded: true` (stays open alongside other sections). `defaultActive: true` (initially expanded, unless a proposal UUID is in the URL).
-- **Content**: `BoardseshBetaList` showing deduped video embeds. If no videos: empty state. An "Add" button (`BoardseshBetaAddButton`) toggles to `BoardseshBetaAddPanel` for submitting TikTok/Instagram video links.
+- **Content**: `BoardseshBetaList` showing deduped video embeds. If no videos: empty state. An "Add" button (`BoardseshBetaAddButton`) opens `AddBetaVideoDialog`, which gives the Instagram Reel caption, separate copy/open Instagram actions, the native share-back instructions, and a manual link fallback.
 - **Summary**: "{N} video(s)" or "No videos yet".
 - **Data**: Fetched via GraphQL `GET_BETA_LINKS` query, deduplicated by URL. Stale time: 5 minutes.
 

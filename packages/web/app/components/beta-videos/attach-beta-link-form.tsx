@@ -27,7 +27,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildInstagramCaption, copyAndOpenInstagram } from '@/app/lib/instagram-posting';
 import { extractGraphQLErrorMessage } from '@/app/lib/graphql/extract-error-message';
 
-export type AttachBetaLinkSurface = 'play-view' | 'logbook' | 'instagram-dialog' | 'unknown';
+export type AttachBetaLinkSurface = 'play-view' | 'logbook' | 'instagram-dialog' | 'climb-actions' | 'unknown';
 
 type AttachBetaLinkFormProps = {
   boardType: string;

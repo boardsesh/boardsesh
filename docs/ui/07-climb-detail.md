@@ -49,8 +49,8 @@ Sections are rendered via `CollapsibleSection` component. Each section has a lab
 1. **Beta** (`key: 'beta'`)
    - Label: Video camera icon + "Beta"
    - Default expanded, `keepExpanded: true`
-   - Content: `BoardseshBetaList` showing video links (TikTok/Instagram embeds), or `BoardseshBetaAddPanel` for adding new beta
-   - Action button: `BoardseshBetaAddButton` toggle
+   - Content: `BoardseshBetaList` showing video links (TikTok/Instagram embeds), plus `AddBetaVideoDialog` for adding new beta
+   - Action button: `BoardseshBetaAddButton` opens the add beta video modal
    - Summary: "{N} videos" or "No videos yet"
    - Data: `GET_BETA_LINKS` GraphQL query, `betaLinks` response mapped via `mapBetaLinksResponse()`
 

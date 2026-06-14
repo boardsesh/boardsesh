@@ -92,6 +92,17 @@
   pointer-events: none;
 }
 
+.collapsedTitleWithAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.collapsedTitleWithAction .collapsedLabel {
+  min-width: 0;
+}
+
 .headerAction {
   display: inline-flex;
   align-items: center;

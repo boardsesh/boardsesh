@@ -12,8 +12,8 @@ import { CrewLogbookView } from '@/app/components/logbook/crew-logbook-view';
 import ClimbSocialSection from '@/app/components/social/climb-social-section';
 import ClimbAnalytics from '@/app/components/charts/climb-analytics';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
-import BoardseshBetaAddPanel from '@/app/components/beta-videos/boardsesh-beta-add-panel';
 import BoardseshBetaAddButton from '@/app/components/beta-videos/boardsesh-beta-add-button';
+import AddBetaVideoDialog from '@/app/components/beta-videos/add-beta-video-dialog';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
@@ -69,7 +69,7 @@ export function useBuildClimbDetailSections({
   const searchParams = useSearchParams();
   const highlightProposalUuid = searchParams.get('proposalUuid') ?? undefined;
   const logbookSummary = useLogbookSummary(climb.uuid);
-  const [isAddingBeta, setIsAddingBeta] = useState(false);
+  const [isAddBetaDialogOpen, setIsAddBetaDialogOpen] = useState(false);
 
   const { data: betaLinks = [], isLoading: betaLinksLoading } = useQuery<BetaLink[]>({
     queryKey: ['betaLinks', boardType, climbUuid],
@@ -118,24 +118,22 @@ export function useBuildClimbDetailSections({
       keepExpanded: true,
       flush: true,
       lazy: true,
-      action: <BoardseshBetaAddButton isAdding={isAddingBeta} onToggle={() => setIsAddingBeta((v) => !v)} />,
+      action: <BoardseshBetaAddButton onClick={() => setIsAddBetaDialogOpen(true)} />,
       content: (
         <Box aria-live="polite">
-          {isAddingBeta ? (
-            <BoardseshBetaAddPanel
-              boardType={boardType}
-              climbUuid={climbUuid}
-              climbName={climb.name}
-              angle={angle}
-              grade={climb.difficulty}
-              setter={climb.setter_username}
-              layoutId={climb.layoutId}
-              onCancel={() => setIsAddingBeta(false)}
-              onSuccess={() => setIsAddingBeta(false)}
-            />
-          ) : (
-            <BoardseshBetaList links={dedupedBetaLinks} isLoading={betaLinksLoading} />
-          )}
+          <BoardseshBetaList links={dedupedBetaLinks} isLoading={betaLinksLoading} />
+          <AddBetaVideoDialog
+            open={isAddBetaDialogOpen}
+            onClose={() => setIsAddBetaDialogOpen(false)}
+            boardType={boardType}
+            climbUuid={climbUuid}
+            climbName={climb.name}
+            angle={angle}
+            grade={climb.difficulty}
+            setter={climb.setter_username}
+            layoutId={climb.layoutId}
+            surface="play-view"
+          />
         </Box>
       ),
     },

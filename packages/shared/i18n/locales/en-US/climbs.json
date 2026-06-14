@@ -221,6 +221,9 @@
     }
   },
   "actions": {
+    "addBetaVideo": {
+      "label": "Add beta video"
+    },
     "playlist": {
       "toast": {
         "added": "Added to playlist",

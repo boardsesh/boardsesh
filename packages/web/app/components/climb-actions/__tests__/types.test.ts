@@ -8,8 +8,8 @@ import {
 
 describe('Climb Action Types & Constants', () => {
   describe('DEFAULT_ACTION_ORDER', () => {
-    it('contains all 11 action types', () => {
-      expect(DEFAULT_ACTION_ORDER).toHaveLength(11);
+    it('contains all 12 action types', () => {
+      expect(DEFAULT_ACTION_ORDER).toHaveLength(12);
     });
 
     it('has correct ordering', () => {
@@ -27,6 +27,7 @@ describe('Climb Action Types & Constants', () => {
         'goToQueue',
         'tick',
         'share',
+        'addBetaVideo',
         'playlist',
         'openInApp',
         'mirror',
@@ -43,10 +44,11 @@ describe('Climb Action Types & Constants', () => {
   });
 
   describe('AUTH_REQUIRED_ACTIONS', () => {
-    it('contains exactly favorite and playlist', () => {
-      expect(AUTH_REQUIRED_ACTIONS).toHaveLength(2);
+    it('contains actions that require a Boardsesh account', () => {
+      expect(AUTH_REQUIRED_ACTIONS).toHaveLength(3);
       expect(AUTH_REQUIRED_ACTIONS).toContain('favorite');
       expect(AUTH_REQUIRED_ACTIONS).toContain('playlist');
+      expect(AUTH_REQUIRED_ACTIONS).toContain('addBetaVideo');
     });
 
     it('does not contain actions that do not require auth', () => {

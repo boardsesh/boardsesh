@@ -290,6 +290,16 @@ function settleClipboardWrite(platform: InstagramPostingPlatform): Promise<void>
   });
 }
 
+export async function copyInstagramCaption(caption: string): Promise<boolean> {
+  const platform = getInstagramPostingPlatform();
+  return copyToClipboard(caption, platform);
+}
+
+export async function openInstagramCamera(): Promise<boolean> {
+  const platform = getInstagramPostingPlatform();
+  return attemptInstagramLaunch(platform);
+}
+
 export async function copyAndOpenInstagram(caption: string): Promise<CopyAndOpenInstagramResult> {
   const platform = getInstagramPostingPlatform();
   const copied = await copyToClipboard(caption, platform);

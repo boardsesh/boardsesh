@@ -27,7 +27,7 @@ import {
   OpenInAppAction,
   MirrorAction,
   ShareAction,
-  InstagramAction,
+  AddBetaVideoAction,
   PlaylistAction,
 } from './actions';
 
@@ -58,7 +58,7 @@ const ACTION_FUNCTIONS: Record<ClimbActionType, (props: ClimbActionProps | OpenI
     openInApp: OpenInAppAction,
     mirror: MirrorAction,
     share: ShareAction,
-    instagram: InstagramAction,
+    addBetaVideo: AddBetaVideoAction,
     playlist: PlaylistAction,
   };
 
@@ -90,7 +90,7 @@ const ACTION_RENDERERS: Record<ClimbActionType, React.FC<ClimbActionProps | Open
   openInApp: createActionRenderer(OpenInAppAction),
   mirror: createActionRenderer(MirrorAction),
   share: createActionRenderer(ShareAction),
-  instagram: createActionRenderer(InstagramAction),
+  addBetaVideo: createActionRenderer(AddBetaVideoAction),
   playlist: createActionRenderer(PlaylistAction),
 };
 

@@ -54,6 +54,17 @@
     "empty": "No ascents logged yet"
   },
   "betaVideos": {
+    "addButton": "Add beta video",
+    "addDialogTitle": "Add beta video",
+    "addDialogIntro": "Copy this caption, post your video as an Instagram Reel, then send the link back to Boardsesh.",
+    "captionLabel": "Post caption",
+    "copyCaption": "Copy caption",
+    "openInstagram": "Open Instagram",
+    "openInstagramFailed": "Instagram didn't open. Open it manually and paste the caption.",
+    "shareIntentTitle": "Link it back to Boardsesh",
+    "shareIntentBody": "Once your Reel is live, tap Share in Instagram, choose Boardsesh, then attach the link to this climb. If Boardsesh is not listed, open More or Extra in the share sheet.",
+    "pasteLinkInstead": "Paste a link instead",
+    "manualLinkHelper": "Already have the reel URL? Paste it here.",
     "shareBetaFor": "Share beta for {{name}}",
     "shareBetaVideo": "Share beta video",
     "shareBeta": "Share beta",

@@ -187,15 +187,20 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
               className={`${styles.collapsedRow} ${isActive ? styles.collapsedRowActive : ''}`}
               {...(isActive && headerClickable ? { onClick: () => setActiveKey(null) } : {})}
             >
-              <span className={styles.collapsedLabel}>{isActive ? section.title : section.label}</span>
               {isActive && section.action ? (
-                <span className={styles.headerAction} onClick={(event) => event.stopPropagation()}>
-                  {section.action}
+                <span className={styles.collapsedTitleWithAction}>
+                  <span className={styles.collapsedLabel}>{section.title}</span>
+                  <span className={styles.headerAction} onClick={(event) => event.stopPropagation()}>
+                    {section.action}
+                  </span>
                 </span>
               ) : (
-                <span className={`${styles.collapsedSummary} ${isActive ? styles.collapsedSummaryHidden : ''}`}>
-                  {summaryText}
-                </span>
+                <>
+                  <span className={styles.collapsedLabel}>{isActive ? section.title : section.label}</span>
+                  <span className={`${styles.collapsedSummary} ${isActive ? styles.collapsedSummaryHidden : ''}`}>
+                    {summaryText}
+                  </span>
+                </>
               )}
             </div>
             <div className={`${styles.expandableContent} ${isActive ? styles.expandableContentOpen : ''}`}>

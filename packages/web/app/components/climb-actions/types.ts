@@ -14,7 +14,7 @@ export type ClimbActionType =
   | 'openInApp'
   | 'mirror'
   | 'share'
-  | 'instagram'
+  | 'addBetaVideo'
   | 'playlist';
 
 /**
@@ -150,6 +150,7 @@ export const DEFAULT_ACTION_ORDER: ClimbActionType[] = [
   'queue',
   'goToQueue',
   'share',
+  'addBetaVideo',
   'favorite',
   'tick',
   'playlist',
@@ -161,7 +162,7 @@ export const DEFAULT_ACTION_ORDER: ClimbActionType[] = [
 /**
  * Actions that require authentication
  */
-export const AUTH_REQUIRED_ACTIONS: ClimbActionType[] = ['favorite', 'playlist'];
+export const AUTH_REQUIRED_ACTIONS: ClimbActionType[] = ['favorite', 'playlist', 'addBetaVideo'];
 
 /**
  * Actions that require Aurora credentials

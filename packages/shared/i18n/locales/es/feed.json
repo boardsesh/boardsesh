@@ -54,6 +54,17 @@
     "empty": "Aún no hay ascensos"
   },
   "betaVideos": {
+    "addButton": "Añadir vídeo de beta",
+    "addDialogTitle": "Añadir vídeo de beta",
+    "addDialogIntro": "Copia esta descripción, publica tu vídeo como Reel de Instagram y envía el enlace de vuelta a Boardsesh.",
+    "captionLabel": "Descripción del post",
+    "copyCaption": "Copiar descripción",
+    "openInstagram": "Abrir Instagram",
+    "openInstagramFailed": "Instagram no se abrió. Ábrelo manualmente y pega la descripción.",
+    "shareIntentTitle": "Vincúlalo a Boardsesh",
+    "shareIntentBody": "Cuando tu Reel esté publicado, toca Compartir en Instagram, elige Boardsesh y adjunta el enlace a este bloque. Si Boardsesh no aparece, abre Más o Extra en el diálogo de compartir.",
+    "pasteLinkInstead": "Pegar un enlace",
+    "manualLinkHelper": "¿Ya tienes la URL del reel? Pégala aquí.",
     "shareBetaFor": "Comparte beta para {{name}}",
     "shareBetaVideo": "Comparte un vídeo de beta",
     "shareBeta": "Compartir beta",

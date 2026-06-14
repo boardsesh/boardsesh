@@ -54,6 +54,17 @@
     "empty": "Aucune ascension pour le moment"
   },
   "betaVideos": {
+    "addButton": "Ajouter une vidéo beta",
+    "addDialogTitle": "Ajouter une vidéo beta",
+    "addDialogIntro": "Copiez cette légende, publiez votre vidéo en Reel Instagram, puis renvoyez le lien vers Boardsesh.",
+    "captionLabel": "Légende du post",
+    "copyCaption": "Copier la légende",
+    "openInstagram": "Ouvrir Instagram",
+    "openInstagramFailed": "Instagram ne s'est pas ouvert. Ouvrez-le manuellement et collez la légende.",
+    "shareIntentTitle": "Relier à Boardsesh",
+    "shareIntentBody": "Quand votre Reel est publié, touchez Partager dans Instagram, choisissez Boardsesh, puis ajoutez le lien à ce bloc. Si Boardsesh n'apparaît pas, ouvrez Plus ou Extra dans le partage.",
+    "pasteLinkInstead": "Coller un lien à la place",
+    "manualLinkHelper": "Vous avez déjà l'URL du reel ? Collez-la ici.",
     "shareBetaFor": "Partager la beta de {{name}}",
     "shareBetaVideo": "Partager une vidéo beta",
     "shareBeta": "Partager la beta",

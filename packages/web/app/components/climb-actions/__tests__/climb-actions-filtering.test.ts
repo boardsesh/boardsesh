@@ -20,7 +20,7 @@ describe('ClimbActions filtering logic', () => {
   it('shows all actions in DEFAULT_ACTION_ORDER when no include/exclude provided', () => {
     const result = getActionsToShow();
     expect(result).toEqual(DEFAULT_ACTION_ORDER);
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
   });
 
   it('has the correct DEFAULT_ACTION_ORDER', () => {
@@ -30,6 +30,7 @@ describe('ClimbActions filtering logic', () => {
       'queue',
       'goToQueue',
       'share',
+      'addBetaVideo',
       'favorite',
       'tick',
       'playlist',
