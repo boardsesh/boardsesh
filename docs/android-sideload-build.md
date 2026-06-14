@@ -184,7 +184,18 @@ Android OAuth client (same package, different SHA-1 — they coexist):
 To register: GCP Console → **APIs & Services → Credentials → Create credentials →
 OAuth client ID → Android**, package `com.boardsesh.app`, paste the SHA-1.
 Propagation takes a few minutes; no rebuild is needed — the registration is
-server-side, so an already-installed APK starts working once it lands.
+server-side, so an already-installed APK starts working once it lands. (The
+generated Android client-id string needs no follow-up — it's only the project's
+record of the package+SHA-1 pair; the app resolves by SHA-1 and the ID token's
+audience is the `webClientId`, which the backend already accepts.)
+
+**Register once per key, not per release.** A SHA-1 belongs to the keystore, so
+every build signed with the same key shares it — registering the upload key once
+covers all future sideload releases, and Google's app-signing key once covers all
+Play releases. You only add another client when a _new key_ appears: an
+upload-keystore rotation (or a changed `ANDROID_KEYSTORE_BASE64`), a Play
+**app-signing key upgrade** (register the new key, keep the old one through the
+rollover), or a new channel's debug keystore.
 
 Use `apksigner verify --print-certs` to read an APK's signer — `keytool -printcert
 -jarfile` only understands the legacy v1/JAR signature and prints nothing for
