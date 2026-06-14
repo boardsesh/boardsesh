@@ -122,6 +122,29 @@ export const createMockRedis = (): MockRedis => {
       }
       return newCount;
     }),
+    hget: vi.fn(async (key: string, field: string) => {
+      const hash = hashes.get(key);
+      return hash ? (hash[field] ?? null) : null;
+    }),
+    hsetnx: vi.fn(async (key: string, field: string, value: string) => {
+      if (!hashes.has(key)) hashes.set(key, {});
+      const hash = hashes.get(key)!;
+      if (field in hash) return 0;
+      hash[field] = value;
+      return 1;
+    }),
+    hdel: vi.fn(async (key: string, ...fields: string[]) => {
+      const hash = hashes.get(key);
+      if (!hash) return 0;
+      let count = 0;
+      for (const field of fields) {
+        if (field in hash) {
+          delete hash[field];
+          count++;
+        }
+      }
+      return count;
+    }),
     setex: vi.fn(async (key: string, _seconds: number, value: string) => {
       store.set(key, value);
       return 'OK';
@@ -161,6 +184,10 @@ export const createMockRedis = (): MockRedis => {
         },
         zrem: (key: string, member: string) => {
           commands.push(() => mockRedis.zrem(key, member));
+          return chainable;
+        },
+        hdel: (key: string, ...fields: string[]) => {
+          commands.push(() => mockRedis.hdel(key, ...fields));
           return chainable;
         },
         exec: async () => {

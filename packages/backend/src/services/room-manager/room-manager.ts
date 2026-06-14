@@ -243,6 +243,10 @@ class RoomManager {
   }
 
   async leaveSession(connectionId: string): Promise<SessionLeaveResult | null> {
+    // Free this connection's wall links before the leave drops it from the
+    // client map (per-connection, so a sibling connection doesn't keep the slot
+    // stuck).
+    await this.releaseWallLinksForConnection(connectionId);
     const result = await leaveSessionFn(
       connectionId,
       this.clients,
@@ -281,6 +285,13 @@ class RoomManager {
   }
 
   async disconnectClient(connectionId: string): Promise<SessionDisconnectResult | null> {
+    // The wall link is bound to the physical connection: free any board THIS
+    // connection held the moment its socket drops, before the (participant-
+    // level, grace-gated) driver cleanup runs. This is what frees a crashed BLE
+    // holder whose participant still has a sibling connection. On a transient
+    // reconnect the client re-announces (participantId resets on re-join), so
+    // the brief release is reclaimed.
+    await this.releaseWallLinksForConnection(connectionId);
     return disconnectClientFn(
       connectionId,
       this.clients,
@@ -566,6 +577,58 @@ class RoomManager {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Record that a connection successfully claimed a board's wall link, so the
+   * claim can be freed per-connection when that connection drops. Only the
+   * connection that actually claimed records it (the resolver calls this on
+   * `didClaim`), so it never frees a slot it doesn't hold.
+   */
+  recordWallLinkForConnection(connectionId: string, boardId: number): void {
+    const client = this.clients.get(connectionId);
+    if (!client) return;
+    (client.announcedWallBoards ??= new Set()).add(boardId);
+  }
+
+  /** Forget a connection's wall-link claim (explicit revoke). */
+  forgetWallLinkForConnection(connectionId: string, boardId: number): void {
+    this.clients.get(connectionId)?.announcedWallBoards?.delete(boardId);
+  }
+
+  /**
+   * Free every wall link this connection holds, broadcasting
+   * WallConnectionChanged(null) per board. Bound to the connection, not the
+   * participant: a crashed BLE-holder connection's slot frees immediately even
+   * when the same participant still has a sibling connection alive (the old
+   * participant-liveness gate left it stuck). `releaseWallConnection` is a no-op
+   * if someone else now holds the slot, so a non-holder connection frees
+   * nothing.
+   */
+  private async releaseWallLinksForConnection(connectionId: string): Promise<void> {
+    const client = this.clients.get(connectionId);
+    if (!client?.sessionId || !client.announcedWallBoards?.size) return;
+    const sessionId = client.sessionId;
+    const participantId = client.participantId ?? connectionId;
+    const boards = [...client.announcedWallBoards];
+    client.announcedWallBoards.clear();
+    for (const boardId of boards) {
+      try {
+        const released = await this.releaseWallConnection(sessionId, boardId, participantId);
+        if (released) {
+          pubsub.publishSessionEvent(sessionId, {
+            __typename: 'WallConnectionChanged',
+            boardId,
+            holderParticipantId: null,
+          });
+        }
+      } catch (error) {
+        logger.error(
+          `[RoomManager] Failed to release wall link for connection ${connectionId.slice(0, 8)} board ${boardId}:`,
+          error,
+        );
+      }
+    }
   }
 
   /** All current wall-connection holders for a session, keyed by boardId. */

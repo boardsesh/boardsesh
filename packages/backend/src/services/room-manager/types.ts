@@ -19,6 +19,11 @@ export type ConnectedClient = {
   avatarUrl?: string;
   isLeader: boolean;
   connectedAt: Date;
+  // Boards this specific connection holds a wall-connection (BLE writer) claim
+  // for. The wall link is bound to the physical connection, not the
+  // participant, so it's freed when *this* connection drops — even if the same
+  // participant still has a sibling connection alive.
+  announcedWallBoards?: Set<number>;
 };
 
 export type LocalSessionParticipant = {

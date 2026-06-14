@@ -707,6 +707,9 @@ export const sessionMutations = {
     const participantId = ctx.participantId;
     const { holderParticipantId, didClaim } = await roomManager.claimWallConnection(sessionId, boardId, participantId);
     if (didClaim) {
+      // Bind the claim to this connection so it's freed when this socket drops,
+      // even if the participant keeps a sibling connection alive.
+      roomManager.recordWallLinkForConnection(ctx.connectionId, boardId);
       pubsub.publishSessionEvent(sessionId, {
         __typename: 'WallConnectionChanged',
         boardId,
@@ -733,6 +736,7 @@ export const sessionMutations = {
     }
     const participantId = ctx.participantId;
     const released = await roomManager.releaseWallConnection(sessionId, boardId, participantId);
+    roomManager.forgetWallLinkForConnection(ctx.connectionId, boardId);
     if (released) {
       pubsub.publishSessionEvent(sessionId, {
         __typename: 'WallConnectionChanged',

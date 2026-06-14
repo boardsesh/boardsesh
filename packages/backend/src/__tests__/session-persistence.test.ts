@@ -827,4 +827,60 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       );
     });
   });
+
+  describe('Wall-connection per-connection cleanup', () => {
+    const boardPath = '/kilter/1/10/1,2/40/list';
+    // Same authenticated user on two connections → one stable participantId (the
+    // multi-tab / second-device case the liveness gate used to mishandle).
+    // Authenticated joins persist the session with created_by_user_id, so the
+    // user must exist (FK).
+    const wallUserId = `wall-user-${uuidv4()}`;
+
+    beforeEach(async () => {
+      await db.execute(sql`
+        INSERT INTO users (id, email, name, created_at, updated_at)
+        VALUES (${wallUserId}, ${`${wallUserId}@wall.test`}, 'Wall Climber', now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `);
+    });
+
+    it('frees a crashed BLE holder slot even when the participant keeps a sibling connection', async () => {
+      const sessionId = `wall-sibling-${uuidv4()}`;
+      await roomManager.registerClient('conn-A', 'Climber', wallUserId);
+      const joinedA = await roomManager.joinSession('conn-A', sessionId, boardPath, 'Climber');
+      await roomManager.registerClient('conn-B', 'Climber', wallUserId);
+      const joinedB = await roomManager.joinSession('conn-B', sessionId, boardPath, 'Climber');
+      expect(joinedB.participantId).toBe(joinedA.participantId);
+      const participantId = joinedA.participantId;
+
+      const boardId = 4242;
+      const claim = await roomManager.claimWallConnection(sessionId, boardId, participantId);
+      expect(claim.didClaim).toBe(true);
+      roomManager.recordWallLinkForConnection('conn-A', boardId);
+      expect((await roomManager.getWallConnections(sessionId)).get(boardId)).toBe(participantId);
+
+      // A's socket drops while B (same participant) stays live. The wall link is
+      // bound to A's connection, so the slot must free — the old participant-
+      // liveness gate would have left it stuck behind B.
+      await roomManager.disconnectClient('conn-A');
+      expect((await roomManager.getWallConnections(sessionId)).has(boardId)).toBe(false);
+    });
+
+    it('a non-holder connection dropping leaves the holder slot intact', async () => {
+      const sessionId = `wall-nonholder-${uuidv4()}`;
+      await roomManager.registerClient('hold-A', 'Climber', wallUserId);
+      const joinedA = await roomManager.joinSession('hold-A', sessionId, boardPath, 'Climber');
+      await roomManager.registerClient('view-B', 'Climber', wallUserId);
+      await roomManager.joinSession('view-B', sessionId, boardPath, 'Climber');
+      const participantId = joinedA.participantId;
+
+      const boardId = 5353;
+      await roomManager.claimWallConnection(sessionId, boardId, participantId);
+      roomManager.recordWallLinkForConnection('hold-A', boardId);
+
+      // B never announced a wall link, so its drop frees nothing.
+      await roomManager.disconnectClient('view-B');
+      expect((await roomManager.getWallConnections(sessionId)).get(boardId)).toBe(participantId);
+    });
+  });
 });
