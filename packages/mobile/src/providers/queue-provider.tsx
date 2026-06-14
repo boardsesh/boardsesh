@@ -108,6 +108,12 @@ function showQueueMutationErrorToast(
   }
 }
 
+function isSessionMembershipMutationError(error: unknown): boolean {
+  const message =
+    extractGraphqlMessage(error) ?? (error instanceof Error ? error.message : typeof error === 'string' ? error : null);
+  return typeof message === 'string' && /\bmust be in a session\b/i.test(message);
+}
+
 type QueueContextValue = {
   state: QueueState;
   dispatch: React.Dispatch<QueueAction>;
@@ -1150,6 +1156,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const resyncQueueAfterMutationFailure = useCallback(
     async (error?: unknown) => {
       if (!sessionIdRef.current) return;
+      if (error !== undefined && isSessionMembershipMutationError(error)) {
+        return;
+      }
       if (error !== undefined && isGraphqlRateLimitedError(error)) {
         await resyncQueueFromServerRef.current();
         showQueueMutationErrorToast(error, t, showToast);

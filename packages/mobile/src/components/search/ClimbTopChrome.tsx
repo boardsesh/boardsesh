@@ -16,7 +16,9 @@ import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
+import { useQueueSessionId } from '../../providers/queue-provider';
 import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-board';
+import { useRepTimerPreference } from '../../lib/rep-timer-preference';
 import { spacing } from '../../theme/tokens';
 import { hapticLight } from '../../lib/haptics';
 import { useLightbulbToggle } from '../ble/use-lightbulb-toggle';
@@ -26,6 +28,7 @@ import { iconMap } from '../icon-map';
 import { BoardSwitcherButton, CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
 import { GradeRangeRail } from '../grade';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
+import { RepTimerHeaderPill } from '../queue-control/RepTimerCapsule';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { FilterButton } from './FilterButton';
 import { GradeFilterControl } from './GradeFilterControl';
@@ -101,6 +104,9 @@ export function ClimbTopChrome({
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
   const usesCustomSearch = searchMode === 'custom';
+  const { sessionId } = useQueueSessionId();
+  const { targetSeconds, loaded: repTimerPreferenceLoaded } = useRepTimerPreference();
+  const showHeaderRepTimer = sessionId !== null && repTimerPreferenceLoaded && targetSeconds !== null;
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -151,9 +157,18 @@ export function ClimbTopChrome({
           elevated
           style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
         >
-          <UserAvatarToolbarAction variant="material" />
-          <BoardSwitcherButton onPress={onOpenBoardDetail} accessibilityHint={t('mobile.search.boardSwitcherHint')} />
-          {canCreate ? (
+          {showHeaderRepTimer ? null : <UserAvatarToolbarAction variant="material" />}
+          {showHeaderRepTimer ? (
+            <>
+              <View style={styles.materialTitleSpacer} />
+              <View pointerEvents="box-none" style={styles.materialTimerOverlay}>
+                <RepTimerHeaderPill />
+              </View>
+            </>
+          ) : (
+            <BoardSwitcherButton onPress={onOpenBoardDetail} accessibilityHint={t('mobile.search.boardSwitcherHint')} />
+          )}
+          {!showHeaderRepTimer && canCreate ? (
             <Appbar.Action
               icon={iconMap.plus.android}
               color={systemColors.label as string}
@@ -161,8 +176,8 @@ export function ClimbTopChrome({
               accessibilityLabel={t('mobile.create.fab.ariaLabel')}
             />
           ) : null}
-          <MaterialAngleAction />
-          <MaterialLightbulbAction />
+          {showHeaderRepTimer ? null : <MaterialAngleAction />}
+          {showHeaderRepTimer ? null : <MaterialLightbulbAction />}
         </Appbar.Header>
 
         {usesCustomSearch ? (
@@ -247,6 +262,7 @@ export function ClimbTopChrome({
       onHeightChange={onHeightChange}
       scrollY={scrollY}
       onPressTitle={onPressTitle}
+      persistentCenterContent={showHeaderRepTimer ? <RepTimerHeaderPill /> : undefined}
     >
       {usesCustomSearch ? (
         <View pointerEvents="box-none" style={styles.searchStack}>
@@ -368,7 +384,20 @@ const styles = StyleSheet.create({
   },
   materialAppbar: {
     elevation: 0,
+    position: 'relative',
     shadowOpacity: 0,
+  },
+  materialTitleSpacer: {
+    flex: 1,
+  },
+  materialTimerOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   materialSearchStack: {
     paddingHorizontal: spacing[4],

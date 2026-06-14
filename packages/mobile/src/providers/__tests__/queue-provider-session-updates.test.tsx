@@ -1413,6 +1413,14 @@ describe('QueueProvider mutation-failure resync', () => {
     ]);
   }
 
+  function sessionMembershipError() {
+    return new GraphQLOperationError([
+      {
+        message: 'Must be in a session to perform this operation',
+      },
+    ]);
+  }
+
   // The harness routes both endSession and the queueState query through
   // http.request. Branch on the operation text so the resync query returns the
   // authoritative snapshot while everything else keeps the default endSession
@@ -1600,6 +1608,74 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
     // Solo's "Action failed" toast must NOT fire in a party session.
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  it('keeps the optimistic add when the backend has not attached this connection to the session yet', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.addQueueItem.mockRejectedValueOnce(sessionMembershipError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    const localItem = makeQueueItem('local-add', 'climb-local');
+    act(() => {
+      snapshot.addToQueue(localItem);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['local-add']);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(queueMutations.addQueueItem).toHaveBeenCalledWith(localItem);
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['local-add']);
+  });
+
+  it('keeps the optimistic current climb when the backend has not attached this connection to the session yet', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverCurrent], serverCurrent), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(sessionMembershipError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    const localItem = makeQueueItem('local-current', 'climb-local-current');
+    act(() => {
+      snapshot.setCurrentClimb(localItem);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('local-current');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(queueMutations.setCurrentClimb).toHaveBeenCalledWith(localItem, true, expect.any(String));
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('local-current');
   });
 
   it('resyncs but shows the rate-limit toast when setCurrentClimb is throttled in a session', async () => {

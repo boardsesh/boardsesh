@@ -27,8 +27,6 @@ type ChromeProps = {
 // gating contract can be asserted directly.
 const chrome = vi.hoisted(() => ({ props: null as ChromeProps | null }));
 const ctrl = vi.hoisted(() => ({
-  repTimerPreferenceLoaded: true,
-  repTimerTargetSeconds: 180 as number | null,
   variant: 'glass' as 'glass' | 'material',
 }));
 // Captures the Material app bar's title + actions so the material branch can be
@@ -119,16 +117,6 @@ vi.mock('../../PressableSurface', () => ({
   }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
-vi.mock('../../../lib/rep-timer-preference', () => ({
-  useRepTimerPreference: () => ({
-    loaded: ctrl.repTimerPreferenceLoaded,
-    setTargetSeconds: vi.fn(),
-    targetSeconds: ctrl.repTimerTargetSeconds,
-  }),
-}));
-vi.mock('../../queue-control/RepTimerCapsule', () => ({
-  RepTimerHeaderPill: () => createElement('div', { 'data-header-rep-timer': 'true' }),
-}));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) => {
     if (variant === 'material') {
@@ -161,8 +149,6 @@ describe('RecordTopChrome', () => {
   beforeEach(() => {
     chrome.props = null;
     ctrl.variant = 'glass';
-    ctrl.repTimerPreferenceLoaded = true;
-    ctrl.repTimerTargetSeconds = 180;
     appbar.title = null;
     appbar.actions = [];
   });
@@ -266,17 +252,7 @@ describe('RecordTopChrome', () => {
     expect(chrome.props?.hideLight).toBe(true);
   });
 
-  it('uses the rep timer as the persistent center content during an active glass session', () => {
-    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
-
-    expect(chrome.props?.persistentCenterContent).toBeDefined();
-    expect(chrome.props?.persistentTitle).toBe(false);
-    expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
-  });
-
-  it('keeps a persistent title center when the rep timer is off', () => {
-    ctrl.repTimerTargetSeconds = null;
-
+  it('keeps a persistent title center while a session is live', () => {
     render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
 
     expect(chrome.props?.persistentCenterContent).toBeUndefined();
@@ -323,25 +299,12 @@ describe('RecordTopChrome', () => {
       expect(appbar.actions).toContain('mobile.session.inEndSession');
     });
 
-    it('uses the rep timer as a centered app-bar overlay during an active session', () => {
+    it('keeps the app-bar title and avatar during an active session', () => {
       const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
 
-      expect(appbar.title).toBeNull();
-      expect(appbar.actions).not.toContain('ariaLabels.userMenu');
-      expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
-      expect(
-        Array.from(container.querySelectorAll('[data-pointer="box-none"]')).some((element) =>
-          (element.getAttribute('data-style') ?? '').includes('"position":"absolute"'),
-        ),
-      ).toBe(true);
-    });
-
-    it('keeps the app-bar title when the rep timer is off during an active session', () => {
-      ctrl.repTimerTargetSeconds = null;
-
-      render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn(), title: 'Active session' })} />);
-
-      expect(appbar.title).toBe('Active session');
+      expect(appbar.title).toBe('Morning session');
+      expect(appbar.actions).toContain('ariaLabels.userMenu');
+      expect(container.querySelector('[data-header-rep-timer="true"]')).toBeNull();
     });
   });
 });

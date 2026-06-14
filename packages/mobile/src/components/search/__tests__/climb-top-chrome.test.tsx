@@ -20,6 +20,9 @@ type BluetoothCtx = {
 const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
   bluetooth: null as BluetoothCtx,
+  repTimerPreferenceLoaded: true,
+  repTimerTargetSeconds: 180 as number | null,
+  sessionId: null as string | null,
   setActiveBoard: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
 }));
@@ -160,6 +163,18 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: ctrl.board }),
   useSetActiveBoard: () => ctrl.setActiveBoard,
+}));
+
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
+}));
+
+vi.mock('../../../lib/rep-timer-preference', () => ({
+  useRepTimerPreference: () => ({
+    loaded: ctrl.repTimerPreferenceLoaded,
+    setTargetSeconds: vi.fn(),
+    targetSeconds: ctrl.repTimerTargetSeconds,
+  }),
 }));
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -312,6 +327,9 @@ vi.mock('../../play-drawer/AngleSelectorSheet', () => ({
         )
       : null,
 }));
+vi.mock('../../queue-control/RepTimerCapsule', () => ({
+  RepTimerHeaderPill: () => createElement('div', { 'data-header-rep-timer': 'true' }),
+}));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) =>
     createElement('button', {
@@ -378,6 +396,9 @@ describe('ClimbTopChrome', () => {
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;
+    ctrl.repTimerPreferenceLoaded = true;
+    ctrl.repTimerTargetSeconds = 180;
+    ctrl.sessionId = null;
     ctrl.variant = 'liquidGlass';
     ctrl.setActiveBoard.mockClear();
     haptics.light.mockClear();
@@ -399,6 +420,29 @@ describe('ClimbTopChrome', () => {
     ctrl.board = namedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(capsule(container)?.getAttribute('data-capsule')).toBe('Garage Wall • 25°');
+  });
+
+  it('uses the rep timer as the glass header center during an active session', () => {
+    ctrl.board = typedBoard;
+    ctrl.sessionId = 'session-1';
+
+    const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
+
+    expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
+    expect(capsule(container)).toBeNull();
+    expect(angleAction(container)).toBeNull();
+    expect(container.querySelector('[data-avatar-variant="glass"]')).toBeNull();
+  });
+
+  it('keeps the glass board header when the rep timer is off', () => {
+    ctrl.board = typedBoard;
+    ctrl.sessionId = 'session-1';
+    ctrl.repTimerTargetSeconds = null;
+
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+
+    expect(container.querySelector('[data-header-rep-timer="true"]')).toBeNull();
+    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12 • 40°');
   });
 
   it('omits the angle segment when angle is absent', () => {
@@ -567,6 +611,40 @@ describe('ClimbTopChrome', () => {
     fireEvent.click(capsule(container)!);
     expect(onOpenBoardDetail).toHaveBeenCalledTimes(1);
     expect(haptics.light).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the rep timer in place of the Material board switcher during an active session', () => {
+    ctrl.variant = 'material';
+    ctrl.board = typedBoard;
+    ctrl.bluetooth = {
+      isConnected: false,
+      connect: vi.fn().mockResolvedValue(true),
+      disconnect: vi.fn(),
+      armUndoWallChangeToast: vi.fn(),
+    };
+    ctrl.sessionId = 'session-1';
+
+    const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true, onOpenFilters: vi.fn() })} />);
+
+    expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
+    expect(capsule(container)).toBeNull();
+    expect(container.querySelector('[data-appbar-action="ariaLabels.userMenu"]')).toBeNull();
+    expect(container.querySelector('[data-appbar-action="mobile.create.fab.ariaLabel"]')).toBeNull();
+    expect(container.querySelector('[data-appbar-action="mobile.angleSelector.title"]')).toBeNull();
+    expect(lightbulb(container)).toBeNull();
+    expect(container.querySelector('[data-search-field]')).not.toBeNull();
+  });
+
+  it('keeps the Material board switcher when the rep timer is off', () => {
+    ctrl.variant = 'material';
+    ctrl.board = typedBoard;
+    ctrl.sessionId = 'session-1';
+    ctrl.repTimerTargetSeconds = null;
+
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+
+    expect(container.querySelector('[data-header-rep-timer="true"]')).toBeNull();
+    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12 • 40°');
   });
 
   it('excludes the dedicated grade chip from the Material filter badge count', () => {
