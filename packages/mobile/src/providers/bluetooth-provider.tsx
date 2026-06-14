@@ -701,6 +701,24 @@ export function BluetoothProvider({
     onConnectSuccess: handleConnectSuccess,
   });
 
+  // The connect-success path announces the wall link only when a session is
+  // already active. If a climber connects solo and *then* joins/starts a session
+  // on the same board, announce the already-connected board now so peers see a
+  // holder instead of every connected member falling back to "writer". Leaving
+  // the session frees our slot backend-side, so reset the ref to allow a fresh
+  // announce on rejoin (and so a later disconnect doesn't revoke a freed slot).
+  useEffect(() => {
+    if (sessionId == null) {
+      announcedWallBoardIdRef.current = null;
+      return;
+    }
+    if (!isConnected) return;
+    const boardId = resolvedPresenceBoardIdRef.current;
+    if (boardId == null || announcedWallBoardIdRef.current === boardId) return;
+    announcedWallBoardIdRef.current = boardId;
+    void announceWallLink(boardId);
+  }, [sessionId, isConnected, announceWallLink]);
+
   const resolvedPickerBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_PICKER_DEVICES);
   const currentBoardConfig = useMemo(() => {
     if (!boardName || layoutId === undefined || sizeId === undefined || !setIds) return undefined;

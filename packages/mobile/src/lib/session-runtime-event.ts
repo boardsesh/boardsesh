@@ -23,6 +23,17 @@ export function toMobileSessionRuntimeEvent(event: SessionUpdateEvent): RuntimeS
         driverParticipantId: event.driverParticipantId ?? null,
         previousDriverParticipantId: event.previousDriverParticipantId ?? null,
       };
+    case 'WallConnectionChanged':
+      // Drives wallConnectionsByBoard in the shared runtime, which
+      // deriveIsWallWriter reads to suppress non-holders. Without this case the
+      // map stays empty and every connected member falls back to "writer".
+      return typeof event.boardId === 'number'
+        ? {
+            __typename: 'WallConnectionChanged',
+            boardId: event.boardId,
+            holderParticipantId: event.holderParticipantId ?? null,
+          }
+        : null;
     case 'SessionBoardSerialChanged':
       return {
         __typename: 'SessionBoardSerialChanged',

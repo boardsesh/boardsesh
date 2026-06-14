@@ -41,9 +41,23 @@ describe('toMobileSessionRuntimeEvent', () => {
     });
   });
 
+  it('adapts WallConnectionChanged so the holder reaches wallConnectionsByBoard', () => {
+    expect(
+      toMobileSessionRuntimeEvent({ __typename: 'WallConnectionChanged', boardId: 42, holderParticipantId: 'p-1' }),
+    ).toEqual({ __typename: 'WallConnectionChanged', boardId: 42, holderParticipantId: 'p-1' });
+    // A freed slot (nobody holds it) maps the holder to null.
+    expect(toMobileSessionRuntimeEvent({ __typename: 'WallConnectionChanged', boardId: 42 })).toEqual({
+      __typename: 'WallConnectionChanged',
+      boardId: 42,
+      holderParticipantId: null,
+    });
+  });
+
   it('ignores stats and incomplete events', () => {
     expect(toMobileSessionRuntimeEvent({ __typename: 'SessionStatsUpdated', totalSends: 1 })).toBeNull();
     expect(toMobileSessionRuntimeEvent({ __typename: 'UserJoined' })).toBeNull();
     expect(toMobileSessionRuntimeEvent({ __typename: 'SessionBoardPathChanged' })).toBeNull();
+    // No boardId → can't key wallConnectionsByBoard, so it's dropped.
+    expect(toMobileSessionRuntimeEvent({ __typename: 'WallConnectionChanged' })).toBeNull();
   });
 });

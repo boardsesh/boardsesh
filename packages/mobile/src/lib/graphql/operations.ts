@@ -949,6 +949,10 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         driverParticipantId
         previousDriverParticipantId
       }
+      ... on WallConnectionChanged {
+        boardId
+        holderParticipantId
+      }
       ... on WallConfirmedClimb {
         climbUuid
         confirmedAt
@@ -1035,6 +1039,9 @@ export type SessionUpdateEvent = {
   // DriverChanged
   driverParticipantId?: string | null;
   previousDriverParticipantId?: string | null;
+  // WallConnectionChanged
+  boardId?: number;
+  holderParticipantId?: string | null;
   // WallConfirmedClimb
   climbUuid?: string;
   confirmedAt?: string;
