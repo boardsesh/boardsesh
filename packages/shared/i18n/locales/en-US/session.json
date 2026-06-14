@@ -338,6 +338,8 @@
       "repTimerLabel": "Rest · {{target}}",
       "repTimerAccessibility": "Rest timer, {{time}} since last tick, {{target}} target",
       "repTimerNoTickAccessibility": "Rest timer, no tick logged yet, {{target}} target",
+      "repTimerHint": "Tap to start or pause. Double tap to reset.",
+      "repTimerResetAction": "Reset timer",
       "dragHandleAria": "Drag to reorder {{name}}"
     },
     "queueSheet": {

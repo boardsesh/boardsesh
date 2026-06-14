@@ -10,7 +10,7 @@ import { execute } from '@boardsesh/graphql-client';
 import { useAuth } from './auth-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
-import { getLatestUserSessionTickAt, getNewerTickAt } from './board-adapter-rep-timer';
+import { getLatestUserSessionTickAt, getNewerTickAt, mergeSavedSessionTick } from './board-adapter-rep-timer';
 import { useProfile } from '../lib/graphql/hooks';
 import { getHttpClient } from '../lib/graphql/client';
 import { useSessionDetail } from '../lib/graphql/hooks/use-session-detail';
@@ -67,7 +67,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       resolveActiveSessionId: () => sessionIdRef.current,
       onTickSaved: (_climbUuid, _angle, climbedAt, savedSessionId) => {
         if (!savedSessionId || savedSessionId !== sessionIdRef.current) return;
-        setLastSavedSessionTick({ sessionId: savedSessionId, climbedAt });
+        setLastSavedSessionTick((current) => mergeSavedSessionTick(current, savedSessionId, climbedAt));
       },
       lastSavedTickAt,
       showError: (reason) => showErrorRef.current?.(reason),

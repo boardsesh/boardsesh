@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getLatestUserSessionTickAt, getNewerTickAt } from '../board-adapter-rep-timer';
+import { getLatestUserSessionTickAt, getNewerTickAt, mergeSavedSessionTick } from '../board-adapter-rep-timer';
 
 describe('board adapter rep timer helpers', () => {
   it('selects the latest tick for the current user', () => {
@@ -25,5 +25,15 @@ describe('board adapter rep timer helpers', () => {
     expect(getNewerTickAt('2026-06-12 07:45:00', '2026-06-12 07:15:00')).toBe('2026-06-12 07:45:00');
     expect(getNewerTickAt('2026-06-12 07:15:00', '2026-06-12 07:45:00')).toBe('2026-06-12 07:45:00');
     expect(getNewerTickAt('not-a-date', '2026-06-12 07:45:00')).toBe('2026-06-12 07:45:00');
+  });
+
+  it('keeps the newest local tick when save responses resolve out of order', () => {
+    const newerTick = mergeSavedSessionTick(null, 'session-1', '2026-06-12 07:45:00');
+
+    expect(mergeSavedSessionTick(newerTick, 'session-1', '2026-06-12 07:15:00')).toEqual(newerTick);
+    expect(mergeSavedSessionTick(newerTick, 'session-1', '2026-06-12 07:50:00')).toEqual({
+      sessionId: 'session-1',
+      climbedAt: '2026-06-12 07:50:00',
+    });
   });
 });

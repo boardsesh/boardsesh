@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
+import { Pressable, StyleSheet, View, type ColorValue, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useOptionalBoardProvider } from '@boardsesh/board-react';
 import { TOOLBAR_CAPSULE_HEIGHT } from '../../theme/layout';
@@ -40,6 +40,9 @@ type RepTimerControl = {
   targetSeconds: number | null;
   targetLabel: string | null;
   accessibilityLabel: string | undefined;
+  accessibilityHint: string | undefined;
+  accessibilityActions: { name: string; label: string }[] | undefined;
+  handleAccessibilityAction: (event: AccessibilityActionEvent) => void;
   handleTimerPressIn: () => void;
   handleTimerPress: () => void;
 };
@@ -134,7 +137,8 @@ function useRepTimerControl(): RepTimerControl {
   const [timerState, setTimerState] = useState(() => createRepTimerControlState(lastSavedTickAt));
   const singlePressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstPressStartedAtRef = useRef<number | null>(null);
-  const ignoreNextPressRef = useRef(false);
+  const pendingDoubleTapPressedAtRef = useRef<number | null>(null);
+  const pendingDoubleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nowMs = useRepTimerNowMs(timerState.isRunning);
   const elapsedSeconds = timerState.isRunning
     ? getRepTimerElapsedSecondsFromStart(timerState.startedAtMs, nowMs)
@@ -148,6 +152,9 @@ function useRepTimerControl(): RepTimerControl {
       : hasReferenceTime || timerState.isRunning
         ? t('mobile.queue.repTimerAccessibility', { time: elapsedLabel, target: targetLabel })
         : t('mobile.queue.repTimerNoTickAccessibility', { target: targetLabel });
+  const accessibilityHint = targetLabel === null ? undefined : t('mobile.queue.repTimerHint');
+  const accessibilityActions =
+    targetLabel === null ? undefined : [{ name: 'reset', label: t('mobile.queue.repTimerResetAction') }];
 
   useEffect(() => {
     setTimerState(createRepTimerControlState(lastSavedTickAt));
@@ -156,7 +163,10 @@ function useRepTimerControl(): RepTimerControl {
   useEffect(() => {
     return () => {
       if (singlePressTimeoutRef.current) clearTimeout(singlePressTimeoutRef.current);
+      if (pendingDoubleTapTimeoutRef.current) clearTimeout(pendingDoubleTapTimeoutRef.current);
       firstPressStartedAtRef.current = null;
+      pendingDoubleTapPressedAtRef.current = null;
+      pendingDoubleTapTimeoutRef.current = null;
     };
   }, []);
 
@@ -191,16 +201,26 @@ function useRepTimerControl(): RepTimerControl {
       clearTimeout(singlePressTimeoutRef.current);
       singlePressTimeoutRef.current = null;
       firstPressStartedAtRef.current = null;
-      ignoreNextPressRef.current = true;
-      resetTimer(pressedAtMs);
+      pendingDoubleTapPressedAtRef.current = pressedAtMs;
+      if (pendingDoubleTapTimeoutRef.current) clearTimeout(pendingDoubleTapTimeoutRef.current);
+      pendingDoubleTapTimeoutRef.current = setTimeout(() => {
+        pendingDoubleTapPressedAtRef.current = null;
+        pendingDoubleTapTimeoutRef.current = null;
+      }, DOUBLE_TAP_RESET_DELAY_MS);
       return;
     }
     firstPressStartedAtRef.current = pressedAtMs;
-  }, [resetTimer]);
+  }, []);
 
   const handleTimerPress = useCallback(() => {
-    if (ignoreNextPressRef.current) {
-      ignoreNextPressRef.current = false;
+    if (pendingDoubleTapPressedAtRef.current !== null) {
+      const pressedAtMs = pendingDoubleTapPressedAtRef.current;
+      pendingDoubleTapPressedAtRef.current = null;
+      if (pendingDoubleTapTimeoutRef.current) {
+        clearTimeout(pendingDoubleTapTimeoutRef.current);
+        pendingDoubleTapTimeoutRef.current = null;
+      }
+      resetTimer(pressedAtMs);
       return;
     }
     const pressedAtMs = firstPressStartedAtRef.current ?? Date.now();
@@ -217,6 +237,15 @@ function useRepTimerControl(): RepTimerControl {
     }, DOUBLE_TAP_RESET_DELAY_MS);
   }, [resetTimer, toggleTimer]);
 
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'reset') {
+        resetTimer(Date.now());
+      }
+    },
+    [resetTimer],
+  );
+
   return {
     enabled: loaded && targetSeconds !== null,
     elapsedSeconds,
@@ -226,6 +255,9 @@ function useRepTimerControl(): RepTimerControl {
     targetSeconds,
     targetLabel,
     accessibilityLabel,
+    accessibilityHint,
+    accessibilityActions,
+    handleAccessibilityAction,
     handleTimerPressIn,
     handleTimerPress,
   };
@@ -262,7 +294,10 @@ export function RepTimerCapsule({
     >
       <Pressable
         accessibilityLabel={timer.accessibilityLabel}
+        accessibilityHint={timer.accessibilityHint}
         accessibilityRole="button"
+        accessibilityActions={timer.accessibilityActions}
+        onAccessibilityAction={timer.handleAccessibilityAction}
         onPressIn={timer.handleTimerPressIn}
         onPress={timer.handleTimerPress}
         style={[
@@ -305,7 +340,10 @@ export function RepTimerHeaderPill() {
   return (
     <Pressable
       accessibilityLabel={timer.accessibilityLabel}
+      accessibilityHint={timer.accessibilityHint}
       accessibilityRole="button"
+      accessibilityActions={timer.accessibilityActions}
+      onAccessibilityAction={timer.handleAccessibilityAction}
       hitSlop={HEADER_TIMER_HIT_SLOP}
       onPressIn={timer.handleTimerPressIn}
       onPress={timer.handleTimerPress}

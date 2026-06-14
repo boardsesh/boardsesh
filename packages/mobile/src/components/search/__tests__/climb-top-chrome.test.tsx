@@ -424,6 +424,12 @@ describe('ClimbTopChrome', () => {
 
   it('uses the rep timer as the glass header center during an active session', () => {
     ctrl.board = typedBoard;
+    ctrl.bluetooth = {
+      isConnected: false,
+      connect: vi.fn().mockResolvedValue(true),
+      disconnect: vi.fn(),
+      armUndoWallChangeToast: vi.fn(),
+    };
     ctrl.sessionId = 'session-1';
 
     const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
@@ -431,6 +437,7 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
     expect(capsule(container)).toBeNull();
     expect(angleAction(container)).toBeNull();
+    expect(lightbulb(container)).toBeNull();
     expect(container.querySelector('[data-avatar-variant="glass"]')).toBeNull();
   });
 
@@ -628,10 +635,10 @@ describe('ClimbTopChrome', () => {
 
     expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
     expect(capsule(container)).toBeNull();
-    expect(container.querySelector('[data-appbar-action="ariaLabels.userMenu"]')).toBeNull();
-    expect(container.querySelector('[data-appbar-action="mobile.create.fab.ariaLabel"]')).toBeNull();
-    expect(container.querySelector('[data-appbar-action="mobile.angleSelector.title"]')).toBeNull();
-    expect(lightbulb(container)).toBeNull();
+    expect(container.querySelector('[data-appbar-action="ariaLabels.userMenu"]')).not.toBeNull();
+    expect(container.querySelector('[data-appbar-action="mobile.create.fab.ariaLabel"]')).not.toBeNull();
+    expect(container.querySelector('[data-appbar-action="mobile.angleSelector.title"]')).not.toBeNull();
+    expect(container.querySelector('[data-appbar-action="ble.connectBoard"]')).not.toBeNull();
     expect(container.querySelector('[data-search-field]')).not.toBeNull();
   });
 

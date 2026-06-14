@@ -5,6 +5,11 @@ type SessionTickTimestamp = {
   climbedAt: string;
 };
 
+export type LocalSessionTick = {
+  sessionId: string;
+  climbedAt: string;
+};
+
 export function getLatestUserSessionTickAt(
   ticks: readonly SessionTickTimestamp[] | undefined,
   userId: string | null | undefined,
@@ -38,4 +43,14 @@ export function getNewerTickAt(firstTickAt: string | null, secondTickAt: string 
   if (!Number.isFinite(secondMs)) return firstTickAt;
 
   return firstMs >= secondMs ? firstTickAt : secondTickAt;
+}
+
+export function mergeSavedSessionTick(
+  currentTick: LocalSessionTick | null,
+  sessionId: string,
+  climbedAt: string,
+): LocalSessionTick | null {
+  const currentTickAt = currentTick?.sessionId === sessionId ? currentTick.climbedAt : null;
+  const newerTickAt = getNewerTickAt(currentTickAt, climbedAt);
+  return newerTickAt ? { sessionId, climbedAt: newerTickAt } : currentTick;
 }

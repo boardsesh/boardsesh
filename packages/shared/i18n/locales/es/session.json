@@ -338,6 +338,8 @@
       "repTimerLabel": "Descanso · {{target}}",
       "repTimerAccessibility": "Temporizador de descanso, {{time}} desde el último tick, objetivo {{target}}",
       "repTimerNoTickAccessibility": "Temporizador de descanso, aún no hay tick registrado, objetivo {{target}}",
+      "repTimerHint": "Toca para iniciar o pausar. Toca dos veces para reiniciar.",
+      "repTimerResetAction": "Reiniciar temporizador",
       "dragHandleAria": "Arrastra para reordenar {{name}}"
     },
     "queueSheet": {

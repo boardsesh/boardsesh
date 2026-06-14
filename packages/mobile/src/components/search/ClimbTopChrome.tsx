@@ -157,7 +157,7 @@ export function ClimbTopChrome({
           elevated
           style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
         >
-          {showHeaderRepTimer ? null : <UserAvatarToolbarAction variant="material" />}
+          <UserAvatarToolbarAction variant="material" />
           {showHeaderRepTimer ? (
             <>
               <View style={styles.materialTitleSpacer} />
@@ -168,7 +168,7 @@ export function ClimbTopChrome({
           ) : (
             <BoardSwitcherButton onPress={onOpenBoardDetail} accessibilityHint={t('mobile.search.boardSwitcherHint')} />
           )}
-          {!showHeaderRepTimer && canCreate ? (
+          {canCreate ? (
             <Appbar.Action
               icon={iconMap.plus.android}
               color={systemColors.label as string}
@@ -176,8 +176,8 @@ export function ClimbTopChrome({
               accessibilityLabel={t('mobile.create.fab.ariaLabel')}
             />
           ) : null}
-          {showHeaderRepTimer ? null : <MaterialAngleAction />}
-          {showHeaderRepTimer ? null : <MaterialLightbulbAction />}
+          <MaterialAngleAction />
+          <MaterialLightbulbAction />
         </Appbar.Header>
 
         {usesCustomSearch ? (
@@ -263,6 +263,7 @@ export function ClimbTopChrome({
       scrollY={scrollY}
       onPressTitle={onPressTitle}
       persistentCenterContent={showHeaderRepTimer ? <RepTimerHeaderPill /> : undefined}
+      hideLight={showHeaderRepTimer}
     >
       {usesCustomSearch ? (
         <View pointerEvents="box-none" style={styles.searchStack}>

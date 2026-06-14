@@ -338,6 +338,8 @@
       "repTimerLabel": "Repos · {{target}}",
       "repTimerAccessibility": "Minuteur de repos, {{time}} depuis le dernier tick, objectif {{target}}",
       "repTimerNoTickAccessibility": "Minuteur de repos, aucun tick enregistré, objectif {{target}}",
+      "repTimerHint": "Touchez pour démarrer ou mettre en pause. Touchez deux fois pour réinitialiser.",
+      "repTimerResetAction": "Réinitialiser le minuteur",
       "dragHandleAria": "Glisser pour réorganiser {{name}}"
     },
     "queueSheet": {

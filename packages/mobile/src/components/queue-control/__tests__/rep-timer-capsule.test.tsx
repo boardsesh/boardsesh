@@ -35,23 +35,34 @@ vi.mock('react-native', () => ({
     accessibilityLabel,
     accessibilityRole,
     children,
+    accessibilityActions,
+    accessibilityHint,
     onPress,
     onPressIn,
+    onAccessibilityAction,
     style,
   }: {
     accessibilityLabel?: string;
+    accessibilityHint?: string;
     accessibilityRole?: string;
+    accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
     children?: ReactNode;
     onPress?: () => void;
     onPressIn?: () => void;
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     style?: unknown;
   }) =>
     createElement(
       'button',
       {
         'aria-label': accessibilityLabel,
+        'data-actions': Array.isArray(accessibilityActions)
+          ? accessibilityActions.map((action) => action.name).join(',')
+          : '',
+        'data-hint': accessibilityHint ?? '',
         'data-height': dataValue(styleValue(style, 'height')),
         onClick: onPress,
+        onContextMenu: () => onAccessibilityAction?.({ nativeEvent: { actionName: 'reset' } }),
         onMouseDown: onPressIn,
         role: accessibilityRole,
       },
@@ -69,6 +80,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'mobile.queue.repTimerLabel') return `Rest · ${values?.target}`;
       if (key === 'mobile.queue.repTimerAccessibility') return `${values?.time} / ${values?.target}`;
       if (key === 'mobile.queue.repTimerNoTickAccessibility') return `No tick / ${values?.target}`;
+      if (key === 'mobile.queue.repTimerHint') return 'Tap to start or pause. Double tap to reset.';
+      if (key === 'mobile.queue.repTimerResetAction') return 'Reset timer';
       return key;
     },
   }),
@@ -165,11 +178,42 @@ describe('RepTimerCapsule', () => {
     advanceTimers(100);
     fireEvent.mouseDown(button);
 
-    expect(getByText('0:00')).not.toBeNull();
+    expect(getByText('0:30')).not.toBeNull();
     advanceTimers(200);
     fireEvent.click(button);
+    expect(getByText('0:00')).not.toBeNull();
     advanceTimers(6_000);
     expect(getByText('0:05')).not.toBeNull();
+  });
+
+  it('does not reset when a second tap is cancelled before press completion', () => {
+    const { getByRole, getByText, queryByText } = render(<RepTimerCapsule />);
+    const button = getByRole('button');
+    expect(getByText('0:30')).not.toBeNull();
+
+    press(button);
+    advanceTimers(100);
+    fireEvent.mouseDown(button);
+    advanceTimers(5_000);
+
+    expect(queryByText('0:00')).toBeNull();
+    expect(getByText('0:35')).not.toBeNull();
+
+    press(button);
+    advanceTimers(240);
+    advanceTimers(5_000);
+    expect(getByText('0:35')).not.toBeNull();
+  });
+
+  it('exposes timer gesture help and a reset accessibility action', () => {
+    const { getByRole, getByText } = render(<RepTimerCapsule />);
+    const button = getByRole('button');
+
+    expect(button.getAttribute('data-hint')).toBe('Tap to start or pause. Double tap to reset.');
+    expect(button.getAttribute('data-actions')).toBe('reset');
+
+    fireEvent.contextMenu(button);
+    expect(getByText('0:00')).not.toBeNull();
   });
 
   it('can start from zero when no tick has been logged yet', () => {
