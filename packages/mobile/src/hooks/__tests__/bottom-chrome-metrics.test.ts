@@ -4,8 +4,6 @@ import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
   TAB_BAR_HEIGHT,
-  TOOLBAR_CAPSULE_HEIGHT,
-  TOOLBAR_GAP,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
   glassSize,
@@ -15,8 +13,6 @@ import {
 // this stays correct when the glass-size ladder is retuned.
 const NATIVE_ACCESSORY_RESERVE = glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR;
 const INLINE_NATIVE_ACCESSORY_RESERVE = glassSize.inline + TOOLBAR_GAP_ABOVE_TABBAR;
-const LIQUID_REP_TIMER_RESERVE = TOOLBAR_CAPSULE_HEIGHT + TOOLBAR_GAP;
-const MATERIAL_REP_TIMER_RESERVE = TOOLBAR_CAPSULE_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR;
 
 describe('computeBottomChromeMetrics', () => {
   it('reserves nothing extra outside the tabs group', () => {
@@ -55,7 +51,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
   });
 
-  it('reserves the JS toolbar and rep timer when a session is active', () => {
+  it('does not reserve bottom timer space when a session is active', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       insetsBottom: 0,
@@ -66,13 +62,14 @@ describe('computeBottomChromeMetrics', () => {
       nativeAccessoryMounted: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
-    expect(metrics.jsQueueReserve).toBe(TOOLBAR_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE + LIQUID_REP_TIMER_RESERVE);
+    expect(metrics.repTimerReserve).toBe(0);
+    expect(metrics.jsQueueReserve).toBe(TOOLBAR_RESERVE);
+    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
+    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
   });
 
-  it('reserves the docked Material bar and rep timer when a session is active', () => {
+  it('does not reserve bottom timer space on Material when a session is active', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'material',
       insetsBottom: 0,
@@ -83,15 +80,12 @@ describe('computeBottomChromeMetrics', () => {
       nativeAccessoryMounted: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
-    expect(metrics.jsQueueReserve).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + MATERIAL_REP_TIMER_RESERVE);
+    expect(metrics.repTimerReserve).toBe(0);
+    expect(metrics.jsQueueReserve).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
     // Material clears its taller M3 nav bar (80) — not the iOS 49.
-    expect(metrics.scrollBottomPadding).toBe(
-      MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + MATERIAL_REP_TIMER_RESERVE,
-    );
-    expect(metrics.floatingControlBottom).toBe(
-      MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + MATERIAL_REP_TIMER_RESERVE,
-    );
-    expect(metrics.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + MATERIAL_REP_TIMER_RESERVE);
+    expect(metrics.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
+    expect(metrics.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT + MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
+    expect(metrics.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
   });
 
   it('reserves the docked Material bar when the JS toolbar is visible', () => {
@@ -133,7 +127,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
   });
 
-  it('pads scroll content for the JS rep timer above the UIKit-owned native accessory', () => {
+  it('does not pad scroll content for a top-header timer above the UIKit-owned native accessory', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       insetsBottom: 0,
@@ -146,13 +140,14 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.nativeAccessoryVisible).toBe(true);
     expect(metrics.jsQueueToolbarVisible).toBe(false);
     expect(metrics.jsQueueReserve).toBe(0);
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.nativeAccessoryReserve).toBe(NATIVE_ACCESSORY_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE + LIQUID_REP_TIMER_RESERVE);
+    expect(metrics.repTimerReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT);
+    expect(metrics.nativeAccessoryReserve).toBe(NATIVE_ACCESSORY_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
+    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
   });
 
-  it('tracks inline native accessory height when reserving the rep timer', () => {
+  it('tracks inline native accessory height without reserving bottom timer space', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       insetsBottom: 0,
@@ -163,11 +158,10 @@ describe('computeBottomChromeMetrics', () => {
       nativeAccessoryMounted: true,
     });
 
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.nativeAccessoryReserve).toBe(INLINE_NATIVE_ACCESSORY_RESERVE + LIQUID_REP_TIMER_RESERVE);
-    expect(metrics.floatingControlBottom).toBe(
-      TAB_BAR_HEIGHT + INLINE_NATIVE_ACCESSORY_RESERVE + LIQUID_REP_TIMER_RESERVE,
-    );
+    expect(metrics.repTimerReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT);
+    expect(metrics.nativeAccessoryReserve).toBe(INLINE_NATIVE_ACCESSORY_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + INLINE_NATIVE_ACCESSORY_RESERVE);
   });
 
   it('reserves queue chrome for fixed footers outside the tabs group', () => {

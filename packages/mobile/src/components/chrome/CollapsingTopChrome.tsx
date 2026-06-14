@@ -60,6 +60,10 @@ type CollapsingTopChromeProps = {
   /** Suppress the bluetooth lightbulb in the right toolbar — e.g. the active-session
    *  header, which keeps only the stop control on the right. */
   hideLight?: boolean;
+  /** Persistent centre control that replaces the normal title/filter capsule. */
+  persistentCenterContent?: ReactNode;
+  /** Keep the screen title pill centred even before collapse. */
+  persistentTitle?: boolean;
   /** Extra controls rendered below the islands row (e.g. the Climbs search row).
    *  Discover passes none. Measured into the reported chrome height. */
   children?: ReactNode;
@@ -96,6 +100,8 @@ export function CollapsingTopChrome({
   leadingAction,
   leadingActionCount,
   hideLight = false,
+  persistentCenterContent,
+  persistentTitle = false,
   children,
 }: CollapsingTopChromeProps) {
   const { systemColors } = useTheme();
@@ -109,11 +115,14 @@ export function CollapsingTopChrome({
     onOpenBoardSwitcher();
   }, [onOpenBoardSwitcher]);
 
-  const canOpenAngle = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
+  const hasPersistentCenter = persistentCenterContent != null || persistentTitle;
+  const showUserAvatar = !hasPersistentCenter;
+  const canShowBoardGlyph = activeBoard != null && !hasPersistentCenter;
+  const canOpenAngle = !hasPersistentCenter && activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
   // A fragment/element of leading actions reads as one element, so callers passing
   // several supply the explicit count; otherwise reserve a slot only for a real one.
   const leadingActions = leadingActionCount ?? (isValidElement(leadingAction) ? 1 : 0);
-  const leftActionCount = 1 + leadingActions + (canCreate ? 1 : 0) + (canOpenAngle ? 1 : 0);
+  const leftActionCount = (showUserAvatar ? 1 : 0) + leadingActions + (canCreate ? 1 : 0) + (canOpenAngle ? 1 : 0);
 
   // The right glass toolbar holds the lightbulb (and an optional trailing action)
   // at rest, and grows to also hold a compact board glyph once collapsed. Screens
@@ -124,9 +133,9 @@ export function CollapsingTopChrome({
   // of several actions supply `trailingActionCount` explicitly (a fragment reads as
   // one element), so the island widens to fit them all.
   const trailingActions = trailingActionCount ?? (isValidElement(trailingAction) ? 1 : 0);
-  const toolbarBoardActions = activeBoard && compactBoardControl ? 1 : 0;
+  const toolbarBoardActions = canShowBoardGlyph && compactBoardControl ? 1 : 0;
   const expandedRightActions = toolbarBoardActions + lightActions + trailingActions;
-  const collapsedRightActions = (activeBoard ? 1 : 0) + lightActions + trailingActions;
+  const collapsedRightActions = (canShowBoardGlyph ? 1 : 0) + lightActions + trailingActions;
   const expandedRightWidth = expandedRightActions * TOP_ACTION_SIZE;
   const collapsedRightWidth = collapsedRightActions * TOP_ACTION_SIZE;
 
@@ -137,18 +146,19 @@ export function CollapsingTopChrome({
     opacity: compactBoardControl ? 1 : interpolate(progress.value, [0.55, 1], [0, 1], Extrapolation.CLAMP),
   }));
 
-  const leftActions = (
-    <GlassActionToolbar actionCount={leftActionCount}>
-      <UserAvatarToolbarAction variant="glass" />
-      {leadingAction}
-      {canCreate ? (
-        <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
-          <Icon name="plus" size={24} color={systemColors.label} />
-        </GlassToolbarAction>
-      ) : null}
-      <AngleToolbarAction />
-    </GlassActionToolbar>
-  );
+  const leftActions =
+    leftActionCount > 0 ? (
+      <GlassActionToolbar actionCount={leftActionCount}>
+        {showUserAvatar ? <UserAvatarToolbarAction variant="glass" /> : null}
+        {leadingAction}
+        {canCreate ? (
+          <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
+            <Icon name="plus" size={24} color={systemColors.label} />
+          </GlassToolbarAction>
+        ) : null}
+        {canOpenAngle ? <AngleToolbarAction /> : null}
+      </GlassActionToolbar>
+    ) : null;
 
   // Right glass toolbar: lightbulb (+ trailing action) at rest, widening to dock
   // the board glyph once collapsed unless the caller keeps the compact board
@@ -171,7 +181,7 @@ export function CollapsingTopChrome({
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        {activeBoard ? (
+        {canShowBoardGlyph ? (
           <Animated.View pointerEvents={compactBoardControl || collapsed ? 'auto' : 'none'} style={boardGlyphStyle}>
             <GlassToolbarAction
               onPress={handleOpenBoardSwitcher}
@@ -196,8 +206,10 @@ export function CollapsingTopChrome({
       onHeightChange={onHeightChange}
       leftActions={leftActions}
       rightActions={rightActions}
+      persistentCenterContent={persistentCenterContent}
+      persistentTitle={persistentTitle}
       centerContent={
-        compactBoardControl ? undefined : (
+        hasPersistentCenter || compactBoardControl ? undefined : (
           <BoardPill onPress={onOpenBoardSwitcher} accessibilityHint={boardPillAccessibilityHint} />
         )
       }

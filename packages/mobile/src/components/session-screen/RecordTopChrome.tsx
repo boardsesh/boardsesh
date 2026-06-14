@@ -12,6 +12,8 @@ import { iconMap } from '../icon-map';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { useRepTimerPreference } from '../../lib/rep-timer-preference';
+import { RepTimerHeaderPill } from '../queue-control/RepTimerCapsule';
 
 // Record's defining action is the Start/End footer button, so the chrome's
 // create island is gated off — its handler is never invoked.
@@ -70,6 +72,10 @@ export function RecordTopChrome({
   const { t: tBoards } = useTranslation('boards');
   const { brandColors, systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
+  const { targetSeconds, loaded: repTimerPreferenceLoaded } = useRepTimerPreference();
+  const inSession = onEndSession !== undefined;
+  const showHeaderRepTimer = inSession && repTimerPreferenceLoaded && targetSeconds !== null;
+  const showHeaderTitle = inSession && !showHeaderRepTimer;
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -97,8 +103,9 @@ export function RecordTopChrome({
           style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
         >
           {/* Invite/share docks on the LEFT (leading) while a session is live; the
-              destructive Stop sits on the right. */}
-          <UserAvatarToolbarAction variant="material" />
+              destructive Stop sits on the right. The centred timer path hides the
+              avatar slot so the narrow Material app bar keeps a clear centre lane. */}
+          {showHeaderRepTimer ? null : <UserAvatarToolbarAction variant="material" />}
           {onOpenSettings ? (
             <Appbar.Action
               icon={iconMap.settings.android}
@@ -115,7 +122,16 @@ export function RecordTopChrome({
               accessibilityLabel={t('mobile.session.invite')}
             />
           ) : null}
-          <Appbar.Content title={title} color={systemColors.label as string} />
+          {showHeaderRepTimer ? (
+            <>
+              <View style={styles.materialTitleSpacer} />
+              <View pointerEvents="box-none" style={styles.materialTimerOverlay}>
+                <RepTimerHeaderPill />
+              </View>
+            </>
+          ) : (
+            <Appbar.Content title={title} color={systemColors.label as string} />
+          )}
           {onEndSession ? (
             <Appbar.Action
               icon={iconMap['flag'].android}
@@ -134,7 +150,6 @@ export function RecordTopChrome({
   // control on the RIGHT, with no lightbulb — so the active header reads settings /
   // invite | title | stop. End sits up here rather than as a bottom bar, keeping the
   // bottom edge to the tab bar + climb accessory.
-  const inSession = onEndSession !== undefined;
   const leadingActionCount = (onOpenSettings ? 1 : 0) + (onShare ? 1 : 0);
   const leadingAction =
     leadingActionCount > 0 ? (
@@ -184,6 +199,8 @@ export function RecordTopChrome({
       onHeightChange={onHeightChange}
       scrollY={scrollY}
       onPressTitle={onPressTitle}
+      persistentCenterContent={showHeaderRepTimer ? <RepTimerHeaderPill /> : undefined}
+      persistentTitle={showHeaderTitle}
       leadingAction={leadingAction}
       leadingActionCount={leadingActionCount}
       trailingAction={trailingAction}
@@ -205,7 +222,20 @@ const styles = StyleSheet.create({
   },
   materialAppbar: {
     elevation: 0,
+    position: 'relative',
     shadowOpacity: 0,
+  },
+  materialTitleSpacer: {
+    flex: 1,
+  },
+  materialTimerOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // The labelled Stop pill fills the two trailing toolbar slots it reserves.
   stopAction: {

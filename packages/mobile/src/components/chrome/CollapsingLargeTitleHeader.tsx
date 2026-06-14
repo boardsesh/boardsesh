@@ -68,6 +68,11 @@ type CollapsingLargeTitleHeaderProps = {
   /** At-rest centred control (e.g. a board pill) that fades out as the collapsed
    *  title capsule takes over. Omit on screens with no centred control. */
   centerContent?: ReactNode;
+  /** Persistent centred control that replaces both the at-rest centre content and
+   *  collapsed title capsule, e.g. the active-session rep timer. */
+  persistentCenterContent?: ReactNode;
+  /** Keep the screen title pill centred even before the large title collapses. */
+  persistentTitle?: boolean;
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
@@ -94,6 +99,8 @@ export function CollapsingLargeTitleHeader({
   leftActions,
   rightActions,
   centerContent,
+  persistentCenterContent,
+  persistentTitle = false,
   children,
 }: CollapsingLargeTitleHeaderProps) {
   const { systemColors } = useTheme();
@@ -137,8 +144,15 @@ export function CollapsingLargeTitleHeader({
           </View>
         ) : null}
 
+        {/* Persistent centred control; replaces the usual centre/title handoff. */}
+        {persistentCenterContent ? (
+          <View pointerEvents="box-none" style={styles.centerAnchor}>
+            {persistentCenterContent}
+          </View>
+        ) : null}
+
         {/* Centred at-rest control; fades out as the title takes over. */}
-        {centerContent ? (
+        {!persistentCenterContent && centerContent ? (
           <Animated.View pointerEvents={collapsed ? 'none' : 'box-none'} style={[styles.centerAnchor, centerFadeStyle]}>
             {centerContent}
           </Animated.View>
@@ -146,8 +160,8 @@ export function CollapsingLargeTitleHeader({
 
         {/* Collapsed title capsule, centred; tap scrolls to the top. Transform-only
             entrance keeps the glass surface live (no opacity). */}
-        {collapsed ? (
-          <Animated.View pointerEvents="box-none" style={[styles.centerAnchor, titleStyle]}>
+        {!persistentCenterContent && (persistentTitle || collapsed) ? (
+          <Animated.View pointerEvents="box-none" style={[styles.centerAnchor, persistentTitle ? null : titleStyle]}>
             <PressableSurface
               onPress={onPressTitle}
               feedback="scale"
@@ -159,6 +173,7 @@ export function CollapsingLargeTitleHeader({
               <View
                 style={[
                   styles.titlePill,
+                  persistentTitle ? styles.persistentTitlePill : null,
                   !nativeGlass && shadows.sm,
                   !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
                 ]}
@@ -245,6 +260,9 @@ const styles = StyleSheet.create({
     // Match the board pill's width cap so a long title ellipsizes rather than
     // running under the left/right islands (both stay visible when collapsed).
     maxWidth: 180,
+  },
+  persistentTitlePill: {
+    maxWidth: 96,
   },
   titleText: {
     fontWeight: '600',

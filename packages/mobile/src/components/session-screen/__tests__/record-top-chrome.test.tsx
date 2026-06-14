@@ -19,19 +19,30 @@ type ChromeProps = {
   leadingAction?: ReactNode;
   leadingActionCount?: number;
   hideLight?: boolean;
+  persistentCenterContent?: ReactNode;
+  persistentTitle?: boolean;
 };
 
 // Captures every prop CollapsingTopChrome receives so the wrapper's forwarding +
 // gating contract can be asserted directly.
 const chrome = vi.hoisted(() => ({ props: null as ChromeProps | null }));
-const ctrl = vi.hoisted(() => ({ variant: 'glass' as 'glass' | 'material' }));
+const ctrl = vi.hoisted(() => ({
+  repTimerPreferenceLoaded: true,
+  repTimerTargetSeconds: 180 as number | null,
+  variant: 'glass' as 'glass' | 'material',
+}));
 // Captures the Material app bar's title + actions so the material branch can be
 // asserted without a real Paper render.
 const appbar = vi.hoisted(() => ({ title: null as string | null, actions: [] as string[] }));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, pointerEvents, style }: { children?: ReactNode; pointerEvents?: string; style?: unknown }) =>
+    createElement(
+      'div',
+      { 'data-pointer': pointerEvents ?? '', 'data-style': style == null ? '' : JSON.stringify(style) },
+      children,
+    ),
 }));
 vi.mock('react-native-reanimated', () => ({}));
 vi.mock('react-native-safe-area-context', () => ({
@@ -50,9 +61,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children),
-    Content: ({ title }: { title?: string }) => {
-      appbar.title = title ?? null;
-      return createElement('div', { 'data-appbar-title': title ?? '' });
+    Content: ({ title }: { title?: ReactNode }) => {
+      appbar.title = typeof title === 'string' ? title : null;
+      return createElement('div', { 'data-appbar-title': typeof title === 'string' ? title : '' }, title);
     },
     Action: ({ accessibilityLabel }: { accessibilityLabel?: string }) => {
       if (accessibilityLabel) appbar.actions.push(accessibilityLabel);
@@ -74,7 +85,13 @@ vi.mock('../../Icon', () => ({
 vi.mock('../../chrome', () => ({
   CollapsingTopChrome: (props: ChromeProps) => {
     chrome.props = props;
-    return createElement('div', { 'data-chrome': 'true' }, props.leadingAction, props.trailingAction);
+    return createElement(
+      'div',
+      { 'data-chrome': 'true' },
+      props.persistentCenterContent,
+      props.leadingAction,
+      props.trailingAction,
+    );
   },
   GlassToolbarAction: ({
     children,
@@ -102,6 +119,16 @@ vi.mock('../../PressableSurface', () => ({
   }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
+vi.mock('../../../lib/rep-timer-preference', () => ({
+  useRepTimerPreference: () => ({
+    loaded: ctrl.repTimerPreferenceLoaded,
+    setTargetSeconds: vi.fn(),
+    targetSeconds: ctrl.repTimerTargetSeconds,
+  }),
+}));
+vi.mock('../../queue-control/RepTimerCapsule', () => ({
+  RepTimerHeaderPill: () => createElement('div', { 'data-header-rep-timer': 'true' }),
+}));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) => {
     if (variant === 'material') {
@@ -134,6 +161,8 @@ describe('RecordTopChrome', () => {
   beforeEach(() => {
     chrome.props = null;
     ctrl.variant = 'glass';
+    ctrl.repTimerPreferenceLoaded = true;
+    ctrl.repTimerTargetSeconds = 180;
     appbar.title = null;
     appbar.actions = [];
   });
@@ -237,6 +266,24 @@ describe('RecordTopChrome', () => {
     expect(chrome.props?.hideLight).toBe(true);
   });
 
+  it('uses the rep timer as the persistent center content during an active glass session', () => {
+    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
+
+    expect(chrome.props?.persistentCenterContent).toBeDefined();
+    expect(chrome.props?.persistentTitle).toBe(false);
+    expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
+  });
+
+  it('keeps a persistent title center when the rep timer is off', () => {
+    ctrl.repTimerTargetSeconds = null;
+
+    render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
+
+    expect(chrome.props?.persistentCenterContent).toBeUndefined();
+    expect(chrome.props?.persistentTitle).toBe(true);
+    expect(chrome.props?.title).toBe('Morning session');
+  });
+
   describe('material variant', () => {
     beforeEach(() => {
       ctrl.variant = 'material';
@@ -274,6 +321,27 @@ describe('RecordTopChrome', () => {
       appbar.actions = [];
       rerender(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
       expect(appbar.actions).toContain('mobile.session.inEndSession');
+    });
+
+    it('uses the rep timer as a centered app-bar overlay during an active session', () => {
+      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
+
+      expect(appbar.title).toBeNull();
+      expect(appbar.actions).not.toContain('ariaLabels.userMenu');
+      expect(container.querySelector('[data-header-rep-timer="true"]')).not.toBeNull();
+      expect(
+        Array.from(container.querySelectorAll('[data-pointer="box-none"]')).some((element) =>
+          (element.getAttribute('data-style') ?? '').includes('"position":"absolute"'),
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps the app-bar title when the rep timer is off during an active session', () => {
+      ctrl.repTimerTargetSeconds = null;
+
+      render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn(), title: 'Active session' })} />);
+
+      expect(appbar.title).toBe('Active session');
     });
   });
 });

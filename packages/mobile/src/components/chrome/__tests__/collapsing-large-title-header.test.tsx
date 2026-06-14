@@ -128,6 +128,27 @@ describe('CollapsingLargeTitleHeader', () => {
     expect(fadeWrapper?.querySelector('[data-testid="center"]')).not.toBeNull();
   });
 
+  it('renders persistent center content instead of the fading center content', () => {
+    const { container } = render(
+      <CollapsingLargeTitleHeader
+        {...makeProps({
+          centerContent: createElement('div', { 'data-testid': 'center' }),
+          persistentCenterContent: createElement('div', { 'data-testid': 'timer' }),
+        })}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="timer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="center"]')).toBeNull();
+    expect(container.querySelector('[data-animated-view="true"]')).toBeNull();
+  });
+
+  it('renders the title capsule before collapse when persistentTitle is set', () => {
+    const { container } = render(<CollapsingLargeTitleHeader {...makeProps({ persistentTitle: true })} />);
+
+    expect(container.querySelector('[data-pressable="You"]')).not.toBeNull();
+  });
+
   it('does not render the collapsed title capsule while collapsed is false', () => {
     const { container } = render(<CollapsingLargeTitleHeader {...makeProps({ title: 'You' })} />);
 

@@ -183,10 +183,10 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-rep-timer]')).toBeNull();
   });
 
-  it('shows the rep timer above the climb capsule during an active session', () => {
+  it('keeps the climb controls without bottom rep timer during an active session', () => {
     cfg.sessionId = 'session-1';
     const { container } = render(<PersistentQueueBar />);
-    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
     expect(container.querySelector('[data-capsule]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
@@ -221,15 +221,14 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('renders only the JS rep timer above the native bottom accessory during an active session', () => {
+  it('renders no JS chrome above the native bottom accessory during an active session', () => {
     cfg.nativeAccessoryActive = true;
     cfg.insideTabs = true;
     cfg.sessionId = 'session-1';
 
     const { container } = render(<PersistentQueueBar />);
 
-    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
-    expect(animatedStyles(container).some((style) => style.includes('"bottom":123'))).toBe(true);
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
@@ -247,7 +246,7 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('places the JS rep timer above the inline native bottom accessory during an active session', () => {
+  it('renders no JS chrome above the inline native bottom accessory during an active session', () => {
     cfg.nativeAccessoryActive = true;
     cfg.nativeAccessoryPlacement = 'inline';
     cfg.insideTabs = true;
@@ -255,8 +254,7 @@ describe('PersistentQueueBar', () => {
 
     const { container } = render(<PersistentQueueBar />);
 
-    expect(container.querySelector('[data-rep-timer]')).not.toBeNull();
-    expect(animatedStyles(container).some((style) => style.includes('"bottom":111'))).toBe(true);
+    expect(container.querySelector('[data-rep-timer]')).toBeNull();
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
@@ -294,15 +292,15 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('uses a docked full-width inline-action rep timer on Material during a session', () => {
+  it('keeps only the docked climb bar on Material during a session', () => {
     cfg.variant = 'material';
     cfg.sessionId = 'session-1';
     cfg.measuredTabBarHeight = 80;
     const { container } = render(<PersistentQueueBar />);
     const timer = container.querySelector('[data-rep-timer]');
     const styles = animatedStyles(container);
-    expect(timer).not.toBeNull();
-    expect(styles.some((style) => style.includes('"bottom":137'))).toBe(true);
+    expect(timer).toBeNull();
+    expect(styles.some((style) => style.includes('"bottom":137'))).toBe(false);
     expect(styles.some((style) => style.includes('"bottom":79'))).toBe(true);
     expect(container.querySelector('[data-tick-inline]')).not.toBeNull();
     expect(container.querySelector('[data-capsule]')).not.toBeNull();

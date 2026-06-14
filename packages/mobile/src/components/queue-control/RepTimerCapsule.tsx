@@ -7,6 +7,9 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useRepTimerPreference } from '../../lib/rep-timer-preference';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { useNativeGlass } from '../../hooks/use-native-glass';
+import { shadows } from '../../theme/tokens';
+import { GlassSurface } from '../GlassSurface';
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
 import {
   formatRepTimerElapsed,
@@ -18,6 +21,9 @@ import {
 
 const REP_TIMER_CAPSULE_MAX_WIDTH = 220;
 const DOUBLE_TAP_RESET_DELAY_MS = 240;
+const HEADER_TIMER_PILL_HEIGHT = 34;
+const HEADER_TIMER_PILL_RADIUS = HEADER_TIMER_PILL_HEIGHT / 2;
+const HEADER_TIMER_HIT_SLOP = { top: 6, right: 4, bottom: 6, left: 4 };
 
 type RepTimerControlState = {
   startedAtMs: number | null;
@@ -25,10 +31,24 @@ type RepTimerControlState = {
   pausedElapsedSeconds: number;
 };
 
+type RepTimerControl = {
+  enabled: boolean;
+  elapsedSeconds: number;
+  elapsedLabel: string;
+  hasReferenceTime: boolean;
+  isRunning: boolean;
+  targetSeconds: number | null;
+  targetLabel: string | null;
+  accessibilityLabel: string | undefined;
+  handleTimerPressIn: () => void;
+  handleTimerPress: () => void;
+};
+
 type RepTimerDisplayProps = {
   elapsedSeconds: number;
   hasReferenceTime: boolean;
   isRunning: boolean;
+  targetSeconds: number | null;
   labelColor: ColorValue;
   valueColor: ColorValue;
   targetExceededColor?: ColorValue;
@@ -65,16 +85,16 @@ export function RepTimerDisplay({
   elapsedSeconds,
   hasReferenceTime,
   isRunning,
+  targetSeconds,
   labelColor,
   valueColor,
   targetExceededColor = valueColor,
   align = 'center',
 }: RepTimerDisplayProps) {
   const { t } = useTranslation('session');
-  const { targetSeconds, loaded } = useRepTimerPreference();
   const elapsedLabel = formatRepTimerElapsed(elapsedSeconds);
 
-  if (!loaded || targetSeconds === null) return null;
+  if (targetSeconds === null) return null;
 
   const targetLabel = formatRepTimerTarget(targetSeconds);
   const resolvedValueColor =
@@ -106,27 +126,10 @@ export function RepTimerDisplay({
   );
 }
 
-type RepTimerCapsuleProps = {
-  height?: number;
-  fillWidth?: boolean;
-  endAction?: ReactNode;
-  endActionSize?: number;
-  surfaceTreatment?: AccessoryBarSurfaceTreatment;
-};
-
-export function RepTimerCapsule({
-  height = TOOLBAR_CAPSULE_HEIGHT,
-  fillWidth = false,
-  endAction,
-  endActionSize = 0,
-  surfaceTreatment = 'floating',
-}: RepTimerCapsuleProps) {
+function useRepTimerControl(): RepTimerControl {
   const board = useOptionalBoardProvider();
-  const { brandColors, systemColors } = useTheme();
   const { t } = useTranslation('session');
-  const { targetSeconds } = useRepTimerPreference();
-  const capsuleRadius = surfaceTreatment === 'docked' ? 0 : height / 2;
-  const endActionReservedWidth = endAction ? endActionSize + 8 : 0;
+  const { targetSeconds, loaded } = useRepTimerPreference();
   const lastSavedTickAt = board?.lastSavedTickAt ?? null;
   const [timerState, setTimerState] = useState(() => createRepTimerControlState(lastSavedTickAt));
   const singlePressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,6 +217,42 @@ export function RepTimerCapsule({
     }, DOUBLE_TAP_RESET_DELAY_MS);
   }, [resetTimer, toggleTimer]);
 
+  return {
+    enabled: loaded && targetSeconds !== null,
+    elapsedSeconds,
+    elapsedLabel,
+    hasReferenceTime,
+    isRunning: timerState.isRunning,
+    targetSeconds,
+    targetLabel,
+    accessibilityLabel,
+    handleTimerPressIn,
+    handleTimerPress,
+  };
+}
+
+type RepTimerCapsuleProps = {
+  height?: number;
+  fillWidth?: boolean;
+  endAction?: ReactNode;
+  endActionSize?: number;
+  surfaceTreatment?: AccessoryBarSurfaceTreatment;
+};
+
+export function RepTimerCapsule({
+  height = TOOLBAR_CAPSULE_HEIGHT,
+  fillWidth = false,
+  endAction,
+  endActionSize = 0,
+  surfaceTreatment = 'floating',
+}: RepTimerCapsuleProps) {
+  const { brandColors, systemColors } = useTheme();
+  const timer = useRepTimerControl();
+  const capsuleRadius = surfaceTreatment === 'docked' ? 0 : height / 2;
+  const endActionReservedWidth = endAction ? endActionSize + 8 : 0;
+
+  if (!timer.enabled) return null;
+
   return (
     <AccessoryBarSurface
       height={height}
@@ -222,10 +261,10 @@ export function RepTimerCapsule({
       style={[styles.capsule, fillWidth ? null : styles.capsuleCap]}
     >
       <Pressable
-        accessibilityLabel={accessibilityLabel}
+        accessibilityLabel={timer.accessibilityLabel}
         accessibilityRole="button"
-        onPressIn={handleTimerPressIn}
-        onPress={handleTimerPress}
+        onPressIn={timer.handleTimerPressIn}
+        onPress={timer.handleTimerPress}
         style={[
           styles.pressTarget,
           {
@@ -235,9 +274,10 @@ export function RepTimerCapsule({
         ]}
       >
         <RepTimerDisplay
-          elapsedSeconds={elapsedSeconds}
-          hasReferenceTime={hasReferenceTime}
-          isRunning={timerState.isRunning}
+          elapsedSeconds={timer.elapsedSeconds}
+          hasReferenceTime={timer.hasReferenceTime}
+          isRunning={timer.isRunning}
+          targetSeconds={timer.targetSeconds}
           labelColor={systemColors.secondaryLabel}
           valueColor={systemColors.label}
           targetExceededColor={brandColors.error}
@@ -245,6 +285,53 @@ export function RepTimerCapsule({
       </Pressable>
       {endAction ? <View style={[styles.endActionSlot, { width: endActionSize, height }]}>{endAction}</View> : null}
     </AccessoryBarSurface>
+  );
+}
+
+export function RepTimerHeaderPill() {
+  const { brandColors, systemColors } = useTheme();
+  const nativeGlass = useNativeGlass();
+  const timer = useRepTimerControl();
+
+  if (!timer.enabled) return null;
+
+  const valueColor =
+    timer.targetSeconds !== null &&
+    (timer.hasReferenceTime || timer.isRunning) &&
+    isRepTimerTargetExceeded(timer.elapsedSeconds, timer.targetSeconds)
+      ? brandColors.error
+      : systemColors.label;
+
+  return (
+    <Pressable
+      accessibilityLabel={timer.accessibilityLabel}
+      accessibilityRole="button"
+      hitSlop={HEADER_TIMER_HIT_SLOP}
+      onPressIn={timer.handleTimerPressIn}
+      onPress={timer.handleTimerPress}
+      style={[
+        styles.headerPill,
+        !nativeGlass && shadows.sm,
+        !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
+      ]}
+    >
+      <GlassSurface
+        glassEffectStyle="regular"
+        fallbackColor={systemColors.elevatedSurface}
+        borderRadius={HEADER_TIMER_PILL_RADIUS}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <Text
+        variant="subheadline"
+        color={valueColor}
+        numberOfLines={1}
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={styles.headerTimerText}
+      >
+        {timer.elapsedLabel}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -282,5 +369,19 @@ const styles = StyleSheet.create({
     right: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 72,
+    maxWidth: 96,
+    height: HEADER_TIMER_PILL_HEIGHT,
+    borderRadius: HEADER_TIMER_PILL_RADIUS,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
+  },
+  headerTimerText: {
+    fontVariant: ['tabular-nums'],
+    fontWeight: '700',
   },
 });

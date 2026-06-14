@@ -494,12 +494,9 @@ export function InSessionView({
   // the tab bar + native accessory — see the on-device evidence in PreSessionView).
   // When the native accessory is unavailable, the JS queue capsule still floats
   // above that inset, so add only its reserve and avoid double-counting the tab bar.
+  // The rep timer lives in the top header and does not reserve bottom space.
   const listBottomPadding =
-    variant === 'material'
-      ? bottomChrome.fixedFooterBottom
-      : insets.bottom +
-        bottomChrome.jsQueueReserve +
-        (bottomChrome.nativeAccessoryVisible ? bottomChrome.repTimerReserve : 0);
+    variant === 'material' ? bottomChrome.fixedFooterBottom : insets.bottom + bottomChrome.jsQueueReserve;
 
   const handleConfirmEnd = useCallback(async () => {
     setIsEnding(true);

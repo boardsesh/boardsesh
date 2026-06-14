@@ -226,7 +226,7 @@ describe('InSessionView footer', () => {
     expect(list.contentContainerStyle?.paddingBottom).toBe(196);
   });
 
-  it('adds the JS rep timer reserve above the native accessory on Liquid Glass', () => {
+  it('does not add a bottom rep timer reserve above the native accessory on Liquid Glass', () => {
     bottomChrome.metrics = {
       fixedFooterBottom: 220,
       jsQueueReserve: 0,
@@ -237,7 +237,7 @@ describe('InSessionView footer', () => {
 
     render(createElement(InSessionView));
 
-    expect(list.contentContainerStyle?.paddingBottom).toBe(190);
+    expect(list.contentContainerStyle?.paddingBottom).toBe(130);
   });
 
   it('uses the fixed-footer reserve for the Material active-context bar', () => {

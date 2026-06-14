@@ -210,6 +210,34 @@ describe('CollapsingTopChrome', () => {
     expect(haptics.light).toHaveBeenCalledTimes(1);
   });
 
+  it('uses persistent center content instead of the centered board pill', () => {
+    ctrl.board = board;
+    const { container } = render(
+      <CollapsingTopChrome
+        {...makeProps({
+          persistentCenterContent: createElement('div', { 'data-testid': 'timer' }),
+        })}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="timer"]')).not.toBeNull();
+    expect(centeredBoardPill(container)).toBeNull();
+    expect(boardGlyph(container)).toBeNull();
+    expect(container.querySelector('[data-avatar-variant="glass"]')).toBeNull();
+    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
+  });
+
+  it('uses the persistent title instead of board and angle controls', () => {
+    ctrl.board = board;
+    const { container } = render(<CollapsingTopChrome {...makeProps({ persistentTitle: true })} />);
+
+    expect(container.querySelector('[data-pressable="All climbs"]')).not.toBeNull();
+    expect(centeredBoardPill(container)).toBeNull();
+    expect(boardGlyph(container)).toBeNull();
+    expect(container.querySelector('[data-avatar-variant="glass"]')).toBeNull();
+    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
+  });
+
   it('gates the create action on canCreate and fires onCreate with its label', () => {
     ctrl.board = board;
     const onCreate = vi.fn();
