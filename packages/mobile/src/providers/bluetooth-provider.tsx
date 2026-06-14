@@ -701,14 +701,18 @@ export function BluetoothProvider({
     onConnectSuccess: handleConnectSuccess,
   });
 
-  // The connect-success path announces the wall link only when a session is
-  // already active. If a climber connects solo and *then* joins/starts a session
-  // on the same board, announce the already-connected board now so peers see a
-  // holder instead of every connected member falling back to "writer". Leaving
-  // the session frees our slot backend-side, so reset the ref to allow a fresh
-  // announce on rejoin (and so a later disconnect doesn't revoke a freed slot).
+  // Announce the wall link whenever this phone is in a session (with a
+  // participant) and BLE-connected. Beyond the connect-success path this covers:
+  // connecting solo then joining a session, and — keyed on participantId, which
+  // resets null -> new on every (re)join including the re-join after a WS
+  // reconnect — re-announcing (idempotent) to reclaim the slot the backend frees
+  // per-connection when the old socket drops. Without the re-announce a transient
+  // reconnect would leave this phone demoted. Leaving the session
+  // (sessionId/participantId null) frees our slot backend-side, so reset the ref
+  // to allow a fresh announce on rejoin (and so a later disconnect doesn't revoke
+  // a freed slot).
   useEffect(() => {
-    if (sessionId == null) {
+    if (sessionId == null || participantId == null) {
       announcedWallBoardIdRef.current = null;
       return;
     }
@@ -717,7 +721,7 @@ export function BluetoothProvider({
     if (boardId == null || announcedWallBoardIdRef.current === boardId) return;
     announcedWallBoardIdRef.current = boardId;
     void announceWallLink(boardId);
-  }, [sessionId, isConnected, announceWallLink]);
+  }, [sessionId, participantId, isConnected, announceWallLink]);
 
   const resolvedPickerBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_PICKER_DEVICES);
   const currentBoardConfig = useMemo(() => {
