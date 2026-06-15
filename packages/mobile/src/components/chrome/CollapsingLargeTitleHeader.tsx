@@ -27,13 +27,19 @@ const TITLE_PILL_RADIUS = TITLE_PILL_HEIGHT / 2;
 export const COLLAPSE_START = 6;
 export const COLLAPSE_END = 48;
 
-// The scrim mirrors iOS systemBackground (pure white in light, pure black in
-// dark) as explicit hex rather than `systemColors.background`'s PlatformColor:
-// expo-linear-gradient resolves a PlatformColor once and never re-resolves it on
-// an in-app light↔dark toggle, so a PlatformColor scrim stays light-mode white
-// over the now-dark page (a white band at the top). Keying off the resolved
-// colorScheme makes the gradient prop actually change, so the native view repaints.
-const SCRIM_BACKGROUND = { light: '#FFFFFF', dark: '#000000' } as const;
+// The scrim fades the screen background to clear behind the floating islands, so
+// it must match the colour the screen content actually sits on: the React
+// Navigation scene background (app/_layout.tsx `ThemedNavigation`) — DefaultTheme
+// grey #F2F2F2 in light, `iosDarkColors.background` #000000 in dark. Using white
+// here (as `systemColors.background` resolves to) painted a white block over the
+// grey scene — a visible band wherever empty scene shows below the islands (the
+// Record tab). These are explicit hex, not `systemColors.background`'s
+// PlatformColor, for two reasons: (1) the scene background is the nav theme's, not
+// systemBackground; (2) expo-linear-gradient resolves a PlatformColor only once and
+// never re-resolves it on an in-app light↔dark toggle, so a PlatformColor scrim got
+// stuck light-mode-coloured over the now-dark page (the Climbs white band). Keying
+// off the resolved colorScheme makes the gradient prop change so the native view repaints.
+const SCRIM_BACKGROUND = { light: '#F2F2F2', dark: '#000000' } as const;
 
 /**
  * Shared collapse math for the floating large-title chrome. Returns the 0→1
