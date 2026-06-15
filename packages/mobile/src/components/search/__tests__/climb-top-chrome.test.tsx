@@ -190,6 +190,9 @@ vi.mock('../../../theme/colors', () => ({
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
+// ProgressiveBlur renders the iOS blur path under this mode (short-circuits the
+// native a11y / glass-capability hooks it would otherwise pull in).
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade: string) => grade }),
 }));

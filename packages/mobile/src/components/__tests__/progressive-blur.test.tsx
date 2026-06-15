@@ -5,6 +5,9 @@ import { createElement, type ReactNode } from 'react';
 
 // Mutable so each test can exercise a resolved colour scheme.
 const themeMock = vi.hoisted(() => ({ colorScheme: 'dark' as 'dark' | 'light' }));
+// Mutable surface mode: 'blur'/'glass' = live iOS blur; 'material'/'solid' = the
+// Android / Reduce-Transparency fade fallback.
+const surfaceMock = vi.hoisted(() => ({ mode: 'blur' as 'glass' | 'blur' | 'material' | 'solid' }));
 
 vi.mock('react-native', () => ({
   StyleSheet: { absoluteFill: {} },
@@ -32,12 +35,14 @@ vi.mock('expo-linear-gradient', () => ({
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ colorScheme: themeMock.colorScheme }),
 }));
+vi.mock('../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => surfaceMock.mode }));
 
 import { ProgressiveBlur } from '../ProgressiveBlur';
 
 describe('ProgressiveBlur', () => {
   afterEach(() => {
     themeMock.colorScheme = 'dark';
+    surfaceMock.mode = 'blur';
   });
 
   it('masks a blur with a top→transparent gradient (full blur up top, clear at the bottom)', () => {
@@ -81,5 +86,17 @@ describe('ProgressiveBlur', () => {
     themeMock.colorScheme = 'light';
     const { container } = render(<ProgressiveBlur />);
     expect(hasDarkScrim(container)).toBe(false);
+  });
+
+  it('renders no live blur on the Material / Reduce-Transparency path — a scene-background fade instead', () => {
+    surfaceMock.mode = 'material';
+    const { container } = render(<ProgressiveBlur />);
+    // No BlurView at all; just a themed opaque→transparent gradient.
+    expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
+    expect(container.querySelector('[data-testid="masked-view"]')).toBeNull();
+    const gradient = container.querySelector('[data-testid="mask-gradient"]');
+    const colors = JSON.parse(gradient?.getAttribute('data-colors') ?? '[]') as string[];
+    expect(colors[0]).toBe('#000000'); // dark scene background (default colour scheme)
+    expect(colors[colors.length - 1]).toBe('transparent');
   });
 });

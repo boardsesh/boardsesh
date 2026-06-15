@@ -43,18 +43,6 @@ vi.mock('expo-linear-gradient', () => ({
   LinearGradient: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-gradient': 'true' }, children),
 }));
-vi.mock('react-native-reanimated', () => ({
-  default: {
-    View: ({ children, pointerEvents }: { children?: ReactNode; pointerEvents?: string }) =>
-      createElement('div', { 'data-pointer': pointerEvents ?? '' }, children),
-  },
-  Extrapolation: { CLAMP: 'clamp' },
-  interpolate: () => 0,
-  runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
-  useAnimatedReaction: () => {},
-  useAnimatedStyle: () => ({}),
-  useDerivedValue: () => ({ value: 0 }),
-}));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: 0, left: 0, right: 0 }),
 }));
@@ -87,6 +75,9 @@ vi.mock('../../../providers/queue-provider', () => ({
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
+// ProgressiveBlur renders the iOS blur path under this mode (short-circuits the
+// native a11y / glass-capability hooks it would otherwise pull in).
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: haptics.light }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44 } }));

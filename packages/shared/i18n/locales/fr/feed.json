@@ -37,7 +37,8 @@
       "scope": {
         "myCrew": "Mon crew",
         "everyone": "Tout le monde",
-        "findGym": "Trouver une salle près de toi"
+        "findGym": "Trouver une salle près de toi",
+        "hint": "Change les voies que vous voyez"
       }
     }
   },

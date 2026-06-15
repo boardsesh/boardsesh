@@ -42,6 +42,9 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
+// ProgressiveBlur renders the iOS blur path under this mode (short-circuits the
+// native a11y / glass-capability hooks it would otherwise pull in).
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
 vi.mock('../GlassActionToolbar', () => ({ TOP_ACTION_SIZE: 48 }));
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));

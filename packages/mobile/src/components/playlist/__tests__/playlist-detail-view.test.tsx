@@ -120,6 +120,9 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
+// The collapsed-bar ProgressiveBlur reads the surface mode; 'blur' renders its iOS
+// blur path and short-circuits the native a11y / glass-capability hooks.
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 
 vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 36, hero: 56 } }));
 vi.mock('../../../theme/tokens', () => ({

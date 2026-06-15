@@ -37,7 +37,8 @@
       "scope": {
         "myCrew": "My crew",
         "everyone": "Everyone",
-        "findGym": "Find a gym near you"
+        "findGym": "Find a gym near you",
+        "hint": "Switches whose climbs you see"
       }
     }
   },
