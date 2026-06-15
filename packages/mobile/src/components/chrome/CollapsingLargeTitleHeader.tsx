@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
-import { spacing, shadows } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { Text } from '../Text';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
@@ -178,7 +178,6 @@ export function CollapsingLargeTitleHeader({
               <View
                 style={[
                   styles.titlePill,
-                  !nativeGlass && shadows.sm,
                   !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
                 ]}
               >

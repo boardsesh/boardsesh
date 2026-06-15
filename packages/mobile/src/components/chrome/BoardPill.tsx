@@ -5,7 +5,6 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { hapticLight } from '../../lib/haptics';
-import { shadows } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
@@ -56,7 +55,6 @@ export function BoardPill({ onPress, accessibilityHint }: BoardPillProps) {
       <View
         style={[
           styles.capsule,
-          !nativeGlass && shadows.sm,
           !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
         ]}
       >

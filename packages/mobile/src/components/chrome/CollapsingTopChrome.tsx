@@ -5,7 +5,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
-import { shadows } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { GlassSurface } from '../GlassSurface';
 import { BoardPill } from './BoardPill';
@@ -149,7 +148,6 @@ export function CollapsingTopChrome({
         style={[
           styles.rightToolbar,
           rightToolbarStyle,
-          !nativeGlass && shadows.sm,
           !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
         ]}
       >
