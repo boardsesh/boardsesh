@@ -27,6 +27,14 @@ const TITLE_PILL_RADIUS = TITLE_PILL_HEIGHT / 2;
 export const COLLAPSE_START = 6;
 export const COLLAPSE_END = 48;
 
+// The scrim mirrors iOS systemBackground (pure white in light, pure black in
+// dark) as explicit hex rather than `systemColors.background`'s PlatformColor:
+// expo-linear-gradient resolves a PlatformColor once and never re-resolves it on
+// an in-app light↔dark toggle, so a PlatformColor scrim stays light-mode white
+// over the now-dark page (a white band at the top). Keying off the resolved
+// colorScheme makes the gradient prop actually change, so the native view repaints.
+const SCRIM_BACKGROUND = { light: '#FFFFFF', dark: '#000000' } as const;
+
 /**
  * Shared collapse math for the floating large-title chrome. Returns the 0→1
  * `progress` derived value plus a `collapsed` boolean that flips once past the
@@ -96,10 +104,15 @@ export function CollapsingLargeTitleHeader({
   centerContent,
   children,
 }: CollapsingLargeTitleHeaderProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const nativeGlass = useNativeGlass();
   const insets = useSafeAreaInsets();
   const { progress, collapsed } = useCollapseProgress(scrollY);
+
+  // Scrim colour resolved from the active scheme (see SCRIM_BACKGROUND) so it
+  // flips on an in-app light↔dark toggle instead of sticking on the mount-time
+  // PlatformColor.
+  const scrimColor = SCRIM_BACKGROUND[colorScheme];
 
   // Only the centre content (which is leaving) fades — flattening its glass
   // mid-fade is invisible because it's disappearing. The capsule that *stays*
@@ -125,7 +138,7 @@ export function CollapsingLargeTitleHeader({
           doesn't bleed through the gaps between the islands. */}
       <LinearGradient
         pointerEvents="none"
-        colors={[systemColors.background, systemColors.background, 'transparent'] as const}
+        colors={[scrimColor, scrimColor, 'transparent'] as const}
         locations={[0, 0.7, 1]}
         style={StyleSheet.absoluteFill}
       />
