@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { Platform, type ColorValue } from 'react-native';
+import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Tabs } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -13,6 +13,8 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { brandColors } from '../../src/theme/colors';
 import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
 import { useInsideTabs } from '../../src/hooks/use-inside-tabs';
+import { useDeviceLayout } from '../../src/hooks/use-device-layout';
+import { IpadSidebar } from '../../src/components/navigation/IpadSidebar';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
 // activity feed, while Climbs remains the search surface one tab over. Drives
@@ -30,6 +32,10 @@ const materialTabIcon =
   ({ focused, color, size }: TabIconProps) => (
     <MaterialCommunityIcons name={focused ? active : inactive} color={color} size={size} />
   );
+
+// The iPad shell hides the Tabs navigator's own bar (the glass sidebar carries
+// navigation), while the navigator still owns routing + per-tab state.
+const renderHiddenTabBar = () => null;
 
 /**
  * Bottom tabs. The system Liquid Glass tab bar (`expo-router/unstable-native-tabs`)
@@ -74,43 +80,73 @@ export default function TabLayout() {
   const insideTabs = useInsideTabs();
   const showRecordBadge = isBluetoothConnected || sessionId !== null;
   const eagerMountRecord = Platform.OS === 'android';
+  // Regular-width iPad opts into the sidebar shell; compact width (every iPhone,
+  // a narrow iPad split) keeps the native / Material tab bars below verbatim.
+  const deviceLayout = useDeviceLayout();
+
+  // The five tab screens are identical across the JS `Tabs` variants (Material
+  // bar vs. the hidden-bar iPad shell), so share one definition. The NativeTabs
+  // path uses its own Trigger API below and does not consume this.
+  const tabScreens = (
+    <>
+      <Tabs.Screen
+        name="home"
+        options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
+      />
+      <Tabs.Screen
+        name="climbs"
+        options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
+      />
+      <Tabs.Screen
+        name="record"
+        options={{
+          title: tSession('mobile.session.recordTab'),
+          tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
+          tabBarBadge: showRecordBadge ? '' : undefined,
+          // Android can stall the first lazy mount of this nested stack,
+          // leaving the Record tab blank until another tab forces a remount.
+          lazy: eagerMountRecord ? false : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="discover"
+        options={{
+          title: tPlaylists('bottomTabBar.discover'),
+          tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: t('mobile.nav.profile'),
+          tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
+        }}
+      />
+    </>
+  );
+
+  // Regular-width iPad: a glass left sidebar replaces the bottom tab bar, with
+  // each tab rendered single-column to its right. The Tabs navigator still owns
+  // routing + per-tab state; we hide its bar and drive it from the sidebar (the
+  // global router). Bottom chrome collapses to the safe-area inset via the
+  // `usesSidebar` branch in computeBottomChromeMetrics.
+  if (deviceLayout.widthClass === 'regular') {
+    return (
+      <View style={styles.shell}>
+        <IpadSidebar />
+        <View style={styles.shellContent}>
+          <Tabs tabBar={renderHiddenTabBar} screenOptions={{ headerShown: false }}>
+            {tabScreens}
+          </Tabs>
+        </View>
+      </View>
+    );
+  }
 
   if (!nativeTabBar) {
     return (
       <Tabs tabBar={(props) => <MaterialTabBar {...props} />} screenOptions={{ headerShown: false }}>
-        <Tabs.Screen
-          name="home"
-          options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
-        />
-        <Tabs.Screen
-          name="climbs"
-          options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
-        />
-        <Tabs.Screen
-          name="record"
-          options={{
-            title: tSession('mobile.session.recordTab'),
-            tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
-            tabBarBadge: showRecordBadge ? '' : undefined,
-            // Android can stall the first lazy mount of this nested stack,
-            // leaving the Record tab blank until another tab forces a remount.
-            lazy: eagerMountRecord ? false : undefined,
-          }}
-        />
-        <Tabs.Screen
-          name="discover"
-          options={{
-            title: tPlaylists('bottomTabBar.discover'),
-            tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: t('mobile.nav.profile'),
-            tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
-          }}
-        />
+        {tabScreens}
       </Tabs>
     );
   }
@@ -162,3 +198,10 @@ export default function TabLayout() {
     </NativeTabs>
   );
 }
+
+const styles = StyleSheet.create({
+  // Sidebar + content laid out as a row; the sidebar owns a fixed width and the
+  // content pane flexes to fill the rest.
+  shell: { flex: 1, flexDirection: 'row' },
+  shellContent: { flex: 1 },
+});

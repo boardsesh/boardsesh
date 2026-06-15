@@ -18,6 +18,8 @@ const cfg = vi.hoisted(() => ({
   // (Material, plus Liquid Glass on iOS < 26 / Android) takes the JS tab bar.
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android',
+  // 'regular' takes the iPad sidebar shell; 'compact' keeps the phone tab bars.
+  widthClass: 'compact' as 'compact' | 'regular',
   materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean } }>,
 }));
 
@@ -27,6 +29,10 @@ vi.mock('react-native', () => ({
       return cfg.platformOS;
     },
   },
+  // _layout.tsx wraps the iPad shell in Views + calls StyleSheet.create at module
+  // eval, so the strict RN mock must supply both.
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -54,6 +60,14 @@ vi.mock('../../../src/hooks/use-sticky-accessory-presence', () => ({
 // real hook; the route-segment split is unit-tested in route-segments.test.
 vi.mock('../../../src/hooks/use-inside-tabs', () => ({
   useInsideTabs: () => cfg.insideTabs,
+}));
+
+vi.mock('../../../src/hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ widthClass: cfg.widthClass, expanded: false }),
+}));
+
+vi.mock('../../../src/components/navigation/IpadSidebar', () => ({
+  IpadSidebar: () => createElement('aside', { 'data-ipad-sidebar': 'true' }),
 }));
 
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
@@ -163,6 +177,7 @@ describe('TabLayout', () => {
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
+    cfg.widthClass = 'compact';
     cfg.materialScreens = [];
   });
 
@@ -202,6 +217,25 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-tabs-material="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-tabs="true"]')).toBeNull();
+    expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
+      'home',
+      'climbs',
+      'record',
+      'discover',
+      'profile',
+    ]);
+  });
+
+  it('renders the iPad sidebar shell at regular width and registers all five tabs', () => {
+    // Regular-width iPad takes the sidebar branch before the native/Material tab
+    // bars: the glass sidebar carries navigation and the native iOS 26 tab bar is
+    // gone, but the Tabs navigator still registers every tab screen.
+    cfg.widthClass = 'regular';
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-sidebar="true"]')).not.toBeNull();
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',

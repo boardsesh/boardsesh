@@ -229,4 +229,70 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.preSessionFooterBottom).toBe(34);
     });
   });
+
+  describe('regular-width iPad sidebar (usesSidebar)', () => {
+    it('collapses every bottom offset to the safe-area inset', () => {
+      // The left sidebar owns navigation and hosts the queue "now playing" in its
+      // footer, so nothing floats at the bottom — every offset is the raw inset.
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom: 20,
+        insideTabs: true,
+        hasCurrentClimb: true,
+        nativeAccessoryMounted: true,
+        usesSidebar: true,
+      });
+      expect(metrics.tabBarHeight).toBe(0);
+      expect(metrics.tabBarBottom).toBe(20);
+      expect(metrics.jsQueueToolbarVisible).toBe(false);
+      expect(metrics.nativeAccessoryVisible).toBe(false);
+      expect(metrics.jsQueueReserve).toBe(0);
+      expect(metrics.nativeAccessoryReserve).toBe(0);
+      expect(metrics.scrollBottomPadding).toBe(20);
+      expect(metrics.floatingControlBottom).toBe(20);
+      expect(metrics.fixedFooterBottom).toBe(20);
+      expect(metrics.inSessionListBottom).toBe(20);
+      expect(metrics.preSessionFooterBottom).toBe(20);
+    });
+
+    it('short-circuits the tab-bar / accessory inputs entirely in sidebar mode', () => {
+      // Even with a climb + the native accessory mounted, sidebar mode reserves
+      // nothing — it returns before the phone arithmetic runs.
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        insetsBottom: 0,
+        insideTabs: true,
+        hasCurrentClimb: true,
+        nativeAccessoryMounted: true,
+        usesSidebar: true,
+      });
+      expect(metrics.scrollBottomPadding).toBe(0);
+      expect(metrics.floatingControlBottom).toBe(0);
+      expect(metrics.nativeAccessoryMounted).toBe(false);
+    });
+
+    it('defaults usesSidebar to false so existing compact call sites are unchanged', () => {
+      const withFlag = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom: 34,
+        insideTabs: true,
+        hasCurrentClimb: false,
+        nativeAccessoryMounted: false,
+        usesSidebar: false,
+      });
+      const withoutFlag = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom: 34,
+        insideTabs: true,
+        hasCurrentClimb: false,
+        nativeAccessoryMounted: false,
+      });
+      expect(withFlag).toEqual(withoutFlag);
+      expect(withoutFlag.scrollBottomPadding).toBe(34 + TAB_BAR_HEIGHT);
+    });
+  });
 });

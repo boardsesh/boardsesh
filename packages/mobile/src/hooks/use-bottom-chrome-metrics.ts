@@ -5,6 +5,7 @@ import { useTheme } from '../providers/theme-provider';
 import { isTabsRoute } from '../lib/route-segments';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useNativeAccessoryActive, useNativeTabBar } from './use-bottom-accessory';
+import { useDeviceLayout } from './use-device-layout';
 import { computeBottomChromeMetrics } from './bottom-chrome-metrics';
 
 /**
@@ -29,6 +30,12 @@ export function useBottomChromeMetrics() {
   const nativeAccessoryMounted = insideTabs && nativeAccessoryActive;
   const nativeTabBar = useNativeTabBar();
   const usesNativeTabBar = insideTabs && nativeTabBar;
+  // Regular-width iPad replaces the bottom tab bar with the left sidebar, so
+  // bottom chrome collapses to the safe-area inset (the queue lives in the
+  // sidebar footer). Compact width (every iPhone, narrow iPad split) keeps the
+  // tab-bar arithmetic above.
+  const { widthClass } = useDeviceLayout();
+  const usesSidebar = insideTabs && widthClass === 'regular';
 
   return useMemo(
     () =>
@@ -39,7 +46,8 @@ export function useBottomChromeMetrics() {
         insideTabs,
         hasCurrentClimb,
         nativeAccessoryMounted,
+        usesSidebar,
       }),
-    [variant, usesNativeTabBar, insets.bottom, insideTabs, hasCurrentClimb, nativeAccessoryMounted],
+    [variant, usesNativeTabBar, insets.bottom, insideTabs, hasCurrentClimb, nativeAccessoryMounted, usesSidebar],
   );
 }

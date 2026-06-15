@@ -90,3 +90,9 @@ export const MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT = glassSize.standard;
  *  rounding — not absorb a constant-vs-reality mismatch — so it stays a fixed hairline
  *  instead of a hand-tuned per-device offset. */
 export const TABBAR_SEAM_OVERLAP = 1;
+
+/** Width of the iPad adaptive-shell sidebar rail (the glass left rail that
+ *  replaces the bottom tab bar at `regular` width — see `size-class.ts`). An
+ *  icon-over-label rail: wide enough for a 44pt touch target plus a caption,
+ *  narrow enough to leave the content panes the bulk of the canvas. */
+export const SIDEBAR_WIDTH = 96;

@@ -8,7 +8,11 @@ type IconMapping = {
 };
 
 export const iconMap = {
-  // Tab bar
+  // Tab bar / iPad sidebar
+  home: { ios: 'house', android: 'home-outline' },
+  'home.fill': { ios: 'house.fill', android: 'home' },
+  record: { ios: 'record.circle', android: 'record-circle-outline' },
+  discover: { ios: 'bookmark', android: 'bookmark-multiple-outline' },
   boards: { ios: 'square.grid.2x2', android: 'view-dashboard' },
   'boards.fill': { ios: 'square.grid.2x2.fill', android: 'view-dashboard' },
   search: { ios: 'magnifyingglass', android: 'magnify' },

@@ -172,7 +172,10 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       // App ID in the Apple Developer portal (manual, one-time). App Review
       // requires Apple sign-in whenever a third-party login (Google) is offered.
       usesAppleSignIn: true,
-      supportsTablet: false,
+      // iPad gets a first-class adaptive UI (sidebar + panes). `requireFullScreen`
+      // is intentionally left unset (false) so Slide Over / Split View work — a
+      // narrow split falls back to the phone UI verbatim (see `size-class.ts`).
+      supportsTablet: true,
       // Entitlements for the App Group (shared with the BoardseshWidgets target),
       // shared keychain (so SharedKeychain.swift can read auth + push tokens),
       // and APNs (so ActivityKit can register Live Activity push tokens).
@@ -184,6 +187,16 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        // iPad rotates freely — landscape is the primary canvas for the sidebar +
+        // panes — while iPhone stays portrait-locked via the top-level
+        // `orientation: 'portrait'`. This `~ipad` key overrides the base
+        // UISupportedInterfaceOrientations for iPad only.
+        'UISupportedInterfaceOrientations~ipad': [
+          'UIInterfaceOrientationPortrait',
+          'UIInterfaceOrientationPortraitUpsideDown',
+          'UIInterfaceOrientationLandscapeLeft',
+          'UIInterfaceOrientationLandscapeRight',
+        ],
         NSHealthUpdateUsageDescription: HEALTH_UPDATE_USAGE_DESCRIPTION,
         NSHealthShareUsageDescription: HEALTH_SHARE_USAGE_DESCRIPTION,
         NSBluetoothAlwaysUsageDescription:
