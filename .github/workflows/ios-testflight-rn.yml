@@ -60,6 +60,17 @@ jobs:
       # build time; without this, analytics.ts sees no key and isAnalyticsEnabled is
       # false, so every track() silently no-ops (the app shipped zero events before).
       EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+      # PostHog source-map upload. The posthog-react-native/expo plugin adds an
+      # Xcode build phase that runs @posthog/cli during `xcodebuild archive` to
+      # upload the Hermes bundle + source map, so the app's $exception stack traces
+      # are readable in PostHog. These are NOT the same as EXPO_PUBLIC_POSTHOG_KEY
+      # (that's the public ingest token; this is a personal API key + project id for
+      # the CLI). The upload phase is gated in app.config.ts on POSTHOG_CLI_API_KEY:
+      # when the secret is unset (forks, or before it's provisioned) the plugin is
+      # omitted at prebuild, so the archive has no upload phase and still succeeds.
+      # POSTHOG_CLI_HOST omitted (US cloud).
+      POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+      POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
 
     steps:
       - name: Checkout repository

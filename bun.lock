@@ -286,6 +286,7 @@
       },
       "devDependencies": {
         "@bacons/apple-targets": "^4.0.7",
+        "@posthog/cli": "^0.7.23",
         "@testing-library/react": "^16.3.2",
         "@types/react": "^19.0.0",
         "jsdom": "^28.1.0",
@@ -1712,6 +1713,8 @@
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
 
     "@popperjs/core": ["@popperjs/core@2.11.8", "", {}, "sha512-P1st0aksCrn9sGZhp8GMYwBnQsbvAWsZAX44oXNNvLHGqAOcoVxmjZiohstwQ7SqKnbR47akdNi+uleWD8+g6A=="],
+
+    "@posthog/cli": ["@posthog/cli@0.7.23", "", { "dependencies": { "detect-libc": "^2.1.2" }, "bin": { "posthog-cli": "run-posthog-cli.js" } }, "sha512-+Wv1zGLOkgBj1+Vbn6WsNVgV1NSqfW8IXeVIafRu/7MU9ZslTA7vLl6Vb+ChSbEfQtAWBNg2RcJ7eOn9v9H4Bw=="],
 
     "@posthog/core": ["@posthog/core@1.30.3", "", { "dependencies": { "@posthog/types": "1.379.0" } }, "sha512-mGIN4Du1a8fKxV5WfnEtogq3VOQLa4PfWMUg5uMIMDD+fp5bhTA4QG4oYAea4vBTZ1ZOanQbjXcX4b5k2X93Qw=="],
 

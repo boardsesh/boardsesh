@@ -1,10 +1,17 @@
-const { getDefaultConfig } = require('expo/metro-config');
+// getPostHogExpoConfig wraps Expo's getDefaultConfig and adds a custom serializer
+// that injects a content-derived debug ID into the JS bundle + its source map. That
+// debug ID is what lets PostHog match a minified/Hermes `$exception` stack trace back
+// to the source map we upload (via @posthog/cli) — without it, every trace stays
+// unreadable. It returns the same config shape as getDefaultConfig, so all the
+// customizations below (watch folders, blockList, singleton resolver, dev middleware)
+// apply unchanged. See docs/mobile-error-telemetry.md.
+const { getPostHogExpoConfig } = require('posthog-react-native/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getDefaultConfig(projectRoot);
+const config = getPostHogExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 

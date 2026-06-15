@@ -51,6 +51,14 @@ jobs:
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
       EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
       EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+      # @posthog/cli reads these to upload OTA source maps so mobile $exception
+      # stack traces are readable in PostHog. The native build workflows do this
+      # via the Xcode/Gradle build phases; OTA updates aren't covered by those, so
+      # the upload step below runs the CLI explicitly. Absent (forks / missing
+      # secret) the upload step skips and the OTA still ships. POSTHOG_CLI_HOST is
+      # omitted — this project is on PostHog US (the CLI defaults to US).
+      POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+      POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
 
     steps:
       - name: Checkout repository
@@ -103,6 +111,21 @@ jobs:
             --non-interactive
         env:
           BRANCH_NAME: ${{ steps.branch.outputs.name }}
+
+      - name: Upload source maps to PostHog
+        # OTA updates aren't covered by the native (Xcode/Gradle) upload, so do it
+        # here. Re-export with the same .env written above: the debug IDs injected
+        # by getPostHogExpoConfig are content-derived, so this dist carries the same
+        # IDs as the bundle `eas update` just shipped, and PostHog can match traces.
+        # Gated on the API key so fork PRs / missing-secret runs still publish OTA.
+        # continue-on-error: the OTA already shipped in the step above, so a flaky
+        # upload must neither fail the run nor skip the PR-comment step below.
+        if: env.POSTHOG_CLI_API_KEY != ''
+        continue-on-error: true
+        working-directory: packages/mobile
+        run: |
+          bunx expo export --dump-sourcemap --platform "$INPUT_PLATFORM"
+          bunx posthog-cli hermes upload --directory dist
 
       - name: Post update link to PR
         if: github.event_name == 'push'

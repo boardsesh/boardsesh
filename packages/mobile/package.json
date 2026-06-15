@@ -97,6 +97,7 @@
   },
   "devDependencies": {
     "@bacons/apple-targets": "^4.0.7",
+    "@posthog/cli": "^0.7.23",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0.0",
     "jsdom": "^28.1.0",

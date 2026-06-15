@@ -61,6 +61,19 @@ jobs:
       # build time; without this, analytics.ts sees no key and isAnalyticsEnabled is
       # false, so every track() silently no-ops (the app shipped zero events before).
       EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+      # PostHog source-map upload. The posthog-react-native/expo plugin adds a
+      # Gradle task that runs @posthog/cli during assemble/bundleRelease to upload
+      # the Hermes bundle + source map, so the app's $exception stack traces are
+      # readable in PostHog. Not the same as EXPO_PUBLIC_POSTHOG_KEY (public ingest
+      # token) — this is a personal API key + project id for the CLI. Gated in
+      # app.config.ts on POSTHOG_CLI_API_KEY: unset (forks, or before provisioning)
+      # → the plugin is omitted at prebuild, so no Gradle upload task is added and
+      # the release stays green. Unlike the @sentry/react-native Gradle task noted
+      # above (which broke on a removed exec() API), PostHog's posthog.gradle uses
+      # the modern injected ExecOperations API, so it isn't expected to hit that
+      # incompatibility — but the gate means a missing key can never break a release.
+      POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+      POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
 
     steps:
       - name: Checkout repository

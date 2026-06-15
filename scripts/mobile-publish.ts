@@ -152,6 +152,42 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
+// Upload source maps so this OTA update's $exception stack traces are readable in
+// PostHog error tracking. Native builds do this via the Xcode/Gradle build phases;
+// OTA isn't covered by those. Best-effort and gated on credentials: most local
+// publishes are unkeyed and skip it; CI (mobile-eas-update.yml) sets the env vars.
+// expo export re-bundles deterministically, so the debug IDs match the bundle eas
+// update just shipped.
+const posthogApiKey = process.env.POSTHOG_CLI_API_KEY;
+const posthogProjectId = process.env.POSTHOG_CLI_PROJECT_ID;
+if (posthogApiKey && posthogProjectId) {
+  console.log('');
+  console.log('[mobile:publish] Uploading source maps to PostHog...');
+  const exportResult = spawnSync('bunx', ['expo', 'export', '--dump-sourcemap', '--platform', platform], {
+    cwd: MOBILE_DIR,
+    stdio: 'inherit',
+    env: { ...process.env },
+  });
+  if (exportResult.status !== 0) {
+    console.warn('[mobile:publish] expo export failed — skipping PostHog source map upload (OTA already shipped).');
+  } else {
+    const uploadResult = spawnSync('bunx', ['posthog-cli', 'hermes', 'upload', '--directory', 'dist'], {
+      cwd: MOBILE_DIR,
+      stdio: 'inherit',
+      env: { ...process.env },
+    });
+    if (uploadResult.status !== 0) {
+      console.warn('[mobile:publish] PostHog source map upload failed (OTA already shipped).');
+    } else {
+      console.log('[mobile:publish] Source maps uploaded to PostHog.');
+    }
+  }
+} else {
+  console.log('');
+  console.log('[mobile:publish] POSTHOG_CLI_API_KEY / POSTHOG_CLI_PROJECT_ID not set — skipping source map upload.');
+  console.log('[mobile:publish] (CI uploads automatically; set both to upload from a local publish.)');
+}
+
 console.log('');
 console.log(`[mobile:publish] Published to branch "${sanitizedBranch}".`);
 console.log(`[mobile:publish] Testers on the "preview" build will receive this update.`);

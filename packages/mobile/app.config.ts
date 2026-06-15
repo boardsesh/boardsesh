@@ -291,6 +291,18 @@ export default ({ config }: ConfigContext): ExpoConfig & { newArchEnabled?: bool
         },
       ],
       'expo-updates',
+      // PostHog source-map upload for readable $exception stack traces. Adds an
+      // Xcode build phase (iOS) + Gradle task (Android) that run @posthog/cli
+      // during `expo prebuild` → archive/assemble. Gated on POSTHOG_CLI_API_KEY:
+      // those scripts call the CLI WITHOUT --no-fail, so they hard-fail the build
+      // when the CLI can't authenticate — applying the plugin only when the key is
+      // present keeps local prebuilds, dev, and fork CI green (no key → no upload
+      // phase added). The debug IDs that make uploads matchable are injected by
+      // getPostHogExpoConfig in metro.config.js regardless of this gate, so OTA
+      // (EAS Update) uploads — handled in mobile-eas-update.yml — keep working.
+      // The plugin also disables Xcode User Script Sandboxing by default so the
+      // upload phase can run (same approach as Sentry's RN plugin).
+      ...(process.env.POSTHOG_CLI_API_KEY ? ['posthog-react-native/expo'] : []),
       'expo-web-browser',
       'react-native-ble-plx',
       // Makes Boardsesh a share target so a beta video link shared from
