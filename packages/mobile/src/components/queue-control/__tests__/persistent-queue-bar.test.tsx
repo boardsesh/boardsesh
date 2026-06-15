@@ -41,6 +41,11 @@ vi.mock('../../../lib/route-segments', () => ({
   isClimbsTabRoute: () => cfg.onClimbsTab,
   isTabsRoute: () => cfg.insideTabs,
 }));
+// useBottomChromeMetrics now reads the device layout; in jsdom this test runs as
+// a compact phone (no sidebar), so the bottom-chrome arithmetic is unchanged.
+vi.mock('../../../hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ widthClass: 'compact', expanded: false }),
+}));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
   useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
