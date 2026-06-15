@@ -117,10 +117,12 @@ jobs:
         # here. Re-export with the same .env written above: the debug IDs injected
         # by getPostHogExpoConfig are content-derived, so this dist carries the same
         # IDs as the bundle `eas update` just shipped, and PostHog can match traces.
-        # Gated on the API key so fork PRs / missing-secret runs still publish OTA.
+        # Gated on BOTH CLI credentials (matching mobile-publish.ts): if only one
+        # is set the step cleanly skips instead of running and failing silently
+        # under continue-on-error. Fork PRs / missing-secret runs still publish OTA.
         # continue-on-error: the OTA already shipped in the step above, so a flaky
         # upload must neither fail the run nor skip the PR-comment step below.
-        if: env.POSTHOG_CLI_API_KEY != ''
+        if: env.POSTHOG_CLI_API_KEY != '' && env.POSTHOG_CLI_PROJECT_ID != ''
         continue-on-error: true
         working-directory: packages/mobile
         run: |
