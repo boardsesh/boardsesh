@@ -14,6 +14,7 @@ type AttachBetaLinkDialogProps = {
   climbUuid: string;
   climbName?: string;
   angle?: number | null;
+  tickUuid?: string | null;
   grade?: string | null;
   setter?: string | null;
   layoutId?: number | null;
@@ -27,6 +28,7 @@ const AttachBetaLinkDialog: React.FC<AttachBetaLinkDialogProps> = ({
   climbUuid,
   climbName,
   angle,
+  tickUuid,
   grade,
   setter,
   layoutId,
@@ -44,6 +46,7 @@ const AttachBetaLinkDialog: React.FC<AttachBetaLinkDialogProps> = ({
           climbUuid={climbUuid}
           climbName={climbName}
           angle={angle}
+          tickUuid={tickUuid}
           grade={grade}
           setter={setter}
           layoutId={layoutId}

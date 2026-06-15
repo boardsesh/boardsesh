@@ -21,6 +21,8 @@ function makeRow(overrides: Partial<BetaLinksGqlRow> = {}): BetaLinksGqlRow {
     thumbnail: '/static/beta-link-thumbnails/abc.jpg',
     isListed: true,
     createdAt: '2026-01-01T00:00:00Z',
+    tickUuid: null,
+    boardId: null,
     ...overrides,
   };
 }
@@ -65,6 +67,8 @@ describe('mapBetaLink (mobile)', () => {
       thumbnail: 'https://ws.boardsesh.test/static/abc.jpg?size=280',
       is_listed: true,
       created_at: '2026-01-01T00:00:00Z',
+      tick_uuid: null,
+      board_id: null,
     });
   });
 

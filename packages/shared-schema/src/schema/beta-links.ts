@@ -11,6 +11,8 @@ export const betaLinksTypeDefs = /* GraphQL */ `
     thumbnail: String
     isListed: Boolean
     createdAt: String
+    tickUuid: ID
+    boardId: Int
   }
 
   """

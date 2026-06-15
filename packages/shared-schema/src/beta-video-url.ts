@@ -61,6 +61,8 @@ export type BetaLink = {
   thumbnail: string | null;
   is_listed: boolean;
   created_at: string;
+  tick_uuid: string | null;
+  board_id: number | null;
 };
 
 /**
@@ -74,6 +76,8 @@ export type BetaLinksGqlRow = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  tickUuid: string | null;
+  boardId: number | null;
 };
 
 /**
@@ -110,6 +114,8 @@ export function dedupeBetaLinks(betaLinks: BetaLink[]): BetaLink[] {
       angle: existing.angle ?? betaLink.angle,
       thumbnail: existing.thumbnail ?? betaLink.thumbnail,
       created_at: existing.created_at || betaLink.created_at,
+      tick_uuid: existing.tick_uuid ?? betaLink.tick_uuid,
+      board_id: existing.board_id ?? betaLink.board_id,
     };
   }
 
@@ -131,6 +137,8 @@ export function mapBetaLinkRow(
     thumbnail: absolutizeThumbnail(row.thumbnail),
     is_listed: row.isListed ?? false,
     created_at: row.createdAt ?? '',
+    tick_uuid: row.tickUuid,
+    board_id: row.boardId,
   };
 }
 

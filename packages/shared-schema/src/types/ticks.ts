@@ -80,4 +80,5 @@ export type AttachBetaLinkInput = {
   climbUuid: string;
   link: string;
   angle?: number | null;
+  tickUuid?: string | null;
 };

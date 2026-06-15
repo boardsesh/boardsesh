@@ -111,6 +111,8 @@ vi.mock('../../../lib/beta-video-url', () => ({
     thumbnail: string | null;
     isListed: boolean | null;
     createdAt: string;
+    tickUuid?: string | null;
+    boardId?: number | null;
   }) => ({
     climb_uuid: row.climbUuid,
     link: row.link,
@@ -119,6 +121,8 @@ vi.mock('../../../lib/beta-video-url', () => ({
     thumbnail: row.thumbnail,
     is_listed: row.isListed ?? false,
     created_at: row.createdAt,
+    tick_uuid: row.tickUuid ?? null,
+    board_id: row.boardId ?? null,
   }),
 }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: () => null }));
@@ -203,6 +207,8 @@ describe('SessionFeedCard chart', () => {
               thumbnail: null,
               isListed: true,
               createdAt: '2026-06-12T00:00:00.000Z',
+              tickUuid: 'tick-2',
+              boardId: null,
             },
           },
         }),

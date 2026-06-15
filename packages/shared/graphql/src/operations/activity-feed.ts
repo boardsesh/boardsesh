@@ -136,6 +136,8 @@ const SESSION_FEED_ITEM_FIELDS = `
       thumbnail
       isListed
       createdAt
+      tickUuid
+      boardId
     }
   }
   socialEntityType

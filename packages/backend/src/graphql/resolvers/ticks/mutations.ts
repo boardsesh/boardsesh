@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { aliasedTable } from 'drizzle-orm/alias';
 import { GraphQLError } from 'graphql';
-import type { ConnectionContext, TickStatus } from '@boardsesh/shared-schema';
+import { betaLinkIdentity, type ConnectionContext, type TickStatus } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
@@ -42,18 +43,17 @@ export function videoUrlForTickStatus(status: TickStatus, videoUrl: string | nul
 
 export type ShortcodeConflict = { kind: 'none' } | { kind: 'same-climb' } | { kind: 'cross-climb'; climbName: string };
 
-// Looks up whether the same Instagram shortcode is already attached to any
-// climb on this board. Returns a structured result so each caller can decide
-// how to handle conflicts (attachBetaLink throws on both kinds; saveTick
-// treats same-climb as a silent skip since the user just wanted to log a
-// climb, not re-attach beta).
+// Looks up whether the same canonical video is already attached anywhere.
+// Returns a structured result so each caller can decide how to handle
+// conflicts (attachBetaLink throws on both kinds; saveTick treats same-climb as
+// a silent skip since the user just wanted to log a climb, not re-attach beta).
 //
-// Uses the indexed `shortcode` column added in 0089_renumber_dedup_index for
-// an exact-match lookup — no LIKE prefilter, no JS post-filter.
+// Uses the indexed `video_identity` column for an exact-match lookup — no LIKE
+// prefilter, no JS post-filter.
 //
-// Race: two concurrent attaches of the same shortcode can both pass this
-// check. The (boardType, climbUuid, link) PK + onConflictDoNothing makes
-// the loser a silent no-op rather than a duplicate row. The loser misses
+// Race: two concurrent attaches of the same canonical video can both pass this
+// check. The partial unique index on `video_identity` + onConflictDoNothing
+// makes the loser a silent no-op rather than a duplicate row. The loser misses
 // the friendly "already linked" toast — accepted trade-off, see PR #1727
 // review notes.
 export async function findInstagramShortcodeConflict(
@@ -61,11 +61,19 @@ export async function findInstagramShortcodeConflict(
   selectedClimbUuid: string,
   instagramUrl: string,
 ): Promise<ShortcodeConflict> {
-  const incomingShortcode = getInstagramMediaId(instagramUrl);
-  if (!incomingShortcode) return { kind: 'none' };
+  return findBetaLinkIdentityConflict(boardType, selectedClimbUuid, instagramUrl);
+}
+
+export async function findBetaLinkIdentityConflict(
+  boardType: string,
+  selectedClimbUuid: string,
+  videoUrl: string,
+): Promise<ShortcodeConflict> {
+  const incomingVideoIdentity = betaLinkIdentity(videoUrl);
 
   const existingLinks = await db
     .select({
+      boardType: dbSchema.boardBetaLinks.boardType,
       climbName: dbSchema.boardClimbs.name,
       climbUuid: dbSchema.boardBetaLinks.climbUuid,
     })
@@ -77,19 +85,16 @@ export async function findInstagramShortcodeConflict(
         eq(dbSchema.boardClimbs.uuid, dbSchema.boardBetaLinks.climbUuid),
       ),
     )
-    .where(
-      and(eq(dbSchema.boardBetaLinks.boardType, boardType), eq(dbSchema.boardBetaLinks.shortcode, incomingShortcode)),
-    );
+    .where(eq(dbSchema.boardBetaLinks.videoIdentity, incomingVideoIdentity));
 
-  // Scan every match before deciding. If the same shortcode is attached to
-  // *both* the selected climb and a different climb (from a prior race or
-  // data drift), the saveTick path's `onSameClimbDup: 'skip'` would
-  // otherwise silently no-op when a same-climb row happens to come back
-  // first — letting a known cross-climb dup pass through. Cross-climb
-  // conflicts must always win.
+  // Scan every match before deciding. If the same video is attached to *both*
+  // the selected climb and a different climb (from a prior race or data drift),
+  // the saveTick path's `onSameClimbDup: 'skip'` would otherwise silently no-op
+  // when a same-climb row happens to come back first — letting a known
+  // cross-climb dup pass through. Cross-climb conflicts must always win.
   let sawSameClimb = false;
   for (const entry of existingLinks) {
-    if (entry.climbUuid === selectedClimbUuid) {
+    if (entry.boardType === boardType && entry.climbUuid === selectedClimbUuid) {
       sawSameClimb = true;
       continue;
     }
@@ -99,10 +104,9 @@ export async function findInstagramShortcodeConflict(
   return { kind: 'none' };
 }
 
-const SAME_CLIMB_DUP_MESSAGE =
-  'We already have this Instagram video linked for this climb. Try a different post or reel.';
+const SAME_CLIMB_DUP_MESSAGE = 'We already have this video linked for this climb. Try a different post or reel.';
 const crossClimbDupMessage = (otherClimbName: string): string =>
-  `This Instagram post is already attached to "${otherClimbName}". Multi-climb slideshows are hard to navigate — please post a separate reel for this climb and share that one instead.`;
+  `This video is already attached to "${otherClimbName}". Multi-climb videos are hard to navigate - please post a separate clip for this climb and share that one instead.`;
 
 type EnrichedBetaInsert = {
   thumbnail: string | null;
@@ -137,7 +141,7 @@ export type BetaLinkInsertPlan =
   // Insert the row. For non-Instagram URLs (TikTok et al.) the enrichment
   // fields are null — the read-time resolver will fill them in lazily.
   | { action: 'insert'; thumbnail: string | null; foreignUsername: string | null }
-  // The shortcode is already attached to *this* climb. saveTick treats this
+  // The canonical video is already attached to *this* climb. saveTick treats this
   // as a silent skip (the user logged a climb; the video URL is incidental
   // and the existing row covers it). attachBetaLink should pass
   // `onSameClimbDup: 'throw'` and never observe this case.
@@ -151,7 +155,7 @@ export type BetaLinkInsertPlan =
   | { action: 'no-url' };
 
 export type ValidateAndEnrichOptions = {
-  // Decides whether a same-climb shortcode duplicate is fatal (attachBetaLink)
+  // Decides whether a same-climb video duplicate is fatal (attachBetaLink)
   // or a silent skip (saveTick). Cross-climb dups are always fatal.
   onSameClimbDup: 'throw' | 'skip';
 };
@@ -159,15 +163,15 @@ export type ValidateAndEnrichOptions = {
 // Single gated entrypoint for write-time beta-link validation. Steps:
 //   1. Apply the per-user rate limit on beta-link writes — 30/min, well above
 //      legitimate use, well below what would let a caller spam writes or
-//      probe IG shortcode existence at scale via the dedup query below.
+//      probe video existence at scale via the dedup query below.
 //      The limit gates the DB probe, the outbound IG fetch, AND non-IG
 //      (TikTok et al.) write paths so every beta-link attach burns budget.
-//   2. Non-Instagram URLs (TikTok, etc.) bypass the deep checks and return
-//      `action: 'insert'` with null enrichment — the read-time `betaLinks`
-//      resolver will enrich them lazily.
-//   3. Run the cross-climb dedup check. Cross-climb dup -> friendly error
+//   2. Run the cross-climb dedup check. Cross-climb dup -> friendly error
 //      via InstagramBetaValidationError. Same-climb dup -> branch on the
 //      caller's `onSameClimbDup`.
+//   3. Non-Instagram URLs (TikTok, etc.) return `action: 'insert'` with null
+//      enrichment after dedup — the read-time `betaLinks` resolver enriches
+//      them lazily.
 //   4. Fetch the canonical post page, validate it's public + the caption
 //      mentions the climb name.
 //   5. Eagerly cache the thumbnail to S3 if configured (best-effort; the
@@ -183,16 +187,12 @@ export async function validateAndEnrichBetaLinkInsert(
 ): Promise<BetaLinkInsertPlan> {
   // Rate limit BEFORE branching on platform so TikTok / future non-IG
   // platforms get the same write-budget as IG. Also runs before the dedup
-  // probe so an authenticated caller can't enumerate "is this IG shortcode
+  // probe so an authenticated caller can't enumerate "is this video
   // attached anywhere?" by watching the error variant (cross-climb vs
   // same-climb vs none) without consuming budget. See review of PR #1745.
   await applyRateLimit(ctx, 30, 'beta-link-validation');
 
-  if (!isInstagramUrl(url)) {
-    return { action: 'insert', thumbnail: null, foreignUsername: null };
-  }
-
-  const conflict = await findInstagramShortcodeConflict(boardType, climbUuid, url);
+  const conflict = await findBetaLinkIdentityConflict(boardType, climbUuid, url);
   if (conflict.kind === 'cross-climb') {
     throw new InstagramBetaValidationError(crossClimbDupMessage(conflict.climbName));
   }
@@ -203,9 +203,101 @@ export async function validateAndEnrichBetaLinkInsert(
     return { action: 'skip-existing' };
   }
 
+  if (!isInstagramUrl(url)) {
+    return { action: 'insert', thumbnail: null, foreignUsername: null };
+  }
+
   const metadata = await validateInstagramBetaLink(url);
   const enriched = await enrichInstagramBetaInsert(metadata);
   return { action: 'insert', thumbnail: enriched.thumbnail, foreignUsername: enriched.foreignUsername };
+}
+
+type BetaLinkTickContext = {
+  tickUuid: string | null;
+  boardId: number | null;
+  angle: number | null;
+};
+
+const tickClimbAlias = aliasedTable(dbSchema.boardClimbAliases, 'beta_link_tick_climb_alias');
+const inputClimbAlias = aliasedTable(dbSchema.boardClimbAliases, 'beta_link_input_climb_alias');
+
+async function resolveBetaLinkTickContext(
+  input: { boardType: string; climbUuid: string; angle?: number | null; tickUuid?: string | null },
+  userId: string,
+): Promise<BetaLinkTickContext> {
+  if (!input.tickUuid) {
+    return { tickUuid: null, boardId: null, angle: input.angle ?? null };
+  }
+
+  const [tick] = await db
+    .select({
+      uuid: dbSchema.boardseshTicks.uuid,
+      userId: dbSchema.boardseshTicks.userId,
+      boardType: dbSchema.boardseshTicks.boardType,
+      climbUuid: dbSchema.boardseshTicks.climbUuid,
+      canonicalClimbUuid: tickClimbAlias.canonicalUuid,
+      inputCanonicalClimbUuid: inputClimbAlias.canonicalUuid,
+      angle: dbSchema.boardseshTicks.angle,
+      status: dbSchema.boardseshTicks.status,
+      boardId: dbSchema.boardseshTicks.boardId,
+    })
+    .from(dbSchema.boardseshTicks)
+    .leftJoin(
+      tickClimbAlias,
+      and(
+        eq(tickClimbAlias.boardType, dbSchema.boardseshTicks.boardType),
+        eq(tickClimbAlias.aliasUuid, dbSchema.boardseshTicks.climbUuid),
+      ),
+    )
+    .leftJoin(
+      inputClimbAlias,
+      and(eq(inputClimbAlias.boardType, input.boardType), eq(inputClimbAlias.aliasUuid, input.climbUuid)),
+    )
+    .where(eq(dbSchema.boardseshTicks.uuid, input.tickUuid))
+    .limit(1);
+
+  if (!tick) {
+    throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
+  }
+  if (tick.userId !== userId) {
+    throw new GraphQLError('You can only attach beta to your own ticks', { extensions: { code: 'FORBIDDEN' } });
+  }
+  if (tick.status === 'attempt') {
+    throw new GraphQLError('Beta videos can only be attached to sends or flashes', {
+      extensions: { code: 'BETA_LINK_TICK_NOT_ASCENT' },
+    });
+  }
+  if (tick.boardType !== input.boardType) {
+    throw new GraphQLError('The selected tick is for a different board type', {
+      extensions: { code: 'BETA_LINK_TICK_MISMATCH' },
+    });
+  }
+
+  const canonicalTickClimbUuid = tick.canonicalClimbUuid ?? tick.climbUuid;
+  const canonicalInputClimbUuid = tick.inputCanonicalClimbUuid ?? input.climbUuid;
+  if (canonicalTickClimbUuid !== canonicalInputClimbUuid) {
+    throw new GraphQLError('The selected tick is for a different climb', {
+      extensions: { code: 'BETA_LINK_TICK_MISMATCH' },
+    });
+  }
+  if (input.angle != null && input.angle !== tick.angle) {
+    throw new GraphQLError('The selected tick is for a different angle', {
+      extensions: { code: 'BETA_LINK_TICK_MISMATCH' },
+    });
+  }
+
+  const [existingTickBetaLink] = await db
+    .select({ link: dbSchema.boardBetaLinks.link })
+    .from(dbSchema.boardBetaLinks)
+    .where(eq(dbSchema.boardBetaLinks.tickUuid, tick.uuid))
+    .limit(1);
+  if (existingTickBetaLink) {
+    throw new GraphQLError('This tick already has a beta video linked', {
+      extensions: { code: 'BETA_LINK_TICK_ALREADY_LINKED' },
+    });
+  }
+
+  return { tickUuid: tick.uuid, boardId: tick.boardId, angle: tick.angle };
 }
 
 export const tickMutations = {
@@ -379,14 +471,13 @@ export const tickMutations = {
       );
     }
 
-    // Run write-time Instagram validation before opening the transaction so a
+    // Run write-time beta-link validation before opening the transaction so a
     // bad video URL doesn't leave a half-state. Zod already validated the
-    // surface shape; the helper confirms the post is actually public, mentions
-    // the climb name, and isn't already attached to another climb. TikTok and
-    // other supported platforms skip the deep validation.
+    // surface shape; Instagram gets deep public/caption validation, while
+    // TikTok and other supported platforms skip platform metadata validation.
     //
     // saveTick is treating beta-link attach as an *incidental* side effect of
-    // logging a tick, so a same-climb shortcode dup must NOT fail the tick —
+    // logging a tick, so a same-climb video dup must NOT fail the tick —
     // we'd otherwise reject a perfectly valid tick because the user happened
     // to leave the video URL in the form. Cross-climb dup is still fatal:
     // the user explicitly chose this video URL and we want to surface the
@@ -450,6 +541,9 @@ export const tickMutations = {
             climbUuid: validatedInput.climbUuid,
             link: attachedVideoUrl,
             shortcode: getInstagramMediaId(attachedVideoUrl),
+            videoIdentity: betaLinkIdentity(attachedVideoUrl),
+            tickUuid: createdTick.uuid,
+            boardId: createdTick.boardId,
             angle: validatedInput.angle,
             isListed: true,
             thumbnail: betaPlan.thumbnail,
@@ -535,7 +629,7 @@ export const tickMutations = {
   },
 
   /**
-   * Attach an Instagram post or reel as beta for a climb.
+   * Attach an Instagram or TikTok video as beta for a climb.
    * Idempotent on (boardType, climbUuid, link).
    */
   attachBetaLink: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
@@ -544,10 +638,11 @@ export const tickMutations = {
     const validated = validateInput(AttachBetaLinkInputSchema, input, 'input');
     const userId = ctx.userId!;
     const now = new Date().toISOString();
+    const tickContext = await resolveBetaLinkTickContext(validated, userId);
 
     // Validation runs first — it's an outbound HTTP fetch we don't want to
     // hold a DB connection open for. attachBetaLink is a deliberate user
-    // action so a same-climb shortcode dup is fatal (the user gets the
+    // action so a same-climb video dup is fatal (the user gets the
     // friendly "already linked" message); cross-climb dup is also fatal.
     // The catch on the insert covers the rare case where validation passed
     // but the write fails (constraint, connection drop), surfacing an
@@ -575,7 +670,10 @@ export const tickMutations = {
           climbUuid: validated.climbUuid,
           link: validated.link,
           shortcode: getInstagramMediaId(validated.link),
-          angle: validated.angle ?? null,
+          videoIdentity: betaLinkIdentity(validated.link),
+          tickUuid: tickContext.tickUuid,
+          boardId: tickContext.boardId,
+          angle: tickContext.angle,
           isListed: true,
           thumbnail: betaPlan.thumbnail,
           foreignUsername: betaPlan.foreignUsername,

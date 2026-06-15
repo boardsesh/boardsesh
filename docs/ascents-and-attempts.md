@@ -160,7 +160,14 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
 - `quality: validatedInput.quality ?? null`
 - Aurora fields all set to `null`; they get populated later by the periodic sync daemon.
 - Publishes `ascent.logged` event for the feed (only for `flash`/`send`, not `attempt`).
-- If `videoUrl` was attached, also inserts a `board_beta_links` row.
+- If `videoUrl` was attached to a successful ascent, also inserts a
+  `board_beta_links` row tied directly to the new tick via `tick_uuid` and to
+  the resolved wall via `board_id` when one is known. Attempts ignore
+  `videoUrl`.
+- Beta-link inserts store a `video_identity` canonicalized from the platform
+  media id when possible. That keeps one canonical beta row per video and one
+  beta row per tick; a same-climb duplicate on `saveTick` skips only the beta
+  side effect and still saves the tick.
 - Calls `queueClimbStatsRecompute(boardType, climbUuid, angle)`. The debounced job
   (2 s window, `packages/backend/src/graphql/resolvers/ticks/debounced-climb-stats-publisher.ts`)
   recomputes `board_climb_stats.boardsesh_ascensionist_count` from the
@@ -247,7 +254,8 @@ Ticks only belong to a session when they were logged inside an explicitly-create
 3. **Always join `board_climb_stats` and COALESCE** when grouping ticks by grade. Reuse `consensusDifficultyExpr` from `packages/backend/src/graphql/resolvers/shared/sql-expressions.ts`.
 4. **Status is the source of truth, not `attempt_count`.** New code must check `status === 'flash'` / `'send'` / `'attempt'`, not infer from attempt counts. The attempt-count heuristic in `buildFlashRedpointBars` is a legacy fallback for pre-status rows only.
 5. **All inserts go through `saveTick` or the Aurora sync.** Don't write ad-hoc inserts elsewhere; you'll skip the `ascent.logged` event, beta-link attach, and the IndexedDB draft cleanup.
-6. **Aurora fields are owned by the sync daemon.** Don't set `aurora_id`, `aurora_type`, or `aurora_synced_at` from a write path other than the sync job.
-7. **Attempts never carry a `quality` or `difficulty`.** If you add an "attempt with grade override" UX, document it here first — every aggregation in this doc assumes the convention.
+6. **Tick-specific beta links belong on `board_beta_links.tick_uuid`.** The legacy climb-level lookup still exists for old rows, but new successful tick attachments should carry `tick_uuid`, `board_id` when known, and `video_identity`. A tick can have at most one beta link, and a canonical video can belong to only one beta row.
+7. **Aurora fields are owned by the sync daemon.** Don't set `aurora_id`, `aurora_type`, or `aurora_synced_at` from a write path other than the sync job.
+8. **Attempts never carry a `quality` or `difficulty`.** If you add an "attempt with grade override" UX, document it here first — every aggregation in this doc assumes the convention.
 
 If you change any of these invariants, update this document in the same PR.

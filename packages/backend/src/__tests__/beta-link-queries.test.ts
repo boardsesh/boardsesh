@@ -142,6 +142,8 @@ type Row = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  tickUuid: string | null;
+  boardId: number | null;
 };
 
 function row(overrides: Partial<Row>): Row {
@@ -154,6 +156,8 @@ function row(overrides: Partial<Row>): Row {
     thumbnail: null,
     isListed: true,
     createdAt: '2026-04-26T00:00:00Z',
+    tickUuid: null,
+    boardId: null,
     ...overrides,
   };
 }

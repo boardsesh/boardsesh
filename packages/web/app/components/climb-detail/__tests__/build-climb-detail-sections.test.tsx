@@ -57,6 +57,8 @@ let mockBetaLinks: Array<{
   thumbnail: string | null;
   isListed: boolean;
   createdAt: string;
+  tickUuid: string | null;
+  boardId: number | null;
 }> = [];
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({
@@ -216,6 +218,8 @@ describe('useBuildClimbDetailSections', () => {
         thumbnail: null,
         isListed: true,
         createdAt: '2024-01-01',
+        tickUuid: null,
+        boardId: null,
       },
       {
         climbUuid: MOCK_CLIMB.uuid,
@@ -225,6 +229,8 @@ describe('useBuildClimbDetailSections', () => {
         thumbnail: null,
         isListed: true,
         createdAt: '2024-01-02',
+        tickUuid: null,
+        boardId: null,
       },
       {
         climbUuid: MOCK_CLIMB.uuid,
@@ -234,6 +240,8 @@ describe('useBuildClimbDetailSections', () => {
         thumbnail: null,
         isListed: true,
         createdAt: '2024-01-03',
+        tickUuid: null,
+        boardId: null,
       },
     ];
 
@@ -257,6 +265,8 @@ describe('useBuildClimbDetailSections', () => {
         thumbnail: null,
         isListed: true,
         createdAt: '2024-01-01',
+        tickUuid: null,
+        boardId: null,
       },
     ];
 

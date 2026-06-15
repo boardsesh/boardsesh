@@ -113,7 +113,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     boardUuid: String
     "Resolved shared board id (from resolveBoardForSerial) for the BLE-connected wall everyone is logging to. Used when no boardUuid is given; falls back to board-config resolution if it doesn't match the payload."
     boardId: Int
-    "Optional Instagram post or reel URL to attach as beta for the climb"
+    "Optional Instagram or TikTok video URL to attach as beta for the climb"
     videoUrl: String
   }
 
@@ -149,16 +149,18 @@ export const ticksTypeDefs = /* GraphQL */ `
   }
 
   """
-  Input for attaching an Instagram video as beta for a climb.
+  Input for attaching an Instagram or TikTok video as beta for a climb.
   """
   input AttachBetaLinkInput {
     "Board type"
     boardType: String!
     "Climb UUID"
     climbUuid: String!
-    "Instagram post or reel URL"
+    "Instagram or TikTok video URL"
     link: String!
     "Optional angle the video was climbed at"
     angle: Int
+    "Optional tick UUID this beta video belongs to"
+    tickUuid: ID
   }
 `;

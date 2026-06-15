@@ -646,11 +646,31 @@ export const boardBetaLinks = pgTable(
     thumbnail: text(),
     isListed: boolean('is_listed'),
     createdAt: text('created_at'),
+    // Optional direct ascent this beta was attached to. Legacy rows can stay
+    // null and are still matched by climb/angle/user heuristics on read.
+    //
+    // FK managed manually in migration `0128_direct_beta_tick_links.sql`:
+    // `board_beta_links_tick_uuid_boardsesh_ticks_uuid_fk` references
+    // `boardsesh_ticks(uuid) ON DELETE SET NULL`. It is not declared here
+    // because this boards schema avoids cross-package FKs to app tables.
+    tickUuid: text('tick_uuid'),
+    // Optional physical board this beta was recorded on. Set alongside
+    // tickUuid when the ascent has a resolved user_boards row.
+    //
+    // FK managed manually in migration `0128_direct_beta_tick_links.sql`:
+    // `board_beta_links_board_id_user_boards_id_fk` references
+    // `user_boards(id) ON DELETE SET NULL`.
+    boardId: bigint('board_id', { mode: 'number' }),
     // Platform-stable identifier extracted from `link` at write time.
     // Currently only populated for Instagram URLs (the post/reel shortcode);
     // null for TikTok and other platforms. Used as the indexed key for the
     // cross-climb dedup check so we don't have to LIKE-scan every row.
     shortcode: text('shortcode'),
+    // Canonical video identity across supported platforms. This lets the same
+    // video be tied to exactly one tick even when the URL text differs by host
+    // or tracking params. Populated at write time for new rows; legacy
+    // duplicates may remain null after migration.
+    videoIdentity: text('video_identity'),
     // Boardsesh user who attached this link. Populated by attachBetaLink and
     // by the saveTick beta-link insert path; NULL for legacy rows written
     // before this column existed and for any future write path that didn't
@@ -669,10 +689,9 @@ export const boardBetaLinks = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.link] }),
-    // Partial index: shortcode is null for TikTok and other non-IG platforms,
-    // and the dedup query is keyed on a non-null shortcode (see
-    // findInstagramShortcodeConflict). Excluding null rows keeps the index
-    // smaller and skips entries the dedup query can never match.
+    // Historical Instagram-only lookup. New duplicate checks use
+    // videoIdentityUnique below, but this index is kept for existing read and
+    // maintenance paths keyed by the Instagram shortcode.
     shortcodeIdx: index('board_beta_links_shortcode_idx')
       .on(table.boardType, table.shortcode)
       .where(sql`${table.shortcode} IS NOT NULL`),
@@ -681,6 +700,15 @@ export const boardBetaLinks = pgTable(
     createdByIdx: index('board_beta_links_created_by_idx')
       .on(table.createdByUserId, table.createdAt)
       .where(sql`${table.createdByUserId} IS NOT NULL`),
+    videoIdentityUnique: uniqueIndex('board_beta_links_video_identity_unique')
+      .on(table.videoIdentity)
+      .where(sql`${table.videoIdentity} IS NOT NULL`),
+    tickUuidUnique: uniqueIndex('board_beta_links_tick_uuid_unique')
+      .on(table.tickUuid)
+      .where(sql`${table.tickUuid} IS NOT NULL`),
+    boardIdx: index('board_beta_links_board_id_idx')
+      .on(table.boardId)
+      .where(sql`${table.boardId} IS NOT NULL`),
     // Note: No FK to board_climbs - beta links may arrive before their corresponding climbs during sync
   }),
 );

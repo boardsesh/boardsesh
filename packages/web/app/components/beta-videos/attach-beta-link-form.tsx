@@ -34,6 +34,7 @@ type AttachBetaLinkFormProps = {
   climbUuid: string;
   climbName?: string;
   angle?: number | null;
+  tickUuid?: string | null;
   grade?: string | null;
   setter?: string | null;
   layoutId?: number | null;
@@ -54,6 +55,7 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
   climbUuid,
   climbName,
   angle,
+  tickUuid,
   grade,
   setter,
   layoutId,
@@ -105,6 +107,7 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
           climbUuid,
           link: trimmed,
           angle: angle ?? undefined,
+          tickUuid: tickUuid ?? undefined,
         },
       };
       await client.request<AttachBetaLinkMutationResponse>(ATTACH_BETA_LINK, variables);
@@ -117,7 +120,7 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
       } else if (isInstagramUrl(trimmed)) {
         platform = 'Instagram';
       }
-      track('Beta Video Added', { boardType, climbUuid, platform });
+      track('Beta Video Added', { boardType, climbUuid, tickUuid, platform });
       showMessage(t('betaVideos.addedToast'), 'success');
       setUrl('');
       onSuccess?.();

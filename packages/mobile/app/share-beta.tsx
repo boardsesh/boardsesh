@@ -83,7 +83,7 @@ export default function ShareBetaScreen() {
     (ascent: AscentFeedItem) => {
       if (!link || attach.isPending) return;
       attach.mutate(
-        { boardType: ascent.boardType, climbUuid: ascent.climbUuid, link, angle: ascent.angle },
+        { boardType: ascent.boardType, climbUuid: ascent.climbUuid, link, angle: ascent.angle, tickUuid: ascent.uuid },
         {
           onSuccess: () => {
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

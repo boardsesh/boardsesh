@@ -64,6 +64,8 @@ type BetaLinkRow = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  betaLinkTickUuid: string | null;
+  boardId: number | null;
 };
 
 type FeaturedBetaRow = BetaLinkRow & {
@@ -1344,6 +1346,8 @@ function mapBetaLinkRow(row: BetaLinkRow) {
     thumbnail: row.thumbnail,
     isListed: row.isListed,
     createdAt: row.createdAt,
+    tickUuid: row.betaLinkTickUuid ?? null,
+    boardId: row.boardId ?? null,
   };
 }
 
@@ -1377,8 +1381,14 @@ function betaCandidateJoinSql() {
     INNER JOIN board_beta_links bl
       ON bl.board_type = t.board_type
       AND bl.climb_uuid = COALESCE(bca_video.canonical_uuid, t.climb_uuid)
-      AND bl.created_by_user_id = t.user_id
-      AND (bl.angle IS NULL OR bl.angle = t.angle)
+      AND (
+        bl.tick_uuid = t.uuid
+        OR (
+          bl.tick_uuid IS NULL
+          AND bl.created_by_user_id = t.user_id
+          AND (bl.angle IS NULL OR bl.angle = t.angle)
+        )
+      )
       AND bl.is_listed IS TRUE
       AND bl.link !~* '^https?://([a-z0-9-]+\\.)*kayaclimb\\.com/'
   `;
@@ -1389,6 +1399,7 @@ function betaCandidateRankSql(partitionExpression: SQL) {
     ROW_NUMBER() OVER (
       PARTITION BY ${partitionExpression}
       ORDER BY
+        (bl.tick_uuid = t.uuid) DESC,
         COALESCE(t.difficulty, ROUND(bcs_beta.display_difficulty)::int, -1) DESC,
         t.climbed_at DESC,
         t.id DESC,
@@ -1422,6 +1433,8 @@ async function fetchSessionFeaturedBetaRows(
         bl.thumbnail,
         bl.is_listed AS "isListed",
         bl.created_at AS "createdAt",
+        bl.tick_uuid AS "betaLinkTickUuid",
+        bl.board_id AS "boardId",
         ${betaCandidateRankSql(sql`t.session_id`)}
       FROM boardsesh_ticks t
       ${batchLayoutJoin}
@@ -1479,6 +1492,8 @@ async function fetchDailyFeaturedBetaRows(
         bl.thumbnail,
         bl.is_listed AS "isListed",
         bl.created_at AS "createdAt",
+        bl.tick_uuid AS "betaLinkTickUuid",
+        bl.board_id AS "boardId",
         ${betaCandidateRankSql(sql`keys.session_id`)}
       FROM keys
       INNER JOIN boardsesh_ticks t

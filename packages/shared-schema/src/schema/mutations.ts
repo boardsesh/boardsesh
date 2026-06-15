@@ -277,7 +277,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     updateTick(uuid: ID!, input: UpdateTickInput!): Tick!
 
     """
-    Attach an Instagram post or reel as beta for a climb. Idempotent on
+    Attach an Instagram or TikTok video as beta for a climb. Idempotent on
     (boardType, climbUuid, link).
     """
     attachBetaLink(input: AttachBetaLinkInput!): Boolean!

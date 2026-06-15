@@ -928,6 +928,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
             climbUuid={item.climbUuid}
             climbName={item.climbName}
             angle={item.angle}
+            tickUuid={item.uuid}
             grade={item.difficultyName}
             setter={item.setterUsername}
             layoutId={item.layoutId}

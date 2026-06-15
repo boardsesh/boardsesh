@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockDbSelect } = vi.hoisted(() => ({
-  mockDbSelect: vi.fn(() => {
-    throw new Error('db.select should not be called for non-Instagram URLs');
-  }),
+  mockDbSelect: vi.fn(() => ({
+    from: () => ({
+      innerJoin: () => ({ where: () => Promise.resolve([]) }),
+    }),
+  })),
 }));
 
 vi.mock('../db/client', () => ({
@@ -46,8 +48,8 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
-// Stub the rate limiter; the gate test only cares about the early-return path
-// for non-Instagram URLs, where applyRateLimit shouldn't even be reached.
+// Stub the rate limiter; the gate tests care about validation ordering, not
+// the limiter implementation itself.
 const { mockApplyRateLimit } = vi.hoisted(() => ({
   mockApplyRateLimit: vi.fn(async () => {}),
 }));
@@ -81,7 +83,7 @@ describe('validateAndEnrichBetaLinkInsert (gate)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns insert plan with null enrichment for TikTok URLs without hitting fetch or DB', async () => {
+  it('returns insert plan with null enrichment for TikTok URLs without hitting fetch', async () => {
     const result = await validateAndEnrichBetaLinkInsert(
       fakeCtx,
       'kilter',
@@ -92,7 +94,7 @@ describe('validateAndEnrichBetaLinkInsert (gate)', () => {
 
     expect(result).toEqual({ action: 'insert', thumbnail: null, foreignUsername: null });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockDbSelect).not.toHaveBeenCalled();
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
   });
 
   it('returns insert plan for short-form TikTok URLs', async () => {
@@ -106,7 +108,7 @@ describe('validateAndEnrichBetaLinkInsert (gate)', () => {
 
     expect(result).toEqual({ action: 'insert', thumbnail: null, foreignUsername: null });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockDbSelect).not.toHaveBeenCalled();
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
   });
 
   it('rate-limits non-Instagram URLs too so TikTok attachments share the per-user write budget', async () => {
@@ -210,18 +212,18 @@ describe('escapeLikePattern', () => {
   });
 });
 
-// findInstagramShortcodeConflict drives the dedup decisions for both call
-// sites. We test it by short-circuiting the drizzle chain mock so we can feed
-// the rows we want directly.
+// findInstagramShortcodeConflict is kept as a compatibility wrapper around the
+// canonical video identity dedup logic. We test it by short-circuiting the
+// drizzle chain mock so we can feed the rows we want directly.
 describe('findInstagramShortcodeConflict', () => {
-  const stubDbReturning = (rows: Array<{ climbName: string | null; climbUuid: string }>) => {
+  const stubDbReturning = (rows: Array<{ boardType?: string; climbName: string | null; climbUuid: string }>) => {
     // Drizzle's chained query builder is heavily typed; for unit tests we
     // only need the runtime shape. Cast through unknown to bypass the
     // void-returning signature `mockDbSelect` got from its initial setup.
     mockDbSelect.mockImplementation((() => ({
       from: () => ({
         innerJoin: () => ({
-          where: () => Promise.resolve(rows),
+          where: () => Promise.resolve(rows.map((row) => ({ boardType: 'kilter', ...row }))),
         }),
       }),
     })) as unknown as () => never);
@@ -283,6 +285,17 @@ describe('findInstagramShortcodeConflict', () => {
     expect(result).toEqual({ kind: 'cross-climb', climbName: 'Other Climb' });
   });
 
+  it('returns cross-climb for the same climb uuid on a different board type', async () => {
+    const { findInstagramShortcodeConflict } = await import('../graphql/resolvers/ticks/mutations');
+    stubDbReturning([{ boardType: 'tension', climbName: 'Same UUID Elsewhere', climbUuid: 'climb-1' }]);
+    const result = await findInstagramShortcodeConflict(
+      'kilter',
+      'climb-1',
+      'https://www.instagram.com/reel/ABC123xyz/',
+    );
+    expect(result).toEqual({ kind: 'cross-climb', climbName: 'Same UUID Elsewhere' });
+  });
+
   it('returns none when no rows match', async () => {
     const { findInstagramShortcodeConflict } = await import('../graphql/resolvers/ticks/mutations');
     stubDbReturning([]);
@@ -294,14 +307,18 @@ describe('findInstagramShortcodeConflict', () => {
     expect(result).toEqual({ kind: 'none' });
   });
 
-  it('returns none for non-Instagram URLs (no shortcode to look up)', async () => {
-    const { findInstagramShortcodeConflict } = await import('../graphql/resolvers/ticks/mutations');
-    const result = await findInstagramShortcodeConflict(
-      'kilter',
-      'climb-1',
-      'https://www.tiktok.com/@user/video/12345',
-    );
+  it('detects long-form TikTok conflicts through the same identity lookup', async () => {
+    const { findBetaLinkIdentityConflict } = await import('../graphql/resolvers/ticks/mutations');
+    stubDbReturning([{ climbName: 'The Project', climbUuid: 'climb-other' }]);
+    const result = await findBetaLinkIdentityConflict('kilter', 'climb-1', 'https://www.tiktok.com/@user/video/12345');
+    expect(result).toEqual({ kind: 'cross-climb', climbName: 'The Project' });
+  });
+
+  it('returns none for TikTok URLs when no identity rows match', async () => {
+    const { findBetaLinkIdentityConflict } = await import('../graphql/resolvers/ticks/mutations');
+    stubDbReturning([]);
+    const result = await findBetaLinkIdentityConflict('kilter', 'climb-1', 'https://www.tiktok.com/@user/video/12345');
     expect(result).toEqual({ kind: 'none' });
-    expect(mockDbSelect).not.toHaveBeenCalled();
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
   });
 });

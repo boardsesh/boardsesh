@@ -18,6 +18,8 @@ export const GET_BETA_LINKS = gql`
       thumbnail
       isListed
       createdAt
+      tickUuid
+      boardId
     }
   }
 `;
@@ -48,6 +50,8 @@ export const GET_RECENT_BETA_LINKS = gql`
         thumbnail
         isListed
         createdAt
+        tickUuid
+        boardId
       }
     }
   }
@@ -76,6 +80,8 @@ export const GET_USER_BETA_LINKS = gql`
         thumbnail
         isListed
         createdAt
+        tickUuid
+        boardId
       }
     }
   }

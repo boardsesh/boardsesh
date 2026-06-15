@@ -64,6 +64,7 @@ export const AttachBetaLinkInputSchema = z.object({
   climbUuid: ExternalUUIDSchema,
   link: z.string().max(500).regex(BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE),
   angle: z.number().int().min(0).max(90).optional().nullable(),
+  tickUuid: UUIDSchema.optional().nullable(),
 });
 
 /**
