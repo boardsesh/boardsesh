@@ -17,7 +17,6 @@
   },
   "mobile": {
     "home": {
-      "title": "Home",
       "betaTitle": "Fresh beta",
       "betaEmpty": "No beta videos yet",
       "betaError": "Couldn't load beta videos.",

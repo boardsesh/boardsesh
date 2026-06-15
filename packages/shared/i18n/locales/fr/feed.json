@@ -17,7 +17,6 @@
   },
   "mobile": {
     "home": {
-      "title": "Accueil",
       "betaTitle": "Beta récente",
       "betaEmpty": "Aucune vidéo beta pour le moment",
       "betaError": "Impossible de charger les vidéos beta.",

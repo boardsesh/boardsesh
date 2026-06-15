@@ -550,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Bloc introuvable",
-      "addToQueue": "Ajouter à la file",
-      "logAscent": "Enregistrer un enchaînement",
-      "sent_one": "Enchaîné {{count}} fois",
-      "sent_other": "Enchaîné {{count}} fois",
-      "sentWithAttempts_one": "Enchaîné {{count}} fois en {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Enchaîné {{count}} fois en {{attempts}} {{attemptWord}}",
-      "attempt_one": "essai",
-      "attempt_other": "essais",
-      "send_one": "enchaînement",
-      "send_other": "enchaînements"
+      "notFound": "Bloc introuvable"
     },
     "logAscent": {
       "attempt": "Essai",

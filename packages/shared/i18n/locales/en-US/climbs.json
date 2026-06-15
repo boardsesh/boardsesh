@@ -550,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Climb not found",
-      "addToQueue": "Add to Queue",
-      "logAscent": "Log Ascent",
-      "sent_one": "Sent {{count}} time",
-      "sent_other": "Sent {{count}} times",
-      "sentWithAttempts_one": "Sent {{count}} time in {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Sent {{count}} times in {{attempts}} {{attemptWord}}",
-      "attempt_one": "attempt",
-      "attempt_other": "attempts",
-      "send_one": "send",
-      "send_other": "sends"
+      "notFound": "Climb not found"
     },
     "logAscent": {
       "attempt": "Attempt",

@@ -550,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Bloque no encontrado",
-      "addToQueue": "Agregar a la cola",
-      "logAscent": "Registrar encadene",
-      "sent_one": "Encadenado {{count}} vez",
-      "sent_other": "Encadenado {{count}} veces",
-      "sentWithAttempts_one": "Encadenado {{count}} vez en {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Encadenado {{count}} veces en {{attempts}} {{attemptWord}}",
-      "attempt_one": "intento",
-      "attempt_other": "intentos",
-      "send_one": "encadene",
-      "send_other": "encadenes"
+      "notFound": "Bloque no encontrado"
     },
     "logAscent": {
       "attempt": "Intento",
