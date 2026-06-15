@@ -4,7 +4,7 @@ uvicorn[standard]==0.32.1
 
 # WebSocket support
 websockets==13.1
-python-multipart==0.0.27
+python-multipart==0.0.31
 
 # Database
 aiosqlite==0.20.0
