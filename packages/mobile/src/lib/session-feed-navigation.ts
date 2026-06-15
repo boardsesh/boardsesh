@@ -6,7 +6,7 @@ type Router = ReturnType<typeof useRouter>;
 // Session detail lives once per tab stack (Home, Profile) so the push stays inside
 // the tab and keeps the native tab bar + bottom accessory on screen. Each feed
 // passes the route for its own tab so the detail lands in that tab's back stack.
-export type SessionDetailPathname = '/home/session/[sessionId]' | '/profile/session/[sessionId]';
+export type SessionDetailPathname = '/(tabs)/home/session/[sessionId]' | '/(tabs)/profile/session/[sessionId]';
 
 export function navigateToSessionFeedItem(
   router: Router,

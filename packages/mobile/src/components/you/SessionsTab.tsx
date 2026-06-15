@@ -163,7 +163,7 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
 
   const handleOpenSession = useCallback(
     (session: SessionFeedItem) => {
-      navigateToSessionFeedItem(router, session, '/profile/session/[sessionId]');
+      navigateToSessionFeedItem(router, session, '/(tabs)/profile/session/[sessionId]');
     },
     [router],
   );
