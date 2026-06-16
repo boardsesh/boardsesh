@@ -13,7 +13,7 @@
  */
 
 import { type ReactNode } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useWindowDimensions, View, StyleSheet } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { timing } from '../../theme/animations';
 import {
@@ -22,8 +22,10 @@ import {
   TOOLBAR_FAB_SIZE,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TABBAR_SEAM_OVERLAP,
+  IPAD_TOOLBAR_MAX_WIDTH,
   glassSize,
 } from '../../theme/layout';
+import { isIpad } from '../../lib/is-ipad';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useMeasuredTabBarHeight } from '../../providers/tab-bar-height-provider';
@@ -62,6 +64,15 @@ export function ActiveContextBar({
   const reduceMotion = useReduceMotion();
   const bottomChrome = useBottomChromeMetrics();
   const measuredTabBarHeight = useMeasuredTabBarHeight();
+  const { width: screenWidth } = useWindowDimensions();
+
+  // On iPad the floating glass bar would otherwise span the whole width — stranding
+  // the capsule mid-screen and flinging the tick FAB to the far edge. Center it as
+  // a phone-like cluster. The docked Material bar keeps its edge-to-edge width.
+  const effectiveInset =
+    isIpad && !fillPrimary && !dockToTabBar
+      ? Math.max(horizontalInset, (screenWidth - IPAD_TOOLBAR_MAX_WIDTH) / 2)
+      : horizontalInset;
 
   // Docked (Material): sit on the tab bar's REAL measured top, tucked under its hairline
   // by one px. Before the first measurement, fall back to the constant-estimated top
@@ -79,8 +90,8 @@ export function ActiveContextBar({
         styles.toolbar,
         {
           bottom,
-          left: horizontalInset,
-          right: horizontalInset,
+          left: effectiveInset,
+          right: effectiveInset,
         },
       ]}
     >

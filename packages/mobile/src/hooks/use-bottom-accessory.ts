@@ -2,14 +2,20 @@ import { Platform } from 'react-native';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useTheme } from '../providers/theme-provider';
+import { isIpad } from '../lib/is-ipad';
 import { useGlassCapability } from './use-glass-capability';
 
 /**
  * Whether the device *can* host `NativeTabs.BottomAccessory` — the pure
  * capability check. The native accessory is tied to the system Liquid Glass tab
  * bar, so it only exists on that path.
+ *
+ * Excluded on iPad: iPadOS positions the system bottom accessory against its own
+ * tab-bar layout, where it lands mis-placed and undersized. The climb + tick ride
+ * the centered JS `PersistentQueueBar` there instead (the native tab bar stays).
  */
 export function isBottomAccessoryAvailable(): boolean {
+  if (isIpad) return false;
   return Platform.OS === 'ios' && NativeTabs?.BottomAccessory != null && isLiquidGlassAvailable();
 }
 

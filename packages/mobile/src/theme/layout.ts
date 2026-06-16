@@ -60,6 +60,15 @@ export const TOOLBAR_CAPSULE_HEIGHT = glassSize.capsule;
  *  FABs and stays Photos-style centered on wide phones. */
 export const TOOLBAR_CAPSULE_MAX_WIDTH = 260;
 
+/** On iPad the floating glass climb bar is centered at this max width instead of
+ *  stretching edge-to-edge (which strands the capsule mid-screen and flings the
+ *  tick FAB to the far corner). */
+export const IPAD_TOOLBAR_MAX_WIDTH = 440;
+
+/** Hero log-ascent tick diameter on iPad — a step up from the phone hero so the
+ *  one defining action reads at arm's length on the larger display. */
+export const IPAD_TICK_FAB_SIZE = 64;
+
 /** Screen-edge gutter for the toolbar's side FABs. Matches ClimbTopChrome. */
 export const TOOLBAR_SIDE_MARGIN = 16;
 

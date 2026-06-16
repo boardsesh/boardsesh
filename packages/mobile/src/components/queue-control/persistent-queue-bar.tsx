@@ -16,7 +16,14 @@
  * pair, so `jsQueueToolbarVisible` is false here and this returns null.
  */
 
-import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
+import {
+  MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
+  TOOLBAR_RESERVE,
+  TAB_BAR_HEIGHT,
+  IPAD_TICK_FAB_SIZE,
+  glassSize,
+} from '../../theme/layout';
+import { isIpad } from '../../lib/is-ipad';
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
@@ -61,5 +68,14 @@ export function PersistentQueueBar() {
     );
   }
 
-  return <ActiveContextBar primary={<ClimbCapsule />} trailing={<LogAscentFab climb={currentClimb} />} />;
+  // iPad bumps the hero tick up a step so it reads at arm's length; the bar's
+  // trailing slot widens to match.
+  const tickSize = isIpad ? IPAD_TICK_FAB_SIZE : glassSize.hero;
+  return (
+    <ActiveContextBar
+      primary={<ClimbCapsule />}
+      trailing={<LogAscentFab climb={currentClimb} size={tickSize} />}
+      trailingWidth={tickSize}
+    />
+  );
 }

@@ -18,6 +18,7 @@ const cfg = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 2, fontScale: 1 }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));

@@ -17,6 +17,7 @@ import {
 import { FullWindowOverlay } from 'react-native-screens';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
+import { isIpad } from '../lib/is-ipad';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { Icon } from './Icon';
@@ -115,6 +116,9 @@ export function LogAscentSheet({
       keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
+      // Full-width on phones; on iPad cap the width and center so the tick form
+      // doesn't stretch into an awkwardly wide sheet.
+      style={isIpad ? styles.ipadSheet : undefined}
     >
       <BottomSheetView style={styles.content}>
         <View style={styles.closeButtonRow}>
@@ -151,6 +155,12 @@ export function LogAscentSheet({
 }
 
 const styles = StyleSheet.create({
+  // iPad: a centered ~form-sheet width rather than the full screen width.
+  ipadSheet: {
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+  },
   indicator: {
     backgroundColor: iosSystemColors.separator,
     width: 36,
