@@ -76,6 +76,10 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
     flags['strava-integration'] = true;
   }
 
+  if (process.env.EXPO_PUBLIC_KILTER_OAUTH_LINKING === 'true') {
+    flags['kilter-oauth-linking'] = true;
+  }
+
   return Object.keys(flags).length > 0 ? flags : undefined;
 }
 

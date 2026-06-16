@@ -40,11 +40,17 @@ session_type` already accommodates inferred solo sessions for later.
 ## Mobile availability and flags
 
 The mobile Connected apps route always shows board account cards for signed-in
-users. Strava is hidden until the `strava-integration` feature flag is enabled;
-static app builds can force it on with `EXPO_PUBLIC_STRAVA_INTEGRATION=true`.
-The More tab subtitle follows the same flag so unreleased Strava copy does not
-appear when the card is hidden. Apple Health remains device-gated by native
-availability checks.
+users. The legacy `Kilter (Aurora)` import/request-data card is always shown;
+the new `Kilter (new)` OAuth card is hidden until the
+`kilter-oauth-linking` feature flag is enabled and the credentials response
+reports `kilterSyncAllowed: true` for the signed-in user. Static app builds can
+force the feature flag on with `EXPO_PUBLIC_KILTER_OAUTH_LINKING=true`, but the
+backend allowlist still controls whether the connect card appears. Strava is
+hidden until the `strava-integration` feature flag is enabled; static app builds
+can force it on with `EXPO_PUBLIC_STRAVA_INTEGRATION=true`. The More tab
+subtitle follows the same flag so unreleased Strava copy does not appear when
+the card is hidden. Apple Health remains device-gated by native availability
+checks.
 
 ## OAuth connect flow (mobile, cookie-less)
 

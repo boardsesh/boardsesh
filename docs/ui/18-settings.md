@@ -151,9 +151,14 @@ Card for each board type (iterates `AURORA_BOARDS`: kilter, tension).
 - Route: `packages/mobile/app/(tabs)/profile/integrations.tsx`.
 - Board account cards render above platform/device integration cards.
 - Uses backend REST endpoints instead of Next internal routes.
-- Kilter can connect through OAuth only when `KILTER_SYNC_ALLOWED_USER_IDS`
-  allows the current user; otherwise the card offers JSON import and data
-  request actions.
+- Kilter renders as `Kilter (Aurora)` for the old Aurora data request/import
+  path. The new OAuth flow renders as a separate `Kilter (new)` card only when
+  the `kilter-oauth-linking` mobile feature flag is enabled and the credentials
+  response reports `kilterSyncAllowed: true`; static mobile builds can enable
+  the flag with `EXPO_PUBLIC_KILTER_OAUTH_LINKING=true`.
+- Kilter OAuth still requires backend allowlist access through
+  `KILTER_SYNC_ALLOWED_USER_IDS`; the mobile feature flag cannot expose the
+  connect card by itself.
 - Non-Kilter boards use the same username/password link dialog semantics as
   web.
 - JSON import reads a local file with `expo-document-picker`, previews the
