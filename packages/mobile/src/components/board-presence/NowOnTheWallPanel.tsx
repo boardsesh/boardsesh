@@ -25,7 +25,6 @@ import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnai
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
-import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { getHttpClient } from '../../lib/graphql/client';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
@@ -167,9 +166,6 @@ function NowOnTheWallPanelComponent({
 
   const { currentClimb } = useBoardPresenceCurrent();
   const { history, stats } = useBoardPresenceFeed();
-  const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
-  const boardPresenceBoardIdRef = useRef(boardPresenceBoardId);
-  boardPresenceBoardIdRef.current = boardPresenceBoardId;
   const visibleHistory = useMemo(
     () =>
       currentClimb

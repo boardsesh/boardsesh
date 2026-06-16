@@ -310,6 +310,50 @@ borderless)` builds a Pressable `android_ripple` config at that state-layer opac
 
 ---
 
+## iPad adaptive layout
+
+iPad (only — no Android tablets) gets a multi-column shell; every iPhone, and an iPad in a narrow
+split, falls through to the phone UI **verbatim**. The size class is pure and unit-tested in
+`theme/size-class.ts` (`resolveDeviceLayout`), fed window width by `hooks/use-device-layout.ts`:
+
+- **`compact`** — every iPhone, plus an iPad window narrower than `REGULAR_WIDTH_BREAKPOINT` (700pt:
+  Slide Over / a narrow Split View). Renders today's phone UI; no phase may regress it.
+- **`regular`** — an iPad window wide enough for the glass sidebar (`IpadSidebar`, replacing the bottom
+  tab bar) + a content column + a detail pane. `expanded` (≥1024pt) is a flag on top.
+
+**The right column is master-detail, not status.** At `regular` width the shell is
+`sidebar · active-tab content · detail pane` (`(tabs)/_layout.tsx`). The detail pane (`IpadPlayPane` →
+`PlayDrawer presentation="pane"`) follows the user's **selection** — tapping a list row updates it —
+mirroring Mail/Notes/Files. It is the SELECTION surface; do not repoint it at shared/live status (that
+was the original bug). A `setAsCurrent:false` open (feed / beta / climb view) previews in the pane
+without committing to the queue (`drawer-host-provider`'s `panePreviewItem`), so every climb-open entry
+point populates the pane.
+
+**The live wall is STATUS, with its own width-adaptive home** (`resolveWallSurface(width, widthClass,
+sidebarWidth)` → `'none' | 'strip' | 'column'`):
+
+- Ambient `SidebarWallCell` in the rail footer (always, `regular`) — the glanceable cross-tab anchor.
+- A dedicated **`column`** on the trailing edge in landscape, when sidebar + browse list (≥
+  `WALL_COLUMN_CONTENT_FLOOR` 400pt) + detail pane (`DETAIL_PANE_WIDTH_WITH_WALL` 320pt) +
+  `WALL_COLUMN_WIDTH` (300pt) all fit (≈≥1116pt → both 11" and 13" landscape).
+- A compact **`strip`** docked atop the detail pane in portrait, where a 4th column would crush the
+  list (11" 834pt / 13" 1032pt).
+
+All three reuse `NowOnTheWallPanel` (extracted from `BoardSheet`, `variant: 'sheet' | 'column'`) and tap
+through to the full `BoardSheet`. Rules when adding layout-sensitive iPad components:
+
+- Decide column-vs-strip from the **computed width budget**, never a raw breakpoint — it stays correct
+  across rotation / Split View / Stage Manager.
+- Exactly **one wall surface per layout**: the shell passes `showWallCell={!showWallColumn}` to the
+  sidebar so the rail cell and the column never both show.
+- Inline columns/strips **own their safe-area insets** (`insets.top` for a top-of-shell column header,
+  `insets.bottom` for a full-height column footer); a gorhom sheet handles its own. When a strip is
+  docked above the pane, the shell sets `PlayDrawer paneTopInset={false}` so the inset isn't doubled.
+- Status may **annotate** selection (the pane shows an "On the wall" chip when the selected climb is the
+  lit one) — but never replace it.
+
+---
+
 ## Motion & haptics
 
 **Springs** (`theme/animations.ts`, for reanimated `withSpring`):
