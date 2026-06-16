@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDeviceLayout, REGULAR_WIDTH_BREAKPOINT, EXPANDED_WIDTH_BREAKPOINT } from '../size-class';
+import {
+  resolveDeviceLayout,
+  resolveWallSurface,
+  REGULAR_WIDTH_BREAKPOINT,
+  EXPANDED_WIDTH_BREAKPOINT,
+} from '../size-class';
+
+const SIDEBAR_WIDTH = 96;
 
 describe('resolveDeviceLayout', () => {
   it('keeps every iPhone compact regardless of width', () => {
@@ -33,5 +40,31 @@ describe('resolveDeviceLayout', () => {
     for (const width of [EXPANDED_WIDTH_BREAKPOINT, 1194, 1366]) {
       expect(resolveDeviceLayout({ width, isPad: true })).toEqual({ widthClass: 'regular', expanded: true });
     }
+  });
+});
+
+describe('resolveWallSurface', () => {
+  it('shows no wall surface at compact width (phone UI owns its own wall chrome)', () => {
+    for (const width of [320, 507, 664, 932]) {
+      expect(resolveWallSurface({ width, widthClass: 'compact', sidebarWidth: SIDEBAR_WIDTH })).toBe('none');
+    }
+  });
+
+  it('shows a strip in portrait, where a 4th column would crush the list', () => {
+    // 11" portrait 834 → 118pt list; 13" portrait 1032 → 316pt list — both below the floor.
+    expect(resolveWallSurface({ width: 834, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('strip');
+    expect(resolveWallSurface({ width: 1032, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('strip');
+  });
+
+  it('shows a dedicated column in landscape on both iPad sizes', () => {
+    // 11" landscape 1194 → 478pt list; 13" landscape 1366 → 650pt list — both clear the floor.
+    expect(resolveWallSurface({ width: 1194, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('column');
+    expect(resolveWallSurface({ width: 1366, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('column');
+  });
+
+  it('flips strip→column exactly at the content floor', () => {
+    // contentWidth = width - 96 - 320 - 300; column requires contentWidth >= 400 → width >= 1116.
+    expect(resolveWallSurface({ width: 1115, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('strip');
+    expect(resolveWallSurface({ width: 1116, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('column');
   });
 });

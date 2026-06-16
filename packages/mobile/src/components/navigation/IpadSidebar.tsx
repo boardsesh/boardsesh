@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
+import { SidebarWallCell } from './SidebarWallCell';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import type { IconName } from '../icon-map';
@@ -69,7 +70,7 @@ function SidebarItem({
   );
 }
 
-function IpadSidebarComponent() {
+function IpadSidebarComponent({ showWallCell = true }: { showWallCell?: boolean }) {
   const { t } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
   const { t: tPlaylists } = useTranslation('playlists');
@@ -136,6 +137,10 @@ function IpadSidebarComponent() {
         />
       ))}
       <View style={styles.spacer} />
+      {/* Ambient "now on the wall" anchor, pinned above the account row. Hidden
+          when the shell shows the full wall column (landscape) so there's one
+          wall surface per layout. */}
+      {showWallCell ? <SidebarWallCell /> : null}
       <SidebarItem destination={account} focused={account.segment === activeSegment} onPress={handleNavigate} />
     </View>
   );

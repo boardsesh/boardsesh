@@ -35,6 +35,8 @@ import { GlassSheetBackground } from '../GlassSheetBackground';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { usePlaylistSuggestionSource, useQueue } from '../../providers/queue-provider';
+import { useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
+import { useTheme } from '../../providers/theme-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -48,10 +50,9 @@ import { useDeferredSheetOpen } from './use-deferred-sheet-open';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { buildPlayDrawerBoardLayout } from './lightbulb-control';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
-import { useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing, sheetStyles } from '../../theme/tokens';
+import { spacing, borderRadius, sheetStyles } from '../../theme/tokens';
 
 type BoardConfig = {
   boardName: string;
@@ -114,6 +115,13 @@ type PlayDrawerProps = {
    * sheet on compact and the shell renders the pane on regular.
    */
   presentation?: 'sheet' | 'pane';
+  /**
+   * Pane only: whether the pane applies the top safe-area inset to its first
+   * screen. Defaults to true. The shell sets this `false` when it docks a
+   * "Now on the wall" strip above the pane (portrait) — the strip then owns the
+   * inset, so the pane must not add it again.
+   */
+  paneTopInset?: boolean;
 };
 
 // Full-screen now-playing takeover: a single 100% snap, no peek detent. The
@@ -137,6 +145,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     mismatchBoardLabel,
     onSwitchBoard,
     presentation = 'sheet',
+    paneTopInset = true,
   },
   ref,
 ) {
@@ -208,15 +217,23 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     });
   }, [boardName, layoutId, sizeId, setIds]);
 
-  // The bottom sheet shows the user's queue climb (preview override → current
-  // queue item). The iPad pane instead mirrors the WALL: it shows the climb that
-  // is lit on the board via board presence, or nothing when the wall is empty —
-  // never the user's private queue selection. `useWallOrQueueCurrentClimb(null)`
-  // returns the live wall climb or null, the same source the accessory bar used.
+  // Both presentations show the user's queue selection (preview override →
+  // current queue item). The iPad pane used to mirror the live WALL here, which
+  // hid the browse→inspect flow — tapping a climb produced no visible change. It
+  // now follows selection like the sheet (the iPad master-detail pattern); the
+  // wall gets its own labelled surfaces (sidebar cell + strip/column) owned by
+  // the shell, and the pane annotates its header when the selection is the lit
+  // climb (below).
+  const displayedQueueItem = drawerPreviewItem ?? state.currentClimbQueueItem;
+  const displayedClimb = displayedQueueItem?.climb ?? null;
+
+  // Status-annotates-selection (the Music "now-playing row" glyph): in the pane,
+  // flag when the selected climb is the one physically lit on the wall. O(1) read
+  // that changes only on a wall event. The sheet never shows the chip.
+  const { brandColors } = useTheme();
   const wallClimb = useWallOrQueueCurrentClimb(null);
-  const queueDisplayedItem = drawerPreviewItem ?? state.currentClimbQueueItem;
-  const displayedQueueItem = isPane ? null : queueDisplayedItem;
-  const displayedClimb = isPane ? wallClimb : (queueDisplayedItem?.climb ?? null);
+  const isDisplayedClimbOnWall =
+    isPane && wallClimb !== null && displayedClimb !== null && wallClimb.uuid === displayedClimb.uuid;
 
   // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
@@ -244,15 +261,12 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     climbUuid: displayedClimb?.uuid ?? null,
   });
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
+  // The pane now follows the user's queue selection like the sheet, so prev/next
+  // step the queue in both presentations (a wall climb that isn't queued simply
+  // has nothing to step to).
   const navigationState = useMemo(
-    () =>
-      // The pane shows a wall climb that isn't in the user's queue, so there's
-      // nothing to step through — hide prev/next (matches the accessory's
-      // wall-pinned swipe suppression).
-      isPane
-        ? { canNext: false, canPrevious: false, nextItem: null, prevItem: null, remainingCount: 0 }
-        : computeNavigationStateWithSuggestions(state.queue, displayedQueueItem, navigationSuggestionSource),
-    [isPane, state.queue, displayedQueueItem, navigationSuggestionSource],
+    () => computeNavigationStateWithSuggestions(state.queue, displayedQueueItem, navigationSuggestionSource),
+    [state.queue, displayedQueueItem, navigationSuggestionSource],
   );
 
   // Multi-frame route playback (animation + BLE + party-sync). Boulders
@@ -576,7 +590,9 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
       <View
         style={[
           styles.firstScreen,
-          isPane ? { paddingTop: insets.top } : { height: firstScreenHeight, paddingTop: insets.top },
+          isPane
+            ? { paddingTop: paneTopInset ? insets.top : 0 }
+            : { height: firstScreenHeight, paddingTop: insets.top },
         ]}
       >
         {isPane ? null : (
@@ -593,6 +609,15 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
             </Pressable>
           </View>
         )}
+
+        {isDisplayedClimbOnWall ? (
+          <View style={styles.onWallChip}>
+            <View style={[styles.onWallDot, { backgroundColor: brandColors.warning }]} />
+            <Text variant="caption1" color={brandColors.warning} style={styles.onWallChipText}>
+              {t('boardPresence.open')}
+            </Text>
+          </View>
+        ) : null}
 
         <PlayDrawerHeader
           name={displayedClimb.name}
@@ -821,7 +846,12 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
             {climbContent}
           </ScrollView>
         ) : (
-          <View style={[styles.paneEmpty, { paddingTop: insets.top + spacing[8], paddingBottom: insets.bottom }]}>
+          <View
+            style={[
+              styles.paneEmpty,
+              { paddingTop: (paneTopInset ? insets.top : 0) + spacing[8], paddingBottom: insets.bottom },
+            ]}
+          >
             <Icon name="search" size={40} color={iosSystemColors.systemGray4} />
             <Text variant="headline" style={styles.paneEmptyTitle}>
               {t('playView.paneEmpty.title')}
@@ -906,6 +936,22 @@ const styles = StyleSheet.create({
   // action controls, leaving the board art and header above it interactive.
   controlsRegion: {
     position: 'relative',
+  },
+  // Pane-only "this selection is the lit climb" annotation, above the header.
+  onWallChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[1],
+  },
+  onWallDot: {
+    width: 8,
+    height: 8,
+    borderRadius: borderRadius.full,
+  },
+  onWallChipText: {
+    fontWeight: '600',
   },
   // iPad pane "no climb selected" placeholder.
   paneEmpty: {

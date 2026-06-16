@@ -26,6 +26,7 @@
   "boardPresence": {
     "title": "Ahora en el muro",
     "open": "En el muro",
+    "railDark": "Nada encendido ahora",
     "openAria": "Ver qué hay en el muro",
     "openAriaWithClimb": "Ver qué hay en el muro: {{name}}",
     "nowOnWallAnnouncement": "Ahora en el muro: {{name}}",
@@ -466,8 +467,8 @@
   },
   "playView": {
     "paneEmpty": {
-      "title": "Nada en el muro",
-      "subtitle": "El bloque encendido aparece aquí."
+      "title": "Elige un bloque",
+      "subtitle": "Toca un bloque para verlo aquí."
     },
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",

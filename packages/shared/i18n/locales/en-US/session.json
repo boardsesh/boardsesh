@@ -26,6 +26,7 @@
   "boardPresence": {
     "title": "Now on the wall",
     "open": "On the wall",
+    "railDark": "Nothing lit right now",
     "openAria": "See what's on the wall",
     "openAriaWithClimb": "See what's on the wall: {{name}}",
     "nowOnWallAnnouncement": "Now on the wall: {{name}}",
@@ -466,8 +467,8 @@
   },
   "playView": {
     "paneEmpty": {
-      "title": "Nothing on the wall",
-      "subtitle": "The climb that's lit up shows here."
+      "title": "Pick a climb",
+      "subtitle": "Tap a climb to see it here."
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",
