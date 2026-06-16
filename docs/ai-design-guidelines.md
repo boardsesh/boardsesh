@@ -329,8 +329,8 @@ was the original bug). A `setAsCurrent:false` open (feed / beta / climb view) pr
 without committing to the queue (`drawer-host-provider`'s `panePreviewItem`), so every climb-open entry
 point populates the pane.
 
-**The live wall is STATUS, with its own width-adaptive home** (`resolveWallSurface(width, widthClass,
-sidebarWidth)` → `'none' | 'strip' | 'column'`):
+**The live wall is STATUS, with its own width-adaptive home** (`resolveWallSurface({ width, widthClass,
+sidebarWidth })` → `'none' | 'strip' | 'column'`):
 
 - Ambient `SidebarWallCell` in the rail footer (always, `regular`) — the glanceable cross-tab anchor.
 - A dedicated **`column`** on the trailing edge in landscape, when sidebar + browse list (≥
