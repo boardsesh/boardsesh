@@ -85,45 +85,51 @@ export default function TabLayout() {
   const deviceLayout = useDeviceLayout();
 
   // The five tab screens are identical across the JS `Tabs` variants (Material
-  // bar vs. the hidden-bar iPad shell), so share one definition. The NativeTabs
-  // path uses its own Trigger API below and does not consume this.
-  const tabScreens = (
-    <>
-      <Tabs.Screen
-        name="home"
-        options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
-      />
-      <Tabs.Screen
-        name="climbs"
-        options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
-      />
-      <Tabs.Screen
-        name="record"
-        options={{
-          title: tSession('mobile.session.recordTab'),
-          tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
-          tabBarBadge: showRecordBadge ? '' : undefined,
-          // Android can stall the first lazy mount of this nested stack,
-          // leaving the Record tab blank until another tab forces a remount.
-          lazy: eagerMountRecord ? false : undefined,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: tPlaylists('bottomTabBar.discover'),
-          tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: t('mobile.nav.profile'),
-          tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
-        }}
-      />
-    </>
-  );
+  // bar vs. the hidden-bar iPad shell), so share one definition. A flat keyed
+  // ARRAY (not a Fragment) — Expo Router walks the navigator's direct children
+  // for `Tabs.Screen`, and a Fragment wrapper makes it ignore their `options`
+  // (titles/icons/badge/lazy). The NativeTabs path uses its own Trigger API below
+  // and does not consume this.
+  const tabScreens = [
+    <Tabs.Screen
+      key="home"
+      name="home"
+      options={{ title: t('mobile.nav.home'), tabBarIcon: materialTabIcon('home', 'home-outline') }}
+    />,
+    <Tabs.Screen
+      key="climbs"
+      name="climbs"
+      options={{ title: t('mobile.nav.climbs'), tabBarIcon: materialTabIcon('magnify', 'magnify') }}
+    />,
+    <Tabs.Screen
+      key="record"
+      name="record"
+      options={{
+        title: tSession('mobile.session.recordTab'),
+        tabBarIcon: materialTabIcon('record-circle', 'record-circle-outline'),
+        tabBarBadge: showRecordBadge ? '' : undefined,
+        // Android can stall the first lazy mount of this nested stack,
+        // leaving the Record tab blank until another tab forces a remount.
+        lazy: eagerMountRecord ? false : undefined,
+      }}
+    />,
+    <Tabs.Screen
+      key="discover"
+      name="discover"
+      options={{
+        title: tPlaylists('bottomTabBar.discover'),
+        tabBarIcon: materialTabIcon('bookmark-multiple', 'bookmark-multiple-outline'),
+      }}
+    />,
+    <Tabs.Screen
+      key="profile"
+      name="profile"
+      options={{
+        title: t('mobile.nav.profile'),
+        tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
+      }}
+    />,
+  ];
 
   // Regular-width iPad: a glass left sidebar replaces the bottom tab bar, with
   // each tab rendered single-column to its right. The Tabs navigator still owns

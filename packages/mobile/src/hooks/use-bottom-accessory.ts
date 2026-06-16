@@ -3,6 +3,7 @@ import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useTheme } from '../providers/theme-provider';
 import { useGlassCapability } from './use-glass-capability';
+import { useDeviceLayout } from './use-device-layout';
 
 /**
  * Whether the device *can* host `NativeTabs.BottomAccessory` — the pure
@@ -24,6 +25,15 @@ export function isBottomAccessoryAvailable(): boolean {
 export function useNativeTabBar(): boolean {
   const { variant } = useTheme();
   const glassCapable = useGlassCapability();
+  const { widthClass } = useDeviceLayout();
+  // The iPad sidebar shell (regular width) renders JS `Tabs` + a glass rail instead
+  // of `NativeTabs`, so the native tab bar — and the bottom accessory + tab-bar
+  // search role it hosts — is not on screen there. Everything that branches on this
+  // predicate (the climb-list search mode, the accessory mount, bottom-chrome
+  // geometry) must treat the iPad shell as "no native tab bar", or it reaches for a
+  // native search bar / accessory that has no bar to live in (the search field
+  // then collides with the floating top chrome).
+  if (widthClass === 'regular') return false;
   return variant === 'liquidGlass' && glassCapable;
 }
 
