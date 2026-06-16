@@ -465,6 +465,10 @@
     }
   },
   "playView": {
+    "paneEmpty": {
+      "title": "Nothing on the wall",
+      "subtitle": "The climb that's lit up shows here."
+    },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",
     "play": "Play",

@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { Platform, StyleSheet, View, type ColorValue } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions, type ColorValue } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Tabs } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -15,6 +15,7 @@ import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-b
 import { useInsideTabs } from '../../src/hooks/use-inside-tabs';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { IpadSidebar } from '../../src/components/navigation/IpadSidebar';
+import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
 // activity feed, while Climbs remains the search surface one tab over. Drives
@@ -83,6 +84,11 @@ export default function TabLayout() {
   // Regular-width iPad opts into the sidebar shell; compact width (every iPhone,
   // a narrow iPad split) keeps the native / Material tab bars below verbatim.
   const deviceLayout = useDeviceLayout();
+  // The right column (the PlayDrawer pane) scales with the window but is clamped
+  // so it never crushes the content column or grows past a comfortable reading
+  // width. ~34% of the window, clamped 320–400pt.
+  const { width: windowWidth } = useWindowDimensions();
+  const playPaneWidth = Math.round(Math.min(400, Math.max(320, windowWidth * 0.34)));
 
   // The five tab screens are identical across the JS `Tabs` variants (Material
   // bar vs. the hidden-bar iPad shell), so share one definition. A flat keyed
@@ -144,6 +150,11 @@ export default function TabLayout() {
           <Tabs tabBar={renderHiddenTabBar} screenOptions={{ headerShown: false }}>
             {tabScreens}
           </Tabs>
+        </View>
+        {/* Persistent right column: the PlayDrawer for the current climb. Replaces
+            the floating accessory/queue bar on the iPad shell (see app/_layout). */}
+        <View style={[styles.playPane, { width: playPaneWidth, borderLeftColor: systemColors.separator }]}>
+          <IpadPlayPane />
         </View>
       </View>
     );
@@ -210,4 +221,5 @@ const styles = StyleSheet.create({
   // content pane flexes to fill the rest.
   shell: { flex: 1, flexDirection: 'row' },
   shellContent: { flex: 1 },
+  playPane: { borderLeftWidth: StyleSheet.hairlineWidth },
 });
