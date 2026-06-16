@@ -24,4 +24,16 @@ describe('useVariantValue', () => {
     const material = render(createElement(Probe));
     expect(material.container.querySelector('div')?.getAttribute('data-value')).toBe('material-value');
   });
+
+  it('updates the returned value on a live variant flip (re-render, no remount)', () => {
+    ctrl.variant = 'liquidGlass';
+    const { container, rerender } = render(createElement(Probe));
+    expect(container.querySelector('div')?.getAttribute('data-value')).toBe('glass-value');
+
+    // Flip the variant and re-render the SAME mounted tree — the reactive case a
+    // misplaced useMemo would regress. The value must track the new variant.
+    ctrl.variant = 'material';
+    rerender(createElement(Probe));
+    expect(container.querySelector('div')?.getAttribute('data-value')).toBe('material-value');
+  });
 });

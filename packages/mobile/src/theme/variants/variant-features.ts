@@ -15,9 +15,14 @@ export type VariantFeatures = {
    *  of a floating bottom FAB. Material uses the toolbar; Liquid Glass floats the FAB.
    *  (Consumed by the climbs screen.) */
   filtersInTopChrome: boolean;
+  /** The condensed filter summary omits the grade filter (grade has its own control
+   *  in the Material top chrome); Liquid Glass summarises all filter tokens. The other
+   *  side of the `filtersInTopChrome` layout decision — kept in the registry so it's
+   *  not a bare `selectByVariant` split from the rest. (Consumed by the climbs screen.) */
+  summaryExcludesGradeFilter: boolean;
 };
 
 export const variantFeatures = {
-  liquidGlass: { inBodyLargeTitle: true, filtersInTopChrome: false },
-  material: { inBodyLargeTitle: false, filtersInTopChrome: true },
+  liquidGlass: { inBodyLargeTitle: true, filtersInTopChrome: false, summaryExcludesGradeFilter: false },
+  material: { inBodyLargeTitle: false, filtersInTopChrome: true, summaryExcludesGradeFilter: true },
 } as const satisfies Record<UiVariant, VariantFeatures>;

@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
@@ -110,9 +110,13 @@ export default function AcknowledgementsScreen() {
     router.push('/licenses');
   }, [router]);
 
-  // Liquid Glass uses the transparent, blur-under-content HIG header; Material's app
-  // bar is opaque — so a forced-Material user on iOS gets the M3 header, not glass.
-  const headerTransparent = useVariantValue({ liquidGlass: true, material: false });
+  // The transparent, blur-under-content header is an iOS-only feature (headerBlurEffect):
+  // on iOS, Liquid Glass gets it and Material's opaque M3 app bar does not. On Android
+  // — including a forced Liquid Glass user, where there's no glass surface — keep the
+  // header opaque so scroll content doesn't slide under the status bar (dual-axis:
+  // aesthetic AND platform). The hook is called unconditionally; only the value is gated.
+  const prefersGlassHeader = useVariantValue({ liquidGlass: true, material: false });
+  const headerTransparent = Platform.OS === 'ios' && prefersGlassHeader;
 
   return (
     <>

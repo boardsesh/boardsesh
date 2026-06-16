@@ -651,7 +651,7 @@ function ClimbListInner() {
     () => filterTokens.filter((filterToken) => filterToken.key !== 'grade'),
     [filterTokens],
   );
-  const summaryFilterTokens = selectByVariant(variant, { material: nonGradeFilterTokens, liquidGlass: filterTokens });
+  const summaryFilterTokens = features.summaryExcludesGradeFilter ? nonGradeFilterTokens : filterTokens;
   // Condensed summary of the active filters (variant-aware: Material chip vs glass
   // title). See buildClimbFilterSummary.
   const filterSummary = useMemo(
