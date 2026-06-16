@@ -37,6 +37,7 @@ import { useAuth } from './auth-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useDeviceLayout } from '../hooks/use-device-layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
@@ -53,6 +54,18 @@ export type OpenClimbActionsOptions = {
   /** When set, the climb actions sheet shows an "Edit entry" row wired to this
    *  callback (logbook rows pass it to open the tick editor). */
   onEditEntry?: () => void;
+};
+
+/** The props both PlayDrawer presentations consume — the bottom sheet (compact)
+ *  and the iPad right-column pane (regular). Built once in the host. */
+export type PlayDrawerPaneProps = {
+  boardConfig: BoardConfig;
+  onAngleChange: (angle: number) => void;
+  isAngleAdjustable: boolean;
+  onOpenQueue: () => void;
+  boardMismatch: boolean;
+  mismatchBoardLabel: string | undefined;
+  onSwitchBoard: () => void;
 };
 
 export type LogAscentInput = {
@@ -119,6 +132,9 @@ type DrawerHostValue = {
    *  separate Switch-board control). Wired to the board glyph when the
    *  `board-presence` flag is on. */
   openBoardSheet: () => void;
+  /** Props for the iPad right-column PlayDrawer pane (regular width); null while
+   *  no board is resolved. Consumed by `IpadPlayPane` in the shell. */
+  playDrawerPaneProps: PlayDrawerPaneProps | null;
 };
 
 const DrawerHostContext = createContext<DrawerHostValue | null>(null);
@@ -174,6 +190,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // behind a fresh sign-in (profile query still resolving), which would show the
   // action in the play drawer but not here. PlayDrawer uses the same predicate.
   const { isAuthenticated } = useAuth();
+  // On the regular-width iPad shell the PlayDrawer renders as the persistent
+  // right-column pane (IpadPlayPane), so the bottom-sheet PlayDrawer is not
+  // mounted and `openPlayDrawer` just makes the climb current — the pane shows
+  // `currentClimbQueueItem`. A ref keeps `openPlayDrawer`'s identity stable.
+  const { widthClass } = useDeviceLayout();
+  const isRegular = widthClass === 'regular';
+  const isRegularRef = useRef(isRegular);
+  isRegularRef.current = isRegular;
 
   // Climb to open after the boardConfig override has committed. We can't
   // open synchronously inside openPlayDrawer when an override is supplied
@@ -234,28 +258,48 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
-  const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
-    // Pull `source` out alongside `boardConfig` so neither reaches PlayDrawer.open
-    // — `source` is analytics-only and would otherwise leak into the drawer.
-    const { boardConfig: override, source: openSource, ...openOptions } = options ?? {};
-    const boardConfig = override ?? activeBoardConfigRef.current;
-    track(SHARED_EVENTS.PlayDrawerOpened, {
-      climbUuid: climb.uuid,
-      boardName: boardConfig?.boardName,
-      layoutId: boardConfig?.layoutId,
-      source:
-        openSource ??
-        (openOptions.committedExternally || openOptions.previewQueueItem != null ? 'current_queue_item' : 'mobile'),
-    });
-    if (override) {
-      pendingOverrideOpenRef.current = { climb, options: openOptions };
-      setBoardConfigOverride(override);
-      return;
-    }
-    setBoardConfigOverride(null);
-    pendingOverrideOpenRef.current = null;
-    playDrawerRef.current?.open(climb, openOptions);
-  }, []);
+  const openPlayDrawer = useCallback(
+    (climb: Climb, options?: OpenPlayDrawerOptions) => {
+      // Pull `source` out alongside `boardConfig` so neither reaches PlayDrawer.open
+      // — `source` is analytics-only and would otherwise leak into the drawer.
+      const { boardConfig: override, source: openSource, ...openOptions } = options ?? {};
+      const boardConfig = override ?? activeBoardConfigRef.current;
+      track(SHARED_EVENTS.PlayDrawerOpened, {
+        climbUuid: climb.uuid,
+        boardName: boardConfig?.boardName,
+        layoutId: boardConfig?.layoutId,
+        source:
+          openSource ??
+          (openOptions.committedExternally || openOptions.previewQueueItem != null ? 'current_queue_item' : 'mobile'),
+      });
+      if (isRegularRef.current) {
+        // iPad pane: there is no sheet to present. Apply the board override (so the
+        // pane renders against the climb's board) and make the climb current —
+        // unless the caller already did, in which case the pane already sees it
+        // through queue state or board presence.
+        setBoardConfigOverride(override ?? null);
+        pendingOverrideOpenRef.current = null;
+        if (!openOptions.committedExternally) {
+          const selectedItem =
+            openOptions.previewQueueItem ??
+            climbToQueueItem(climb, { suggested: openOptions.playlistSuggestionSource != null });
+          setCurrentClimb(selectedItem, {
+            playlistSuggestionSource: openOptions.playlistSuggestionSource ?? null,
+          });
+        }
+        return;
+      }
+      if (override) {
+        pendingOverrideOpenRef.current = { climb, options: openOptions };
+        setBoardConfigOverride(override);
+        return;
+      }
+      setBoardConfigOverride(null);
+      pendingOverrideOpenRef.current = null;
+      playDrawerRef.current?.open(climb, openOptions);
+    },
+    [setCurrentClimb],
+  );
 
   // Open after the override has flowed through `activeBoardConfig` into
   // PlayDrawer's props.
@@ -596,6 +640,33 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const boardSheetLabel = useMemo(() => formatActiveBoardLabel(activeBoard), [activeBoard]);
 
+  // One source of truth for the PlayDrawer props across both presentations: the
+  // bottom sheet (compact, rendered below) and the iPad pane (regular, rendered
+  // by IpadPlayPane from this context value).
+  const playDrawerPaneProps = useMemo<PlayDrawerPaneProps | null>(
+    () =>
+      activeBoardConfig
+        ? {
+            boardConfig: activeBoardConfig,
+            onAngleChange: handleAngleChange,
+            isAngleAdjustable: activeBoard?.isAngleAdjustable ?? true,
+            onOpenQueue: openQueueSheet,
+            boardMismatch,
+            mismatchBoardLabel,
+            onSwitchBoard: handleSwitchBoardFromDrawer,
+          }
+        : null,
+    [
+      activeBoardConfig,
+      handleAngleChange,
+      activeBoard?.isAngleAdjustable,
+      openQueueSheet,
+      boardMismatch,
+      mismatchBoardLabel,
+      handleSwitchBoardFromDrawer,
+    ],
+  );
+
   const value = useMemo<DrawerHostValue>(
     () => ({
       boardConfig: activeBoardConfig,
@@ -606,6 +677,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openAddToPlaylist,
       openQueueSheet,
       openBoardSheet,
+      playDrawerPaneProps,
     }),
     [
       activeBoardConfig,
@@ -616,13 +688,17 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openAddToPlaylist,
       openQueueSheet,
       openBoardSheet,
+      playDrawerPaneProps,
     ],
   );
 
   return (
     <DrawerHostContext.Provider value={value}>
       {children}
-      {activeBoardConfig ? (
+      {/* Bottom-sheet PlayDrawer — compact only. On the regular-width iPad shell
+          the same drawer renders as the persistent right column (IpadPlayPane),
+          so mounting the sheet here too would double its sub-sheets + state. */}
+      {activeBoardConfig && !isRegular ? (
         <PlayDrawer
           ref={playDrawerRef}
           boardConfig={activeBoardConfig}

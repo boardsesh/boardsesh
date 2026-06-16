@@ -105,6 +105,12 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress }, children),
 }));
 
+// The host reads the device layout to decide sheet (compact) vs pane (regular).
+// These tests exercise the compact bottom-sheet path.
+vi.mock('../../hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ widthClass: 'compact', expanded: false }),
+}));
+
 vi.mock('react-native-screens', () => ({
   FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));

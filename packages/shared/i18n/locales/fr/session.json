@@ -485,6 +485,10 @@
   "playView": {
     "previewBadge": "Aperçu",
     "setActive": "Activer",
+    "paneEmpty": {
+      "title": "Rien sur le mur",
+      "subtitle": "Le bloc allumé s'affiche ici."
+    },
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",
     "play": "Lire",

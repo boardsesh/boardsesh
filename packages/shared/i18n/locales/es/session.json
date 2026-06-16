@@ -485,6 +485,10 @@
   "playView": {
     "previewBadge": "Vista previa",
     "setActive": "Activar",
+    "paneEmpty": {
+      "title": "Nada en el muro",
+      "subtitle": "El bloque encendido aparece aquí."
+    },
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",
     "play": "Reproducir",

@@ -21,6 +21,7 @@ import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -35,9 +36,13 @@ export function PersistentQueueBar() {
   const { state } = useQueue();
   const { variant } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
+  const { widthClass } = useDeviceLayout();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
 
+  // The iPad shell shows the current climb in the persistent right-column pane
+  // (IpadPlayPane), so the floating bar must not also render there.
+  if (widthClass === 'regular') return null;
   if (!currentClimb) return null;
   if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
 

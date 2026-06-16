@@ -33,6 +33,8 @@ vi.mock('react-native', () => ({
   // eval, so the strict RN mock must supply both.
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  // The regular-width shell sizes the play pane off the window width.
+  useWindowDimensions: () => ({ width: 1024, height: 1366 }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -68,6 +70,10 @@ vi.mock('../../../src/hooks/use-device-layout', () => ({
 
 vi.mock('../../../src/components/navigation/IpadSidebar', () => ({
   IpadSidebar: () => createElement('aside', { 'data-ipad-sidebar': 'true' }),
+}));
+
+vi.mock('../../../src/components/play-drawer/IpadPlayPane', () => ({
+  IpadPlayPane: () => createElement('aside', { 'data-ipad-play-pane': 'true' }),
 }));
 
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
@@ -236,6 +242,8 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-ipad-sidebar="true"]')).not.toBeNull();
+    // The right column hosts the PlayDrawer pane (replaces the floating accessory bar).
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
     expect(container.querySelector('[data-tabs="true"]')).toBeNull();
     expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
       'home',
