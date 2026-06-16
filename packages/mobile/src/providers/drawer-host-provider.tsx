@@ -60,6 +60,12 @@ export type PlayDrawerPaneProps = {
   boardMismatch: boolean;
   mismatchBoardLabel: string | undefined;
   onSwitchBoard: () => void;
+  /** Climb to preview in the pane without committing it as current (iPad pane
+   *  only); null when the pane should show `currentClimbQueueItem`. */
+  previewItem: ClimbQueueItem | null;
+  /** Called by the pane once the current climb changes, so the host drops the
+   *  preview and the pane falls back to `currentClimbQueueItem`. */
+  onPreviewConsumed: () => void;
 };
 
 /** Props for the iPad "Now on the wall" column (regular landscape) — the same
@@ -170,6 +176,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const [climbActions, setClimbActions] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
   const [playlistClimb, setPlaylistClimb] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
   const [betaVideoClimb, setBetaVideoClimb] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  // iPad pane only: a climb to PREVIEW in the right-column pane without committing
+  // it as the queue's current (e.g. a `setAsCurrent: false` open from the feed /
+  // beta / a climb view). The pane shows this over `currentClimbQueueItem`; it is
+  // dropped once the current climb changes (a list tap's async activate commits,
+  // or the user navigates), so the pane shows one continuous climb. Compact width
+  // never sets it — there the bottom sheet handles previews via its own state.
+  const [panePreviewItem, setPanePreviewItem] = useState<ClimbQueueItem | null>(null);
+  const clearPanePreview = useCallback(() => setPanePreviewItem(null), []);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
@@ -278,18 +292,24 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       });
       if (isRegularRef.current) {
         // iPad pane: there is no sheet to present. Apply the board override (so the
-        // pane renders against the climb's board) and make the climb current —
-        // unless the caller already did (setAsCurrent === false), in which case the
-        // pane already shows it via currentClimbQueueItem.
+        // pane renders against the climb's board), then either commit the climb as
+        // current or preview it in the pane.
         setBoardConfigOverride(override ?? null);
         pendingOverrideOpenRef.current = null;
+        const selectedItem =
+          openOptions.previewQueueItem ??
+          climbToQueueItem(climb, { suggested: openOptions.previewPlaylistSuggestionSource != null });
         if (openOptions.setAsCurrent ?? true) {
-          const selectedItem =
-            openOptions.previewQueueItem ??
-            climbToQueueItem(climb, { suggested: openOptions.previewPlaylistSuggestionSource != null });
+          setPanePreviewItem(null);
           setCurrentClimb(selectedItem, {
             playlistSuggestionSource: openOptions.previewPlaylistSuggestionSource ?? null,
           });
+        } else {
+          // `setAsCurrent: false` (feed / beta / climb view, and the list tap whose
+          // own async activate commits next) — show the climb in the pane without
+          // committing it. Without this the tap was a no-op on iPad; the pane drops
+          // the preview once the current climb changes (see PlayDrawer's effect).
+          setPanePreviewItem(selectedItem);
         }
         return;
       }
@@ -656,6 +676,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             boardMismatch,
             mismatchBoardLabel,
             onSwitchBoard: handleSwitchBoardFromDrawer,
+            previewItem: panePreviewItem,
+            onPreviewConsumed: clearPanePreview,
           }
         : null,
     [
@@ -666,6 +688,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       boardMismatch,
       mismatchBoardLabel,
       handleSwitchBoardFromDrawer,
+      panePreviewItem,
+      clearPanePreview,
     ],
   );
 
