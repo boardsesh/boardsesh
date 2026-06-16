@@ -217,11 +217,7 @@ export default function AcknowledgementsScreen() {
               title={t('mobile.acknowledgements.friendsTitle')}
               body={t('mobile.acknowledgements.friendsBody', { names: friendsLine })}
             />
-            <ThanksCard
-              icon="person"
-              title="Alex"
-              body={t('mobile.acknowledgements.alexBody')}
-            />
+            <ThanksCard icon="person" title="Alex" body={t('mobile.acknowledgements.alexBody')} />
             <ThanksCard
               icon="paw"
               title={dogName}
