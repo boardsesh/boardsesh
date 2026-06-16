@@ -143,7 +143,7 @@ export type NowOnTheWallPanelProps = {
   onOpenActions?: (action: BoardSheetClimbAction) => void;
 };
 
-export function NowOnTheWallPanel({
+function NowOnTheWallPanelComponent({
   variant,
   boardLabel,
   boardConfig,
@@ -553,7 +553,17 @@ export function NowOnTheWallPanel({
 
   return (
     <>
-      <View style={[styles.header, { borderBottomColor: systemColors.separator }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: systemColors.separator,
+            // Sheet mode sits below the notch (gorhom handles it); the inline
+            // column renders at the top of the shell, so it must own the inset.
+            paddingTop: variant === 'column' ? insets.top + spacing[2] : 0,
+          },
+        ]}
+      >
         {onClose ? (
           <Pressable
             onPress={handleClose}
@@ -617,6 +627,8 @@ export function NowOnTheWallPanel({
     </>
   );
 }
+
+export const NowOnTheWallPanel = memo(NowOnTheWallPanelComponent);
 
 type HeroProps = {
   climb: BoardPresenceClimb | null;
