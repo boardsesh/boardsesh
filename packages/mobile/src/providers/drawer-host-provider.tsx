@@ -68,6 +68,20 @@ export type PlayDrawerPaneProps = {
   onSwitchBoard: () => void;
 };
 
+/** Props for the iPad "Now on the wall" column (regular landscape) — the same
+ *  wall feed / history / stats / switch-board content as the BoardSheet modal,
+ *  rendered inline. Mirrors {@link PlayDrawerPaneProps}; null while no board is
+ *  resolved. Consumed by `IpadWallColumn` in the shell. */
+export type NowOnTheWallColumnProps = {
+  boardLabel: string | null;
+  boardConfig: BoardConfig | null;
+  onSwitchBoard: () => void;
+  onClimbPress: (action: BoardSheetClimbAction) => void;
+  onAddToQueue: (action: BoardSheetClimbAction) => void;
+  onOpenPlaylist: (action: BoardSheetClimbAction) => void;
+  onOpenActions: (action: BoardSheetClimbAction) => void;
+};
+
 export type LogAscentInput = {
   climbUuid: string;
   boardName: string;
@@ -135,6 +149,9 @@ type DrawerHostValue = {
   /** Props for the iPad right-column PlayDrawer pane (regular width); null while
    *  no board is resolved. Consumed by `IpadPlayPane` in the shell. */
   playDrawerPaneProps: PlayDrawerPaneProps | null;
+  /** Props for the iPad "Now on the wall" column (regular landscape); null while
+   *  no board is resolved. Consumed by `IpadWallColumn` in the shell. */
+  boardPanelProps: NowOnTheWallColumnProps | null;
 };
 
 const DrawerHostContext = createContext<DrawerHostValue | null>(null);
@@ -667,6 +684,33 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Props for the iPad "Now on the wall" column — the same handlers passed to the
+  // BoardSheet modal below, surfaced via context so the inline column renders the
+  // identical wall feed. Mirrors playDrawerPaneProps; null while no board resolved.
+  const boardPanelProps = useMemo<NowOnTheWallColumnProps | null>(
+    () =>
+      activeBoardConfig
+        ? {
+            boardLabel: boardSheetLabel,
+            boardConfig: activeBoardConfig,
+            onSwitchBoard: handleSwitchBoardFromSheet,
+            onClimbPress: handleBoardSheetClimbPress,
+            onAddToQueue: handleBoardSheetAddToQueue,
+            onOpenPlaylist: handleBoardSheetOpenPlaylist,
+            onOpenActions: handleBoardSheetOpenActions,
+          }
+        : null,
+    [
+      activeBoardConfig,
+      boardSheetLabel,
+      handleSwitchBoardFromSheet,
+      handleBoardSheetClimbPress,
+      handleBoardSheetAddToQueue,
+      handleBoardSheetOpenPlaylist,
+      handleBoardSheetOpenActions,
+    ],
+  );
+
   const value = useMemo<DrawerHostValue>(
     () => ({
       boardConfig: activeBoardConfig,
@@ -678,6 +722,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openQueueSheet,
       openBoardSheet,
       playDrawerPaneProps,
+      boardPanelProps,
     }),
     [
       activeBoardConfig,
@@ -689,6 +734,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openQueueSheet,
       openBoardSheet,
       playDrawerPaneProps,
+      boardPanelProps,
     ],
   );
 

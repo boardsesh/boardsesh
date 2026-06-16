@@ -26,6 +26,7 @@
   "boardPresence": {
     "title": "Sur le mur maintenant",
     "open": "Sur le mur",
+    "railDark": "Rien d'allumé pour l'instant",
     "openAria": "Voir ce qui est sur le mur",
     "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}",
     "nowOnWallAnnouncement": "Sur le mur maintenant : {{name}}",
@@ -486,8 +487,8 @@
     "previewBadge": "Aperçu",
     "setActive": "Activer",
     "paneEmpty": {
-      "title": "Rien sur le mur",
-      "subtitle": "Le bloc allumé s'affiche ici."
+      "title": "Choisis un bloc",
+      "subtitle": "Touche un bloc pour le voir ici."
     },
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",

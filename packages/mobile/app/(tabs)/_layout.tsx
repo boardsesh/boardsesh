@@ -16,6 +16,11 @@ import { useInsideTabs } from '../../src/hooks/use-inside-tabs';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { IpadSidebar } from '../../src/components/navigation/IpadSidebar';
 import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
+import { IpadWallColumn } from '../../src/components/board-presence/IpadWallColumn';
+import { useBoardPresenceControls } from '../../src/providers/board-presence-provider';
+import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { resolveWallSurface, WALL_COLUMN_WIDTH, DETAIL_PANE_WIDTH_WITH_WALL } from '../../src/theme/size-class';
+import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
 // activity feed, while Climbs remains the search surface one tab over. Drives
@@ -84,11 +89,31 @@ export default function TabLayout() {
   // Regular-width iPad opts into the sidebar shell; compact width (every iPhone,
   // a narrow iPad split) keeps the native / Material tab bars below verbatim.
   const deviceLayout = useDeviceLayout();
-  // The right column (the PlayDrawer pane) scales with the window but is clamped
-  // so it never crushes the content column or grows past a comfortable reading
-  // width. ~34% of the window, clamped 320–400pt.
   const { width: windowWidth } = useWindowDimensions();
-  const playPaneWidth = Math.round(Math.min(400, Math.max(320, windowWidth * 0.34)));
+  // The live wall gets a dedicated column in landscape (room for sidebar + browse
+  // list + detail pane + wall) and falls back to a strip atop the pane in portrait
+  // (see resolveWallSurface). Gated on a bound board so an empty column never sits
+  // as dead space. The presence controls context only changes on bind/unbind, not
+  // on wall climb updates, so this doesn't re-render the shell per wall event.
+  const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
+  // The column only renders content when a board config is resolved (the wall
+  // panel reads it via the host). `boardPresenceBoardId` can be set from the BLE
+  // serial before/without an active board, so gate on the active board too — else
+  // the column View reserves 300pt while `IpadWallColumn` renders null (dead space).
+  const { data: activeBoard } = useActiveBoard();
+  const wallSurface = resolveWallSurface({
+    width: windowWidth,
+    widthClass: deviceLayout.widthClass,
+    sidebarWidth: SIDEBAR_WIDTH,
+  });
+  const showWallColumn =
+    wallSurface === 'column' && boardPresenceEnabled && boardPresenceBoardId !== null && activeBoard != null;
+  // The detail (play) pane scales with the window (clamped 320–400pt) but narrows
+  // to a fixed width when the wall column shares the row, so the browse list keeps
+  // room.
+  const playPaneWidth = showWallColumn
+    ? DETAIL_PANE_WIDTH_WITH_WALL
+    : Math.round(Math.min(400, Math.max(320, windowWidth * 0.34)));
 
   // The five tab screens are identical across the JS `Tabs` variants (Material
   // bar vs. the hidden-bar iPad shell), so share one definition. A flat keyed
@@ -145,17 +170,25 @@ export default function TabLayout() {
   if (deviceLayout.widthClass === 'regular') {
     return (
       <View style={styles.shell}>
-        <IpadSidebar />
+        <IpadSidebar showWallCell={!showWallColumn} />
         <View style={styles.shellContent}>
           <Tabs tabBar={renderHiddenTabBar} screenOptions={{ headerShown: false }}>
             {tabScreens}
           </Tabs>
         </View>
-        {/* Persistent right column: the PlayDrawer for the current climb. Replaces
-            the floating accessory/queue bar on the iPad shell (see app/_layout). */}
+        {/* Persistent right column: the PlayDrawer for the SELECTED climb (iPad
+            master-detail). Replaces the floating accessory/queue bar on the shell. */}
         <View style={[styles.playPane, { width: playPaneWidth, borderLeftColor: systemColors.separator }]}>
           <IpadPlayPane />
         </View>
+        {/* Dedicated "Now on the wall" column — landscape only, where the width
+            budget leaves room for it (see resolveWallSurface). In portrait the wall
+            rides a strip atop the pane (IpadPlayPane) instead. */}
+        {showWallColumn ? (
+          <View style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: systemColors.separator }]}>
+            <IpadWallColumn />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -222,4 +255,5 @@ const styles = StyleSheet.create({
   shell: { flex: 1, flexDirection: 'row' },
   shellContent: { flex: 1 },
   playPane: { borderLeftWidth: StyleSheet.hairlineWidth },
+  wallColumn: { borderLeftWidth: StyleSheet.hairlineWidth },
 });
