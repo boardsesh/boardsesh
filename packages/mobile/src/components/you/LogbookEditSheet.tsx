@@ -246,7 +246,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     updateTick,
   ]);
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!ascent || isMutating) return;
     const confirmed = await confirm({
       title: t('mobile.logbook.deleteTitle'),
@@ -263,7 +263,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         showToast(t('mobile.logbook.deleteError'), 'error');
       },
     });
-  };
+  }, [ascent, isMutating, confirm, deleteTick, sheetRef, showToast, t]);
 
   return (
     <Sheet

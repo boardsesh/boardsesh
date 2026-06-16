@@ -3,14 +3,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const ctrl = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
+const ctrl = vi.hoisted(() => ({
+  variant: 'material' as 'material' | 'liquidGlass',
+  os: 'android' as 'ios' | 'android',
+}));
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 const alertMock = vi.hoisted(() => ({
   calls: [] as Array<{ title: string; message?: string; buttons: AlertButton[]; onDismiss?: () => void }>,
 }));
 
-// The provider only needs Alert from react-native; mock it to capture the args.
+// The provider needs Alert + Platform from react-native; mock both (Platform.OS is
+// controllable because the Paper dialog is Android-Material-only — iOS uses Alert).
 vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return ctrl.os;
+    },
+  },
   Alert: {
     alert: (
       title: string,
@@ -65,10 +74,11 @@ const OPTS = { title: 'Delete?', message: 'This cannot be undone.', confirmLabel
 
 beforeEach(() => {
   ctrl.variant = 'material';
+  ctrl.os = 'android';
   alertMock.calls = [];
 });
 
-describe('useConfirm — Material (Paper Dialog)', () => {
+describe('useConfirm — Android Material (Paper Dialog)', () => {
   it('resolves true when the confirm action is pressed', async () => {
     const { container } = setup();
     let promise!: Promise<boolean>;
@@ -104,6 +114,47 @@ describe('useConfirm — Material (Paper Dialog)', () => {
     // The second confirm now surfaces and resolves on its own.
     act(() => materialButton(container, 'Second').click());
     await expect(second).resolves.toBe(true);
+  });
+
+  it('settles each confirm once — a re-press / dismiss race cannot drop the next confirm', async () => {
+    const { container } = setup();
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
+    act(() => {
+      first = confirmFn({ ...OPTS, confirmLabel: 'First' });
+      second = confirmFn({ ...OPTS, confirmLabel: 'Second' });
+    });
+    // Double-tap the first confirm's action in the same tick (the race the
+    // one-shot guard protects): it must resolve once and NOT pop the second.
+    const firstButton = materialButton(container, 'First');
+    act(() => {
+      firstButton.click();
+      firstButton.click();
+    });
+    await expect(first).resolves.toBe(true);
+    // The second confirm survived and still resolves on its own.
+    act(() => materialButton(container, 'Second').click());
+    await expect(second).resolves.toBe(true);
+  });
+});
+
+describe('useConfirm — iOS Material (native Alert, not the Paper Portal)', () => {
+  beforeEach(() => {
+    ctrl.variant = 'material';
+    ctrl.os = 'ios';
+  });
+
+  it('uses Alert on iOS even on Material (the Paper Portal renders under FullWindowOverlay sheets)', async () => {
+    const { container } = setup();
+    let promise!: Promise<boolean>;
+    act(() => {
+      promise = confirmFn(OPTS);
+    });
+    // No Paper dialog rendered; routed to the native Alert instead.
+    expect(container.querySelector('[data-dialog]')).toBeNull();
+    expect(alertMock.calls).toHaveLength(1);
+    act(() => alertMock.calls[0].buttons.find((b) => b.text === 'Delete')?.onPress?.());
+    await expect(promise).resolves.toBe(true);
   });
 });
 

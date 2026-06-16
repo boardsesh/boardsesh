@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   autoSyncMutate: vi.fn(),
   disconnectMutate: vi.fn(),
   alert: vi.fn(),
+  confirmResult: true,
   statuses: undefined as IntegrationStatus[] | undefined,
   isLoading: false,
 }));
@@ -51,7 +52,7 @@ vi.mock('../../../providers/toast-provider', () => ({
   useToast: () => ({ showToast: mocks.showToast }),
 }));
 vi.mock('../../../providers/dialog-provider', () => ({
-  useConfirm: () => () => Promise.resolve(true),
+  useConfirm: () => () => Promise.resolve(mocks.confirmResult),
 }));
 
 type TextMockProps = { children?: ReactNode };
@@ -112,6 +113,7 @@ describe('StravaCard', () => {
     mocks.autoSyncMutate.mockReset();
     mocks.disconnectMutate.mockReset();
     mocks.alert.mockReset();
+    mocks.confirmResult = true;
     mocks.statuses = undefined;
     mocks.isLoading = false;
   });
@@ -131,6 +133,27 @@ describe('StravaCard', () => {
     expect(container.querySelector('[data-switch="integrations.strava.autoSync"]')).not.toBeNull();
     expect(button(container, 'integrations.strava.disconnect')).not.toBeNull();
     expect(button(container, 'integrations.strava.connect')).toBeNull();
+  });
+
+  it('disconnects when the confirm is accepted', async () => {
+    mocks.statuses = [connectedStatus];
+    mocks.confirmResult = true;
+    const { container } = render(<StravaCard />);
+    fireEvent.click(button(container, 'integrations.strava.disconnect')!);
+    await waitFor(() => {
+      expect(mocks.disconnectMutate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does NOT disconnect when the confirm is cancelled', async () => {
+    mocks.statuses = [connectedStatus];
+    mocks.confirmResult = false;
+    const { container } = render(<StravaCard />);
+    fireEvent.click(button(container, 'integrations.strava.disconnect')!);
+    // Give the awaited confirm a tick to settle, then assert the mutation never fired.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.disconnectMutate).not.toHaveBeenCalled();
   });
 
   it('shows a success toast and refetches when a connection succeeds', async () => {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { Button, Dialog, Portal, Text } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 
@@ -37,19 +37,35 @@ type PendingConfirm = ConfirmOptions & { id: number; resolve: (value: boolean) =
  * provider that calls `confirm`. Providers are exempt from the variant guard, so the
  * `variant ===` branch here is the sanctioned place to resolve it.
  *
- * Concurrent confirms queue (one Material dialog shows at a time; the native iOS
- * Alert queues itself), so a Bluetooth confirm racing a UI confirm can't clobber the
- * other's resolver. Scrim / back dismiss resolves `false`.
+ * The Paper `Dialog` is used on **Android Material only**. On iOS we always fall back
+ * to the native `Alert` — even on the Material variant — because confirms are often
+ * launched from a sheet rendered in a `FullWindowOverlay` (iOS-only), and the Paper
+ * `Portal` lives in the normal React tree *underneath* that overlay: the dialog would
+ * be invisible and its promise would never resolve. The native `Alert` always sits on
+ * top. iOS Material is a forced-variant edge case, so the lost M3 chrome there is an
+ * acceptable trade for a confirm that actually works.
+ *
+ * Concurrent confirms queue (one Android dialog shows at a time; the native Alert
+ * queues itself). Each confirm settles exactly once, by id — a double-tap, or an
+ * action racing `onDismiss`, can't drop a different queued confirm or leave a caller
+ * awaiting forever. Scrim / back dismiss resolves `false`.
  */
 export function DialogProvider({ children }: { children: ReactNode }) {
   const { variant, m3 } = useTheme();
   const [queue, setQueue] = useState<PendingConfirm[]>([]);
   const idRef = useRef(0);
+  // One-shot guard: a confirm settles at most once even if its dialog fires
+  // onPress and onDismiss in the same tick, or is double-tapped before re-render.
+  const settledIdsRef = useRef<Set<number>>(new Set());
+
+  // Native Alert on Liquid Glass everywhere, and on iOS regardless of variant (see
+  // the FullWindowOverlay note above). The Paper dialog queue is Android-Material only.
+  const useNativeAlert = variant === 'liquidGlass' || Platform.OS === 'ios';
 
   const confirm = useCallback(
     (options: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
-        if (variant === 'liquidGlass') {
+        if (useNativeAlert) {
           Alert.alert(
             options.title,
             options.message,
@@ -68,25 +84,29 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         idRef.current += 1;
         setQueue((q) => [...q, { ...options, id: idRef.current, resolve }]);
       }),
-    [variant],
+    [useNativeAlert],
   );
 
   const value = useMemo<DialogContextValue>(() => ({ confirm }), [confirm]);
 
+  // Resolve a SPECIFIC pending confirm by id and drop just that one from the queue.
+  // Stable (no `current` dep) and one-shot, so racing handlers can't slice the wrong
+  // entry or resolve twice.
+  const settle = useCallback((target: PendingConfirm, result: boolean) => {
+    if (settledIdsRef.current.has(target.id)) return;
+    settledIdsRef.current.add(target.id);
+    target.resolve(result);
+    setQueue((q) => q.filter((item) => item.id !== target.id));
+  }, []);
+
   const current = queue[0];
-  // `current` is captured per render (the head of the queue), so each settle
-  // resolves exactly that confirm's promise, then advances to the next queued one.
-  const settle = (result: boolean) => {
-    current?.resolve(result);
-    setQueue((q) => q.slice(1));
-  };
 
   return (
     <DialogContext value={value}>
       {children}
-      {variant === 'material' && current ? (
+      {current ? (
         <Portal>
-          <Dialog visible onDismiss={() => settle(false)}>
+          <Dialog visible onDismiss={() => settle(current, false)}>
             <Dialog.Title>{current.title}</Dialog.Title>
             {current.message ? (
               <Dialog.Content>
@@ -94,8 +114,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
               </Dialog.Content>
             ) : null}
             <Dialog.Actions>
-              <Button onPress={() => settle(false)}>{current.cancelLabel}</Button>
-              <Button textColor={current.destructive ? m3.error : undefined} onPress={() => settle(true)}>
+              <Button onPress={() => settle(current, false)}>{current.cancelLabel}</Button>
+              <Button textColor={current.destructive ? m3.error : undefined} onPress={() => settle(current, true)}>
                 {current.confirmLabel}
               </Button>
             </Dialog.Actions>
