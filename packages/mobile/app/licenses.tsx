@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { loadOssLicenses, type OssLicense } from '../src/lib/oss-licenses';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
+import { useVariantValue } from '../src/theme/variants';
 import { spacing } from '../src/theme/tokens';
 
 const keyExtractor = (item: OssLicense) => `${item.name}@${item.version}`;
@@ -79,6 +80,10 @@ export default function LicensesScreen() {
     [handleSelect],
   );
 
+  // Liquid Glass uses the transparent, blur-under-content HIG header; Material's app
+  // bar is opaque (forced-Material on iOS gets the M3 header).
+  const headerTransparent = useVariantValue({ liquidGlass: true, material: false });
+
   return (
     <>
       <Stack.Screen
@@ -86,7 +91,7 @@ export default function LicensesScreen() {
           title: t('mobile.licenses.title'),
           headerShown: true,
           headerLargeTitle: false,
-          headerTransparent: Platform.OS === 'ios',
+          headerTransparent,
           headerBlurEffect: 'systemMaterial',
           contentStyle: { backgroundColor: 'transparent' },
         }}

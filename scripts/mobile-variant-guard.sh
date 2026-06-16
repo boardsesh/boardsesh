@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #
-# Guards against raw UI-variant magic-string compares in mobile component render
-# bodies. The aesthetic variant (Material 3 vs Liquid Glass) must be routed through
+# Guards against raw UI-variant magic-string compares in mobile render bodies —
+# components (`packages/mobile/src/components`) and screens (`packages/mobile/app`).
+# The aesthetic variant (Material 3 vs Liquid Glass) must be routed through
 # `selectByVariant` / `createVariantComponent` / a provider-resolved `theme.*` token
 # — never an inline `variant === 'material'` / `=== 'liquidGlass'` comparison that
-# can silently regrow. See packages/mobile/src/theme/variants/README.md.
+# can silently regrow. `src/providers` and `src/hooks` are NOT scanned: they
+# legitimately resolve (theme-provider, resolveSystemColors, useEffectiveSurfaceMode)
+# or compose (use-bottom-accessory: `variant === 'liquidGlass' && glassCapable`) the
+# variant — that's the abstraction's plumbing, not a render-body branch.
+# See packages/mobile/src/theme/variants/README.md.
 #
 # Deliberately scoped to the theme variant: the `[vV]ariant` token matches a
 # `variant`, `uiVariant`, or `theme.variant` identifier (grep substring-matches, so
@@ -32,7 +37,7 @@ ALLOWLIST='queue-control/AccessoryBarSurface\.tsx|user-drawer/UserAvatarToolbarA
 
 matches=$(
   grep -rnE "[vV]ariant[[:space:]]*[!=]==[[:space:]]*'(material|liquidGlass)'" \
-    packages/mobile/src/components \
+    packages/mobile/src/components packages/mobile/app \
     --include='*.tsx' --include='*.ts' \
     | grep -v '__tests__' \
     | grep -v 'variant-ok' \
@@ -41,7 +46,7 @@ matches=$(
 )
 
 if [ -n "$matches" ]; then
-  echo "✖ Raw theme-variant compares found in mobile components:"
+  echo "✖ Raw theme-variant compares found in mobile components/screens:"
   echo "$matches"
   echo
   echo "  Route the aesthetic variant through selectByVariant / createVariantComponent"
@@ -51,4 +56,4 @@ if [ -n "$matches" ]; then
   exit 1
 fi
 
-echo "✓ No raw theme-variant compares in mobile components."
+echo "✓ No raw theme-variant compares in mobile components/screens."

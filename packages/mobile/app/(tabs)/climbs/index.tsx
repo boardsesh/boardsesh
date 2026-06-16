@@ -27,6 +27,7 @@ import { ClimbFilterFab } from '../../../src/components/search/ClimbFilterFab';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { selectByVariant } from '../../../src/theme/variants';
 import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
 import { useBoardProvider } from '@boardsesh/board-react';
@@ -128,7 +129,7 @@ function ClimbListInner() {
   const handleOpenBoardDetail = useCallback(() => {
     openBoardSheet();
   }, [openBoardSheet]);
-  const { systemColors, variant, brandColors } = useTheme();
+  const { systemColors, variant, brandColors, features } = useTheme();
   const { addToQueue } = useQueueActions();
   const {
     filters,
@@ -173,7 +174,7 @@ function ClimbListInner() {
   // On the Material variant the filter lives in the top-right toolbar (next to
   // the light/bluetooth button) inside ClimbTopChrome, so the bottom filter FAB
   // is not rendered here.
-  const filterInTopChrome = variant === 'material';
+  const filterInTopChrome = features.filtersInTopChrome;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -650,14 +651,14 @@ function ClimbListInner() {
     () => filterTokens.filter((filterToken) => filterToken.key !== 'grade'),
     [filterTokens],
   );
-  const summaryFilterTokens = variant === 'material' ? nonGradeFilterTokens : filterTokens;
+  const summaryFilterTokens = selectByVariant(variant, { material: nonGradeFilterTokens, liquidGlass: filterTokens });
   // Condensed summary of the active filters (variant-aware: Material chip vs glass
   // title). See buildClimbFilterSummary.
   const filterSummary = useMemo(
     () =>
       buildClimbFilterSummary({
         labels: summaryFilterTokens.map((token) => token.label),
-        isMaterial: variant === 'material',
+        isMaterial: selectByVariant(variant, { material: true, liquidGlass: false }),
         maxChars: SUMMARY_MAX_CHARS,
         more: (count) => t('mobile.search.more', { count }),
       }),
@@ -869,7 +870,7 @@ function ClimbListInner() {
         activeFilterCount={activeFilterCount}
         onOpenFilters={handleOpenFilters}
         filterSummary={
-          variant === 'material' && filterSummary
+          features.filtersInTopChrome && filterSummary
             ? { text: filterSummary, onClear: handleClearNonGradeFilters }
             : undefined
         }

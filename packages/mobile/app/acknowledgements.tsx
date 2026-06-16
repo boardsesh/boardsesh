@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
@@ -19,6 +19,7 @@ import {
 import { openDiscordInvite } from '../src/lib/discord';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
+import { useVariantValue } from '../src/theme/variants';
 import { borderRadius, spacing } from '../src/theme/tokens';
 import type { IconName } from '../src/components/icon-map';
 
@@ -109,6 +110,10 @@ export default function AcknowledgementsScreen() {
     router.push('/licenses');
   }, [router]);
 
+  // Liquid Glass uses the transparent, blur-under-content HIG header; Material's app
+  // bar is opaque — so a forced-Material user on iOS gets the M3 header, not glass.
+  const headerTransparent = useVariantValue({ liquidGlass: true, material: false });
+
   return (
     <>
       <Stack.Screen
@@ -116,7 +121,7 @@ export default function AcknowledgementsScreen() {
           title: t('mobile.acknowledgements.title'),
           headerShown: true,
           headerLargeTitle: false,
-          headerTransparent: Platform.OS === 'ios',
+          headerTransparent,
           headerBlurEffect: 'systemMaterial',
           contentStyle: { backgroundColor: 'transparent' },
         }}

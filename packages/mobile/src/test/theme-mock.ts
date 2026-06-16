@@ -5,6 +5,7 @@ import { textStylesByVariant } from '../theme/typography';
 import { brandColors, brandColorsDark, materialSurfaces, androidFallbackColors } from '../theme/colors';
 import { buildPaperTheme } from '../theme/paper-theme';
 import { resolveActionColors, resolveChartColors, sectionCaptionByVariant } from '../theme/variants/variant-tokens';
+import { variantFeatures } from '../theme/variants/variant-features';
 
 /**
  * Build a complete `Theme` for unit tests. One factory so every test gets the
@@ -53,6 +54,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
     }),
     chartColors: resolveChartColors(variant, colorScheme),
     sectionCaption: sectionCaptionByVariant[variant],
+    features: variantFeatures[variant],
   };
 
   return { ...base, ...overrides };

@@ -1,17 +1,21 @@
 import { Stack } from 'expo-router';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ScoutPhoto } from '../src/components/ScoutPhoto';
 import { Text } from '../src/components/Text';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { dogName } from '../src/lib/acknowledgements';
 import { useTheme } from '../src/providers/theme-provider';
+import { useVariantValue } from '../src/theme/variants';
 import { borderRadius, spacing } from '../src/theme/tokens';
 
 export default function ScoutScreen() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
+  // Liquid Glass uses the transparent, blur-under-content HIG header; Material's app
+  // bar is opaque (forced-Material on iOS gets the M3 header).
+  const headerTransparent = useVariantValue({ liquidGlass: true, material: false });
 
   return (
     <>
@@ -20,7 +24,7 @@ export default function ScoutScreen() {
           title: dogName,
           headerShown: true,
           headerLargeTitle: false,
-          headerTransparent: Platform.OS === 'ios',
+          headerTransparent,
           headerBlurEffect: 'systemMaterial',
           contentStyle: { backgroundColor: 'transparent' },
         }}

@@ -10,7 +10,7 @@ import { LayoutPercentageBar } from './LayoutPercentageBar';
 import { gradeBadgeColor } from './profile-chart-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
+import { useVariantValue } from '../../theme/variants';
 
 type Percentile = { percentile: number; totalActiveUsers: number } | null;
 
@@ -23,8 +23,8 @@ type StatsSummaryCardProps = {
 
 export function StatsSummaryCard({ statisticsSummary, hardestSend, hardestFlash, percentile }: StatsSummaryCardProps) {
   const { t } = useTranslation('profile');
-  const { systemColors, brandColors, variant, m3 } = useTheme();
-  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const { systemColors, brandColors, m3 } = useTheme();
+  const isMaterial = useVariantValue({ material: true, liquidGlass: false });
 
   const showPercentile = percentile != null && percentile.percentile > 0;
   // "Top X%" — invert the percentile, clamped so a 100th-percentile climber

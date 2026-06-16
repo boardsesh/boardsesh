@@ -2,7 +2,6 @@ import { type ReactNode } from 'react';
 import { type StyleProp, type TextStyle } from 'react-native';
 import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
-import { selectByVariant } from '../theme/variants';
 
 type ScreenTitleProps = {
   children: ReactNode;
@@ -17,8 +16,8 @@ type ScreenTitleProps = {
  * Material-only null gate (the old inline largeTitle suppression) at each site.
  */
 export function ScreenTitle({ children, style }: ScreenTitleProps) {
-  const { variant } = useTheme();
-  if (!selectByVariant(variant, { liquidGlass: true, material: false })) return null;
+  const { features } = useTheme();
+  if (!features.inBodyLargeTitle) return null;
   return (
     <Text variant="largeTitle" style={style}>
       {children}

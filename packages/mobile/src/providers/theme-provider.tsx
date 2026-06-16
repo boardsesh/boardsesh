@@ -38,6 +38,7 @@ import {
   type ChartColors,
   type SectionCaption,
 } from '../theme/variants/variant-tokens';
+import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
 import { assertNever } from '../lib/assert-never';
 import { SCREENSHOT_MODE, SCREENSHOT_THEME_OVERRIDE, SCREENSHOT_VARIANT_PREFERENCE } from '../lib/screenshot-mode';
@@ -125,6 +126,8 @@ type Theme = {
   chartColors: ChartColors;
   /** Section-caption treatment (uppercase / opacity / letter-spacing), per variant. */
   sectionCaption: SectionCaption;
+  /** Per-variant feature / content-layout flags (what shows, and where), resolved once. */
+  features: VariantFeatures;
 };
 
 const ThemeContext = createContext<Theme | null>(null);
@@ -330,6 +333,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       }),
       chartColors: resolveChartColors(variant, colorScheme),
       sectionCaption: sectionCaptionByVariant[variant],
+      features: variantFeatures[variant],
     };
   }, [colorScheme, variant, themeOverride, setThemeOverride, uiVariantPreference, setUiVariant, m3Colors]);
 
