@@ -11,9 +11,9 @@
 // State comes from `@boardsesh/board-presence-react`'s split current/feed
 // contexts, which are inert when the `board-presence` flag is off — so this
 // sheet is only ever opened from the board glyph when the flag is on. This
-// wrapper keeps its own cheap current/feed reads ONLY for the history-count and
-// now-playing analytics; the panel owns the volatile action state so the
-// wrapper doesn't re-render in ways that interfered with gorhom's `present()`.
+// wrapper keeps refs to current/feed state ONLY for the history-count and
+// now-playing analytics; the panel owns the volatile action state so the wrapper
+// doesn't re-render in ways that interfered with gorhom's `present()`.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
@@ -84,25 +84,26 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   const sheetRef = useRef<BottomSheetModal>(null);
   const panelRef = useRef<NowOnTheWallPanelHandle>(null);
 
-  // Cheap current/feed reads kept here ONLY for the now-playing + history-view
-  // analytics. The action/loading state that re-renders on every interaction
-  // lives in NowOnTheWallPanel, out of this gorhom-`present()`-sensitive wrapper.
+  // Current/feed reads kept here ONLY for the now-playing + history-view
+  // analytics. History filtering happens inside present(), so the always-mounted
+  // sheet wrapper does not do O(history) work for every wall event while closed.
   const { currentClimb } = useBoardPresenceCurrent();
   const { history } = useBoardPresenceFeed();
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const boardPresenceBoardIdRef = useRef(boardPresenceBoardId);
   boardPresenceBoardIdRef.current = boardPresenceBoardId;
-  const visibleHistoryCount = useMemo(
-    () =>
-      currentClimb
-        ? history.filter((historyClimb) => {
-            return historyClimb.climbUuid !== currentClimb.climbUuid || historyClimb.seq !== currentClimb.seq;
-          }).length
-        : history.length,
-    [currentClimb, history],
-  );
-  const historyCountRef = useRef(visibleHistoryCount);
-  historyCountRef.current = visibleHistoryCount;
+  const currentClimbRef = useRef(currentClimb);
+  currentClimbRef.current = currentClimb;
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const getVisibleHistoryCount = useCallback(() => {
+    const currentWallClimb = currentClimbRef.current;
+    const wallHistory = historyRef.current;
+    if (!currentWallClimb) return wallHistory.length;
+    return wallHistory.filter((historyClimb) => {
+      return historyClimb.climbUuid !== currentWallClimb.climbUuid || historyClimb.seq !== currentWallClimb.seq;
+    }).length;
+  }, []);
 
   const lastReceivedWallClimbRef = useRef<string | null>(null);
   useEffect(() => {
@@ -124,10 +125,11 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
 
   useImperativeHandle(ref, () => ({
     present: () => {
-      if (historyCountRef.current > 0) {
+      const visibleHistoryCount = getVisibleHistoryCount();
+      if (visibleHistoryCount > 0) {
         track(SHARED_EVENTS.BoardHistoryViewed, {
           boardId: boardPresenceBoardIdRef.current ?? undefined,
-          itemCount: historyCountRef.current,
+          itemCount: visibleHistoryCount,
         });
       }
       sheetRef.current?.present();

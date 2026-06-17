@@ -77,6 +77,7 @@ export type PlayDrawerPaneProps = {
 };
 
 type PanePreview = {
+  id: string;
   item: ClimbQueueItem;
   boardConfigOverride: BoardConfig | null;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
@@ -204,13 +205,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const [panePreview, setPanePreview] = useState<PanePreview | null>(null);
   const panePreviewRef = useRef(panePreview);
   panePreviewRef.current = panePreview;
-  const clearPanePreview = useCallback(() => {
+  const nextPanePreviewIdRef = useRef(0);
+  const clearPanePreview = useCallback((previewId: string | null) => {
     const preview = panePreviewRef.current;
-    if (preview?.boardConfigOverride) {
-      setBoardConfigOverride((currentOverride) =>
-        boardConfigsMatch(currentOverride, preview.boardConfigOverride) ? null : currentOverride,
-      );
-    }
+    if (!preview || preview.id !== previewId) return;
     setPanePreview(null);
   }, []);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
@@ -247,6 +245,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const isRegular = widthClass === 'regular';
   const isRegularRef = useRef(isRegular);
   isRegularRef.current = isRegular;
+  useEffect(() => {
+    if (!isRegular) setPanePreview(null);
+  }, [isRegular]);
 
   // Climb to open after the boardConfig override has committed. We can't
   // open synchronously inside openPlayDrawer when an override is supplied
@@ -257,8 +258,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // matches the override.
   const pendingOverrideOpenRef = useRef<{ climb: Climb; options: PlayDrawerOpenOptions } | null>(null);
 
-  const activeBoardConfig: BoardConfig | null = useMemo(() => {
-    if (boardConfigOverride) return boardConfigOverride;
+  // The user's STORED active board as a BoardConfig (never the override). Used
+  // for board-presence surfaces and to decide whether a climb opened with a
+  // board override is genuinely a different board (→ switch-board gate) or the
+  // same board (→ drop the override and render against the user's precise board).
+  const storedActiveBoardConfig = useMemo<BoardConfig | null>(() => {
     if (!activeBoard) return null;
     return {
       boardName: activeBoard.boardType,
@@ -267,7 +271,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       setIds: activeBoard.setIds,
       angle: activeBoard.angle,
     };
-  }, [boardConfigOverride, activeBoard]);
+  }, [activeBoard]);
+
+  const activeBoardConfig: BoardConfig | null = useMemo(
+    () => boardConfigOverride ?? storedActiveBoardConfig,
+    [boardConfigOverride, storedActiveBoardConfig],
+  );
 
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
     if (!activeBoard) return null;
@@ -288,22 +297,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const activeBoardConfigRef = useRef(activeBoardConfig);
   activeBoardConfigRef.current = activeBoardConfig;
 
-  // The user's STORED active board as a BoardConfig (never the override). Used
-  // to decide whether a climb opened with a board override is genuinely a
-  // different board (→ switch-board gate) or the same board (→ drop the override
-  // and render against the user's precise board).
-  const storedActiveBoardConfig = useMemo<BoardConfig | null>(() => {
-    if (!activeBoard) return null;
-    return {
-      boardName: activeBoard.boardType,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds,
-      angle: activeBoard.angle,
-    };
-  }, [activeBoard]);
   const boardConfigOverrideRef = useRef(boardConfigOverride);
   boardConfigOverrideRef.current = boardConfigOverride;
+  const playDrawerBoardConfigOverride = panePreview?.boardConfigOverride ?? boardConfigOverride;
+  const playDrawerBoardConfigOverrideRef = useRef(playDrawerBoardConfigOverride);
+  playDrawerBoardConfigOverrideRef.current = playDrawerBoardConfigOverride;
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
@@ -322,27 +320,29 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           (openOptions.committedExternally || openOptions.previewQueueItem != null ? 'current_queue_item' : 'mobile'),
       });
       if (isRegularRef.current) {
-        // iPad pane: there is no sheet to present. Apply the board override (so the
-        // pane renders against the climb's board), then either commit the climb as
-        // current or preview it in the pane.
-        setBoardConfigOverride(override ?? null);
         pendingOverrideOpenRef.current = null;
         const selectedItem =
           openOptions.previewQueueItem ??
           climbToQueueItem(climb, { suggested: openOptions.playlistSuggestionSource != null });
         if (openOptions.committedExternally) {
+          setBoardConfigOverride(override ?? null);
           setPanePreview(null);
         } else if (openOptions.previewQueueItem) {
           // View-only opens (feed / beta / climb view, and the list tap whose own
           // async activate commits next) show the climb in the pane without
-          // committing it. Without this the tap is a no-op on iPad; the pane drops
-          // the preview once the current climb changes (see PlayDrawer's effect).
+          // committing it or rewriting the global active board config. Without
+          // this the tap is a no-op on iPad; the pane drops the preview once the
+          // current climb changes (see PlayDrawer's effect).
+          const previewId = `pane-preview-${nextPanePreviewIdRef.current}`;
+          nextPanePreviewIdRef.current += 1;
           setPanePreview({
+            id: previewId,
             item: selectedItem,
             boardConfigOverride: override ?? null,
             playlistSuggestionSource: openOptions.playlistSuggestionSource ?? null,
           });
         } else {
+          setBoardConfigOverride(override ?? null);
           setPanePreview(null);
           setCurrentClimb(selectedItem, {
             playlistSuggestionSource: openOptions.playlistSuggestionSource ?? null,
@@ -375,8 +375,19 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // Apply an angle change made from the play drawer's angle selector.
   const handleAngleChange = useCallback(
     (newAngle: number) => {
-      const cfg = activeBoardConfigRef.current;
-      if (boardConfigOverride) {
+      const previewBoardConfig = panePreviewRef.current?.boardConfigOverride ?? null;
+      const cfg = previewBoardConfig ?? activeBoardConfigRef.current;
+      if (previewBoardConfig) {
+        if (newAngle === previewBoardConfig.angle) return;
+        setPanePreview((currentPreview) =>
+          currentPreview?.boardConfigOverride
+            ? {
+                ...currentPreview,
+                boardConfigOverride: { ...currentPreview.boardConfigOverride, angle: newAngle },
+              }
+            : currentPreview,
+        );
+      } else if (boardConfigOverride) {
         // Guard against the override's current angle, not the base board's.
         if (newAngle === boardConfigOverride.angle) return;
         // The drawer is showing a climb from a board other than the user's
@@ -617,7 +628,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // so the drawer shows the now-active board and the overlay clears); otherwise
   // route to the board picker, mirroring the playlist mismatch banner.
   const handleSwitchBoardFromDrawer = useCallback(() => {
-    const override = boardConfigOverrideRef.current;
+    const override = playDrawerBoardConfigOverrideRef.current;
     if (!override) return;
     const owned = myBoardsRef.current?.boards.find((board) =>
       boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
@@ -630,7 +641,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // fixed, in which case its own angle stands.
       const switchedBoard = owned.isAngleAdjustable === false ? owned : { ...owned, angle: override.angle };
       void setActiveBoard(switchedBoard);
-      setBoardConfigOverride(null);
+      if (boardConfigOverrideRef.current) setBoardConfigOverride(null);
       return;
     }
     playDrawerRef.current?.close();
@@ -644,10 +655,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // a gate). A null stored board (user hasn't picked one) also counts as a
   // mismatch, prompting them to choose a board to control.
   const boardMismatch =
-    boardConfigOverride != null && !boardLooselyMatches(boardConfigOverride, storedActiveBoardConfig);
+    playDrawerBoardConfigOverride != null &&
+    !boardLooselyMatches(playDrawerBoardConfigOverride, storedActiveBoardConfig);
   const mismatchBoardLabel = useMemo(
-    () => (boardConfigOverride ? formatBoardDisplayName(boardConfigOverride.boardName) : undefined),
-    [boardConfigOverride],
+    () => (playDrawerBoardConfigOverride ? formatBoardDisplayName(playDrawerBoardConfigOverride.boardName) : undefined),
+    [playDrawerBoardConfigOverride],
   );
 
   const handleBoardSheetClimbPress = useCallback(
@@ -708,7 +720,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () =>
       activeBoardConfig
         ? {
-            boardConfig: activeBoardConfig,
+            boardConfig: panePreview?.boardConfigOverride ?? activeBoardConfig,
             onAngleChange: handleAngleChange,
             isAngleAdjustable: activeBoard?.isAngleAdjustable ?? true,
             onOpenQueue: openQueueSheet,
@@ -717,11 +729,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onSwitchBoard: handleSwitchBoardFromDrawer,
             previewItem: panePreview?.item ?? null,
             previewPlaylistSuggestionSource: panePreview?.playlistSuggestionSource ?? null,
-            onPreviewConsumed: clearPanePreview,
+            onPreviewConsumed: () => clearPanePreview(panePreview?.id ?? null),
           }
         : null,
     [
       activeBoardConfig,
+      panePreview?.boardConfigOverride,
       handleAngleChange,
       activeBoard?.isAngleAdjustable,
       openQueueSheet,
@@ -738,10 +751,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // identical wall feed. Mirrors playDrawerPaneProps; null while no board resolved.
   const boardPanelProps = useMemo<NowOnTheWallColumnProps | null>(
     () =>
-      activeBoardConfig
+      storedActiveBoardConfig
         ? {
             boardLabel: boardSheetLabel,
-            boardConfig: activeBoardConfig,
+            boardConfig: storedActiveBoardConfig,
             onSwitchBoard: handleSwitchBoardFromSheet,
             onClimbPress: handleBoardSheetClimbPress,
             onAddToQueue: handleBoardSheetAddToQueue,
@@ -750,7 +763,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           }
         : null,
     [
-      activeBoardConfig,
+      storedActiveBoardConfig,
       boardSheetLabel,
       handleSwitchBoardFromSheet,
       handleBoardSheetClimbPress,
@@ -875,7 +888,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       <BoardSheet
         ref={boardSheetRef}
         boardLabel={boardSheetLabel}
-        boardConfig={activeBoardConfig}
+        boardConfig={storedActiveBoardConfig}
         onClose={requestCloseBoardSheet}
         onSwitchBoard={handleSwitchBoardFromSheet}
         onClimbPress={handleBoardSheetClimbPress}

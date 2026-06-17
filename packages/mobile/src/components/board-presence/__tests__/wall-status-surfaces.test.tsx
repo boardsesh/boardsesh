@@ -10,6 +10,9 @@ const wallSelector = vi.hoisted(() => ({
 const drawerHost = vi.hoisted(() => ({
   openBoardSheet: vi.fn(),
   boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+  boardPanelProps: {
+    boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+  },
 }));
 
 const presenceControls = vi.hoisted(() => ({

@@ -29,7 +29,8 @@ function WallStripComponent() {
   const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const litClimb = useWallOrQueueCurrentClimb(null);
-  const { openBoardSheet, boardConfig } = useDrawerHost();
+  const { openBoardSheet, boardPanelProps } = useDrawerHost();
+  const boardConfig = boardPanelProps?.boardConfig ?? null;
 
   const handlePress = useCallback(() => {
     hapticSelection();

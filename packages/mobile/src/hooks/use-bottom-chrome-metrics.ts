@@ -31,9 +31,9 @@ export function useBottomChromeMetrics() {
   const nativeTabBar = useNativeTabBar();
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar, so
-  // bottom chrome collapses to the safe-area inset (the queue lives in the
-  // sidebar footer). Compact width (every iPhone, narrow iPad split) keeps the
-  // tab-bar arithmetic above.
+  // bottom chrome collapses to the safe-area inset (the selected-climb pane
+  // replaces the floating queue toolbar). Compact width (every iPhone, narrow
+  // iPad split) keeps the tab-bar arithmetic above.
   const { widthClass } = useDeviceLayout();
   const usesSidebar = insideTabs && widthClass === 'regular';
 

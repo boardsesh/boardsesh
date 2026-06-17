@@ -42,11 +42,11 @@ export type BottomChromeInputs = {
   nativeAccessoryMounted: boolean;
   /**
    * Whether the regular-width iPad shell is on screen: a left sidebar replaces
-   * the bottom tab bar and the queue "now playing" lives in the sidebar footer,
-   * so there is no bottom chrome to reserve for. Optional and defaults to
-   * `false` — every existing (phone / compact-iPad) call site keeps its current
-   * behavior unchanged. When true, every bottom offset collapses to the raw
-   * safe-area inset.
+   * the bottom tab bar and the selected-climb pane replaces the floating queue
+   * toolbar, so there is no bottom chrome to reserve for. Optional and defaults
+   * to `false` — every existing (phone / compact-iPad) call site keeps its
+   * current behavior unchanged. When true, every bottom offset collapses to the
+   * raw safe-area inset.
    */
   usesSidebar?: boolean;
 };

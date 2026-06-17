@@ -34,7 +34,8 @@ function SidebarWallCellComponent() {
   const { formatGrade } = useGradeFormat();
   const { enabled, boardId } = useBoardPresenceControls();
   const litClimb = useWallOrQueueCurrentClimb(null);
-  const { openBoardSheet, boardConfig } = useDrawerHost();
+  const { openBoardSheet, boardPanelProps } = useDrawerHost();
+  const boardConfig = boardPanelProps?.boardConfig ?? null;
 
   const handlePress = useCallback(() => {
     hapticSelection();

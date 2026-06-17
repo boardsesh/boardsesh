@@ -453,20 +453,22 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   }, [flushOnDismiss]);
 
   const handlePrev = useCallback(() => {
+    if (isPreview) return;
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     previousClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [previousClimb]);
+  }, [isPreview, previousClimb]);
 
   const handleNext = useCallback(() => {
+    if (isPreview) return;
     // Always-live: navigation commits the shared current climb for everyone.
     setDrawerPreviewItem(null);
     nextClimb();
     setIsMirrored(false);
     // The favorite override is cleared by the climb-change effect.
-  }, [nextClimb]);
+  }, [isPreview, nextClimb]);
 
   // Promote the previewed climb to the active/current queue item. The Preview
   // badge clears and the lightbulb (which acts on the current climb) now drives
@@ -659,6 +661,9 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   const ascentCount = displayedClimb?.userAscents ?? 0;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   const subDrawerOpen = activeSubDrawer !== 'none';
+  const canNavigateQueue = !isPreview;
+  const canSwipePrevious = canNavigateQueue && navigationState.canPrevious;
+  const canSwipeNext = canNavigateQueue && navigationState.canNext;
 
   const climbContent = displayedClimb ? (
     <>
@@ -716,11 +721,11 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
               setIds={setIds}
               currentFrames={displayedClimb.frames}
               currentFrameOverride={playback.isAnimatable ? playback.currentFrameString : null}
-              nextFrames={navigationState.nextItem?.climb.frames ?? null}
-              prevFrames={navigationState.prevItem?.climb.frames ?? null}
+              nextFrames={canSwipeNext ? (navigationState.nextItem?.climb.frames ?? null) : null}
+              prevFrames={canSwipePrevious ? (navigationState.prevItem?.climb.frames ?? null) : null}
               mirrored={isMirrored}
-              canSwipeNext={navigationState.canNext}
-              canSwipePrevious={navigationState.canPrevious}
+              canSwipeNext={canSwipeNext}
+              canSwipePrevious={canSwipePrevious}
               onSwipeNext={handleNext}
               onSwipePrevious={handlePrev}
               onResetZoomReady={handleResetZoomReady}
@@ -765,12 +770,12 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
             )}
 
             <PlayDrawerActionBar
-              canSwipePrevious={navigationState.canPrevious}
-              canSwipeNext={navigationState.canNext}
+              canSwipePrevious={canSwipePrevious}
+              canSwipeNext={canSwipeNext}
               isMirrored={isMirrored}
               supportsMirroring={supportsMirroring}
               isFavorited={isFavorited}
-              remainingQueueCount={navigationState.remainingCount}
+              remainingQueueCount={canNavigateQueue ? navigationState.remainingCount : 0}
               lightbulbActive={lightbulbActive}
               lightbulbConnected={bluetoothConnected}
               lightbulbPending={lightbulbPending}

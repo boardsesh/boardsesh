@@ -23,8 +23,9 @@ import { spacing, borderRadius } from '../../theme/tokens';
  * Compact width never mounts this; `_layout.tsx` renders the native tab bar
  * there, so the phone UI is unchanged.
  *
- * The current-climb "now playing" chrome stays on the existing floating
- * `PersistentQueueBar` for now; moving it into a sidebar footer is a follow-up.
+ * The selected-climb pane lives to the right of this rail; the bottom
+ * PersistentQueueBar stays compact-only. The rail owns only navigation plus the
+ * compact board-presence cell.
  */
 
 type SidebarDestination = {
