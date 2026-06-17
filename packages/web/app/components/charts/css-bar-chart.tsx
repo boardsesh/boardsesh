@@ -19,7 +19,10 @@ export type CssBarChartBar = {
 
 type CssBarChartProps = {
   bars: CssBarChartBar[];
+  /** Container height (px) on desktop. The chart fills this box rather than
+   * taking its own fixed height, so it stays in sync with `mobileHeight`. */
   height?: number;
+  /** Container height (px) at ≤768px. */
   mobileHeight?: number;
   showLegend?: boolean;
   gap?: number;
@@ -131,7 +134,9 @@ export type GroupedBar = {
 
 type GroupedBarChartProps = {
   bars: GroupedBar[];
+  /** Container height (px) on desktop. The chart fills this box (see CssBarChart). */
   height?: number;
+  /** Container height (px) at ≤768px. */
   mobileHeight?: number;
   showLegend?: boolean;
   gap?: number;
