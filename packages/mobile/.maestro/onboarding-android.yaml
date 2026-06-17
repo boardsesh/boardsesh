@@ -3,10 +3,6 @@ name: onboarding illustrations android
 ---
 # Android version of onboarding.yaml for the standalone screenshot APK.
 - launchApp
-- extendedWaitUntil:
-    visible:
-      id: 'auth-email-input'
-    timeout: 180000
 - runFlow: login.yaml
 
 - openLink: com.boardsesh.app://climbs

@@ -1,13 +1,13 @@
-// Decides which board a playlist-detail screen renders its climbs against, and
-// whether to gate queueing behind a board switch.
+// Decides which board a playlist-detail screen should prefer for climb-row
+// rendering, and whether to show a board-switch prompt.
 //
 // Playlists carry only `boardType` + `layoutId`. When the active board matches,
 // rows render against the user's precise board (correct size/sets/angle) and
-// tapping queues normally. When it differs — or there is no active board — rows
-// render read-only against the playlist's own board (largest size + all sets,
-// via `getBoardConfigForPlaylist`, mirroring web's playlist rendering); a banner
-// prompts switching boards because the queue, play drawer, and BLE LEDs all
-// follow the single active board, so you genuinely must switch to climb it.
+// tapping queues normally. When it differs, rows still receive the active board
+// first; each row can then fall back to its own board and visually mark itself
+// incompatible. If there is no active board, we fall back to the playlist's own
+// board (largest size + all sets, via `getBoardConfigForPlaylist`) so the list
+// can still render.
 
 import { useMemo } from 'react';
 import { useRouter } from 'expo-router';
@@ -21,8 +21,8 @@ import { getBoardConfigForPlaylist } from './board-details-for-playlist';
  *  config; `setIds` is the comma-joined string `ClimbListRow` expects. */
 export type PlaylistRenderBoard = BoardConfig;
 
-/** Shown above a read-only playlist list when its board differs from the active
- *  board (or there is no active board). Strings are already translated. */
+/** Shown above a playlist list when its board differs from the active board (or
+ *  there is no active board). Strings are already translated. */
 export type PlaylistBoardBanner = {
   title: string;
   subtitle: string;
@@ -31,11 +31,11 @@ export type PlaylistBoardBanner = {
 };
 
 export type UsePlaylistRenderBoardResult = {
-  /** Board the climb rows render against, or null when it can't be resolved (no
-   *  active board for a smart playlist; an unbundled board such as MoonBoard —
-   *  the banner still shows in that case). */
+  /** Preferred board for climb rows, or null when no active/fallback board can
+   *  be resolved. Individual rows may choose a different board to render a
+   *  specific climb. */
   renderBoard: PlaylistRenderBoard | null;
-  /** Set when the list is read-only (board mismatch / no active board). */
+  /** Set when the board-switch banner should be shown. */
   banner: PlaylistBoardBanner | null;
 };
 
@@ -57,7 +57,7 @@ export function usePlaylistRenderBoard(
   const boardType = playlistBoard?.boardType ?? null;
   const layoutId = playlistBoard?.layoutId ?? null;
 
-  // Resolve the render board + read-only flag from the real board state only (no
+  // Resolve the preferred render board + mismatch flag from the real board state only (no
   // `t`/`router`), so `renderBoard`'s identity is stable across unrelated
   // re-renders and never churns the FlashList rows that depend on it.
   const { renderBoard, mismatch } = useMemo<{ renderBoard: PlaylistRenderBoard | null; mismatch: boolean }>(() => {
@@ -67,9 +67,14 @@ export function usePlaylistRenderBoard(
     const matchesActive = boardLooselyMatches({ boardName: boardType, layoutId }, activeBoard);
     if (matchesActive) return { renderBoard: activeBoard, mismatch: false };
 
-    // Mismatch or no active board → read-only against the playlist's own board
-    // (largest size + all sets). `null` when it can't resolve (e.g. MoonBoard),
-    // in which case the banner shows alone rather than a half-broken list.
+    // Mismatch with an active board: keep passing the active board into row
+    // rendering so each row can decide whether it fits, or fall back to its own
+    // board and mark itself incompatible.
+    if (activeBoard) return { renderBoard: activeBoard, mismatch: true };
+
+    // No active board → render against the playlist's own board (largest size +
+    // all sets). `null` when it can't resolve (e.g. MoonBoard), in which case
+    // the banner shows alone rather than a half-broken list.
     const resolved = getBoardConfigForPlaylist(boardType, layoutId);
     if (!resolved) return { renderBoard: null, mismatch: true };
     return {
@@ -78,9 +83,9 @@ export function usePlaylistRenderBoard(
         layoutId: resolved.layoutId,
         sizeId: resolved.sizeId,
         setIds: resolved.setIds.join(','),
-        // List-level angle is unused in the read-only branch — each row renders
-        // at its own climb's angle (the angle its grade was baked at).
-        angle: activeBoard?.angle ?? 0,
+        // List-level angle is unused in the no-active-board fallback — each row
+        // renders at its own climb's angle (the angle its grade was baked at).
+        angle: 0,
       },
       mismatch: true,
     };

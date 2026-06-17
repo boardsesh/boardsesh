@@ -321,6 +321,8 @@ Mobile resolves the feed board id in this order:
 
 Each resolver stamps short-lived proof-of-presence for the authenticated user before `reportBoardClimb` will accept a wall-feed report. On the mobile client, starting a newer UUID/config/serial resolve clears the previous board id and stale async results are ignored by a resolve-generation guard, so the sheet does not temporarily show another selected board's feed.
 
+Every board-presence event carries the board's shared `seq`. The client subscribes before its initial hot-feed backfill, then uses that backfill to establish the first sequence baseline. After that, any live event with `seq > lastObservedSeq + 1` is treated as a missed event: the client applies the live event immediately, then runs a coalesced hot-feed catch-up (`boardRecentClimbs`, `boardPresenceStats`, and `boardConnection`) for the active board. This intentionally uses the Redis-backed recent feed rather than durable `boardHistory`, because `boardHistory` is authenticated and dwell-gated while the board sheet must repair anonymous and short-dwell sends too.
+
 ---
 
 ## Backend URL Resolution
@@ -1824,12 +1826,14 @@ The push token as the credential keeps the widget extension out of the user-auth
 ### Validation
 
 **navigate**
+
 - `sessionId`: non-empty string
 - `action`: `"next"` or `"previous"`
 - `currentIndex`: integer, `>= 0`
 - Request body capped at 4 KB
 
 **take-control**
+
 - `sessionId`: non-empty string
 - Request body capped at 2 KB
 

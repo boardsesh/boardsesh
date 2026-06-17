@@ -65,13 +65,53 @@ const connectionEvent = (seq: number, nextHolder: BoardConnectionHolder | null):
   seq,
 });
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+type Deferred<T> = {
+  promise: Promise<T>;
+  reject: (reason: unknown) => void;
+  resolve: (value: T) => void;
+  settled: boolean;
+};
 function deferred<T>(): Deferred<T> {
-  let resolve: (value: T) => void = () => {};
-  const promise = new Promise<T>((res) => {
-    resolve = res;
+  const target: Deferred<T> = {
+    promise: Promise.resolve(undefined as T),
+    reject: () => {},
+    resolve: () => {},
+    settled: false,
+  };
+  const promise = new Promise<T>((res, rej) => {
+    target.resolve = (value) => {
+      if (target.settled) {
+        return;
+      }
+      target.settled = true;
+      res(value);
+    };
+    target.reject = (reason) => {
+      if (target.settled) {
+        return;
+      }
+      target.settled = true;
+      rej(reason);
+    };
   });
-  return { promise, resolve };
+  target.promise = promise;
+  return target;
+}
+
+function pushDeferred<T>(map: Map<number, Array<Deferred<T>>>, boardId: number): Deferred<T> {
+  const next = deferred<T>();
+  const entries = map.get(boardId);
+  if (entries) {
+    entries.push(next);
+  } else {
+    map.set(boardId, [next]);
+  }
+  return next;
+}
+
+function nextPendingDeferred<T>(map: Map<number, Array<Deferred<T>>>, boardId: number): Deferred<T> {
+  const existing = map.get(boardId)?.find((entry) => !entry.settled);
+  return existing ?? pushDeferred(map, boardId);
 }
 
 // A controllable fake client. `emit` pushes a live event to the current
@@ -85,44 +125,17 @@ function makeClient() {
   const unsubscribe = vi.fn();
   let subscribedBoardId: number | null = null;
 
-  const recentByBoard = new Map<number, Deferred<BoardPresenceClimb[]>>();
-  const statsByBoard = new Map<number, Deferred<BoardPresenceStats>>();
-  const connectionByBoard = new Map<number, Deferred<BoardConnectionHolder | null>>();
-  const recentFor = (boardId: number) => {
-    const existing = recentByBoard.get(boardId);
-    if (existing) {
-      return existing;
-    }
-    const next = deferred<BoardPresenceClimb[]>();
-    recentByBoard.set(boardId, next);
-    return next;
-  };
-  const statsFor = (boardId: number) => {
-    const existing = statsByBoard.get(boardId);
-    if (existing) {
-      return existing;
-    }
-    const next = deferred<BoardPresenceStats>();
-    statsByBoard.set(boardId, next);
-    return next;
-  };
-  const connectionFor = (boardId: number) => {
-    const existing = connectionByBoard.get(boardId);
-    if (existing) {
-      return existing;
-    }
-    const next = deferred<BoardConnectionHolder | null>();
-    connectionByBoard.set(boardId, next);
-    return next;
-  };
+  const recentByBoard = new Map<number, Array<Deferred<BoardPresenceClimb[]>>>();
+  const statsByBoard = new Map<number, Array<Deferred<BoardPresenceStats>>>();
+  const connectionByBoard = new Map<number, Array<Deferred<BoardConnectionHolder | null>>>();
 
   const reportClimb = vi.fn(async () => true);
   const reportDisconnect = vi.fn(async () => true);
   // Captured separately so assertions reference the bound mock directly
   // (referencing `client.fetchX` trips the unbound-method lint).
-  const fetchRecentClimbs = vi.fn((boardId: number) => recentFor(boardId).promise);
-  const fetchStats = vi.fn((boardId: number) => statsFor(boardId).promise);
-  const fetchConnection = vi.fn((boardId: number) => connectionFor(boardId).promise);
+  const fetchRecentClimbs = vi.fn((boardId: number) => pushDeferred(recentByBoard, boardId).promise);
+  const fetchStats = vi.fn((boardId: number) => pushDeferred(statsByBoard, boardId).promise);
+  const fetchConnection = vi.fn((boardId: number) => pushDeferred(connectionByBoard, boardId).promise);
   const subscribeNowPlaying = vi.fn(
     (
       boardId: number,
@@ -162,18 +175,33 @@ function makeClient() {
     emitComplete: () => onComplete?.(),
     getSubscribedBoardId: () => subscribedBoardId,
     resolveRecent: (boardId: number, climbs: BoardPresenceClimb[]) => {
-      const target = recentFor(boardId);
+      const target = nextPendingDeferred(recentByBoard, boardId);
       target.resolve(climbs);
       return target.promise;
     },
+    rejectRecent: (boardId: number, error: unknown) => {
+      const target = nextPendingDeferred(recentByBoard, boardId);
+      target.reject(error);
+      return target.promise;
+    },
     resolveStats: (boardId: number, stats: BoardPresenceStats) => {
-      const target = statsFor(boardId);
+      const target = nextPendingDeferred(statsByBoard, boardId);
       target.resolve(stats);
       return target.promise;
     },
+    rejectStats: (boardId: number, error: unknown) => {
+      const target = nextPendingDeferred(statsByBoard, boardId);
+      target.reject(error);
+      return target.promise;
+    },
     resolveConnection: (boardId: number, nextHolder: BoardConnectionHolder | null) => {
-      const target = connectionFor(boardId);
+      const target = nextPendingDeferred(connectionByBoard, boardId);
       target.resolve(nextHolder);
+      return target.promise;
+    },
+    rejectConnection: (boardId: number, error: unknown) => {
+      const target = nextPendingDeferred(connectionByBoard, boardId);
+      target.reject(error);
       return target.promise;
     },
   };
@@ -342,6 +370,139 @@ describe('useBoardPresence — subscribe before backfill', () => {
   });
 });
 
+describe('useBoardPresence — sequence gap recovery', () => {
+  it('does not run gap catch-up before the initial recent-climbs fetch establishes a sequence baseline', () => {
+    const harness = makeClient();
+    renderHook(() => useBoardPresence(1, harness.client));
+
+    act(() => {
+      harness.emit(statsEvent(7, { climbsSentCount: 3 }));
+    });
+
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+    expect(harness.fetchStats).toHaveBeenCalledTimes(1);
+    expect(harness.fetchConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs a missed live sequence with a hot-feed catch-up', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed-holder' }));
+    });
+
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+    expect(result.current.history.map((entry) => entry.seq)).toEqual([1]);
+
+    act(() => {
+      harness.emit(setEvent(climb('live-newest', 4)));
+    });
+
+    expect(result.current.currentClimb?.climbUuid).toBe('live-newest');
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+    expect(harness.fetchStats).toHaveBeenCalledTimes(2);
+    expect(harness.fetchConnection).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('live-newest', 4), climb('missed', 3), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2, hardestGrade: 'V8' });
+      await harness.resolveConnection(1, holder({ userId: 'catch-up-holder' }));
+    });
+
+    await waitFor(() => expect(result.current.history.map((entry) => entry.seq)).toEqual([4, 3, 1]));
+    expect(result.current.currentClimb?.climbUuid).toBe('live-newest');
+    expect(result.current.stats?.climbsSentCount).toBe(2);
+    expect(result.current.stats?.hardestGrade).toBe('V8');
+    expect(result.current.holder?.userId).toBe('catch-up-holder');
+  });
+
+  it('does not catch up for duplicate or out-of-order events', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('current', 5)]);
+    });
+    expect(result.current.history.map((entry) => entry.seq)).toEqual([5]);
+
+    act(() => {
+      harness.emit(setEvent(climb('older', 4)));
+      harness.emit(setEvent(climb('current', 5)));
+    });
+
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+    expect(harness.fetchStats).toHaveBeenCalledTimes(1);
+    expect(harness.fetchConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs history while keeping stale stats and holder when partial catch-up fetches fail', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed-holder' }));
+    });
+
+    act(() => {
+      harness.emit(setEvent(climb('live-newest', 4)));
+    });
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('live-newest', 4), climb('missed', 3), climb('first', 1)]);
+      await Promise.all([
+        harness.rejectStats(1, new Error('stats fetch failed')).catch(() => undefined),
+        harness.rejectConnection(1, new Error('connection fetch failed')).catch(() => undefined),
+      ]);
+    });
+
+    await waitFor(() => expect(result.current.history.map((entry) => entry.seq)).toEqual([4, 3, 1]));
+    expect(result.current.stats?.climbsSentCount).toBe(1);
+    expect(result.current.holder?.userId).toBe('seed-holder');
+  });
+
+  it('coalesces multiple gaps while a catch-up is already in flight and reruns once', async () => {
+    const harness = makeClient();
+    renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed-holder' }));
+    });
+
+    act(() => {
+      harness.emit(statsEvent(3, { climbsSentCount: 2 }));
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      harness.emit(connectionEvent(5, holder({ userId: 'second-gap' })));
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+      await harness.resolveConnection(1, holder({ userId: 'first-catch-up' }));
+    });
+
+    await waitFor(() => expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+      await harness.resolveConnection(1, holder({ userId: 'second-catch-up' }));
+    });
+
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe('useBoardPresence — switching boards', () => {
   it('resets state, resubscribes, and ignores the old board’s late async', async () => {
     const harness = makeClient();
@@ -404,6 +565,39 @@ describe('useBoardPresence — switching boards', () => {
       await harness.resolveStats(2, { ...emptyStats, climbsSentCount: 1 });
     });
     expect(result.current.stats?.climbsSentCount).toBe(1);
+  });
+
+  it('ignores a late gap catch-up from the previous board after switching boards', async () => {
+    const harness = makeClient();
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
+      initialProps: { boardId: 1 },
+    });
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('board1-current', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'board1-holder' }));
+    });
+
+    act(() => {
+      harness.emit(setEvent(climb('board1-gap', 4)));
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+
+    rerender({ boardId: 2 });
+    expect(result.current.currentClimb).toBeNull();
+    expect(result.current.history).toEqual([]);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('board1-gap', 4), climb('board1-missed', 3)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+      await harness.resolveConnection(1, holder({ userId: 'late-board1-holder' }));
+    });
+
+    expect(result.current.currentClimb).toBeNull();
+    expect(result.current.history).toEqual([]);
+    expect(result.current.stats).toBeNull();
+    expect(result.current.holder).toBeNull();
   });
 
   it('unsubscribes on unmount', () => {

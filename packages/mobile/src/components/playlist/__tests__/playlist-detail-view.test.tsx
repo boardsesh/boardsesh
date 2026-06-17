@@ -6,6 +6,31 @@ import type { Climb } from '@boardsesh/queue';
 
 const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
+type CapturedClimbListRowProps = {
+  climb: { uuid: string; name: string };
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  unsupported?: boolean;
+  onPress?: (climb: { uuid: string; name: string }) => void;
+};
+
+type CapturedPlaylistEditClimbRowProps = {
+  climb: Climb;
+  board: {
+    boardName: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    angle: number;
+  };
+};
+
+const capturedClimbRows = vi.hoisted(() => [] as CapturedClimbListRowProps[]);
+const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProps[]);
+
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
   View: ({
@@ -66,12 +91,14 @@ vi.mock('expo-linear-gradient', () => ({
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
     data,
+    renderItem,
     ListHeaderComponent,
     ListEmptyComponent,
     ListFooterComponent,
     onEndReached,
   }: {
     data?: unknown[];
+    renderItem?: (info: { item: unknown; index: number }) => ReactNode;
     ListHeaderComponent?: ReactNode;
     ListEmptyComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
@@ -81,7 +108,9 @@ vi.mock('@shopify/flash-list', () => ({
       'div',
       { 'data-list': 'true', onClick: onEndReached },
       ListHeaderComponent ?? null,
-      data?.length === 0 ? (ListEmptyComponent ?? null) : null,
+      data && data.length > 0 && renderItem
+        ? data.map((item, index) => createElement('div', { key: index }, renderItem({ item, index })))
+        : (ListEmptyComponent ?? null),
       ListFooterComponent ?? null,
     ),
 }));
@@ -151,7 +180,22 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: ({ size }: { size?: string }) => createElement('div', { 'data-spinner': size ?? 'default' }),
 }));
 
-vi.mock('../../ClimbListRow', () => ({ ClimbListRow: () => null }));
+vi.mock('../../ClimbListRow', () => ({
+  ClimbListRow: (props: CapturedClimbListRowProps) => {
+    capturedClimbRows.push(props);
+    return createElement(
+      'button',
+      {
+        'data-climb-row': props.climb.uuid,
+        'data-board-name': props.boardName,
+        'data-layout-id': String(props.layoutId),
+        'data-unsupported': props.unsupported ? 'true' : 'false',
+        onClick: () => props.onPress?.(props.climb),
+      },
+      props.climb.name,
+    );
+  },
+}));
 
 // Button pulls in react-native-paper + expo-modules-core; stub it to a plain
 // button so the board-mismatch banner can render in jsdom.
@@ -220,7 +264,10 @@ vi.mock('../use-playlist-drag', () => ({
   }),
 }));
 vi.mock('../PlaylistEditClimbRow', () => ({
-  PlaylistEditClimbRow: () => null,
+  PlaylistEditClimbRow: (props: CapturedPlaylistEditClimbRowProps) => {
+    capturedEditRows.push(props);
+    return createElement('div', { 'data-edit-climb-row': props.climb.uuid });
+  },
 }));
 
 // Use real playlist-gradient and playlist-colors (pure TS, no RN imports).
@@ -241,6 +288,24 @@ const CLIMB: Climb = {
   stars: 3,
   difficulty_error: '0',
   benchmark_difficulty: null,
+};
+
+const KILTER_CLIMB: Climb = {
+  ...CLIMB,
+  uuid: 'kilter-row',
+  name: 'Kilter Row',
+  boardType: 'kilter',
+  layoutId: 1,
+  angle: 40,
+};
+
+const TENSION_CLIMB: Climb = {
+  ...CLIMB,
+  uuid: 'tension-row',
+  name: 'Tension Row',
+  boardType: 'tension',
+  layoutId: 9,
+  angle: 35,
 };
 
 function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDetailViewProps {
@@ -266,6 +331,8 @@ describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
     ctrl.variant = 'liquidGlass';
+    capturedClimbRows.length = 0;
+    capturedEditRows.length = 0;
   });
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -363,6 +430,62 @@ describe('PlaylistDetailView', () => {
   it('shows no footer spinner when isFetchingNextPage=false', () => {
     const { container } = render(<PlaylistDetailView {...makeProps({ isFetchingNextPage: false, climbs: [CLIMB] })} />);
     expect(container.querySelector('[data-spinner="small"]')).toBeNull();
+  });
+
+  it('renders compatible rows against the active board', () => {
+    render(
+      <PlaylistDetailView
+        {...makeProps({
+          climbs: [KILTER_CLIMB],
+          renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 45 },
+        })}
+      />,
+    );
+
+    expect(capturedClimbRows[0]).toMatchObject({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      angle: 45,
+      unsupported: false,
+    });
+  });
+
+  it('renders incompatible mixed-board rows on their own board and dims them', () => {
+    render(
+      <PlaylistDetailView
+        {...makeProps({
+          climbs: [KILTER_CLIMB, TENSION_CLIMB],
+          renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 45 },
+        })}
+      />,
+    );
+
+    expect(capturedClimbRows).toHaveLength(2);
+    expect(capturedClimbRows[0]).toMatchObject({
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 45,
+      unsupported: false,
+    });
+    expect(capturedClimbRows[1]).toMatchObject({
+      boardName: 'tension',
+      layoutId: 9,
+      angle: 35,
+      unsupported: true,
+    });
+  });
+
+  it('keeps edit row board props stable across parent rerenders', () => {
+    const climbs = [KILTER_CLIMB];
+    const renderBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 45 };
+    const { rerender } = render(<PlaylistDetailView {...makeProps({ climbs, renderBoard, editMode: true })} />);
+
+    rerender(<PlaylistDetailView {...makeProps({ climbs, renderBoard, editMode: true })} />);
+
+    expect(capturedEditRows).toHaveLength(2);
+    expect(capturedEditRows[1]?.board).toBe(capturedEditRows[0]?.board);
   });
 
   // ── Board backdrop ──────────────────────────────────────────────────────────
@@ -484,7 +607,7 @@ describe('PlaylistDetailView', () => {
     });
   });
 
-  // ── Board-mismatch banner (read-only) ───────────────────────────────────────
+  // ── Board-mismatch banner ──────────────────────────────────────────────────
   describe('board mismatch banner', () => {
     const banner = {
       title: 'Switch to Kilter to climb this playlist',
@@ -518,9 +641,27 @@ describe('PlaylistDetailView', () => {
     it('hides the Material activate-all action while the banner is shown', () => {
       ctrl.variant = 'material';
       const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], boardBanner: banner })} />);
-      // Queueing is blocked on a board mismatch, so the play-all action is gone
-      // even though the list has climbs.
+      // Playlist-level activate-all is blocked on a board mismatch, so the play
+      // action is gone even though the list has climbs.
       expect(container.querySelector('[data-appbar-action="play"]')).toBeNull();
+    });
+
+    it('still activates a row while the banner is shown', () => {
+      const onActivateClimb = vi.fn();
+      const { container } = render(
+        <PlaylistDetailView
+          {...makeProps({
+            climbs: [TENSION_CLIMB],
+            boardBanner: banner,
+            onActivateClimb,
+          })}
+        />,
+      );
+
+      fireEvent.click(container.querySelector('[data-climb-row="tension-row"]') as HTMLElement);
+
+      expect(onActivateClimb).toHaveBeenCalledWith(TENSION_CLIMB);
+      expect(banner.onPress).not.toHaveBeenCalled();
     });
   });
 });

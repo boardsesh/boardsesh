@@ -121,10 +121,9 @@ export default function PlaylistDetail() {
     refreshErrorMessage: 'Failed to refresh playlist suggestions:',
   });
 
-  // Render the climbs against the playlist's own board. When it matches the
-  // active board this is the active board (tapping queues normally); when it
-  // differs (or there's no active board) rows render read-only against the
-  // playlist's board and `boardBanner` prompts a switch.
+  // Prefer the active board for row rendering; mixed-board climbs resolve their
+  // own board per row and dim when they do not fit the active board. The banner
+  // still prompts a switch for list-level board mismatches.
   const { renderBoard, banner: boardBanner } = usePlaylistRenderBoard(
     playlist ? { boardType: playlist.boardType, layoutId: playlist.layoutId } : null,
   );

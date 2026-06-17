@@ -33,7 +33,7 @@ import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { GlassIconButton } from '../GlassIconButton';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
-import { PlaylistEditClimbRow } from './PlaylistEditClimbRow';
+import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
 import { buildHeroGradient } from './playlist-gradient';
@@ -42,6 +42,7 @@ import { PLAYLIST_COLORS, isValidHexColor } from './playlist-colors';
 import { withAlpha } from '../../theme/colors';
 import { toQueueClimb, toSchemaClimb } from '../../lib/climb-types';
 import type { PlaylistRenderBoard, PlaylistBoardBanner } from '../../lib/playlists/use-playlist-render-board';
+import { resolvePlaylistClimbRenderBoard } from '../../lib/playlists/playlist-climb-render-board';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -94,14 +95,13 @@ export type PlaylistDetailHero = {
 export type PlaylistDetailViewProps = {
   hero: PlaylistDetailHero;
   climbs: Climb[];
-  /** Board the climb rows render against (resolved by `usePlaylistRenderBoard`).
-   *  Null while the active board is still loading, or when the playlist's board
-   *  can't be resolved — every row renders null in that case. */
+  /** Preferred active board for climb rows. Compatible rows render against it;
+   *  incompatible rows resolve their own board config and are dimmed. */
   renderBoard: PlaylistRenderBoard | null;
   /** Set when the playlist belongs to a board other than the active one (or
-   *  there is no active board). Rows render read-only against the playlist's own
-   *  board, a switch-board banner shows above the list, and queueing (row tap +
-   *  activate-all) is disabled. */
+   *  there is no active board). A switch-board banner shows above the list and
+   *  activate-all is disabled; row taps still open the drawer so it can explain
+   *  incompatibility. */
   boardBanner?: PlaylistBoardBanner | null;
   /** True while the first page loads (hero still renders; list shows a spinner). */
   isLoading: boolean;
@@ -135,17 +135,21 @@ export type PlaylistDetailViewProps = {
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
 const noopRemove = (_climbUuid: string) => {};
 
+type ResolvedPlaylistClimbRow = {
+  renderBoard: PlaylistRenderBoard;
+  editBoard: PlaylistEditRowBoard;
+  incompatible: boolean;
+};
+
 /**
  * Shared hero + paginated climb list for the playlist-detail and
  * smart-playlist-detail screens. Renders the colour/emoji hero, then a FlashList
- * of `ClimbListRow`s rendered against `renderBoard`, paginating via
+ * of `ClimbListRow`s rendered from `renderBoard`, paginating via
  * `fetchNextPage` as the list nears its end.
  *
- * `renderBoard` is the user's active board for the common case. When a playlist
- * belongs to a different board, the caller passes the playlist's own board plus
- * a `boardBanner`: rows then render read-only against that board, a switch-board
- * banner shows above the list, and queueing is disabled (the queue / play drawer
- * / BLE LEDs follow the single active board).
+ * `renderBoard` is the user's active board for the common case. Rows whose
+ * climbs do not fit that board render against their own board config and are
+ * dimmed; the play drawer owns the incompatibility message when opened.
  *
  * Two presentations: the Liquid Glass variant keeps the full-bleed gradient hero
  * with white text and floating FABs; the Material 3 variant swaps in a Paper
@@ -231,27 +235,19 @@ export function PlaylistDetailView({
   // header `collapsed` flips during scroll) would otherwise re-render every row.
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
 
-  // Read-only mode (board mismatch): tapping a climb routes to the board
-  // switcher — the one action that lets the user actually climb it. Read the
-  // banner through a ref so this callback (and thus `renderItem`) stays stable
-  // even if `boardBanner`'s identity churns — otherwise every FlashList row
-  // would re-render on a banner recreation.
-  const boardBannerRef = useRef(boardBanner);
-  boardBannerRef.current = boardBanner;
-  const handleSwitchBoard = useCallback(() => boardBannerRef.current?.onPress(), []);
-
-  // `renderItem` depends on this boolean, not the `boardBanner` object, so a
-  // banner identity change doesn't invalidate the memoized rows.
-  const readOnly = !!boardBanner;
+  // Activate-all only needs to know whether the board-switch banner is present;
+  // row taps still open the drawer so it can explain incompatible climbs.
+  const disableActivateAll = !!boardBanner;
 
   // Activate-all: queue the playlist from the top. Reuses the same row-tap path
   // (which seeds the suggestion source from the whole list), so swiping the play
-  // drawer walks the playlist. No-op on an empty list or in read-only mode.
+  // drawer walks the playlist. No-op on an empty list or while the switch-board
+  // banner is shown.
   const handleActivateAll = useCallback(() => {
-    if (readOnly) return;
+    if (disableActivateAll) return;
     const first = climbs[0];
     if (first) onActivateClimb(first);
-  }, [readOnly, climbs, onActivateClimb]);
+  }, [disableActivateAll, climbs, onActivateClimb]);
 
   // List-level drag-to-reorder for edit mode. Always instantiated (hooks can't be
   // conditional); only the edit rows wire up its handles. `isDragging` locks the
@@ -261,30 +257,38 @@ export function PlaylistDetailView({
     itemCount: climbs.length,
   });
 
-  // Stable board object for the memoized edit rows (a fresh inline object each
-  // render would defeat their memoization).
-  const editBoard = useMemo(
-    () =>
-      renderBoard
-        ? {
-            boardName: renderBoard.boardName as BoardName,
-            layoutId: renderBoard.layoutId,
-            sizeId: renderBoard.sizeId,
-            setIds: renderBoard.setIds,
-            angle: renderBoard.angle,
-          }
-        : null,
-    [renderBoard],
-  );
+  const resolvedRowsByClimbUuid = useMemo(() => {
+    const resolvedRows = new Map<string, ResolvedPlaylistClimbRow>();
+    for (const climb of climbs) {
+      const resolvedBoard = resolvePlaylistClimbRenderBoard(climb, renderBoard);
+      if (!resolvedBoard) continue;
+
+      const board = resolvedBoard.renderBoard;
+      resolvedRows.set(climb.uuid, {
+        renderBoard: board,
+        editBoard: {
+          boardName: board.boardName as BoardName,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds,
+          angle: board.angle,
+        },
+        incompatible: resolvedBoard.incompatible,
+      });
+    }
+    return resolvedRows;
+  }, [climbs, renderBoard]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: Climb; index: number }) => {
-      if (!renderBoard) return null;
-      if (editMode && editBoard) {
+      const resolvedRow = resolvedRowsByClimbUuid.get(item.uuid);
+      if (!resolvedRow) return null;
+
+      if (editMode) {
         return (
           <PlaylistEditClimbRow
             climb={item}
-            board={editBoard}
+            board={resolvedRow.editBoard}
             rowIndex={index}
             drag={dragControls}
             onRemove={onRemoveClimb ?? noopRemove}
@@ -292,31 +296,21 @@ export function PlaylistDetailView({
           />
         );
       }
+
       return (
         <ClimbListRow
           climb={toSchemaClimb(item)}
-          boardName={renderBoard.boardName as BoardName}
-          layoutId={renderBoard.layoutId}
-          sizeId={renderBoard.sizeId}
-          setIds={renderBoard.setIds}
-          // Read-only rows render at each climb's own angle (the angle its grade
-          // was baked at); the matching case uses the active board's angle.
-          angle={readOnly ? item.angle : renderBoard.angle}
-          onPress={readOnly ? handleSwitchBoard : handleActivate}
+          boardName={resolvedRow.renderBoard.boardName as BoardName}
+          layoutId={resolvedRow.renderBoard.layoutId}
+          sizeId={resolvedRow.renderBoard.sizeId}
+          setIds={resolvedRow.renderBoard.setIds}
+          angle={resolvedRow.renderBoard.angle}
+          onPress={handleActivate}
+          unsupported={resolvedRow.incompatible}
         />
       );
     },
-    [
-      renderBoard,
-      editMode,
-      editBoard,
-      dragControls,
-      onRemoveClimb,
-      onReorderClimb,
-      readOnly,
-      handleActivate,
-      handleSwitchBoard,
-    ],
+    [resolvedRowsByClimbUuid, editMode, dragControls, onRemoveClimb, onReorderClimb, handleActivate],
   );
 
   // Cog shown beside the playlist name only in edit mode — opens the
@@ -369,9 +363,8 @@ export function PlaylistDetailView({
     </View>
   ) : null;
 
-  // Switch-board banner shown above the read-only list when the playlist's board
-  // differs from the active one. Sits inside the list header so it scrolls with
-  // the hero in both variants.
+  // Switch-board banner shown when the playlist's board differs from the active
+  // one. Sits inside the list header so it scrolls with the hero in both variants.
   const bannerNode = boardBanner ? <BoardMismatchBanner banner={boardBanner} systemColors={systemColors} /> : null;
 
   // ── Material 3 branch ───────────────────────────────────────────────────────
@@ -666,9 +659,8 @@ function MaterialEmptyState({
   );
 }
 
-/** Switch-board banner for a read-only playlist whose board differs from the
- *  active one: a board glyph + the prompt, then a filled CTA into `/boards`.
- *  Lives above the (read-only) climb list in both variants. */
+/** Switch-board banner for a playlist whose board differs from the active one:
+ *  a board glyph + the prompt, then a filled CTA into `/boards`. */
 function BoardMismatchBanner({
   banner,
   systemColors,

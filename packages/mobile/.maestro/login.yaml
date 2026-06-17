@@ -1,41 +1,26 @@
 appId: com.boardsesh.app
-name: login (subflow)
+name: ready (subflow — waits for the screenshot-mode auto sign-in to land on a tab)
 ---
-# Reusable login subflow. The caller loads the Metro bundle into the dev-client
-# and waits for the signed-out auth screen before invoking this. Fill the seeded
-# test credentials (passed by the orchestrator via `maestro test -e
-# SCREENSHOT_USER_EMAIL=... -e SCREENSHOT_USER_PASSWORD=...`) and wait until the
-# app redirects out of auth.
+# The screenshot build auto-signs-in on boot (packages/mobile/src/lib/screenshot-mode.ts
+# SCREENSHOT_USER_* + app/auth/login.tsx), so there's no login form to drive. This subflow
+# just waits for the app to finish loading the (pre-warmed) Metro bundle and land on the
+# home tab — detected by the native tab bar, which is only present once signed in.
 #
-# A "Sign in to your Apple Account" system alert can linger on the simulator from
-# a prior Apple-auth attempt and cover the login form (the orchestrator's app
-# reinstall resets app data but not system modals). Dismiss it if present.
+# We deliberately do NOT wait on the auth form: auto sign-in redirects within the network
+# round-trip, so the form flashes faster than Maestro polls and a `visible: auth-email-input`
+# wait times out (the field is already gone — this is the bug this replaced). The native
+# tab bar is a UIKit element, so it surfaces to Maestro (unlike plain RN views).
+#
+# A "Sign in to your Apple Account" system alert can linger from a prior Apple-auth attempt
+# and cover the screen; dismiss it if present.
 - tapOn:
     text: 'Close'
     optional: true
+# The "Discover" tab label appears only once auto sign-in lands on a tab — a reliable
+# "loaded + authenticated" signal. (NOT "Climbs": that tab uses role="search", so iOS 26
+# renders it as a magnifying-glass glyph with no text label.) Generous timeout covers a
+# cold Metro bundle on a slow runner.
 - extendedWaitUntil:
     visible:
-      id: 'auth-email-input'
-    timeout: 30000
-- tapOn:
-    id: 'auth-email-input'
-- inputText: ${SCREENSHOT_USER_EMAIL}
-- tapOn:
-    id: 'auth-password-input'
-- inputText: ${SCREENSHOT_USER_PASSWORD}
-# Submit via the keyboard return key — the password field's onSubmitEditing
-# triggers sign-in. Locale-independent, and avoids depending on the submit
-# button's testID (the glass button wraps a reanimated AnimatedPressable, which
-# doesn't reliably surface testID to the iOS accessibility tree).
-- pressKey: Enter
-# The email field disappearing is the reliable "auth succeeded + redirected"
-# signal — more robust than racing a specific tab's content load.
-- extendedWaitUntil:
-    notVisible:
-      id: 'auth-email-input'
-    timeout: 45000
-# iOS offers to save the just-entered password; dismiss it so the system dialog
-# doesn't cover the captured screens (and block the board picker).
-- tapOn:
-    text: 'Not Now'
-    optional: true
+      text: 'Discover'
+    timeout: 300000

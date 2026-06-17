@@ -65,24 +65,20 @@ describe('usePlaylistRenderBoard', () => {
     expect(result.current.banner).toBeNull();
   });
 
-  it('resolves the playlist board read-only + banner on a board-name mismatch', () => {
+  it('keeps the active board and shows a banner on a board-name mismatch', () => {
     const { result } = renderHook(() => usePlaylistRenderBoard({ boardType: 'tension', layoutId: 9 }));
-    expect(result.current.renderBoard).toEqual({
-      boardName: 'tension',
-      layoutId: 9,
-      sizeId: 5,
-      setIds: '1,2',
-      angle: 40,
-    });
+    expect(result.current.renderBoard).toBe(mocks.activeBoard);
     expect(result.current.banner?.title).toContain('Tension');
     expect(result.current.banner?.subtitle).toContain('Tension');
+    expect(mocks.getBoardConfigForPlaylist).not.toHaveBeenCalled();
   });
 
   it('treats a layout mismatch on the same board as a mismatch', () => {
     mocks.resolved = { boardName: 'kilter', layoutId: 8, sizeId: 7, setIds: [3] };
     const { result } = renderHook(() => usePlaylistRenderBoard({ boardType: 'kilter', layoutId: 8 }));
     expect(result.current.banner).not.toBeNull();
-    expect(result.current.renderBoard).toMatchObject({ boardName: 'kilter', layoutId: 8, setIds: '3' });
+    expect(result.current.renderBoard).toBe(mocks.activeBoard);
+    expect(mocks.getBoardConfigForPlaylist).not.toHaveBeenCalled();
   });
 
   it('resolves read-only + banner when there is no active board', () => {
@@ -93,7 +89,16 @@ describe('usePlaylistRenderBoard', () => {
     expect(result.current.renderBoard).toMatchObject({ boardName: 'tension', angle: 0 });
   });
 
-  it('shows the banner alone when the board cannot be resolved (e.g. MoonBoard)', () => {
+  it('keeps the active board when the playlist board cannot be resolved', () => {
+    mocks.resolved = null;
+    const { result } = renderHook(() => usePlaylistRenderBoard({ boardType: 'moonboard', layoutId: 1 }));
+    expect(result.current.renderBoard).toBe(mocks.activeBoard);
+    expect(result.current.banner).not.toBeNull();
+    expect(mocks.getBoardConfigForPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('shows the banner alone when there is no active board and the fallback cannot be resolved', () => {
+    mocks.activeBoard = null;
     mocks.resolved = null;
     const { result } = renderHook(() => usePlaylistRenderBoard({ boardType: 'moonboard', layoutId: 1 }));
     expect(result.current.renderBoard).toBeNull();

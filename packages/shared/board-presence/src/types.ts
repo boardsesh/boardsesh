@@ -64,8 +64,15 @@ export type BoardPresenceAction =
   | { type: 'APPLY_STATS_UPDATED'; payload: { stats: BoardPresenceStats; seq: number } }
   // One-time initial fetch seed; only fills the tiles before any live push.
   | { type: 'SEED_STATS'; payload: BoardPresenceStats }
+  // Full-feed catch-up after a detected sequence gap. This is a snapshot, so it
+  // replaces stale tiles and advances the stats cursor through the repaired seq.
+  | { type: 'REFRESH_STATS'; payload: { stats: BoardPresenceStats; upToSeq: number } }
   // Live connection push from the subscription (holder, or null when freed).
   | { type: 'APPLY_CONNECTION_CHANGED'; payload: { holder: BoardConnectionHolder | null; seq: number } }
   // One-time initial fetch seed; only fills the holder before any live push.
   | { type: 'SEED_CONNECTION'; payload: BoardConnectionHolder | null }
+  // Full-feed catch-up after a detected sequence gap. This is a snapshot, so it
+  // replaces stale holder state and advances the connection cursor through the
+  // repaired seq.
+  | { type: 'REFRESH_CONNECTION'; payload: { holder: BoardConnectionHolder | null; upToSeq: number } }
   | { type: 'RESET' };

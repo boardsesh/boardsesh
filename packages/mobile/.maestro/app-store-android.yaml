@@ -24,10 +24,7 @@ name: app-store screenshots android
 # Order: board-independent shots first (home/discover/profile/session); board-dependent
 # shots after the board is picked. Plain visits run before screenshot-param visits.
 - launchApp
-- extendedWaitUntil:
-    visible:
-      id: 'auth-email-input'
-    timeout: 180000
+# Auto-signs-in on boot; login.yaml waits for the home tab (no login form is shown).
 - runFlow: login.yaml
 
 # Home — feed populated by the prod test user's follows.

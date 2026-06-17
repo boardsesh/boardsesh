@@ -25,10 +25,6 @@ name: onboarding illustrations
 # no openurl, no "Open in Boardsesh?" dialog on a fresh CI sim. This flow just waits
 # for the auth screen. The orchestrator uninstalled + reinstalled and reset the
 # keychain, so this cold-loads signed out.
-- extendedWaitUntil:
-    visible:
-      id: 'auth-email-input'
-    timeout: 300000
 - runFlow: login.yaml
 
 - openLink: com.boardsesh.app://climbs

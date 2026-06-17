@@ -24,6 +24,7 @@ import {
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
+  BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
 } from '@boardsesh/shared-schema';
@@ -92,6 +93,23 @@ export type BoardPresenceActions = {
   getUndoTarget: () => BoardPresenceClimb | null;
 };
 
+function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
+  switch (event.__typename) {
+    case 'BoardClimbSet':
+      return event.climb.seq;
+    case 'BoardClimbCleared':
+    case 'BoardStatsUpdated':
+    case 'BoardConnectionChanged':
+      return event.seq;
+    default:
+      return null;
+  }
+}
+
+function highestClimbSeq(climbs: BoardPresenceClimb[]): number {
+  return climbs.reduce((highestSeq, climb) => Math.max(highestSeq, climb.seq), 0);
+}
+
 export function useBoardPresence(boardId: number | null, client: BoardPresenceClient | null): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
@@ -107,6 +125,7 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   currentClimbRef.current = state.currentClimb;
   const undoTargetRef = useRef<BoardPresenceClimb | null>(undoTarget);
   undoTargetRef.current = undoTarget;
+  const observedSeqRef = useRef(0);
 
   useEffect(() => {
     // No board or no transport: collapse to the initial state and stay inert.
@@ -115,6 +134,7 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       dispatch({ type: 'RESET' });
       setIsLive(false);
       setUndoTarget(null);
+      observedSeqRef.current = 0;
       return;
     }
 
@@ -122,11 +142,79 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     // history/current/stats never bleed into this one.
     dispatch({ type: 'RESET' });
     setUndoTarget(null);
+    observedSeqRef.current = 0;
 
     let isActive = true;
+    let catchUpInFlight = false;
+    let catchUpRequested = false;
+    // Once a baseline exists, a live gap may trigger catch-up even while the
+    // initial backfill is still resolving. That overlap is safe: both paths
+    // merge through BACKFILL_HISTORY, which dedups by (climbUuid, seq).
+    let hasSequenceBaseline = false;
     // Identifies this effect run; late async results for a superseded board are
     // ignored by comparing against the ref, which the cleanup flips off.
     const subscribedBoardId = boardId;
+
+    const runCatchUp = () => {
+      if (!isActive || boardIdRef.current !== subscribedBoardId) {
+        return;
+      }
+      if (catchUpInFlight) {
+        catchUpRequested = true;
+        return;
+      }
+
+      catchUpInFlight = true;
+      const startedAtSeq = observedSeqRef.current;
+      const connectionFetch = client.fetchConnection;
+      const connectionPromise =
+        connectionFetch === undefined
+          ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
+          : connectionFetch(boardId);
+
+      void Promise.allSettled([
+        client.fetchRecentClimbs(boardId),
+        client.fetchStats(boardId),
+        connectionPromise,
+      ] as const)
+        .then(([recentResult, statsResult, connectionResult]) => {
+          if (!isActive || boardIdRef.current !== subscribedBoardId) {
+            return;
+          }
+
+          let repairedThroughSeq = startedAtSeq;
+          if (recentResult.status === 'fulfilled') {
+            const recentClimbs = recentResult.value;
+            repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
+            observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
+            dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
+          }
+
+          if (statsResult.status === 'fulfilled') {
+            dispatch({
+              type: 'REFRESH_STATS',
+              payload: { stats: statsResult.value, upToSeq: repairedThroughSeq },
+            });
+          }
+
+          if (connectionFetch !== undefined && connectionResult.status === 'fulfilled') {
+            dispatch({
+              type: 'REFRESH_CONNECTION',
+              payload: { holder: connectionResult.value ?? null, upToSeq: repairedThroughSeq },
+            });
+          }
+        })
+        .finally(() => {
+          if (!isActive) {
+            return;
+          }
+          catchUpInFlight = false;
+          if (catchUpRequested) {
+            catchUpRequested = false;
+            runCatchUp();
+          }
+        });
+    };
 
     // 1) Subscribe FIRST. Events arriving during the catch-up fetches below are
     //    buffered straight into the reducer; the reducer's seq-dedup then keeps
@@ -136,6 +224,15 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       (event) => {
         if (!isActive) {
           return;
+        }
+        const eventSeq = boardPresenceEventSeq(event);
+        if (eventSeq !== null) {
+          const previousObservedSeq = observedSeqRef.current;
+          observedSeqRef.current = Math.max(previousObservedSeq, eventSeq);
+          if (hasSequenceBaseline && eventSeq > previousObservedSeq + 1) {
+            runCatchUp();
+          }
+          hasSequenceBaseline = true;
         }
         const action = mapBoardPresenceEnvelopeToAction(event);
         if (action) {
@@ -166,11 +263,14 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       .fetchRecentClimbs(boardId)
       .then((recentClimbs) => {
         if (isActive && boardIdRef.current === subscribedBoardId) {
+          observedSeqRef.current = Math.max(observedSeqRef.current, highestClimbSeq(recentClimbs));
+          hasSequenceBaseline = true;
           dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
         }
       })
       .catch(() => {
         // Backfill is best-effort; the live stream still drives the wall.
+        hasSequenceBaseline = observedSeqRef.current > 0;
       });
 
     void client

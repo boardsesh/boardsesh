@@ -221,6 +221,11 @@ export function buildScreenshotEnv(
     EXPO_PUBLIC_SCREENSHOT_MODE: '1',
     // Baked at JS-bundle time; theme-provider locks to it in screenshot mode.
     EXPO_PUBLIC_SCREENSHOT_THEME: options.theme,
+    // The app auto-signs-in with these on boot (see screenshot-mode.ts), so the
+    // Maestro flow never types into the login form — which pops iOS's
+    // "Save Password?" dialog over every shot and blocks the board picker.
+    EXPO_PUBLIC_SCREENSHOT_USER_EMAIL: baseEnv.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL,
+    EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: baseEnv.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD,
   };
   if (options.variant) {
     env.EXPO_PUBLIC_SCREENSHOT_VARIANT = options.variant;

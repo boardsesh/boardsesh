@@ -378,6 +378,33 @@ describe('SEED_STATS', () => {
   });
 });
 
+describe('REFRESH_STATS', () => {
+  it('overwrites stale stats from a catch-up snapshot and advances lastStatsSeq through the repaired seq', () => {
+    const state = makeState({ stats: makeStats({ climbsSentCount: 1 }), lastStatsSeq: 3 });
+    const refreshed = makeStats({ climbsSentCount: 9, hardestGrade: 'V10' });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_STATS',
+      payload: { stats: refreshed, upToSeq: 8 },
+    });
+
+    expect(result.stats).toEqual(refreshed);
+    expect(result.lastStatsSeq).toBe(8);
+  });
+
+  it('ignores an older catch-up snapshot so neither stats nor lastStatsSeq regress', () => {
+    const freshStats = makeStats({ climbsSentCount: 7 });
+    const state = makeState({ stats: freshStats, lastStatsSeq: 12 });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_STATS',
+      payload: { stats: makeStats({ climbsSentCount: 8 }), upToSeq: 10 },
+    });
+
+    expect(result).toBe(state);
+  });
+});
+
 describe('APPLY_CONNECTION_CHANGED', () => {
   it('sets the holder and advances lastConnectionSeq', () => {
     const holder = makeHolder({ userId: 'alice', displayName: 'Alice' });
@@ -479,6 +506,32 @@ describe('SEED_CONNECTION', () => {
     const state = makeState({ holder: live, lastConnectionSeq: 3 });
 
     const result = boardPresenceReducer(state, { type: 'SEED_CONNECTION', payload: makeHolder({ userId: 'alice' }) });
+    expect(result).toBe(state);
+  });
+});
+
+describe('REFRESH_CONNECTION', () => {
+  it('overwrites stale holder state from a catch-up snapshot and advances lastConnectionSeq through the repaired seq', () => {
+    const state = makeState({ holder: makeHolder({ userId: 'old' }), lastConnectionSeq: 2 });
+    const refreshed = makeHolder({ userId: 'new' });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: refreshed, upToSeq: 9 },
+    });
+
+    expect(result.holder).toEqual(refreshed);
+    expect(result.lastConnectionSeq).toBe(9);
+  });
+
+  it('ignores an older catch-up snapshot so neither holder nor lastConnectionSeq regress', () => {
+    const state = makeState({ holder: makeHolder({ userId: 'old' }), lastConnectionSeq: 12 });
+
+    const result = boardPresenceReducer(state, {
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: null, upToSeq: 10 },
+    });
+
     expect(result).toBe(state);
   });
 });

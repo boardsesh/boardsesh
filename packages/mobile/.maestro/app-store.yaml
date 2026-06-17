@@ -37,12 +37,8 @@ name: app-store screenshots
 # - Filenames are numbered for store DISPLAY order (00..09), not capture order. 03 is the
 #   live-party shot, added by the party-session flow (see app-store-party.yaml / PR2).
 #
-# Cold Metro bundle on the first load can take a while; wait for the signed-out auth
-# screen, then log in.
-- extendedWaitUntil:
-    visible:
-      id: 'auth-email-input'
-    timeout: 300000
+# Cold Metro bundle on the first load can take a while; the screenshot build auto-signs-in
+# on boot, so login.yaml just waits for it to land on the home tab (no login form is shown).
 - runFlow: login.yaml
 
 # Home — feed populated by the prod test user's follows.

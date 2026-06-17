@@ -145,4 +145,16 @@ describe('buildScreenshotEnv', () => {
       buildScreenshotEnv(makeOptions({ workout: null }), baseEnv()).EXPO_PUBLIC_SCREENSHOT_WORKOUT,
     ).toBeUndefined();
   });
+
+  it('bakes the auto-sign-in credentials (defaults to the test account)', () => {
+    const env = buildScreenshotEnv(makeOptions(), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('test@boardsesh.com');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD).toBe('test');
+    const overridden = buildScreenshotEnv(
+      makeOptions(),
+      baseEnv({ SCREENSHOT_USER_EMAIL: 'shots@boardsesh.com', SCREENSHOT_USER_PASSWORD: 'secret' }),
+    );
+    expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('shots@boardsesh.com');
+    expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD).toBe('secret');
+  });
 });

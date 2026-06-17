@@ -54,3 +54,15 @@ export const SCREENSHOT_WORKOUT: ScreenshotWorkout | null = SCREENSHOT_WORKOUT_T
 )
   ? (screenshotWorkoutEnv as ScreenshotWorkout)
   : null;
+
+/**
+ * Credentials the app auto-signs-in with on boot in screenshot mode (see
+ * `app/auth/login.tsx`), so the Maestro flows never type into the login form.
+ * Typing the password makes iOS offer to save it, and that "Save Password?"
+ * system dialog then covers every captured screen and sits over the board picker
+ * so the board-pick tap misses. Baked by the orchestrator
+ * (`scripts/mobile-screenshots.ts` for iOS; the CI `.env` for Android) from
+ * SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD. Empty in normal builds.
+ */
+export const SCREENSHOT_USER_EMAIL = process.env.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL ?? '';
+export const SCREENSHOT_USER_PASSWORD = process.env.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD ?? '';
