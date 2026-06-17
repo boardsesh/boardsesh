@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -133,6 +133,8 @@ type PlayDrawerProps = {
    * this undefined and previews via its own internal state.
    */
   previewItem?: ClimbQueueItem | null;
+  /** iPad pane only: playlist source for host-held previews. */
+  previewPlaylistSuggestionSource?: PlaylistSuggestionSource | null;
   /** iPad pane only: fired when the current climb changes while a preview is
    *  showing, so the host clears the preview. */
   onPreviewConsumed?: () => void;
@@ -149,6 +151,23 @@ const DEFAULT_BETA_HEADER_HEIGHT = 52;
 // enablePanDownToClose + enableContentPanningGesture.
 const renderNoHandle = () => null;
 
+const PaneOnWallChip = memo(function PaneOnWallChip({ climbUuid }: { climbUuid: string }) {
+  const { t } = useTranslation('session');
+  const { brandColors } = useTheme();
+  const wallClimb = useWallOrQueueCurrentClimb(null);
+
+  if (wallClimb?.uuid !== climbUuid) return null;
+
+  return (
+    <View style={styles.onWallChip}>
+      <View style={[styles.onWallDot, { backgroundColor: brandColors.warning }]} />
+      <Text variant="caption1" color={brandColors.warning} style={styles.onWallChipText}>
+        {t('boardPresence.open')}
+      </Text>
+    </View>
+  );
+});
+
 export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function PlayDrawer(
   {
     boardConfig,
@@ -161,6 +180,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     presentation = 'sheet',
     paneTopInset = true,
     previewItem = null,
+    previewPlaylistSuggestionSource = null,
     onPreviewConsumed,
   },
   ref,
@@ -261,17 +281,10 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     if (isPane && previewItemRef.current) onPreviewConsumedRef.current?.();
   }, [currentClimbUuid, isPane]);
 
-  // Status-annotates-selection (the Music "now-playing row" glyph): in the pane,
-  // flag when the selected climb is the one physically lit on the wall. O(1) read
-  // that changes only on a wall event. The sheet never shows the chip.
-  const { brandColors } = useTheme();
-  const wallClimb = useWallOrQueueCurrentClimb(null);
-  const isDisplayedClimbOnWall =
-    isPane && wallClimb !== null && displayedClimb !== null && wallClimb.uuid === displayedClimb.uuid;
   // A view-only preview is showing (not the active/wall climb). Commit paths
-  // never set `drawerPreviewItem`, so this is true only for genuine previews
+  // never set preview items, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
-  const isPreview = !isPane && drawerPreviewItem != null;
+  const isPreview = isPane ? previewItem != null : drawerPreviewItem != null;
 
   // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
@@ -298,7 +311,8 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     boardLayout,
     climbUuid: displayedClimb?.uuid ?? null,
   });
-  const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
+  const navigationSuggestionSource =
+    (isPane ? previewPlaylistSuggestionSource : drawerPreviewSuggestionSource) ?? playlistSuggestionSource;
   // The pane now follows the user's queue selection like the sheet, so prev/next
   // step the queue in both presentations (a wall climb that isn't queued simply
   // has nothing to step to).
@@ -458,11 +472,22 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   // badge clears and the lightbulb (which acts on the current climb) now drives
   // this climb.
   const handleSetActive = useCallback(() => {
-    if (!drawerPreviewItem) return;
-    setCurrentClimb(drawerPreviewItem, { playlistSuggestionSource: drawerPreviewSuggestionSource });
+    const activePreviewItem = isPane ? previewItem : drawerPreviewItem;
+    if (!activePreviewItem) return;
+    const activePreviewSuggestionSource = isPane ? previewPlaylistSuggestionSource : drawerPreviewSuggestionSource;
+    setCurrentClimb(activePreviewItem, { playlistSuggestionSource: activePreviewSuggestionSource });
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
-  }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb]);
+    if (isPane) onPreviewConsumed?.();
+  }, [
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    isPane,
+    onPreviewConsumed,
+    previewItem,
+    previewPlaylistSuggestionSource,
+    setCurrentClimb,
+  ]);
 
   const handleMirror = useCallback(() => {
     const nextMirrored = !isMirrored;
@@ -660,14 +685,7 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           </View>
         )}
 
-        {isDisplayedClimbOnWall ? (
-          <View style={styles.onWallChip}>
-            <View style={[styles.onWallDot, { backgroundColor: brandColors.warning }]} />
-            <Text variant="caption1" color={brandColors.warning} style={styles.onWallChipText}>
-              {t('boardPresence.open')}
-            </Text>
-          </View>
-        ) : null}
+        {isPane ? <PaneOnWallChip climbUuid={displayedClimb.uuid} /> : null}
 
         <PlayDrawerHeader
           name={displayedClimb.name}

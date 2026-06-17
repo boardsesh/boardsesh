@@ -26,7 +26,7 @@ import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
-import type { BoardSheetClimbAction } from './NowOnTheWallPanel';
+import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
@@ -82,6 +82,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
 ) {
   const { sheet } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
+  const panelRef = useRef<NowOnTheWallPanelHandle>(null);
 
   // Cheap current/feed reads kept here ONLY for the now-playing + history-view
   // analytics. The action/loading state that re-renders on every interaction
@@ -117,6 +118,10 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
 
   const snapPoints = useMemo(() => ['55%', '92%'], []);
 
+  const invalidatePanelActions = useCallback(() => {
+    panelRef.current?.invalidatePendingActions();
+  }, []);
+
   useImperativeHandle(ref, () => ({
     present: () => {
       if (historyCountRef.current > 0) {
@@ -128,16 +133,22 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       sheetRef.current?.present();
     },
     dismiss: () => {
-      // The panel owns its in-flight action state now, so it (not this handle)
-      // invalidates pending GET_CLIMB resolves. Every user dismiss path routes
-      // through a panel control that invalidates first (header chevron →
-      // handleClose, footer → handleSwitchBoard, row tap → close-on-success), and
-      // runInteractiveAction's generation/board-signature guards drop any late
-      // resolve regardless — so a bare programmatic dismiss here is safe. A future
-      // programmatic dismiss that bypasses those controls should invalidate too.
+      invalidatePanelActions();
       sheetRef.current?.dismiss();
     },
   }));
+
+  const handleSheetAnimate = useCallback(
+    (_fromIndex: number, toIndex: number) => {
+      if (toIndex < 0) invalidatePanelActions();
+    },
+    [invalidatePanelActions],
+  );
+
+  const handleDismiss = useCallback(() => {
+    invalidatePanelActions();
+    onDismissed?.();
+  }, [invalidatePanelActions, onDismissed]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -164,12 +175,14 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       stackBehavior="push"
       enablePanDownToClose
       backdropComponent={renderBackdrop}
-      onDismiss={onDismissed}
+      onAnimate={handleSheetAnimate}
+      onDismiss={handleDismiss}
       handleIndicatorStyle={sheet.handleStyle}
       backgroundComponent={GlassSheetBackground}
       style={styles.sheet}
     >
       <NowOnTheWallPanel
+        ref={panelRef}
         variant="sheet"
         boardLabel={boardLabel}
         boardConfig={boardConfig}

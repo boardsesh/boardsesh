@@ -8,7 +8,17 @@
 // hardest-send row and history rows are VIRTUALIZED (the list, never .map). State
 // comes from `@boardsesh/board-presence-react`'s split current/feed contexts.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import { FlatList, Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,6 +59,10 @@ export type BoardSheetClimbAction = {
   climb: Climb;
   queueItemUuid: string | null;
   boardConfig: BoardConfig;
+};
+
+export type NowOnTheWallPanelHandle = {
+  invalidatePendingActions: () => void;
 };
 
 type BoardSheetActionContext = {
@@ -142,17 +156,20 @@ export type NowOnTheWallPanelProps = {
   onOpenActions?: (action: BoardSheetClimbAction) => void;
 };
 
-function NowOnTheWallPanelComponent({
-  variant,
-  boardLabel,
-  boardConfig,
-  onClose,
-  onSwitchBoard,
-  onClimbPress,
-  onAddToQueue,
-  onOpenPlaylist,
-  onOpenActions,
-}: NowOnTheWallPanelProps): React.JSX.Element {
+function NowOnTheWallPanelComponent(
+  {
+    variant,
+    boardLabel,
+    boardConfig,
+    onClose,
+    onSwitchBoard,
+    onClimbPress,
+    onAddToQueue,
+    onOpenPlaylist,
+    onOpenActions,
+  }: NowOnTheWallPanelProps,
+  ref: Ref<NowOnTheWallPanelHandle>,
+): React.JSX.Element {
   const { t } = useTranslation('session');
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
@@ -222,6 +239,8 @@ function NowOnTheWallPanelComponent({
     actionGenerationRef.current += 1;
     clearPendingActionKeys();
   }, [clearPendingActionKeys]);
+
+  useImperativeHandle(ref, () => ({ invalidatePendingActions }), [invalidatePendingActions]);
 
   useEffect(() => {
     invalidatePendingActions();
@@ -313,9 +332,9 @@ function NowOnTheWallPanelComponent({
           }
           try {
             callback(action);
-            if (closeOnSuccess) {
+            if (closeOnSuccess && onClose) {
               invalidatePendingActions();
-              onClose?.();
+              onClose();
             }
           } catch (error) {
             console.warn('Failed to run board-sheet climb action', error);
@@ -625,7 +644,7 @@ function NowOnTheWallPanelComponent({
   );
 }
 
-export const NowOnTheWallPanel = memo(NowOnTheWallPanelComponent);
+export const NowOnTheWallPanel = memo(forwardRef(NowOnTheWallPanelComponent));
 
 type HeroProps = {
   climb: BoardPresenceClimb | null;

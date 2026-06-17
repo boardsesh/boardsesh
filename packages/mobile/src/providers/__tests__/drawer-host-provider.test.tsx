@@ -962,4 +962,73 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(playDrawer.open).not.toHaveBeenCalled();
     expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem?.climb.uuid).toBe('preview-1');
   });
+
+  it('forwards playlist suggestion source for pane previews', async () => {
+    const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const sourceItem = makeQueueItem('queue-source', 'source-climb');
+    const previewItem = makeQueueItem('queue-preview-2', 'preview-2');
+    const playlistSuggestionSource: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist-pane',
+      activatedClimbUuid: sourceItem.climb.uuid,
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [sourceItem.climb, previewItem.climb],
+    };
+
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(previewItem.climb as unknown as Climb, {
+        previewQueueItem: previewItem,
+        playlistSuggestionSource,
+        source: 'climb_view',
+      });
+    });
+
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(hosts.at(-1)?.playDrawerPaneProps?.previewPlaylistSuggestionSource).toBe(playlistSuggestionSource);
+  });
+
+  it('clears the temporary board override when a pane preview is consumed', async () => {
+    const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const previewItem = makeQueueItem('queue-preview-override', 'preview-override');
+    const override: BoardConfig = {
+      boardName: 'tension',
+      layoutId: 8,
+      sizeId: 7,
+      setIds: '5,6',
+      angle: 55,
+    };
+
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(previewItem.climb as unknown as Climb, {
+        boardConfig: override,
+        previewQueueItem: previewItem,
+        source: 'climb_view',
+      });
+    });
+
+    await waitFor(() => {
+      expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(override);
+    });
+    expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem?.climb.uuid).toBe('preview-override');
+
+    act(() => {
+      hosts.at(-1)?.playDrawerPaneProps?.onPreviewConsumed();
+    });
+
+    await waitFor(() => {
+      expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem).toBeNull();
+      expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        angle: 40,
+      });
+    });
+  });
 });

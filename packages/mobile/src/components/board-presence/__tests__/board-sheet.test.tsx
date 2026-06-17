@@ -738,6 +738,48 @@ describe('BoardSheet', () => {
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
+  it('drops stale action results after an imperative dismiss', async () => {
+    presence.currentClimb = makeClimb('hero-climb', 3, {
+      frames: 'hero-frames',
+      grade: 'V7',
+      queueItemUuid: 'queue-hero',
+    });
+    const ref = createRef<BoardSheetHandle>();
+    const onClimbPress = vi.fn();
+    const heroDetail = makeFullClimb('hero-climb', { name: 'Hydrated Hero' });
+    const climbRequest = createDeferred<{ climb: Climb | null }>();
+    graphql.request.mockReturnValueOnce(climbRequest.promise);
+
+    const { getByLabelText, queryByLabelText } = render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onClimbPress,
+      }),
+    );
+
+    fireEvent.click(getByLabelText('press hero-climb'));
+    await waitFor(() => expect(queryByLabelText('mobile.boardPresence.actionLoading')).not.toBeNull());
+
+    act(() => {
+      ref.current?.dismiss();
+    });
+    expect(sheetModal.dismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(queryByLabelText('mobile.boardPresence.actionLoading')).toBeNull());
+
+    await act(async () => {
+      climbRequest.resolve({ climb: heroDetail });
+      await climbRequest.promise;
+    });
+
+    expect(onClimbPress).not.toHaveBeenCalled();
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
   it('shows a toast instead of leaking errors thrown by action callbacks', async () => {
     presence.currentClimb = makeClimb('hero-climb', 3);
     const callbackError = new Error('callback failed');

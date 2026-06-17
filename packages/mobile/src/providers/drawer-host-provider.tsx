@@ -69,9 +69,17 @@ export type PlayDrawerPaneProps = {
   /** Climb to preview in the pane without committing it as current (iPad pane
    *  only); null when the pane should show `currentClimbQueueItem`. */
   previewItem: ClimbQueueItem | null;
+  /** Playlist source for pane previews so next/previous can walk the source list. */
+  previewPlaylistSuggestionSource: PlaylistSuggestionSource | null;
   /** Called by the pane once the current climb changes, so the host drops the
    *  preview and the pane falls back to `currentClimbQueueItem`. */
   onPreviewConsumed: () => void;
+};
+
+type PanePreview = {
+  item: ClimbQueueItem;
+  boardConfigOverride: BoardConfig | null;
+  playlistSuggestionSource: PlaylistSuggestionSource | null;
 };
 
 /** Props for the iPad "Now on the wall" column (regular landscape) — the same
@@ -193,8 +201,18 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // dropped once the current climb changes (a list tap's async activate commits,
   // or the user navigates), so the pane shows one continuous climb. Compact width
   // never sets it — there the bottom sheet handles previews via its own state.
-  const [panePreviewItem, setPanePreviewItem] = useState<ClimbQueueItem | null>(null);
-  const clearPanePreview = useCallback(() => setPanePreviewItem(null), []);
+  const [panePreview, setPanePreview] = useState<PanePreview | null>(null);
+  const panePreviewRef = useRef(panePreview);
+  panePreviewRef.current = panePreview;
+  const clearPanePreview = useCallback(() => {
+    const preview = panePreviewRef.current;
+    if (preview?.boardConfigOverride) {
+      setBoardConfigOverride((currentOverride) =>
+        boardConfigsMatch(currentOverride, preview.boardConfigOverride) ? null : currentOverride,
+      );
+    }
+    setPanePreview(null);
+  }, []);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
@@ -313,15 +331,19 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           openOptions.previewQueueItem ??
           climbToQueueItem(climb, { suggested: openOptions.playlistSuggestionSource != null });
         if (openOptions.committedExternally) {
-          setPanePreviewItem(null);
+          setPanePreview(null);
         } else if (openOptions.previewQueueItem) {
           // View-only opens (feed / beta / climb view, and the list tap whose own
           // async activate commits next) show the climb in the pane without
           // committing it. Without this the tap is a no-op on iPad; the pane drops
           // the preview once the current climb changes (see PlayDrawer's effect).
-          setPanePreviewItem(selectedItem);
+          setPanePreview({
+            item: selectedItem,
+            boardConfigOverride: override ?? null,
+            playlistSuggestionSource: openOptions.playlistSuggestionSource ?? null,
+          });
         } else {
-          setPanePreviewItem(null);
+          setPanePreview(null);
           setCurrentClimb(selectedItem, {
             playlistSuggestionSource: openOptions.playlistSuggestionSource ?? null,
           });
@@ -693,7 +715,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             boardMismatch,
             mismatchBoardLabel,
             onSwitchBoard: handleSwitchBoardFromDrawer,
-            previewItem: panePreviewItem,
+            previewItem: panePreview?.item ?? null,
+            previewPlaylistSuggestionSource: panePreview?.playlistSuggestionSource ?? null,
             onPreviewConsumed: clearPanePreview,
           }
         : null,
@@ -705,7 +728,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       boardMismatch,
       mismatchBoardLabel,
       handleSwitchBoardFromDrawer,
-      panePreviewItem,
+      panePreview,
       clearPanePreview,
     ],
   );
