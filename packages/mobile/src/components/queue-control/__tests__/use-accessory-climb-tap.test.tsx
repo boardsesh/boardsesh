@@ -19,6 +19,7 @@ const tap = vi.hoisted(() => ({ onEnd: null as ((...args: unknown[]) => unknown)
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state }),
+  useActiveClimbQueueItemUuid: () => queue.state.currentClimbQueueItem?.uuid ?? null,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -29,6 +30,9 @@ vi.mock('../use-wall-or-queue-climb', () => ({
   useWallOrQueueCurrentClimb: (localClimb: Climb | null) => wall.climb ?? localClimb,
 }));
 
+vi.mock('../../../hooks/use-actively-climbing', () => ({ useIsActivelyClimbing: () => false }));
+vi.mock('../../../lib/accessory-dismiss-store', () => ({ dismissAccessory: vi.fn() }));
+
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
@@ -38,14 +42,26 @@ vi.mock('react-native-reanimated', () => ({
 }));
 
 vi.mock('react-native-gesture-handler', () => {
-  const builder = {
-    maxDuration: () => builder,
+  const tapBuilder = {
+    maxDuration: () => tapBuilder,
     onEnd: (cb: (...args: unknown[]) => unknown) => {
       tap.onEnd = cb;
-      return builder;
+      return tapBuilder;
     },
   };
-  return { Gesture: { Tap: () => builder } };
+  const panBuilder = {
+    enabled: () => panBuilder,
+    activeOffsetY: () => panBuilder,
+    failOffsetY: () => panBuilder,
+    onEnd: () => panBuilder,
+  };
+  return {
+    Gesture: {
+      Tap: () => tapBuilder,
+      Pan: () => panBuilder,
+      Exclusive: (...gestures: unknown[]) => gestures[0],
+    },
+  };
 });
 
 import { useAccessoryClimbTap } from '../use-accessory-climb-tap';
@@ -86,7 +102,7 @@ describe('useAccessoryClimbTap', () => {
 
   it('opens the local queue head active on tap (it already is current)', () => {
     renderHook(() => useAccessoryClimbTap());
-    tap.onEnd?.();
+    tap.onEnd?.(undefined, true);
     // The bar shows the current climb, so it opens active — no preview.
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {
       source: 'current_queue_item',
@@ -96,7 +112,7 @@ describe('useAccessoryClimbTap', () => {
   it('opens a peer-driven wall climb as a preview when a board feed is live', () => {
     wall.climb = makeClimb('wall');
     renderHook(() => useAccessoryClimbTap());
-    tap.onEnd?.();
+    tap.onEnd?.(undefined, true);
     // The wall climb isn't the local current, so it opens view-only (badged).
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-wall' }), {
       previewQueueItem: expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-wall' }) }),
@@ -108,7 +124,7 @@ describe('useAccessoryClimbTap', () => {
     queue.state.currentClimbQueueItem = null;
     wall.climb = null;
     renderHook(() => useAccessoryClimbTap());
-    tap.onEnd?.();
+    tap.onEnd?.(undefined, true);
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 });

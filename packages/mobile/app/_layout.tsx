@@ -39,6 +39,8 @@ import { PlaylistsAdapterWrapper } from '../src/providers/playlists-adapter';
 import { BoardProvider } from '@boardsesh/board-react';
 import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
+import { AccessoryDismissResets } from '../src/components/queue-control/AccessoryDismissResets';
+import { AccessoryDismissHint } from '../src/components/queue-control/AccessoryDismissHint';
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
@@ -397,6 +399,8 @@ function RootLayout() {
                                                           </Stack>
                                                         </ThemedNavigation>
                                                         <PersistentQueueBar />
+                                                        <AccessoryDismissResets />
+                                                        <AccessoryDismissHint />
                                                         <OnboardingGate ready={authReady && fontsReady} />
                                                       </UserDrawerProvider>
                                                     </TabBarHeightProvider>

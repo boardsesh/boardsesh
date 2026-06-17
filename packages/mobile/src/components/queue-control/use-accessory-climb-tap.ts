@@ -2,11 +2,17 @@ import { useCallback, useMemo } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueue, useActiveClimbQueueItemUuid } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { hapticLight } from '../../lib/haptics';
+import { dismissAccessory } from '../../lib/accessory-dismiss-store';
+import { useIsActivelyClimbing } from '../../hooks/use-actively-climbing';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
+
+// A downward drag past this distance (or a firm downward flick) tucks the bar away.
+const DISMISS_TRANSLATION_THRESHOLD = 40;
+const DISMISS_VELOCITY_THRESHOLD = 600;
 
 /**
  * Tap-to-open behind the bottom accessory bar (`ClimbCapsule` and the iOS 26
@@ -18,6 +24,12 @@ import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 export type AccessoryClimbTap = {
   /** Tap → open the play drawer for the displayed climb. */
   openGesture: GestureType;
+  /** Downward swipe → tuck the bar away (JS bar composes this with `openGesture`). */
+  dismissGesture: GestureType;
+  /** Imperative dismiss for the native platter's explicit hide control. */
+  dismiss: () => void;
+  /** Whether the bar may be dismissed right now (false while actively climbing). */
+  canDismiss: boolean;
   /** Local queue head; the wrappers re-apply `useWallOrQueueCurrentClimb` for display. */
   currentItem: ClimbQueueItem | null | undefined;
 };
@@ -26,6 +38,11 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
   const { state } = useQueue();
   const { openPlayDrawer } = useDrawerHost();
   const { currentClimbQueueItem } = state;
+  const activeQueueItemUuid = useActiveClimbQueueItemUuid();
+  const isActivelyClimbing = useIsActivelyClimbing();
+  // The bar is dismissible only when there's a climb to dismiss and no climbing
+  // signal — an active climber keeps one-tap return / tick, so no hide affordance.
+  const canDismiss = !isActivelyClimbing && activeQueueItemUuid !== null;
 
   // Open whatever the accessory is showing: the wall's lit climb when a feed is
   // live, else the local queue head — useWallOrQueueCurrentClimb already folds the
@@ -52,16 +69,43 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     }
   }, [openPlayDrawer, accessoryClimb, currentClimbQueueItem]);
 
+  const dismiss = useCallback(() => {
+    if (!activeQueueItemUuid) return;
+    hapticLight();
+    // UI-only: tuck the strip away for this queue item. Never mutates the queue.
+    dismissAccessory(activeQueueItemUuid);
+  }, [activeQueueItemUuid]);
+
   const openGesture = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(250)
-        .onEnd(() => {
+        .onEnd((_event, success) => {
           'worklet';
+          // Only open on a recognized tap — never on a cancelled one (the tap loses
+          // to the dismiss Pan under Gesture.Exclusive on the JS bar).
+          if (!success) return;
           runOnJS(handleOpenPlay)();
         }),
     [handleOpenPlay],
   );
 
-  return { openGesture, currentItem: currentClimbQueueItem };
+  // Activates only on a downward drag (and bails on an upward one), so it never
+  // competes with the tap for a quick press. Disabled entirely while climbing.
+  const dismissGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(canDismiss)
+        .activeOffsetY(12)
+        .failOffsetY(-12)
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationY > DISMISS_TRANSLATION_THRESHOLD || event.velocityY > DISMISS_VELOCITY_THRESHOLD) {
+            runOnJS(dismiss)();
+          }
+        }),
+    [canDismiss, dismiss],
+  );
+
+  return { openGesture, dismissGesture, dismiss, canDismiss, currentItem: currentClimbQueueItem };
 }

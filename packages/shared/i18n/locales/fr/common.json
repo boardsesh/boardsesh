@@ -10,6 +10,12 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
+    "accessoryBar": {
+      "coachmarkHint": "Pas en train de grimper ? Tu peux le masquer.",
+      "coachmarkGotIt": "Compris",
+      "hideControlAria": "Masquer le bloc actuel",
+      "hideControlHint": "Le garde dans ta file d'attente"
+    },
     "more": {
       "title": "Plus",
       "library": "Bibliothèque",

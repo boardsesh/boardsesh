@@ -208,6 +208,12 @@
       "viewProfile": "Ver el perfil de {{name}}",
       "thisClimber": "este escalador"
     },
+    "accessoryBar": {
+      "coachmarkHint": "¿No estás escalando ahora? Puedes ocultarlo.",
+      "coachmarkGotIt": "Entendido",
+      "hideControlAria": "Ocultar el bloque actual",
+      "hideControlHint": "Lo mantiene en tu cola"
+    },
     "more": {
       "title": "Más",
       "library": "Biblioteca",

@@ -14,6 +14,7 @@ const cfg = vi.hoisted(() => ({
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
   nativeTabBar: false,
+  dismissed: false,
 }));
 
 // useAccessoryClimbTap builds a preview queue item via climbToQueueItem, which
@@ -48,6 +49,11 @@ vi.mock('../../../lib/route-segments', () => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
   useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
+}));
+// The bar (and use-bottom-chrome-metrics) consult this to hide a user-dismissed
+// climb; default to visible and flip per-test.
+vi.mock('../../../hooks/use-accessory-dismissed', () => ({
+  useAccessoryDismissed: () => cfg.dismissed,
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => true }));
 vi.mock('../../../theme/animations', () => ({ timing: { fast: 150, normal: 250 } }));
@@ -134,6 +140,14 @@ describe('PersistentQueueBar', () => {
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
     cfg.nativeTabBar = false;
+    cfg.dismissed = false;
+  });
+
+  it('renders nothing when the user has tucked the bar away', () => {
+    cfg.dismissed = true;
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
   it('renders nothing when no climb is current', () => {

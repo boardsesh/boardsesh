@@ -10,6 +10,12 @@
       "viewProfile": "View {{name}}'s profile",
       "thisClimber": "this climber"
     },
+    "accessoryBar": {
+      "coachmarkHint": "Not climbing right now? You can tuck this away.",
+      "coachmarkGotIt": "Got it",
+      "hideControlAria": "Hide the current climb",
+      "hideControlHint": "Keeps it in your queue"
+    },
     "more": {
       "title": "More",
       "library": "Library",

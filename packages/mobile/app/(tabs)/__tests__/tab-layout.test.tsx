@@ -19,6 +19,7 @@ const cfg = vi.hoisted(() => ({
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android',
   materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean } }>,
+  accessoryDismissed: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -54,6 +55,11 @@ vi.mock('../../../src/hooks/use-sticky-accessory-presence', () => ({
 // real hook; the route-segment split is unit-tested in route-segments.test.
 vi.mock('../../../src/hooks/use-inside-tabs', () => ({
   useInsideTabs: () => cfg.insideTabs,
+}));
+
+// User-dismissed (and not actively climbing): the native accessory host unmounts.
+vi.mock('../../../src/hooks/use-accessory-dismissed', () => ({
+  useAccessoryDismissed: () => cfg.accessoryDismissed,
 }));
 
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
@@ -164,6 +170,7 @@ describe('TabLayout', () => {
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
     cfg.materialScreens = [];
+    cfg.accessoryDismissed = false;
   });
 
   it('lands on the home tab by default', () => {
@@ -257,6 +264,16 @@ describe('TabLayout', () => {
   it('skips the empty native bottom accessory when no climb is current', () => {
     cfg.nativeAccessoryActive = true;
     cfg.hasCurrentClimb = false;
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
+  });
+
+  it('skips the native bottom accessory when the user has tucked the bar away', () => {
+    cfg.nativeAccessoryActive = true;
+    cfg.hasCurrentClimb = true;
+    cfg.accessoryDismissed = true;
 
     const { container } = render(<TabLayout />);
 

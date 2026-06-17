@@ -1,5 +1,6 @@
-import { StyleSheet, View, type ColorValue } from 'react-native';
+import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
@@ -8,6 +9,7 @@ import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
@@ -71,10 +73,11 @@ function ClimbLabel({ climb, labelColor, formattedGrade, showThumbnail, boardCon
  * capsule's colorized grade.
  */
 export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAccessoryClimbRowProps) {
+  const { t } = useTranslation('common');
   const { boardConfig } = useDrawerHost();
   const { systemColors } = useTheme();
   const { formatGrade } = useGradeFormat();
-  const { openGesture } = useAccessoryClimbTap();
+  const { openGesture, dismiss, canDismiss } = useAccessoryClimbTap();
 
   const showThumbnail = placement === 'regular' && boardConfig !== null;
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
@@ -95,6 +98,18 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
           </View>
         </View>
       </GestureDetector>
+      {canDismiss ? (
+        <Pressable
+          onPress={dismiss}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.accessoryBar.hideControlAria')}
+          accessibilityHint={t('mobile.accessoryBar.hideControlHint')}
+          hitSlop={spacing[1]}
+          style={[styles.hideSlot, { width: glassSize.inline, height: rowHeight }]}
+        >
+          <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
+        </Pressable>
+      ) : null}
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
         <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
       </View>
@@ -138,6 +153,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: spacing[10],
     textAlign: 'right',
+  },
+  // Separated from the tick by a gap so the hide control is never mistaken for —
+  // or fat-fingered into — logging an ascent.
+  hideSlot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginRight: spacing[1],
   },
   tickSlot: {
     alignItems: 'center',

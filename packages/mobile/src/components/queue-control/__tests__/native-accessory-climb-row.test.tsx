@@ -100,6 +100,21 @@ vi.mock('react-native', () => ({
       children,
     );
   },
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    onPress,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+    onPress?: () => void;
+  }) =>
+    createElement(
+      'button',
+      { 'data-hide-control': 'true', 'data-label': accessibilityLabel ?? '', onClick: onPress },
+      children,
+    ),
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
   },
@@ -116,11 +131,17 @@ vi.mock('react-native-gesture-handler', () => {
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) =>
       createElement('div', { 'data-gesture': 'true' }, children),
-    Gesture: { Tap: () => builder },
+    Gesture: { Tap: () => builder, Pan: () => builder, Exclusive: () => builder },
   };
 });
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
+vi.mock('../../Icon', () => ({
+  Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon-name': name }),
+}));
+vi.mock('../../../hooks/use-actively-climbing', () => ({ useIsActivelyClimbing: () => false }));
+vi.mock('../../../lib/accessory-dismiss-store', () => ({ dismissAccessory: vi.fn() }));
 
 type TextMockProps = {
   children?: ReactNode;
@@ -170,6 +191,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: queue.nextClimb,
     previousClimb: queue.previousClimb,
   }),
+  useActiveClimbQueueItemUuid: () => queue.state.currentClimbQueueItem?.uuid ?? null,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({

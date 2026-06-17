@@ -13,6 +13,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { brandColors } from '../../src/theme/colors';
 import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
 import { useInsideTabs } from '../../src/hooks/use-inside-tabs';
+import { useAccessoryDismissed } from '../../src/hooks/use-accessory-dismissed';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
 // activity feed, while Climbs remains the search surface one tab over. Drives
@@ -72,6 +73,11 @@ export default function TabLayout() {
   // makes the real mount match. `isTabsRoute` keys on segments[0] only, so intra-tab
   // navigation doesn't toggle it.
   const insideTabs = useInsideTabs();
+  // Tucked away by the user (and not actively climbing): unmount the UIKit
+  // accessory host entirely — a clean unmount that stays unmounted, like an empty
+  // queue, so no orphaned glass-platter snapshot. Applied outside the sticky
+  // presence grace so a deliberate hide takes effect immediately, not after 500ms.
+  const accessoryDismissed = useAccessoryDismissed();
   const showRecordBadge = isBluetoothConnected || sessionId !== null;
   const eagerMountRecord = Platform.OS === 'android';
 
@@ -126,7 +132,7 @@ export default function TabLayout() {
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
       tintColor={systemColors.label}
     >
-      {insideTabs && nativeAccessoryActive && hasCurrentClimb ? (
+      {insideTabs && nativeAccessoryActive && hasCurrentClimb && !accessoryDismissed ? (
         <NativeTabs.BottomAccessory key="queue-bottom-accessory">
           <QueueBottomAccessory />
         </NativeTabs.BottomAccessory>

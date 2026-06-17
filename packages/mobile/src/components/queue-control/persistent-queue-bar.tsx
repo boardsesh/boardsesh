@@ -21,6 +21,7 @@ import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useAccessoryDismissed } from '../../hooks/use-accessory-dismissed';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -37,8 +38,12 @@ export function PersistentQueueBar() {
   const bottomChrome = useBottomChromeMetrics();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
+  // Tucked away by the user (and not actively climbing) — hide the JS bar. The
+  // native iOS 26 platter is gated the same way at its mount in (tabs)/_layout.
+  const hidden = useAccessoryDismissed();
 
   if (!currentClimb) return null;
+  if (hidden) return null;
   if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });

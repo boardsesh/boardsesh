@@ -6,7 +6,8 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH } from '../../theme/layout';
@@ -76,10 +77,18 @@ export function ClimbCapsule({
   endActionSize = 0,
   surfaceTreatment = 'floating',
 }: ClimbCapsuleProps) {
+  const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { formatGrade } = useGradeFormat();
-  const { openGesture, currentItem } = useAccessoryClimbTap();
+  const { openGesture, dismissGesture, dismiss, canDismiss, currentItem } = useAccessoryClimbTap();
+  // Swipe down to tuck the bar away; a quick tap still opens. The pan only
+  // activates on a downward drag, so it never steals a tap. Exclusive gives the
+  // dismiss priority so a deliberate drag never registers as an accidental open.
+  const gesture = useMemo(
+    () => (canDismiss ? Gesture.Exclusive(dismissGesture, openGesture) : openGesture),
+    [canDismiss, dismissGesture, openGesture],
+  );
 
   // Source-of-truth flip: show the wall's lit climb when a board feed is live
   // (flag-gated), else the local queue head.
@@ -124,11 +133,21 @@ export function ClimbCapsule({
           style={[styles.gradeAccent, { backgroundColor: grades.currentColor }]}
         />
       ) : null}
-      <GestureDetector gesture={openGesture}>
+      <GestureDetector gesture={gesture}>
         <View
           style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
           accessibilityRole="button"
           accessibilityLabel={currentClimb.name}
+          accessibilityActions={
+            canDismiss ? [{ name: 'dismiss', label: t('mobile.accessoryBar.hideControlAria') }] : undefined
+          }
+          onAccessibilityAction={
+            canDismiss
+              ? (event) => {
+                  if (event.nativeEvent.actionName === 'dismiss') dismiss();
+                }
+              : undefined
+          }
         >
           <View style={[styles.labelSlot, { right: labelRight }]}>
             <ClimbLabel

@@ -273,12 +273,16 @@ type QueueLiveStatsContextValue = {
 const QueueLiveStatsContext = createContext<QueueLiveStatsContextValue | null>(null);
 
 /**
- * Active-climb selector context. Changes identity ONLY when the active climb's
- * uuid changes, so the climb list (which highlights the active row) stops
- * re-rendering on every unrelated queue mutation or party push.
+ * Active-climb selector context. Carries both the active climb's uuid (for the
+ * climb list, which highlights the matching row regardless of which queue item it
+ * came from) and the active queue-ITEM uuid (unique per enqueue, for features that
+ * must distinguish a re-added climb as a fresh activation — e.g. the accessory
+ * dismiss). Identity changes only when one of these changes, so it stays off the
+ * hot path of unrelated queue mutations / party pushes.
  */
 type QueueActiveClimbContextValue = {
   activeClimbUuid: string | null;
+  activeClimbQueueItemUuid: string | null;
 };
 
 const QueueActiveClimbContext = createContext<QueueActiveClimbContextValue | null>(null);
@@ -349,6 +353,18 @@ export function useActiveClimbUuid(): string | null {
   const context = useContext(QueueActiveClimbContext);
   if (!context) throw new Error('useActiveClimbUuid must be used within QueueProvider');
   return context.activeClimbUuid;
+}
+
+/**
+ * The active queue-ITEM uuid (unique per enqueue), not the climb uuid. The same
+ * climb re-added from search / a playlist / a peer broadcast is a distinct item,
+ * so this changes where {@link useActiveClimbUuid} would not — exactly the
+ * granularity the accessory dismiss keys on so a fresh activation un-hides the bar.
+ */
+export function useActiveClimbQueueItemUuid(): string | null {
+  const context = useContext(QueueActiveClimbContext);
+  if (!context) throw new Error('useActiveClimbQueueItemUuid must be used within QueueProvider');
+  return context.activeClimbQueueItemUuid;
 }
 
 export function useHasActiveClimb(): boolean {
@@ -1674,7 +1690,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // changes (memoized on the uuid string), so highlight-only consumers like the
   // climb list don't re-render on unrelated queue mutations or party pushes.
   const activeClimbUuid = state.currentClimbQueueItem?.climb?.uuid ?? null;
-  const activeClimbValue = useMemo<QueueActiveClimbContextValue>(() => ({ activeClimbUuid }), [activeClimbUuid]);
+  const activeClimbQueueItemUuid = state.currentClimbQueueItem?.uuid ?? null;
+  const activeClimbValue = useMemo<QueueActiveClimbContextValue>(
+    () => ({ activeClimbUuid, activeClimbQueueItemUuid }),
+    [activeClimbUuid, activeClimbQueueItemUuid],
+  );
 
   // Presence-only selector: flips solely when a climb appears/disappears, so
   // bottom-chrome consumers (whole tab screens) don't re-render on climb-to-climb

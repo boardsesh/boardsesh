@@ -66,7 +66,7 @@ vi.mock('react-native-gesture-handler', () => {
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) =>
       createElement('div', { 'data-gesture': 'true' }, children),
-    Gesture: { Tap: () => builder },
+    Gesture: { Tap: () => builder, Pan: () => builder, Exclusive: () => builder },
   };
 });
 
@@ -120,7 +120,11 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
+  useActiveClimbQueueItemUuid: () => queue.state.currentClimbQueueItem?.uuid ?? null,
 }));
+
+vi.mock('../../../hooks/use-actively-climbing', () => ({ useIsActivelyClimbing: () => false }));
+vi.mock('../../../lib/accessory-dismiss-store', () => ({ dismissAccessory: vi.fn() }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer, boardConfig: null }),
@@ -137,6 +141,8 @@ vi.mock('../../../hooks/use-grade-format', () => ({
     formatGrade: (difficulty: string | null | undefined) => (difficulty ? `${difficulty} 6C` : null),
   }),
 }));
+
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 

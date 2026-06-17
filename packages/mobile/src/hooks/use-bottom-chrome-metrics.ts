@@ -5,6 +5,7 @@ import { useTheme } from '../providers/theme-provider';
 import { isTabsRoute } from '../lib/route-segments';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useNativeAccessoryActive, useNativeTabBar } from './use-bottom-accessory';
+import { useAccessoryDismissed } from './use-accessory-dismissed';
 import { computeBottomChromeMetrics } from './bottom-chrome-metrics';
 
 /**
@@ -22,7 +23,11 @@ export function useBottomChromeMetrics() {
   // board-presence ("on the wall") climb counts too. Use the same sticky wrapper
   // as the accessory mount gate so the JS-vs-native arbitration tracks what the
   // accessory host actually shows (incl. its brief presence-blip hold).
-  const hasCurrentClimb = useStickyAccessoryPresence();
+  // When the user has tucked the bar away (and isn't actively climbing) it claims
+  // no space — list/scroll padding and floating-control offsets reclaim it. Applied
+  // OUTSIDE the sticky presence grace so a deliberate hide is reflected immediately.
+  const accessoryDismissed = useAccessoryDismissed();
+  const hasCurrentClimb = useStickyAccessoryPresence() && !accessoryDismissed;
   const { variant } = useTheme();
   const insideTabs = isTabsRoute(segments);
   const nativeAccessoryActive = useNativeAccessoryActive();
