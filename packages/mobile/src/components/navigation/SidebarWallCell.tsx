@@ -5,7 +5,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
-import { useHasWallClimb, useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
+import { useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -33,8 +33,7 @@ function SidebarWallCellComponent() {
   const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { enabled, boardId } = useBoardPresenceControls();
-  const hasWallClimb = useHasWallClimb();
-  const wallClimb = useWallOrQueueCurrentClimb(null);
+  const litClimb = useWallOrQueueCurrentClimb(null);
   const { openBoardSheet, boardConfig } = useDrawerHost();
 
   const handlePress = useCallback(() => {
@@ -45,7 +44,6 @@ function SidebarWallCellComponent() {
   // The wall concept is inactive (no board bound) — leave the rail as-is.
   if (!enabled || boardId === null) return null;
 
-  const litClimb = hasWallClimb ? wallClimb : null;
   const grade = litClimb ? formatGrade(litClimb.difficulty) : null;
   const accessibilityLabel = litClimb
     ? t('boardPresence.openAriaWithClimb', { name: litClimb.name })

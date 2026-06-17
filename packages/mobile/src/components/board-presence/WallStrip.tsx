@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
-import { useHasWallClimb, useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
+import { useWallOrQueueCurrentClimb } from '../queue-control/use-wall-or-queue-climb';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -28,8 +28,7 @@ function WallStripComponent() {
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
-  const hasWallClimb = useHasWallClimb();
-  const wallClimb = useWallOrQueueCurrentClimb(null);
+  const litClimb = useWallOrQueueCurrentClimb(null);
   const { openBoardSheet, boardConfig } = useDrawerHost();
 
   const handlePress = useCallback(() => {
@@ -37,7 +36,6 @@ function WallStripComponent() {
     openBoardSheet();
   }, [openBoardSheet]);
 
-  const litClimb = hasWallClimb ? wallClimb : null;
   const grade = litClimb ? formatGrade(litClimb.difficulty) : null;
 
   return (

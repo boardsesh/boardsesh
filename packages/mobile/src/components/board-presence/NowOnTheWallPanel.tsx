@@ -546,6 +546,7 @@ function NowOnTheWallPanelComponent({
   );
 
   const listContentContainerStyle = useMemo(() => ({ paddingBottom: spacing[4] }), []);
+  const footerBottomPadding = variant === 'sheet' ? spacing[3] : insets.bottom + spacing[3];
 
   return (
     <>
@@ -603,7 +604,7 @@ function NowOnTheWallPanelComponent({
         onPress={handleSwitchBoard}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
+        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: footerBottomPadding }]}
       >
         <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
           <Icon name="transfer" size={20} color={systemColors.label} />

@@ -26,9 +26,9 @@ import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
+import type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
-import type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
 /**
  * Imperative handle — the host presents/dismisses the sheet by calling these
