@@ -3,8 +3,10 @@ import type {
   EventsReplayResponse,
   SessionHealthExport,
   SessionStatus,
+  SessionUser,
 } from '@boardsesh/shared-schema';
 import { eq } from 'drizzle-orm';
+import { users as usersTable, userProfiles } from '@boardsesh/db/schema';
 import { roomManager, type DiscoverableSession } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { validateInput, requireSessionMember, requireAuthenticated } from '../shared/helpers';
@@ -13,7 +15,54 @@ import { generateSessionHealthExport, generateSessionSummary } from './session-s
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
 import { dbRead } from '../../../db/client';
-import { sessions } from '../../../db/schema';
+import { sessions, boardSessionParticipants } from '../../../db/schema';
+
+/**
+ * Build a Session payload from the durable Postgres rows when a session has no
+ * currently-connected members. `session` otherwise returns null for any empty
+ * live roster, which makes the mobile join preview report "not found" for a
+ * session you can still join — a host who just dropped, the reconnect grace
+ * window, or a session seeded straight into Postgres (the screenshot fixture).
+ * Returns null only when the session row is genuinely absent.
+ */
+async function buildDurableSessionPayload(sessionId: string, ctx: ConnectionContext) {
+  const [sessionRow] = await dbRead.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+  if (!sessionRow) return null;
+
+  const participantRows = await dbRead
+    .select({
+      userId: boardSessionParticipants.userId,
+      name: usersTable.name,
+      displayName: userProfiles.displayName,
+      avatarUrl: userProfiles.avatarUrl,
+    })
+    .from(boardSessionParticipants)
+    .leftJoin(usersTable, eq(usersTable.id, boardSessionParticipants.userId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, boardSessionParticipants.userId))
+    .where(eq(boardSessionParticipants.sessionId, sessionId));
+
+  const durableUsers: SessionUser[] = participantRows.map((participant) => ({
+    id: participant.userId,
+    username: participant.displayName ?? participant.name ?? '',
+    isLeader: participant.userId === sessionRow.createdByUserId,
+    avatarUrl: participant.avatarUrl ?? undefined,
+    userId: participant.userId,
+    connectionState: 'CONNECTED',
+  }));
+
+  // The join's JOIN_SESSION re-hydrates the queue from Postgres; the preview
+  // doesn't render it, so an empty queueState here is fine. Overriding
+  // queueState + sessionData + lastConnectedBoardSerial keeps this off the
+  // RoomManager (which has nothing for a session with no live members).
+  return buildSessionPayload(sessionId, ctx, {
+    users: durableUsers,
+    queueState: { sequence: 0, stateHash: '', queue: [], currentClimbQueueItem: null },
+    sessionData: sessionRow,
+    lastConnectedBoardSerial: null,
+    isLeader: false,
+    clientId: '',
+  });
+}
 
 export const sessionQueries = {
   /**
@@ -29,7 +78,14 @@ export const sessionQueries = {
     // paying for the remaining lookups, then hand the pre-resolved list to
     // the helper.
     const users = await roomManager.getSessionUsers(sessionId);
-    if (users.length === 0) return null;
+    if (users.length === 0) {
+      // No one is currently connected. Rather than reporting "not found", fall
+      // back to the durable Postgres row so a dormant-but-active session — a host
+      // who just dropped, the reconnect grace window, or a session seeded straight
+      // into Postgres — is still previewable and joinable. Null only when the row
+      // is genuinely absent.
+      return buildDurableSessionPayload(sessionId, ctx);
+    }
 
     // Query result: no WebSocket context, so `isLeader` is always false and
     // `clientId` is empty. Participant ID falls back through the helper's

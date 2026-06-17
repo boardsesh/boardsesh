@@ -4,6 +4,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { screenshotFixtureMutations } from '../graphql/resolvers/sessions/screenshot-fixture';
+import { sessionQueries } from '../graphql/resolvers/sessions/queries';
 
 /**
  * Integration test for the App Store screenshot fixture.
@@ -273,5 +274,62 @@ describe('screenshot fixture mutations', () => {
       makeCtx(SCREENSHOT_USER_ID),
     );
     expect(ended).toBe(true);
+  });
+
+  it('the session query returns a durable payload for the seeded session (join preview works with no live members)', async () => {
+    await screenshotFixtureMutations.createScreenshotSession(undefined, undefined, makeCtx(SCREENSHOT_USER_ID));
+
+    // Nobody is connected to the room manager for this DB-seeded session, so the
+    // `session` query must fall back to the durable Postgres row — otherwise the
+    // mobile join preview gets null and the screenshot auto-join never fires.
+    const payload = await sessionQueries.session(undefined, { sessionId: SESSION_ID }, makeCtx(SCREENSHOT_USER_ID));
+    expect(payload).not.toBeNull();
+    expect(payload?.id).toBe(SESSION_ID);
+    expect(payload?.boardPath).toBe(`/${BOARD_TYPE}/${LAYOUT_ID}/${SIZE_ID}/${SET_IDS}/${ANGLE}`);
+    expect(payload?.endedAt).toBeNull();
+    const userIds = new Set((payload?.users ?? []).map((sessionUser) => sessionUser.userId));
+    expect(userIds).toEqual(new Set([DEMO_USER_ID, SCREENSHOT_USER_ID]));
+
+    // A genuinely absent session is still null.
+    const missing = await sessionQueries.session(
+      undefined,
+      { sessionId: 'no-such-session-xyz' },
+      makeCtx(SCREENSHOT_USER_ID),
+    );
+    expect(missing).toBeNull();
+
+    await screenshotFixtureMutations.endScreenshotSession(
+      undefined,
+      { sessionId: SESSION_ID },
+      makeCtx(SCREENSHOT_USER_ID),
+    );
+  });
+
+  it('endScreenshotSession leaves a session created by a different user untouched', async () => {
+    // A real session owned by someone else — the screenshot user must not be able
+    // to tear it down by passing its id.
+    const otherSessionId = 'someone-elses-session';
+    await seedUser('other-owner-user', 'Other Owner');
+    await db.insert(dbSchema.boardSessions).values({
+      id: otherSessionId,
+      boardPath: `/${BOARD_TYPE}/${LAYOUT_ID}/${SIZE_ID}/${SET_IDS}/${ANGLE}`,
+      status: 'active',
+      createdByUserId: 'other-owner-user',
+    });
+
+    const ended = await screenshotFixtureMutations.endScreenshotSession(
+      undefined,
+      { sessionId: otherSessionId },
+      makeCtx(SCREENSHOT_USER_ID),
+    );
+    expect(ended).toBe(true); // idempotent no-op — guard scopes teardown to the caller's own sessions
+
+    const stillThere = await db
+      .select()
+      .from(dbSchema.boardSessions)
+      .where(eq(dbSchema.boardSessions.id, otherSessionId));
+    expect(stillThere).toHaveLength(1);
+
+    await db.delete(dbSchema.boardSessions).where(eq(dbSchema.boardSessions.id, otherSessionId));
   });
 });

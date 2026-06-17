@@ -13,6 +13,7 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     workout: 'volume',
     appPath: null,
     shutdown: false,
+    party: false,
     ...overrides,
   };
 }
@@ -65,6 +66,7 @@ describe('parseArgs', () => {
         '--app-path',
         '/tmp/Boardsesh.app',
         '--shutdown',
+        '--party',
       ]),
     ).toEqual({
       platform: 'android',
@@ -76,6 +78,7 @@ describe('parseArgs', () => {
       workout: 'ladder',
       appPath: '/tmp/Boardsesh.app',
       shutdown: true,
+      party: true,
     });
   });
 
