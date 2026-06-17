@@ -926,14 +926,14 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     layoutCfg.widthClass = 'regular';
   });
 
-  it('commits the climb as current (no sheet) when setAsCurrent is true', async () => {
+  it('commits the climb as current (no sheet) when opened without a preview', async () => {
     const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
     renderHost((host) => hosts.push(host));
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
 
     const climb = makeQueueItem('queue-x', 'commit-1').climb as unknown as Climb;
     act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { setAsCurrent: true });
+      hosts.at(-1)?.openPlayDrawer(climb);
     });
 
     expect(queue.setCurrentClimb).toHaveBeenCalledWith(
@@ -945,16 +945,17 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem).toBeNull();
   });
 
-  it('previews a setAsCurrent:false open in the pane without committing it as current', async () => {
+  it('previews a view-only open in the pane without committing it as current', async () => {
     const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
     renderHost((host) => hosts.push(host));
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
 
     const climb = makeQueueItem('queue-x', 'preview-1').climb as unknown as Climb;
+    const previewItem = makeQueueItem('queue-preview-1', 'preview-1');
     act(() => {
       // The feed / beta / climb-view preview path: show it in the pane, don't
       // change the queue's current climb (would otherwise broadcast in a session).
-      hosts.at(-1)?.openPlayDrawer(climb, { setAsCurrent: false, source: 'climb_view' });
+      hosts.at(-1)?.openPlayDrawer(climb, { previewQueueItem: previewItem, source: 'climb_view' });
     });
 
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
