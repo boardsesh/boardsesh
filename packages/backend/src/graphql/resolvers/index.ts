@@ -17,6 +17,7 @@ import { playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
 import { sessionMutations } from './sessions/mutations';
+import { screenshotFixtureMutations } from './sessions/screenshot-fixture';
 import { pushTokenMutations } from './sessions/push-tokens';
 import { sessionSubscriptions } from './sessions/subscriptions';
 import { sessionEventResolver } from './sessions/type-resolvers';
@@ -92,6 +93,7 @@ export const resolvers = {
 
   Mutation: {
     ...sessionMutations,
+    ...screenshotFixtureMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,

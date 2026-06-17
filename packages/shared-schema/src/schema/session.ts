@@ -255,4 +255,17 @@ export const sessionTypeDefs = /* GraphQL */ `
     "Existing Apple Health workout id saved for this viewer/session"
     healthKitWorkoutId: String
   }
+
+  """
+  Result of the App Store screenshot fixture: a freshly seeded, ACTIVE
+  multi-climber party session the screenshot run deep-links into. Inert in
+  production (gated on the SCREENSHOT_FIXTURE_USER_ID env var + the configured
+  screenshot user).
+  """
+  type ScreenshotSession {
+    "Deterministic id of the seeded session"
+    sessionId: ID!
+    "Board path the session lives on, for deep-linking into the in-session view"
+    boardPath: String!
+  }
 `;

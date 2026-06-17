@@ -567,6 +567,19 @@ type SessionHealthExport {
   healthKitWorkoutId: String
 }
 
+"""
+Result of the App Store screenshot fixture: a freshly seeded, ACTIVE
+multi-climber party session the screenshot run deep-links into. Inert in
+production (gated on the SCREENSHOT_FIXTURE_USER_ID env var + the configured
+screenshot user).
+"""
+type ScreenshotSession {
+  "Deterministic id of the seeded session"
+  sessionId: ID!
+  "Board path the session lives on, for deep-linking into the in-session view"
+  boardPath: String!
+}
+
 # ============================================
 # Board Configuration Types
 # ============================================
@@ -4384,6 +4397,20 @@ type Mutation {
   End a session (active participant only).
   """
   endSession(sessionId: ID!, timezone: String): SessionSummary
+
+  """
+  Seed a fresh ACTIVE multi-climber party session for App Store screenshots.
+  Inert in production: requires the SCREENSHOT_FIXTURE_USER_ID env var to be
+  set AND the caller to be that exact screenshot user, otherwise it throws.
+  Re-runs reuse + reset the deterministic session so each capture is clean.
+  """
+  createScreenshotSession: ScreenshotSession!
+
+  """
+  Tear down a screenshot session seeded by createScreenshotSession. Same
+  guard as createScreenshotSession. Idempotent (no error if already gone).
+  """
+  endScreenshotSession(sessionId: ID!): Boolean!
 
   """
   Update display name and avatar in the current session.

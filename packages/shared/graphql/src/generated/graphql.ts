@@ -2080,6 +2080,13 @@ export type Mutation = {
   createPlaylist: Playlist;
   /** Create a proposal for a climb grade/classic/benchmark change. */
   createProposal: Proposal;
+  /**
+   * Seed a fresh ACTIVE multi-climber party session for App Store screenshots.
+   * Inert in production: requires the SCREENSHOT_FIXTURE_USER_ID env var to be
+   * set AND the caller to be that exact screenshot user, otherwise it throws.
+   * Re-runs reuse + reset the deterministic session so each capture is clean.
+   */
+  createScreenshotSession: ScreenshotSession;
   /** Create a new session with GPS coordinates for discovery. */
   createSession: Session;
   /**
@@ -2115,6 +2122,11 @@ export type Mutation = {
    * Requires authentication.
    */
   disconnectIntegration: Scalars['Boolean']['output'];
+  /**
+   * Tear down a screenshot session seeded by createScreenshotSession. Same
+   * guard as createScreenshotSession. Idempotent (no error if already gone).
+   */
+  endScreenshotSession: Scalars['Boolean']['output'];
   /** End a session (active participant only). */
   endSession?: Maybe<SessionSummary>;
   /** Follow a board. */
@@ -2531,6 +2543,11 @@ export type MutationDeleteTickArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDisconnectIntegrationArgs = {
   provider: IntegrationProvider;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationEndScreenshotSessionArgs = {
+  sessionId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4500,6 +4517,20 @@ export type SaveTickInput = {
   status: TickStatus;
   /** Optional Instagram or TikTok video URL to attach as beta for the climb */
   videoUrl?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Result of the App Store screenshot fixture: a freshly seeded, ACTIVE
+ * multi-climber party session the screenshot run deep-links into. Inert in
+ * production (gated on the SCREENSHOT_FIXTURE_USER_ID env var + the configured
+ * screenshot user).
+ */
+export type ScreenshotSession = {
+  __typename?: 'ScreenshotSession';
+  /** Board path the session lives on, for deep-linking into the in-session view */
+  boardPath: Scalars['String']['output'];
+  /** Deterministic id of the seeded session */
+  sessionId: Scalars['ID']['output'];
 };
 
 /** Input for searching boards. */

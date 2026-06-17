@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
+import { SCREENSHOT_MODE } from '../../src/lib/screenshot-mode';
 import { Text } from '../../src/components/Text';
 import { Button } from '../../src/components/Button';
 import { Card } from '../../src/components/Card';
@@ -115,6 +116,18 @@ export default function JoinSessionScreen() {
     }
     void performJoin();
   }, [session, activeSessionId, clearSession, performJoin, t]);
+
+  // Screenshot mode: auto-confirm the join once the active session preview lands,
+  // so the in-session party shot is deterministic (Maestro can't tap the Join
+  // button on this iOS build). Fires once; inert in normal builds.
+  const screenshotJoinedRef = useRef(false);
+  useEffect(() => {
+    if (!SCREENSHOT_MODE || screenshotJoinedRef.current) return;
+    if (!isAuthenticated || !session || session.endedAt != null) return;
+    if (activeSessionId === session.id) return;
+    screenshotJoinedRef.current = true;
+    void performJoin();
+  }, [isAuthenticated, session, activeSessionId, performJoin]);
 
   const containerStyle = [styles.container, { backgroundColor: systemColors.background, paddingTop: insets.top }];
 

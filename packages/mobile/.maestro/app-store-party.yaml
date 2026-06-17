@@ -1,0 +1,35 @@
+appId: com.boardsesh.app
+name: app-store party shot
+---
+# Live multi-user "party" shot — store slot 03 on iOS. Run by the orchestrator as a
+# SECOND Maestro invocation AFTER app-store.yaml, against the still-running, already
+# logged-in app, and only when the screenshot-session fixture exists: the orchestrator
+# creates a fresh ACTIVE multi-participant session on the backend (createScreenshotSession),
+# passes its id here via `-e SCREENSHOT_SESSION_ID`, and tears it down afterward
+# (endScreenshotSession). This stays a separate flow so the default capture still
+# produces a clean 9-shot iOS set when the fixture isn't enabled.
+#
+# Requires (passed by the orchestrator via `maestro test -e`):
+#   SCREENSHOT_SESSION_ID    — the fixture session id to join
+#   MAESTRO_DEV_CLIENT_URL   — expo-development-client reload URL (clears the prior drawer)
+#
+# Reload the JS runtime first to clear the play drawer app-store.yaml's board-view shot
+# left open (the Keychain login + active board survive the reload). Then deep-link the
+# join screen, which AUTO-CONFIRMS the join in screenshot mode (Maestro can't tap the
+# Join button on this iOS build), landing on the Record tab's in-session view. The
+# seeded ticks render the multi-user analytics + leaderboard; screenshot mode also
+# surfaces the seeded crew in the presence row (see InSessionView's SCREENSHOT_MODE
+# branch). Two settle-waits bracket the join + the session-detail load.
+- openLink: ${MAESTRO_DEV_CLIENT_URL}
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://join/${SCREENSHOT_SESSION_ID}
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 03-party

@@ -33,11 +33,38 @@ simulator keychain first so login authenticates cleanly against prod.
   when the auth screen is showing (the Keychain token survives `clearState`).
 - `app-store.yaml` (iOS) — log in, then capture Home, Discover, Profile, Logbook,
   session detail, Climbs, the workout generator, playlist detail, and the board view
-  (10 store slots; the `03` live-party slot is filled by the party flow, PR2).
+  (nine of the ten store slots; the `03` live-party slot is the separate
+  `app-store-party.yaml` below).
 - `app-store-android.yaml` — the eight Play Store shots: Home, Discover, Profile,
   session detail, Climbs, the workout generator, board view, and the board sheet.
+- `app-store-party.yaml` (iOS) — the live multi-user party shot (slot `03`). Run by
+  the orchestrator as a second pass with `--party` against a backend
+  `createScreenshotSession` fixture; see "Party shot" below.
 - `onboarding.yaml` / `onboarding-android.yaml` — capture app screens for
   onboarding-card illustrations (`--flow onboarding`).
+
+## Party shot (slot 03)
+
+The live multi-user in-session shot needs a real ACTIVE session, so the orchestrator
+stands one up on the backend and tears it down per run (enable with
+`vp run mobile:screenshots -- --party`, iOS app-store only):
+
+1. `scripts/screenshot-session-fixture.ts create` authenticates as the test user and
+   calls the backend `createScreenshotSession` mutation, which seeds an active session
+   (test user + a dedicated "Demo Climber" participant, a queue, and ticks from both)
+   and returns its id.
+2. `app-store-party.yaml` reloads the JS runtime (clearing the prior board-view
+   drawer), deep-links `://join/<id>`, and the app auto-confirms the join in screenshot
+   mode, landing on the in-session view. The seeded ticks render the multi-user
+   analytics + leaderboard; screenshot mode also surfaces the seeded crew in the
+   presence row (`InSessionView`'s `SCREENSHOT_MODE` branch).
+3. `screenshot-session-fixture.ts end <id>` tears the session (and its ticks) down.
+
+It's best-effort: `createScreenshotSession` is **inert unless the backend has
+`SCREENSHOT_FIXTURE_USER_ID` set to the test user's id**, so on a backend without that
+env the party shot is skipped and the nine-shot set is captured unchanged. The fixture
+authenticates against `--backend prod`'s `https://ws.boardsesh.com` (override with
+`SCREENSHOT_BACKEND_URL`).
 
 ## Required env (passed by the orchestrator via `maestro test -e`)
 

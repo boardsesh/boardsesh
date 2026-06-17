@@ -34,6 +34,20 @@ export const mutationsTypeDefs = /* GraphQL */ `
     endSession(sessionId: ID!, timezone: String): SessionSummary
 
     """
+    Seed a fresh ACTIVE multi-climber party session for App Store screenshots.
+    Inert in production: requires the SCREENSHOT_FIXTURE_USER_ID env var to be
+    set AND the caller to be that exact screenshot user, otherwise it throws.
+    Re-runs reuse + reset the deterministic session so each capture is clean.
+    """
+    createScreenshotSession: ScreenshotSession!
+
+    """
+    Tear down a screenshot session seeded by createScreenshotSession. Same
+    guard as createScreenshotSession. Idempotent (no error if already gone).
+    """
+    endScreenshotSession(sessionId: ID!): Boolean!
+
+    """
     Update display name and avatar in the current session.
     """
     updateUsername(username: String!, avatarUrl: String): Boolean!

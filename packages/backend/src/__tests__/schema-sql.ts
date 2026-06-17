@@ -345,6 +345,7 @@ export const schemaSQL = `
     "user_id" text PRIMARY KEY NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "display_name" text,
     "avatar_url" text,
+    "instagram_url" text,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );

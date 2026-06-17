@@ -2083,6 +2083,13 @@ export type Mutation = {
   createPlaylist: Playlist;
   /** Create a proposal for a climb grade/classic/benchmark change. */
   createProposal: Proposal;
+  /**
+   * Seed a fresh ACTIVE multi-climber party session for App Store screenshots.
+   * Inert in production: requires the SCREENSHOT_FIXTURE_USER_ID env var to be
+   * set AND the caller to be that exact screenshot user, otherwise it throws.
+   * Re-runs reuse + reset the deterministic session so each capture is clean.
+   */
+  createScreenshotSession: ScreenshotSession;
   /** Create a new session with GPS coordinates for discovery. */
   createSession: Session;
   /**
@@ -2118,6 +2125,11 @@ export type Mutation = {
    * Requires authentication.
    */
   disconnectIntegration: Scalars['Boolean']['output'];
+  /**
+   * Tear down a screenshot session seeded by createScreenshotSession. Same
+   * guard as createScreenshotSession. Idempotent (no error if already gone).
+   */
+  endScreenshotSession: Scalars['Boolean']['output'];
   /** End a session (active participant only). */
   endSession?: Maybe<SessionSummary>;
   /** Follow a board. */
@@ -2534,6 +2546,11 @@ export type MutationDeleteTickArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDisconnectIntegrationArgs = {
   provider: IntegrationProvider;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationEndScreenshotSessionArgs = {
+  sessionId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4505,6 +4522,20 @@ export type SaveTickInput = {
   videoUrl?: InputMaybe<Scalars['String']['input']>;
 };
 
+/**
+ * Result of the App Store screenshot fixture: a freshly seeded, ACTIVE
+ * multi-climber party session the screenshot run deep-links into. Inert in
+ * production (gated on the SCREENSHOT_FIXTURE_USER_ID env var + the configured
+ * screenshot user).
+ */
+export type ScreenshotSession = {
+  __typename?: 'ScreenshotSession';
+  /** Board path the session lives on, for deep-linking into the in-session view */
+  boardPath: Scalars['String']['output'];
+  /** Deterministic id of the seeded session */
+  sessionId: Scalars['ID']['output'];
+};
+
 /** Input for searching boards. */
 export type SearchBoardsInput = {
   /** Filter by board type */
@@ -6180,6 +6211,7 @@ export type ResolversTypes = ResolversObject<{
   SaveClimbResult: ResolverTypeWrapper<SaveClimbResult>;
   SaveMoonBoardClimbInput: SaveMoonBoardClimbInput;
   SaveTickInput: SaveTickInput;
+  ScreenshotSession: ResolverTypeWrapper<ScreenshotSession>;
   SearchBoardsInput: SearchBoardsInput;
   SearchGymsInput: SearchGymsInput;
   SearchPlaylistsInput: SearchPlaylistsInput;
@@ -6454,6 +6486,7 @@ export type ResolversParentTypes = ResolversObject<{
   SaveClimbResult: SaveClimbResult;
   SaveMoonBoardClimbInput: SaveMoonBoardClimbInput;
   SaveTickInput: SaveTickInput;
+  ScreenshotSession: ScreenshotSession;
   SearchBoardsInput: SearchBoardsInput;
   SearchGymsInput: SearchGymsInput;
   SearchPlaylistsInput: SearchPlaylistsInput;
@@ -7644,6 +7677,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateProposalArgs, 'input'>
   >;
+  createScreenshotSession?: Resolver<ResolversTypes['ScreenshotSession'], ParentType, ContextType>;
   createSession?: Resolver<
     ResolversTypes['Session'],
     ParentType,
@@ -7715,6 +7749,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDisconnectIntegrationArgs, 'provider'>
+  >;
+  endScreenshotSession?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationEndScreenshotSessionArgs, 'sessionId'>
   >;
   endSession?: Resolver<
     Maybe<ResolversTypes['SessionSummary']>,
@@ -9063,6 +9103,15 @@ export type SaveClimbResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ScreenshotSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ScreenshotSession'] = ResolversParentTypes['ScreenshotSession'],
+> = ResolversObject<{
+  boardPath?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SearchPlaylistsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SearchPlaylistsResult'] = ResolversParentTypes['SearchPlaylistsResult'],
@@ -9929,6 +9978,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ResolveBoardResult?: ResolveBoardResultResolvers<ContextType>;
   ResolvedBoard?: ResolvedBoardResolvers<ContextType>;
   SaveClimbResult?: SaveClimbResultResolvers<ContextType>;
+  ScreenshotSession?: ScreenshotSessionResolvers<ContextType>;
   SearchPlaylistsResult?: SearchPlaylistsResultResolvers<ContextType>;
   SendDeviceLogsResponse?: SendDeviceLogsResponseResolvers<ContextType>;
   Session?: SessionResolvers<ContextType>;

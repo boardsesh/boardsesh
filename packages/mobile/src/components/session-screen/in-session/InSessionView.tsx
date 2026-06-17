@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
+import type { SessionDetailTick, SessionFeedParticipant, SessionUser } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
 import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
 import { Card } from '../../Card';
@@ -31,6 +31,7 @@ import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../../lib/tick-to-climb';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
+import { SCREENSHOT_MODE } from '../../../lib/screenshot-mode';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { withAlpha } from '../../../theme/colors';
@@ -395,9 +396,25 @@ export function InSessionView({
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
+  // Screenshot mode: the live roster holds only the lone capturing client, but the
+  // seeded session has a full crew in the DB-backed `participants`. Surface them so
+  // the presence row reads as the multi-user party the leaderboard already shows.
+  const presenceUsers = useMemo<SessionUser[]>(() => {
+    if (SCREENSHOT_MODE && participants.length > sessionUsers.length) {
+      return participants.map((participant) => ({
+        id: participant.userId,
+        username: participant.displayName ?? '',
+        isLeader: false,
+        avatarUrl: participant.avatarUrl ?? undefined,
+        userId: participant.userId,
+        connectionState: 'CONNECTED' as const,
+      }));
+    }
+    return sessionUsers;
+  }, [participants, sessionUsers]);
   // Teach the share affordance while solo — an in-body row, since the chrome's
   // bare glass glyph can't carry a label. Drops once a friend joins.
-  const soloInvite = sessionUsers.length <= 1;
+  const soloInvite = presenceUsers.length <= 1;
   const dismissGesture = useMemo(() => {
     if (translateY === undefined || screenHeight === undefined) return null;
     return Gesture.Pan()
@@ -491,7 +508,7 @@ export function InSessionView({
           off there too. */}
       {showChrome ? <ScreenTitle style={styles.screenTitle}>{t('mobile.session.headerActive')}</ScreenTitle> : null}
 
-      <SessionPresenceRow users={sessionUsers} />
+      <SessionPresenceRow users={presenceUsers} />
 
       {/* Solo teaching row for the chrome's bare share glyph (tab mode). A glass
           square can't hold a label, so the affordance is explained here until a

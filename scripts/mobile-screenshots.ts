@@ -43,6 +43,8 @@ const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
 const MAESTRO_DIR = resolve(MOBILE_DIR, '.maestro');
 const BUILD_SIM_APP_SCRIPT = resolve(ROOT_DIR, 'scripts', 'mobile-build-sim-app.ts');
+const FIXTURE_SCRIPT = resolve(ROOT_DIR, 'scripts', 'screenshot-session-fixture.ts');
+const PARTY_FLOW = resolve(MOBILE_DIR, '.maestro', 'app-store-party.yaml');
 const APP_CACHE_DIR = resolve(MOBILE_DIR, '.app-cache');
 const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
 // Metro dev server port the dev-client loads its JS bundle from. Defaults to
@@ -72,6 +74,9 @@ const DEFAULT_ANDROID_APK = resolve(
 // so localhost is correct for a sim build pointed at the local dev backend.
 const LOCAL_BACKEND_URL = 'http://localhost:8080';
 const LOCAL_WEB_URL = 'http://localhost:3000';
+// The app's prod backend default (packages/mobile/src/lib/env.ts); the party fixture
+// authenticates + creates/ends its session here when --backend prod.
+const PROD_BACKEND_URL = 'https://ws.boardsesh.com';
 const DEFAULT_USER_EMAIL = 'test@boardsesh.com';
 const DEFAULT_USER_PASSWORD = 'test';
 const MAESTRO_INSTALL_HINT = 'Install Maestro: curl -Ls "https://get.maestro.mobile.dev" | bash';
@@ -94,6 +99,10 @@ export interface ScreenshotOptions {
   /** Prebuilt/cached app artifact to install; iOS can build one when null. */
   appPath: string | null;
   shutdown: boolean;
+  /** Capture the live multi-user party shot (iOS app-store only): create a backend
+   *  fixture session, run the party flow against it, then tear it down. Off by default,
+   *  and a no-op unless the backend has SCREENSHOT_FIXTURE_USER_ID enabled. */
+  party: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): ScreenshotOptions {
@@ -113,6 +122,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     workout: 'volume',
     appPath: null,
     shutdown: false,
+    party: false,
   };
 
   for (let index = 0; index < args.length; index++) {
@@ -156,6 +166,9 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         break;
       case '--shutdown':
         options.shutdown = true;
+        break;
+      case '--party':
+        options.party = true;
         break;
       default:
         throw new Error(`Unknown argument: ${flag}`);
@@ -480,6 +493,10 @@ function runIos(options: ScreenshotOptions): number {
       return maestroStatus;
     }
 
+    if (options.party && options.flow === 'app-store') {
+      runPartyShot(options, device.udid, captureDir, email, password);
+    }
+
     const saved = collectScreenshots(captureDir, 'ios', device.name);
     if (saved.length === 0) {
       console.error(`${LOG} WARNING: flow completed but no PNGs were captured.`);
@@ -499,6 +516,74 @@ function runIos(options: ScreenshotOptions): number {
   }
 
   return 0;
+}
+
+/**
+ * Capture the live multi-user party shot (iOS app-store slot 03). Creates a backend
+ * fixture session (createScreenshotSession), runs the party flow against the still-
+ * running app, then tears the session down. Best-effort: if the fixture can't be
+ * created — e.g. the backend hasn't enabled SCREENSHOT_FIXTURE_USER_ID — it logs and
+ * skips, leaving the 9-shot set intact. The party PNG lands in the same capture dir,
+ * so the caller's single collectScreenshots() picks it up.
+ */
+function runPartyShot(
+  options: ScreenshotOptions,
+  deviceUdid: string,
+  captureDir: string,
+  email: string,
+  password: string,
+): void {
+  const backendUrl =
+    process.env.EXPO_PUBLIC_BACKEND_URL ?? (options.backend === 'local' ? LOCAL_BACKEND_URL : PROD_BACKEND_URL);
+  const fixtureEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    SCREENSHOT_BACKEND_URL: backendUrl,
+    SCREENSHOT_USER_EMAIL: email,
+    SCREENSHOT_USER_PASSWORD: password,
+  };
+
+  console.log(`${LOG} Party shot: creating fixture session on ${backendUrl}...`);
+  const created = spawnSync('bunx', ['tsx', FIXTURE_SCRIPT, 'create'], { encoding: 'utf8', env: fixtureEnv });
+  const sessionId = (created.stdout ?? '').trim();
+  if (created.status !== 0 || sessionId.length === 0) {
+    console.warn(
+      `${LOG} Party shot skipped: could not create the fixture session ` +
+        `(the backend may not have SCREENSHOT_FIXTURE_USER_ID enabled). The 9-shot set is unaffected.`,
+    );
+    return;
+  }
+
+  try {
+    console.log(`${LOG} Party shot: joining ${sessionId} and capturing...`);
+    const partyStatus = runInherit(
+      'maestro',
+      [
+        '--device',
+        deviceUdid,
+        'test',
+        PARTY_FLOW,
+        '-e',
+        `MAESTRO_DEV_CLIENT_URL=${metroDevClientUrl()}`,
+        '-e',
+        `SCREENSHOT_SESSION_ID=${sessionId}`,
+        '-e',
+        `SCREENSHOT_USER_EMAIL=${email}`,
+        '-e',
+        `SCREENSHOT_USER_PASSWORD=${password}`,
+      ],
+      process.env,
+      captureDir,
+    );
+    if (partyStatus !== 0) {
+      console.warn(`${LOG} Party shot: Maestro exited with ${partyStatus}; the 9-shot set is still saved.`);
+    }
+  } finally {
+    console.log(`${LOG} Party shot: tearing down fixture session ${sessionId}...`);
+    const ended = spawnSync('bunx', ['tsx', FIXTURE_SCRIPT, 'end', sessionId], { encoding: 'utf8', env: fixtureEnv });
+    if (ended.status !== 0) {
+      console.warn(`${LOG} Party shot: teardown of ${sessionId} failed; remove it manually if it lingers.`);
+    }
+  }
 }
 
 function runAndroid(options: ScreenshotOptions): number {
