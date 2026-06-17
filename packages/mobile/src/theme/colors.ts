@@ -44,6 +44,9 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
  * - `primaryFill`: brand colour for a FILLED surface/button background.
  * - `onPrimary`: text/icon colour sitting on `primaryFill`.
  * - `accent`: warm amber spark for highlights — FILL-ONLY, always pair with dark text.
+ * - `live`: the "this climb is physically lit / now on the wall" status hue. A
+ *   dedicated role (not `warning`) so a future warning retune can't silently shift
+ *   the board-presence affordance. Resolves to the warm amber per scheme.
  *
  * Contrast (WCAG, light): white-on-primary #6D28D9 = 7.10:1; black-on-accent = 8.95:1.
  */
@@ -56,6 +59,7 @@ export const brandColors = {
   success: '#047857',
   warning: '#B45309',
   error: '#C81E1E',
+  live: '#B45309',
 } as const;
 
 /**
@@ -76,6 +80,7 @@ export const brandColorsDark = {
   success: '#34D399',
   warning: '#FBBF24',
   error: '#F87171',
+  live: '#FBBF24',
 } as const;
 
 /**

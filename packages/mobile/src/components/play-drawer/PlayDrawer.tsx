@@ -21,6 +21,7 @@ import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from './PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
 import { PlayDrawerHeader } from './PlayDrawerHeader';
+import { PanePlaceholder } from './PanePlaceholder';
 import { PlayDrawerPreviewBanner } from './PlayDrawerPreviewBanner';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
@@ -151,17 +152,33 @@ const DEFAULT_BETA_HEADER_HEIGHT = 52;
 // enablePanDownToClose + enableContentPanningGesture.
 const renderNoHandle = () => null;
 
-const PaneOnWallChip = memo(function PaneOnWallChip({ climbUuid }: { climbUuid: string }) {
+const PaneOnWallChip = memo(function PaneOnWallChip({
+  climbUuid,
+  climbName,
+}: {
+  climbUuid: string;
+  climbName: string;
+}) {
   const { t } = useTranslation('session');
   const { brandColors } = useTheme();
   const wallClimb = useWallOrQueueCurrentClimb(null);
 
   if (wallClimb?.uuid !== climbUuid) return null;
 
+  // One accessible element (role 'text' — non-interactive; the pane is already
+  // open), labelled like the sibling wall surfaces (WallStrip / SidebarWallCell)
+  // so VoiceOver reads it as status bound to the climb, not a stray header line.
+  // The dot is decorative and folds into the grouped label. Uses the dedicated
+  // `live` colour role rather than `warning`.
   return (
-    <View style={styles.onWallChip}>
-      <View style={[styles.onWallDot, { backgroundColor: brandColors.warning }]} />
-      <Text variant="caption1" color={brandColors.warning} style={styles.onWallChipText}>
+    <View
+      style={styles.onWallChip}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={t('boardPresence.openAriaWithClimb', { name: climbName })}
+    >
+      <View style={[styles.onWallDot, { backgroundColor: brandColors.live }]} />
+      <Text variant="caption1" color={brandColors.live} style={styles.onWallChipText}>
         {t('boardPresence.open')}
       </Text>
     </View>
@@ -690,7 +707,14 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
           </View>
         )}
 
-        {isPane ? <PaneOnWallChip climbUuid={displayedClimb.uuid} /> : null}
+        {/* Skip the chip when a WallStrip is docked above the pane (portrait —
+            signalled by paneTopInset=false): the strip already shows the lit climb a
+            few points up, so the chip would repeat "on the wall" for the same climb.
+            Keep it in the column/landscape layout, where the pane is the sole nearby
+            wall reference. (Pane-only anyway — the compact sheet has isPane=false.) */}
+        {isPane && paneTopInset ? (
+          <PaneOnWallChip climbUuid={displayedClimb.uuid} climbName={displayedClimb.name} />
+        ) : null}
 
         <PlayDrawerHeader
           name={displayedClimb.name}
@@ -926,20 +950,12 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
             {climbContent}
           </ScrollView>
         ) : (
-          <View
-            style={[
-              styles.paneEmpty,
-              { paddingTop: (paneTopInset ? insets.top : 0) + spacing[8], paddingBottom: insets.bottom },
-            ]}
-          >
-            <Icon name="search" size={40} color={iosSystemColors.systemGray4} />
-            <Text variant="headline" style={styles.paneEmptyTitle}>
-              {t('playView.paneEmpty.title')}
-            </Text>
-            <Text variant="subheadline" style={styles.paneEmptySubtitle}>
-              {t('playView.paneEmpty.subtitle')}
-            </Text>
-          </View>
+          <PanePlaceholder
+            title={t('playView.paneEmpty.title')}
+            subtitle={t('playView.paneEmpty.subtitle')}
+            paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
+            paddingBottom={insets.bottom}
+          />
         )}
         {subSheets}
       </>
@@ -1032,22 +1048,5 @@ const styles = StyleSheet.create({
   },
   onWallChipText: {
     fontWeight: '600',
-  },
-  // iPad pane "no climb selected" placeholder.
-  paneEmpty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[6],
-    gap: spacing[2],
-  },
-  paneEmptyTitle: {
-    marginTop: spacing[2],
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  paneEmptySubtitle: {
-    opacity: 0.5,
-    textAlign: 'center',
   },
 });

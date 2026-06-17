@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +12,12 @@ import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { tabsActiveSegment } from '../../lib/route-segments';
-import { SIDEBAR_WIDTH } from '../../theme/layout';
+import {
+  SIDEBAR_WIDTH,
+  SIDEBAR_NAV_PILL_HEIGHT,
+  SIDEBAR_NAV_PILL_WIDTH,
+  SIDEBAR_NAV_ICON_SIZE,
+} from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 /**
@@ -37,8 +42,6 @@ type SidebarDestination = {
   label: string;
 };
 
-const NAV_ICON_SIZE = 26;
-
 function SidebarItem({
   destination,
   focused,
@@ -48,23 +51,37 @@ function SidebarItem({
   focused: boolean;
   onPress: (destination: SidebarDestination) => void;
 }) {
-  const { systemColors, brandColors } = useTheme();
-  const tint = focused ? brandColors.primary : systemColors.secondaryLabel;
+  const { systemColors } = useTheme();
+  // Pointer-hover / keyboard-focus on the iPad rail (no-op on touch). Treated as
+  // a single "active-ish" cue: it brightens the glyph and fills the pill, the
+  // same affordance selection uses, so hovering/focusing previews selection.
+  const [interactive, setInteractive] = useState(false);
+  const active = focused || interactive;
+  // Neutral chrome glyphs, matching NativeTabs / MaterialTabBar (the systemFill
+  // pill is the sole active affordance, not a brand tint). See
+  // docs/ai-design-guidelines.md — chrome carries state with fills, not colour.
+  const tint = active ? systemColors.label : systemColors.secondaryLabel;
   const handlePress = useCallback(() => onPress(destination), [onPress, destination]);
+  const handleInteractiveOn = useCallback(() => setInteractive(true), []);
+  const handleInteractiveOff = useCallback(() => setInteractive(false), []);
 
   return (
     <PressableSurface
       onPress={handlePress}
+      onHoverIn={handleInteractiveOn}
+      onHoverOut={handleInteractiveOff}
+      onFocus={handleInteractiveOn}
+      onBlur={handleInteractiveOff}
       feedback="scale"
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
       accessibilityLabel={destination.label}
       style={styles.item}
     >
-      <View style={[styles.iconPill, focused ? { backgroundColor: systemColors.fill } : null]}>
-        <Icon name={destination.icon} size={NAV_ICON_SIZE} color={tint} />
+      <View style={[styles.iconPill, active ? { backgroundColor: systemColors.fill } : null]}>
+        <Icon name={destination.icon} size={SIDEBAR_NAV_ICON_SIZE} color={tint} />
       </View>
-      <Text variant="caption2" color={tint} numberOfLines={1} style={styles.label}>
+      <Text variant="caption2" color={tint} numberOfLines={2} style={styles.label}>
         {destination.label}
       </Text>
     </PressableSurface>
@@ -103,12 +120,14 @@ function IpadSidebarComponent({ showWallCell = true }: { showWallCell?: boolean 
 
   const handleNavigate = useCallback(
     (destination: SidebarDestination) => {
-      // Only buzz when the tab actually changes — re-tapping the active row is a
-      // no-op (a future refinement can pop the tab's stack to root instead).
-      if (destination.segment !== activeSegment) hapticSelection();
+      // Always acknowledge the tap with a haptic so the active row is never a dead
+      // control. `router.navigate` to a tab already in the stack pops it back to
+      // the tab root (the iPhone tab-bar active-tap convention); a fresh tab just
+      // switches. Scroll-to-top on re-tap is a future refinement.
+      hapticSelection();
       router.navigate(destination.href);
     },
-    [router, activeSegment],
+    [router],
   );
 
   return (
@@ -129,14 +148,19 @@ function IpadSidebarComponent({ showWallCell = true }: { showWallCell?: boolean 
         fallbackColor={systemColors.secondaryBackground}
         pointerEvents="none"
       />
-      {primary.map((destination) => (
-        <SidebarItem
-          key={destination.segment}
-          destination={destination}
-          focused={destination.segment === activeSegment}
-          onPress={handleNavigate}
-        />
-      ))}
+      {/* The primary destinations form one tab group; the account row and the
+          wall cell are labelled siblings outside it, so VoiceOver reads a coherent
+          set rather than a flat run of tabs split by a button. */}
+      <View style={styles.navGroup} accessibilityRole="tablist">
+        {primary.map((destination) => (
+          <SidebarItem
+            key={destination.segment}
+            destination={destination}
+            focused={destination.segment === activeSegment}
+            onPress={handleNavigate}
+          />
+        ))}
+      </View>
       <View style={styles.spacer} />
       {/* Ambient "now on the wall" anchor, pinned above the account row. Hidden
           when the shell shows the full wall column (landscape) so there's one
@@ -156,6 +180,11 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     borderRightWidth: StyleSheet.hairlineWidth,
   },
+  navGroup: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing[1],
+  },
   item: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -164,8 +193,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   iconPill: {
-    width: 48,
-    height: 34,
+    width: SIDEBAR_NAV_PILL_WIDTH,
+    height: SIDEBAR_NAV_PILL_HEIGHT,
     borderRadius: borderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',

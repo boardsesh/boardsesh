@@ -20,6 +20,9 @@ const cfg = vi.hoisted(() => ({
   platformOS: 'ios' as 'ios' | 'android',
   // 'regular' takes the iPad sidebar shell; 'compact' keeps the phone tab bars.
   widthClass: 'compact' as 'compact' | 'regular',
+  // iPad in a narrow split: compact width but still an iPad, which the shell keeps on
+  // JS Tabs (never NativeTabs). Independent of widthClass; 'regular' always implies iPad.
+  isPad: false,
   // Window width drives the wall surface in the regular shell: a dedicated column
   // (landscape) vs a strip atop the pane (portrait) — see resolveWallSurface.
   windowWidth: 1024,
@@ -76,7 +79,13 @@ vi.mock('../../../src/hooks/use-inside-tabs', () => ({
 }));
 
 vi.mock('../../../src/hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: cfg.widthClass, expanded: false }),
+  // `regular` is only ever reached on an iPad (an iPhone is always compact), so it
+  // always implies isPad; cfg.isPad additionally models an iPad in a narrow split.
+  useDeviceLayout: () => ({
+    widthClass: cfg.widthClass,
+    expanded: false,
+    isPad: cfg.widthClass === 'regular' || cfg.isPad,
+  }),
 }));
 
 vi.mock('../../../src/components/navigation/IpadSidebar', () => ({
@@ -208,6 +217,7 @@ describe('TabLayout', () => {
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
     cfg.widthClass = 'compact';
+    cfg.isPad = false;
     cfg.windowWidth = 1024;
     cfg.boardPresenceEnabled = false;
     cfg.boardPresenceBoardId = null;
@@ -261,6 +271,30 @@ describe('TabLayout', () => {
     ]);
   });
 
+  it('keeps an iPad in a narrow split on the JS Material tab bar (never NativeTabs)', () => {
+    // Slide Over / Split View: compact width but still an iPad. The single-navigator
+    // shell routes it through JS Tabs + the Material bar so a resize across the 700pt
+    // boundary doesn't swap navigator types — NativeTabs never renders on iPad, and
+    // there's no rail at compact width.
+    cfg.isPad = true;
+    cfg.widthClass = 'compact';
+    cfg.variant = 'liquidGlass';
+    cfg.glassCapable = true;
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs-material="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-tabs="true"]')).toBeNull();
+    expect(container.querySelector('[data-ipad-sidebar="true"]')).toBeNull();
+    expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
+      'home',
+      'climbs',
+      'record',
+      'discover',
+      'profile',
+    ]);
+  });
+
   it('renders the iPad sidebar shell at regular width and registers all five tabs', () => {
     // Regular-width iPad takes the sidebar branch before the native/Material tab
     // bars: the glass sidebar carries navigation and the native iOS 26 tab bar is
@@ -284,6 +318,21 @@ describe('TabLayout', () => {
       'discover',
       'profile',
     ]);
+  });
+
+  it('suppresses the detail pane on the tightest regular portraits, keeping the list full width', () => {
+    // iPad mini portrait (744): sidebar (96) + the pane's 320pt floor would leave the
+    // browse list ~328pt — below the 400pt readable floor — so resolveDetailPaneSurface
+    // drops the pane and the compact bottom-sheet PlayDrawer hosts the drawer instead.
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 744;
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-sidebar="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+    // No room for a wall column at this width either — the wall stays the sidebar cell.
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
   });
 
   it('shows the dedicated wall column in landscape with a bound board, hiding the rail cell', () => {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveDeviceLayout,
   resolveWallSurface,
+  resolveDetailPaneSurface,
   REGULAR_WIDTH_BREAKPOINT,
   EXPANDED_WIDTH_BREAKPOINT,
 } from '../size-class';
@@ -34,6 +35,15 @@ describe('resolveDeviceLayout', () => {
       widthClass: 'regular',
       expanded: false,
     });
+  });
+
+  it('is regular but not expanded across the tightest real iPad portraits', () => {
+    // iPad mini portrait (744), 9.7"/10.2" portrait (768/810) — the narrow-regular
+    // band where a persistent detail pane squeezes the browse list. All clear 700
+    // (sidebar shows) but not 1024 (no master+detail). See resolveDetailPaneSurface.
+    for (const width of [744, 768, 810]) {
+      expect(resolveDeviceLayout({ width, isPad: true })).toEqual({ widthClass: 'regular', expanded: false });
+    }
   });
 
   it('is expanded for a full-screen iPad (portrait 1024+ and any landscape)', () => {

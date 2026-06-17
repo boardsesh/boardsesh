@@ -19,7 +19,12 @@ import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
 import { IpadWallColumn } from '../../src/components/board-presence/IpadWallColumn';
 import { useBoardPresenceControls } from '../../src/providers/board-presence-provider';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
-import { resolveWallSurface, WALL_COLUMN_WIDTH, DETAIL_PANE_WIDTH_WITH_WALL } from '../../src/theme/size-class';
+import {
+  resolveWallSurface,
+  resolveDetailPaneSurface,
+  WALL_COLUMN_WIDTH,
+  DETAIL_PANE_WIDTH_WITH_WALL,
+} from '../../src/theme/size-class';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
@@ -88,6 +93,8 @@ export default function TabLayout() {
   const eagerMountRecord = Platform.OS === 'android';
   // Regular-width iPad opts into the sidebar shell; compact width (every iPhone,
   // a narrow iPad split) keeps the native / Material tab bars below verbatim.
+  // (deviceLayout.expanded is computed but intentionally unconsumed here — it's
+  // reserved for the Phase-3 master+detail Climbs browser; see size-class.ts.)
   const deviceLayout = useDeviceLayout();
   const { width: windowWidth } = useWindowDimensions();
   // The live wall gets a dedicated column in landscape (room for sidebar + browse
@@ -114,6 +121,17 @@ export default function TabLayout() {
   const playPaneWidth = showWallColumn
     ? DETAIL_PANE_WIDTH_WITH_WALL
     : Math.round(Math.min(400, Math.max(320, windowWidth * 0.34)));
+  // The detail (play) pane is width-budgeted exactly like the wall column: it only
+  // mounts when the browse list still clears the readable floor after the sidebar
+  // and a minimum pane width. On the tightest regular portraits (iPad mini /
+  // 9.7–10.2", 744–810pt) it's suppressed and the compact bottom-sheet PlayDrawer
+  // hosts the drawer instead (see drawer-host-provider), so the list keeps room.
+  const showDetailPane =
+    resolveDetailPaneSurface({
+      width: windowWidth,
+      widthClass: deviceLayout.widthClass,
+      sidebarWidth: SIDEBAR_WIDTH,
+    }) === 'pane';
 
   // The five tab screens are identical across the JS `Tabs` variants (Material
   // bar vs. the hidden-bar iPad shell), so share one definition. A flat keyed
@@ -162,30 +180,50 @@ export default function TabLayout() {
     />,
   ];
 
-  // Regular-width iPad: a glass left sidebar replaces the bottom tab bar, with
-  // each tab rendered single-column to its right. The Tabs navigator still owns
-  // routing + per-tab state; we hide its bar and drive it from the sidebar (the
-  // global router). Bottom chrome collapses to the safe-area inset via the
-  // `usesSidebar` branch in computeBottomChromeMetrics.
-  if (deviceLayout.widthClass === 'regular') {
+  // iPad adaptive shell. ONE JS `Tabs` navigator is mounted across the
+  // regular↔compact boundary, so resizing an iPad window across the breakpoint (a
+  // Split View drag, a Stage Manager resize) swaps only the CHROME — the glass
+  // sidebar + content panes at regular width, the Material tab bar in a narrow
+  // split — and keeps each tab's scroll offset and nested-stack depth instead of
+  // remounting the navigator. The navigator still owns routing; at regular width
+  // its bar is hidden and the sidebar drives it through the global router. iPad
+  // never uses NativeTabs (that would swap navigator *types* on the boundary cross
+  // and remount); NativeTabs stays the iPhone-only glass path below. The `content`
+  // View carries a stable key so the navigator survives the chrome swap.
+  if (deviceLayout.isPad) {
+    const isRegular = deviceLayout.widthClass === 'regular';
+    const tabsNavigator = (
+      <Tabs
+        tabBar={isRegular ? renderHiddenTabBar : (props) => <MaterialTabBar {...props} />}
+        screenOptions={{ headerShown: false }}
+      >
+        {tabScreens}
+      </Tabs>
+    );
     return (
-      <View style={styles.shell}>
-        <IpadSidebar showWallCell={!showWallColumn} />
-        <View style={styles.shellContent}>
-          <Tabs tabBar={renderHiddenTabBar} screenOptions={{ headerShown: false }}>
-            {tabScreens}
-          </Tabs>
+      <View style={isRegular ? styles.shell : styles.shellCompact}>
+        {isRegular ? <IpadSidebar key="sidebar" showWallCell={!showWallColumn} /> : null}
+        <View key="content" style={styles.shellContent}>
+          {tabsNavigator}
         </View>
         {/* Persistent right column: the PlayDrawer for the SELECTED climb (iPad
-            master-detail). Replaces the floating accessory/queue bar on the shell. */}
-        <View style={[styles.playPane, { width: playPaneWidth, borderLeftColor: systemColors.separator }]}>
-          <IpadPlayPane />
-        </View>
+            master-detail). Width-budgeted like the wall column (resolveDetailPaneSurface):
+            the tightest regular portraits — iPad mini and 9.7–10.2" (744–810pt) — suppress
+            it rather than squeeze the browse list below the readable floor; there the
+            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). */}
+        {isRegular && showDetailPane ? (
+          <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: systemColors.separator }]}>
+            <IpadPlayPane />
+          </View>
+        ) : null}
         {/* Dedicated "Now on the wall" column — landscape only, where the width
             budget leaves room for it (see resolveWallSurface). In portrait the wall
             rides a strip atop the pane (IpadPlayPane) instead. */}
-        {showWallColumn ? (
-          <View style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: systemColors.separator }]}>
+        {isRegular && showWallColumn ? (
+          <View
+            key="wall"
+            style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: systemColors.separator }]}
+          >
             <IpadWallColumn />
           </View>
         ) : null}
@@ -253,6 +291,9 @@ const styles = StyleSheet.create({
   // Sidebar + content laid out as a row; the sidebar owns a fixed width and the
   // content pane flexes to fill the rest.
   shell: { flex: 1, flexDirection: 'row' },
+  // iPad in a narrow split (compact): the same single `Tabs` navigator, no rail,
+  // just filling the window — so the navigator stays mounted across the boundary.
+  shellCompact: { flex: 1 },
   shellContent: { flex: 1 },
   playPane: { borderLeftWidth: StyleSheet.hairlineWidth },
   wallColumn: { borderLeftWidth: StyleSheet.hairlineWidth },

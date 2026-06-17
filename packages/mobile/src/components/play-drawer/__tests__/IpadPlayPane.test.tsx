@@ -39,6 +39,10 @@ vi.mock('../PlayDrawer', () => ({
   },
 }));
 
+vi.mock('../PanePlaceholder', () => ({
+  PanePlaceholder: () => createElement('div', { 'data-pane-placeholder': 'true' }),
+}));
+
 vi.mock('../../board-presence/WallStrip', () => ({
   WallStrip: () => createElement('div', { 'data-wall-strip': 'true' }),
 }));
@@ -91,5 +95,15 @@ describe('IpadPlayPane wall surface', () => {
     const { container } = render(<IpadPlayPane />);
     expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
     expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+  });
+
+  it('renders the shared placeholder (not the drawer) when no board is resolved', () => {
+    // No pane props → nothing selected: the pane shows the shared PanePlaceholder
+    // instead of the drawer, and there's no wall strip to dock.
+    cfg.paneProps = null;
+    const { container } = render(<IpadPlayPane />);
+    expect(container.querySelector('[data-pane-placeholder="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-play-drawer="true"]')).toBeNull();
+    expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
   });
 });

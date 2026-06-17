@@ -83,3 +83,40 @@ export function resolveWallSurface({
   const contentWidth = width - sidebarWidth - DETAIL_PANE_WIDTH_WITH_WALL - WALL_COLUMN_WIDTH;
   return contentWidth >= WALL_COLUMN_CONTENT_FLOOR ? 'column' : 'strip';
 }
+
+/** Minimum width the persistent detail (play) pane needs to be useful — the floor
+ *  of its standalone clamp. Below the content floor the pane is suppressed so the
+ *  browse list keeps room (see {@link resolveDetailPaneSurface}). */
+export const DETAIL_PANE_MIN_WIDTH = 320;
+
+/**
+ * How the detail (play) pane appears in the regular-width shell. `pane` is the
+ * persistent right-column master-detail surface; `sheet` falls back to the
+ * compact bottom-sheet PlayDrawer so the browse list keeps the full content
+ * column.
+ */
+export type DetailPaneSurface = 'pane' | 'sheet';
+
+/**
+ * Decide whether the persistent detail pane is mounted, from the same width
+ * budget `resolveWallSurface` uses — never a raw breakpoint. The pane only
+ * mounts when, after the sidebar and a minimum pane width, the browse list still
+ * clears `WALL_COLUMN_CONTENT_FLOOR`. The narrowest regular windows — iPad mini
+ * portrait (744) and 9.7–10.2" portrait (768/810) — would otherwise squeeze the
+ * list to ~iPhone-SE width beneath a persistent pane, so there it drops to a
+ * sheet; 11"+ portrait (≥834 → ≥418 list) keeps the pane. Pure (sidebar width
+ * injected) so it unit-tests without react-native.
+ */
+export function resolveDetailPaneSurface({
+  width,
+  widthClass,
+  sidebarWidth,
+}: {
+  width: number;
+  widthClass: WidthClass;
+  sidebarWidth: number;
+}): DetailPaneSurface {
+  if (widthClass !== 'regular') return 'sheet';
+  const contentWidth = width - sidebarWidth - DETAIL_PANE_MIN_WIDTH;
+  return contentWidth >= WALL_COLUMN_CONTENT_FLOOR ? 'pane' : 'sheet';
+}

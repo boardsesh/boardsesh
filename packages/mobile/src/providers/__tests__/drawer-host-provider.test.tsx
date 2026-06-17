@@ -103,6 +103,9 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
+  // The host width-budgets pane vs. sheet (resolveDetailPaneSurface). 1024 clears
+  // the budget, so the regular-width describe takes the pane path; compact stays sheet.
+  useWindowDimensions: () => ({ width: 1024, height: 1366 }),
 }));
 
 // The host reads the device layout to decide sheet (compact) vs pane (regular).

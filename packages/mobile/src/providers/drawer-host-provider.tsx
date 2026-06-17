@@ -12,6 +12,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -38,6 +39,8 @@ import { favoritesStore } from '@boardsesh/climb-actions';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
+import { resolveDetailPaneSurface } from '../theme/size-class';
+import { SIDEBAR_WIDTH } from '../theme/layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
@@ -237,17 +240,28 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // behind a fresh sign-in (profile query still resolving), which would show the
   // action in the play drawer but not here. PlayDrawer uses the same predicate.
   const { isAuthenticated } = useAuth();
-  // On the regular-width iPad shell the PlayDrawer renders as the persistent
-  // right-column pane (IpadPlayPane), so the bottom-sheet PlayDrawer is not
-  // mounted and `openPlayDrawer` just makes the climb current — the pane shows
-  // `currentClimbQueueItem`. A ref keeps `openPlayDrawer`'s identity stable.
+  // When the iPad shell hosts the persistent right-column pane (IpadPlayPane), the
+  // bottom-sheet PlayDrawer is not mounted and `openPlayDrawer` just makes the
+  // climb current — the pane shows `currentClimbQueueItem`. The pane is shown only
+  // when the window is wide enough for it (resolveDetailPaneSurface, the SAME
+  // budget the shell uses): the tightest regular portraits suppress the pane, and
+  // there this bottom sheet hosts the drawer instead. So the gate keys on the pane
+  // budget, not just widthClass === 'regular'. A ref keeps `openPlayDrawer` stable.
+  const { width: windowWidth } = useWindowDimensions();
   const { widthClass } = useDeviceLayout();
-  const isRegular = widthClass === 'regular';
-  const isRegularRef = useRef(isRegular);
-  isRegularRef.current = isRegular;
+  const usesDetailPane =
+    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  const usesDetailPaneRef = useRef(usesDetailPane);
+  usesDetailPaneRef.current = usesDetailPane;
+  // Drop a pane preview when the pane goes away (a resize into compact, or into a
+  // narrow-regular split where the sheet takes over). A preview held by the bottom
+  // sheet is intentionally NOT migrated into the pane on the reverse transition —
+  // that would mean lifting PlayDrawer's internal preview state up; instead the
+  // pane falls back to the current climb (a rare, view-only loss at the exact
+  // moment of a boundary resize mid-inspect).
   useEffect(() => {
-    if (!isRegular) setPanePreview(null);
-  }, [isRegular]);
+    if (!usesDetailPane) setPanePreview(null);
+  }, [usesDetailPane]);
 
   // Climb to open after the boardConfig override has committed. We can't
   // open synchronously inside openPlayDrawer when an override is supplied
@@ -319,7 +333,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           openSource ??
           (openOptions.committedExternally || openOptions.previewQueueItem != null ? 'current_queue_item' : 'mobile'),
       });
-      if (isRegularRef.current) {
+      if (usesDetailPaneRef.current) {
         pendingOverrideOpenRef.current = null;
         const selectedItem =
           openOptions.previewQueueItem ??
@@ -803,10 +817,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   return (
     <DrawerHostContext.Provider value={value}>
       {children}
-      {/* Bottom-sheet PlayDrawer — compact only. On the regular-width iPad shell
-          the same drawer renders as the persistent right column (IpadPlayPane),
-          so mounting the sheet here too would double its sub-sheets + state. */}
-      {activeBoardConfig && !isRegular ? (
+      {/* Bottom-sheet PlayDrawer — mounted whenever the persistent pane is NOT (every
+          compact width, plus the narrow-regular iPad splits where the pane is
+          suppressed). When the iPad shell hosts the pane (IpadPlayPane), the same
+          drawer renders there, so mounting the sheet too would double its sub-sheets. */}
+      {activeBoardConfig && !usesDetailPane ? (
         <PlayDrawer
           ref={playDrawerRef}
           boardConfig={activeBoardConfig}

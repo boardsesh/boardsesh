@@ -11,6 +11,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { WALL_LIVE_DOT_SIZE } from '../../theme/layout';
 
 const STRIP_THUMBNAIL_SIZE = 40;
 
@@ -56,10 +57,7 @@ function WallStripComponent() {
             size={STRIP_THUMBNAIL_SIZE}
           />
           <View
-            style={[
-              styles.dot,
-              { backgroundColor: brandColors.warning, borderColor: systemColors.secondaryBackground },
-            ]}
+            style={[styles.dot, { backgroundColor: brandColors.live, borderColor: systemColors.secondaryBackground }]}
           />
         </View>
       ) : (
@@ -76,7 +74,7 @@ function WallStripComponent() {
         </Text>
       </View>
       {grade ? (
-        <Text variant="subheadline" color={brandColors.warning} numberOfLines={1} style={styles.grade}>
+        <Text variant="subheadline" color={brandColors.live} numberOfLines={1} style={styles.grade}>
           {grade}
         </Text>
       ) : null}
@@ -101,8 +99,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-    width: 12,
-    height: 12,
+    width: WALL_LIVE_DOT_SIZE,
+    height: WALL_LIVE_DOT_SIZE,
     borderRadius: borderRadius.full,
     borderWidth: 2,
   },

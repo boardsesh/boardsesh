@@ -352,6 +352,29 @@ through to the full `BoardSheet`. Rules when adding layout-sensitive iPad compon
 - Status may **annotate** selection (the pane shows an "On the wall" chip when the selected climb is the
   lit one) — but never replace it.
 
+**The detail pane is width-budgeted, like the wall column** — not gated on a raw breakpoint. The
+persistent detail (play) pane mounts only when, after the sidebar and a minimum pane width, the browse
+list still clears the readable content floor (`WALL_COLUMN_CONTENT_FLOOR` 400pt) — via
+`resolveDetailPaneSurface` in `theme/size-class.ts`, mirroring `resolveWallSurface`. On the narrowest
+regular widths (iPad mini and 9.7–10.2" portrait, ~744–810pt) the pane would squeeze the list below the
+floor, so there it falls back to the compact bottom-sheet `PlayDrawer` and the list keeps the full
+content column. This applies the "compute from the width budget, never a raw breakpoint" rule above to
+the detail pane, closing the one place it wasn't followed.
+
+**The active sidebar row uses neutral system glyphs**, matching the bottom tab bars. The sidebar is the
+tab-bar analogue, so its active row follows the same chrome-glyph rule as `NativeTabs` and
+`MaterialTabBar`: `systemColors.label` selected / `secondaryLabel` inactive, with the `systemColors.fill`
+pill as the active affordance — not a brand-violet tint. Brand colour stays for genuine accents, per the
+chrome-glyph rule documented under Iconography.
+
+**The shell is width-adaptive, not idiom-adaptive.** Size class is driven by `Platform.isPad` (fixed at
+process launch) plus the live window width; only width is live. The guarantee is "the right layout for
+the current window width on iPad," not a layout that re-derives the device idiom across Stage Manager or
+an external display. Note also the deliberate choice of a bespoke 96pt icon-over-label rail instead of a
+`UISplitViewController` sidebar: a Phase-1 call that keeps the rail simple but means it won't inherit
+system sidebar behaviours (collapse control, pointer magnetism). Revisit in Phase 2+ whether to adopt a
+true wide text sidebar or the iPadOS 18 floating-tab-bar-to-sidebar pattern.
+
 ---
 
 ## Motion & haptics

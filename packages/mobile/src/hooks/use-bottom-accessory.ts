@@ -25,15 +25,19 @@ export function isBottomAccessoryAvailable(): boolean {
 export function useNativeTabBar(): boolean {
   const { variant } = useTheme();
   const glassCapable = useGlassCapability();
-  const { widthClass } = useDeviceLayout();
-  // The iPad sidebar shell (regular width) renders JS `Tabs` + a glass rail instead
-  // of `NativeTabs`, so the native tab bar — and the bottom accessory + tab-bar
-  // search role it hosts — is not on screen there. Everything that branches on this
+  const { isPad } = useDeviceLayout();
+  // The iPad adaptive shell renders JS `Tabs` at EVERY iPad width — a glass rail at
+  // regular width, the Material bar in a narrow split (Slide Over / Split View) — and
+  // never `NativeTabs`, so a resize across the breakpoint keeps one navigator mounted
+  // (see `_layout`). So the native tab bar — and the bottom accessory + tab-bar search
+  // role it hosts — is never on screen on iPad. Everything that branches on this
   // predicate (the climb-list search mode, the accessory mount, bottom-chrome
-  // geometry) must treat the iPad shell as "no native tab bar", or it reaches for a
-  // native search bar / accessory that has no bar to live in (the search field
-  // then collides with the floating top chrome).
-  if (widthClass === 'regular') return false;
+  // geometry) must treat iPad as "no native tab bar", or it reaches for a native
+  // accessory / search bar that has no bar to live in — and on an iPad in a narrow
+  // split that would skip the native accessory AND suppress the JS PersistentQueueBar,
+  // dropping the now-playing bar entirely. (`isPad` subsumes the old regular-width
+  // check, since a `regular` width only ever resolves on an iPad.)
+  if (isPad) return false;
   return variant === 'liquidGlass' && glassCapable;
 }
 

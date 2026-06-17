@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode } from 'react';
 import {
   Pressable,
   Platform,
@@ -11,6 +11,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+
+type RNPressableProps = ComponentProps<typeof Pressable>;
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { springs } from '../theme/animations';
 import { androidRipple } from '../theme/tokens';
@@ -32,6 +34,13 @@ type PressableSurfaceProps = {
   onPressOut?: (event: GestureResponderEvent) => void;
   onLongPress?: (event: GestureResponderEvent) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
+  /** Pointer hover (iPad trackpad / pointer) — no-op on touch-only platforms. Lets
+   *  callers light up a hovered state on the iPad regular-width surfaces. */
+  onHoverIn?: RNPressableProps['onHoverIn'];
+  onHoverOut?: RNPressableProps['onHoverOut'];
+  /** Hardware-keyboard focus (iPad Magic Keyboard) — no-op on touch-only platforms. */
+  onFocus?: RNPressableProps['onFocus'];
+  onBlur?: RNPressableProps['onBlur'];
   disabled?: boolean;
   /** iOS feedback style (default 'scale'). Android uses a ripple either way. */
   feedback?: PressFeedback;
@@ -71,6 +80,10 @@ export function PressableSurface({
   onPressOut,
   onLongPress,
   onLayout,
+  onHoverIn,
+  onHoverOut,
+  onFocus,
+  onBlur,
   disabled = false,
   feedback = 'scale',
   scaleTo = 0.96,
@@ -127,6 +140,10 @@ export function PressableSurface({
         onPressOut={onPressOut}
         onLongPress={onLongPress}
         onLayout={onLayout}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        onFocus={onFocus}
+        onBlur={onBlur}
         disabled={disabled}
         // Static brand tint by design: this is a core primitive and the default
         // ripple is an Android-only, rarely-hit fallback (most callers pass an
@@ -155,6 +172,10 @@ export function PressableSurface({
       onPressOut={handlePressOut}
       onLongPress={onLongPress}
       onLayout={onLayout}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      onFocus={onFocus}
+      onBlur={onBlur}
       disabled={disabled}
       hitSlop={hitSlop}
       accessibilityRole={accessibilityRole}

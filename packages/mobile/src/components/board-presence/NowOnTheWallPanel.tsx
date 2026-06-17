@@ -494,14 +494,14 @@ function NowOnTheWallPanelComponent(
                 valueColor={systemColors.label}
               />
               <StatTile
-                value={stats.hardestGrade ? (formatGrade(stats.hardestGrade) ?? '–') : '–'}
+                value={stats.hardestGrade ? (formatGrade(stats.hardestGrade) ?? STAT_EMPTY_VALUE) : STAT_EMPTY_VALUE}
                 label={t('mobile.boardPresence.statHardest')}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
               />
               <StatTile
-                value={stats.topGrade ? (formatGrade(stats.topGrade) ?? '–') : '–'}
+                value={stats.topGrade ? (formatGrade(stats.topGrade) ?? STAT_EMPTY_VALUE) : STAT_EMPTY_VALUE}
                 label={t('mobile.boardPresence.statTopGrade')}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
@@ -1007,9 +1007,21 @@ type StatTileProps = {
   valueColor: ColorValue;
 };
 
+// Em-dash placeholder rendered when a grade stat has no data yet (see call sites).
+const STAT_EMPTY_VALUE = '–';
+
 function StatTile({ value, label, surfaceColor, labelColor, valueColor }: StatTileProps) {
+  // Group the value + label into one VoiceOver stop so the number is announced with
+  // its unit ("12 Sent") and the empty-grade placeholder reads as the label alone
+  // ("Hardest") instead of a bare, ambiguous dash. `label` arrives already translated.
+  const accessibilityLabel = value === STAT_EMPTY_VALUE ? label : `${value} ${label}`;
+
   return (
-    <View style={[styles.statTile, { backgroundColor: surfaceColor }]}>
+    <View
+      style={[styles.statTile, { backgroundColor: surfaceColor }]}
+      accessible={true}
+      accessibilityLabel={accessibilityLabel}
+    >
       <Text variant="title3" color={valueColor} numberOfLines={1}>
         {value}
       </Text>
