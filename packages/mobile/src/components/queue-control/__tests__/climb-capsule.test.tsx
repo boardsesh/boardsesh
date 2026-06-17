@@ -46,11 +46,30 @@ vi.mock('react-native', () => ({
     }, [onLayout]);
     return createElement('div', { 'data-testid': testID, 'data-bg': backgroundOf(style) }, children);
   },
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    onPress,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+    onPress?: () => void;
+  }) =>
+    createElement(
+      'button',
+      { 'data-hide-control': 'true', 'data-label': accessibilityLabel ?? '', onClick: onPress },
+      children,
+    ),
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
     absoluteFill: {},
     hairlineWidth: 1,
   },
+}));
+
+vi.mock('../../Icon', () => ({
+  Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon-name': name }),
 }));
 
 // The tap hook wraps its open handler in runOnJS — return it as-is.
@@ -114,7 +133,7 @@ vi.mock('../../GlassSurface', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
+    systemColors: { label: '#111111', secondaryLabel: '#888888', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
   }),
 }));
 
@@ -142,12 +161,14 @@ vi.mock('../../../hooks/use-grade-format', () => ({
   }),
 }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => `${color}29` }));
-vi.mock('../../../theme/layout', () => ({ TOOLBAR_CAPSULE_HEIGHT: 52, TOOLBAR_CAPSULE_MAX_WIDTH: 260 }));
+vi.mock('../../../theme/layout', () => ({
+  TOOLBAR_CAPSULE_HEIGHT: 52,
+  TOOLBAR_CAPSULE_MAX_WIDTH: 260,
+  glassSize: { inline: 44 },
+}));
 vi.mock('../../../theme/tokens', () => ({
   shadows: { sm: {} },
   spacing: { 1: 4, 2: 8, 4: 16 },

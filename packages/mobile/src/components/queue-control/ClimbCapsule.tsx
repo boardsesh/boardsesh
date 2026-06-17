@@ -5,22 +5,28 @@
 // behaviour is shared with the native accessory via useAccessoryClimbTap.
 
 import { useMemo, type ReactNode } from 'react';
-import { View, StyleSheet, type ColorValue } from 'react-native';
+import { Pressable, View, StyleSheet, type ColorValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
-import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH } from '../../theme/layout';
+import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
+
+// Visible hide control on the JS bar (Android / iOS < 26 / Material) — parity with
+// the iOS 26 native platter chevron, so the dismiss is discoverable everywhere, not
+// just swipe-only. Matches the inline tick's touch size.
+const HIDE_CONTROL_SIZE = glassSize.inline;
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -109,9 +115,13 @@ export function ClimbCapsule({
   if (!currentClimb) return null;
 
   const capsuleRadius = surfaceTreatment === 'docked' ? 0 : height / 2;
-  // Reserve room on the right so the name/grade never slide under the inline tick.
+  // Reserve room on the right so the name/grade never slide under the inline tick
+  // or the (optional) hide control.
   const endActionReservedWidth = endAction ? endActionSize + spacing[2] : 0;
-  const labelRight = spacing[4] + endActionReservedWidth;
+  const hideReservedWidth = canDismiss ? HIDE_CONTROL_SIZE + spacing[2] : 0;
+  const labelRight = spacing[4] + endActionReservedWidth + hideReservedWidth;
+  // The hide control sits just inboard of the tick (or at the edge when there's none).
+  const hideControlRight = spacing[2] + endActionReservedWidth;
 
   // The docked Material bar stays on a neutral M3 surface (a step above the tab bar
   // via elevation) and marks the grade with a vivid leading colour stripe — distinct
@@ -138,16 +148,6 @@ export function ClimbCapsule({
           style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
           accessibilityRole="button"
           accessibilityLabel={currentClimb.name}
-          accessibilityActions={
-            canDismiss ? [{ name: 'dismiss', label: t('mobile.accessoryBar.hideControlAria') }] : undefined
-          }
-          onAccessibilityAction={
-            canDismiss
-              ? (event) => {
-                  if (event.nativeEvent.actionName === 'dismiss') dismiss();
-                }
-              : undefined
-          }
         >
           <View style={[styles.labelSlot, { right: labelRight }]}>
             <ClimbLabel
@@ -161,6 +161,18 @@ export function ClimbCapsule({
           </View>
         </View>
       </GestureDetector>
+      {canDismiss ? (
+        <Pressable
+          onPress={dismiss}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.accessoryBar.hideControlAria')}
+          accessibilityHint={t('mobile.accessoryBar.hideControlHint')}
+          hitSlop={spacing[1]}
+          style={[styles.hideSlot, { right: hideControlRight, width: HIDE_CONTROL_SIZE, height }]}
+        >
+          <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
+        </Pressable>
+      ) : null}
       {endAction ? <View style={[styles.endActionSlot, { width: endActionSize, height }]}>{endAction}</View> : null}
     </AccessoryBarSurface>
   );
@@ -200,6 +212,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: spacing[2],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Hide control: absolutely placed just inboard of the tick (its `right` is set
+  // inline), outside the tap-to-open gesture target so it never opens the drawer.
+  hideSlot: {
+    position: 'absolute',
+    top: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
