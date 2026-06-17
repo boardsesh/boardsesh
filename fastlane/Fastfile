@@ -1,6 +1,6 @@
 # Uploads native store screenshots to App Store Connect / Google Play.
 #
-# Screenshots only - no binary, no text metadata, no review submission. The
+# Screenshots only — no binary, no text metadata, no review submission. The
 # screenshots are captured fresh by `vp run mobile:screenshots` (see
 # scripts/mobile-screenshots.ts) into the canonical trees:
 #
@@ -173,7 +173,7 @@ platform :ios do
         sync_screenshots: true,
         submit_for_review: false,
         run_precheck_before_submit: false,
-        # force: true is mandatory in CI: without it deliver opens an HTML
+        # force: true is mandatory in CI — without it deliver opens an HTML
         # preview in a browser and blocks until timeout.
         force: true
       )

@@ -28,9 +28,11 @@ name: app-store screenshots
 #
 # Notes:
 # - The .app is a Debug dev-client that auto-loads Metro on launch, so the orchestrator
-#   just simctl-launches it; this flow waits for the signed-out auth screen, then logs in.
-# - Fresh install (orchestrator uninstalled/reinstalled + reset keychain): cold-loads
-#   signed out, no active board (re-picked below), login authenticates against the backend.
+#   just simctl-launches it; the build auto-signs-in on boot, so there's no login screen
+#   and this flow opens straight into the shots (the orchestrator gates on `$screen /home`).
+# - Fresh install (orchestrator uninstalled/reinstalled + reset keychain): cold-loads with
+#   no active board (re-picked below), and the keychain reset forces the auto-sign-in to
+#   re-authenticate against the target backend rather than reuse a stale token.
 # - iOS shows an "Open in 'Boardsesh'?" confirmation for the first in-flow route deep link
 #   on a fresh sim; each openLink is followed by an optional tapOn "Open".
 # - Order: board-INDEPENDENT shots (home/discover/profile/logbook/session) run first so a

@@ -7,7 +7,7 @@ high-res icon / feature graphic). Nothing here uploads a binary, submits for
 review, or does a staged rollout.
 
 ```bash
-# screenshots (PNGs from app-stores/*/screenshots/<device>/)
+# screenshots (PNGs from app-stores/apple/screenshots/<locale>/<device>/ and app-stores/google/screenshots/<device>/)
 cd fastlane && bundle exec fastlane ios screenshots
 cd fastlane && bundle exec fastlane android screenshots
 

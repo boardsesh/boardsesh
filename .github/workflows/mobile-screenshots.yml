@@ -29,7 +29,10 @@ on:
           - app-store
           - onboarding
       devices:
-        description: 'iOS simulator devices: common, or a comma-separated list of simulator names'
+        # A subset only makes sense for local iteration: the dimension gate and the
+        # App Store Connect upload both require the full common-device matrix, so a
+        # narrowed list here fails the "Assert screenshot dimensions" step in CI.
+        description: 'iOS simulator devices: common (required for upload), or a comma-separated list for local iteration'
         type: string
         default: 'common'
       android_device:
@@ -37,7 +40,9 @@ on:
         type: string
         default: 'Pixel 2'
       locales:
-        description: 'App locales: all, or a comma-separated list such as en-US,es,fr'
+        # Same as devices: the dimension gate + upload expect all four App Store
+        # locales (en-US, es-ES, es-MX, fr-FR), so a subset fails CI validation.
+        description: 'App locales: all (required for upload), or a comma-separated list such as en-US,es for local iteration'
         type: string
         default: 'all'
       upload:
