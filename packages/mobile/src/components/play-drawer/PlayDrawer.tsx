@@ -125,6 +125,17 @@ type PlayDrawerProps = {
    * inset, so the pane must not add it again.
    */
   paneTopInset?: boolean;
+  /**
+   * iPad pane only: a climb to preview over the queue's current climb (a
+   * `setAsCurrent: false` open from the feed / beta / a climb view). The pane
+   * shows it without committing to the queue; once the current climb changes the
+   * pane calls {@link onPreviewConsumed} so the host drops it. The sheet leaves
+   * this undefined and previews via its own internal state.
+   */
+  previewItem?: ClimbQueueItem | null;
+  /** iPad pane only: fired when the current climb changes while a preview is
+   *  showing, so the host clears the preview. */
+  onPreviewConsumed?: () => void;
 };
 
 // Full-screen now-playing takeover: a single 100% snap, no peek detent. The
@@ -149,6 +160,8 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
     onSwitchBoard,
     presentation = 'sheet',
     paneTopInset = true,
+    previewItem = null,
+    onPreviewConsumed,
   },
   ref,
 ) {
@@ -227,8 +240,26 @@ export const PlayDrawer = forwardRef<PlayDrawerHandle, PlayDrawerProps>(function
   // wall gets its own labelled surfaces (sidebar cell + strip/column) owned by
   // the shell, and the pane annotates its header when the selection is the lit
   // climb (below).
-  const displayedQueueItem = drawerPreviewItem ?? state.currentClimbQueueItem;
+  // `previewItem` is the iPad pane's host-held preview (feed/beta/climb-view open
+  // that didn't commit to the queue); it's null for the sheet. Order: pane preview
+  // → the sheet's own internal preview → the queue's current climb.
+  const displayedQueueItem = previewItem ?? drawerPreviewItem ?? state.currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb ?? null;
+
+  // iPad pane: once the queue's current climb changes (a list tap's async activate
+  // committed, or the user navigated), drop the host-held preview so the pane
+  // falls back to the live current climb. Refs keep the effect keyed on the
+  // current climb's uuid only — including `previewItem` in the deps would clear it
+  // the instant it's set. The sheet never sets `previewItem`, so this is a no-op
+  // there.
+  const previewItemRef = useRef(previewItem);
+  previewItemRef.current = previewItem;
+  const onPreviewConsumedRef = useRef(onPreviewConsumed);
+  onPreviewConsumedRef.current = onPreviewConsumed;
+  const currentClimbUuid = state.currentClimbQueueItem?.climb?.uuid;
+  useEffect(() => {
+    if (isPane && previewItemRef.current) onPreviewConsumedRef.current?.();
+  }, [currentClimbUuid, isPane]);
 
   // Status-annotates-selection (the Music "now-playing row" glyph): in the pane,
   // flag when the selected climb is the one physically lit on the wall. O(1) read

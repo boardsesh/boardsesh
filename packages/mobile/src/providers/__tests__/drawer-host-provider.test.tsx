@@ -106,9 +106,11 @@ vi.mock('react-native', () => ({
 }));
 
 // The host reads the device layout to decide sheet (compact) vs pane (regular).
-// These tests exercise the compact bottom-sheet path.
+// Defaults to compact (the bottom-sheet path most tests exercise); the
+// regular-width pane describe flips it.
+const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular' }));
 vi.mock('../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: 'compact', expanded: false }),
+  useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
 
 vi.mock('react-native-screens', () => ({
@@ -319,6 +321,8 @@ beforeEach(() => {
   presence.resolveAndBindBoardByConfig.mockClear();
   presence.resolveAndBindBoardByUuid.mockClear();
   presence.resetPresence.mockClear();
+  queue.setCurrentClimb.mockClear();
+  layoutCfg.widthClass = 'compact';
 });
 
 describe('DrawerHostProvider board presence binding', () => {
@@ -913,5 +917,48 @@ describe('DrawerHostProvider switch board keeps the climb angle', () => {
     expect(playDrawer.close).toHaveBeenCalledTimes(1);
     expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards' }));
     expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+  });
+});
+
+describe('DrawerHostProvider iPad pane open (regular width)', () => {
+  beforeEach(() => {
+    // Regular width takes the pane path: no bottom sheet to present.
+    layoutCfg.widthClass = 'regular';
+  });
+
+  it('commits the climb as current (no sheet) when setAsCurrent is true', async () => {
+    const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'commit-1').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb, { setAsCurrent: true });
+    });
+
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'commit-1' }) }),
+      expect.anything(),
+    );
+    // The pane never presents the bottom sheet, and a commit clears any preview.
+    expect(playDrawer.open).not.toHaveBeenCalled();
+    expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem).toBeNull();
+  });
+
+  it('previews a setAsCurrent:false open in the pane without committing it as current', async () => {
+    const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'preview-1').climb as unknown as Climb;
+    act(() => {
+      // The feed / beta / climb-view preview path: show it in the pane, don't
+      // change the queue's current climb (would otherwise broadcast in a session).
+      hosts.at(-1)?.openPlayDrawer(climb, { setAsCurrent: false, source: 'climb_view' });
+    });
+
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(playDrawer.open).not.toHaveBeenCalled();
+    expect(hosts.at(-1)?.playDrawerPaneProps?.previewItem?.climb.uuid).toBe('preview-1');
   });
 });
