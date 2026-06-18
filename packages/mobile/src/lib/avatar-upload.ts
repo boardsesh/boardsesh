@@ -4,7 +4,7 @@ import { BACKEND_URL } from './env';
 // The backend caps avatars at 2MB and accepts jpg/png/gif/webp. The picker +
 // expo-image-manipulator compress to a ≤1024px JPEG before we ever get here, so
 // in practice every upload is a small JPEG well under the limit.
-const AVATAR_ENDPOINT = `${BACKEND_URL}/api/avatars`;
+const AVATAR_ENDPOINT = backendPath('/api/avatars');
 
 /** A picked (and already-compressed) local image ready to upload. */
 export type AvatarUploadFile = {
@@ -16,6 +16,20 @@ export type AvatarUploadFile = {
   type?: string;
 };
 
+export class AvatarUploadError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AvatarUploadError';
+    this.status = status;
+  }
+}
+
+function backendPath(path: string): string {
+  return `${BACKEND_URL.replace(/\/+$/, '')}${path}`;
+}
+
 /**
  * The avatar handler returns a backend-relative URL (`/static/avatars/{id}.{ext}`)
  * so the backend can proxy/resize it. Persisted profiles store the absolute URL,
@@ -23,7 +37,7 @@ export type AvatarUploadFile = {
  * pass through untouched.
  */
 export function absolutizeAvatarUrl(url: string): string {
-  return url.startsWith('/') ? `${BACKEND_URL}${url}` : url;
+  return url.startsWith('/') ? backendPath(url) : url;
 }
 
 /**
@@ -51,7 +65,7 @@ export async function uploadAvatar(file: AvatarUploadFile, userId: string): Prom
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    throw new AvatarUploadError(await readErrorMessage(response), response.status);
   }
 
   const data = (await response.json()) as { success?: boolean; avatarUrl?: string };

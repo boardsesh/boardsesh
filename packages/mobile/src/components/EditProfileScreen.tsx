@@ -8,8 +8,8 @@ import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
-import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
-import { reportError } from '../lib/error-reporting';
+import { uploadAvatar, AvatarUploadError, type AvatarUploadFile } from '../lib/avatar-upload';
+import { reportError, reportHandledError } from '../lib/error-reporting';
 import { spacing } from '../theme/tokens';
 import { Avatar } from './Avatar';
 import { AuthTextInput } from './AuthTextInput';
@@ -82,10 +82,12 @@ export function EditProfileScreen() {
   }, []);
 
   const trimmedName = displayName.trim();
+  const trimmedProfileName = (profile?.displayName ?? '').trim();
+  const displayNameChanged = trimmedName.length > 0 && trimmedName !== trimmedProfileName;
   const nameTooLong = trimmedName.length > DISPLAY_NAME_MAX;
   const previewUri = pickedAvatar?.uri ?? profile?.avatarUrl;
   const avatarName = trimmedName || profile?.email || null;
-  const hasChanges = pickedAvatar != null || trimmedName.length > 0;
+  const hasChanges = pickedAvatar != null || displayNameChanged;
   const canSave = !isSaving && !nameTooLong && hasChanges && !!profile?.id;
 
   const handlePickAvatar = async () => {
@@ -124,7 +126,7 @@ export function EditProfileScreen() {
     setIsSaving(true);
     try {
       const input: UpdateProfileInput = {};
-      if (trimmedName.length > 0) {
+      if (displayNameChanged) {
         input.displayName = trimmedName;
       }
 
@@ -134,7 +136,10 @@ export function EditProfileScreen() {
         } catch (error) {
           // Match web: a failed avatar upload warns but still saves the name, so
           // the user doesn't lose a name edit to an image hiccup.
-          reportError(error);
+          reportHandledError(error, {
+            tags: { source: 'profile', op: 'avatar-upload' },
+            extra: { status: error instanceof AvatarUploadError ? error.status : undefined },
+          });
           showToast(t('profile.avatarUploadFailed'), 'warning');
         }
       }
@@ -151,7 +156,7 @@ export function EditProfileScreen() {
       showToast(t('profile.saved'), 'success');
       router.back();
     } catch (error) {
-      reportError(error);
+      reportHandledError(error, { tags: { source: 'profile', op: 'save' } });
       showToast(t('profile.saveError'), 'error');
     } finally {
       setIsSaving(false);

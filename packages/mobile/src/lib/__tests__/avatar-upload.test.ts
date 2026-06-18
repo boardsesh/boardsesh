@@ -19,8 +19,8 @@ const BACKEND = 'https://ws.example.com';
 const file = { uri: 'file:///tmp/avatar.jpg', name: 'avatar.jpg', type: 'image/jpeg' };
 const userId = '11111111-2222-3333-4444-555555555555';
 
-function jsonResponse(body: unknown, ok = true): Response {
-  return { ok, json: async () => body } as unknown as Response;
+function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400): Response {
+  return { ok, status, json: async () => body } as unknown as Response;
 }
 
 beforeEach(() => {
@@ -66,12 +66,42 @@ describe('uploadAvatar', () => {
   });
 
   it('throws the server-provided error message on a non-ok response', async () => {
-    mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ error: 'File too large' }, false));
-    await expect(uploadAvatar(file, userId)).rejects.toThrow('File too large');
+    mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ error: 'File too large' }, false, 413));
+    await expect(uploadAvatar(file, userId)).rejects.toMatchObject({ message: 'File too large', status: 413 });
   });
 
   it('throws when the response is missing an avatarUrl', async () => {
     mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ success: true }));
     await expect(uploadAvatar(file, userId)).rejects.toThrow('Avatar upload failed');
+  });
+});
+
+describe('avatar upload URL trailing-slash normalisation', () => {
+  it('strips a trailing slash from BACKEND_URL before joining upload and static paths', async () => {
+    vi.resetModules();
+    const trailingSlashFetch = vi.fn().mockResolvedValue(
+      jsonResponse({
+        success: true,
+        avatarUrl: '/static/avatars/me.jpg?v=upload-123',
+      }),
+    );
+    vi.doMock('../env', () => ({
+      BACKEND_URL: 'https://ws.example.com/',
+    }));
+    vi.doMock('../auth-interceptor', () => ({
+      authenticatedFetch: (...args: unknown[]) => trailingSlashFetch(...args),
+    }));
+
+    const reloaded = await import('../avatar-upload');
+    const result = await reloaded.uploadAvatar(file, userId);
+
+    expect(result).toBe(`${BACKEND}/static/avatars/me.jpg?v=upload-123`);
+    expect(trailingSlashFetch).toHaveBeenCalledWith(
+      `${BACKEND}/api/avatars`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(reloaded.absolutizeAvatarUrl('/static/avatars/me.jpg?v=upload-123')).toBe(
+      `${BACKEND}/static/avatars/me.jpg?v=upload-123`,
+    );
   });
 });

@@ -14,6 +14,19 @@ const resizeMock = vi.hoisted(() => vi.fn());
 const renderAsyncMock = vi.hoisted(() => vi.fn());
 const saveAsyncMock = vi.hoisted(() => vi.fn());
 const releaseMock = vi.hoisted(() => vi.fn());
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
+const AvatarUploadErrorMock = vi.hoisted(
+  () =>
+    class AvatarUploadError extends Error {
+      readonly status: number;
+
+      constructor(message: string, status: number) {
+        super(message);
+        this.name = 'AvatarUploadError';
+        this.status = status;
+      }
+    },
+);
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -67,11 +80,13 @@ vi.mock('../../lib/graphql/hooks', () => ({
 }));
 
 vi.mock('../../lib/avatar-upload', () => ({
+  AvatarUploadError: AvatarUploadErrorMock,
   uploadAvatar: uploadAvatarMock,
 }));
 
 vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
+  reportHandledError: reportHandledErrorMock,
 }));
 
 vi.mock('../Avatar', () => ({
@@ -130,6 +145,7 @@ beforeEach(() => {
   renderAsyncMock.mockReset();
   saveAsyncMock.mockReset();
   releaseMock.mockReset();
+  reportHandledErrorMock.mockClear();
 
   requestMediaLibraryPermissionsMock.mockResolvedValue({ granted: true });
   launchImageLibraryMock.mockResolvedValue({
@@ -172,5 +188,29 @@ describe('EditProfileScreen', () => {
       avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
     });
     expect(routerBackMock).toHaveBeenCalledOnce();
+  });
+
+  it('reports avatar upload failures with profile upload context', async () => {
+    const uploadError = new AvatarUploadErrorMock('File too large', 413);
+    uploadAvatarMock.mockRejectedValue(uploadError);
+
+    render(createElement(EditProfileScreen));
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+
+    await waitFor(() => {
+      expect(reportHandledErrorMock).toHaveBeenCalledWith(uploadError, {
+        tags: { source: 'profile', op: 'avatar-upload' },
+        extra: { status: 413 },
+      });
+    });
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(routerBackMock).not.toHaveBeenCalled();
   });
 });
