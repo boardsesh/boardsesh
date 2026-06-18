@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { ONBOARDING_TIP_ACCESSORY_KEY } from '@boardsesh/key-value-storage';
 import { OnboardingTipBanner } from './OnboardingTipBanner';
 import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage';
-import { useStickyAccessoryPresence } from '../../hooks/use-sticky-accessory-presence';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
 
@@ -28,8 +27,10 @@ import { spacing } from '../../theme/tokens';
  */
 export function AccessoryOnboardingTip() {
   const { t } = useTranslation('common');
-  const hasCurrentClimb = useStickyAccessoryPresence();
+  // Presence comes from the bottom-chrome metrics (which already tracks it via
+  // useStickyAccessoryPresence), so we don't double-subscribe to the sticky hook.
   const bottomChrome = useBottomChromeMetrics();
+  const hasCurrentClimb = bottomChrome.hasCurrentClimb;
   const [tipVisible, setTipVisible] = useState(false);
 
   // Arm the tip the first time the accessory bar is on screen (a current climb
@@ -40,17 +41,19 @@ export function AccessoryOnboardingTip() {
     if (!hasCurrentClimb) return;
     let cancelled = false;
     void hasSeenTip(ONBOARDING_TIP_ACCESSORY_KEY).then((seen) => {
-      if (!cancelled && !seen) setTipVisible(true);
+      if (cancelled || seen) return;
+      setTipVisible(true);
+      // Mark seen as soon as it's shown, so it's genuinely one-time: presence
+      // flips true again on cold start (the queue head persists), so marking only
+      // on dismiss would re-show the tip every launch until the user taps the X.
+      void markTipSeen(ONBOARDING_TIP_ACCESSORY_KEY);
     });
     return () => {
       cancelled = true;
     };
   }, [hasCurrentClimb]);
 
-  const dismissTip = useCallback(() => {
-    setTipVisible(false);
-    void markTipSeen(ONBOARDING_TIP_ACCESSORY_KEY);
-  }, []);
+  const dismissTip = useCallback(() => setTipVisible(false), []);
 
   // Tie the tip to the bar it points at: if the current climb clears (the
   // accessory bar disappears) before the user dismisses, hide the tip too. It
