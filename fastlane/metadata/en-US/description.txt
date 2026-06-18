@@ -27,4 +27,4 @@ Follow your crew and setters, search climbers, and pin playlists from Discover.
 
 Supported boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper and So iLL.
 
-Boardsesh works with these boards and is not affiliated with or endorsed by Aurora Climbing or Moon Climbing.
+Boardsesh works with these boards and is not affiliated with or endorsed by Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Aurora Climbing, Moon Climbing or any board manufacturer.
