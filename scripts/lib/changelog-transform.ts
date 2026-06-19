@@ -61,6 +61,10 @@ const CODE_FENCE = /^\s*```/;
 // Dropped so it never becomes a changelog entry. A real sentence like
 // "none of the old buttons…" doesn't match (a letter follows `none`), so it's kept.
 const NONE_MARKER = /^none\s*(?:[([{:.\-–—].*)?$/i;
+// Also ends the section (besides the next heading): a markdown horizontal rule, or
+// the auto-generated PR footer (the "🤖 Generated with…" line). Stops a footer that
+// sits right after the notes — with no heading to bound it — from leaking in.
+const SECTION_BREAK = /^\s*(?:(?:-{3,}|\*{3,}|_{3,})\s*$|🤖)/;
 
 export type ReleaseNotes = { title: string; body?: string };
 
@@ -91,7 +95,7 @@ export function extractReleaseNotes(prBody: string | null | undefined): ReleaseN
       sectionLines.push(line);
       continue;
     }
-    if (!insideFence && ANY_HEADING.test(line)) break;
+    if (!insideFence && (ANY_HEADING.test(line) || SECTION_BREAK.test(line))) break;
     sectionLines.push(line);
   }
 

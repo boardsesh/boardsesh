@@ -94,6 +94,16 @@ describe('extractReleaseNotes', () => {
     const body = '## Release Notes\nThe note\n# Another top heading\nNot included';
     expect(extractReleaseNotes(body)).toEqual({ title: 'The note' });
   });
+
+  it('stops the section at the PR footer / horizontal rule (no heading to bound it)', () => {
+    // The auto-generated footer right after the notes must not leak in.
+    const footered =
+      '## Release Notes\n- none\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nhttps://claude.ai/code/session_x';
+    expect(extractReleaseNotes(footered)).toBeNull();
+    // A real note is kept, but the trailing footer is excluded.
+    const withNote = '## Release Notes\nQueue sync is faster\n\n---\n🤖 Generated with [Claude Code](x)';
+    expect(extractReleaseNotes(withNote)).toEqual({ title: 'Queue sync is faster' });
+  });
 });
 
 describe('categorize', () => {
