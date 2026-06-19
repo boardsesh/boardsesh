@@ -186,7 +186,7 @@ export function ClimbReactionMenu({
       <View style={StyleSheet.absoluteFill}>
         {/* Blurred / dimmed backdrop, tap to dismiss. */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-          {hasBlur && Platform.OS === 'ios' ? (
+          {hasBlur ? (
             <BlurView
               blurType={colorScheme === 'dark' ? 'dark' : 'light'}
               blurAmount={12}
@@ -322,10 +322,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   menuCard: {
-    // No `overflow: 'hidden'` here: GlassSurface's Material branch puts the elevation
-    // cast on the same view as this style, and clipping would swallow the Android
-    // shadow. GlassSurface clips its own glass/blur shapes; the rows are transparent,
-    // so nothing pokes past the rounded corners.
+    // No overflow clip — it would swallow GlassSurface's Material elevation cast (same view).
     borderRadius: borderRadius.xl,
   },
   menuContent: {
