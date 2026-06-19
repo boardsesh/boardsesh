@@ -250,17 +250,6 @@ jobs:
             fi
           fi
 
-      # Embed the up-to-date changelog in the binary's JS bundle. The committed
-      # snapshot is only a fallback — without this a fresh Play/APK install shows
-      # an empty What's New until it pulls an OTA (and never, if the OTA is
-      # skipped). It writes a JS-only data file, so it can't change the
-      # fingerprint resolved above; degrades gracefully (keeps the committed
-      # file) if the crawl fails. Mirrors the OTA publish's pre-bundle step.
-      - name: Generate changelog for the embedded bundle
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node --import tsx scripts/generate-changelog.ts
-
       - name: Expo prebuild (generate android/)
         working-directory: packages/mobile
         # GOOGLE_MAPS_API_KEY is inherited from the workflow env (baked into the

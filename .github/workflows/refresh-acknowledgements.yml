@@ -35,26 +35,27 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Regenerate acknowledgements + OSS licenses + changelog
+      - name: Regenerate acknowledgements + OSS licenses
         env:
           # Contributors work with the default repo token. Reading the org's
           # GitHub Sponsors needs a PAT with sponsors / read:org scope — set the
           # ACKNOWLEDGEMENTS_GH_TOKEN secret to enable it; without it the sponsors
-          # list stays as-committed and the script still succeeds. The changelog
-          # generator only reads public PRs, so the default token suffices for it.
+          # list stays as-committed and the script still succeeds.
           GH_TOKEN: ${{ secrets.ACKNOWLEDGEMENTS_GH_TOKEN || github.token }}
         run: |
           node --import tsx scripts/fetch-acknowledgements.ts
           node --import tsx scripts/generate-oss-licenses.ts
-          node --import tsx scripts/generate-changelog.ts
 
+      # NOTE: changelog.generated.json is intentionally NOT refreshed here — the
+      # Mobile OTA Production workflow is its sole owner (it regenerates and pushes
+      # the file on every publish). Keep it out of this job to avoid two writers.
       - name: Commit refreshed data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [[ -n "$(git status --porcelain packages/mobile/src/data)" ]]; then
-            git add packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json packages/mobile/src/data/changelog.generated.json
-            git commit -m "chore: refresh acknowledgements + OSS licenses + changelog [skip ci]"
+            git add packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json
+            git commit -m "chore: refresh acknowledgements + OSS licenses [skip ci]"
             # Explicit target: commit back to the branch this run was dispatched from
             # (main on the schedule) — checkout leaves a detached HEAD, so a bare
             # `git push` has no upstream and could otherwise be ambiguous.

@@ -33,10 +33,13 @@ on:
         default: 'all'
 
 permissions:
-  contents: read
+  # write: this workflow owns packages/mobile/src/data/changelog.generated.json —
+  # it regenerates and pushes it back to main (see the generate step below).
+  contents: write
 
 concurrency:
   # Never cancel a production publish mid-flight (matches android-apk-rn.yml).
+  # Serialized per ref, so two OTA runs never race on the changelog push-back.
   group: mobile-ota-production-${{ github.ref }}
   cancel-in-progress: false
 
@@ -87,6 +90,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history so the changelog push-back can rebase onto the latest main.
+          fetch-depth: 0
 
       - uses: voidzero-dev/setup-vp@v1
 
@@ -124,19 +130,42 @@ jobs:
           EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
           EOF
 
-      # Regenerate the bundled "What's New" changelog from merged-PR Release Notes
-      # so this OTA ships the entries for everything up to this commit. It rewrites
-      # packages/mobile/src/data/changelog.generated.json in the workspace, which
-      # the eoas publish steps below bundle. It does NOT commit anything back — the
-      # committed snapshot is refreshed out-of-band by refresh-acknowledgements.yml
-      # (with [skip ci]), so this path can never re-trigger the OTA workflow.
-      # Degrades gracefully: a gh/network failure keeps the committed file and
-      # exits 0. The default GITHUB_TOKEN can read public PRs.
-      - name: Generate changelog from PR history
+      # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
+      # It regenerates the "What's New" changelog from merged-PR Release Notes,
+      # commits it, and pushes it back to main so the committed copy is the single
+      # source of truth (native builds bundle it; the next OTA diffs against it).
+      # Nothing else writes this file: a CI guard blocks PRs from editing it, and
+      # the native-build / refresh workflows only read it. We commit (not just
+      # regenerate) for two reasons: `eoas publish` refuses to run on a dirty tree,
+      # and the committed copy must reach main. The commit carries [skip ci], so the
+      # push can't re-trigger this workflow. Rebase-and-retry guards a non-OTA push
+      # landing on main since checkout (OTA runs are serialized on main, so two of
+      # these never race). Degrades gracefully: a gh/network failure leaves the file
+      # unchanged (no diff → no commit/push) and exits 0. The default GITHUB_TOKEN
+      # reads public PRs. The file is JS-only, so it never affects the fingerprint.
+      # Commit (not just regenerate) for two reasons: `eoas publish` refuses to run
+      # on a dirty tree, and the committed copy is pushed to main below. [skip ci]
+      # keeps the later push from re-triggering this workflow. The file is JS-only,
+      # so it never affects the fingerprint. `changed` tells the push step whether
+      # there's anything to push.
+      - name: Generate changelog and commit
+        id: generate
         if: steps.gate.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: vp run generate:changelog
+        run: |
+          set -euo pipefail
+          vp run generate:changelog
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add packages/mobile/src/data/changelog.generated.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Changelog unchanged — nothing to commit."
+          else
+            git commit -m "chore(changelog): refresh from merged PRs [skip ci]"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
@@ -163,6 +192,35 @@ jobs:
           args=(--channel production --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
           vp run mobile:publish -- "${args[@]}"
+
+      # Push the refreshed changelog to main so the committed copy is the single
+      # source of truth (native builds bundle it; the next OTA diffs against it).
+      # Runs AFTER publish, so the rebase here can't change what was just bundled.
+      # The commit carries [skip ci], so this push can't re-trigger the workflow.
+      # Rebase-and-retry guards a non-OTA push landing on main since checkout (OTA
+      # runs are serialized on main, so two of these never race; only this workflow
+      # writes the file, so the rebase can't conflict). always() + the `changed`
+      # gate: the file still lands even if a publish failed — its entry then ships
+      # on the next OTA.
+      - name: Push changelog to main
+        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::Rebasing the changelog onto main conflicted — unexpected, this workflow is its only writer."
+              exit 1
+            fi
+            if git push origin HEAD:main; then
+              echo "Pushed refreshed changelog to main."
+              exit 0
+            fi
+            echo "Push rejected (main advanced); retry ${attempt}/3…"
+          done
+          echo "::error::Could not push the changelog to main after 3 attempts."
+          exit 1
 
       # Announce the publish to the Discord deploy channel (same webhook + pattern
       # as ios-testflight-rn.yml / android-apk-rn.yml). Only when an OTA actually

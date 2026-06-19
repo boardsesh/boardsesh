@@ -36,6 +36,9 @@ jobs:
       sharedSchema: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.sharedSchema }}
       i18nCatalogs: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.i18nCatalogs }}
       rootCi: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.rootCi }}
+      # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
+      # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
+      changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       # True if any downstream job's gate would fire. setup gates on this so
       # docs-only / firmware-only PRs skip the bun-install + build:db pass
       # nothing downstream would consume. Must mirror the union of every
@@ -96,6 +99,8 @@ jobs:
               - 'vite.config.ts'
               - 'package.json'
               - 'bun.lock'
+            changelogData:
+              - 'packages/mobile/src/data/changelog.generated.json'
 
   setup:
     needs: [changes]
@@ -600,6 +605,21 @@ jobs:
           printf '%s' "$PR_BODY" > pr-body.txt
           vp run check:release-notes -- --body-file pr-body.txt
 
+  changelog-owned:
+    needs: [changes]
+    # The Mobile OTA Production workflow is the SOLE writer of
+    # changelog.generated.json — it regenerates and pushes it on every publish. A
+    # PR must never hand-edit it (that would fight the OTA bot and could revert
+    # shipped entries). Fail if a PR touches the file.
+    if: github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Reject manual changelog edits
+        run: |
+          echo "::error::packages/mobile/src/data/changelog.generated.json is owned by the Mobile OTA Production workflow (it regenerates and pushes it on every OTA). Revert your change to this file — it should never be edited in a PR."
+          exit 1
+
   test-report:
     needs: [test-default, test-backend, test-ocr]
     # Only post a report when at least one test job actually ran. If all three
@@ -646,6 +666,7 @@ jobs:
       - mobile-bundle
       - commit-lint
       - release-notes
+      - changelog-owned
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
