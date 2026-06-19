@@ -89,11 +89,29 @@ jobs:
       INPUT_MESSAGE: ${{ github.event.inputs.message }}
 
     steps:
+      # Mint the GitHub App token FIRST so checkout persists ITS credentials for
+      # the push-back. actions/checkout writes an http.extraheader for whatever
+      # token it's given, and that overrides any token in the remote URL — so the
+      # push must inherit the app token here, not swap it in later. The default
+      # GITHUB_TOKEN (github-actions[bot]) isn't in main's PR-bypass list and is
+      # rejected; the app is. Skips cleanly when the app isn't configured.
+      - name: Mint push token
+        id: push_token
+        if: vars.OTA_PUSH_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           # Full history so the changelog push-back can rebase onto the latest main.
           fetch-depth: 0
+          # Persist the app token (when configured) so the push-back authenticates
+          # as the app and bypasses the branch's PR rule. Falls back to the default
+          # token (read-only checkout) when the app isn't set up.
+          token: ${{ steps.push_token.outputs.token || github.token }}
 
       - uses: voidzero-dev/setup-vp@v1
 
@@ -203,31 +221,14 @@ jobs:
       # writes the file, so the rebase can't conflict). always() + the `changed`
       # gate: the file still lands even if a publish failed — its entry then ships
       # on the next OTA.
-      # Mint a short-lived token from the dedicated GitHub App so the push can
-      # bypass main's "require a pull request" rule. The App must hold contents:write
-      # AND be added to the branch's "Allow specified actors to bypass required pull
-      # requests" list. Only runs when configured (the OTA_PUSH_APP_ID variable is
-      # set); until then the push step no-ops with a warning so the OTA still ships.
-      - name: Mint push token
-        id: push_token
-        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ vars.OTA_PUSH_APP_ID }}
-          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
-
+      # Auth is the app token that checkout persisted (the app is in main's
+      # PR-bypass list; github-actions[bot] is not, so it would 403). Skips when the
+      # app isn't configured — checkout then holds only the default token, the OTA
+      # already shipped, and main's committed copy is just left unchanged.
       - name: Push changelog to main
-        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true'
-        env:
-          PUSH_TOKEN: ${{ steps.push_token.outputs.token }}
+        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
         run: |
           set -euo pipefail
-          if [ -z "${PUSH_TOKEN:-}" ]; then
-            echo "::warning::Changelog push-back is not configured — the OTA published, but main's committed copy is unchanged. To enable it: create a GitHub App (contents:write), install it, add it to main's 'Allow specified actors to bypass required pull requests' list, then set the OTA_PUSH_APP_ID repo variable and OTA_PUSH_APP_PRIVATE_KEY secret. See docs/mobile-ota-updates.md."
-            exit 0
-          fi
-          # Push with the App token (its own credentials bypass the branch rule).
-          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
           for attempt in 1 2 3; do
             git fetch origin main
             if ! git rebase origin/main; then
