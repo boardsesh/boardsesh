@@ -181,6 +181,34 @@ Run `vp run mobile:ota-setup` with no argument for the ordered runbook.
    the Expo project (the server reads the mapping from Expo's API) and maps channel `production` →
    branch `production`.
 
+## Changelog ownership (the in-app "What's New")
+
+`packages/mobile/src/data/changelog.generated.json` is owned **solely** by the
+`mobile-ota-production.yml` workflow. On every production OTA it regenerates the file from merged-PR
+`## Release Notes` sections, commits it, **pushes it back to `main`** (commit tagged `[skip ci]` so
+the push can't re-trigger the OTA), and only then runs `eoas publish` (which needs a clean tree).
+Nothing else writes the file: the native build workflows and `refresh-acknowledgements.yml` only
+*read* it, and a CI guard (`changelog-owned` in `ci.yml`) fails any PR that edits it. The OTA still
+publishes whether or not the push-back is wired — the push-back just keeps `main`'s copy (which the
+native binaries embed) current.
+
+**Push-back needs a bypass identity**, because `main` requires a pull request (enforce-admins on),
+which blocks the default `GITHUB_TOKEN` from pushing directly. One-time setup:
+
+1. **Create a GitHub App** (org or personal) with repository permission **Contents: Read & write**.
+   No webhook needed. Note its **App ID**.
+2. **Install** the App on `boardsesh/boardsesh` (only this repo).
+3. **Generate a private key** for the App (downloads a `.pem`).
+4. **Add the App to the bypass list**: repo → Settings → Branches → `main` rule → *Allow specified
+   actors to bypass required pull requests* → add the App.
+5. **Wire the secrets**: set repo **variable** `OTA_PUSH_APP_ID` = the App ID, and repo **secret**
+   `OTA_PUSH_APP_PRIVATE_KEY` = the `.pem` contents.
+
+Until those exist, the OTA's "Push changelog to main" step no-ops with a `::warning::` (the OTA
+itself still ships). A fine-grained PAT from a user who's in the bypass list works too — store it as
+`OTA_PUSH_APP_PRIVATE_KEY`'s equivalent and swap the `Mint push token` step for a direct
+`secrets.<PAT>` (ask if you prefer that route).
+
 ## Verify end to end
 
 1. Local config check (the cert gate means you must generate certs first, else the config falls

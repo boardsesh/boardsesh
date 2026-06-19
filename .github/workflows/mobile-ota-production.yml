@@ -33,9 +33,10 @@ on:
         default: 'all'
 
 permissions:
-  # write: this workflow owns packages/mobile/src/data/changelog.generated.json —
-  # it regenerates and pushes it back to main (see the generate step below).
-  contents: write
+  # read only: the push-back to main uses a dedicated GitHub App token (it must
+  # bypass main's "require a pull request" rule — the default GITHUB_TOKEN can't),
+  # so the workflow token just needs read for checkout/fetch.
+  contents: read
 
 concurrency:
   # Never cancel a production publish mid-flight (matches android-apk-rn.yml).
@@ -202,10 +203,31 @@ jobs:
       # writes the file, so the rebase can't conflict). always() + the `changed`
       # gate: the file still lands even if a publish failed — its entry then ships
       # on the next OTA.
+      # Mint a short-lived token from the dedicated GitHub App so the push can
+      # bypass main's "require a pull request" rule. The App must hold contents:write
+      # AND be added to the branch's "Allow specified actors to bypass required pull
+      # requests" list. Only runs when configured (the OTA_PUSH_APP_ID variable is
+      # set); until then the push step no-ops with a warning so the OTA still ships.
+      - name: Mint push token
+        id: push_token
+        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
       - name: Push changelog to main
         if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true'
+        env:
+          PUSH_TOKEN: ${{ steps.push_token.outputs.token }}
         run: |
           set -euo pipefail
+          if [ -z "${PUSH_TOKEN:-}" ]; then
+            echo "::warning::Changelog push-back is not configured — the OTA published, but main's committed copy is unchanged. To enable it: create a GitHub App (contents:write), install it, add it to main's 'Allow specified actors to bypass required pull requests' list, then set the OTA_PUSH_APP_ID repo variable and OTA_PUSH_APP_PRIVATE_KEY secret. See docs/mobile-ota-updates.md."
+            exit 0
+          fi
+          # Push with the App token (its own credentials bypass the branch rule).
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
           for attempt in 1 2 3; do
             git fetch origin main
             if ! git rebase origin/main; then
