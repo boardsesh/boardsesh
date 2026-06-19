@@ -28,7 +28,8 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { springs, timing } from '../../theme/animations';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing, borderRadius, overlays } from '../../theme/tokens';
+import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useClimbActions } from './use-climb-actions';
 
 type ClimbReactionMenuProps = {
@@ -86,6 +87,7 @@ export function ClimbReactionMenu({
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { formatGrade } = useGradeFormat();
+  const surfaceMode = useEffectiveSurfaceMode();
 
   const progress = useSharedValue(0);
 
@@ -165,14 +167,26 @@ export function ClimbReactionMenu({
     transform: [{ translateY: (1 - progress.value) * 18 }, { scale: 0.96 + progress.value * 0.04 }],
   }));
 
-  const scrimColor = colorScheme === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)';
+  // When a real blur sits underneath (iOS Liquid Glass / its < 26 blur fallback), a
+  // light tint completes the dim — the blur already makes the busy board-art grid
+  // recede. With no blur (Android, or Reduce Transparency / Material-on-iOS), the tint
+  // alone lets the grid bleed through, so use a denser scrim to recede it the way the
+  // blur otherwise would. Gated on the same surface mode `GlassSurface` switches on.
+  const hasBlur = surfaceMode === 'glass' || surfaceMode === 'blur';
+  const scrimColor = hasBlur
+    ? colorScheme === 'dark'
+      ? 'rgba(0,0,0,0.5)'
+      : 'rgba(0,0,0,0.35)'
+    : colorScheme === 'dark'
+      ? overlays.scrim
+      : 'rgba(0,0,0,0.4)';
 
   return (
     <OverlayPortal onRequestClose={dismiss}>
       <View style={StyleSheet.absoluteFill}>
         {/* Blurred / dimmed backdrop, tap to dismiss. */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-          {Platform.OS === 'ios' ? (
+          {hasBlur && Platform.OS === 'ios' ? (
             <BlurView
               blurType={colorScheme === 'dark' ? 'dark' : 'light'}
               blurAmount={12}
@@ -236,21 +250,20 @@ export function ClimbReactionMenu({
           </Animated.View>
 
           <Animated.View style={[styles.menuWrap, menuStyle]}>
-            <GlassSurface role="base" level="level2" borderRadius={borderRadius.xl} style={styles.menuCard}>
+            <GlassSurface role="high" level="level3" borderRadius={borderRadius.xl} style={styles.menuCard}>
               <ScrollView
                 style={{ maxHeight: menuMaxHeight }}
                 bounces={false}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.menuContent}
               >
-                {actions.map((action, index) => (
+                {actions.map((action) => (
                   <ListRow
                     key={action.id}
                     title={action.title}
-                    leading={<Icon name={action.icon} size={22} color={action.color} />}
+                    leading={<Icon name={action.icon} size={24} color={action.color} />}
                     onPress={action.run}
-                    showSeparator={index < actions.length - 1}
-                    separatorInset={56}
+                    showSeparator={false}
                   />
                 ))}
               </ScrollView>
@@ -309,8 +322,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   menuCard: {
+    // No `overflow: 'hidden'` here: GlassSurface's Material branch puts the elevation
+    // cast on the same view as this style, and clipping would swallow the Android
+    // shadow. GlassSurface clips its own glass/blur shapes; the rows are transparent,
+    // so nothing pokes past the rounded corners.
     borderRadius: borderRadius.xl,
-    overflow: 'hidden',
   },
   menuContent: {
     paddingVertical: spacing[1],
