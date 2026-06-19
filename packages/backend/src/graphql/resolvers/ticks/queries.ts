@@ -587,31 +587,42 @@ export const tickQueries = {
     { userId, caption }: { userId: string; caption: string },
     ctx?: ConnectionContext,
   ): Promise<AscentFeedRow[]> => {
-    const quotedNames = extractQuotedClimbNames(caption);
-    if (quotedNames.length === 0) return [];
+    // Public resolver that fans out to DB queries — rate-limit it like the other
+    // public reads (ctx is always present for a real request; tests pass none).
+    if (ctx) await applyRateLimit(ctx, 10, 'userAscentCaptionMatches');
 
-    // A caption virtually always quotes a single climb; cap lookups defensively.
+    // Cap the caption before any scanning so a multi-MB payload can't make
+    // matchAll/extract walk the whole string. 2 KB is ample for a real reel.
+    const MAX_CAPTION_LENGTH = 2048;
     const MAX_NAME_LOOKUPS = 4;
     const MAX_SUGGESTIONS = 8;
 
-    const gathered: AscentFeedRow[] = [];
-    for (const quotedName of quotedNames.slice(0, MAX_NAME_LOOKUPS)) {
-      // statusMode 'send' = flash + send (beta attaches to ascents, not attempts,
-      // so a flash-only climb is still included). The climbName filter is an
-      // indexed, per-user ILIKE that returns a handful of rows — not the whole
-      // logbook — and resolves aliased/deduped climbs to their canonical name.
-      const feed = await tickQueries.userAscentsFeed(
-        _,
-        { userId, input: { climbName: quotedName, statusMode: 'send', limit: 50 } },
-        ctx,
-      );
-      gathered.push(...feed.items);
-    }
+    const safeCaption = caption.slice(0, MAX_CAPTION_LENGTH);
+    const quotedNames = extractQuotedClimbNames(safeCaption);
+    if (quotedNames.length === 0) return [];
+
+    // statusMode 'send' = flash + send (beta attaches to ascents, not attempts,
+    // so a flash-only climb is still included). The climbName filter is an
+    // indexed, per-user ILIKE that returns a handful of rows — not the whole
+    // logbook — and resolves aliased/deduped climbs to their canonical name.
+    // Lookups run in parallel (captions occasionally quote more than one climb).
+    const feeds = await Promise.all(
+      quotedNames
+        .slice(0, MAX_NAME_LOOKUPS)
+        .map((quotedName) =>
+          tickQueries.userAscentsFeed(
+            _,
+            { userId, input: { climbName: quotedName, statusMode: 'send', limit: 50 } },
+            ctx,
+          ),
+        ),
+    );
+    const gathered = feeds.flatMap((feed) => feed.items);
 
     // Exact-match the quoted name(s) against the fetched rows — drops ILIKE
     // substring over-matches and comment-only hits — then de-dupe by climb
     // (keeping the most recent send, since the feed is recency-sorted) and rank.
-    return matchClimbsToCaption(caption, gathered).slice(0, MAX_SUGGESTIONS);
+    return matchClimbsToCaption(safeCaption, gathered).slice(0, MAX_SUGGESTIONS);
   },
 
   /**

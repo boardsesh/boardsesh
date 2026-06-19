@@ -188,4 +188,19 @@ describe('ShareTargetProvider', () => {
     });
     expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
   });
+
+  it('reuses the open modal (setParams) when a stashed link is replayed after login while share-beta is already open', async () => {
+    storage.set(PENDING_SHARE_KEY, INSTAGRAM_LINK);
+    authState.isAuthenticated = true;
+    segmentsState.value = ['share-beta'];
+    shareState.hasShareIntent = false;
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(setParamsMock).toHaveBeenCalledWith({ link: INSTAGRAM_LINK });
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
+  });
 });

@@ -55,10 +55,10 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
   const { showToast } = useToast();
 
   // Whether the /share-beta modal is the focused route, read by the navigate
-  // handler without resubscribing. Root-level modal → its first segment is the
-  // route name.
+  // handler without resubscribing. `includes` (not segments[0]) so a future
+  // route-group nesting can't silently break the reuse check.
   const onShareBetaRef = useRef(false);
-  onShareBetaRef.current = segments[0] === 'share-beta';
+  onShareBetaRef.current = segments.includes('share-beta');
   // resetOnBackground defaults to true; turn it off so the OAuth round-trip
   // (which backgrounds the app) can't wipe a share before we've consumed it.
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent({ resetOnBackground: false });
