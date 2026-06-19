@@ -56,6 +56,11 @@ const LIST_MARKER = /^(?:[-*+]|\d+\.)\s+/;
 // A fenced-code-block delimiter. Tracked so a `#` line *inside* a fence doesn't
 // get mistaken for the section's end heading.
 const CODE_FENCE = /^\s*```/;
+// A "none" marker — the convention for "no user-facing change" — optionally with
+// a parenthetical/punctuated explanation (e.g. `none (CI only)`, `none — chore`).
+// Dropped so it never becomes a changelog entry. A real sentence like
+// "none of the old buttons…" doesn't match (a letter follows `none`), so it's kept.
+const NONE_MARKER = /^none\s*(?:[([{:.\-–—].*)?$/i;
 
 export type ReleaseNotes = { title: string; body?: string };
 
@@ -94,7 +99,7 @@ export function extractReleaseNotes(prBody: string | null | undefined): ReleaseN
   // a mix of real notes and `none` placeholders never ship a junk "none" entry).
   const cleaned = sectionLines
     .map((line) => line.replace(LIST_MARKER, '').trim())
-    .filter((line) => line.length > 0 && line.toLowerCase() !== 'none');
+    .filter((line) => line.length > 0 && !NONE_MARKER.test(line));
 
   if (cleaned.length === 0) return null;
 

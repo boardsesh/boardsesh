@@ -39,9 +39,14 @@ permissions:
   contents: read
 
 concurrency:
-  # Never cancel a production publish mid-flight (matches android-apk-rn.yml).
-  # Serialized per ref, so two OTA runs never race on the changelog push-back.
-  group: mobile-ota-production-${{ github.ref }}
+  # EXACTLY ONE production OTA publish at a time, repo-wide. This workflow owns
+  # changelog.generated.json (regenerate + push to main), so two concurrent runs
+  # would race on that file. A constant group (not per-ref) serializes push +
+  # dispatch + any branch into a single lane. cancel-in-progress: false never
+  # kills a publish mid-flight; a newer run just queues behind it and supersedes
+  # an older pending one — harmless, since the generator crawls all merged PRs, so
+  # the run that wins republishes the latest state anyway.
+  group: mobile-ota-production
   cancel-in-progress: false
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
@@ -229,13 +234,29 @@ jobs:
         if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
         run: |
           set -euo pipefail
+          cp packages/mobile/src/data/changelog.generated.json "$RUNNER_TEMP/changelog.json"
           for attempt in 1 2 3; do
             git fetch origin main
-            if ! git rebase origin/main; then
-              git rebase --abort || true
-              echo "::error::Rebasing the changelog onto main conflicted — unexpected, this workflow is its only writer."
-              exit 1
+            # Idempotent on ENTRIES (ignore the generatedAt timestamp): if main
+            # already carries these entries, we're done — no churn, no conflict.
+            main_entries="$(git show origin/main:packages/mobile/src/data/changelog.generated.json 2>/dev/null | jq -cS '.entries' 2>/dev/null || echo 'missing')"
+            our_entries="$(jq -cS '.entries' "$RUNNER_TEMP/changelog.json")"
+            if [ "$main_entries" = "$our_entries" ]; then
+              echo "main already has the current changelog entries — nothing to push."
+              exit 0
             fi
+            # Land ONLY the changelog file on top of the latest main: hard-reset to
+            # main (so we never revert files changed since our checkout), then
+            # re-apply our generated file. No rebase — a full-file regen can't
+            # auto-merge a different generatedAt.
+            git reset --hard origin/main
+            cp "$RUNNER_TEMP/changelog.json" packages/mobile/src/data/changelog.generated.json
+            git add packages/mobile/src/data/changelog.generated.json
+            if git diff --cached --quiet; then
+              echo "Changelog matches main (timestamp aside) — nothing to push."
+              exit 0
+            fi
+            git commit -m "chore(changelog): refresh from merged PRs [skip ci]"
             if git push origin HEAD:main; then
               echo "Pushed refreshed changelog to main."
               exit 0

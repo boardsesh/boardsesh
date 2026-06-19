@@ -64,6 +64,14 @@ describe('extractReleaseNotes', () => {
     expect(extractReleaseNotes('## Release Notes\n- none')).toBeNull();
     // Multiple `none` placeholders must not slip through as a junk entry.
     expect(extractReleaseNotes('## Release Notes\n- none\n- none')).toBeNull();
+    // A `none` marker with a parenthetical/punctuated explanation is still skip.
+    expect(extractReleaseNotes('## Release Notes\n- none (CI / release-plumbing only)')).toBeNull();
+    expect(extractReleaseNotes('## Release Notes\nNone — internal refactor')).toBeNull();
+    expect(extractReleaseNotes('## Release Notes\nnone.')).toBeNull();
+    // But a real sentence starting with the word "none" is kept.
+    expect(extractReleaseNotes('## Release Notes\nNone of the old buttons jump anymore')).toEqual({
+      title: 'None of the old buttons jump anymore',
+    });
   });
 
   it('drops "none" lines mixed with real notes', () => {
