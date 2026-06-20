@@ -32,12 +32,17 @@ concurrency:
 jobs:
   publish-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       INPUT_BRANCH: ${{ github.event.inputs.branch }}
       INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
+      # NOTE: EXPO_UPDATES_URL is deliberately NOT set job-wide. app.config's
+      # resolveUpdatesConfig flips `updates.url` to the self-hosted server whenever
+      # EXPO_UPDATES_URL is present (+ the committed cert), which would make the EAS
+      # `eas update` step below fail ("expected the EAS url"). So it's set per-step
+      # ONLY on the self-hosted publish steps; the EAS step runs without it.
       # Build-time env inlined into the OTA JS bundle, matching the native build
       # workflows (ios-testflight-rn.yml / android-apk-rn.yml). Without these, an OTA
       # update ships a bundle that re-resolves EXPO_PUBLIC_* to its in-code fallbacks
@@ -55,6 +60,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
 
       - uses: oven-sh/setup-bun@v2
 
@@ -104,6 +111,47 @@ jobs:
         env:
           BRANCH_NAME: ${{ steps.branch.outputs.name }}
 
+      # ---- Self-hosted OTA (expo-open-ota) ----
+      # Publish the SAME JS to our own server under a channel named after the branch,
+      # so a tester on a TestFlight/store build can pull it via the in-app channel
+      # switcher (#3068) — those binaries point at the self-hosted server, never EAS.
+      # Skips gracefully until EXPO_UPDATES_URL is set repo-wide + the signing cert is
+      # committed (mirrors mobile-ota-production.yml's gate).
+      - name: Check self-hosted OTA is wired
+        id: selfhost_gate
+        env:
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+        run: |
+          if [ -z "$EXPO_UPDATES_URL" ] || [ ! -f packages/mobile/certs/certificate.pem ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Self-hosted OTA not wired (EXPO_UPDATES_URL unset or certs/certificate.pem missing) — skipping self-hosted preview publish. See docs/mobile-ota-updates.md."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # iOS and Android publish SEPARATELY for fingerprint parity: GOOGLE_MAPS_API_KEY
+      # perturbs BOTH resolved fingerprints, and only the Android binary bakes it in
+      # (iOS uses Apple Maps). So iOS publishes WITHOUT the key and Android WITH it —
+      # a single `--platform all` publish could only ever match one side. Mirrors
+      # mobile-ota-production.yml. `--channel "$BRANCH_NAME"` maps to a same-named
+      # branch on the server (eoas); testers type that name in the channel switcher.
+      - name: Publish iOS OTA (self-hosted)
+        if: steps.selfhost_gate.outputs.configured == 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        run: vp run mobile:publish -- --channel "$BRANCH_NAME" --platform ios --message "$BRANCH_NAME (branch preview)"
+        env:
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+
+      - name: Publish Android OTA (self-hosted)
+        if: steps.selfhost_gate.outputs.configured == 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        run: vp run mobile:publish -- --channel "$BRANCH_NAME" --platform android --message "$BRANCH_NAME (branch preview)"
+        env:
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+          # Must match the Android native prebuild so the resolved android.config +
+          # fingerprint agree with the installed binary.
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+
       - name: Post update link to PR
         if: github.event_name == 'push'
         uses: actions/github-script@v7
@@ -135,11 +183,16 @@ jobs:
               `**Commit:** \`${sha}\``,
               `**Platform:** ${platform}`,
               '',
-              'Testers with the **preview** build installed will receive this update automatically',
-              'if their channel points to this branch.',
+              '**Tester on a TestFlight / store build** (self-hosted OTA): grant the `tester`',
+              'role, then in-app **More → OTA channel switcher → Custom Channel** and enter:',
+              '',
+              '```',
+              branch,
+              '```',
+              '',
+              '**EAS preview build** (branch switcher): point the preview channel at this branch:',
               '',
               '```bash',
-              `# Point the preview channel at this branch:`,
               `bunx eas-cli@16 channel:edit preview --branch "${branch}"`,
               '```',
             ].join('\n');
