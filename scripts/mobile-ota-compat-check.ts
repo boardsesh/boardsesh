@@ -51,10 +51,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 /**
  * `bunx expo-updates runtimeversion:resolve` is intermittently non-deterministic
  * (≈5% of invocations its autolinking step computes a hash off a different source
- * set), so a single resolve can't be trusted to mean "the fingerprint changed".
- * The check confirms a *difference* before reporting it: a real native change
- * stays different across re-resolves, a flake collapses back to equal. An "equal"
- * is trusted immediately (two independent trees won't collide on a wrong hash).
+ * set, or fails outright and yields null), so a single resolve can't be trusted
+ * to mean "the fingerprint changed". The check confirms a *difference* (and
+ * retries a *null*) before acting: a real native change stays different across
+ * re-resolves, a flake collapses back to equal, a transient null recovers. An
+ * "equal" is trusted immediately (two independent trees won't collide on a wrong
+ * hash). Worst case is MAX_DIFF_CONFIRMATIONS + 1 resolves per side per platform
+ * (≈12 total) — only when reads never settle; the common path is one each.
  */
 const MAX_DIFF_CONFIRMATIONS = 5;
 
@@ -133,16 +136,22 @@ export interface FingerprintPair {
 
 /**
  * PURE (given injected resolvers): resolve a platform's PR and baseline
- * fingerprints, confirming any difference so a flaky resolver can't surface as a
- * false "native change". Trusts an "equal" read immediately (two independent
- * trees won't collide on a wrong hash); on a difference, re-resolves both up to
- * `maxConfirmations` times — returns the equal pair the moment one agrees, or
- * stops early once the same differing pair repeats (a stable, real native change).
+ * fingerprints, smoothing over the resolver's intermittent flakiness so it can't
+ * surface as a false "native change" or a spurious "unknown".
+ *
+ * - An equal, non-null pair is trusted immediately (two independent trees won't
+ *   collide on a wrong hash).
+ * - A difference or a null on either side is retried, up to `maxConfirmations`
+ *   re-resolves: a flaky difference collapses back to equal, a transient null
+ *   recovers to a real hash. A genuine native change stays different — detected
+ *   when the same non-null differing pair repeats — and returns after one
+ *   confirmation. A side that is *persistently* null (or never settles) falls
+ *   through to a null result → an honest "unknown" verdict.
  *
  * `resolveBase` may be backed by a fixed value (the cache-hit path); then only
  * the PR side actually changes across retries, and the PR converging to that
- * constant is what confirms equality. Keep the two resolvers' side effects cheap
- * and idempotent — they're each called up to `maxConfirmations + 1` times.
+ * constant is what confirms equality. Keep the resolvers cheap and idempotent —
+ * each is called up to `maxConfirmations + 1` times.
  */
 export function confirmComparison(
   resolvePr: () => string | null,
@@ -151,23 +160,33 @@ export function confirmComparison(
 ): FingerprintPair {
   let prFingerprint = resolvePr();
   let baseFingerprint = resolveBase();
-
-  if (!prFingerprint || !baseFingerprint || prFingerprint === baseFingerprint) {
-    return { prFingerprint, baseFingerprint };
-  }
-
   let previousPr = prFingerprint;
   let previousBase = baseFingerprint;
+
   for (let attempt = 0; attempt < maxConfirmations; attempt += 1) {
+    if (prFingerprint && baseFingerprint && prFingerprint === baseFingerprint) {
+      return { prFingerprint, baseFingerprint };
+    }
+    // A non-null differing pair seen twice running → a stable, genuine native
+    // change (attempt > 0 so we never short-circuit before re-resolving once).
+    if (
+      attempt > 0 &&
+      prFingerprint &&
+      baseFingerprint &&
+      prFingerprint === previousPr &&
+      baseFingerprint === previousBase
+    ) {
+      break;
+    }
+    // Otherwise re-resolve: a difference may be a flake, a null may be a
+    // transient resolve failure — both can recover on re-read. Keep the last
+    // non-null reading so a later null doesn't erase a good hash.
+    previousPr = prFingerprint;
+    previousBase = baseFingerprint;
     const pr = resolvePr();
     const base = resolveBase();
     if (pr) prFingerprint = pr;
     if (base) baseFingerprint = base;
-    if (pr && base && pr === base) return { prFingerprint: pr, baseFingerprint: base };
-    // The same differing pair twice running → a stable, genuine native change.
-    if (pr && base && pr === previousPr && base === previousBase) break;
-    if (pr) previousPr = pr;
-    if (base) previousBase = base;
   }
   return { prFingerprint, baseFingerprint };
 }
