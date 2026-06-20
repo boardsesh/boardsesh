@@ -813,6 +813,23 @@ describe('useBoardPresence — hydrating & refresh', () => {
     await expect(result.current.refresh()).resolves.toBeUndefined();
     expect(result.current.isRefreshing).toBe(false);
   });
+
+  it('refresh is a no-op while the initial hydration is still in flight', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    // Seeds are still pending, so the board is hydrating.
+    expect(result.current.isHydrating).toBe(true);
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // The refresh bailed: no extra fetches piled on top of the in-flight seeds.
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+    expect(harness.fetchStats).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(false);
+  });
 });
 
 describe('useBoardPresence — connection holder', () => {

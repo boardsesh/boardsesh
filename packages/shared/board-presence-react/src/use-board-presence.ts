@@ -222,10 +222,14 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   currentClimbRef.current = state.currentClimb;
   const undoTargetRef = useRef<BoardPresenceClimb | null>(undoTarget);
   undoTargetRef.current = undoTarget;
+  const isHydratingRef = useRef(isHydrating);
+  isHydratingRef.current = isHydrating;
   const observedSeqRef = useRef(0);
 
   // Tracks mount so async tails (e.g. a refresh resolving after unmount) can skip
   // their trailing state updates, matching the bind effect's per-run `isActive`.
+  // The mount assignment is not redundant with `useRef(true)`: under StrictMode's
+  // mount→cleanup→mount cycle the cleanup flips it false, so we must re-set it true.
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -438,19 +442,21 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   const refresh = useCallback(async (): Promise<void> => {
     const activeBoardId = boardIdRef.current;
     const activeClient = clientRef.current;
-    if (activeBoardId === null || activeClient === null || isRefreshingRef.current) {
+    // Skip while inert, already refreshing, or still doing the initial hydrate —
+    // the seeds are already fetching the same data, so a refresh would just pile on.
+    if (activeBoardId === null || activeClient === null || isRefreshingRef.current || isHydratingRef.current) {
       return;
     }
     isRefreshingRef.current = true;
     setIsRefreshing(true);
     try {
-      // Ignore a late result if the board was switched out mid-flight.
+      // Ignore a late result after unmount or a board switch mid-flight.
       await applyBoardPresenceCatchUp(
         activeClient,
         activeBoardId,
         dispatch,
         observedSeqRef,
-        () => boardIdRef.current === activeBoardId,
+        () => mountedRef.current && boardIdRef.current === activeBoardId,
       );
     } finally {
       // Only clear the flags if still mounted and on the board this refresh was
