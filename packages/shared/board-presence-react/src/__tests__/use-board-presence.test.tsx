@@ -684,7 +684,7 @@ describe('useBoardPresence — hydrating & refresh', () => {
   it('re-raises isHydrating synchronously on a board switch (no empty-state frame)', async () => {
     const harness = makeClient();
     const { result, rerender } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
-      initialProps: { boardId: 1 },
+      initialProps: { boardId: 1 as number | null },
     });
 
     await act(async () => {

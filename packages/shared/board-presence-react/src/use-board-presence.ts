@@ -155,11 +155,9 @@ async function applyBoardPresenceCatchUp(
   shouldApply: () => boolean,
 ): Promise<void> {
   const startedAtSeq = observedSeqRef.current;
-  const connectionFetch = client.fetchConnection;
-  const connectionPromise =
-    connectionFetch === undefined
-      ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
-      : connectionFetch(boardId);
+  // Optional call (not a bare `client.fetchConnection` reference) so we don't trip
+  // typescript/unbound-method; `??` supplies the no-op for clients without it.
+  const connectionPromise = client.fetchConnection?.(boardId) ?? Promise.resolve(undefined);
 
   const [recentResult, statsResult, connectionResult] = await Promise.allSettled([
     client.fetchRecentClimbs(boardId),
@@ -183,7 +181,7 @@ async function applyBoardPresenceCatchUp(
     dispatch({ type: 'REFRESH_STATS', payload: { stats: statsResult.value, upToSeq: repairedThroughSeq } });
   }
 
-  if (connectionFetch !== undefined && connectionResult.status === 'fulfilled') {
+  if (client.fetchConnection !== undefined && connectionResult.status === 'fulfilled') {
     dispatch({
       type: 'REFRESH_CONNECTION',
       payload: { holder: connectionResult.value ?? null, upToSeq: repairedThroughSeq },

@@ -66,8 +66,9 @@ vi.mock('react-native', () => ({
     children,
     onPress,
     accessibilityLabel,
-  }: ViewMockProps & { onPress?: () => void; accessibilityLabel?: string }) =>
-    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+    disabled,
+  }: ViewMockProps & { onPress?: () => void; accessibilityLabel?: string; disabled?: boolean }) =>
+    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, disabled }, children),
 }));
 
 vi.mock('@gorhom/bottom-sheet', () => ({
@@ -956,7 +957,7 @@ describe('BoardSheet', () => {
   it('shows skeleton placeholders instead of history while hydrating', () => {
     presence.isHydrating = true;
     presence.history = [makeClimb('hidden-while-loading', 1)];
-    const { container } = render(
+    const { container, getByLabelText } = render(
       createElement(BoardSheet, {
         boardLabel: 'Garage Wall',
         onClose: noop,
@@ -967,8 +968,10 @@ describe('BoardSheet', () => {
     );
     // The real history rows are withheld while the skeleton is up.
     expect(container.textContent).not.toContain('hidden-while-loading');
-    // The header refresh control is still rendered (disabled) during the hydrate.
+    // The header refresh control is rendered but disabled during the hydrate, so a
+    // tap can't kick off a redundant fetch alongside the initial seeds.
     expect(container.querySelector('[data-icon="refresh"]')).not.toBeNull();
+    expect((getByLabelText('mobile.boardPresence.refresh') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('shows skeleton placeholders and a spinning refresh control while refreshing', () => {
