@@ -681,6 +681,34 @@ describe('useBoardPresence — hydrating & refresh', () => {
     await waitFor(() => expect(result.current.isHydrating).toBe(false));
   });
 
+  it('re-raises isHydrating synchronously on a board switch (no empty-state frame)', async () => {
+    const harness = makeClient();
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
+      initialProps: { boardId: 1 },
+    });
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('a', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+    });
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    // Switching boards shows the skeleton again immediately — the render-phase
+    // reset raises it before the bind effect runs, so no empty-state flash.
+    rerender({ boardId: 2 });
+    expect(result.current.isHydrating).toBe(true);
+
+    await act(async () => {
+      await harness.resolveRecent(2, [climb('b', 1)]);
+      await harness.resolveStats(2, { ...emptyStats, climbsSentCount: 1 });
+    });
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    // Unbinding (null board) drops the skeleton too.
+    rerender({ boardId: null });
+    expect(result.current.isHydrating).toBe(false);
+  });
+
   it('refresh re-fetches and merges recent climbs, stats, and holder while toggling isRefreshing', async () => {
     const harness = makeClient();
     const { result } = renderHook(() => useBoardPresence(1, harness.client));

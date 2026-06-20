@@ -668,7 +668,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
         </Text>
         <Pressable
           onPress={() => void refresh()}
-          disabled={isRefreshing}
+          disabled={isLoading}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.boardPresence.refresh')}

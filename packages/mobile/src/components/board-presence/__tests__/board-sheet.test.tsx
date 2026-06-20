@@ -967,7 +967,26 @@ describe('BoardSheet', () => {
     );
     // The real history rows are withheld while the skeleton is up.
     expect(container.textContent).not.toContain('hidden-while-loading');
-    // The header refresh control stays available during the initial hydrate.
+    // The header refresh control is still rendered (disabled) during the hydrate.
     expect(container.querySelector('[data-icon="refresh"]')).not.toBeNull();
+  });
+
+  it('shows skeleton placeholders and a spinning refresh control while refreshing', () => {
+    presence.isRefreshing = true;
+    presence.history = [makeClimb('hidden-while-refreshing', 1)];
+    const { container } = render(
+      createElement(BoardSheet, {
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+      }),
+    );
+    // Same skeleton path as hydration: real rows withheld while refreshing.
+    expect(container.textContent).not.toContain('hidden-while-refreshing');
+    // The refresh control swaps its icon for a spinner mid-refresh.
+    expect(container.querySelector('[data-icon="refresh"]')).toBeNull();
+    expect(container.querySelector('[data-loading="true"]')).not.toBeNull();
   });
 });

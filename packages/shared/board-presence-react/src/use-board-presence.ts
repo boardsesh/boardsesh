@@ -191,15 +191,28 @@ async function applyBoardPresenceCatchUp(
   }
 }
 
+type HydrationBindKey = { boardId: number | null; client: BoardPresenceClient | null };
+
 export function useBoardPresence(boardId: number | null, client: BoardPresenceClient | null): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
-  // Seed true when there's a board to hydrate so the first paint already shows the
-  // skeleton (the bind effect, which sets it, only runs after the first render).
-  const [isHydrating, setIsHydrating] = useState(() => boardId !== null && client !== null);
+  const [isHydrating, setIsHydrating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [undoTarget, setUndoTarget] = useState<BoardPresenceClimb | null>(null);
   const isRefreshingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Raise the skeleton synchronously during render whenever the bound board (or
+  // client) changes — including the first render. Doing it here (not in the bind
+  // effect, which runs after render) avoids flashing the empty state for one frame
+  // before the skeleton appears on a fresh bind or a board switch. The seed-settle
+  // in the effect lowers it again. Mirrors the effect's `[boardId, client]` deps;
+  // the guard keeps the render-phase update from looping.
+  const [hydrationBindKey, setHydrationBindKey] = useState<HydrationBindKey | null>(null);
+  if (hydrationBindKey === null || hydrationBindKey.boardId !== boardId || hydrationBindKey.client !== client) {
+    setHydrationBindKey({ boardId, client });
+    setIsHydrating(boardId !== null && client !== null);
+  }
 
   // Live refs so the action callbacks stay identity-stable while still reading
   // the current board, client, and restore target.
@@ -213,17 +226,26 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   undoTargetRef.current = undoTarget;
   const observedSeqRef = useRef(0);
 
+  // Tracks mount so async tails (e.g. a refresh resolving after unmount) can skip
+  // their trailing state updates, matching the bind effect's per-run `isActive`.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     // No board or no transport: collapse to the initial state and stay inert.
     // RESET clears stats too (they live in the reducer now).
     if (boardId === null || client === null) {
       dispatch({ type: 'RESET' });
       setIsLive(false);
-      setIsHydrating(false);
       setIsRefreshing(false);
       isRefreshingRef.current = false;
       setUndoTarget(null);
       observedSeqRef.current = 0;
+      // isHydrating is driven by the render-phase bind-key reset above.
       return;
     }
 
@@ -232,11 +254,10 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     dispatch({ type: 'RESET' });
     setUndoTarget(null);
     observedSeqRef.current = 0;
-    // Drop any in-flight refresh from the previous board and show the skeleton
-    // until the initial backfill below settles for THIS board.
+    // Drop any in-flight refresh from the previous board. The skeleton is raised
+    // by the render-phase bind-key reset above; the seed-settle below lowers it.
     isRefreshingRef.current = false;
     setIsRefreshing(false);
-    setIsHydrating(true);
 
     let isActive = true;
     let catchUpInFlight = false;
@@ -434,9 +455,9 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
         () => boardIdRef.current === activeBoardId,
       );
     } finally {
-      // Only clear the flags if we're still on the board this refresh was for —
-      // a board switch already reset them and may have started a fresh refresh.
-      if (boardIdRef.current === activeBoardId) {
+      // Only clear the flags if still mounted and on the board this refresh was
+      // for — a board switch already reset them and may have started a fresh one.
+      if (mountedRef.current && boardIdRef.current === activeBoardId) {
         isRefreshingRef.current = false;
         setIsRefreshing(false);
       }
