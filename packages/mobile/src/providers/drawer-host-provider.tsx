@@ -27,6 +27,7 @@ import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
+import { useFreezeDebugFlag } from '../lib/freeze-debug-store';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
@@ -185,6 +186,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // menu so its mount-time enter animation uses the real value, not the hook's
   // conservative `true` default.
   const reduceMotion = useReduceMotion();
+  // Diagnostic (preview/dev only): stop mounting the always-on gorhom sheets to
+  // test whether a closed-sheet container swallows climb-list touches on Android
+  // 16. Default false in production. See freeze-debug-store.
+  const unmountSheets = useFreezeDebugFlag('unmountSheets');
 
   // Climb to open after the boardConfig override has committed. We can't
   // open synchronously inside openPlayDrawer when an override is supplied
@@ -648,7 +653,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onClose={closeAddToPlaylist}
         />
       ) : null}
-      {queueBoard ? (
+      {!unmountSheets && queueBoard ? (
         <QueueSheet
           ref={queueSheetRef}
           board={queueBoard}
@@ -659,17 +664,19 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onTickHistory={handleQueueTickHistory}
         />
       ) : null}
-      <BoardSheet
-        ref={boardSheetRef}
-        boardLabel={boardSheetLabel}
-        boardConfig={storedActiveBoardConfig}
-        onClose={requestCloseBoardSheet}
-        onSwitchBoard={handleSwitchBoardFromSheet}
-        onClimbPress={handleBoardSheetClimbPress}
-        onAddToQueue={handleBoardSheetAddToQueue}
-        onOpenPlaylist={handleBoardSheetOpenPlaylist}
-        onOpenActions={handleBoardSheetOpenActions}
-      />
+      {!unmountSheets ? (
+        <BoardSheet
+          ref={boardSheetRef}
+          boardLabel={boardSheetLabel}
+          boardConfig={storedActiveBoardConfig}
+          onClose={requestCloseBoardSheet}
+          onSwitchBoard={handleSwitchBoardFromSheet}
+          onClimbPress={handleBoardSheetClimbPress}
+          onAddToQueue={handleBoardSheetAddToQueue}
+          onOpenPlaylist={handleBoardSheetOpenPlaylist}
+          onOpenActions={handleBoardSheetOpenActions}
+        />
+      ) : null}
       {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
           long-pressed (RN-screens doesn't strictly guarantee cross-overlay z-order). */}
