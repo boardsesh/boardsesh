@@ -22,7 +22,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
+import { useBoardPresenceActions, useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, BoardPresenceClimb, BoardPresenceHardestSend, Climb } from '@boardsesh/shared-schema';
 import { GlassSheetBackground } from '../GlassSheetBackground';
@@ -32,6 +32,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
+import { BoardSheetHistorySkeleton, BoardSheetStatsSkeleton } from './BoardSheetSkeleton';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -193,7 +194,11 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   boardConfigSignatureRef.current = boardConfigSignature;
 
   const { currentClimb } = useBoardPresenceCurrent();
-  const { history, stats } = useBoardPresenceFeed();
+  const { history, stats, isHydrating, isRefreshing } = useBoardPresenceFeed();
+  const { refresh } = useBoardPresenceActions();
+  // Show skeleton content on first open (before the backfill settles) and while a
+  // manual refresh is in flight.
+  const isLoading = isHydrating || isRefreshing;
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const boardPresenceBoardIdRef = useRef(boardPresenceBoardId);
   boardPresenceBoardIdRef.current = boardPresenceBoardId;
@@ -533,7 +538,9 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
             gradeColor={getGradeColor(currentClimb?.grade ?? '') ?? DEFAULT_GRADE_COLOR}
           />
         )}
-        {stats ? (
+        {isLoading ? (
+          <BoardSheetStatsSkeleton />
+        ) : stats ? (
           <View style={styles.statsBlock}>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
               {t('mobile.boardPresence.statsHeader')}
@@ -581,7 +588,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
             ) : null}
           </View>
         ) : null}
-        {visibleHistory.length > 0 ? (
+        {!isLoading && visibleHistory.length > 0 ? (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
             {t('mobile.boardPresence.historyHeader')}
           </Text>
@@ -592,6 +599,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       currentClimb,
       boardConfig,
       stats,
+      isLoading,
       visibleHistory.length,
       systemColors,
       brandColors.warning,
@@ -654,15 +662,28 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
         <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
           {boardLabel ?? t('mobile.boardPresence.title')}
         </Text>
-        <View pointerEvents="none" style={styles.headerAction} />
+        <Pressable
+          onPress={() => void refresh()}
+          disabled={isRefreshing}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.boardPresence.refresh')}
+          style={styles.headerAction}
+        >
+          {isRefreshing ? (
+            <ActivityIndicator size="small" style={styles.actionSpinner} />
+          ) : (
+            <Icon name="refresh" size={20} color={systemColors.secondaryLabel} />
+          )}
+        </Pressable>
       </View>
 
       <BottomSheetFlatList
-        data={visibleHistory}
+        data={isLoading ? [] : visibleHistory}
         keyExtractor={boardPresenceHistoryKeyExtractor}
         renderItem={renderHistoryItem}
         ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
+        ListEmptyComponent={isLoading ? <BoardSheetHistorySkeleton /> : listEmpty}
         contentContainerStyle={{ paddingBottom: spacing[4] }}
       />
 

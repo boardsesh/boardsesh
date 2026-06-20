@@ -8,6 +8,12 @@ const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
   history: [] as BoardPresenceClimb[],
   stats: null as BoardPresenceStats | null,
+  isHydrating: false,
+  isRefreshing: false,
+}));
+
+const presenceActions = vi.hoisted(() => ({
+  refresh: vi.fn(async () => {}),
 }));
 
 const presenceControls = vi.hoisted(() => ({
@@ -116,7 +122,13 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     undoTarget: null,
     isLive: true,
   }),
-  useBoardPresenceFeed: () => ({ history: presence.history, stats: presence.stats }),
+  useBoardPresenceFeed: () => ({
+    history: presence.history,
+    stats: presence.stats,
+    isHydrating: presence.isHydrating,
+    isRefreshing: presence.isRefreshing,
+  }),
+  useBoardPresenceActions: () => ({ refresh: presenceActions.refresh }),
 }));
 
 vi.mock('../../../providers/board-presence-provider', () => ({
@@ -277,6 +289,9 @@ describe('BoardSheet', () => {
     presence.currentClimb = null;
     presence.history = [];
     presence.stats = null;
+    presence.isHydrating = false;
+    presence.isRefreshing = false;
+    presenceActions.refresh.mockClear();
     presenceControls.boardId = 123;
     analytics.track.mockClear();
     graphql.request.mockReset();
@@ -921,5 +936,38 @@ describe('BoardSheet', () => {
     expect(container.querySelector('[data-icon="close"]')).toBeNull();
     fireEvent.click(getByLabelText('mobile.boardPresence.close'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('forces a refresh from the header refresh control', () => {
+    const { container, getByLabelText } = render(
+      createElement(BoardSheet, {
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+      }),
+    );
+    expect(container.querySelector('[data-icon="refresh"]')).not.toBeNull();
+    fireEvent.click(getByLabelText('mobile.boardPresence.refresh'));
+    expect(presenceActions.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows skeleton placeholders instead of history while hydrating', () => {
+    presence.isHydrating = true;
+    presence.history = [makeClimb('hidden-while-loading', 1)];
+    const { container } = render(
+      createElement(BoardSheet, {
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+      }),
+    );
+    // The real history rows are withheld while the skeleton is up.
+    expect(container.textContent).not.toContain('hidden-while-loading');
+    // The header refresh control stays available during the initial hydrate.
+    expect(container.querySelector('[data-icon="refresh"]')).not.toBeNull();
   });
 });

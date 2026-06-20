@@ -14,11 +14,12 @@
 // reducer). We also guard every async result against unmount and against a
 // board switch (late results for a previous board are ignored).
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import {
   boardPresenceReducer,
   initialBoardPresenceState,
   mapBoardPresenceEnvelopeToAction,
+  type BoardPresenceAction,
   type BoardPresenceState,
 } from '@boardsesh/board-presence';
 import type {
@@ -37,11 +38,14 @@ export type UseBoardPresenceResult = {
   holder: BoardPresenceCurrentState['holder'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
+  isHydrating: BoardPresenceFeedState['isHydrating'];
+  isRefreshing: BoardPresenceFeedState['isRefreshing'];
   isLive: BoardPresenceCurrentState['isLive'];
   reportClimb: BoardPresenceActions['reportClimb'];
   reportClimbWithUndoTarget: BoardPresenceActions['reportClimbWithUndoTarget'];
   reportDisconnect: BoardPresenceActions['reportDisconnect'];
   getUndoTarget: BoardPresenceActions['getUndoTarget'];
+  refresh: BoardPresenceActions['refresh'];
 };
 
 export type BoardPresenceReportResult = {
@@ -71,6 +75,14 @@ export type BoardPresenceCurrentState = {
 export type BoardPresenceFeedState = {
   history: BoardPresenceState['history'];
   stats: BoardPresenceStats | null;
+  /**
+   * True from the moment a board binds until the initial backfill (recent climbs
+   * + stats) settles. Lets the feed surface a skeleton on first open instead of
+   * the empty state, which is otherwise indistinguishable from a quiet board.
+   */
+  isHydrating: boolean;
+  /** True while a user-triggered `refresh()` is in flight. */
+  isRefreshing: boolean;
 };
 
 export type BoardPresenceActions = {
@@ -91,6 +103,12 @@ export type BoardPresenceActions = {
   reportDisconnect: () => Promise<boolean>;
   /** Latest captured undo target for action-only consumers that need a ref-like read. */
   getUndoTarget: () => BoardPresenceClimb | null;
+  /**
+   * Force a re-fetch of the active board's recent climbs, stats, and connection
+   * holder, dispatching the same catch-up actions the live-gap path uses. Resolves
+   * when the fetch settles; no-op when inert or already refreshing.
+   */
+  refresh: () => Promise<void>;
 };
 
 function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
@@ -110,10 +128,67 @@ function highestClimbSeq(climbs: BoardPresenceClimb[]): number {
   return climbs.reduce((highestSeq, climb) => Math.max(highestSeq, climb.seq), 0);
 }
 
+/**
+ * Shared catch-up body for both the live-gap path and the user `refresh()`:
+ * re-fetch recent climbs + stats + connection holder for `boardId` and dispatch
+ * the seq-guarded merge actions. `observedSeqRef` is advanced past anything the
+ * recent fetch repaired so a later live event doesn't re-trigger catch-up for
+ * the same gap. `shouldApply` is re-checked AFTER the fetch settles — when it
+ * returns false (unmount or a board switch landed mid-flight) nothing is applied,
+ * so a late result for a superseded board can't clobber the new board's state.
+ * Callers own their own in-flight guarding.
+ */
+async function applyBoardPresenceCatchUp(
+  client: BoardPresenceClient,
+  boardId: number,
+  dispatch: Dispatch<BoardPresenceAction>,
+  observedSeqRef: MutableRefObject<number>,
+  shouldApply: () => boolean,
+): Promise<void> {
+  const startedAtSeq = observedSeqRef.current;
+  const connectionFetch = client.fetchConnection;
+  const connectionPromise =
+    connectionFetch === undefined
+      ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
+      : connectionFetch(boardId);
+
+  const [recentResult, statsResult, connectionResult] = await Promise.allSettled([
+    client.fetchRecentClimbs(boardId),
+    client.fetchStats(boardId),
+    connectionPromise,
+  ] as const);
+
+  if (!shouldApply()) {
+    return;
+  }
+
+  let repairedThroughSeq = startedAtSeq;
+  if (recentResult.status === 'fulfilled') {
+    const recentClimbs = recentResult.value;
+    repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
+    observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
+    dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
+  }
+
+  if (statsResult.status === 'fulfilled') {
+    dispatch({ type: 'REFRESH_STATS', payload: { stats: statsResult.value, upToSeq: repairedThroughSeq } });
+  }
+
+  if (connectionFetch !== undefined && connectionResult.status === 'fulfilled') {
+    dispatch({
+      type: 'REFRESH_CONNECTION',
+      payload: { holder: connectionResult.value ?? null, upToSeq: repairedThroughSeq },
+    });
+  }
+}
+
 export function useBoardPresence(boardId: number | null, client: BoardPresenceClient | null): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [undoTarget, setUndoTarget] = useState<BoardPresenceClimb | null>(null);
+  const isRefreshingRef = useRef(false);
 
   // Live refs so the action callbacks stay identity-stable while still reading
   // the current board, client, and restore target.
@@ -133,6 +208,9 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     if (boardId === null || client === null) {
       dispatch({ type: 'RESET' });
       setIsLive(false);
+      setIsHydrating(false);
+      setIsRefreshing(false);
+      isRefreshingRef.current = false;
       setUndoTarget(null);
       observedSeqRef.current = 0;
       return;
@@ -143,6 +221,11 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     dispatch({ type: 'RESET' });
     setUndoTarget(null);
     observedSeqRef.current = 0;
+    // Drop any in-flight refresh from the previous board and show the skeleton
+    // until the initial backfill below settles for THIS board.
+    isRefreshingRef.current = false;
+    setIsRefreshing(false);
+    setIsHydrating(true);
 
     let isActive = true;
     let catchUpInFlight = false;
@@ -165,45 +248,13 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       }
 
       catchUpInFlight = true;
-      const startedAtSeq = observedSeqRef.current;
-      const connectionFetch = client.fetchConnection;
-      const connectionPromise =
-        connectionFetch === undefined
-          ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
-          : connectionFetch(boardId);
-
-      void Promise.allSettled([
-        client.fetchRecentClimbs(boardId),
-        client.fetchStats(boardId),
-        connectionPromise,
-      ] as const)
-        .then(([recentResult, statsResult, connectionResult]) => {
-          if (!isActive || boardIdRef.current !== subscribedBoardId) {
-            return;
-          }
-
-          let repairedThroughSeq = startedAtSeq;
-          if (recentResult.status === 'fulfilled') {
-            const recentClimbs = recentResult.value;
-            repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
-            observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
-            dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
-          }
-
-          if (statsResult.status === 'fulfilled') {
-            dispatch({
-              type: 'REFRESH_STATS',
-              payload: { stats: statsResult.value, upToSeq: repairedThroughSeq },
-            });
-          }
-
-          if (connectionFetch !== undefined && connectionResult.status === 'fulfilled') {
-            dispatch({
-              type: 'REFRESH_CONNECTION',
-              payload: { holder: connectionResult.value ?? null, upToSeq: repairedThroughSeq },
-            });
-          }
-        })
+      void applyBoardPresenceCatchUp(
+        client,
+        boardId,
+        dispatch,
+        observedSeqRef,
+        () => isActive && boardIdRef.current === subscribedBoardId,
+      )
         .finally(() => {
           if (!isActive) {
             return;
@@ -259,7 +310,7 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     //    fresh `BoardStatsUpdated` over the subscription above (handled by the
     //    reducer), so the tiles update live without re-fetching. SEED_STATS is a
     //    no-op once any live push has landed, so it can't clobber fresher data.
-    void client
+    const recentSeed = client
       .fetchRecentClimbs(boardId)
       .then((recentClimbs) => {
         if (isActive && boardIdRef.current === subscribedBoardId) {
@@ -273,7 +324,7 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
         hasSequenceBaseline = observedSeqRef.current > 0;
       });
 
-    void client
+    const statsSeed = client
       .fetchStats(boardId)
       .then((nextStats) => {
         if (isActive && boardIdRef.current === subscribedBoardId) {
@@ -283,6 +334,14 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       .catch(() => {
         // Stats are best-effort; absence renders as "no stats yet".
       });
+
+    // Skeleton stays up until both seeds settle for this board; after that the
+    // real history/stats (or the empty state) render.
+    void Promise.allSettled([recentSeed, statsSeed]).then(() => {
+      if (isActive && boardIdRef.current === subscribedBoardId) {
+        setIsHydrating(false);
+      }
+    });
 
     // 4) Seed the current connection holder for a late joiner. `fetchConnection`
     //    is optional — `?.` skips clients that don't implement it (returns
@@ -347,6 +406,33 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     return activeClient.reportDisconnect(activeBoardId);
   }, []);
 
+  const refresh = useCallback(async (): Promise<void> => {
+    const activeBoardId = boardIdRef.current;
+    const activeClient = clientRef.current;
+    if (activeBoardId === null || activeClient === null || isRefreshingRef.current) {
+      return;
+    }
+    isRefreshingRef.current = true;
+    setIsRefreshing(true);
+    try {
+      // Ignore a late result if the board was switched out mid-flight.
+      await applyBoardPresenceCatchUp(
+        activeClient,
+        activeBoardId,
+        dispatch,
+        observedSeqRef,
+        () => boardIdRef.current === activeBoardId,
+      );
+    } finally {
+      // Only clear the flags if we're still on the board this refresh was for —
+      // a board switch already reset them and may have started a fresh refresh.
+      if (boardIdRef.current === activeBoardId) {
+        isRefreshingRef.current = false;
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
   return useMemo<UseBoardPresenceResult>(
     () => ({
       currentClimb: state.currentClimb,
@@ -355,11 +441,14 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       holder: state.holder,
       history: state.history,
       stats: state.stats,
+      isHydrating,
+      isRefreshing,
       isLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
       getUndoTarget,
+      refresh,
     }),
     [
       state.currentClimb,
@@ -368,11 +457,14 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
       state.holder,
       state.history,
       state.stats,
+      isHydrating,
+      isRefreshing,
       isLive,
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
       getUndoTarget,
+      refresh,
     ],
   );
 }

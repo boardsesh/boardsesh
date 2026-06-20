@@ -389,6 +389,7 @@
       "switchBoard": "Changer de mur",
       "switchBoardAria": "Passer à un autre mur",
       "close": "Fermer",
+      "refresh": "Actualiser",
       "setByLine": "Ouvert par {{setter}}",
       "drivenByA11y": "{{name}} allume le mur. Ouvre le profil.",
       "drivenByAnonA11y": "Quelqu'un allume le mur.",

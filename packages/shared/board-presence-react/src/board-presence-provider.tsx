@@ -40,8 +40,9 @@ export function BoardPresenceProvider({
       reportClimbWithUndoTarget: value.reportClimbWithUndoTarget,
       reportDisconnect: value.reportDisconnect,
       getUndoTarget: value.getUndoTarget,
+      refresh: value.refresh,
     }),
-    [value.reportClimb, value.reportClimbWithUndoTarget, value.reportDisconnect, value.getUndoTarget],
+    [value.reportClimb, value.reportClimbWithUndoTarget, value.reportDisconnect, value.getUndoTarget, value.refresh],
   );
   const current = useMemo<BoardPresenceCurrentState>(
     () => ({
@@ -57,8 +58,10 @@ export function BoardPresenceProvider({
     () => ({
       history: value.history,
       stats: value.stats,
+      isHydrating: value.isHydrating,
+      isRefreshing: value.isRefreshing,
     }),
-    [value.history, value.stats],
+    [value.history, value.stats, value.isHydrating, value.isRefreshing],
   );
   // Bare primitive on purpose — no useMemo. A boolean is compared by value, so
   // the context only re-renders consumers when it actually flips (not on every

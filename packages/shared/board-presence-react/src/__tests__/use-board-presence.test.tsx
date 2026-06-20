@@ -662,6 +662,131 @@ describe('useBoardPresence — actions', () => {
   });
 });
 
+describe('useBoardPresence — hydrating & refresh', () => {
+  it('reports isHydrating until both the recent-climbs and stats seeds settle', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    // Skeleton flag is up from the moment the board binds.
+    expect(result.current.isHydrating).toBe(true);
+
+    // Only the recent fetch settled — stats still pending keeps hydration up.
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('a', 2)]);
+    });
+    expect(result.current.isHydrating).toBe(true);
+
+    await act(async () => {
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+    });
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+  });
+
+  it('refresh re-fetches and merges recent climbs, stats, and holder while toggling isRefreshing', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(1);
+    expect(result.current.isRefreshing).toBe(false);
+
+    let refreshPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      refreshPromise = result.current.refresh();
+    });
+    // The synchronous part of refresh sets the flag and fires the fetches.
+    expect(result.current.isRefreshing).toBe(true);
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+    expect(harness.fetchStats).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('second', 2), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 5, hardestGrade: 'V5' });
+      await harness.resolveConnection(1, holder({ userId: 'after-refresh' }));
+      await refreshPromise;
+    });
+
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.history.map((entry) => entry.seq)).toEqual([2, 1]);
+    expect(result.current.stats?.climbsSentCount).toBe(5);
+    expect(result.current.holder?.userId).toBe('after-refresh');
+  });
+
+  it('coalesces a refresh requested while one is already in flight (no double fetch)', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+    });
+
+    let firstRefresh: Promise<void> = Promise.resolve();
+    act(() => {
+      firstRefresh = result.current.refresh();
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+
+    // A second tap while the first is in flight is a no-op (guarded by the ref).
+    act(() => {
+      void result.current.refresh();
+    });
+    expect(harness.fetchRecentClimbs).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+      await firstRefresh;
+    });
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it('ignores a refresh result for a board that was switched away mid-flight', async () => {
+    const harness = makeClient();
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
+      initialProps: { boardId: 1 },
+    });
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('b1', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'b1' }));
+    });
+
+    let refreshPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      refreshPromise = result.current.refresh();
+    });
+
+    // Switch boards before board 1's refresh resolves.
+    rerender({ boardId: 2 });
+    expect(result.current.history).toEqual([]);
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('b1-late', 9)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 99 });
+      await harness.resolveConnection(1, holder({ userId: 'b1-late' }));
+      await refreshPromise;
+    });
+
+    // The stale board-1 refresh must not write into board 2's state.
+    expect(result.current.history).toEqual([]);
+    expect(result.current.stats).toBeNull();
+    expect(result.current.holder).toBeNull();
+  });
+
+  it('refresh is a no-op when inert', async () => {
+    const { result } = renderHook(() => useBoardPresence(null, null));
+    await expect(result.current.refresh()).resolves.toBeUndefined();
+    expect(result.current.isRefreshing).toBe(false);
+  });
+});
+
 describe('useBoardPresence — connection holder', () => {
   it('seeds the holder from fetchConnection for a late joiner', async () => {
     const harness = makeClient();

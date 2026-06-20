@@ -389,6 +389,7 @@
       "switchBoard": "Switch board",
       "switchBoardAria": "Switch to a different board",
       "close": "Close",
+      "refresh": "Refresh",
       "setByLine": "Set by {{setter}}",
       "drivenByA11y": "{{name}} is lighting the wall. Open profile.",
       "drivenByAnonA11y": "Someone is lighting the wall.",
