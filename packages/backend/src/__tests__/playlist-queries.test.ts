@@ -317,6 +317,14 @@ describe('playlistClimbs resolver', () => {
     expect(byUuid['climb-tension'].angle).toBe(25);
   });
 
+  it('rejects activeBoardName without activeAngle (they must be provided together)', async () => {
+    const ctx = makeCtx();
+    // Validation runs before any DB access, so no select mocks are needed.
+    await expect(
+      playlistQueries.playlistClimbs(null, { input: { playlistId: 'test-pl', activeBoardName: 'kilter' } }, ctx),
+    ).rejects.toThrow();
+  });
+
   it('should return climbs in specific-board mode when boardName is provided', async () => {
     const ctx = makeCtx();
 

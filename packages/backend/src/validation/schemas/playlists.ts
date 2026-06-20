@@ -86,20 +86,26 @@ export const GetPlaylistsForClimbsInputSchema = z.object({
   climbUuids: z.array(ExternalUUIDSchema).min(1).max(500),
 });
 
-export const GetPlaylistClimbsInputSchema = z.object({
-  playlistId: z.string().min(1),
-  boardName: BoardNameSchema.optional(),
-  layoutId: z.number().int().positive().optional(),
-  sizeId: z.number().int().positive().optional(),
-  setIds: z.string().min(1).optional(),
-  angle: z.number().int().optional(),
-  // All-boards mode only: render on-active-board climbs' grades at the user's
-  // selected angle instead of the added-at / most-ascents fallback.
-  activeBoardName: BoardNameSchema.optional(),
-  activeAngle: z.number().int().min(0).max(90).optional(),
-  page: z.number().int().min(0).optional(),
-  pageSize: z.number().int().min(1).max(100).optional(),
-});
+export const GetPlaylistClimbsInputSchema = z
+  .object({
+    playlistId: z.string().min(1),
+    boardName: BoardNameSchema.optional(),
+    layoutId: z.number().int().positive().optional(),
+    sizeId: z.number().int().positive().optional(),
+    setIds: z.string().min(1).optional(),
+    angle: z.number().int().optional(),
+    // All-boards mode only: render on-active-board climbs' grades at the user's
+    // selected angle instead of the added-at / most-ascents fallback. Both are
+    // required together — one without the other would silently no-op.
+    activeBoardName: BoardNameSchema.optional(),
+    activeAngle: z.number().int().min(0).max(90).optional(),
+    page: z.number().int().min(0).optional(),
+    pageSize: z.number().int().min(1).max(100).optional(),
+  })
+  .refine((input) => (input.activeBoardName == null) === (input.activeAngle == null), {
+    message: 'activeBoardName and activeAngle must be provided together',
+    path: ['activeAngle'],
+  });
 
 export const DiscoverPlaylistsInputSchema = z.object({
   boardType: BoardNameSchema.optional(),
