@@ -226,6 +226,11 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   const isHydratingRef = useRef(isHydrating);
   isHydratingRef.current = isHydrating;
   const observedSeqRef = useRef(0);
+  // Monotonic token bumped on every bind (board/client change). A manual refresh
+  // captures it and only applies its result if it still matches — so a refresh
+  // whose binding was torn down and later re-created for the SAME board (an A→B→A
+  // switch) is still treated as stale, which a plain boardId check would miss.
+  const bindGenerationRef = useRef(0);
 
   // Tracks mount so async tails (e.g. a refresh resolving after unmount) can skip
   // their trailing state updates, matching the bind effect's per-run `isActive`.
@@ -239,6 +244,8 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   }, []);
 
   useEffect(() => {
+    // Every (re)bind supersedes any in-flight manual refresh from a prior binding.
+    bindGenerationRef.current += 1;
     // No board or no transport: collapse to the initial state and stay inert.
     // RESET clears stats too (they live in the reducer now).
     if (boardId === null || client === null) {
@@ -448,21 +455,19 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
     if (activeBoardId === null || activeClient === null || isRefreshingRef.current || isHydratingRef.current) {
       return;
     }
+    // Capture the binding this refresh belongs to; any (re)bind bumps the token,
+    // so an A→B→A switch invalidates this run even though the board id matches again.
+    const refreshGeneration = bindGenerationRef.current;
+    const isCurrentBinding = () => mountedRef.current && bindGenerationRef.current === refreshGeneration;
     isRefreshingRef.current = true;
     setIsRefreshing(true);
     try {
-      // Ignore a late result after unmount or a board switch mid-flight.
-      await applyBoardPresenceCatchUp(
-        activeClient,
-        activeBoardId,
-        dispatch,
-        observedSeqRef,
-        () => mountedRef.current && boardIdRef.current === activeBoardId,
-      );
+      // Ignore a late result after unmount or a (re)bind mid-flight.
+      await applyBoardPresenceCatchUp(activeClient, activeBoardId, dispatch, observedSeqRef, isCurrentBinding);
     } finally {
-      // Only clear the flags if still mounted and on the board this refresh was
-      // for — a board switch already reset them and may have started a fresh one.
-      if (mountedRef.current && boardIdRef.current === activeBoardId) {
+      // Only clear the flags if this refresh's binding is still the live one — a
+      // rebind already reset them and may have started a fresh refresh.
+      if (isCurrentBinding()) {
         isRefreshingRef.current = false;
         setIsRefreshing(false);
       }

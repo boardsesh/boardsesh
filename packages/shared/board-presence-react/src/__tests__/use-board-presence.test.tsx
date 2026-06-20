@@ -808,6 +808,43 @@ describe('useBoardPresence — hydrating & refresh', () => {
     expect(result.current.holder).toBeNull();
   });
 
+  it('ignores a refresh from a superseded binding after an A→B→A switch', async () => {
+    const harness = makeClient();
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
+      initialProps: { boardId: 1 as number | null },
+    });
+
+    // Hydrate board 1 — settle all three seeds so the refresh's own fetches are the
+    // next pending deferreds (the fake resolves them in FIFO order per board).
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('board1-initial', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'board1-seed' }));
+    });
+    expect(result.current.isHydrating).toBe(false);
+
+    // Start a refresh on board 1, then switch away and BACK before it settles.
+    let stalePromise: Promise<void> = Promise.resolve();
+    act(() => {
+      stalePromise = result.current.refresh();
+    });
+    rerender({ boardId: 2 });
+    rerender({ boardId: 1 });
+
+    // Resolve the original (now superseded) refresh's fetches. The board id matches
+    // again, but the bind generation moved on, so nothing is applied.
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('STALE', 9)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 999 });
+      await harness.resolveConnection(1, holder({ userId: 'stale-holder' }));
+      await stalePromise;
+    });
+
+    expect(result.current.history).toEqual([]);
+    expect(result.current.stats).toBeNull();
+    expect(result.current.holder).toBeNull();
+  });
+
   it('refresh is a no-op when inert', async () => {
     const { result } = renderHook(() => useBoardPresence(null, null));
     await expect(result.current.refresh()).resolves.toBeUndefined();
