@@ -371,6 +371,11 @@ describe('BluetoothProvider', () => {
     // The hook reports the precise cause via the ref; the AutoSender must label
     // the failure with that reason — not the retired catch-all
     // `characteristic_unavailable`, which hid the dominant mid-session drop.
+    // These are the reasons the hook sets synchronously on a `return false`. The
+    // throw-path reasons (`missing_mirror_mapping`, `dom_*`) come from the hook's
+    // catch via `classifyBleFailureReason` and are unit-tested directly in
+    // connection-error.test.ts; from the AutoSender's side they read identically
+    // through the same ref, so they aren't re-parametrized here.
     const failureReasons: BleSendFailureReason[] = [
       'disconnected',
       'incompatible_climb',
@@ -538,13 +543,15 @@ describe('BluetoothProvider', () => {
       expect(result.current.isConnected).toBe(false);
       expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1);
 
-      // Take-back reconnect: AutoSender remounts (fresh dedup signature) and
-      // re-lights the same climb. Let the remount's send effect drain.
+      // Take-back reconnect: commit the remount (fresh dedup signature) inside
+      // act, then poll OUTSIDE act for the remount's async send — polling rather
+      // than a fixed delay so the assertion holds under slow CI. (vi.waitFor
+      // nested inside act doesn't advance the drain here.)
       await act(async () => {
         mockBluetoothState.isConnected = true;
         rerender();
-        await new Promise((resolve) => setTimeout(resolve, 60));
       });
+      await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
 
       // Exactly one re-send for the unchanged climb — never a double.
       expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2);

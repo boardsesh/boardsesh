@@ -31,6 +31,7 @@ export type BleSendFailureReason =
   | 'missing_mirror_data' // mirroring requested but holdsData absent (pre-write)
   | 'missing_mirror_mapping' // a hold had no mirrored id while building the mirror
   | 'write_failed' // any other thrown write failure on a live link
+  | 'unknown' // defensive fallback: a `false` send left no reason set (unreachable in practice)
   | `dom_${string}`; // a DOMException name we don't otherwise classify
 
 function errorName(error: unknown): string | undefined {
