@@ -85,7 +85,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[3],
     borderRadius: borderRadius.md,
-    gap: 6,
+    // Match styles.statTile in BoardSheet so tiles don't jump when real data lands.
+    gap: 2,
   },
   statValueBlock: {
     width: 40,
@@ -108,7 +109,8 @@ const styles = StyleSheet.create({
   },
   historyBody: {
     flex: 1,
-    gap: 6,
+    // Match styles.historyBody in BoardSheet so rows don't jump when real data lands.
+    gap: 2,
   },
   historyNameBlock: {
     width: '62%',

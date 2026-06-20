@@ -194,7 +194,9 @@ async function applyBoardPresenceCatchUp(
 export function useBoardPresence(boardId: number | null, client: BoardPresenceClient | null): UseBoardPresenceResult {
   const [state, dispatch] = useReducer(boardPresenceReducer, initialBoardPresenceState);
   const [isLive, setIsLive] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(false);
+  // Seed true when there's a board to hydrate so the first paint already shows the
+  // skeleton (the bind effect, which sets it, only runs after the first render).
+  const [isHydrating, setIsHydrating] = useState(() => boardId !== null && client !== null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [undoTarget, setUndoTarget] = useState<BoardPresenceClimb | null>(null);
   const isRefreshingRef = useRef(false);
@@ -263,17 +265,16 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
         dispatch,
         observedSeqRef,
         () => isActive && boardIdRef.current === subscribedBoardId,
-      )
-        .finally(() => {
-          if (!isActive) {
-            return;
-          }
-          catchUpInFlight = false;
-          if (catchUpRequested) {
-            catchUpRequested = false;
-            runCatchUp();
-          }
-        });
+      ).finally(() => {
+        if (!isActive) {
+          return;
+        }
+        catchUpInFlight = false;
+        if (catchUpRequested) {
+          catchUpRequested = false;
+          runCatchUp();
+        }
+      });
     };
 
     // 1) Subscribe FIRST. Events arriving during the catch-up fetches below are
