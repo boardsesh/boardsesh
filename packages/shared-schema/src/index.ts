@@ -5,3 +5,4 @@ export * from './types';
 export * from './schema';
 export * from './utils';
 export * from './beta-video-url';
+export * from './instagram-caption-parse';

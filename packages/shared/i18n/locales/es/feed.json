@@ -3,6 +3,10 @@
     "feed": {
       "title": "Actividad",
       "description": "Mira lo que están escalando los que sigues."
+    },
+    "importBeta": {
+      "title": "Importa beta desde Instagram",
+      "description": "Vincula tus reels de escalada de Instagram con bloques de Boardsesh y adjúntalos como beta en unos clics."
     }
   },
   "title": "Actividad",
@@ -43,6 +47,72 @@
     "instagramCopiedAndOpened": "Descripción copiada — pégala en Instagram.",
     "instagramCopiedOnly": "Descripción copiada al portapapeles.",
     "addSubmit": "Añadir"
+  },
+  "importBeta": {
+    "title": "Importa beta desde Instagram",
+    "intro": "Recupera los bloques que ya grabaste en Instagram y adjúntalos como beta. Haz un escaneo rápido en tu navegador, pega el resultado y emparejamos cada reel con el bloque correcto.",
+    "signInPrompt": "Inicia sesión para emparejar tus reels de Instagram con bloques de Boardsesh.",
+    "signInCta": "Iniciar sesión",
+    "authUnavailable": "No pudimos verificar tu sesión. Recarga e inténtalo de nuevo.",
+    "scriptCopied": "Script copiado. Pégalo en la consola de Instagram.",
+    "scriptCopyFailed": "No se pudo copiar el script. Selecciónalo y cópialo a mano.",
+    "pasteEmpty": "Primero pega el JSON que copió el script.",
+    "parseError": "Esto no parece el resultado del escaneo. Vuelve a ejecutar el script y pega exactamente lo que copia.",
+    "noPosts": "No se encontraron publicaciones en lo que pegaste. Asegúrate de ejecutar el script en un perfil.",
+    "scanError": "El escaneo falló. Inténtalo de nuevo en un momento.",
+    "angle": "{{angle}}°",
+    "board": {
+      "label": "¿Qué tabla?",
+      "kilter": "Kilter",
+      "tension": "Tension"
+    },
+    "scan": {
+      "title": "Paso 1 · Escanea tus publicaciones",
+      "subtitle": "Esto se ejecuta en tu propio navegador en Instagram. Nada sale de tu sesión y Boardsesh nunca ve tu inicio de sesión de Instagram.",
+      "step1": "Abre tu perfil de Instagram en otra pestaña e inicia sesión.",
+      "step2": "Abre la consola del navegador (clic derecho, Inspeccionar y luego Consola).",
+      "step3": "Pega el script de abajo, pulsa Enter y deja que termine. Copia tus publicaciones al portapapeles.",
+      "copyScript": "Copiar script"
+    },
+    "paste": {
+      "title": "Paso 2 · Pega y busca",
+      "subtitle": "Pega lo que copió el script. Leeremos las descripciones y las emparejaremos con bloques.",
+      "label": "Resultado del escaneo",
+      "placeholder": "Pega aquí el JSON que copió el script",
+      "submit": "Buscar bloques"
+    },
+    "review": {
+      "title": "Paso 3 · Revisa y adjunta",
+      "summary": "Se escanearon {{scanned}} publicaciones y se leyeron {{parsed}} descripciones: {{found}} nuevas por adjuntar, {{already}} ya en Boardsesh, {{ambiguous}} necesitan elección, {{skipped}} omitidas."
+    },
+    "missing": {
+      "empty": "Nada nuevo que adjuntar. Todo lo que emparejamos ya está en Boardsesh.",
+      "heading": "Beta nueva por adjuntar ({{count}})",
+      "attachSelected": "Adjuntar {{count}} seleccionadas",
+      "attachAllDone": "Se adjuntaron {{count}} vídeos de beta.",
+      "attachSomeFailed": "Se adjuntaron {{attached}}, {{failed}} fallaron. Revisa las marcadas como fallidas.",
+      "attachFailedGeneric": "No se pudo adjuntar esta. La publicación puede ser privada o estar eliminada."
+    },
+    "ambiguous": {
+      "heading": "Necesitan elección ({{count}})",
+      "subtitle": "Más de un bloque coincidió con estas descripciones. Elige el correcto y adjúntalo.",
+      "selectPlaceholder": "Elige el bloque",
+      "candidateLabel": "{{setter}} · layout {{layoutId}}",
+      "unknownSetter": "Aperturista desconocido",
+      "attach": "Adjuntar",
+      "attachedToast": "Beta adjuntada."
+    },
+    "alreadyLinked": {
+      "heading": "Ya en Boardsesh ({{count}})"
+    },
+    "unmatched": {
+      "heading": "Omitidas ({{count}})",
+      "noName": "Sin nombre de bloque en la descripción"
+    },
+    "status": {
+      "attached": "Adjuntada",
+      "failed": "Fallida"
+    }
   },
   "commentFeed": {
     "empty": "Sin comentarios todavía",

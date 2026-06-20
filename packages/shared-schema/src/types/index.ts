@@ -20,3 +20,4 @@ export * from './new-climb-feed';
 export * from './controller';
 export * from './device-logging';
 export * from './feedback';
+export * from './instagram-beta-import';

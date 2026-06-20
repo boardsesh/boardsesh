@@ -580,5 +580,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     Returns only rows whose thumbnails are cached in our S3.
     """
     userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+
+    """
+    Resolve scraped Instagram posts against Boardsesh: which beta videos are
+    missing, already linked, ambiguous, or unmatched. Read-only — the client
+    attaches the missing ones via the attachBetaLink mutation.
+    """
+    instagramBetaScan(input: InstagramBetaScanInput!): InstagramBetaScanResult!
   }
 `;

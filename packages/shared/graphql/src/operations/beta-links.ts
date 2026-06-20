@@ -1,5 +1,10 @@
 import { gql } from 'graphql-request';
-import type { AttachBetaLinkInput, BetaLinksGqlRow } from '@boardsesh/shared-schema';
+import type {
+  AttachBetaLinkInput,
+  BetaLinksGqlRow,
+  InstagramBetaScanInput,
+  InstagramBetaScanResult,
+} from '@boardsesh/shared-schema';
 
 export const GET_BETA_LINKS = gql`
   query GetBetaLinks($boardType: String!, $climbUuid: String!) {
@@ -64,3 +69,50 @@ export const GET_USER_BETA_LINKS = gql`
     }
   }
 `;
+
+export const INSTAGRAM_BETA_SCAN = gql`
+  query InstagramBetaScan($input: InstagramBetaScanInput!) {
+    instagramBetaScan(input: $input) {
+      scanned
+      parsed
+      missing {
+        shortcode
+        link
+        climbUuid
+        climbName
+        boardType
+        angle
+      }
+      alreadyLinked {
+        shortcode
+        link
+        climbUuid
+        climbName
+        boardType
+        angle
+      }
+      ambiguous {
+        shortcode
+        link
+        parsedName
+        boardType
+        angle
+        candidates {
+          climbUuid
+          name
+          layoutId
+          setterUsername
+        }
+      }
+      unmatched {
+        shortcode
+        link
+        parsedName
+        reason
+      }
+    }
+  }
+`;
+
+export type InstagramBetaScanQueryVariables = { input: InstagramBetaScanInput };
+export type InstagramBetaScanQueryResponse = { instagramBetaScan: InstagramBetaScanResult };

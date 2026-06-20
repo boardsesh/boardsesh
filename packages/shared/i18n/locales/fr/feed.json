@@ -3,6 +3,10 @@
     "feed": {
       "title": "Fil d'activité",
       "description": "Voyez ce que grimpent les personnes que vous suivez."
+    },
+    "importBeta": {
+      "title": "Importer une beta depuis Instagram",
+      "description": "Reliez vos reels d'escalade Instagram aux blocs Boardsesh et ajoutez-les comme beta en quelques clics."
     }
   },
   "title": "Fil d'activité",
@@ -42,6 +46,72 @@
       "step1Title": "Ouvrez Instagram et copiez votre légende",
       "step2Title": "Depuis votre publication, copiez le lien de partage",
       "step3Title": "Collez le lien ci-dessous"
+    }
+  },
+  "importBeta": {
+    "title": "Importer une beta depuis Instagram",
+    "intro": "Récupérez les blocs que vous avez déjà filmés sur Instagram et ajoutez-les comme beta. Lancez un scan rapide dans votre navigateur, collez le résultat et nous relions chaque reel au bon bloc.",
+    "signInPrompt": "Connectez-vous pour relier vos reels Instagram aux blocs Boardsesh.",
+    "signInCta": "Se connecter",
+    "authUnavailable": "Impossible de vérifier votre session. Rechargez et réessayez.",
+    "scriptCopied": "Script copié. Collez-le dans la console Instagram.",
+    "scriptCopyFailed": "Impossible de copier le script. Sélectionnez-le et copiez-le à la main.",
+    "pasteEmpty": "Collez d'abord le JSON copié par le script.",
+    "parseError": "Cela ne ressemble pas au résultat du scan. Relancez le script et collez exactement ce qu'il copie.",
+    "noPosts": "Aucune publication trouvée dans ce collage. Vérifiez que vous avez lancé le script sur un profil.",
+    "scanError": "Le scan a échoué. Réessayez dans un instant.",
+    "angle": "{{angle}}°",
+    "board": {
+      "label": "Quel board ?",
+      "kilter": "Kilter",
+      "tension": "Tension"
+    },
+    "scan": {
+      "title": "Étape 1 · Scannez vos publications",
+      "subtitle": "Cela s'exécute dans votre propre navigateur sur Instagram. Rien ne quitte votre session et Boardsesh ne voit jamais votre connexion Instagram.",
+      "step1": "Ouvrez votre profil Instagram dans un autre onglet et connectez-vous.",
+      "step2": "Ouvrez la console du navigateur (clic droit, Inspecter, puis Console).",
+      "step3": "Collez le script ci-dessous, appuyez sur Entrée et laissez-le finir. Il copie vos publications dans le presse-papiers.",
+      "copyScript": "Copier le script"
+    },
+    "paste": {
+      "title": "Étape 2 · Collez et trouvez",
+      "subtitle": "Collez ce que le script a copié. Nous lirons les légendes et les relierons aux blocs.",
+      "label": "Résultat du scan",
+      "placeholder": "Collez ici le JSON copié par le script",
+      "submit": "Trouver les blocs"
+    },
+    "review": {
+      "title": "Étape 3 · Vérifiez et ajoutez",
+      "summary": "{{scanned}} publications scannées, {{parsed}} légendes lues : {{found}} nouvelles à ajouter, {{already}} déjà sur Boardsesh, {{ambiguous}} à choisir, {{skipped}} ignorées."
+    },
+    "missing": {
+      "empty": "Rien de nouveau à ajouter. Tout ce que nous avons relié est déjà sur Boardsesh.",
+      "heading": "Nouvelles beta à ajouter ({{count}})",
+      "attachSelected": "Ajouter {{count}} sélectionnées",
+      "attachAllDone": "{{count}} vidéos de beta ajoutées.",
+      "attachSomeFailed": "{{attached}} ajoutées, {{failed}} en échec. Vérifiez celles marquées en échec.",
+      "attachFailedGeneric": "Impossible d'ajouter celle-ci. La publication est peut-être privée ou supprimée."
+    },
+    "ambiguous": {
+      "heading": "À choisir ({{count}})",
+      "subtitle": "Plusieurs blocs correspondent à ces légendes. Choisissez le bon, puis ajoutez-le.",
+      "selectPlaceholder": "Choisissez le bloc",
+      "candidateLabel": "{{setter}} · layout {{layoutId}}",
+      "unknownSetter": "Ouvreur inconnu",
+      "attach": "Ajouter",
+      "attachedToast": "Beta ajoutée."
+    },
+    "alreadyLinked": {
+      "heading": "Déjà sur Boardsesh ({{count}})"
+    },
+    "unmatched": {
+      "heading": "Ignorées ({{count}})",
+      "noName": "Aucun nom de bloc dans la légende"
+    },
+    "status": {
+      "attached": "Ajoutée",
+      "failed": "Échec"
     }
   },
   "commentFeed": {

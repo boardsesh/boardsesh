@@ -23,4 +23,63 @@ export const betaLinksTypeDefs = /* GraphQL */ `
     boardType: String!
     layoutId: Int
   }
+
+  "A single scraped Instagram post fed to the beta-import scanner."
+  input InstagramScanPostInput {
+    shortcode: String!
+    caption: String
+    takenAt: String
+  }
+
+  "Input for instagramBetaScan: a default board plus the scraped posts."
+  input InstagramBetaScanInput {
+    boardType: String!
+    posts: [InstagramScanPostInput!]!
+  }
+
+  "A scanned post resolved to exactly one climb (ready to attach)."
+  type InstagramBetaMatch {
+    shortcode: String!
+    link: String!
+    climbUuid: String!
+    climbName: String!
+    boardType: String!
+    angle: Int
+  }
+
+  "A candidate climb when a scanned name matched more than one climb."
+  type InstagramBetaCandidate {
+    climbUuid: String!
+    name: String!
+    layoutId: Int!
+    setterUsername: String
+  }
+
+  "A scanned post whose climb name matched multiple climbs — the user picks one."
+  type InstagramBetaAmbiguous {
+    shortcode: String!
+    link: String!
+    parsedName: String!
+    boardType: String!
+    angle: Int
+    candidates: [InstagramBetaCandidate!]!
+  }
+
+  "A scanned post we could not act on (no caption, unparseable, or no matching climb)."
+  type InstagramBetaUnmatched {
+    shortcode: String!
+    link: String!
+    parsedName: String
+    reason: String!
+  }
+
+  "Result of scanning Instagram posts against Boardsesh's catalog and existing beta."
+  type InstagramBetaScanResult {
+    scanned: Int!
+    parsed: Int!
+    missing: [InstagramBetaMatch!]!
+    alreadyLinked: [InstagramBetaMatch!]!
+    ambiguous: [InstagramBetaAmbiguous!]!
+    unmatched: [InstagramBetaUnmatched!]!
+  }
 `;

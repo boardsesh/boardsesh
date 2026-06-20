@@ -1683,6 +1683,70 @@ export type GymMembersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/** A scanned post whose climb name matched multiple climbs — the user picks one. */
+export type InstagramBetaAmbiguous = {
+  __typename?: 'InstagramBetaAmbiguous';
+  angle?: Maybe<Scalars['Int']['output']>;
+  boardType: Scalars['String']['output'];
+  candidates: Array<InstagramBetaCandidate>;
+  link: Scalars['String']['output'];
+  parsedName: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** A candidate climb when a scanned name matched more than one climb. */
+export type InstagramBetaCandidate = {
+  __typename?: 'InstagramBetaCandidate';
+  climbUuid: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  setterUsername?: Maybe<Scalars['String']['output']>;
+};
+
+/** A scanned post resolved to exactly one climb (ready to attach). */
+export type InstagramBetaMatch = {
+  __typename?: 'InstagramBetaMatch';
+  angle?: Maybe<Scalars['Int']['output']>;
+  boardType: Scalars['String']['output'];
+  climbName: Scalars['String']['output'];
+  climbUuid: Scalars['String']['output'];
+  link: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** Input for instagramBetaScan: a default board plus the scraped posts. */
+export type InstagramBetaScanInput = {
+  boardType: Scalars['String']['input'];
+  posts: Array<InstagramScanPostInput>;
+};
+
+/** Result of scanning Instagram posts against Boardsesh's catalog and existing beta. */
+export type InstagramBetaScanResult = {
+  __typename?: 'InstagramBetaScanResult';
+  alreadyLinked: Array<InstagramBetaMatch>;
+  ambiguous: Array<InstagramBetaAmbiguous>;
+  missing: Array<InstagramBetaMatch>;
+  parsed: Scalars['Int']['output'];
+  scanned: Scalars['Int']['output'];
+  unmatched: Array<InstagramBetaUnmatched>;
+};
+
+/** A scanned post we could not act on (no caption, unparseable, or no matching climb). */
+export type InstagramBetaUnmatched = {
+  __typename?: 'InstagramBetaUnmatched';
+  link: Scalars['String']['output'];
+  parsedName?: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** A single scraped Instagram post fed to the beta-import scanner. */
+export type InstagramScanPostInput = {
+  caption?: InputMaybe<Scalars['String']['input']>;
+  shortcode: Scalars['String']['input'];
+  takenAt?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -3075,6 +3139,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve scraped Instagram posts against Boardsesh: which beta videos are
+   * missing, already linked, ambiguous, or unmatched. Read-only — the client
+   * attaches the missing ones via the attachBetaLink mutation.
+   */
+  instagramBetaScan: InstagramBetaScanResult;
+  /**
    * Check if the current user follows a specific user.
    * Requires authentication.
    */
@@ -3473,6 +3543,11 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryInstagramBetaScanArgs = {
+  input: InstagramBetaScanInput;
 };
 
 /** Root query type for all read operations. */
@@ -5400,6 +5475,13 @@ export type ResolversTypes = ResolversObject<{
   GymMemberRole: GymMemberRole;
   GymMembersInput: GymMembersInput;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
+  InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
+  InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
+  InstagramBetaMatch: ResolverTypeWrapper<InstagramBetaMatch>;
+  InstagramBetaScanInput: InstagramBetaScanInput;
+  InstagramBetaScanResult: ResolverTypeWrapper<InstagramBetaScanResult>;
+  InstagramBetaUnmatched: ResolverTypeWrapper<InstagramBetaUnmatched>;
+  InstagramScanPostInput: InstagramScanPostInput;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   JSON: ResolverTypeWrapper<Scalars['JSON']['output']>;
   LayoutStats: ResolverTypeWrapper<LayoutStats>;
@@ -5657,6 +5739,13 @@ export type ResolversParentTypes = ResolversObject<{
   GymMemberConnection: GymMemberConnection;
   GymMembersInput: GymMembersInput;
   ID: Scalars['ID']['output'];
+  InstagramBetaAmbiguous: InstagramBetaAmbiguous;
+  InstagramBetaCandidate: InstagramBetaCandidate;
+  InstagramBetaMatch: InstagramBetaMatch;
+  InstagramBetaScanInput: InstagramBetaScanInput;
+  InstagramBetaScanResult: InstagramBetaScanResult;
+  InstagramBetaUnmatched: InstagramBetaUnmatched;
+  InstagramScanPostInput: InstagramScanPostInput;
   Int: Scalars['Int']['output'];
   JSON: Scalars['JSON']['output'];
   LayoutStats: LayoutStats;
@@ -6583,6 +6672,67 @@ export type GymMemberConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   members?: Resolver<Array<ResolversTypes['GymMember']>, ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type InstagramBetaAmbiguousResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  candidates?: Resolver<Array<ResolversTypes['InstagramBetaCandidate']>, ParentType, ContextType>;
+  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  parsedName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type InstagramBetaCandidateResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['InstagramBetaCandidate'] = ResolversParentTypes['InstagramBetaCandidate'],
+> = ResolversObject<{
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type InstagramBetaMatchResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['InstagramBetaMatch'] = ResolversParentTypes['InstagramBetaMatch'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type InstagramBetaScanResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['InstagramBetaScanResult'] = ResolversParentTypes['InstagramBetaScanResult'],
+> = ResolversObject<{
+  alreadyLinked?: Resolver<Array<ResolversTypes['InstagramBetaMatch']>, ParentType, ContextType>;
+  ambiguous?: Resolver<Array<ResolversTypes['InstagramBetaAmbiguous']>, ParentType, ContextType>;
+  missing?: Resolver<Array<ResolversTypes['InstagramBetaMatch']>, ParentType, ContextType>;
+  parsed?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  scanned?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unmatched?: Resolver<Array<ResolversTypes['InstagramBetaUnmatched']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type InstagramBetaUnmatchedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['InstagramBetaUnmatched'] = ResolversParentTypes['InstagramBetaUnmatched'],
+> = ResolversObject<{
+  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  parsedName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -7648,6 +7798,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
+  >;
+  instagramBetaScan?: Resolver<
+    ResolversTypes['InstagramBetaScanResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryInstagramBetaScanArgs, 'input'>
   >;
   isFollowing?: Resolver<
     ResolversTypes['Boolean'],
@@ -8745,6 +8901,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymConnection?: GymConnectionResolvers<ContextType>;
   GymMember?: GymMemberResolvers<ContextType>;
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
+  InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
+  InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
+  InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;
+  InstagramBetaScanResult?: InstagramBetaScanResultResolvers<ContextType>;
+  InstagramBetaUnmatched?: InstagramBetaUnmatchedResolvers<ContextType>;
   JSON?: GraphQLScalarType;
   LayoutStats?: LayoutStatsResolvers<ContextType>;
   LeaderChanged?: LeaderChangedResolvers<ContextType>;

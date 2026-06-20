@@ -63,6 +63,30 @@ export const AttachBetaLinkInputSchema = z.object({
 });
 
 /**
+ * instagramBetaScan input validation schema.
+ *
+ * A scraped-post payload fed to the beta-import scanner. `boardType` is the
+ * default board for posts whose caption doesn't name one; the per-post caption
+ * can still override it (see parseInstagramBetaCaption). Posts are capped at
+ * 2000 — well above a single account's realistic beta backlog, low enough to
+ * bound the per-call resolution + dedup work.
+ */
+export const InstagramScanPostInputSchema = z.object({
+  shortcode: z.string().min(1, 'Shortcode cannot be empty').max(100, 'Shortcode too long'),
+  caption: z.string().max(5000).optional().nullable(),
+  takenAt: z.string().max(100).optional().nullable(),
+});
+
+export const InstagramBetaScanInputSchema = z.object({
+  // Scoped to the boards whose share captions use the quoted `"name" @ angle°`
+  // format the parser understands and that the import UI offers. Other boards
+  // (e.g. MoonBoard's comma format) are rejected rather than silently
+  // zero-matching.
+  boardType: z.enum(['kilter', 'tension']),
+  posts: z.array(InstagramScanPostInputSchema).max(2000, 'Too many posts in a single scan'),
+});
+
+/**
  * Ascent feed input validation schema
  */
 export const AscentFeedInputSchema = z.object({

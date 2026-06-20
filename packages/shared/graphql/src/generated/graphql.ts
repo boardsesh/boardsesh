@@ -1680,6 +1680,70 @@ export type GymMembersInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/** A scanned post whose climb name matched multiple climbs — the user picks one. */
+export type InstagramBetaAmbiguous = {
+  __typename?: 'InstagramBetaAmbiguous';
+  angle?: Maybe<Scalars['Int']['output']>;
+  boardType: Scalars['String']['output'];
+  candidates: Array<InstagramBetaCandidate>;
+  link: Scalars['String']['output'];
+  parsedName: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** A candidate climb when a scanned name matched more than one climb. */
+export type InstagramBetaCandidate = {
+  __typename?: 'InstagramBetaCandidate';
+  climbUuid: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  setterUsername?: Maybe<Scalars['String']['output']>;
+};
+
+/** A scanned post resolved to exactly one climb (ready to attach). */
+export type InstagramBetaMatch = {
+  __typename?: 'InstagramBetaMatch';
+  angle?: Maybe<Scalars['Int']['output']>;
+  boardType: Scalars['String']['output'];
+  climbName: Scalars['String']['output'];
+  climbUuid: Scalars['String']['output'];
+  link: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** Input for instagramBetaScan: a default board plus the scraped posts. */
+export type InstagramBetaScanInput = {
+  boardType: Scalars['String']['input'];
+  posts: Array<InstagramScanPostInput>;
+};
+
+/** Result of scanning Instagram posts against Boardsesh's catalog and existing beta. */
+export type InstagramBetaScanResult = {
+  __typename?: 'InstagramBetaScanResult';
+  alreadyLinked: Array<InstagramBetaMatch>;
+  ambiguous: Array<InstagramBetaAmbiguous>;
+  missing: Array<InstagramBetaMatch>;
+  parsed: Scalars['Int']['output'];
+  scanned: Scalars['Int']['output'];
+  unmatched: Array<InstagramBetaUnmatched>;
+};
+
+/** A scanned post we could not act on (no caption, unparseable, or no matching climb). */
+export type InstagramBetaUnmatched = {
+  __typename?: 'InstagramBetaUnmatched';
+  link: Scalars['String']['output'];
+  parsedName?: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  shortcode: Scalars['String']['output'];
+};
+
+/** A single scraped Instagram post fed to the beta-import scanner. */
+export type InstagramScanPostInput = {
+  caption?: InputMaybe<Scalars['String']['input']>;
+  shortcode: Scalars['String']['input'];
+  takenAt?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -3072,6 +3136,12 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
+   * Resolve scraped Instagram posts against Boardsesh: which beta videos are
+   * missing, already linked, ambiguous, or unmatched. Read-only — the client
+   * attaches the missing ones via the attachBetaLink mutation.
+   */
+  instagramBetaScan: InstagramBetaScanResult;
+  /**
    * Check if the current user follows a specific user.
    * Requires authentication.
    */
@@ -3470,6 +3540,11 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryInstagramBetaScanArgs = {
+  input: InstagramBetaScanInput;
 };
 
 /** Root query type for all read operations. */
@@ -5268,6 +5343,59 @@ export type GetUserBetaLinksQuery = {
       createdAt?: string | null;
     };
   }>;
+};
+
+export type InstagramBetaScanQueryVariables = Exact<{
+  input: InstagramBetaScanInput;
+}>;
+
+export type InstagramBetaScanQuery = {
+  __typename?: 'Query';
+  instagramBetaScan: {
+    __typename?: 'InstagramBetaScanResult';
+    scanned: number;
+    parsed: number;
+    missing: Array<{
+      __typename?: 'InstagramBetaMatch';
+      shortcode: string;
+      link: string;
+      climbUuid: string;
+      climbName: string;
+      boardType: string;
+      angle?: number | null;
+    }>;
+    alreadyLinked: Array<{
+      __typename?: 'InstagramBetaMatch';
+      shortcode: string;
+      link: string;
+      climbUuid: string;
+      climbName: string;
+      boardType: string;
+      angle?: number | null;
+    }>;
+    ambiguous: Array<{
+      __typename?: 'InstagramBetaAmbiguous';
+      shortcode: string;
+      link: string;
+      parsedName: string;
+      boardType: string;
+      angle?: number | null;
+      candidates: Array<{
+        __typename?: 'InstagramBetaCandidate';
+        climbUuid: string;
+        name: string;
+        layoutId: number;
+        setterUsername?: string | null;
+      }>;
+    }>;
+    unmatched: Array<{
+      __typename?: 'InstagramBetaUnmatched';
+      shortcode: string;
+      link: string;
+      parsedName?: string | null;
+      reason: string;
+    }>;
+  };
 };
 
 export type ClimbStatsHistoryQueryVariables = Exact<{
@@ -7631,6 +7759,119 @@ export const GetUserBetaLinksDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUserBetaLinksQuery, GetUserBetaLinksQueryVariables>;
+export const InstagramBetaScanDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'InstagramBetaScan' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'InstagramBetaScanInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'instagramBetaScan' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'scanned' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'parsed' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'missing' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'alreadyLinked' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'ambiguous' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'parsedName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'candidates' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'unmatched' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'parsedName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<InstagramBetaScanQuery, InstagramBetaScanQueryVariables>;
 export const ClimbStatsHistoryDocument = {
   kind: 'Document',
   definitions: [

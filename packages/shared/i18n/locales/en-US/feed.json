@@ -3,6 +3,10 @@
     "feed": {
       "title": "Activity Feed",
       "description": "View climbing activity from people you follow."
+    },
+    "importBeta": {
+      "title": "Import beta from Instagram",
+      "description": "Match your Instagram climbing reels to Boardsesh climbs and attach them as beta in a few clicks."
     }
   },
   "title": "Activity Feed",
@@ -42,6 +46,72 @@
       "step1Title": "Open Instagram and copy your caption",
       "step2Title": "From your post, copy the share link",
       "step3Title": "Paste the link below"
+    }
+  },
+  "importBeta": {
+    "title": "Import beta from Instagram",
+    "intro": "Grab the climbs you've already filmed on Instagram and attach them as beta. Run a quick scan in your browser, paste the result, and we'll match each reel to the right climb.",
+    "signInPrompt": "Sign in to match your Instagram reels to Boardsesh climbs.",
+    "signInCta": "Sign in",
+    "authUnavailable": "We couldn't verify your session. Reload and try again.",
+    "scriptCopied": "Script copied. Paste it into the Instagram console.",
+    "scriptCopyFailed": "Couldn't copy the script. Select it and copy by hand.",
+    "pasteEmpty": "Paste the JSON the script copied first.",
+    "parseError": "That doesn't look like the scan output. Re-run the script and paste exactly what it copies.",
+    "noPosts": "No posts found in that paste. Make sure you ran the script on a profile.",
+    "scanError": "The scan failed. Try again in a moment.",
+    "angle": "{{angle}}°",
+    "board": {
+      "label": "Which board?",
+      "kilter": "Kilter",
+      "tension": "Tension"
+    },
+    "scan": {
+      "title": "Step 1 · Scan your posts",
+      "subtitle": "This runs in your own browser on Instagram. Nothing leaves your session, and Boardsesh never sees your Instagram login.",
+      "step1": "Open your Instagram profile in another tab and log in.",
+      "step2": "Open the browser console (right-click, Inspect, then Console).",
+      "step3": "Paste the script below, press Enter, and let it finish. It copies your posts to the clipboard.",
+      "copyScript": "Copy script"
+    },
+    "paste": {
+      "title": "Step 2 · Paste and find",
+      "subtitle": "Paste what the script copied. We'll read the captions and match them to climbs.",
+      "label": "Scan output",
+      "placeholder": "Paste the JSON the script copied here",
+      "submit": "Find climbs"
+    },
+    "review": {
+      "title": "Step 3 · Review and attach",
+      "summary": "Scanned {{scanned}} posts, read {{parsed}} captions: {{found}} new to attach, {{already}} already on Boardsesh, {{ambiguous}} need a pick, {{skipped}} skipped."
+    },
+    "missing": {
+      "empty": "Nothing new to attach. Everything we matched is already on Boardsesh.",
+      "heading": "New beta to attach ({{count}})",
+      "attachSelected": "Attach {{count}} selected",
+      "attachAllDone": "Attached {{count}} beta videos.",
+      "attachSomeFailed": "Attached {{attached}}, {{failed}} failed. Check the ones marked failed.",
+      "attachFailedGeneric": "Couldn't attach this one. The post may be private or deleted."
+    },
+    "ambiguous": {
+      "heading": "Need a pick ({{count}})",
+      "subtitle": "More than one climb matched these captions. Choose the right one, then attach.",
+      "selectPlaceholder": "Pick the climb",
+      "candidateLabel": "{{setter}} · layout {{layoutId}}",
+      "unknownSetter": "Unknown setter",
+      "attach": "Attach",
+      "attachedToast": "Beta attached."
+    },
+    "alreadyLinked": {
+      "heading": "Already on Boardsesh ({{count}})"
+    },
+    "unmatched": {
+      "heading": "Skipped ({{count}})",
+      "noName": "No climb name in the caption"
+    },
+    "status": {
+      "attached": "Attached",
+      "failed": "Failed"
     }
   },
   "commentFeed": {
