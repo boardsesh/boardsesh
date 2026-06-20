@@ -814,6 +814,36 @@ describe('useBoardPresence — hydrating & refresh', () => {
     expect(result.current.isRefreshing).toBe(false);
   });
 
+  it('refresh applies the successful fetches even when one (stats) fails', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 1 });
+      await harness.resolveConnection(1, holder({ userId: 'seed' }));
+    });
+
+    let refreshPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      refreshPromise = result.current.refresh();
+    });
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('second', 2), climb('first', 1)]);
+      await harness.rejectStats(1, new Error('stats 503')).catch(() => undefined);
+      await harness.resolveConnection(1, holder({ userId: 'after' }));
+      await refreshPromise;
+    });
+
+    // History and holder update from the fulfilled fetches; stats keeps its prior
+    // value rather than clobbering it with a half-failed snapshot.
+    expect(result.current.history.map((entry) => entry.seq)).toEqual([2, 1]);
+    expect(result.current.stats?.climbsSentCount).toBe(1);
+    expect(result.current.holder?.userId).toBe('after');
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   it('refresh is a no-op while the initial hydration is still in flight', async () => {
     const harness = makeClient();
     const { result } = renderHook(() => useBoardPresence(1, harness.client));

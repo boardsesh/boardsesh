@@ -61,7 +61,8 @@ type ClimbListRowMockProps = {
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  View: ({ children }: ViewMockProps) => createElement('div', null, children),
+  View: ({ children, testID }: ViewMockProps & { testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   Pressable: ({
     children,
     onPress,
@@ -968,6 +969,9 @@ describe('BoardSheet', () => {
     );
     // The real history rows are withheld while the skeleton is up.
     expect(container.textContent).not.toContain('hidden-while-loading');
+    // The stats and history skeletons actually render in place of the real content.
+    expect(container.querySelector('[data-testid="board-sheet-stats-skeleton"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="board-sheet-history-skeleton"]')).not.toBeNull();
     // The header refresh control is rendered but disabled during the hydrate, so a
     // tap can't kick off a redundant fetch alongside the initial seeds.
     expect(container.querySelector('[data-icon="refresh"]')).not.toBeNull();
@@ -986,8 +990,10 @@ describe('BoardSheet', () => {
         onSwitchBoard: noop,
       }),
     );
-    // Same skeleton path as hydration: real rows withheld while refreshing.
+    // Same skeleton path as hydration: real rows withheld, skeletons shown.
     expect(container.textContent).not.toContain('hidden-while-refreshing');
+    expect(container.querySelector('[data-testid="board-sheet-stats-skeleton"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="board-sheet-history-skeleton"]')).not.toBeNull();
     // The refresh control swaps its icon for a spinner mid-refresh.
     expect(container.querySelector('[data-icon="refresh"]')).toBeNull();
     expect(container.querySelector('[data-loading="true"]')).not.toBeNull();

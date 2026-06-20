@@ -205,7 +205,8 @@ export function useBoardPresence(boardId: number | null, client: BoardPresenceCl
   // effect, which runs after render) avoids flashing the empty state for one frame
   // before the skeleton appears on a fresh bind or a board switch. The seed-settle
   // in the effect lowers it again. Mirrors the effect's `[boardId, client]` deps;
-  // the guard keeps the render-phase update from looping.
+  // the guard keeps the render-phase update from looping (and, like the effect,
+  // assumes `client` is identity-stable — an inline client would re-bind anyway).
   const [hydrationBindKey, setHydrationBindKey] = useState<HydrationBindKey | null>(null);
   if (hydrationBindKey === null || hydrationBindKey.boardId !== boardId || hydrationBindKey.client !== client) {
     setHydrationBindKey({ boardId, client });
