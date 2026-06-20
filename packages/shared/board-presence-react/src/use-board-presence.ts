@@ -14,7 +14,16 @@
 // reducer). We also guard every async result against unmount and against a
 // board switch (late results for a previous board are ignored).
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+} from 'react';
 import {
   boardPresenceReducer,
   initialBoardPresenceState,

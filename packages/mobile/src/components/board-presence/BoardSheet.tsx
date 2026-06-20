@@ -22,7 +22,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { useBoardPresenceActions, useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
+import {
+  useBoardPresenceActions,
+  useBoardPresenceCurrent,
+  useBoardPresenceFeed,
+} from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, BoardPresenceClimb, BoardPresenceHardestSend, Climb } from '@boardsesh/shared-schema';
 import { GlassSheetBackground } from '../GlassSheetBackground';
