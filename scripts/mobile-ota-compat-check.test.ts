@@ -203,11 +203,17 @@ describe('confirmComparison (retry/confirmation logic)', () => {
     expect(base.calls()).toBe(1);
   });
 
-  it('returns early without retrying when a side is null', () => {
+  it('recovers from a transient null on the first read by retrying', () => {
     const pr = sequence([null, 'abc']);
     const base = sequence(['abc']);
-    expect(confirmComparison(pr.resolve, base.resolve)).toEqual({ prFingerprint: null, baseFingerprint: 'abc' });
-    expect(pr.calls()).toBe(1);
+    expect(confirmComparison(pr.resolve, base.resolve)).toEqual({ prFingerprint: 'abc', baseFingerprint: 'abc' });
+  });
+
+  it('falls through to a null result (→ unknown) when a side never resolves', () => {
+    const base = sequence(['abc']);
+    const result = confirmComparison(() => null, base.resolve, 3);
+    expect(result.prFingerprint).toBeNull();
+    expect(result.baseFingerprint).toBe('abc');
   });
 
   it('collapses a flake: a spurious difference that re-resolves to equal → equal', () => {
