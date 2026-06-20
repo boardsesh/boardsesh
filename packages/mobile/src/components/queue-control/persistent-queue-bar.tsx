@@ -23,6 +23,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { isGymDiscoveryRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useFreezeDebugFlag } from '../../lib/freeze-debug-store';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -40,7 +41,11 @@ export function PersistentQueueBar() {
   const bottomChrome = useBottomChromeMetrics();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
+  // Diagnostic (preview/dev only): force the bar off to test whether it's the
+  // touch-freeze culprit. Default false in production. See freeze-debug-store.
+  const hideQueueBar = useFreezeDebugFlag('hideQueueBar');
 
+  if (hideQueueBar) return null;
   if (!currentClimb) return null;
   // The gym-discovery screen is a full-bleed map with its own bottom sheet — the
   // climb accessory would overlap it, so suppress it there.

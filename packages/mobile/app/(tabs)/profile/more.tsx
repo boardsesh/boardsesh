@@ -14,6 +14,7 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
+import { FreezeDebugPanel } from '../../../src/components/settings/FreezeDebugPanel';
 import { Icon } from '../../../src/components/Icon';
 import { Avatar } from '../../../src/components/Avatar';
 import { Text } from '../../../src/components/Text';
@@ -148,6 +149,7 @@ export default function MoreScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <DevMetadataPanel />
+      <FreezeDebugPanel />
 
       {profile?.id ? (
         <View style={styles.section}>

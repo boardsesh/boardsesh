@@ -175,6 +175,10 @@ type ClimbListRowProps = {
   contentRowStyle?: StyleProp<ViewStyle>;
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
+  /** Diagnostic (preview/dev only): render the row WITHOUT the ReanimatedSwipeable
+   *  wrapper, to test whether the per-row horizontal-pan gesture is stealing the
+   *  list's vertical scroll on Android 16. Default false. See freeze-debug-store. */
+  disableSwipe?: boolean;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -195,6 +199,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   contentRowStyle,
   separatorStyle,
   showSeparator = true,
+  disableSwipe = false,
 }: ClimbListRowProps) {
   const { systemColors, brandColors: brand } = useTheme();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
@@ -370,43 +375,53 @@ const ClimbListRow = React.memo(function ClimbListRow({
     />
   );
 
+  const rowInner = (
+    <GestureDetector gesture={tapGesture}>
+      <View
+        testID="climb-row"
+        style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={climb.name}
+        accessibilityState={{ selected: !!selected }}
+      >
+        {/* Active-climb highlight: violet wash + left accent bar */}
+        {selected ? (
+          <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
+        ) : null}
+        {selected ? (
+          <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
+        ) : null}
+
+        {rowContent}
+      </View>
+    </GestureDetector>
+  );
+
   return (
     <View style={[styles.outerContainer, containerStyle, unsupported && styles.unsupported]}>
-      <ReanimatedSwipeable
-        ref={swipeableRef}
-        friction={SWIPE_FRICTION}
-        leftThreshold={COMMIT_THRESHOLD}
-        rightThreshold={COMMIT_THRESHOLD}
-        overshootLeft={false}
-        overshootRight={false}
-        renderLeftActions={onAddToQueue ? renderLeftActions : undefined}
-        renderRightActions={onOpenPlaylist ? renderRightActions : undefined}
-        onSwipeableOpenStartDrag={handleSwipeStartDrag}
-        onSwipeableWillOpen={handleSwipeWillOpen}
-        onSwipeableOpen={handleSwipeableOpened}
-        onSwipeableClose={handleSwipeableClosed}
-      >
-        <GestureDetector gesture={tapGesture}>
-          <View
-            testID="climb-row"
-            style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={climb.name}
-            accessibilityState={{ selected: !!selected }}
-          >
-            {/* Active-climb highlight: violet wash + left accent bar */}
-            {selected ? (
-              <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
-            ) : null}
-            {selected ? (
-              <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
-            ) : null}
-
-            {rowContent}
-          </View>
-        </GestureDetector>
-      </ReanimatedSwipeable>
+      {/* Diagnostic: disableSwipe drops the ReanimatedSwipeable so a tester can check
+          whether the per-row horizontal pan is stealing the list's vertical scroll. */}
+      {disableSwipe ? (
+        rowInner
+      ) : (
+        <ReanimatedSwipeable
+          ref={swipeableRef}
+          friction={SWIPE_FRICTION}
+          leftThreshold={COMMIT_THRESHOLD}
+          rightThreshold={COMMIT_THRESHOLD}
+          overshootLeft={false}
+          overshootRight={false}
+          renderLeftActions={onAddToQueue ? renderLeftActions : undefined}
+          renderRightActions={onOpenPlaylist ? renderRightActions : undefined}
+          onSwipeableOpenStartDrag={handleSwipeStartDrag}
+          onSwipeableWillOpen={handleSwipeWillOpen}
+          onSwipeableOpen={handleSwipeableOpened}
+          onSwipeableClose={handleSwipeableClosed}
+        >
+          {rowInner}
+        </ReanimatedSwipeable>
+      )}
 
       {/* Separator — inset to start at the text column (after the thumbnail) */}
       {showSeparator ? (

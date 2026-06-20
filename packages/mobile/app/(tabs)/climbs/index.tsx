@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
-import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager } from 'react-native';
+import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager, FlatList } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,6 +61,7 @@ import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filt
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
+import { useFreezeDebugFlags } from '../../../src/lib/freeze-debug-store';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { glassSize } from '../../../src/theme/layout';
@@ -872,6 +873,12 @@ function ClimbListInner() {
     [useNativeSearch, t, handleNativeSearchChange, handleSearchFocus, handleSearchBlur, handleNativeSearchCancel],
   );
 
+  // Diagnostic toggles (preview/dev only) for the Android-16 climb-list touch
+  // freeze: swap FlashList→FlatList, drop the per-row swipe, and hide the top
+  // chrome to bisect the cause on a real device. All default OFF. See
+  // freeze-debug-store / FreezeDebugPanel.
+  const { flags: freezeDebug } = useFreezeDebugFlags();
+
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (
       <ActiveAwareClimbListRow
@@ -885,6 +892,7 @@ function ClimbListInner() {
         onOpenActions={openClimbActions}
         onOpenPlaylist={openAddToPlaylist}
         onAddToQueue={handleAddToQueue}
+        disableSwipe={freezeDebug.disableRowSwipe}
       />
     ),
     [
@@ -897,6 +905,7 @@ function ClimbListInner() {
       openClimbActions,
       openAddToPlaylist,
       handleAddToQueue,
+      freezeDebug.disableRowSwipe,
     ],
   );
 
@@ -944,77 +953,105 @@ function ClimbListInner() {
 
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
 
+  // Extracted so the diagnostic FlatList swap (freezeDebug.useFlatList) renders the
+  // exact same refresh control and empty state as FlashList.
+  const refreshControl = (
+    <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
+  );
+  const listEmptyComponent = showInitialSkeletons ? (
+    <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+  ) : isEmpty ? (
+    <View style={styles.emptyContainer}>
+      <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
+      <Text variant="headline" style={styles.emptyTitle}>
+        {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
+      </Text>
+      <Text variant="subheadline" style={styles.emptySubtitle}>
+        {name.length > 0
+          ? t('mobile.emptyState.noMatches.description', { query: name })
+          : t('mobile.emptyState.noClimbs.subtitle')}
+      </Text>
+    </View>
+  ) : null;
+
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
-      <FlashList
-        testID="climb-list"
-        data={visibleClimbs}
-        renderItem={renderClimbItem}
-        keyExtractor={keyExtractor}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        // The header is transparent on every path now, so the chrome owns the top
-        // inset and the list pads manually by the measured chrome height. Leaving
-        // this 'automatic' would double-inset under the (invisible) native header.
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingTop: searchBarHeight }}
-        scrollIndicatorInsets={{ top: searchBarHeight }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
-        }
-        ListHeaderComponent={listHeader}
-        ListFooterComponent={listFooter}
-        ListEmptyComponent={
-          showInitialSkeletons ? (
-            <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
-          ) : isEmpty ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {name.length > 0
-                  ? t('mobile.emptyState.noMatches.description', { query: name })
-                  : t('mobile.emptyState.noClimbs.subtitle')}
-              </Text>
-            </View>
-          ) : null
-        }
-      />
+      {/* Diagnostic (preview/dev only): swap to a plain RN FlatList to isolate a
+          FlashList v2 scroll/measure regression on Android 16 — same props on both. */}
+      {freezeDebug.useFlatList ? (
+        <FlatList
+          testID="climb-list"
+          data={visibleClimbs}
+          renderItem={renderClimbItem}
+          keyExtractor={keyExtractor}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={{ paddingTop: searchBarHeight }}
+          scrollIndicatorInsets={{ top: searchBarHeight }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          refreshControl={refreshControl}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={listEmptyComponent}
+        />
+      ) : (
+        <FlashList
+          testID="climb-list"
+          data={visibleClimbs}
+          renderItem={renderClimbItem}
+          keyExtractor={keyExtractor}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          // The header is transparent on every path now, so the chrome owns the top
+          // inset and the list pads manually by the measured chrome height. Leaving
+          // this 'automatic' would double-inset under the (invisible) native header.
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={{ paddingTop: searchBarHeight }}
+          scrollIndicatorInsets={{ top: searchBarHeight }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          refreshControl={refreshControl}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={listEmptyComponent}
+        />
+      )}
 
-      <ClimbTopChrome
-        searchMode={useNativeSearch ? 'native' : 'custom'}
-        title={searchTitle}
-        canCreate={isAuthenticated && hasBoardConfig}
-        onCreate={handleCreateClimb}
-        onOpenBoardDetail={handleOpenBoardDetail}
-        showBoardBadge={showRevealTip}
-        onHeightChange={setSearchBarHeight}
-        searchFieldRef={searchHeaderRef}
-        searchInitialValue={name}
-        searchPlaceholder={t('search.placeholders.climbs')}
-        onSearchChange={handleSearchChange}
-        onSearchFocus={handleSearchFocus}
-        onSearchBlur={handleSearchBlur}
-        onCloseGrade={handleDismissGrade}
-        activeFilterCount={activeFilterCount}
-        onOpenFilters={handleOpenFilters}
-        filterSummary={
-          features.filtersInTopChrome && filterSummary
-            ? { text: filterSummary, onClear: handleClearNonGradeFilters }
-            : undefined
-        }
-        gradeBound={gradeBound}
-        grades={grades}
-        gradeRailVisible={showGrade}
-        gradeChip={gradeChip}
-        onOpenGrade={handleOpenGrade}
-        onGradeChange={handleGradeChange}
-      />
+      {/* Diagnostic: hide the absolute top chrome to test whether it blocks the list. */}
+      {freezeDebug.hideTopChrome ? null : (
+        <ClimbTopChrome
+          searchMode={useNativeSearch ? 'native' : 'custom'}
+          title={searchTitle}
+          canCreate={isAuthenticated && hasBoardConfig}
+          onCreate={handleCreateClimb}
+          onOpenBoardDetail={handleOpenBoardDetail}
+          showBoardBadge={showRevealTip}
+          onHeightChange={setSearchBarHeight}
+          searchFieldRef={searchHeaderRef}
+          searchInitialValue={name}
+          searchPlaceholder={t('search.placeholders.climbs')}
+          onSearchChange={handleSearchChange}
+          onSearchFocus={handleSearchFocus}
+          onSearchBlur={handleSearchBlur}
+          onCloseGrade={handleDismissGrade}
+          activeFilterCount={activeFilterCount}
+          onOpenFilters={handleOpenFilters}
+          filterSummary={
+            features.filtersInTopChrome && filterSummary
+              ? { text: filterSummary, onClear: handleClearNonGradeFilters }
+              : undefined
+          }
+          gradeBound={gradeBound}
+          grades={grades}
+          gradeRailVisible={showGrade}
+          gradeChip={gradeChip}
+          onOpenGrade={handleOpenGrade}
+          onGradeChange={handleGradeChange}
+        />
+      )}
 
       {filterInTopChrome ? null : (
         <ClimbFilterFab
