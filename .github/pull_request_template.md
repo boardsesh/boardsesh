@@ -14,9 +14,11 @@ Write in climber voice. Describe what the user gets, not what the feature does:
 One short line per user-facing change. The first line is the headline; any extra
 lines fill in the detail. Keep it to what someone would actually notice.
 
-Internal-only change (refactor, CI, deps, tests)? Write `none` below, or add the
-`skip-changelog` label.
+Nothing user-facing (refactor, CI, deps, tests)? Tick the checkbox below instead
+(or add the `skip-changelog` label). Leaving this section blank fails CI.
 -->
+
+- [ ] No release note needed (internal / technical change)
 
 ## Test plan
 

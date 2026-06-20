@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractReleaseNotes,
+  isNoReleaseNoteBoxChecked,
   categorize,
   buildEntries,
   isContentEqual,
@@ -92,6 +93,18 @@ describe('extractReleaseNotes', () => {
     expect(extractReleaseNotes(undefined)).toBeNull();
   });
 
+  it('strips the "No release note needed" checkbox line (checked or not)', () => {
+    // Checked box, nothing else → no entry.
+    expect(
+      extractReleaseNotes('## Release Notes\n- [x] No release note needed (internal / technical change)'),
+    ).toBeNull();
+    // Unchecked box left in the template, but real notes written → notes win.
+    expect(
+      extractReleaseNotes(
+        '## Release Notes\n- [ ] No release note needed (internal / technical change)\n- Resume where you left off',
+      ),
+    ).toEqual({ title: 'Resume where you left off' });
+  });
   it('stops the section at the next heading of any level', () => {
     const body = '## Release Notes\nThe note\n# Another top heading\nNot included';
     expect(extractReleaseNotes(body)).toEqual({ title: 'The note' });
@@ -105,6 +118,21 @@ describe('extractReleaseNotes', () => {
     // A real note is kept, but the trailing footer is excluded.
     const withNote = '## Release Notes\nQueue sync is faster\n\n---\n🤖 Generated with [Claude Code](x)';
     expect(extractReleaseNotes(withNote)).toEqual({ title: 'Queue sync is faster' });
+  });
+});
+
+describe('isNoReleaseNoteBoxChecked', () => {
+  it('is true only when the checkbox is ticked', () => {
+    expect(
+      isNoReleaseNoteBoxChecked('## Release Notes\n- [x] No release note needed (internal / technical change)'),
+    ).toBe(true);
+    expect(isNoReleaseNoteBoxChecked('- [X] No release note needed')).toBe(true);
+    expect(
+      isNoReleaseNoteBoxChecked('## Release Notes\n- [ ] No release note needed (internal / technical change)'),
+    ).toBe(false);
+    expect(isNoReleaseNoteBoxChecked('## Release Notes\n- A real user-facing change')).toBe(false);
+    expect(isNoReleaseNoteBoxChecked('')).toBe(false);
+    expect(isNoReleaseNoteBoxChecked(null)).toBe(false);
   });
 });
 

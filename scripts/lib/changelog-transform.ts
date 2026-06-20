@@ -61,6 +61,13 @@ const CODE_FENCE = /^\s*```/;
 // Dropped so it never becomes a changelog entry. A real sentence like
 // "none of the old buttons…" doesn't match (a letter follows `none`), so it's kept.
 const NONE_MARKER = /^none\s*(?:[([{:.\-–—].*)?$/i;
+// The PR-template "No release note needed" checkbox (a flag for internal/technical
+// changes). Matched on the raw line (before list-marker stripping). The first form
+// matches it checked OR unchecked — those lines are never changelog content. The
+// second matches only the CHECKED box — an explicit "skip, on purpose" the gate
+// honors (vs an empty section, which is a forgotten note and still fails).
+const NO_RELEASE_NOTE_BOX = /^\s*[-*]\s*\[[ xX]\]\s*no release note/i;
+const NO_RELEASE_NOTE_BOX_CHECKED = /^[ \t]*[-*][ \t]*\[[xX]\][ \t]*no release note/im;
 // Also ends the section (besides the next heading): a markdown horizontal rule, or
 // the auto-generated PR footer (the "🤖 Generated with…" line). Stops a footer that
 // sits right after the notes — with no heading to bound it — from leaking in.
@@ -99,9 +106,11 @@ export function extractReleaseNotes(prBody: string | null | undefined): ReleaseN
     sectionLines.push(line);
   }
 
-  // Drop blank lines, bullet markers, and any standalone `none` (so `- none` or
-  // a mix of real notes and `none` placeholders never ship a junk "none" entry).
+  // Drop the "No release note needed" checkbox line (checked or not — it's a flag,
+  // never content), then blank lines, bullet markers, and any standalone `none`, so
+  // none of them ship as a junk entry.
   const cleaned = sectionLines
+    .filter((line) => !NO_RELEASE_NOTE_BOX.test(line))
     .map((line) => line.replace(LIST_MARKER, '').trim())
     .filter((line) => line.length > 0 && !NONE_MARKER.test(line));
 
@@ -110,6 +119,18 @@ export function extractReleaseNotes(prBody: string | null | undefined): ReleaseN
   const [title, ...rest] = cleaned;
   const body = rest.join('\n').trim();
   return body ? { title, body } : { title };
+}
+
+/**
+ * True when the PR ticks the template's "No release note needed" checkbox — an
+ * explicit, on-purpose skip (internal/technical change). The release-notes gate
+ * honors it as a pass; it never produces a changelog entry (the box line is
+ * stripped in `extractReleaseNotes`). Distinct from an empty/missing section,
+ * which is a forgotten note and still fails the gate.
+ */
+export function isNoReleaseNoteBoxChecked(prBody: string | null | undefined): boolean {
+  if (!prBody) return false;
+  return NO_RELEASE_NOTE_BOX_CHECKED.test(prBody);
 }
 
 /**
