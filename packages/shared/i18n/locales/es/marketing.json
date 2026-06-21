@@ -447,7 +447,7 @@
       "connectLabel": "Para conectar:",
       "connect1": "Toca el icono de la bombilla en la barra de la cola",
       "connect2": "Selecciona tu plafón en la lista de dispositivos",
-      "connect3": "Una vez conectada, los LEDs muestran automáticamente el bloque actual",
+      "connect3": "Una vez conectado, los LEDs muestran automáticamente el bloque actual",
       "outro": "La conexión admite patrones en espejo y se actualizará automáticamente cuando cambies de bloque."
     },
     "userSync": {
