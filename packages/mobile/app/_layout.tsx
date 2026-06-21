@@ -11,7 +11,7 @@ import {
   DarkTheme,
   DefaultTheme,
 } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { QueryProvider } from '../src/providers/query-provider';
@@ -247,14 +247,15 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
   );
   return (
     <NavigationThemeProvider value={navTheme}>
-      {/* Drive the system status-bar icon contrast from the *resolved* scheme
-          (honours the in-app appearance override), not "auto" — under Android's
-          mandatory edge-to-edge the bar is transparent over app content, so a
-          forced dark theme on a light OS must still get light icons.
-          Note: the Android 3-button navigation-bar icon contrast is NOT driven
-          here — under edge-to-edge that needs react-native-edge-to-edge's
-          <SystemBars> (a new native dep), deferred to a device-tested follow-up. */}
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} animated />
+      {/* Drive BOTH the status- and navigation-bar icon contrast from the
+          *resolved* scheme (honours the in-app appearance override), not "auto" —
+          under Android's mandatory edge-to-edge both bars are transparent over app
+          content, so a forced dark theme on a light OS must still get light icons.
+          react-native-edge-to-edge's <SystemBars> drives the Android nav bar too
+          (expo-status-bar's StatusBar only covered the status bar); on iOS it maps
+          to the status bar. `style` follows the same convention: 'light' = light
+          icons for a dark surface. */}
+      <SystemBars style={colorScheme === 'dark' ? 'light' : 'dark'} />
       {children}
     </NavigationThemeProvider>
   );

@@ -389,6 +389,16 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // android.config.googleMaps.apiKey (env-gated). iOS uses Apple Maps.
       'expo-maps',
       'expo-status-bar',
+      // Proper Android 15/16 edge-to-edge handling. Expo already enables the
+      // edge-to-edge WINDOW MODE (expo-modules-core's EdgeToEdgePackage), but
+      // without this it leaves the default (unmanaged) theme — so the navigation
+      // bar's icon contrast and the system-bar theme are at OEM defaults, which
+      // is the suspected source of the Samsung One UI / Pixel 10 Android-16 touch
+      // freeze (split-screen, which re-runs window-metrics, clears it). This sets
+      // the proper Theme.EdgeToEdge parent and lets <SystemBars> (app/_layout.tsx)
+      // drive BOTH the status- and navigation-bar contrast from the resolved
+      // scheme. Native change → ships on the next build, not OTA.
+      'react-native-edge-to-edge',
       // Android 12+ system splash + the launch screen on every platform. The
       // transparent brand mark sits on a black background for a consistent
       // icon-to-app handoff. app/_layout.tsx already drives
