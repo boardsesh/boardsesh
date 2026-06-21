@@ -56,10 +56,17 @@ if (isSentryEnabled) {
 }
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string
-// rather than dropping them so triage data survives.
-function toSentryTag(value: unknown): string | number | boolean {
+// rather than dropping them so triage data survives. Objects/arrays would
+// stringify to a useless "[object Object]", so JSON-serialize them to keep the
+// real data; fall back to String() for anything JSON can't handle (circular
+// refs, BigInt).
+export function toSentryTag(value: unknown): string | number | boolean {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-  return String(value);
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /**
@@ -82,8 +89,19 @@ export function captureToSentry(error: unknown, context?: ErrorReportContext): v
 }
 
 /** Best-effort flush so a report survives a later hard crash. */
-export function flushSentry(): Promise<unknown> {
+export function flushSentry(): Promise<boolean> {
   return isSentryEnabled ? Sentry.flush() : Promise.resolve(true);
+}
+
+/**
+ * Force a native crash to verify the native crash handler on a real binary — the
+ * event is persisted across the crash and uploaded on the next launch. No-op
+ * when Sentry is disabled so it can never hard-crash a dev / no-DSN build. Wired
+ * behind the tester-only channel switcher; not for production code paths.
+ */
+export function nativeSentryCrash(): void {
+  if (!isSentryEnabled) return;
+  Sentry.nativeCrash();
 }
 
 // Wrap the RN global error handler regardless of whether Sentry is enabled: the

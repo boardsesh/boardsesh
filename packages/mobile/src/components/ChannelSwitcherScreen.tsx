@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, ScrollView, ActivityIndicator, Alert, Pressable, StyleSheet, TextInput } from 'react-native';
 import * as Updates from 'expo-updates';
-import { reportHandledError } from '../lib/error-reporting';
+import { reportError, reportHandledError } from '../lib/error-reporting';
+import { isSentryEnabled, nativeSentryCrash } from '../lib/sentry';
 import { Text } from './Text';
 import { SectionHeader } from './SectionHeader';
 import { ListRow } from './ListRow';
@@ -32,7 +33,7 @@ function applyChannelOverride(channel: string | null): void {
 }
 
 export function ChannelSwitcherScreen() {
-  const { systemColors, spacing, borderRadius } = useTheme();
+  const { systemColors, brandColors, spacing, borderRadius } = useTheme();
   const confirm = useConfirm();
   const [override, setOverride] = useState<string | null>(null);
   const [customChannel, setCustomChannel] = useState('');
@@ -168,6 +169,52 @@ export function ChannelSwitcherScreen() {
       inFlightRef.current = false;
     }
   }, [confirm, buildChannel, makeDeps]);
+
+  // --- Sentry verification (tester-only) ---
+  // Sentry never sends from a dev / Metro build (gated on !__DEV__), so the only
+  // way to confirm the deployed binary actually reports is to fire each capture
+  // path from a real build and watch the boardsesh Sentry project.
+  const sendSentryTestEvent = useCallback(() => {
+    hapticLight();
+    reportError(new Error('Sentry test event (handled) — channel switcher'), {
+      tags: { source: 'sentry-test', kind: 'handled' },
+    });
+    Alert.alert(
+      // i18n-ignore-next-line — tester-only screen
+      'Test event sent',
+      isSentryEnabled
+        ? // i18n-ignore-next-line — tester-only screen
+          'A handled event was sent to the boardsesh Sentry project. Filter by source:sentry-test.'
+        : // i18n-ignore-next-line — tester-only screen
+          'Sentry is disabled in this build, so nothing was sent.',
+    );
+  }, []);
+
+  const throwSentryUncaught = useCallback(() => {
+    hapticError();
+    // Throw on a fresh tick so it escapes this handler and React, surfacing as a
+    // genuine uncaught JS error that the global handler reports to Sentry.
+    setTimeout(() => {
+      throw new Error('Sentry test: uncaught JS exception — channel switcher');
+    }, 0);
+  }, []);
+
+  const triggerSentryNativeCrash = useCallback(async () => {
+    hapticLight();
+    const confirmed = await confirm({
+      // i18n-ignore-next-line — tester-only screen
+      title: 'Force a native crash?',
+      // i18n-ignore-next-line — tester-only screen
+      message: 'The app crashes immediately. The crash uploads to Sentry on the next launch.',
+      // i18n-ignore-next-line — tester-only screen
+      confirmLabel: 'Crash',
+      // i18n-ignore-next-line — tester-only screen
+      cancelLabel: 'Cancel',
+    });
+    if (!confirmed) return;
+    hapticError();
+    nativeSentryCrash();
+  }, [confirm]);
 
   const channels = buildChannelList(override);
 
@@ -308,6 +355,43 @@ export function ChannelSwitcherScreen() {
           </Pressable>
         </>
       )}
+
+      {/* i18n-ignore-next-line — tester-only screen */}
+      <SectionHeader title="Test crash reporting (Sentry)" />
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: systemColors.secondaryBackground,
+            borderRadius: borderRadius.lg,
+            marginHorizontal: spacing[4],
+          },
+        ]}
+      >
+        {/* i18n-ignore-next-line — tester-only screen */}
+        <InfoRow label="Sentry" value={isSentryEnabled ? 'Active' : 'Disabled in this build'} />
+        <ListRow
+          // i18n-ignore-next-line — tester-only screen
+          title="Send test event (handled)"
+          trailing={<Icon name="send" size={18} color={systemColors.secondaryLabel} />}
+          onPress={sendSentryTestEvent}
+          showSeparator
+        />
+        <ListRow
+          // i18n-ignore-next-line — tester-only screen
+          title="Throw JS exception (uncaught)"
+          trailing={<Icon name="warning" size={18} color={brandColors.warning} />}
+          onPress={throwSentryUncaught}
+          showSeparator
+        />
+        <ListRow
+          // i18n-ignore-next-line — tester-only screen
+          title="Native crash"
+          trailing={<Icon name="flame" size={18} color={brandColors.error} />}
+          onPress={() => void triggerSentryNativeCrash()}
+          showSeparator={false}
+        />
+      </View>
 
       <View style={styles.bottomSpacer} />
     </ScrollView>

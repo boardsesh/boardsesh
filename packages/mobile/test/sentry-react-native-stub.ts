@@ -20,6 +20,8 @@ type StubScope = {
 
 export function init(): void {}
 
+export function nativeCrash(): void {}
+
 export function captureException(): void {}
 
 export function captureMessage(): void {}
