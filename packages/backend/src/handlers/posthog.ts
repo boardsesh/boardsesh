@@ -41,6 +41,11 @@ function readBody(req: IncomingMessage, limitBytes: number): Promise<Buffer | { 
  * the query string, request body bytes, and Content-Encoding header (the JS SDK
  * gzips the /batch/ payload when CompressionStream is available, so the body is
  * binary, not text).
+ *
+ * Also forwards the browser's User-Agent. PostHog derives `$raw_user_agent` (and
+ * its bot/traffic classification + device parsing) from the request UA header;
+ * Node's fetch sends none by default, so without this every proxied event lands
+ * with an empty UA and PostHog flags it as a bot.
  */
 export async function handlePosthogProxy(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -75,6 +80,10 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
   }
   const clientIp = getClientIp(req);
   if (clientIp) headers['X-Forwarded-For'] = clientIp;
+  const userAgent = req.headers['user-agent'];
+  if (typeof userAgent === 'string' && userAgent.length > 0) {
+    headers['User-Agent'] = userAgent;
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);

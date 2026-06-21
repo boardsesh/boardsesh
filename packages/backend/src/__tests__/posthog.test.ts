@@ -14,6 +14,7 @@ type FakeReqOptions = {
   contentEncoding?: string;
   forwardedFor?: string;
   remoteAddress?: string;
+  userAgent?: string;
 };
 
 function createFakeReq(options: FakeReqOptions): ProxyReq {
@@ -23,6 +24,7 @@ function createFakeReq(options: FakeReqOptions): ProxyReq {
   if (options.contentType) headers['content-type'] = options.contentType;
   if (options.contentEncoding) headers['content-encoding'] = options.contentEncoding;
   if (options.forwardedFor) headers['x-forwarded-for'] = options.forwardedFor;
+  if (options.userAgent) headers['user-agent'] = options.userAgent;
 
   const req = {
     method: options.method,
@@ -150,6 +152,7 @@ describe('PostHog Proxy Handler', () => {
       body: '{"event":"test"}',
       contentType: 'application/json',
       forwardedFor: '203.0.113.7, 10.0.0.1',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
     });
     const res = createFakeRes();
 
@@ -164,6 +167,10 @@ describe('PostHog Proxy Handler', () => {
     const headers = init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['X-Forwarded-For']).toBe('203.0.113.7');
+    // UA must reach PostHog so it isn't recorded with an empty user agent (→ bot).
+    expect(headers['User-Agent']).toBe(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
+    );
     // Body must be forwarded as bytes (the SDK may have gzipped it).
     expect(init.body).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(init.body as Uint8Array)).toBe('{"event":"test"}');
@@ -216,6 +223,18 @@ describe('PostHog Proxy Handler', () => {
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>)['X-Forwarded-For']).toBe('198.51.100.4');
+  });
+
+  it('omits User-Agent when the incoming request has none (avoids sending an empty UA)', async () => {
+    fetchMock.mockResolvedValue(new Response('1', { status: 200 }));
+
+    const req = createFakeReq({ method: 'POST', origin: 'https://boardsesh.com', body: '{}' });
+    const res = createFakeRes();
+
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/i/v0/e/'));
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['User-Agent']).toBeUndefined();
   });
 
   it('returns 404 when the path is exactly the prefix (no upstream target)', async () => {

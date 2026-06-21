@@ -1,6 +1,19 @@
 import { PostHog } from 'posthog-react-native';
 import { installGlobalErrorCapture } from './global-error-capture';
 
+// PostHog classifies traffic by parsing the request User-Agent into
+// `$raw_user_agent` (its `$virt_is_bot` / traffic-type is `isLikelyBot($raw_user_agent)`).
+// The RN SDK sends no UA that PostHog stores, so without this every mobile event
+// lands with an empty UA — which PostHog treats as a bot, hiding all real mobile
+// users behind the "Regular traffic" filter. A non-empty UA with no denylisted
+// bot substring ("bot"/"crawler"/…) classifies as Regular. Kept a static
+// constant rather than derived from `react-native` Platform so this module stays
+// free of the RN Flow barrel (react-native/index.js), which the node-env test
+// runner that imports this file transitively can't parse. OS, device, and app
+// version already ride on $os / $device_model / $app_version, so the UA only
+// needs the non-bot signature; the SDK still sets $os / $device_type directly.
+const MOBILE_USER_AGENT = 'Boardsesh Mobile';
+
 // PostHog project token. Intentionally the SAME project as web so a signed-in
 // user's web + mobile activity resolves to one person. `EXPO_PUBLIC_*` vars are
 // inlined into the JS bundle at build time, so this must be set when the bundle
@@ -67,6 +80,13 @@ export function getPostHogClient(): PostHog | null {
       captureLog: true,
     },
   });
+  // Attach a device User-Agent to every event so PostHog's bot classifier sees
+  // real mobile traffic instead of an empty UA. Never let this block init.
+  try {
+    client.register({ $raw_user_agent: MOBILE_USER_AGENT });
+  } catch {
+    // Super-property registration is best-effort; analytics must still start.
+  }
   installMobileGlobalErrorCapture();
   return client;
 }
