@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish Web Unit Tests report
-        uses: turing85/publish-report@v2
+        uses: turing85/publish-report@ee901e1a36f554c87b963f151170296227dac3d6 # v2
         with:
           checkout: 'true'
           download-artifact-name: web-test-results
@@ -36,10 +36,10 @@ jobs:
     if: github.event.workflow.name == 'Backend Integration Tests'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Download all shard results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: backend-test-results-*
           path: test-results
@@ -48,7 +48,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish Backend Integration Tests report
-        uses: turing85/publish-report@v2
+        uses: turing85/publish-report@ee901e1a36f554c87b963f151170296227dac3d6 # v2
         with:
           comment-header: backend-test-report
           comment-enabled: 'true'

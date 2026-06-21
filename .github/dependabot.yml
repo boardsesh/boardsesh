@@ -9,3 +9,16 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+
+  # Keep the SHA-pinned GitHub Actions current. Dependabot bumps the pinned
+  # commit and its trailing `# vX` comment together, so we get the supply-chain
+  # safety of SHA pins without manually chasing new releases. Grouped into one PR
+  # per week to avoid 28 separate bump PRs.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    groups:
+      github-actions:
+        patterns:
+          - '*'

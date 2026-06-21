@@ -1,0 +1,18 @@
+# Code owners for security-sensitive infrastructure.
+#
+# Anything that can read a secret, run on a self-hosted runner, or change the
+# build/deploy pipeline must be reviewed by a maintainer. This only *enforces* a
+# blocking review once branch protection on `main` has "Require review from Code
+# Owners" enabled (Settings → Branches). Until then it still routes review
+# requests, just without the hard gate.
+#
+# Replace @marcodejongh with a @boardsesh/<team> once a maintainers team exists,
+# so ownership survives any single account.
+
+# CI/CD workflows, Dependabot, and this file itself
+/.github/                       @marcodejongh
+
+# Build/deploy/release tooling invoked by the workflows above
+/scripts/                       @marcodejongh
+/Dockerfile.backend             @marcodejongh
+/docker-compose*.yml            @marcodejongh

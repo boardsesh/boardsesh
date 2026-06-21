@@ -107,6 +107,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web still on the legacy rose/sage palette, pending migration)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
+- `docs/ci-security.md` — CI/CD secret scoping, write-access threat model, rules for new workflows/secrets
 
 ## Architecture Overview
 

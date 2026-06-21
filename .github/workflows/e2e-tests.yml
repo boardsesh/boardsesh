@@ -23,18 +23,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             node_modules
@@ -73,7 +73,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install unzip (required by setup-bun)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
@@ -123,16 +123,16 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             node_modules
@@ -149,7 +149,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Cache Next.js incremental build
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/web/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('bun.lock') }}-${{ hashFiles('packages/web/**/*.ts', 'packages/web/**/*.tsx', 'packages/web/**/*.js', 'packages/web/**/*.jsx') }}
@@ -194,7 +194,7 @@ jobs:
           ls -lh built-packages.tar
 
       - name: Upload built packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ env.BUILT_PACKAGES_ARTIFACT }}
           path: built-packages.tar
@@ -232,7 +232,7 @@ jobs:
           --shm-size 256mb
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install unzip (required by setup-bun)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
@@ -282,16 +282,16 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             node_modules
@@ -307,7 +307,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Download built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ env.BUILT_PACKAGES_ARTIFACT }}
 
@@ -366,7 +366,7 @@ jobs:
           cat web.log || true
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -374,7 +374,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Playwright test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: playwright-results-shard-${{ matrix.shard }}
@@ -418,7 +418,7 @@ jobs:
           --shm-size 256mb
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install unzip (required by setup-bun)
         # apt-get from the default Ubuntu mirror is intermittently unreachable
@@ -468,16 +468,16 @@ jobs:
           unzip -h >/dev/null 2>&1 || { echo "python unzip wrapper failed"; exit 1; }
           echo "python-based unzip wrapper installed at /usr/local/bin/unzip"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
 
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             node_modules
@@ -493,7 +493,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Download built packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ env.BUILT_PACKAGES_ARTIFACT }}
 
@@ -564,7 +564,7 @@ jobs:
 
       - name: Upload screenshots artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: screenshots-current
           path: screenshots-out/
@@ -583,13 +583,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
 
       - name: Download screenshots artifact
         id: dl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         continue-on-error: true
         with:
           name: screenshots-current
@@ -700,7 +700,7 @@ jobs:
           PUSHED: ${{ steps.push.outputs.pushed }}
 
       - name: Upsert sticky PR comment
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2
         with:
           header: e2e-screenshots
           path: summary.md

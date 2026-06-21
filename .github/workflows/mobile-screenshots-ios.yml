@@ -122,11 +122,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
@@ -142,7 +142,7 @@ jobs:
       # job never uses — keeping the common-path critical path to ~1-2 min.
       - name: Check for cached simulator app
         id: app-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
@@ -163,7 +163,7 @@ jobs:
       # hit the entry already exists.
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
@@ -204,11 +204,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
@@ -221,7 +221,7 @@ jobs:
       # populates the cache before these shards start (needs: + cache saves at job
       # end), so this restore is a guaranteed hit.
       - name: Restore prebuilt simulator app
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/.app-cache
           key: ${{ needs.ios-build.outputs.cache-key }}
@@ -281,7 +281,7 @@ jobs:
 
       - name: Upload capture debug artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           # Per-shard name: upload-artifact@v4 rejects two uploads with the same
           # name in one run.
@@ -297,7 +297,7 @@ jobs:
       # intermediate; the combined tree is re-uploaded by ios-finalize.
       - name: Upload shard screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ios-screenshots-${{ matrix.locale }}-${{ matrix.device.slug }}
           path: app-stores/apple/screenshots/**
@@ -310,6 +310,11 @@ jobs:
     # gap (a missing locale fails it loudly rather than uploading a partial set).
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    # Gate the App Store Connect secrets behind the Production environment
+    # (main-only branch policy) so they can be stored ONLY in that environment,
+    # never at the repo level. A workflow_dispatch from a feature branch can't
+    # read them — only the scheduled/main run can.
+    environment: Production
     timeout-minutes: 30
 
     env:
@@ -319,11 +324,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@2dec1e33f4ab2c6d5bce1b0c4607961bb1a3f7a1 # v1
         with:
           node-version: 'lts'
           cache: true
@@ -336,7 +341,7 @@ jobs:
       # preserving each one's <locale>/<device>/NN-name.png layout — so the gate
       # and fastlane see the full four-locale tree.
       - name: Download locale screenshots
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: ios-screenshots-*
           path: app-stores/apple/screenshots
@@ -362,7 +367,7 @@ jobs:
       # it runs fine on ubuntu.
       - name: Set up Ruby + fastlane
         if: success() && env.UPLOAD_RUN == 'true'
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@9eb537ca036ebaed86729dcb9309076e4c5c3b74 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -406,7 +411,7 @@ jobs:
 
       - name: Upload screenshots artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-screenshots-ios
           path: app-stores/apple/screenshots/**

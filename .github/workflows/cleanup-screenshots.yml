@@ -16,7 +16,7 @@ jobs:
       # the whole branch — no path surgery needed, and if the branch was
       # never created (PR had no screenshot run) the 404 is a no-op.
       - name: Delete pr-screenshots/{PR} if it exists
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const pr = context.payload.pull_request.number;
