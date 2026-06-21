@@ -19,6 +19,7 @@ export class PostHog {
   identify(): void {}
   alias(): void {}
   reset(): void {}
+  register(): void {}
   screen(): void {}
   setPersonProperties(): void {}
   flush(): Promise<void> {
