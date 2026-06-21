@@ -86,8 +86,13 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
     <View style={[styles.row, { width, height: rowHeight }]}>
       {/* Leading board control as a content-layer element (the platter is
           UIKit-owned, so the glow lives here, not on the glass). Static state
-          swap; no long-press recognizer — it would fight UIKit's own gestures. */}
-      <BoardControlIndicator size={glassSize.inline} iconSize={22} />
+          swap; no long-press recognizer — it would fight UIKit's own gestures.
+          The negative trailing margin pulls the climb thumbnail in toward the
+          lightbulb (the 44pt tap slot otherwise leaves a wide gap), without
+          shrinking the indicator's halo. */}
+      <View style={styles.controlGutter}>
+        <BoardControlIndicator size={glassSize.inline} iconSize={22} />
+      </View>
       <GestureDetector gesture={openGesture}>
         <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
           <View style={styles.labelSlot}>
@@ -114,6 +119,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: ACCESSORY_LEADING_INSET,
     paddingRight: ACCESSORY_TRAILING_INSET,
+  },
+  // Pulls the climb thumbnail ~12pt closer to the lightbulb by eating into the
+  // 44pt tap slot's empty right padding (the icon is centred, so this never
+  // overlaps it) — the halo stays full-size.
+  controlGutter: {
+    marginRight: -spacing[3],
   },
   tapClip: {
     flex: 1,
