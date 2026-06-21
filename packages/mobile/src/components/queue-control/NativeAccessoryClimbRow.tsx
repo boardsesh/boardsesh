@@ -24,6 +24,11 @@ type NativeAccessoryClimbRowProps = {
 const ACCESSORY_LEADING_INSET = spacing[1];
 // Pull the tick ~20pt off the platter's right edge so it doesn't sit flush.
 const ACCESSORY_TRAILING_INSET = spacing[8];
+// Leading space the climb content reserves for the (absolutely-positioned)
+// lightbulb. A touch less than the 44pt slot so the thumbnail tucks ~12pt closer
+// to the bulb than a full slot + gap would, matching the look we want without a
+// negative margin overlapping the control's tap target.
+const THUMBNAIL_LEADING_INSET = glassSize.inline - spacing[3];
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -84,16 +89,9 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
-      {/* Leading board control as a content-layer element (the platter is
-          UIKit-owned, so the glow lives here, not on the glass). Static state
-          swap; no long-press recognizer — it would fight UIKit's own gestures.
-          The negative trailing margin pulls the climb thumbnail in toward the
-          lightbulb (the 44pt tap slot otherwise leaves a wide gap), without
-          shrinking the indicator's halo. */}
-      <View style={styles.controlGutter}>
-        <BoardControlIndicator size={glassSize.inline} iconSize={22} />
-      </View>
       <GestureDetector gesture={openGesture}>
+        {/* tapClip reserves the leading slot via paddingLeft (not a real child),
+            so the climb thumbnail tucks in close to the lightbulb. */}
         <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
           <View style={styles.labelSlot}>
             <ClimbLabel
@@ -109,6 +107,15 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
         <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
       </View>
+      {/* Leading board control as a content-layer element (the platter is
+          UIKit-owned, so the glow lives here, not on the glass). Static state
+          swap; no long-press recognizer — it would fight UIKit's own gestures.
+          Positioned ABSOLUTELY on top of the climb gesture (rendered last) so its
+          full 44pt tap target is never stolen by the climb-row tap — the same
+          leading-control treatment the Android ClimbCapsule uses. */}
+      <View style={styles.controlSlot} pointerEvents="box-none">
+        <BoardControlIndicator size={glassSize.inline} iconSize={22} />
+      </View>
     </View>
   );
 }
@@ -120,11 +127,16 @@ const styles = StyleSheet.create({
     paddingLeft: ACCESSORY_LEADING_INSET,
     paddingRight: ACCESSORY_TRAILING_INSET,
   },
-  // Pulls the climb thumbnail ~12pt closer to the lightbulb by eating into the
-  // 44pt tap slot's empty right padding (the icon is centred, so this never
-  // overlaps it) — the halo stays full-size.
-  controlGutter: {
-    marginRight: -spacing[3],
+  // The lightbulb sits in this absolute slot on TOP of the climb gesture, so its
+  // Pressable keeps a full, unobscured 44pt tap target. left matches the row's
+  // leading inset; box-none lets taps outside the bulb fall through to the climb
+  // gesture underneath.
+  controlSlot: {
+    position: 'absolute',
+    left: ACCESSORY_LEADING_INSET,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   tapClip: {
     flex: 1,
@@ -132,6 +144,8 @@ const styles = StyleSheet.create({
     height: '100%',
     overflow: 'hidden',
     justifyContent: 'center',
+    // Reserve the leading slot so the thumbnail starts just past the lightbulb.
+    paddingLeft: THUMBNAIL_LEADING_INSET,
   },
   labelSlot: {
     justifyContent: 'center',
