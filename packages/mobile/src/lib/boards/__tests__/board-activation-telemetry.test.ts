@@ -33,7 +33,7 @@ function trackedPhases(): Array<string | undefined> {
 }
 
 function begin(board: UserBoard, returnTo: BoardReturnTo = '/(tabs)/climbs') {
-  telemetry.beginBoardActivationTelemetry(board, { source: 'board_picker', returnTo });
+  return telemetry.beginBoardActivationTelemetry(board, { source: 'board_picker', returnTo });
 }
 
 describe('board activation telemetry', () => {
@@ -77,35 +77,38 @@ describe('board activation telemetry', () => {
 
     begin(board);
     telemetry.markBoardActivationPhase('persisted', board);
+    telemetry.markBoardActivationPhase('dismiss_requested', board);
     telemetry.markBoardActivationPhase('climbs_screen_ready', board);
     telemetry.markBoardActivationPhase('active_board_published', board);
     vi.advanceTimersByTime(6000);
 
-    expect(trackedPhases()).toEqual(['tap', 'persisted', 'climbs_screen_ready']);
+    expect(trackedPhases()).toEqual(['tap', 'persisted', 'dismiss_requested', 'climbs_screen_ready']);
   });
 
   it('clears non-Climbs activations after active-board publish', () => {
     const board = makeBoard('board-1');
 
     begin(board, '/(tabs)/discover');
-    telemetry.markBoardActivationPhase('active_board_published', board);
+    telemetry.markBoardActivationPhase('persisted', board);
     telemetry.markBoardActivationPhase('dismiss_requested', board);
+    telemetry.markBoardActivationPhase('active_board_published', board);
+    telemetry.markBoardActivationPhase('climbs_screen_ready', board);
 
-    expect(trackedPhases()).toEqual(['tap', 'active_board_published']);
+    expect(trackedPhases()).toEqual(['tap', 'persisted', 'dismiss_requested', 'active_board_published']);
   });
 
-  it('clears the previous timeout when a second activation starts', () => {
-    const firstBoard = makeBoard('board-1');
-    const secondBoard = makeBoard('board-2');
+  it('uses distinct activation ids and clears the previous timeout when the same board is reactivated', () => {
+    const board = makeBoard('board-1');
 
-    begin(firstBoard);
-    begin(secondBoard);
+    const firstActivationId = begin(board);
+    const secondActivationId = begin(board);
     vi.advanceTimersByTime(6000);
 
+    expect(firstActivationId).not.toBe(secondActivationId);
     expect(trackedPhases()).toEqual(['tap', 'tap', 'timeout']);
     expect(analytics.track).toHaveBeenLastCalledWith(
       telemetry.BOARD_ACTIVATION_PHASE_EVENT,
-      expect.objectContaining({ phase: 'timeout', boardUuid: secondBoard.uuid }),
+      expect.objectContaining({ activationId: secondActivationId, phase: 'timeout', boardUuid: board.uuid }),
     );
   });
 });

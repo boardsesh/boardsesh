@@ -73,10 +73,8 @@ export function useSetActiveBoard() {
  * Used by Android board-picker activation so the modal dismissal can finish
  * before active-board subscribers mount heavier board-backed surfaces.
  */
-export function usePersistActiveBoard() {
-  return useCallback(async (board: UserBoard) => {
-    await setStoredActiveBoard(board);
-  }, []);
+export async function persistActiveBoard(board: UserBoard) {
+  await setStoredActiveBoard(board);
 }
 
 /**

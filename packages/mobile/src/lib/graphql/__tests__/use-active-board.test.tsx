@@ -141,7 +141,7 @@ describe('useActiveBoard', () => {
   });
 
   it('persistActiveBoard writes storage without publishing the cache', async () => {
-    const { useActiveBoard, usePersistActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
+    const { useActiveBoard, persistActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
     const { getStoredActiveBoard } = await import('../../active-board-store');
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const sharedWrapper = ({ children }: { children: ReactNode }) => (
@@ -149,13 +149,10 @@ describe('useActiveBoard', () => {
     );
 
     const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
-    const persister = renderHook(() => usePersistActiveBoard(), { wrapper: sharedWrapper });
     await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
     expect(read.result.current.data).toBeNull();
 
-    await act(async () => {
-      await persister.result.current(storedBoard);
-    });
+    await persistActiveBoard(storedBoard);
 
     expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeNull();
     expect(read.result.current.data).toBeNull();

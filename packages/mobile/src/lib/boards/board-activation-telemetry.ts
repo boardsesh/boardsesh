@@ -25,6 +25,7 @@ type PendingBoardActivation = {
 };
 
 let pendingBoardActivation: PendingBoardActivation | null = null;
+let boardActivationSequence = 0;
 
 function buildBoardProps(board: UserBoard) {
   return {
@@ -61,8 +62,9 @@ export function beginBoardActivationTelemetry(
   if (pendingBoardActivation) clearPendingActivation(pendingBoardActivation);
 
   const startedAt = Date.now();
+  boardActivationSequence += 1;
   const pending: PendingBoardActivation = {
-    id: `${board.uuid}:${startedAt}`,
+    id: `${board.uuid}:${startedAt}:${boardActivationSequence}`,
     boardUuid: board.uuid,
     startedAt,
     returnTo: opts.returnTo,

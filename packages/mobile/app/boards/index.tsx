@@ -7,7 +7,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, usePopularBoardConfigs, useNearbyBoards } from '../../src/lib/graphql/hooks';
 import {
   useActiveBoard,
-  usePersistActiveBoard,
+  persistActiveBoard,
   usePublishActiveBoardAfterInteractions,
   useSetActiveBoard,
 } from '../../src/lib/graphql/use-active-board';
@@ -52,7 +52,6 @@ export default function BoardSelection() {
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
   const setActiveBoard = useSetActiveBoard();
-  const persistActiveBoard = usePersistActiveBoard();
   const publishActiveBoardAfterInteractions = usePublishActiveBoardAfterInteractions();
   const { data: activeBoard } = useActiveBoard();
 
@@ -85,13 +84,6 @@ export default function BoardSelection() {
     if (isError) void refreshAuthState();
   }, [isError, refreshAuthState]);
 
-  useEffect(() => {
-    return () => {
-      deferredActiveBoardPublishCancelRef.current?.();
-      deferredActiveBoardPublishCancelRef.current = null;
-    };
-  }, []);
-
   const activateBoard = useCallback(
     async (board: UserBoard) => {
       hapticSelection();
@@ -110,16 +102,16 @@ export default function BoardSelection() {
           if (activationSequence !== activationSequenceRef.current) return;
 
           markBoardActivationPhase('persisted', board);
-          if (fromOnboarding) {
-            track(SHARED_EVENTS.OnboardingBoardActivated, { boardType: board.boardType, source: 'onboarding' });
-            void setBoardRevealTipPending();
-          }
           markBoardActivationPhase('dismiss_requested', board);
           router.dismissTo(boardReturnTo);
           deferredActiveBoardPublishCancelRef.current = publishActiveBoardAfterInteractions(board, {
             onPublished: () => {
               if (activationSequence !== activationSequenceRef.current) return;
               deferredActiveBoardPublishCancelRef.current = null;
+              if (fromOnboarding) {
+                track(SHARED_EVENTS.OnboardingBoardActivated, { boardType: board.boardType, source: 'onboarding' });
+                void setBoardRevealTipPending();
+              }
               markBoardActivationPhase('active_board_published', board);
             },
           });
@@ -150,16 +142,7 @@ export default function BoardSelection() {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [
-      setActiveBoard,
-      persistActiveBoard,
-      publishActiveBoardAfterInteractions,
-      router,
-      boardReturnTo,
-      showToast,
-      t,
-      fromOnboarding,
-    ],
+    [setActiveBoard, publishActiveBoardAfterInteractions, router, boardReturnTo, showToast, t, fromOnboarding],
   );
 
   const myBoardItems = useMemo(
