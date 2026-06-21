@@ -388,7 +388,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // expo-location above; the Android Google Maps key is set via
       // android.config.googleMaps.apiKey (env-gated). iOS uses Apple Maps.
       'expo-maps',
-      'expo-status-bar',
       // Android 12+ system splash + the launch screen on every platform. The
       // transparent brand mark sits on a black background for a consistent
       // icon-to-app handoff. app/_layout.tsx already drives
