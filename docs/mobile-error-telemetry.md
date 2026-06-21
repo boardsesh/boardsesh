@@ -25,6 +25,13 @@ module side-effect) and wraps the root with `wrapWithSentry`.
 (`app/_layout.tsx`) both report through `reportError`. Crashes and render errors land
 in Sentry with no extra work.
 
+**App hangs / ANRs.** `enableAppHangTracking` (iOS) reports a main-thread freeze
+longer than `appHangTimeoutInterval` (2s) as an App Hang; Android ANR detection (5s
+main-thread block) is on by default in the native `sentry-android` layer. Both attach
+a JS stack pinned to the blocked frame — that's how the in-the-wild device freezes
+(e.g. Galaxy S24 / Pixel 10) surface with the exact culprit, rather than via emulator
+repro.
+
 ## What you must do: report _handled_ errors
 
 The blind spot is errors the app **catches** and turns into a toast, inline

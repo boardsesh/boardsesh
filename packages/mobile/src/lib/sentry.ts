@@ -33,6 +33,19 @@ if (isSentryEnabled) {
     // captureMessage calls a stack too.
     enableNativeCrashHandling: true,
     attachStacktrace: true,
+    // App-hang / ANR tracking. This is what catches the freezes users actually
+    // report in the wild (e.g. Galaxy S24 / Pixel 10) with a JS stack pinned to
+    // the blocked frame — far more reliable than chasing a repro in an emulator.
+    //   - iOS: enableAppHangTracking watches the main thread; any unresponsive
+    //     stretch ≥ appHangTimeoutInterval seconds is reported as an App Hang.
+    //     Both default on / 2s; set explicitly so a future SDK default can't
+    //     flip them, matching the enableNativeCrashHandling rationale above.
+    //   - Android: ANR detection is already on by default in the native
+    //     sentry-android layer (5s main-thread block) — there's no JS init
+    //     option to set; the @sentry/react-native/expo plugin wires the native
+    //     SDK that captures it and attaches the JS stack.
+    enableAppHangTracking: true,
+    appHangTimeoutInterval: 2,
     // release/dist are intentionally left unset so @sentry/react-native
     // auto-detects them from the native build (CFBundleShortVersionString +
     // CFBundleVersion). Those are the exact values `sentry-cli react-native
