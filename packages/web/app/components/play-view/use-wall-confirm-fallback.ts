@@ -4,13 +4,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   createWallConfirmFallbackController,
   subscribeToWallConfirm,
+  WALL_CONFIRM_BACKSTOP_MS,
   WALL_CONFIRM_TIMEOUT_MS,
   type WallConfirmArmArgs,
 } from '@boardsesh/play-view';
 import { track } from '@/app/lib/analytics';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
 
-export { WALL_CONFIRM_TIMEOUT_MS };
+export { WALL_CONFIRM_BACKSTOP_MS, WALL_CONFIRM_TIMEOUT_MS };
 
 type Deps = {
   /** Current local BLE connection state. */
@@ -78,7 +79,16 @@ export function useWallConfirmFallback(deps: Deps, callbacks: Callbacks = {}) {
             track('Wall Confirmed', { climbUuid, latencyMs, confirmedByRole, mode, boardLayout });
           },
           onTrackTimeout: ({ mode, fallback, boardLayout }) => {
-            track('Wall Confirm Timeout', { mode, fallback, boardLayout });
+            // Only the connected-but-no-converge case is a genuine board-ack
+            // failure. Everything else (`pulse_only`/`picker`/`auto_connect`/
+            // `unsupported`) is the backstop firing while the link was still
+            // coming up — not a wall failure. Split it out so it stops inflating
+            // the board-ack-failure metric.
+            if (fallback === 'already_connected') {
+              track('Wall Confirm Timeout', { mode, fallback, boardLayout });
+            } else {
+              track('Wall Confirm Connecting', { mode, fallback, boardLayout });
+            }
           },
         },
       ),

@@ -11,6 +11,7 @@ import React, {
   useDeferredValue,
 } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
+import { emitWallConfirm } from '@boardsesh/play-view';
 import { useTranslation } from 'react-i18next';
 import { track } from '@/app/lib/analytics';
 import IconButton from '@mui/material/IconButton';
@@ -31,7 +32,7 @@ import { PlaybackControls } from '../playback/playback-controls';
 import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
-import { useWallConfirmFallback } from './use-wall-confirm-fallback';
+import { useWallConfirmFallback, WALL_CONFIRM_BACKSTOP_MS } from './use-wall-confirm-fallback';
 import { useDrawerPlayback } from './use-drawer-playback';
 import { themeTokens } from '@/app/theme/theme-config';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
@@ -109,10 +110,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
    * Lightbulb pending state (queue-control-bar pivot, Phase 3).
    *
    * Set when the user presses the lightbulb to connect + send the current climb
-   * to the board — between the press and the matching `WallConfirmedClimb`, the
+   * to the board — between the press and the climb converging onto the wall, the
    * lightbulb renders with a soft pulse so the user can see we're waiting.
-   * Cleared either way when `useWallConfirmFallback` resolves (confirm,
-   * timeout, or session-swap cancellation).
+   * Cleared when the climb confirms (convergent state), is superseded (queue
+   * moves on), the session swaps, or the backstop fires.
    */
   const [pendingClimbUuid, setPendingClimbUuid] = useState<string | null>(null);
   /**
@@ -380,20 +381,22 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const handlePrevNavClick = useCallback(() => {
     navigate('previous', 'playViewDrawer');
   }, [navigate]);
-  // Wall-confirm watcher: armed by handleLightbulbClick, dismissed by the
-  // local wall-confirm bus or fires a connect fallback after 2 s. Owns its
-  // own unmount cleanup so the drawer doesn't need to thread that wiring.
+  // Wall-confirm watcher: armed by handleLightbulbClick. The pulse resolves
+  // from convergent state — the local wall-confirm bus (fed by the BLE write,
+  // the seq'd board-presence `BoardClimbSet`, and `WallConfirmedClimb`) — or
+  // clears when the climb is superseded (queue moves on) / the session ends.
+  // The timer is only a long backstop for a stuck pulse, not a verdict, so a
+  // slow confirm still lands solid-lit instead of being clipped at 2 s.
   //
   // `onConfirmed` / `onTimeout` clear the lightbulb's pending pulse state so
-  // the UI accurately reflects the round-trip — pulse during the window,
-  // solid lit on confirm, picker (or no-op) on timeout.
+  // the UI reflects the round-trip — pulse while pending, solid lit on confirm.
   const handleWallConfirmed = useCallback((info: { climbUuid: string }) => {
     setPendingClimbUuid((current) => (current === info.climbUuid ? null : current));
   }, []);
   const handleWallConfirmTimeout = useCallback((info: { climbUuid: string }) => {
     setPendingClimbUuid((current) => (current === info.climbUuid ? null : current));
   }, []);
-  const { armWatcher: armWallConfirmWatcher } = useWallConfirmFallback(
+  const { armWatcher: armWallConfirmWatcher, cancelWatcher: cancelWallConfirmWatcher } = useWallConfirmFallback(
     {
       isBluetoothConnected,
       isBluetoothSupported,
@@ -403,6 +406,37 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     },
     { onConfirmed: handleWallConfirmed, onTimeout: handleWallConfirmTimeout },
   );
+
+  // Derive the confirm from the convergent wall state: when the board-presence
+  // feed *transitions* to show the pending climb on the wall (a fresh seq'd
+  // `BoardClimbSet`, which also survives a reconnect catch-up), feed it into the
+  // same wall-confirm bus the watcher listens on so it records `Wall Confirmed`
+  // with the true, un-clipped latency. The bus coalesces, so this is safe
+  // alongside the local BLE write that fires it immediately. Gate on the
+  // transition (was-not → now-is), not steady-state equality: a tap while the
+  // board already shows the climb is confirmed by the local write, not a fresh
+  // round-trip, and would otherwise log a ~0 ms latency that skews the metric.
+  const wallCurrentClimbUuid = boardPresenceCurrent?.currentClimb?.climbUuid ?? null;
+  const prevWallCurrentClimbUuidRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevWallClimbUuid = prevWallCurrentClimbUuidRef.current;
+    prevWallCurrentClimbUuidRef.current = wallCurrentClimbUuid;
+    if (pendingClimbUuid && wallCurrentClimbUuid === pendingClimbUuid && prevWallClimbUuid !== pendingClimbUuid) {
+      emitWallConfirm(pendingClimbUuid);
+    }
+  }, [wallCurrentClimbUuid, pendingClimbUuid]);
+
+  // Supersede: if the user navigates the queue off the pending climb before it
+  // confirms, the pulse was for a climb they've moved on from. Cancel the
+  // watcher silently (no confirm, no timeout — it's neither) and clear the
+  // pulse, so the longer backstop never leaves a stale pulse on the bulb.
+  const committedCurrentClimbUuid = currentClimbQueueItem?.climb.uuid ?? null;
+  useEffect(() => {
+    if (pendingClimbUuid && committedCurrentClimbUuid && committedCurrentClimbUuid !== pendingClimbUuid) {
+      cancelWallConfirmWatcher();
+      setPendingClimbUuid(null);
+    }
+  }, [committedCurrentClimbUuid, pendingClimbUuid, cancelWallConfirmWatcher]);
 
   // Session-swap during pending: if the watcher hook cancels because the
   // session ended mid-window, also clear the local pending UI state. The
@@ -423,9 +457,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
    *    clears.
    *  - Not BLE-connected → connect (silent reconnect to the last board on
    *    native shells, otherwise the device picker). The fresh AutoSender pushes
-   *    the current climb on mount; arm the 2-second wall-confirm watcher so the
-   *    bulb pulses until WallConfirmedClimb lands (the watcher no-ops once
-   *    connected).
+   *    the *committed* current climb on mount; arm the wall-confirm watcher on
+   *    that same climb so the bulb pulses until it converges onto the wall.
    */
   const handleLightbulbClick = useCallback(() => {
     const boardLayout = boardDetails.layout_name ?? '';
@@ -437,11 +470,16 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
       return;
     }
 
+    // Pulse/arm on the *committed* current climb — that's what the AutoSender
+    // writes on connect and what board presence will report — not a drawer
+    // browse-preview (`currentClimb` can be a previewed climb that never gets
+    // sent, which would never confirm and would trip the supersede guard).
+    const sendClimbUuid = currentClimbQueueItem?.climb.uuid ?? null;
     track('Wall Control Taken', {
       source: 'lightbulb_drawer',
       mode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
-      climbUuid: currentClimb?.uuid ?? null,
+      climbUuid: sendClimbUuid,
     });
     // Silent reconnect to the board we were last on (native shells only — Web
     // Bluetooth ignores a target serial and always shows the chooser). Null
@@ -453,22 +491,26 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     } else {
       void bluetoothConnect();
     }
-    // Pulse the bulb until the climb is confirmed on the wall. We just initiated
+    // Pulse the bulb until the climb converges onto the wall. We just initiated
     // the connect above, so arm pulse-only: the watcher must NOT fire its own
-    // connect fallback on timeout. Re-connecting 2s later is redundant once the
+    // connect fallback on the backstop. Re-connecting later is redundant once the
     // first connect lands, and firing it while the device picker is still open
     // starts a second scan that trips "Already scanning. Stopping now." on iOS.
-    if (currentClimb) {
-      setPendingClimbUuid(currentClimb.uuid);
+    // The backstop is connect-included (cold connect + write + ack), not a 2s
+    // verdict — the confirm comes from convergent state and supersede clears the
+    // pulse early when the user moves on.
+    if (sendClimbUuid) {
+      setPendingClimbUuid(sendClimbUuid);
       armWallConfirmWatcher({
-        climbUuid: currentClimb.uuid,
+        climbUuid: sendClimbUuid,
         mode: isPersistentSessionActive ? 'party' : 'solo',
         boardLayout,
         pulseOnly: true,
+        timeoutMs: WALL_CONFIRM_BACKSTOP_MS,
       });
     }
   }, [
-    currentClimb,
+    currentClimbQueueItem,
     isPersistentSessionActive,
     isBluetoothConnected,
     bluetoothConnect,

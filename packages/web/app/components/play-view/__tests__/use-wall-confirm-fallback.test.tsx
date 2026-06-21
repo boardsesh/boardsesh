@@ -132,7 +132,7 @@ describe('useWallConfirmFallback', () => {
     // serial, BLE supported → picker fallback.
     expect(deps.bluetoothConnect).toHaveBeenCalledOnce();
     expect(deps.bluetoothConnect).toHaveBeenCalledWith();
-    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Timeout', {
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', {
       mode: 'solo',
       fallback: 'picker',
       boardLayout: 'Original',
@@ -154,7 +154,7 @@ describe('useWallConfirmFallback', () => {
     // Picker path: connect called with NO targetSerial arg.
     expect(deps.bluetoothConnect).toHaveBeenCalledOnce();
     expect(deps.bluetoothConnect).toHaveBeenCalledWith();
-    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Timeout', {
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', {
       mode: 'party',
       fallback: 'picker',
       boardLayout: 'Original',
@@ -180,7 +180,7 @@ describe('useWallConfirmFallback', () => {
 
     expect(deps.bluetoothConnect).toHaveBeenCalledOnce();
     expect(deps.bluetoothConnect).toHaveBeenCalledWith(undefined, undefined, 'serial-42');
-    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Timeout', {
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', {
       mode: 'party',
       fallback: 'auto_connect',
       boardLayout: 'Original',
@@ -206,7 +206,7 @@ describe('useWallConfirmFallback', () => {
 
     expect(deps.bluetoothConnect).toHaveBeenCalledOnce();
     expect(deps.bluetoothConnect).toHaveBeenCalledWith();
-    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Timeout', expect.objectContaining({ fallback: 'picker' }));
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', expect.objectContaining({ fallback: 'picker' }));
   });
 
   it('does nothing when already BLE-connected (already_connected path)', () => {
@@ -243,7 +243,7 @@ describe('useWallConfirmFallback', () => {
 
     expect(deps.bluetoothConnect).not.toHaveBeenCalled();
     expect(mockTrack).toHaveBeenCalledWith(
-      'Wall Confirm Timeout',
+      'Wall Confirm Connecting',
       expect.objectContaining({ fallback: 'unsupported' }),
     );
   });
@@ -359,7 +359,7 @@ describe('useWallConfirmFallback', () => {
     });
     expect(deps.bluetoothConnect).toHaveBeenCalledOnce();
     expect(mockTrack).toHaveBeenCalledOnce();
-    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Timeout', expect.objectContaining({ fallback: 'picker' }));
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', expect.objectContaining({ fallback: 'picker' }));
 
     // A late confirm for the same climb arrives — must not double-fire or
     // tear anything down (the watcher is already gone).
@@ -453,5 +453,50 @@ describe('useWallConfirmFallback', () => {
       'Wall Confirm Timeout',
       expect.objectContaining({ fallback: 'already_connected' }),
     );
+  });
+
+  it('records a still-connecting backstop as "Wall Confirm Connecting", not a board-ack timeout', () => {
+    // The production lightbulb arm: pulseOnly + still disconnected when the
+    // backstop fires. This is "we were still bringing the link up", not a board
+    // failure — it must NOT inflate the genuine `Wall Confirm Timeout` metric.
+    const deps = makeDeps({ isBluetoothConnected: false });
+    const { result } = renderHook(() => useWallConfirmFallback(deps));
+
+    act(() => {
+      result.current.armWatcher({ ...baseClimb, pulseOnly: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(WALL_CONFIRM_TIMEOUT_MS);
+    });
+
+    expect(deps.bluetoothConnect).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith('Wall Confirm Connecting', {
+      mode: 'solo',
+      fallback: 'pulse_only',
+      boardLayout: 'Original',
+    });
+    expect(mockTrack).not.toHaveBeenCalledWith('Wall Confirm Timeout', expect.anything());
+  });
+
+  it('records a confirm past the old 2s ceiling as Wall Confirmed (no clipping) with a widened backstop', () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWallConfirmFallback(deps));
+
+    act(() => {
+      result.current.armWatcher({ ...baseClimb, pulseOnly: true, timeoutMs: 8000 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(2500); // would have been clipped under the old 2s verdict
+    });
+    act(() => {
+      emitWallConfirm('climb-1');
+    });
+
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Wall Confirmed',
+      expect.objectContaining({ climbUuid: 'climb-1', latencyMs: 2500 }),
+    );
+    expect(mockTrack).not.toHaveBeenCalledWith('Wall Confirm Connecting', expect.anything());
+    expect(mockTrack).not.toHaveBeenCalledWith('Wall Confirm Timeout', expect.anything());
   });
 });

@@ -309,4 +309,62 @@ describe('createWallConfirmFallbackController', () => {
       boardLayout: 'Original',
     });
   });
+
+  it('pulseOnly: classifies a connected backstop as a genuine board-ack timeout, not pulse_only', () => {
+    // Connected when the backstop fires means the connect handshake wasn't the
+    // problem — we were on the board but no confirm converged. That's the
+    // genuine board-ack signal, even though pulseOnly still suppresses connect.
+    const wallConfirmBus = createLocalWallConfirmBus();
+    const callbacks = createCallbacks();
+    const deps = createDeps(wallConfirmBus, { isBluetoothConnected: () => true });
+    const controller = createWallConfirmFallbackController(deps, callbacks);
+
+    controller.armWatcher({ ...baseClimb, pulseOnly: true });
+    vi.advanceTimersByTime(WALL_CONFIRM_TIMEOUT_MS);
+
+    expect(deps.bluetoothConnect).not.toHaveBeenCalled();
+    expect(callbacks.onTrackTimeout).toHaveBeenCalledWith({
+      mode: 'solo',
+      fallback: 'already_connected',
+      boardLayout: 'Original',
+    });
+  });
+
+  it('respects a custom timeoutMs backstop', () => {
+    const wallConfirmBus = createLocalWallConfirmBus();
+    const callbacks = createCallbacks();
+    const deps = createDeps(wallConfirmBus);
+    const controller = createWallConfirmFallbackController(deps, callbacks);
+
+    controller.armWatcher({ ...baseClimb, timeoutMs: 5000 });
+    // Past the default window — the backstop must NOT have fired yet.
+    vi.advanceTimersByTime(WALL_CONFIRM_TIMEOUT_MS + 500);
+    expect(callbacks.onTimeout).not.toHaveBeenCalled();
+    expect(callbacks.onTrackTimeout).not.toHaveBeenCalled();
+    expect(deps.bluetoothConnect).not.toHaveBeenCalled();
+
+    // Reach the custom backstop — now it fires.
+    vi.advanceTimersByTime(5000 - (WALL_CONFIRM_TIMEOUT_MS + 500));
+    expect(callbacks.onTimeout).toHaveBeenCalledWith({ climbUuid: 'climb-1' });
+    expect(callbacks.onTrackTimeout).toHaveBeenCalledOnce();
+  });
+
+  it('records a confirm that lands after the default window but within a widened backstop (no clipping)', () => {
+    const wallConfirmBus = createLocalWallConfirmBus();
+    const callbacks = createCallbacks();
+    const deps = createDeps(wallConfirmBus);
+    const controller = createWallConfirmFallbackController(deps, callbacks);
+
+    controller.armWatcher({ ...baseClimb, timeoutMs: 5000 });
+    vi.advanceTimersByTime(2500); // past the old 2s clip ceiling
+    wallConfirmBus.emit('climb-1');
+
+    expect(callbacks.onConfirmed).toHaveBeenCalledWith({
+      climbUuid: 'climb-1',
+      latencyMs: 2500,
+      confirmedByRole: 'other',
+    });
+    expect(callbacks.onTimeout).not.toHaveBeenCalled();
+    expect(callbacks.onTrackTimeout).not.toHaveBeenCalled();
+  });
 });
