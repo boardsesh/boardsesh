@@ -205,6 +205,27 @@ describe('useActiveBoard', () => {
     expect(onPublished).toHaveBeenCalledTimes(1);
   });
 
+  it('publishActiveBoardAfterInteractions can be cancelled before it updates readers', async () => {
+    const { useActiveBoard, usePublishActiveBoardAfterInteractions } = await import('../use-active-board');
+    const sharedWrapper = wrapper();
+    const onPublished = vi.fn();
+
+    const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
+    const publisher = renderHook(() => usePublishActiveBoardAfterInteractions(), { wrapper: sharedWrapper });
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+
+    const cancel = publisher.result.current(storedBoard, { onPublished, timeoutMs: 1 });
+    cancel();
+
+    act(() => {
+      interactionManagerMock.state.callbacks.shift()?.();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(read.result.current.data).toBeNull();
+    expect(onPublished).not.toHaveBeenCalled();
+  });
+
   // Mirrors what AuthProvider.signOut does: removeQueries on the active-board
   // key must evict the staleTime: Infinity entry so the next signed-in user
   // doesn't inherit the previous user's board from the in-memory cache.

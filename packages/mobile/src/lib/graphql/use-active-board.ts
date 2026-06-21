@@ -83,7 +83,7 @@ export function usePersistActiveBoard() {
  * Publish a previously-persisted active board into the React Query cache.
  * Kept separate from persistence for Android modal-transition ordering.
  */
-export function usePublishActiveBoard() {
+function usePublishActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(
     (board: UserBoard) => {

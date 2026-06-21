@@ -222,8 +222,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     activeBoardMountKey,
     500,
   );
-  const shouldMountActiveBoardSheets =
-    activeBoardConfig != null && (Platform.OS !== 'android' || androidActiveBoardSheetsReady);
+  const mountedActiveBoardConfig =
+    activeBoardConfig != null && (Platform.OS !== 'android' || androidActiveBoardSheetsReady)
+      ? activeBoardConfig
+      : null;
 
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
     if (!activeBoard) return null;
@@ -607,10 +609,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   return (
     <DrawerHostContext.Provider value={value}>
       {children}
-      {shouldMountActiveBoardSheets && activeBoardConfig ? (
+      {mountedActiveBoardConfig ? (
         <PlayDrawer
           ref={playDrawerRef}
-          boardConfig={activeBoardConfig}
+          boardConfig={mountedActiveBoardConfig}
           onAngleChange={handleAngleChange}
           isAngleAdjustable={activeBoard?.isAngleAdjustable ?? true}
           onOpenQueue={openQueueSheet}
@@ -658,7 +660,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onClose={closeAddToPlaylist}
         />
       ) : null}
-      {shouldMountActiveBoardSheets && queueBoard ? (
+      {mountedActiveBoardConfig && queueBoard ? (
         <QueueSheet
           ref={queueSheetRef}
           board={queueBoard}

@@ -104,8 +104,29 @@ const presence = vi.hoisted(() => ({
   resetPresence: vi.fn(),
 }));
 
+const nativePlatform = vi.hoisted(() => ({
+  OS: 'ios' as 'ios' | 'android',
+}));
+
+const interactionManager = vi.hoisted(() => {
+  const scheduled: Array<() => void> = [];
+  return {
+    scheduled,
+    runAfterInteractions: vi.fn((callback: () => void) => {
+      scheduled.push(callback);
+      return { cancel: vi.fn() };
+    }),
+  };
+});
+
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  InteractionManager: { runAfterInteractions: interactionManager.runAfterInteractions },
+  Platform: {
+    get OS() {
+      return nativePlatform.OS;
+    },
+    select: (options: Record<string, unknown>) => options[nativePlatform.OS] ?? options.default,
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
@@ -314,7 +335,14 @@ function renderHost(onHost: (host: ReturnType<typeof useDrawerHost>) => void) {
   return render(createElement(DrawerHostProvider, null, createElement(Probe, { onHost })));
 }
 
+function flushDrawerHostInteractions() {
+  for (const callback of interactionManager.scheduled.splice(0)) callback();
+}
+
 beforeEach(() => {
+  nativePlatform.OS = 'ios';
+  interactionManager.scheduled.length = 0;
+  interactionManager.runAfterInteractions.mockClear();
   activeBoard.stored = { ...activeBoard.defaultStored };
   activeBoard.setActiveBoard.mockClear();
   myBoards.boards = [];
@@ -502,6 +530,26 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     expect(playDrawer.open).toHaveBeenCalledWith(suggestion, {
       committedExternally: true,
     });
+  });
+});
+
+describe('DrawerHostProvider Android active-board sheet deferral', () => {
+  it('mounts PlayDrawer and QueueSheet after interactions settle', async () => {
+    nativePlatform.OS = 'android';
+    const hosts: Array<ReturnType<typeof useDrawerHost>> = [];
+    const { container } = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    expect(container.querySelector('[data-play-drawer]')).toBeNull();
+    expect(container.querySelector('[data-queue-sheet]')).toBeNull();
+    await waitFor(() => expect(interactionManager.runAfterInteractions).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      flushDrawerHostInteractions();
+    });
+
+    await waitFor(() => expect(container.querySelector('[data-play-drawer]')).not.toBeNull());
+    expect(container.querySelector('[data-queue-sheet]')).not.toBeNull();
   });
 });
 

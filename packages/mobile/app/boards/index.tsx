@@ -73,6 +73,8 @@ export default function BoardSelection() {
   const { data: nearby, isLoading: isNearbyLoading } = useNearbyBoards(location.coords, 20);
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
+  const activationSequenceRef = useRef(0);
+  const deferredActiveBoardPublishCancelRef = useRef<(() => void) | null>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
   // when opened, and tears it down when closed.
   const [bluetoothActive, setBluetoothActive] = useState(false);
@@ -83,9 +85,21 @@ export default function BoardSelection() {
     if (isError) void refreshAuthState();
   }, [isError, refreshAuthState]);
 
+  useEffect(() => {
+    return () => {
+      deferredActiveBoardPublishCancelRef.current?.();
+      deferredActiveBoardPublishCancelRef.current = null;
+    };
+  }, []);
+
   const activateBoard = useCallback(
     async (board: UserBoard) => {
       hapticSelection();
+      const activationSequence = activationSequenceRef.current + 1;
+      activationSequenceRef.current = activationSequence;
+      deferredActiveBoardPublishCancelRef.current?.();
+      deferredActiveBoardPublishCancelRef.current = null;
+
       beginBoardActivationTelemetry(board, {
         source: fromOnboarding ? 'onboarding' : 'board_picker',
         returnTo: boardReturnTo,
@@ -93,6 +107,8 @@ export default function BoardSelection() {
       try {
         if (Platform.OS === 'android') {
           await persistActiveBoard(board);
+          if (activationSequence !== activationSequenceRef.current) return;
+
           markBoardActivationPhase('persisted', board);
           if (fromOnboarding) {
             track(SHARED_EVENTS.OnboardingBoardActivated, { boardType: board.boardType, source: 'onboarding' });
@@ -100,8 +116,12 @@ export default function BoardSelection() {
           }
           markBoardActivationPhase('dismiss_requested', board);
           router.dismissTo(boardReturnTo);
-          publishActiveBoardAfterInteractions(board, {
-            onPublished: () => markBoardActivationPhase('active_board_published', board),
+          deferredActiveBoardPublishCancelRef.current = publishActiveBoardAfterInteractions(board, {
+            onPublished: () => {
+              if (activationSequence !== activationSequenceRef.current) return;
+              deferredActiveBoardPublishCancelRef.current = null;
+              markBoardActivationPhase('active_board_published', board);
+            },
           });
           return;
         }
@@ -126,6 +146,7 @@ export default function BoardSelection() {
         markBoardActivationPhase('dismiss_requested', board);
         router.dismissTo(boardReturnTo);
       } catch {
+        if (activationSequence !== activationSequenceRef.current) return;
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
