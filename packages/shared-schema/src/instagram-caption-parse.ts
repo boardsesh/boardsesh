@@ -13,8 +13,12 @@ export type ParsedBetaCaption = {
   boardType: 'kilter' | 'tension' | null;
 };
 
-const OPEN_QUOTES = '"“‟«‹‚‘';
-const CLOSE_QUOTES = '"”„»›’';
+// Only DOUBLE-quote delimiters (straight, curly, guillemets). Climb names are
+// always double-quoted, and a curly apostrophe (’ U+2019) or straight ' inside a
+// name — "Carlo’s Blowtorch", "Bucky Barnes’ Lost Arm" — must NOT count as a
+// closing quote, or the name gets truncated at the apostrophe.
+const OPEN_QUOTES = '"“«';
+const CLOSE_QUOTES = '"”»';
 // First quoted run, 1–120 chars, non-greedy so it stops at the first closing quote.
 const QUOTED_NAME = new RegExp(`[${OPEN_QUOTES}]([^${OPEN_QUOTES}${CLOSE_QUOTES}]{1,120}?)[${CLOSE_QUOTES}]`);
 // `@ 40°` / `@40` / `@ 40 deg`. Requires 1–2 digits right after @, with the

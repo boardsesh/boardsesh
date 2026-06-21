@@ -112,6 +112,21 @@ describe('parseInstagramBetaCaption', () => {
     ).toBeNull();
   });
 
+  // Regression: a curly apostrophe (’ U+2019) inside the name used to be treated
+  // as a closing quote, truncating "Carlo’s Blowtorch" to "Carlo".
+  it('keeps a curly apostrophe inside the climb name', () => {
+    expect(parseInstagramBetaCaption('“Carlo’s Blowtorch” @ 30° on the Kilter Board')).toEqual({
+      climbName: 'Carlo’s Blowtorch',
+      angle: 30,
+      boardType: 'kilter',
+    });
+    expect(parseInstagramBetaCaption('“Bucky Barnes’ Lost Arm” @ 40° on the Kilter Board')).toEqual({
+      climbName: 'Bucky Barnes’ Lost Arm',
+      angle: 40,
+      boardType: 'kilter',
+    });
+  });
+
   it('rejects an out-of-range angle but keeps the name', () => {
     expect(parseInstagramBetaCaption('"Weird Angle" @ 99°')).toEqual({
       climbName: 'Weird Angle',
