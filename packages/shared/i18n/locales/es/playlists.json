@@ -93,7 +93,7 @@
     "createFab": {
       "ariaLabel": "Crear playlist"
     },
-    "customUnavailable": "Las configuraciones personalizadas todavía no están disponibles aquí. Elige uno de tus boards o una configuración popular de la lista.",
+    "customUnavailable": "Las configuraciones personalizadas todavía no están disponibles aquí. Elige uno de tus plafones o una configuración popular de la lista.",
     "errors": {
       "loadTitle": "No se pudo cargar la biblioteca",
       "loadDescription": "Hubo un error al cargar tu biblioteca. Inténtalo de nuevo.",
@@ -106,8 +106,8 @@
     "activateAll": "Poner en cola todos los bloques",
     "boardMismatch": {
       "title": "Cambia a {{board}} para escalar esta playlist",
-      "subtitle": "Estos son bloques de {{board}}. Cambia de tablero para ponerlos en cola.",
-      "cta": "Cambiar de tablero"
+      "subtitle": "Estos son bloques de {{board}}. Cambia de plafón para ponerlos en cola.",
+      "cta": "Cambiar de plafón"
     },
     "unrenderableClimb": {
       "subtitle": "Faltan datos del tablero para este bloque."
@@ -295,7 +295,7 @@
     "you": "Tú",
     "youSignInTitle": "Inicia sesión para ver tu progreso",
     "youSignInDescription": "Inicia sesión para registrar tus estadísticas, sesiones y logbook.",
-    "selectBoardForPlaylist": "Selecciona una tabla de escalada antes de crear una playlist",
+    "selectBoardForPlaylist": "Selecciona un plafón antes de crear una playlist",
     "createdPlaylistToast": "Playlist «{{name}}» creada",
     "createPlaylistFailed": "No se pudo crear la playlist"
   }

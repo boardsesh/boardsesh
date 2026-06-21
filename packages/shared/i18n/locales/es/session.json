@@ -1,8 +1,8 @@
 {
   "boardMismatch": {
     "title": "Cambia a {{board}} para escalar este bloque",
-    "subtitle": "Este es un bloque de {{board}}. Cambia de tablero para ponerlo en cola.",
-    "cta": "Cambiar de tablero"
+    "subtitle": "Este es un bloque de {{board}}. Cambia de plafón para ponerlo en cola.",
+    "cta": "Cambiar de plafón"
   },
   "metadata": {
     "detail": {
@@ -144,8 +144,8 @@
     "dialogTitle": "Crear sesión",
     "dialogSubmit": "Crear sesión",
     "started": "¡Sesión empezada!",
-    "selectBoardWarning": "Selecciona un board primero",
-    "boardsNearYou": "Boards cerca de ti",
+    "selectBoardWarning": "Selecciona un plafón primero",
+    "boardsNearYou": "Plafones cerca de ti",
     "loggedInBlurb": "Registra tus bloques e invita a otros a unirse.",
     "anonymousBlurb": "Métete sin cuenta. Inicia sesión más tarde para guardar tu progreso.",
     "signInForMore": "Inicia sesión para más funciones",
@@ -167,7 +167,7 @@
     },
     "generateQueue": {
       "button": "Generar cola de entrenamiento",
-      "buttonHint": "Elige un board primero",
+      "buttonHint": "Elige un plafón primero",
       "regenerate": "Regenerar",
       "clear": "Limpiar",
       "summary_one": "{{count}} bloque en cola",
@@ -362,7 +362,7 @@
       "syncError": "Error de sincronización de cola",
       "outOfSyncRefreshed": "La cola estaba desincronizada. Se actualizó con tu grupo.",
       "sessionCreateError": "No se pudo crear la sesión",
-      "noBoardSelected": "Selecciona un board primero",
+      "noBoardSelected": "Selecciona un plafón primero",
       "actionFailed": "Acción fallida. Inténtalo de nuevo.",
       "rateLimited": "Demasiados cambios muy rápido. Espera un momento.",
       "endSession": "Terminar sesión",
@@ -421,7 +421,7 @@
       "headerActive": "Sesión",
       "minimize": "Minimizar sesión",
       "recordTab": "Grabar",
-      "preBoardLabel": "Tabla",
+      "preBoardLabel": "Plafón",
       "preGeneratorLabel": "Entrenamiento",
       "preGeneratorOff": "Apagado",
       "preGeneratorVolume": "Volumen",
@@ -465,7 +465,7 @@
       "preGeneratorTuning": "Ajustes",
       "preStart": "Empezar",
       "preStarting": "Empezando…",
-      "preNoBoard": "Elige una tabla para empezar",
+      "preNoBoard": "Elige un plafón para empezar",
       "preStartError": "No se pudo iniciar la sesión. Inténtalo de nuevo.",
       "preWorkoutPreviewTitle": "Vista previa del entrenamiento",
       "preWorkoutPreviewGenerating": "Creando tu entrenamiento…",
@@ -483,7 +483,7 @@
       "inStop": "Parar",
       "notification": {
         "channelName": "Sesión de escalada activa",
-        "channelDescription": "Mantiene tu tablero conectado y muestra los controles de la sesión mientras Boardsesh está en segundo plano.",
+        "channelDescription": "Mantiene tu plafón conectado y muestra los controles de la sesión mientras Boardsesh está en segundo plano.",
         "contentTitleFallback": "Sesión de escalada",
         "previous": "Anterior",
         "next": "Siguiente",

@@ -2,7 +2,7 @@
   "metadata": {
     "dashboard": {
       "title": "Tú",
-      "description": "Tu tabla de escalada en Boardsesh"
+      "description": "Tu plafón de escalada en Boardsesh"
     },
     "logbook": {
       "title": "Historial",
@@ -96,8 +96,8 @@
     "filter": {
       "title": "Filtros",
       "timeRange": "Periodo",
-      "board": "Tabla",
-      "allBoards": "Todas las tablas",
+      "board": "Plafón",
+      "allBoards": "Todos los plafones",
       "all": "Todo",
       "year": "Año",
       "month": "Mes",

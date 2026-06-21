@@ -170,6 +170,8 @@ Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection vi
 
 Adding a new locale: update `SUPPORTED_LOCALES` and friends in `app/lib/i18n/config.ts`, add catalog dir, language switcher, sitemap.
 
+**Spanish terminology for boards:** Always use **"plafón"** (singular/plural: plafón/plafones) in Spanish translations. This term consistently replaces "tabla de escalada", "tablero", or "tabla" (in board context). Maintain proper Spanish grammar: "un plafón" (masculine), not "una tabla". This ensures consistent Spanish UX across all board-related features.
+
 ### Copy & microcopy
 
 - Describe what the user gets, not what the feature does.

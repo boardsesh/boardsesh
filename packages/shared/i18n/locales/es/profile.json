@@ -55,8 +55,8 @@
     "calendarAria": "Calendario de escalada: {{days}} días activos, {{count}} bloques",
     "calendarLess": "Menos",
     "calendarMore": "Más",
-    "boards": "Tablas",
-    "layoutShareAria": "Reparto por tabla de {{count}} bloques",
+    "boards": "Plafones",
+    "layoutShareAria": "Reparto por plafón de {{count}} bloques",
     "layoutLegendAria": "{{name}}: {{percentage}}% ({{count}} bloques)",
     "percentile": "Percentil",
     "topPercent": "Top {{value}}%",
@@ -69,7 +69,7 @@
     "vPointsTotal": "{{value}} en total",
     "weekAxisLabel": "Semana",
     "chartTooltipTotal": "Total",
-    "gradeDistributionAria": "Distribución por grados en todas las tablas de escalada",
+    "gradeDistributionAria": "Distribución por grados en todos los plafones",
     "weeklyAttemptsAria": "Intentos semanales por dificultad",
     "flashRedpointAria": "Flash vs trabajado por grado",
     "layoutTooltip": "{{name}}: {{count}} bloques ({{percentage}}%)"
@@ -151,7 +151,7 @@
         "attempt": "Intento"
       },
       "snackbar": {
-        "boardsLinkMissing": "No se encontró la tabla enlazada — mostrando todas tus entradas.",
+        "boardsLinkMissing": "No se encontró el plafón enlazado — mostrando todas tus entradas.",
         "deleteFailed": "No se pudo eliminar la marca",
         "tickDeleted": "Marca eliminada",
         "undo": "Deshacer"

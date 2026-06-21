@@ -77,7 +77,7 @@
         "board": "Board",
         "climb": "Bloque"
       },
-      "boardTypeLabel": "Tipo de tabla de escalada",
+      "boardTypeLabel": "Tipo de plafón",
       "boardTypePlaceholder": "kilter, tension",
       "climbUuidLabel": "UUID del bloque",
       "climbUuidPlaceholder": "UUID del bloque"

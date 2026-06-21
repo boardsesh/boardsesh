@@ -30,7 +30,7 @@
       "emptyBody": "Sigue a escaladores y equipadores para llenar esto.",
       "unknownClimb": "Bloque desconocido",
       "sessionsTitle": "Sesiones recientes",
-      "betaTitleBoard": "Beta reciente en esta tabla",
+      "betaTitleBoard": "Beta reciente en este plafón",
       "boardEmptyTitle": "Tranquilo en {{board}} ahora mismo",
       "boardEmptyBody": "Sé el primero en registrar una sesión, o mira qué está escalando el resto.",
       "boardEmptyCta": "Ver a todos",
@@ -138,7 +138,7 @@
   },
   "search": {
     "minCharsHint": "Escribe al menos 2 caracteres para buscar",
-    "noBoards": "No hay tablas para \"{{query}}\"",
+    "noBoards": "No hay plafones para \"{{query}}\"",
     "noGyms": "No hay gimnasios para \"{{query}}\"",
     "noPlaylists": "No hay listas para \"{{query}}\"",
     "noUsers": "No hay usuarios ni setters para \"{{query}}\"",
