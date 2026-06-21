@@ -8,9 +8,10 @@ import { installGlobalErrorCapture } from './global-error-capture';
 export const MOBILE_USER_AGENT = 'Boardsesh Mobile';
 
 // Registers the non-bot User-Agent as a super property on every event. Exported
-// so the call site is unit-testable — the live invocation in getPostHogClient()
-// is __DEV__-gated and never runs under the test env. Best-effort: a failure must
-// never block analytics init.
+// so the call site is unit-testable: getPostHogClient() returns null before
+// reaching its own call to this whenever analytics is disabled (no token, or
+// __DEV__ — both hold in the test env), so the live path can't run in tests.
+// Best-effort: a failure must never block analytics init.
 export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void {
   try {
     client.register({ $raw_user_agent: MOBILE_USER_AGENT });
