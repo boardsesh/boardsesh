@@ -6,12 +6,14 @@ import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useFreezeDebugFlags, type FreezeDebugFlag } from '../../lib/freeze-debug-store';
+import { useFreezeDiagnosticsStatus } from '../../lib/main-thread-watchdog';
 
-// Diagnostic-only panel for the Android-16 climb-list touch-freeze bug. Each
-// switch disables ONE suspected cause; a tester flips one at a time and reports
-// which makes the list scroll again. Gated on the admin-granted `tester` role (or
-// a dev build) — same audience as the OTA channel switcher (#3068), so a tester on
-// a store build who switches to the diagnostic channel sees it. Copy is
+// Diagnostic-only panel for the Android-16 climb-list freeze bug. The toggles
+// disable ONE suspected cause each so a tester can bisect on a real affected
+// device; the status block surfaces the JS-thread heartbeat + native main-thread
+// watchdog so we can tell a thread hang from touch interception and confirm the
+// instrumentation is actually running. Gated on the admin-granted `tester` role
+// (or a dev build) — same audience as the OTA channel switcher (#3068). Copy is
 // intentionally un-translated (matches the other tester/dev-only sections in
 // profile/more.tsx).
 
@@ -41,12 +43,18 @@ const ROWS: { flag: FreezeDebugFlag; label: string; description: string }[] = [
     label: 'Hide top chrome',
     description: 'Removes the search/filter bar overlay at the top of the list.',
   },
+  {
+    flag: 'disableNativeRender',
+    label: 'Disable native render',
+    description: 'Stops drawing the board-hold thumbnails (tests the native render burst on board select).',
+  },
 ];
 
 export function FreezeDebugPanel() {
   const { systemColors } = useTheme();
   const { data: profile } = useProfile();
   const { flags, setFlag } = useFreezeDebugFlags();
+  const status = useFreezeDiagnosticsStatus();
 
   // Admin-granted tester, or a local dev build. Never a regular production user.
   if (!profile?.isTester && !__DEV__) return null;
@@ -70,6 +78,21 @@ export function FreezeDebugPanel() {
         {/* i18n-ignore-next-line */}
         Flip ONE switch, go to the Climbs tab, and check if you can scroll and tap. Tell us which switch helps.
       </Text>
+      <View style={[styles.card, styles.statusCard, { backgroundColor: systemColors.secondaryBackground }]}>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {/* i18n-ignore-next-line */}
+          JS heartbeat: {status.heartbeatRunning ? 'alive' : 'off'} · worst stall {status.worstGapMs} ms
+        </Text>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {/* i18n-ignore-next-line */}
+          Native watchdog: {status.watchdogRunning ? 'running' : 'off (iOS / not built)'} · {status.pendingStalls}{' '}
+          pending
+        </Text>
+      </View>
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.hint}>
+        {/* i18n-ignore-next-line */}
+        If the app fully freezes, force-kill and reopen — the captured main-thread stack uploads automatically.
+      </Text>
     </View>
   );
 }
@@ -83,6 +106,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: borderRadius.lg,
     marginHorizontal: spacing[4],
+  },
+  statusCard: {
+    marginTop: spacing[3],
+    padding: spacing[3],
+    gap: spacing[1],
   },
   hint: {
     marginTop: spacing[2],

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
+import { useFreezeDebugFlag } from '../lib/freeze-debug-store';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
@@ -51,6 +52,9 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
 }: ClimbListThumbnailProps) {
   const cellWidth = size?.width ?? THUMBNAIL_WIDTH;
   const cellHeight = size?.height ?? THUMBNAIL_HEIGHT;
+  // Freeze-debug bisection: skip the native hold-overlay render when the tester
+  // enables `disableNativeRender` (Android-16 climb-list freeze test).
+  const nativeRenderEnabled = !useFreezeDebugFlag('disableNativeRender');
   const { overlayUri, backgroundPaths, missingBackgroundCount } = useNativeClimbRender({
     frames,
     boardName,
@@ -58,6 +62,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     sizeId,
     setIds,
     filledStyle: true,
+    enabled: nativeRenderEnabled,
     // Render the overlay + resolve the background at ~5× the cell width (≥400px,
     // covering the default 76px cell at up to ~3× DPR and a ~100px hero cell at
     // ~4×) so expo-image never has to downscale a ~1080px source on the main

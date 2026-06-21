@@ -1,0 +1,7 @@
+{
+  "name": "@boardsesh/main-thread-watchdog-module",
+  "version": "0.1.0",
+  "description": "Android-only ANR-style watchdog that captures the main-thread stack during a UI freeze",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

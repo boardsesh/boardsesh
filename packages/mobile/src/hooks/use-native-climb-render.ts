@@ -74,6 +74,13 @@ type NativeClimbRenderParams = {
    * upscales). Also selects the bundled `thumb` background variant.
    */
   renderWidth?: number;
+  /**
+   * Freeze-debug bisection toggle (Android-16 climb-list freeze). When false,
+   * skip the native hold-overlay render entirely so list cells stay placeholders,
+   * confirming or ruling out the board-activation native-render burst on a real
+   * affected device. Defaults to true (render normally).
+   */
+  enabled?: boolean;
 };
 
 type NativeClimbRenderResult = {
@@ -480,7 +487,7 @@ function getNativeModule() {
  * and the component shows backgrounds alone.
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
-  const { frames, boardName, layoutId, sizeId, setIds, filledStyle = false, renderWidth } = params;
+  const { frames, boardName, layoutId, sizeId, setIds, filledStyle = false, renderWidth, enabled = true } = params;
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
@@ -631,7 +638,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Overlay-render effect: kick off the native render if we don't already
   // have one for this cache key in the sync map.
   useEffect(() => {
-    if (!frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
+    if (!enabled || !frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
 
     if (renderedOverlays.has(currentCacheKey)) {
       // Sync map already has it — make sure local state reflects that
@@ -722,6 +729,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     brushThickness,
     shapeSize,
     holdRenderSignature,
+    enabled,
   ]);
 
   // Only surface the native URI if it matches the *current* cache key —

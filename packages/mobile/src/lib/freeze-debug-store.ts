@@ -28,7 +28,10 @@ export type FreezeDebugFlag =
   | 'disableRowSwipe'
   /** Skip the absolutely-positioned ClimbTopChrome overlay — tests the Material
    *  top chrome / its measured search-bar padding. */
-  | 'hideTopChrome';
+  | 'hideTopChrome'
+  /** Skip the native board-hold overlay render in list cells — tests whether the
+   *  burst of native renders on board activation drives the main-thread hang. */
+  | 'disableNativeRender';
 
 export type FreezeDebugFlags = Record<FreezeDebugFlag, boolean>;
 
@@ -40,6 +43,7 @@ const DEFAULT_FLAGS: FreezeDebugFlags = {
   useFlatList: false,
   disableRowSwipe: false,
   hideTopChrome: false,
+  disableNativeRender: false,
 };
 
 const FLAG_KEYS = Object.keys(DEFAULT_FLAGS) as FreezeDebugFlag[];

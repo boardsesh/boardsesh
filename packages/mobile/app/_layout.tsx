@@ -43,6 +43,7 @@ import { PersistentQueueBar } from '../src/components/queue-control/persistent-q
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
+import { useFreezeDiagnostics } from '../src/lib/main-thread-watchdog';
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { Text } from '../src/components/Text';
 import { Icon } from '../src/components/Icon';
@@ -286,6 +287,11 @@ function RootLayout() {
     if (!authReady || !fontsReady) return;
     void SplashScreen.hideAsync();
   }, [authReady, fontsReady]);
+
+  // Android-16 climb-list freeze diagnostics: start the JS-thread heartbeat and
+  // drain any native main-thread stall captured before a prior force-kill,
+  // forwarding it to PostHog. No-op on iOS (the watchdog is Android-only).
+  useFreezeDiagnostics();
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>
