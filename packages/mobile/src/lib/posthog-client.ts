@@ -7,6 +7,18 @@ import { installGlobalErrorCapture } from './global-error-capture';
 // barrel out of this module's graph, which would break the node-env test runner.
 export const MOBILE_USER_AGENT = 'Boardsesh Mobile';
 
+// Registers the non-bot User-Agent as a super property on every event. Exported
+// so the call site is unit-testable — the live invocation in getPostHogClient()
+// is __DEV__-gated and never runs under the test env. Best-effort: a failure must
+// never block analytics init.
+export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void {
+  try {
+    client.register({ $raw_user_agent: MOBILE_USER_AGENT });
+  } catch (error) {
+    if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
+  }
+}
+
 // PostHog project token. Intentionally the SAME project as web so a signed-in
 // user's web + mobile activity resolves to one person. `EXPO_PUBLIC_*` vars are
 // inlined into the JS bundle at build time, so this must be set when the bundle
@@ -73,11 +85,7 @@ export function getPostHogClient(): PostHog | null {
       captureLog: true,
     },
   });
-  try {
-    client.register({ $raw_user_agent: MOBILE_USER_AGENT });
-  } catch {
-    // Best-effort: registration must never block analytics init.
-  }
+  registerMobileUserAgent(client);
   installMobileGlobalErrorCapture();
   return client;
 }
