@@ -21,7 +21,7 @@ import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, gl
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { isGymDiscoveryRoute } from '../../lib/route-segments';
+import { isAuthRoute, isGymDiscoveryRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
@@ -42,6 +42,9 @@ export function PersistentQueueBar() {
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
 
   if (!currentClimb) return null;
+  // The sign-in / sign-up flow is pre-auth — a leftover queued or "on the wall"
+  // climb must not float a tick bar over the login screen.
+  if (isAuthRoute(segments)) return null;
   // The gym-discovery screen is a full-bleed map with its own bottom sheet — the
   // climb accessory would overlap it, so suppress it there.
   if (isGymDiscoveryRoute(segments)) return null;

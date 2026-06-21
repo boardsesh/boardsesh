@@ -310,7 +310,8 @@
     "successRating": "Thanks — logged.",
     "successBug": "Bug logged — thanks.",
     "errorRating": "Couldn't send — we'll keep your feedback.",
-    "closeAria": "Close"
+    "closeAria": "Close",
+    "joinDiscord": "Join Discord"
   },
   "feedbackForm": {
     "missingHeading": "What's missing?",

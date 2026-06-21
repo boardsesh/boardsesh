@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTabsRoute, isClimbsTabRoute } from '../route-segments';
+import { isTabsRoute, isClimbsTabRoute, isAuthRoute } from '../route-segments';
 
 describe('isTabsRoute', () => {
   it('is true anywhere inside the tab navigator', () => {
@@ -26,5 +26,19 @@ describe('isClimbsTabRoute', () => {
     expect(isClimbsTabRoute(['(tabs)'])).toBe(false);
     expect(isClimbsTabRoute(['auth'])).toBe(false);
     expect(isClimbsTabRoute([])).toBe(false);
+  });
+});
+
+describe('isAuthRoute', () => {
+  it('is true anywhere inside the auth flow', () => {
+    expect(isAuthRoute(['auth'])).toBe(true);
+    expect(isAuthRoute(['auth', 'login'])).toBe(true);
+    expect(isAuthRoute(['auth', 'register'])).toBe(true);
+  });
+
+  it('is false outside the auth flow', () => {
+    expect(isAuthRoute(['(tabs)', 'climbs'])).toBe(false);
+    expect(isAuthRoute(['gyms'])).toBe(false);
+    expect(isAuthRoute([])).toBe(false);
   });
 });

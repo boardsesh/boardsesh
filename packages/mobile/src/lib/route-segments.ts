@@ -12,10 +12,20 @@ type Segments = readonly string[];
 const TABS_GROUP = '(tabs)';
 const CLIMBS_TAB = 'climbs';
 const GYMS_ROUTE = 'gyms';
+const AUTH_GROUP = 'auth';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
   return segments[0] === TABS_GROUP;
+}
+
+/**
+ * True when the focused route is the sign-in / sign-up flow (`/auth/*`). The user
+ * isn't signed in there, so the persistent climb accessory has nothing to act on
+ * and shouldn't float over the login screen.
+ */
+export function isAuthRoute(segments: Segments): boolean {
+  return segments[0] === AUTH_GROUP;
 }
 
 /** True when the focused route is the Climbs tab (or one of its sub-routes). */

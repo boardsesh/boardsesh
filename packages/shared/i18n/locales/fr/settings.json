@@ -310,7 +310,8 @@
     "successRating": "Merci, c'est noté.",
     "successBug": "Bug enregistré, merci.",
     "errorRating": "Envoi impossible. On garde votre retour.",
-    "closeAria": "Fermer"
+    "closeAria": "Fermer",
+    "joinDiscord": "Rejoindre Discord"
   },
   "feedbackForm": {
     "missingHeading": "Qu'est-ce qui manque ?",

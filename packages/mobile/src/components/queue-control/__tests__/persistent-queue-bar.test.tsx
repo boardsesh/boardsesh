@@ -9,6 +9,7 @@ const cfg = vi.hoisted(() => ({
   onClimbsTab: true,
   insideTabs: true,
   onGymDiscovery: false,
+  onAuthRoute: false,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   wallClimb: null as null | { uuid: string; angle: number },
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
@@ -49,6 +50,7 @@ vi.mock('../../../lib/route-segments', () => ({
   isClimbsTabRoute: () => cfg.onClimbsTab,
   isTabsRoute: () => cfg.insideTabs,
   isGymDiscoveryRoute: () => cfg.onGymDiscovery,
+  isAuthRoute: () => cfg.onAuthRoute,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
@@ -134,6 +136,7 @@ describe('PersistentQueueBar', () => {
     cfg.onClimbsTab = true;
     cfg.insideTabs = true;
     cfg.onGymDiscovery = false;
+    cfg.onAuthRoute = false;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.wallClimb = null;
     cfg.variant = 'liquidGlass';
@@ -158,6 +161,15 @@ describe('PersistentQueueBar', () => {
     // The /gyms screen is a full-bleed map with its own bottom sheet, so the
     // climb accessory is suppressed there even with a current climb.
     cfg.onGymDiscovery = true;
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('renders nothing on the auth (login) route', () => {
+    // Pre-auth screens have no user to tick for — a leftover queued or "on the
+    // wall" climb must not float a tick bar over the login screen.
+    cfg.onAuthRoute = true;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();

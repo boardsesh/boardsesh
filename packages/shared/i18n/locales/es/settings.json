@@ -310,7 +310,8 @@
     "successRating": "Gracias — registrado.",
     "successBug": "Fallo registrado — gracias.",
     "errorRating": "No se pudo enviar — guardamos tus comentarios.",
-    "closeAria": "Cerrar"
+    "closeAria": "Cerrar",
+    "joinDiscord": "Únete a Discord"
   },
   "feedbackForm": {
     "missingHeading": "¿Qué falta?",

@@ -12,6 +12,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
+import { openDiscordInvite } from '../../lib/discord';
 
 export type FeedbackSheetMode = 'rating' | 'bug';
 
@@ -22,9 +23,15 @@ const STAR_RATING_VALUES = [1, 2, 3, 4, 5] as const;
 type FeedbackSheetProps = {
   sheetRef: RefObject<BottomSheetModal | null>;
   mode: FeedbackSheetMode;
+  /**
+   * Show a "Join Discord" link below the submit button. Used on the login screen,
+   * where a stuck user has no other route to help; off everywhere else (the user
+   * drawer already has its own Discord row).
+   */
+  showDiscordLink?: boolean;
 };
 
-export function FeedbackSheet({ sheetRef, mode }: FeedbackSheetProps) {
+export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: FeedbackSheetProps) {
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -154,6 +161,19 @@ export function FeedbackSheet({ sheetRef, mode }: FeedbackSheetProps) {
         loading={isPending}
         style={styles.submitButton}
       />
+
+      {showDiscordLink ? (
+        <Button
+          title={t('feedbackDialog.joinDiscord')}
+          onPress={() => {
+            void openDiscordInvite('login');
+          }}
+          variant="text"
+          size="large"
+          icon="open.external"
+          tintColor={brandColors.primary}
+        />
+      ) : null}
     </ModalSheet>
   );
 }
