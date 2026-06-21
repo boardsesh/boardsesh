@@ -66,6 +66,36 @@ describe('parseInstagramBetaCaption', () => {
     });
   });
 
+  // Real captions captured from a live scan of a 233-post account.
+  it('parses real-world captions seen in a live scan', () => {
+    expect(
+      parseInstagramBetaCaption(
+        '“Rug Burn 10x12” @ 30° on the Kilter Board Homewall. The Kilter Home Board. @auroraclimbing',
+      ),
+    ).toEqual({ climbName: 'Rug Burn 10x12', angle: 30, boardType: 'kilter' });
+    expect(parseInstagramBetaCaption('“Carné Asada” @ 40° on the Kilter Board')).toEqual({
+      climbName: 'Carné Asada',
+      angle: 40,
+      boardType: 'kilter',
+    });
+    expect(parseInstagramBetaCaption("“Sweet'n Low” @ 40° on the Kilter Board")).toEqual({
+      climbName: "Sweet'n Low",
+      angle: 40,
+      boardType: 'kilter',
+    });
+    expect(parseInstagramBetaCaption('“Will there be punch and pie?” @ 40° on the Kilter Board')).toEqual({
+      climbName: 'Will there be punch and pie?',
+      angle: 40,
+      boardType: 'kilter',
+    });
+  });
+
+  it('returns null for a real non-beta caption', () => {
+    expect(
+      parseInstagramBetaCaption('First time on the board in 2023, hope everybody had a great holiday!'),
+    ).toBeNull();
+  });
+
   it('rejects an out-of-range angle but keeps the name', () => {
     expect(parseInstagramBetaCaption('"Weird Angle" @ 99°')).toEqual({
       climbName: 'Weird Angle',

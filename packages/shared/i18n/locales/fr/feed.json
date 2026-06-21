@@ -71,7 +71,7 @@
       "subtitle": "Cela s'exécute dans votre propre navigateur sur Instagram. Rien ne quitte votre session et Boardsesh ne voit jamais votre connexion Instagram.",
       "step1": "Ouvrez votre profil Instagram dans un autre onglet et connectez-vous.",
       "step2": "Ouvrez la console du navigateur (clic droit, Inspecter, puis Console).",
-      "step3": "Collez le script ci-dessous, appuyez sur Entrée et laissez-le finir. Il copie vos publications dans le presse-papiers.",
+      "step3": "Collez le script ci-dessous et appuyez sur Entrée. Sur un grand compte, cela peut prendre une minute. Il affiche la progression dans la console, indique combien il en a trouvé et les copie dans le presse-papiers.",
       "copyScript": "Copier le script"
     },
     "paste": {

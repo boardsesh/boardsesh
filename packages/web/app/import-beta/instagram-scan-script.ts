@@ -8,6 +8,15 @@
  * clipboard for pasting into the Boardsesh import page. No credentials leave
  * the browser; Boardsesh never touches Instagram.
  *
+ * Hardened from a live scan of a 233-post account:
+ *  - Retries transient failures (timeouts, the occasional 429/5xx) instead of
+ *    stopping on the first error. A naive break-on-error silently truncates the
+ *    scan, which under-reports what's missing — the whole point is to find ALL
+ *    of it.
+ *  - Logs running progress (a large account can take a minute to paginate).
+ *  - Reports whether the scan COMPLETED or gave up early, so a partial result
+ *    isn't mistaken for the full account.
+ *
  * Exported as a string so the import page can display it with a copy button.
  */
 export const INSTAGRAM_SCAN_SCRIPT = String.raw`(async () => {
@@ -27,34 +36,49 @@ export const INSTAGRAM_SCAN_SCRIPT = String.raw`(async () => {
   const seen = new Set();
   const out = [];
   let maxId = '';
-  while (true) {
+  let complete = false;
+  let consecutiveErrors = 0;
+  const MAX_ERRORS = 6;
+  const MAX_PAGES = 400;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
     const url = 'https://www.instagram.com/api/v1/feed/user/' + userId + '/?count=33' + (maxId ? '&max_id=' + maxId : '');
-    let data;
+    let data = null;
     try {
-      const r = await fetch(url, { headers: { 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'include' });
-      if (!r.ok) break;
+      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined;
+      const r = await fetch(url, { headers: { 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'include', signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       data = await r.json();
-    } catch (e) { break; }
-    if (!data || data.status !== 'ok') break;
+      if (!data || data.status !== 'ok') throw new Error('unexpected response');
+    } catch (e) {
+      consecutiveErrors++;
+      console.log('Boardsesh scan: transient error (' + consecutiveErrors + '/' + MAX_ERRORS + '), retrying — ' + (e && e.message ? e.message : e));
+      if (consecutiveErrors >= MAX_ERRORS) break; // give up; scan is incomplete
+      await new Promise((res) => setTimeout(res, 2000));
+      continue;
+    }
+    consecutiveErrors = 0;
     for (const it of (data.items || [])) {
       if (!it.code || seen.has(it.code)) continue;
       seen.add(it.code);
       out.push({ shortcode: it.code, caption: (it.caption && it.caption.text) || '', takenAt: it.taken_at || null });
     }
     console.log('Boardsesh scan: ' + out.length + ' posts so far...');
-    if (!data.more_available) break;
+    if (!data.more_available) { complete = true; break; }
     maxId = data.next_max_id || '';
-    if (!maxId) break;
+    if (!maxId) { complete = true; break; }
     await new Promise((res) => setTimeout(res, 300));
   }
 
   const json = JSON.stringify(out);
+  const status = complete ? 'complete' : 'INCOMPLETE — hit repeated errors; re-run to get the rest';
+  const summary = 'Boardsesh: ' + out.length + ' posts (' + status + ').';
   try {
     await navigator.clipboard.writeText(json);
-    alert('Boardsesh: copied ' + out.length + ' posts. Paste them into the Boardsesh import page.');
+    alert(summary + ' Copied to clipboard — paste into the Boardsesh import page.');
   } catch (e) {
     console.log('Boardsesh scan JSON (clipboard blocked — copy the next line):');
     console.log(json);
-    alert('Boardsesh: clipboard blocked. Copy the JSON printed in the console.');
+    alert(summary + ' Clipboard blocked — copy the JSON printed in the console.');
   }
 })();`;

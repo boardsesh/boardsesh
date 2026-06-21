@@ -71,7 +71,7 @@
       "subtitle": "Esto se ejecuta en tu propio navegador en Instagram. Nada sale de tu sesión y Boardsesh nunca ve tu inicio de sesión de Instagram.",
       "step1": "Abre tu perfil de Instagram en otra pestaña e inicia sesión.",
       "step2": "Abre la consola del navegador (clic derecho, Inspeccionar y luego Consola).",
-      "step3": "Pega el script de abajo, pulsa Enter y deja que termine. Copia tus publicaciones al portapapeles.",
+      "step3": "Pega el script de abajo y pulsa Enter. En una cuenta grande puede tardar un minuto. Muestra el progreso en la consola, indica cuántas encontró y las copia al portapapeles.",
       "copyScript": "Copiar script"
     },
     "paste": {
