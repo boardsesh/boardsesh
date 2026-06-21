@@ -1,7 +1,7 @@
 {
   "discovery": {
     "section": {
-      "nearby": "Boards cerca de ti"
+      "nearby": "Plafones cerca de ti"
     },
     "findNearby": {
       "loading": "Buscando plafones...",
@@ -31,34 +31,34 @@
   },
   "mobile": {
     "edit": {
-      "screenTitle": "Editar board",
+      "screenTitle": "Editar plafón",
       "save": "Guardar cambios",
       "updateError": "No se pudieron guardar los cambios. Inténtalo de nuevo.",
-      "notFound": "No encontramos ese board",
+      "notFound": "No encontramos ese plafón",
       "back": "Volver",
-      "configLockedHint": "Este board tiene ascensos registrados, así que su layout, tamaño y sets están bloqueados."
+      "configLockedHint": "Este plafón tiene ascensos registrados, así que su layout, tamaño y sets están bloqueados."
     },
     "manage": {
-      "ownedHeader": "Tus boards",
+      "ownedHeader": "Tus plafones",
       "followingHeader": "Siguiendo",
-      "deleteTitle": "¿Eliminar board?",
-      "deleteMessage": "¿Quitar \"{{name}}\" de tus boards? No se puede deshacer.",
+      "deleteTitle": "¿Eliminar plafón?",
+      "deleteMessage": "¿Quitar \"{{name}}\" de tus plafones? No se puede deshacer.",
       "deleteConfirm": "Eliminar",
       "cancel": "Cancelar",
-      "deleteError": "No se pudo eliminar ese board. Inténtalo de nuevo.",
-      "unfollowError": "No se pudo dejar de seguir ese board. Inténtalo de nuevo.",
+      "deleteError": "No se pudo eliminar ese plafón. Inténtalo de nuevo.",
+      "unfollowError": "No se pudo dejar de seguir ese plafón. Inténtalo de nuevo.",
       "editAria": "Editar {{name}}",
       "deleteAria": "Eliminar {{name}}",
       "unfollowAria": "Dejar de seguir {{name}}"
     },
-    "emptyTitle": "Aún no tienes boards",
-    "emptySubtitle": "Busca un board para empezar",
-    "signInTitle": "Inicia sesión para ver tus boards",
-    "signInSubtitle": "Tus boards están vinculados a tu cuenta.",
+    "emptyTitle": "Aún no tienes plafones",
+    "emptySubtitle": "Busca un plafón para empezar",
+    "signInTitle": "Inicia sesión para ver tus plafones",
+    "signInSubtitle": "Tus plafones están vinculados a tu cuenta.",
     "signInCta": "Iniciar sesión",
-    "errorTitle": "No se pudieron cargar tus boards",
+    "errorTitle": "No se pudieron cargar tus plafones",
     "errorRetry": "Reintentar",
-    "boardSwitchError": "No se pudo guardar ese board. Inténtalo de nuevo.",
+    "boardSwitchError": "No se pudo guardar ese plafón. Inténtalo de nuevo.",
     "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
     "discovery": {
       "findNearby": "Buscar cerca",
@@ -66,19 +66,19 @@
       "locationDenied": "Permitir ubicación",
       "nearbyTitle": "Cerca de ti",
       "nearbyShowing": "Mostrando cercanos",
-      "yourBoardsTitle": "Tus boards",
+      "yourBoardsTitle": "Tus plafones",
       "popularTitle": "Configuraciones populares",
       "findGym": "Buscar gimnasio",
-      "create": "Crear board"
+      "create": "Crear plafón"
     },
     "create": {
-      "screenTitle": "Configura tu board",
+      "screenTitle": "Configura tu plafón",
       "previewHint": "Elige tu layout y te mostramos tu pared",
       "adjustable": "Ángulo ajustable",
       "anglePreview": "Pared inclinada a {{angle}}°",
       "moreOptions": "Más opciones",
-      "ownBoard": "Este board es mío",
-      "public": "Board público",
+      "ownBoard": "Este plafón es mío",
+      "public": "Plafón público",
       "publicHint": "Muéstralo en el mapa para que tu gente lo encuentre",
       "unlisted": "No listado",
       "hideLocation": "Ocultar ubicación exacta",
@@ -89,11 +89,11 @@
       "serial": "Número de serie del controlador",
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
-      "save": "Guardar mi board",
-      "createError": "No se pudo crear ese board. Inténtalo de nuevo."
+      "save": "Guardar mi plafón",
+      "createError": "No se pudo crear ese plafón. Inténtalo de nuevo."
     },
     "custom": {
-      "board": "Board",
+      "board": "Plafón",
       "layout": "Layout",
       "size": "Tamaño",
       "sets": "Sets",
@@ -101,10 +101,10 @@
       "name": "Nombre del plafón"
     },
     "bluetooth": {
-      "title": "Boards cerca de ti",
-      "scanning": "Buscando boards…",
-      "resolving": "Cargando boards…",
-      "noResults": "Ningún board al alcance",
+      "title": "Plafones cerca de ti",
+      "scanning": "Buscando plafones…",
+      "resolving": "Cargando plafones…",
+      "noResults": "Ningún plafón al alcance",
       "unavailable": "Activa el Bluetooth para buscar"
     },
     "boardDetail": {

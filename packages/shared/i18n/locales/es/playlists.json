@@ -110,7 +110,7 @@
       "cta": "Cambiar de plafón"
     },
     "unrenderableClimb": {
-      "subtitle": "Faltan datos del tablero para este bloque."
+      "subtitle": "Faltan datos del plafón para este bloque."
     },
     "menu": {
       "generate": "Generar",
@@ -227,7 +227,7 @@
       "minRating": "Valoración mínima",
       "climbBias": "Sesgo de bloques",
       "tallClimbsLabel": "Solo bloques altos",
-      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en tableros 8x12 y 10x12)",
+      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en plafones 8x12 y 10x12)",
       "wideClimbsLabel": "Solo bloques anchos",
       "wideClimbsTooltip": "Muestra solo bloques que usan las presas laterales extra del 10x10",
       "mainSetClimbs": "Bloques de la serie principal",

@@ -24,7 +24,7 @@
     "table": {
       "user": "Usuario",
       "role": "Rol",
-      "board": "Board",
+      "board": "Plafón",
       "grantedBy": "Asignado por",
       "date": "Fecha",
       "actions": "Acciones"
@@ -47,9 +47,9 @@
       "fallbackUserInitial": "U",
       "change": "Cambiar",
       "roleLabel": "Rol",
-      "boardTypeLabel": "Tipo de board (opcional)",
+      "boardTypeLabel": "Tipo de plafón (opcional)",
       "boardTypeOptions": {
-        "global": "Global (all boards)",
+        "global": "Global (todos los plafones)",
         "kilter": "Kilter",
         "tension": "Tension"
       },
@@ -74,7 +74,7 @@
       "label": "Alcance",
       "options": {
         "global": "Global",
-        "board": "Board",
+        "board": "Plafón",
         "climb": "Bloque"
       },
       "boardTypeLabel": "Tipo de plafón",

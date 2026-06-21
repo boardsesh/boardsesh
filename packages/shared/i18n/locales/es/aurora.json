@@ -2,7 +2,7 @@
   "metadata": {
     "migration": {
       "title": "Migra desde la antigua app de Kilter",
-      "description": "Trae tus datos del board de Kilter a Boardsesh tras el cierre de la aplicación de Aurora."
+      "description": "Trae tus datos del plafón de Kilter a Boardsesh tras el cierre de la aplicación de Aurora."
     }
   },
   "migration": {
@@ -17,7 +17,7 @@
       "ledRisk": "Este riesgo de depender de un solo proveedor ya se vio hace 2 años, cuando no se podían comprar kits de LEDs para los presas de Kilter por una disputa legal entre Kilter y Aurora.",
       "boardseshIntroPrefix": "Para eliminar ese riesgo se creó ",
       "boardseshLink": "Boardsesh",
-      "boardseshIntroSuffix": ", una alternativa open source para todas las apps de boards. Boardsesh tiene su propia copia de las bases de datos de bloques y con el tiempo dará soporte a todos los boards. Se puede autoalojar fácilmente y permitirá descargar tus datos cuando quieras."
+      "boardseshIntroSuffix": ", una alternativa open source para todas las apps de plafones. Boardsesh tiene su propia copia de las bases de datos de bloques y con el tiempo dará soporte a todos los plafones. Se puede autoalojar fácilmente y permitirá descargar tus datos cuando quieras."
     },
     "howToMigrate": {
       "title": "¿Cómo migrar?",

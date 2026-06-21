@@ -353,7 +353,7 @@
     "angleSelector": {
       "title": "Elegir ángulo",
       "fromVerticalHint": "Medido desde la vertical",
-      "diagramAria": "Tablero inclinado a {{angle}}° desde la vertical"
+      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",
@@ -488,7 +488,7 @@
         "previous": "Anterior",
         "next": "Siguiente",
         "relight": "Reactivar el muro",
-        "reconnect": "Conectar al tablero",
+        "reconnect": "Conectar al plafón",
         "onWall": "{{name}} está en el muro"
       },
       "inStatsFlashes": "Flashes",
