@@ -45,6 +45,7 @@ import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-a
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
+import { markBoardActivationPhase } from '../../../src/lib/boards/board-activation-telemetry';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { clearBoardRevealTipPending, hasBoardRevealTipPending } from '../../../src/lib/onboarding/onboarding-storage';
 import { useMyBoards } from '../../../src/lib/graphql/hooks';
@@ -403,6 +404,11 @@ function ClimbListInner() {
 
   // Search is "ready" once this board's restore has landed — gate queries on it.
   const searchReady = hasBoardConfig && restoredKey === boardKey;
+
+  useEffect(() => {
+    if (!activeBoard || !searchReady) return;
+    markBoardActivationPhase('climbs_screen_ready', activeBoard);
+  }, [activeBoard, searchReady]);
 
   useEffect(() => {
     if (!boardConfig || !searchReady) return;

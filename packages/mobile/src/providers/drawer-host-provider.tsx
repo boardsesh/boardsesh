@@ -12,6 +12,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { router } from 'expo-router';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
@@ -34,6 +35,7 @@ import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
+import { useDeferredAfterInteractions } from '../hooks/use-deferred-after-interactions';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
@@ -214,6 +216,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () => boardConfigOverride ?? storedActiveBoardConfig,
     [boardConfigOverride, storedActiveBoardConfig],
   );
+  const activeBoardMountKey = activeBoard?.uuid ?? 'none';
+  const androidActiveBoardSheetsReady = useDeferredAfterInteractions(
+    Platform.OS === 'android' && activeBoardConfig != null,
+    activeBoardMountKey,
+    500,
+  );
+  const shouldMountActiveBoardSheets =
+    activeBoardConfig != null && (Platform.OS !== 'android' || androidActiveBoardSheetsReady);
 
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
     if (!activeBoard) return null;
@@ -597,7 +607,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   return (
     <DrawerHostContext.Provider value={value}>
       {children}
-      {activeBoardConfig ? (
+      {shouldMountActiveBoardSheets && activeBoardConfig ? (
         <PlayDrawer
           ref={playDrawerRef}
           boardConfig={activeBoardConfig}
@@ -648,7 +658,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onClose={closeAddToPlaylist}
         />
       ) : null}
-      {queueBoard ? (
+      {shouldMountActiveBoardSheets && queueBoard ? (
         <QueueSheet
           ref={queueSheetRef}
           board={queueBoard}

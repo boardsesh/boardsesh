@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, usePopularBoardConfigs, useNearbyBoards } from '../../src/lib/graphql/hooks';
-import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import {
+  useActiveBoard,
+  usePersistActiveBoard,
+  usePublishActiveBoardAfterInteractions,
+  useSetActiveBoard,
+} from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
@@ -21,6 +26,10 @@ import { userBoardToItem, popularConfigToItem } from '../../src/components/board
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import {
+  beginBoardActivationTelemetry,
+  markBoardActivationPhase,
+} from '../../src/lib/boards/board-activation-telemetry';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -43,6 +52,8 @@ export default function BoardSelection() {
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
   const setActiveBoard = useSetActiveBoard();
+  const persistActiveBoard = usePersistActiveBoard();
+  const publishActiveBoardAfterInteractions = usePublishActiveBoardAfterInteractions();
   const { data: activeBoard } = useActiveBoard();
 
   const {
@@ -75,11 +86,32 @@ export default function BoardSelection() {
   const activateBoard = useCallback(
     async (board: UserBoard) => {
       hapticSelection();
+      beginBoardActivationTelemetry(board, {
+        source: fromOnboarding ? 'onboarding' : 'board_picker',
+        returnTo: boardReturnTo,
+      });
       try {
+        if (Platform.OS === 'android') {
+          await persistActiveBoard(board);
+          markBoardActivationPhase('persisted', board);
+          if (fromOnboarding) {
+            track(SHARED_EVENTS.OnboardingBoardActivated, { boardType: board.boardType, source: 'onboarding' });
+            void setBoardRevealTipPending();
+          }
+          markBoardActivationPhase('dismiss_requested', board);
+          router.dismissTo(boardReturnTo);
+          publishActiveBoardAfterInteractions(board, {
+            onPublished: () => markBoardActivationPhase('active_board_published', board),
+          });
+          return;
+        }
+
         // Persists to AsyncStorage + the ['activeBoard'] cache, then navigates
         // only once the write succeeds (a failed write must not strand the user
         // on a board that won't survive the next cold start).
         await setActiveBoard(board);
+        markBoardActivationPhase('persisted', board);
+        markBoardActivationPhase('active_board_published', board);
         if (fromOnboarding) {
           // The real activation metric — board history turns on the moment a
           // named board is bound — and the one-time Climbs reveal banner is armed
@@ -91,12 +123,22 @@ export default function BoardSelection() {
         // by default (including the onboarding hand-off), Discover when the pill
         // there opened it (replaces with that tab if it isn't already underneath,
         // e.g. opened from a deep link).
+        markBoardActivationPhase('dismiss_requested', board);
         router.dismissTo(boardReturnTo);
       } catch {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [setActiveBoard, router, boardReturnTo, showToast, t, fromOnboarding],
+    [
+      setActiveBoard,
+      persistActiveBoard,
+      publishActiveBoardAfterInteractions,
+      router,
+      boardReturnTo,
+      showToast,
+      t,
+      fromOnboarding,
+    ],
   );
 
   const myBoardItems = useMemo(

@@ -45,11 +45,8 @@ type BoardDiscoveryCardProps = {
   onPress: (item: DiscoveryBoardItem) => void;
 };
 
-export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
+function BoardDiscoveryCardContent({ item }: { item: DiscoveryBoardItem }) {
   const { systemColors, brandColors } = useTheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const render = useMemo(
     () =>
@@ -69,16 +66,7 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
   };
 
   return (
-    <AnimatedPressable
-      onPress={() => {
-        hapticLight();
-        onPress(item);
-      }}
-      onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
-      onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
-      accessibilityRole="button"
-      style={[animatedStyle, styles.container]}
-    >
+    <>
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
         {render ? (
           <BoardImageNative
@@ -128,13 +116,57 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
           {item.subtitle}
         </Text>
       ) : null}
+    </>
+  );
+}
+
+function StaticBoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
+  return (
+    <Pressable
+      onPress={() => {
+        hapticLight();
+        onPress(item);
+      }}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.container, pressed ? styles.androidPressed : null]}
+    >
+      <BoardDiscoveryCardContent item={item} />
+    </Pressable>
+  );
+}
+
+function AnimatedBoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <AnimatedPressable
+      onPress={() => {
+        hapticLight();
+        onPress(item);
+      }}
+      onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
+      onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
+      accessibilityRole="button"
+      style={[animatedStyle, styles.container]}
+    >
+      <BoardDiscoveryCardContent item={item} />
     </AnimatedPressable>
   );
+}
+
+export function BoardDiscoveryCard(props: BoardDiscoveryCardProps) {
+  if (Platform.OS === 'android') return <StaticBoardDiscoveryCard {...props} />;
+  return <AnimatedBoardDiscoveryCard {...props} />;
 }
 
 const styles = StyleSheet.create({
   container: {
     width: DISCOVERY_CARD_WIDTH,
+  },
+  androidPressed: {
+    opacity: 0.72,
   },
   thumb: {
     width: DISCOVERY_CARD_WIDTH,

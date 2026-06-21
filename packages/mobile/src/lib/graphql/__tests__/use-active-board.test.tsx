@@ -1,9 +1,26 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
+
+const interactionManagerMock = vi.hoisted(() => {
+  const state = { callbacks: [] as Array<() => void> };
+  return {
+    state,
+    runAfterInteractions: vi.fn((callback: () => void) => {
+      state.callbacks.push(callback);
+      return { cancel: vi.fn() };
+    }),
+  };
+});
+
+vi.mock('react-native', () => ({
+  InteractionManager: {
+    runAfterInteractions: interactionManagerMock.runAfterInteractions,
+  },
+}));
 
 // AsyncStorage-backed preference store (in-memory).
 vi.mock('@react-native-async-storage/async-storage', () => {
@@ -58,7 +75,13 @@ async function resetAsyncStorage() {
 describe('useActiveBoard', () => {
   beforeEach(async () => {
     vi.resetModules();
+    interactionManagerMock.state.callbacks = [];
+    interactionManagerMock.runAfterInteractions.mockClear();
     await resetAsyncStorage();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns the stored board', async () => {
@@ -115,6 +138,71 @@ describe('useActiveBoard', () => {
 
     await waitFor(() => expect(read.result.current.data).toEqual(otherBoard));
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+  });
+
+  it('persistActiveBoard writes storage without publishing the cache', async () => {
+    const { useActiveBoard, usePersistActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
+    const { getStoredActiveBoard } = await import('../../active-board-store');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const sharedWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
+    const persister = renderHook(() => usePersistActiveBoard(), { wrapper: sharedWrapper });
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+    expect(read.result.current.data).toBeNull();
+
+    await act(async () => {
+      await persister.result.current(storedBoard);
+    });
+
+    expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeNull();
+    expect(read.result.current.data).toBeNull();
+    await expect(getStoredActiveBoard()).resolves.toEqual(storedBoard);
+  });
+
+  it('publishActiveBoardAfterInteractions waits for the interaction queue before updating readers', async () => {
+    const { useActiveBoard, usePublishActiveBoardAfterInteractions } = await import('../use-active-board');
+    const sharedWrapper = wrapper();
+    const onPublished = vi.fn();
+
+    const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
+    const publisher = renderHook(() => usePublishActiveBoardAfterInteractions(), { wrapper: sharedWrapper });
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+
+    act(() => {
+      publisher.result.current(storedBoard, { onPublished });
+    });
+
+    expect(interactionManagerMock.runAfterInteractions).toHaveBeenCalledTimes(1);
+    expect(read.result.current.data).toBeNull();
+
+    act(() => {
+      interactionManagerMock.state.callbacks.shift()?.();
+    });
+
+    await waitFor(() => expect(read.result.current.data).toEqual(storedBoard));
+    expect(onPublished).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishActiveBoardAfterInteractions falls back when interactions are starved', async () => {
+    const { useActiveBoard, usePublishActiveBoardAfterInteractions } = await import('../use-active-board');
+    const sharedWrapper = wrapper();
+    const onPublished = vi.fn();
+
+    const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
+    const publisher = renderHook(() => usePublishActiveBoardAfterInteractions(), { wrapper: sharedWrapper });
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+
+    act(() => {
+      publisher.result.current(otherBoard, { onPublished, timeoutMs: 1 });
+    });
+
+    expect(read.result.current.data).toBeNull();
+
+    await waitFor(() => expect(read.result.current.data).toEqual(otherBoard));
+    expect(onPublished).toHaveBeenCalledTimes(1);
   });
 
   // Mirrors what AuthProvider.signOut does: removeQueries on the active-board

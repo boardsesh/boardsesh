@@ -8,11 +8,22 @@ import type { DiscoveryBoardItem } from '../BoardDiscoveryCard';
 // the discovery card omitted renderWidth, so the native renderer resolved the
 // full-res board background (~1080-1461px) into a 168px cell on the main thread.
 const boardImageProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
+const nativePlatform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+const reanimatedMock = vi.hoisted(() => ({
+  useAnimatedStyle: vi.fn((factory: () => unknown) => factory()),
+  useSharedValue: vi.fn((initial: unknown) => ({ value: initial })),
+  withSpring: vi.fn((toValue: unknown) => toValue),
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Platform: { select: (spec: Record<string, unknown>) => spec.ios },
+  Platform: {
+    get OS() {
+      return nativePlatform.OS;
+    },
+    select: (spec: Record<string, unknown>) => spec.ios,
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -25,9 +36,9 @@ vi.mock('react-native-reanimated', () => ({
       ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children),
   },
-  useAnimatedStyle: (factory: () => unknown) => factory(),
-  useSharedValue: (initial: unknown) => ({ value: initial }),
-  withSpring: (toValue: unknown) => toValue,
+  useAnimatedStyle: reanimatedMock.useAnimatedStyle,
+  useSharedValue: reanimatedMock.useSharedValue,
+  withSpring: reanimatedMock.withSpring,
 }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
@@ -76,6 +87,10 @@ describe('BoardDiscoveryCard', () => {
   afterEach(() => {
     cleanup();
     boardImageProps.last = null;
+    nativePlatform.OS = 'ios';
+    reanimatedMock.useAnimatedStyle.mockClear();
+    reanimatedMock.useSharedValue.mockClear();
+    reanimatedMock.withSpring.mockClear();
   });
 
   it('renders the thumbnail at a small renderWidth, not the full-res board source', () => {
@@ -85,5 +100,15 @@ describe('BoardDiscoveryCard', () => {
     // The discovery card cell is 168px; requesting renderWidth forces the
     // thumb-variant background + small overlay instead of a full-res decode.
     expect(boardImageProps.last?.renderWidth).toBe(400);
+  });
+
+  it('uses the static Pressable path on Android', () => {
+    nativePlatform.OS = 'android';
+
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn() }));
+
+    expect(boardImageProps.last).not.toBeNull();
+    expect(reanimatedMock.useSharedValue).not.toHaveBeenCalled();
+    expect(reanimatedMock.useAnimatedStyle).not.toHaveBeenCalled();
   });
 });
