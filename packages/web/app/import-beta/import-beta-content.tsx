@@ -56,6 +56,39 @@ type AttachStatus = 'idle' | 'pending' | 'attached' | 'failed';
 
 const ATTACH_DELAY_MS = 600;
 
+// applyRateLimit (backend) throws a structured RATE_LIMITED error carrying
+// retryAfterSeconds. Pull it out of the graphql-request ClientError so a large
+// bulk attach can pace itself to the 30/min limit instead of dropping videos.
+function rateLimitRetrySeconds(error: unknown): number | null {
+  const errors = (error as { response?: { errors?: { extensions?: { code?: string; retryAfterSeconds?: number } }[] } })
+    ?.response?.errors;
+  const limited = errors?.find((entry) => entry.extensions?.code === 'RATE_LIMITED');
+  if (!limited) return null;
+  const seconds = limited.extensions?.retryAfterSeconds;
+  return typeof seconds === 'number' && seconds > 0 ? Math.min(seconds, 65) : 30;
+}
+
+const MAX_RATE_LIMIT_RETRIES = 6;
+
+// Attach one beta link, transparently waiting out the per-user rate limit so a
+// big import finishes cleanly. Non-rate errors (private/deleted post, same-climb
+// dup) propagate immediately for the caller to record per row.
+async function attachBetaLinkWithRetry(
+  client: ReturnType<typeof createGraphQLHttpClient>,
+  input: { boardType: string; climbUuid: string; link: string; angle?: number },
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await client.request<AttachBetaLinkMutationResponse>(ATTACH_BETA_LINK, { input });
+      return;
+    } catch (error) {
+      const waitSeconds = rateLimitRetrySeconds(error);
+      if (waitSeconds === null || attempt >= MAX_RATE_LIMIT_RETRIES) throw error;
+      await new Promise((resolve) => setTimeout(resolve, (waitSeconds + 1) * 1000));
+    }
+  }
+}
+
 async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -551,13 +584,11 @@ function MissingSection({ items, token, showMessage }: MissingSectionProps) {
       const item = queue[index];
       setStatuses((prev) => ({ ...prev, [item.shortcode]: 'pending' }));
       try {
-        await client.request<AttachBetaLinkMutationResponse>(ATTACH_BETA_LINK, {
-          input: {
-            boardType: item.boardType,
-            climbUuid: item.climbUuid,
-            link: item.link,
-            angle: item.angle ?? undefined,
-          },
+        await attachBetaLinkWithRetry(client, {
+          boardType: item.boardType,
+          climbUuid: item.climbUuid,
+          link: item.link,
+          angle: item.angle ?? undefined,
         });
         attachedCount += 1;
         setStatuses((prev) => ({ ...prev, [item.shortcode]: 'attached' }));
@@ -745,13 +776,11 @@ function AmbiguousRow({ item, token, showMessage }: AmbiguousRowProps) {
     setErrorText(null);
     try {
       const client = createGraphQLHttpClient(token);
-      await client.request<AttachBetaLinkMutationResponse>(ATTACH_BETA_LINK, {
-        input: {
-          boardType: item.boardType,
-          climbUuid: chosenUuid,
-          link: item.link,
-          angle: item.angle ?? undefined,
-        },
+      await attachBetaLinkWithRetry(client, {
+        boardType: item.boardType,
+        climbUuid: chosenUuid,
+        link: item.link,
+        angle: item.angle ?? undefined,
       });
       setStatus('attached');
       track('Import Beta Attached', { attached: '1', failed: '0', source: 'ambiguous' });
