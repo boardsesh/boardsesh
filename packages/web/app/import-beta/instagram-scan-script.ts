@@ -71,14 +71,18 @@ export const INSTAGRAM_SCAN_SCRIPT = String.raw`(async () => {
   }
 
   const json = JSON.stringify(out);
+  // Stash on window so it's always retrievable with the DevTools copy() helper.
+  // clipboard.writeText usually fails from a pasted console snippet (no user
+  // gesture / DevTools has focus), and hand-copying a large JSON blob out of the
+  // console is painful — copy(__boardseshBeta) is reliable everywhere.
+  window.__boardseshBeta = json;
   const status = complete ? 'complete' : 'INCOMPLETE — hit repeated errors; re-run to get the rest';
   const summary = 'Boardsesh: ' + out.length + ' posts (' + status + ').';
   try {
     await navigator.clipboard.writeText(json);
-    alert(summary + ' Copied to clipboard — paste into the Boardsesh import page.');
+    alert(summary + ' Copied to clipboard — paste it into the Boardsesh import page.');
   } catch (e) {
-    console.log('Boardsesh scan JSON (clipboard blocked — copy the next line):');
-    console.log(json);
-    alert(summary + ' Clipboard blocked — copy the JSON printed in the console.');
+    console.log('%cBoardsesh: clipboard blocked. Run this in the console to copy it:  copy(__boardseshBeta)', 'font-weight:bold');
+    alert(summary + ' Clipboard was blocked. In the console, run  copy(__boardseshBeta)  to copy it, then paste into Boardsesh.');
   }
 })();`;
