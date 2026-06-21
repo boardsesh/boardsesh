@@ -61,6 +61,7 @@
     "noPosts": "No se encontraron publicaciones en lo que pegaste. Asegúrate de ejecutar el script en un perfil.",
     "scanError": "El escaneo falló. Inténtalo de nuevo en un momento.",
     "angle": "{{angle}}°",
+    "openOnInstagram": "Abrir en Instagram",
     "board": {
       "label": "¿Qué tabla?",
       "kilter": "Kilter",
@@ -68,7 +69,7 @@
     },
     "scan": {
       "title": "Paso 1 · Escanea tus publicaciones",
-      "subtitle": "Esto se ejecuta en tu propio navegador en Instagram. Nada sale de tu sesión y Boardsesh nunca ve tu inicio de sesión de Instagram.",
+      "subtitle": "Esto se ejecuta en tu propio navegador en Instagram. Nada sale de tu sesión y Boardsesh nunca ve tu inicio de sesión de Instagram. Una advertencia: usa la API de feed de Instagram, así que escanear demasiado en poco tiempo podría hacer que Instagram limite temporalmente tu cuenta.",
       "step1": "Abre tu perfil de Instagram en otra pestaña e inicia sesión.",
       "step2": "Abre la consola del navegador (clic derecho, Inspeccionar y luego Consola).",
       "step3": "Pega el script de abajo y pulsa Enter. En una cuenta grande puede tardar un minuto. Muestra el progreso en la consola, indica cuántas encontró y las copia al portapapeles.",

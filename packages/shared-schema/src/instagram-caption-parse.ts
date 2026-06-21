@@ -37,9 +37,14 @@ export function parseInstagramBetaCaption(caption: string | null | undefined): P
   const climbName = nameMatch[1].trim();
   if (!climbName) return null;
 
-  const angleMatch = ANGLE.exec(caption);
+  // Detect angle + board only in the text AFTER the quoted name. The canonical
+  // caption is `"name" @ angle° on the X Board`, so the trailing region is the
+  // authoritative source — and this stops a climb literally named "Tension
+  // Board" or "Project @ 30" from poisoning the board/angle.
+  const rest = caption.slice(nameMatch.index + nameMatch[0].length);
+  const angleMatch = ANGLE.exec(rest);
   const rawAngle = angleMatch ? Number(angleMatch[1]) : null;
   const angle = rawAngle != null && rawAngle >= 0 && rawAngle <= 90 ? rawAngle : null;
 
-  return { climbName, angle, boardType: detectBoard(caption) };
+  return { climbName, angle, boardType: detectBoard(rest) };
 }

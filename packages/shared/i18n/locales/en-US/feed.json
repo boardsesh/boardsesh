@@ -61,6 +61,7 @@
     "noPosts": "No posts found in that paste. Make sure you ran the script on a profile.",
     "scanError": "The scan failed. Try again in a moment.",
     "angle": "{{angle}}°",
+    "openOnInstagram": "Open on Instagram",
     "board": {
       "label": "Which board?",
       "kilter": "Kilter",
@@ -68,7 +69,7 @@
     },
     "scan": {
       "title": "Step 1 · Scan your posts",
-      "subtitle": "This runs in your own browser on Instagram. Nothing leaves your session, and Boardsesh never sees your Instagram login.",
+      "subtitle": "This runs in your own browser on Instagram. Nothing leaves your session, and Boardsesh never sees your Instagram login. One caveat: it uses Instagram's own feed API, so scanning very heavily could get your account temporarily rate-limited by Instagram.",
       "step1": "Open your Instagram profile in another tab and log in.",
       "step2": "Open the browser console (right-click, Inspect, then Console).",
       "step3": "Paste the script below and press Enter. On a large account it can take a minute. It logs progress in the console, says how many it found, and copies them to the clipboard.",

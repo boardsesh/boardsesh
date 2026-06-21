@@ -1,4 +1,3 @@
-import React from 'react';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';

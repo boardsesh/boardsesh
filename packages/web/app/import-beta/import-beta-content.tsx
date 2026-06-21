@@ -88,11 +88,14 @@ function parsePastedPosts(raw: string): InstagramScanPostInput[] {
     throw new Error('not-array');
   }
   const posts: InstagramScanPostInput[] = [];
+  const seen = new Set<string>();
   for (const entry of parsed) {
     if (!entry || typeof entry !== 'object') continue;
     const record = entry as Record<string, unknown>;
     const shortcode = record.shortcode;
     if (typeof shortcode !== 'string' || shortcode.length === 0) continue;
+    if (seen.has(shortcode)) continue; // a profile can surface the same reel twice; one row per shortcode
+    seen.add(shortcode);
     posts.push({
       shortcode,
       caption: typeof record.caption === 'string' ? record.caption : '',
@@ -441,7 +444,12 @@ function ReviewStep({ result, token, showMessage }: ReviewStepProps) {
                           {item.climbName}
                           {item.angle != null && ` · ${t('importBeta.angle', { angle: item.angle })}`}
                         </Typography>
-                        <Link href={item.link} target="_blank" rel="noopener noreferrer">
+                        <Link
+                          href={item.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={t('importBeta.openOnInstagram')}
+                        >
                           <OpenInNewOutlined fontSize="small" />
                         </Link>
                       </Stack>
@@ -471,7 +479,12 @@ function ReviewStep({ result, token, showMessage }: ReviewStepProps) {
                         <Typography variant="body2" color="text.secondary">
                           {item.parsedName ?? t('importBeta.unmatched.noName')}
                         </Typography>
-                        <Link href={item.link} target="_blank" rel="noopener noreferrer">
+                        <Link
+                          href={item.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={t('importBeta.openOnInstagram')}
+                        >
                           <OpenInNewOutlined fontSize="small" />
                         </Link>
                       </Stack>
@@ -618,7 +631,13 @@ function MissingSection({ items, token, showMessage }: MissingSectionProps) {
                 )}
               </Box>
               <StatusBadge status={status} />
-              <Link href={item.link} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-flex' }}>
+              <Link
+                href={item.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t('importBeta.openOnInstagram')}
+                sx={{ display: 'inline-flex' }}
+              >
                 <OpenInNewOutlined fontSize="small" />
               </Link>
             </Box>
@@ -750,7 +769,13 @@ function AmbiguousRow({ item, token, showMessage }: AmbiguousRowProps) {
         <Typography variant="body2" fontWeight={600}>
           {item.parsedName}
         </Typography>
-        <Link href={item.link} target="_blank" rel="noopener noreferrer" sx={{ display: 'inline-flex' }}>
+        <Link
+          href={item.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t('importBeta.openOnInstagram')}
+          sx={{ display: 'inline-flex' }}
+        >
           <OpenInNewOutlined fontSize="small" />
         </Link>
       </Stack>

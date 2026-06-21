@@ -61,6 +61,7 @@
     "noPosts": "Aucune publication trouvée dans ce collage. Vérifiez que vous avez lancé le script sur un profil.",
     "scanError": "Le scan a échoué. Réessayez dans un instant.",
     "angle": "{{angle}}°",
+    "openOnInstagram": "Ouvrir sur Instagram",
     "board": {
       "label": "Quel board ?",
       "kilter": "Kilter",
@@ -68,7 +69,7 @@
     },
     "scan": {
       "title": "Étape 1 · Scannez vos publications",
-      "subtitle": "Cela s'exécute dans votre propre navigateur sur Instagram. Rien ne quitte votre session et Boardsesh ne voit jamais votre connexion Instagram.",
+      "subtitle": "Cela s'exécute dans votre propre navigateur sur Instagram. Rien ne quitte votre session et Boardsesh ne voit jamais votre connexion Instagram. Une réserve : il utilise l'API de feed d'Instagram, donc scanner énormément en peu de temps pourrait faire limiter temporairement votre compte par Instagram.",
       "step1": "Ouvrez votre profil Instagram dans un autre onglet et connectez-vous.",
       "step2": "Ouvrez la console du navigateur (clic droit, Inspecter, puis Console).",
       "step3": "Collez le script ci-dessous et appuyez sur Entrée. Sur un grand compte, cela peut prendre une minute. Il affiche la progression dans la console, indique combien il en a trouvé et les copie dans le presse-papiers.",

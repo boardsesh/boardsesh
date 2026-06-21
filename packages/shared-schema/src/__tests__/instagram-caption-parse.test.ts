@@ -51,9 +51,25 @@ describe('parseInstagramBetaCaption', () => {
   });
 
   it('does not mistake a social handle for an angle', () => {
-    expect(parseInstagramBetaCaption('check out @kilterboard — "Send It" @ 50°')).toEqual({
+    expect(parseInstagramBetaCaption('check out @kilterboard "Send It" @ 50° on the Kilter Board')).toEqual({
       climbName: 'Send It',
       angle: 50,
+      boardType: 'kilter',
+    });
+  });
+
+  it('scopes board detection to text after the name (climb named like a board)', () => {
+    expect(parseInstagramBetaCaption('"Tension Board" @ 40° on the Kilter Board.')).toEqual({
+      climbName: 'Tension Board',
+      angle: 40,
+      boardType: 'kilter',
+    });
+  });
+
+  it('scopes angle detection to text after the name (angle inside the name)', () => {
+    expect(parseInstagramBetaCaption('"Project @ 30" @ 45° on the Kilter Board')).toEqual({
+      climbName: 'Project @ 30',
+      angle: 45,
       boardType: 'kilter',
     });
   });
