@@ -131,7 +131,6 @@ export default function BoardSelection() {
         // on a board that won't survive the next cold start).
         await setActiveBoard(board);
         markBoardActivationPhase('persisted', board);
-        markBoardActivationPhase('active_board_published', board);
         if (fromOnboarding) {
           // The real activation metric — board history turns on the moment a
           // named board is bound — and the one-time Climbs reveal banner is armed
@@ -144,6 +143,7 @@ export default function BoardSelection() {
         // there opened it (replaces with that tab if it isn't already underneath,
         // e.g. opened from a deep link).
         markBoardActivationPhase('dismiss_requested', board);
+        markBoardActivationPhase('active_board_published', board);
         router.dismissTo(boardReturnTo);
       } catch {
         if (activationSequence !== activationSequenceRef.current) return;
