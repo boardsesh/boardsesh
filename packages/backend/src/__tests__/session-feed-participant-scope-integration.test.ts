@@ -149,13 +149,16 @@ describe('sessionGroupedFeed — per-viewer scoping in party sessions (real DB)'
     // PARTNER: 2 sends, BOTH harder than the viewer's hardest (15) — so a
     // whole-session hardest would be the partner's 25, but the viewer-scoped
     // hardest must stay the viewer's 15.
+    // The partner's ticks also BRACKET the viewer's 10:00-10:20 span (one before,
+    // one after), so the viewer-scoped first/last tick (and durationMinutes) stay
+    // the viewer's own 20-minute window while the whole session spans 35 minutes.
     await insertTick({
       uuid: 'sf-pscope-partner-send-1',
       userId: PARTNER_USER_ID,
       status: 'send',
       difficulty: 20,
       attemptCount: 1,
-      climbedAt: '2026-03-01 10:05:00',
+      climbedAt: '2026-03-01 09:55:00', // before the viewer's first tick
     });
     await insertTick({
       uuid: 'sf-pscope-partner-send-2',
@@ -163,7 +166,7 @@ describe('sessionGroupedFeed — per-viewer scoping in party sessions (real DB)'
       status: 'send',
       difficulty: 25,
       attemptCount: 1,
-      climbedAt: '2026-03-01 10:15:00',
+      climbedAt: '2026-03-01 10:30:00', // after the viewer's last tick
     });
   });
 
@@ -180,6 +183,9 @@ describe('sessionGroupedFeed — per-viewer scoping in party sessions (real DB)'
     expect(session.tickCount).toBe(3);
     // Grade distribution is the viewer's own — sums to 3 successful ascents, not 5.
     expect(successCount(session)).toBe(3);
+    // first/last tick (hence durationMinutes) are the viewer's 20-min window,
+    // not the partner-widened 35-min whole-session span.
+    expect(session.durationMinutes).toBe(20);
   });
 
   it("scopes hardestSend to the viewer (their difficulty 15, not the partner's harder 25)", async () => {
@@ -222,5 +228,7 @@ describe('sessionGroupedFeed — per-viewer scoping in party sessions (real DB)'
     // Whole-session hardest is the partner's 25.
     expect(session.hardestSend?.difficulty).toBe(25);
     expect(session.participants).toHaveLength(2);
+    // Whole-session span covers both partner ticks (09:55 to 10:30).
+    expect(session.durationMinutes).toBe(35);
   });
 });

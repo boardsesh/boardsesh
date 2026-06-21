@@ -22,12 +22,9 @@ import { buildGradeDistributionFromTicks, computeSessionAggregates } from './ses
 
 type SessionFeedFilterOptions = {
   boardIdFilter: number | null;
-  // When the feed is scoped to a single climber (the "your sessions" surfaces
-  // that pass a userId), party-session aggregates are scoped to that climber's
-  // own ticks so the viewer's totals/grades/hardest don't count their party-
-  // mates. null on the public/social and following feeds, where whole-session
-  // aggregates are correct. participants[] stays whole-session regardless — it
-  // is the session leaderboard, not the viewer's own stats.
+  // Single-climber scope ("your sessions" surfaces): aggregates count only this
+  // climber's ticks. null on social/following feeds (whole-session). participants[]
+  // stays whole-session regardless; it is the leaderboard, not the viewer's stats.
   userIdFilter: string | null;
 };
 
@@ -131,13 +128,10 @@ export const sessionFeedQueries = {
     let sessionRows;
     try {
       const sessionBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
-      // Per-user scope: when a single userId filters the feed (the "your
-      // sessions" surfaces on web + mobile), count only that climber's ticks in
-      // each party session — their own sends/flashes/attempts/grades/hardest —
-      // not the whole party's. Empty on the social/home/following feeds (no
-      // userId), so those keep whole-session aggregates, which is correct for a
-      // social card showing the whole crew.
-      const sessionUserFilter = userId ? sql`AND t.user_id = ${userId}` : sql``;
+      // Per-user scope: a single userId ("your sessions") counts only that
+      // climber's ticks per session. Empty on social/home/following feeds, which
+      // keep whole-session aggregates. Mirrors boardIdFilter's null guard.
+      const sessionUserFilter = userId !== null ? sql`AND t.user_id = ${userId}` : sql``;
       const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
       const eligibleUsersCte = userId
         ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
