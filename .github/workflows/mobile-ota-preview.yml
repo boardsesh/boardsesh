@@ -10,20 +10,32 @@ name: Mobile OTA Preview (Per-PR Channel)
 #
 # ─── SECURITY — READ BEFORE EDITING ──────────────────────────────────────────────
 # EXPO_TOKEN == the OTA server's trusted EXPO_ACCESS_TOKEN, so ANY job holding it can
-# `eoas publish --branch production`. The publish job runs PR-AUTHOR HEAD code
-# (app.config.ts calls execSync at config time; workspace postinstall) WITH that
-# token. The boundary is therefore "never let untrusted code touch the token without
-# a human gate", NOT the channel-name guard. Controls, all required:
-#   * `pull_request` (NEVER pull_request_target) → fork jobs get no secrets.
-#   * Same-repo auto-publish needs BOTH the `ota-preview` label AND non-fork.
-#   * Forks / on-demand builds run ONLY from a maintainer's `/ota-preview` comment
-#     (author_association OWNER/MEMBER/COLLABORATOR) or workflow_dispatch.
-#   * The publish job uses `environment: ota-preview`; configure it with required
-#     reviewers so a maintainer approves secret injection for that diff (the same
-#     human-review the merge-to-main production flow has).
-#   * `^pr-[0-9]+$` channel assertion is defense-in-depth, not the control.
-# NEVER switch to pull_request_target or auto-run `/ota-preview` on fork pushes —
-# either hands the production-capable token to untrusted code.
+# `eoas publish --branch production`. The publish job runs PR-AUTHOR code WITH that
+# token (app.config.ts calls execSync at config time; workspace postinstall).
+#
+# Threat boundary (what actually protects production):
+#   * FORKS get NO secrets on `pull_request` (we never use pull_request_target). A
+#     fork can't publish or exfiltrate the token no matter what it edits — the hard
+#     boundary that keeps external contributors away from `production`.
+#   * The `/ota-preview` comment + workflow_dispatch paths run the DEFAULT-BRANCH
+#     (main) copy of this file, so their maintainer / author_association gate is NOT
+#     PR-editable. That's how a FORK is previewed safely: a maintainer triggers it
+#     and the publish then waits on the `ota-preview` environment.
+#   * SAME-REPO collaborators are trusted: for `pull_request` GitHub runs the PR's
+#     OWN copy of this workflow with repo secrets, so the `ota-preview` label +
+#     non-fork + the `environment: ota-preview` reviewer gate are an INTENT + REVIEW
+#     checkpoint (no accidental publishes; a human approves each diff) — not a hard
+#     wall against a malicious insider, who already holds the repo's secrets via
+#     other workflows.
+#   * `^pr-[0-9]+$` guards every channel mutation (defense-in-depth, not the control).
+#
+# Hardening (optional, for hard same-repo enforcement): make EXPO_TOKEN an
+# `ota-preview` ENVIRONMENT secret (not a repo secret) so a same-repo PR can't drop
+# the environment to reach it; the sweep then needs a main-only environment and
+# cleanup defers deletion to the sweep. See docs/mobile-ota-updates.md.
+#
+# NEVER switch to pull_request_target, and NEVER auto-run `/ota-preview` on fork
+# pushes — either hands the production-capable token to untrusted code.
 
 on:
   pull_request:
@@ -70,8 +82,13 @@ env:
 
 jobs:
   # ── Decide what to do, with NO secrets (read-only). Resolves the PR number and
-  # whether this run should publish or clean up, enforcing the trigger gates. Runs
-  # from the base/main copy of this file, so its logic isn't PR-author-editable.
+  # whether to publish / clean up, enforcing the trigger gates.
+  # NOTE on which copy of this file runs: for `pull_request` GitHub runs the PR's
+  # OWN copy (a same-repo author can edit this gate — but same-repo collaborators are
+  # already trusted with the repo's secrets, and forks get NO secrets so they can't
+  # publish regardless of what they edit). The `/ota-preview` comment + workflow_dispatch
+  # paths run the DEFAULT-BRANCH (main) copy, so their maintainer / author-association
+  # gate is NOT editable from a PR — that is what makes the fork / on-demand path safe.
   gate:
     # Skip unrelated comments (issue_comment fires on every comment in the repo).
     if: >-

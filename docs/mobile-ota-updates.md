@@ -362,13 +362,25 @@ per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
   env is held byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
 - **Who can publish (security).** `EXPO_TOKEN` == the server's trusted `EXPO_ACCESS_TOKEN`, and the
   publish job runs PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with that
-  token — so the boundary is "no untrusted code touches the token without a human gate", not the
-  channel name. Controls: `pull_request` (never `pull_request_target`, so fork jobs get **no
-  secrets**); same-repo auto-publish needs the **`ota-preview` label** + non-fork; forks / on-demand
-  builds run only from a maintainer **`/ota-preview` comment** (`author_association`
-  OWNER/MEMBER/COLLABORATOR) or `workflow_dispatch`; and the publish job sits in the **`ota-preview`
-  GitHub environment** (configure required reviewers, so a maintainer approves secret injection for
-  that diff). The `^pr-[0-9]+$` channel guard is defense-in-depth.
+  token. The boundary that protects `production`:
+  - **Forks get NO secrets** on `pull_request` (we never use `pull_request_target`), so a fork can't
+    publish or exfiltrate the token regardless of what it edits. This is the hard boundary for
+    external contributors.
+  - **Fork / on-demand previews** run only from a maintainer **`/ota-preview` comment**
+    (`author_association` OWNER/MEMBER/COLLABORATOR) or `workflow_dispatch`. Those events run the
+    **default-branch (main)** copy of the workflow, so their maintainer gate is not PR-editable; the
+    publish then waits on the `ota-preview` environment.
+  - **Same-repo collaborators are trusted.** For `pull_request`, GitHub runs the PR's **own** copy of
+    the workflow with repo secrets, so the **`ota-preview` label** + non-fork + the **`ota-preview`
+    environment** reviewer gate are an intent + review checkpoint (no accidental publishes; a human
+    approves each diff) — not a hard wall against a malicious insider, who already holds the repo's
+    secrets via other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
+  - **Hardening (optional).** For hard same-repo enforcement, make `EXPO_TOKEN` an **`ota-preview`
+    environment secret** (not a repo secret) so a same-repo PR can't drop the environment to reach it.
+    Then the sweep needs a main-only environment (e.g. `ota-maintenance` with a `main` deployment
+    branch policy, no reviewers) and the on-close cleanup defers channel deletion to the sweep (so
+    cleanup needs no token). Not done by default because `EXPO_TOKEN` is currently a repo secret
+    shared with the production publish.
 - **Readiness signal.** Each publish posts a sticky PR comment (channel name + switcher steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
