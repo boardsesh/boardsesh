@@ -5,6 +5,7 @@ import { renderHook, act } from '@testing-library/react';
 import {
   useWallConfirmConvergence,
   useWallConfirmFallback,
+  WALL_CONFIRM_BACKSTOP_MS,
   WALL_CONFIRM_TIMEOUT_MS,
 } from '../use-wall-confirm-fallback';
 import { emitWallConfirm } from '@boardsesh/play-view';
@@ -460,17 +461,18 @@ describe('useWallConfirmFallback', () => {
   });
 
   it('records a still-connecting backstop as "Wall Confirm Connecting", not a board-ack timeout', () => {
-    // The production lightbulb arm: pulseOnly + still disconnected when the
-    // backstop fires. This is "we were still bringing the link up", not a board
-    // failure — it must NOT inflate the genuine `Wall Confirm Timeout` metric.
+    // The production lightbulb arm: pulseOnly + the connect-included backstop +
+    // still disconnected when it fires. This is "we were still bringing the link
+    // up", not a board failure — it must NOT inflate the genuine `Wall Confirm
+    // Timeout` metric.
     const deps = makeDeps({ isBluetoothConnected: false });
     const { result } = renderHook(() => useWallConfirmFallback(deps));
 
     act(() => {
-      result.current.armWatcher({ ...baseClimb, pulseOnly: true });
+      result.current.armWatcher({ ...baseClimb, pulseOnly: true, timeoutMs: WALL_CONFIRM_BACKSTOP_MS });
     });
     act(() => {
-      vi.advanceTimersByTime(WALL_CONFIRM_TIMEOUT_MS);
+      vi.advanceTimersByTime(WALL_CONFIRM_BACKSTOP_MS);
     });
 
     expect(deps.bluetoothConnect).not.toHaveBeenCalled();
