@@ -11,7 +11,7 @@
     "view": {
       "title": "{{climbName}} - {{grade}}",
       "description": "{{climbName}} - {{grade}} de {{setter}}. Calidad: {{quality}}/5. Encadenes: {{ascents}}",
-      "imageAlt": "{{climbName}} - {{grade}} en tabla {{boardName}}",
+      "imageAlt": "{{climbName}} - {{grade}} en plafón {{boardName}}",
       "fallbackTitle": "Bloque",
       "fallbackDescription": "Mira los detalles del bloque y vídeos de beta",
       "seoHeading": "{{climbName}} — {{grade}}",
@@ -21,7 +21,7 @@
     },
     "create": {
       "title": "Crear un bloque",
-      "description": "Apertura un nuevo bloque en tu tabla de escalada"
+      "description": "Apertura un nuevo bloque en tu plafón"
     },
     "import": {
       "title": "Importar bloques",
@@ -33,7 +33,7 @@
     },
     "logbook": {
       "title": "Historial",
-      "description": "Tu historial de escalada para esta tabla"
+      "description": "Tu historial de escalada para este plafón"
     }
   },
   "list": {
@@ -43,7 +43,7 @@
       "grid": "Vista de cuadrícula"
     },
     "biggerBoard": {
-      "title": "No cabe en tu tabla de escalada",
+      "title": "No cabe en tu plafón",
       "description": "Este se sale del borde de tu pared. Necesitas un tamaño mayor para encadenarlo."
     },
     "sort": {

@@ -98,7 +98,7 @@
       "size": "Tamaño",
       "sets": "Sets",
       "angle": "Ángulo",
-      "name": "Nombre del tablero"
+      "name": "Nombre del plafón"
     },
     "bluetooth": {
       "title": "Boards cerca de ti",
@@ -108,8 +108,8 @@
       "unavailable": "Activa el Bluetooth para buscar"
     },
     "boardDetail": {
-      "setActive": "Usar esta tabla",
-      "alreadyActive": "Tabla activa",
+      "setActive": "Usar este plafón",
+      "alreadyActive": "Plafón activo",
       "stats": {
         "ascents": "ascensiones",
         "climbers": "escaladores",
@@ -124,24 +124,24 @@
       }
     },
     "disambiguation": {
-      "title": "¿En qué tablero estás?",
-      "subtitle": "Este número de serie lo comparten varios tableros. Elige el muro en el que estás.",
-      "yourBoard": "Tu tablero",
+      "title": "¿En qué plafón estás?",
+      "subtitle": "Este número de serie lo comparten varios plafones. Elige el muro en el que estás.",
+      "yourBoard": "Tu plafón",
       "cancel": "Ahora no"
     },
     "gyms": {
       "title": "Gimnasios cerca de ti",
-      "subtitle": "Toca un gimnasio para usar su tablero",
+      "subtitle": "Toca un gimnasio para usar su plafón",
       "locationNeeded": "Comparte tu ubicación para encontrar gimnasios cerca",
       "grantLocation": "Usar mi ubicación",
       "empty": "Aún no hay gimnasios cerca",
-      "noBoards": "Aún no hay tableros aquí",
-      "boardCount": "{{count}} tableros",
-      "searchPlaceholder": "Busca una ciudad, gimnasio o tabla",
+      "noBoards": "Aún no hay plafones aquí",
+      "boardCount": "{{count}} plafones",
+      "searchPlaceholder": "Busca una ciudad, gimnasio o plafón",
       "showingPlace": "Mostrando {{place}}",
       "clearSearch": "Borrar búsqueda",
       "closeMap": "Cerrar",
-      "otherBoardsTitle": "Tablas cercanas"
+      "otherBoardsTitle": "Plafones cercanos"
     }
   },
   "boardEntity": {
@@ -166,7 +166,7 @@
       "comments": "comentarios"
     },
     "delete": {
-      "title": "Eliminar tabla de escalada",
+      "title": "Eliminar plafón",
       "confirm": "¿Eliminar \"{{name}}\"? No se puede deshacer.",
       "cancel": "Cancelar",
       "delete": "Eliminar"
@@ -230,7 +230,7 @@
     "submitLabel": "Guardar cambios",
     "snackbar": {
       "updated": "¡Plafón actualizado!",
-        "updateFailed": "Error al actualizar el plafón"
+      "updateFailed": "Error al actualizar el plafón"
     }
   },
   "editGym": {
@@ -291,11 +291,11 @@
   },
   "boardSearchDrawer": {
     "title": "Buscar un plafón",
-      "searchPlaceholder": "Busca plafones por nombre o ubicación",
-      "clear": "Limpiar",
-      "radiusInfo": "Mostrando plafones en un radio de {{radiusKm}} km del centro del mapa",
-      "empty": "No hay plafones en esta zona. Mueve el mapa o aleja el zoom para encontrar más.",
-      "emptyWithQuery": "No hay plafones que coincidan con \"{{query}}\" aquí. Aleja el zoom o busca en otra zona.",
+    "searchPlaceholder": "Busca plafones por nombre o ubicación",
+    "clear": "Limpiar",
+    "radiusInfo": "Mostrando plafones en un radio de {{radiusKm}} km del centro del mapa",
+    "empty": "No hay plafones en esta zona. Mueve el mapa o aleja el zoom para encontrar más.",
+    "emptyWithQuery": "No hay plafones que coincidan con \"{{query}}\" aquí. Aleja el zoom o busca en otra zona.",
     "open": "Abrir"
   },
   "boardSearchMap": {
@@ -325,8 +325,8 @@
   },
   "selectorDrawer": {
     "customTitle": "Plafón personalizado",
-      "createTitle": "Crear plafón",
-      "createButton": "Crear plafón",
+    "createTitle": "Crear plafón",
+    "createButton": "Crear plafón",
     "quickSession": "Sesión rápida",
     "configSection": {
       "label": "Configuración del plafón",
