@@ -45,12 +45,11 @@ env:
   # binary via Expo.plist by `expo prebuild`. See docs/mobile-ota-updates.md.
   EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
-  # NOTE: currently inert at runtime — the mobile app has no
-  # @sentry/react-native wiring (no Sentry.init, no src/lib/sentry.ts), so this
-  # DSN is not read by the running app; client-side errors go to PostHog only
-  # (reportError → captureError). Kept so adding Sentry later needs no workflow
-  # change. Same DSN/project as web + backend; not secret — already hardcoded
-  # in packages/web and packages/backend source.
+  # Read at runtime by src/lib/sentry.ts (Sentry.init) — Sentry is the mobile
+  # error + native-crash sink (PostHog is product analytics only). Same DSN/
+  # project as web + backend; not secret — already hardcoded in packages/web and
+  # packages/backend source. The source-map + dSYM upload (gated on
+  # SENTRY_AUTH_TOKEN below) symbolicates the stack traces.
   EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
   # PostHog product analytics. Intentionally the SAME project token as web
   # (vars.NEXT_PUBLIC_POSTHOG_KEY) so a signed-in user's web + mobile activity

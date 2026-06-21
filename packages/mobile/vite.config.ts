@@ -55,6 +55,15 @@ export default defineConfig({
         find: '@react-native-community/blur',
         replacement: fileURLToPath(new URL('./test/community-blur-stub.tsx', import.meta.url)),
       },
+      // @sentry/react-native's real entry pulls in react-native's Promise.js,
+      // which imports `promise/setimmediate/es6-extensions` (no extension) and
+      // fails to resolve under vitest's node ESM env — breaking every suite that
+      // transitively imports `src/lib/sentry`. Sentry is disabled in tests, so a
+      // lightweight stub satisfies the static imports.
+      {
+        find: '@sentry/react-native',
+        replacement: fileURLToPath(new URL('./test/sentry-react-native-stub.ts', import.meta.url)),
+      },
       // expo-file-system and expo-image point their `main`/`exports` at TypeScript
       // source (src/index.ts). That source imports expo-modules-core native bindings
       // whose untransformed TS declarations throw `SyntaxError: Unexpected token

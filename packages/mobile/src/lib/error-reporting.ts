@@ -1,19 +1,18 @@
-import { captureError } from './posthog-client';
+import { captureToSentry, type ErrorReportContext } from './sentry';
 import { isExpectedAuthError, isExpectedBetaValidationError } from './graphql/extract-error-message';
 
-export type ErrorReportContext = {
-  level?: 'fatal' | 'error' | 'warning' | 'info' | 'debug';
-  tags?: Record<string, unknown>;
-  extra?: Record<string, unknown>;
-};
+// Re-exported so the public reporting surface (`{ ErrorReportContext }` from
+// './error-reporting') is unchanged; the type itself lives in './sentry' to keep
+// the dependency one-directional.
+export type { ErrorReportContext };
 
 /**
- * Report an error to PostHog if it is active. No-op otherwise. The optional
+ * Report an error to Sentry if it is active. No-op otherwise. The optional
  * context lets callers attach triage data such as source, board path, or HTTP
  * status.
  */
 export function reportError(error: unknown, context?: ErrorReportContext): void {
-  captureError(error, context);
+  captureToSentry(error, context);
 }
 
 /**

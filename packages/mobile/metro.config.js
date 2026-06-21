@@ -1,10 +1,14 @@
-const { getDefaultConfig } = require('expo/metro-config');
+// getSentryExpoConfig wraps Expo's getDefaultConfig to add the Sentry source-map
+// serializer (debug-id injection) so production stack traces symbolicate. It
+// returns the same Expo config object, so every customisation below applies
+// unchanged.
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getDefaultConfig(projectRoot);
+const config = getSentryExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 

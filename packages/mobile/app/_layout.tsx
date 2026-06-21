@@ -1,3 +1,8 @@
+// Import first so Sentry.init() runs (and installs its global handler) before
+// any other module side-effect — notably posthog-client's analytics init and the
+// worklet-serialization global-error-capture install, which must wrap Sentry's
+// handler, not the other way round.
+import { wrapWithSentry } from '../src/lib/sentry';
 import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
@@ -451,4 +456,7 @@ function RootLayout() {
   );
 }
 
-export default RootLayout;
+// Wrap with Sentry so the root and its children report render errors and feed
+// the navigation/performance instrumentation. No-op when Sentry is disabled
+// (dev / no DSN), so it's safe in every build.
+export default wrapWithSentry(RootLayout);

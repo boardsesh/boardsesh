@@ -1,25 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reportError, reportHandledError } from '../error-reporting';
-import { captureError } from '../posthog-client';
+import { captureToSentry } from '../sentry';
 
-// captureError is the only side-effecting dependency; mocking it keeps this a
-// pure test of the noise policy (and avoids posthog-client's import-time global
-// error-capture install).
-vi.mock('../posthog-client', () => ({
-  captureError: vi.fn(),
+// captureToSentry is the only side-effecting dependency; mocking it keeps this a
+// pure test of the noise policy (and avoids sentry.ts's import-time Sentry.init +
+// global error-capture install).
+vi.mock('../sentry', () => ({
+  captureToSentry: vi.fn(),
 }));
 
-const mockedCaptureError = vi.mocked(captureError);
+const mockedCaptureToSentry = vi.mocked(captureToSentry);
 
 afterEach(() => {
-  mockedCaptureError.mockClear();
+  mockedCaptureToSentry.mockClear();
 });
 
 describe('reportHandledError', () => {
   it('drops cancellations (user dismiss / unmount) without reporting', () => {
     reportHandledError(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     reportHandledError(Object.assign(new Error('cancelled'), { name: 'CancelledError' }));
-    expect(mockedCaptureError).not.toHaveBeenCalled();
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
   });
 
   it('drops expected auth-required GraphQL errors (a session-only query ran logged-out)', () => {
@@ -32,7 +32,7 @@ describe('reportHandledError', () => {
       },
     });
     reportHandledError(authError, { tags: { source: 'react-query' } });
-    expect(mockedCaptureError).not.toHaveBeenCalled();
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
   });
 
   it('drops the auth error before the network check, even when it looks transport-shaped', () => {
@@ -46,7 +46,7 @@ describe('reportHandledError', () => {
       },
     });
     reportHandledError(authError, { tags: { source: 'react-query' } });
-    expect(mockedCaptureError).not.toHaveBeenCalled();
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
   });
 
   it('drops expected beta-attach validation rejections (user resolves them on the share sheet)', () => {
@@ -62,7 +62,7 @@ describe('reportHandledError', () => {
       },
     });
     reportHandledError(alreadyLinked, { tags: { source: 'react-query', kind: 'mutation' } });
-    expect(mockedCaptureError).not.toHaveBeenCalled();
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
   });
 
   it('still reports a genuine beta-attach write fault (BETA_LINK_INSERT_FAILED)', () => {
@@ -78,7 +78,7 @@ describe('reportHandledError', () => {
       },
     });
     reportHandledError(insertFailed, { tags: { source: 'react-query', kind: 'mutation' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(insertFailed, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(insertFailed, {
       level: 'error',
       tags: { source: 'react-query', kind: 'mutation' },
     });
@@ -87,7 +87,7 @@ describe('reportHandledError', () => {
   it('downgrades offline fetch failures to a warning and tags them network', () => {
     const offline = new TypeError('Network request failed');
     reportHandledError(offline, { tags: { source: 'react-query' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
       level: 'warning',
       tags: { source: 'react-query', network: true },
     });
@@ -96,7 +96,7 @@ describe('reportHandledError', () => {
   it('treats a transport ClientError (response without a numeric status) as network', () => {
     const transport = Object.assign(new Error('boom'), { response: { errors: [] } });
     reportHandledError(transport, { tags: { source: 'queue-mutation' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(transport, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(transport, {
       level: 'warning',
       tags: { source: 'queue-mutation', network: true },
     });
@@ -105,7 +105,7 @@ describe('reportHandledError', () => {
   it('forces warning for a network error even if the caller asked for a higher level', () => {
     const offline = new TypeError('Network request failed');
     reportHandledError(offline, { level: 'fatal', tags: { source: 'x' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(offline, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
       level: 'warning',
       tags: { source: 'x', network: true },
     });
@@ -114,7 +114,7 @@ describe('reportHandledError', () => {
   it('reports a real server error (response with an HTTP status) at error level', () => {
     const serverError = Object.assign(new Error('Internal Server Error'), { response: { status: 500 } });
     reportHandledError(serverError, { tags: { source: 'react-query', kind: 'mutation' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(serverError, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(serverError, {
       level: 'error',
       tags: { source: 'react-query', kind: 'mutation' },
     });
@@ -123,7 +123,7 @@ describe('reportHandledError', () => {
   it('defaults a plain error to error level', () => {
     const error = new Error('boom');
     reportHandledError(error, { tags: { source: 'ble-connect' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(error, {
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, {
       level: 'error',
       tags: { source: 'ble-connect' },
     });
@@ -132,14 +132,14 @@ describe('reportHandledError', () => {
   it('lets the caller keep a non-error severity for a non-network failure', () => {
     const error = new Error('boom');
     reportHandledError(error, { level: 'info', tags: { source: 'x' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(error, { level: 'info', tags: { source: 'x' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, { level: 'info', tags: { source: 'x' } });
   });
 });
 
 describe('reportError', () => {
-  it('forwards verbatim to captureError', () => {
+  it('forwards verbatim to captureToSentry', () => {
     const error = new Error('x');
     reportError(error, { level: 'error', tags: { source: 's' } });
-    expect(mockedCaptureError).toHaveBeenCalledWith(error, { level: 'error', tags: { source: 's' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, { level: 'error', tags: { source: 's' } });
   });
 });
