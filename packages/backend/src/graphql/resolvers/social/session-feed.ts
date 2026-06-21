@@ -22,6 +22,13 @@ import { buildGradeDistributionFromTicks, computeSessionAggregates } from './ses
 
 type SessionFeedFilterOptions = {
   boardIdFilter: number | null;
+  // When the feed is scoped to a single climber (the "your sessions" surfaces
+  // that pass a userId), party-session aggregates are scoped to that climber's
+  // own ticks so the viewer's totals/grades/hardest don't count their party-
+  // mates. null on the public/social and following feeds, where whole-session
+  // aggregates are correct. participants[] stays whole-session regardless — it
+  // is the session leaderboard, not the viewer's own stats.
+  userIdFilter: string | null;
 };
 
 type SessionFeedRow = {
@@ -124,6 +131,13 @@ export const sessionFeedQueries = {
     let sessionRows;
     try {
       const sessionBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+      // Per-user scope: when a single userId filters the feed (the "your
+      // sessions" surfaces on web + mobile), count only that climber's ticks in
+      // each party session — their own sends/flashes/attempts/grades/hardest —
+      // not the whole party's. Empty on the social/home/following feeds (no
+      // userId), so those keep whole-session aggregates, which is correct for a
+      // social card showing the whole crew.
+      const sessionUserFilter = userId ? sql`AND t.user_id = ${userId}` : sql``;
       const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
       const eligibleUsersCte = userId
         ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
@@ -323,6 +337,7 @@ export const sessionFeedQueries = {
           ${participantFilterEnabled ? sql`INNER JOIN eligible_sessions es ON es.session_id = t.session_id` : sql``}
           WHERE t.session_id IS NOT NULL
             ${sessionBoardFilter}
+            ${sessionUserFilter}
           GROUP BY t.session_id
         ),
         scored AS (
@@ -372,7 +387,7 @@ export const sessionFeedQueries = {
     const dailyHighlightTickUuids = resultRows
       .filter((row) => row.session_type === 'daily_highlight' && !!row.highlight_tick_uuid)
       .map((row) => row.highlight_tick_uuid as string);
-    const filterOptions: SessionFeedFilterOptions = { boardIdFilter };
+    const filterOptions: SessionFeedFilterOptions = { boardIdFilter, userIdFilter: userId };
 
     const [
       participantMap,
@@ -931,11 +946,12 @@ async function fetchParticipantsBatch(
  */
 async function fetchGradeDistributionBatch(
   sessionIds: string[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (sessionIds.length === 0) return new Map();
 
   const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
     SELECT
@@ -957,6 +973,7 @@ async function fetchGradeDistributionBatch(
       sql`, `,
     )})`}
       ${batchBoardFilter}
+      ${batchUserFilter}
       AND COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
     GROUP BY t.session_id, diff_num
     ORDER BY diff_num DESC
@@ -1015,11 +1032,12 @@ async function fetchSessionMetaBatch(
  */
 async function fetchBoardTypesBatch(
   sessionIds: string[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
 ): Promise<Map<string, string[]>> {
   if (sessionIds.length === 0) return new Map();
 
   const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
     SELECT
@@ -1031,6 +1049,7 @@ async function fetchBoardTypesBatch(
       sql`, `,
     )})`}
       ${batchBoardFilter}
+      ${batchUserFilter}
     GROUP BY t.session_id
   `);
 
@@ -1173,11 +1192,12 @@ async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<strin
 
 async function fetchHardestSendsBatch(
   sessionIds: string[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
 ): Promise<Map<string, SessionFeedTickHighlight>> {
   if (sessionIds.length === 0) return new Map();
 
   const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
     WITH ranked AS (
@@ -1199,6 +1219,7 @@ async function fetchHardestSendsBatch(
         sql`, `,
       )})`}
         ${batchBoardFilter}
+        ${batchUserFilter}
         AND t.status IN ('flash', 'send')
     )
     SELECT
@@ -1423,11 +1444,12 @@ function betaCandidateRankSql(partitionExpression: SQL) {
 
 async function fetchSessionFeaturedBetaRows(
   sessionIds: string[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
 ): Promise<FeaturedBetaRow[]> {
   if (sessionIds.length === 0) return [];
 
   const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
     WITH ranked AS (
@@ -1456,6 +1478,7 @@ async function fetchSessionFeaturedBetaRows(
         sql`, `,
       )})`}
         ${batchBoardFilter}
+        ${batchUserFilter}
         AND t.status IN ('flash', 'send')
     )
     SELECT *
