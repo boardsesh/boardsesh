@@ -178,6 +178,7 @@ jobs:
             echo "::error::Refusing to publish to non-preview channel '$CHANNEL' (must match ^pr-[0-9]+\$)."
             exit 1
           fi
+          echo "::notice::This job holds EXPO_TOKEN and runs PR-author code; its human gate is the 'ota-preview' environment's REQUIRED REVIEWERS. Confirm they're set (Settings → Environments → ota-preview)."
 
       - name: Start deployment (preview building)
         id: deploy

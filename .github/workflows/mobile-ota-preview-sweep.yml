@@ -74,7 +74,12 @@ jobs:
           ALL_NAMES=""
           offset=0
           while [ "$offset" -le 1000 ]; do
-            page="$(bunx eas-cli@16 channel:list --json --non-interactive --limit 25 --offset "$offset" 2>/dev/null || echo '[]')"
+            # Surface a paginated-call failure instead of silently stopping at this
+            # page (e.g. if a future eas-cli drops --offset) — the next run retries.
+            if ! page="$(bunx eas-cli@16 channel:list --json --non-interactive --limit 25 --offset "$offset" 2>/dev/null)"; then
+              echo "::warning::eas channel:list failed at offset $offset (is --offset supported?) — channels past this page weren't checked this run."
+              break
+            fi
             names="$(printf '%s' "$page" | jq -r '[.. | .name? // empty] | .[]' 2>/dev/null || true)"
             [ -z "$names" ] && break
             ALL_NAMES="$(printf '%s\n%s' "$ALL_NAMES" "$names")"
