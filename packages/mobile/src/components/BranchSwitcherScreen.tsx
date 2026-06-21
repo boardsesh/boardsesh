@@ -17,6 +17,7 @@ import { ListRow } from './ListRow';
 import { Icon } from './Icon';
 import { InfoRow } from './InfoRow';
 import { useTheme } from '../providers/theme-provider';
+import { useConfirm } from '../providers/dialog-provider';
 import { hapticLight, hapticError } from '../lib/haptics';
 import {
   isPreviewBuild,
@@ -68,6 +69,7 @@ function getCurrentBranchName(): string | null {
 }
 export function BranchSwitcherScreen() {
   const { systemColors, spacing, borderRadius } = useTheme();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [switchingBranchId, setSwitchingBranchId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -133,17 +135,22 @@ export function BranchSwitcherScreen() {
   }, [queryClient, projectId]);
 
   const handleSwitchBranch = useCallback(
-    (branch: EASBranch) => {
+    async (branch: EASBranch) => {
       hapticLight();
-      // i18n-ignore-next-line
-      Alert.alert('Switch Branch', `Switch to "${branch.name}"? The app will download the update and restart.`, [
+      const confirmed = await confirm({
+        // i18n-ignore-next-line — preview-only dev screen
+        title: 'Switch Branch',
         // i18n-ignore-next-line
-        { text: 'Cancel', style: 'cancel' },
+        message: `Switch to "${branch.name}"? The app will download the update and restart.`,
         // i18n-ignore-next-line
-        { text: 'Switch', onPress: () => switchMutation.mutate(branch) },
-      ]);
+        confirmLabel: 'Switch',
+        // i18n-ignore-next-line
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return;
+      switchMutation.mutate(branch);
     },
-    [switchMutation],
+    [confirm, switchMutation],
   );
   if (!preview) {
     return null;

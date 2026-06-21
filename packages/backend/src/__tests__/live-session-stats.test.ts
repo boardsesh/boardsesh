@@ -62,6 +62,7 @@ function makeSessionDetail(overrides: Partial<SessionDetail> = {}): SessionDetai
         climbedAt: '2024-01-15T10:10:00.000Z',
         upvotes: 2,
         totalAttempts: 2,
+        betaLinks: [],
       },
     ],
     upvotes: 0,
@@ -84,14 +85,6 @@ describe('buildSessionStatsUpdatedEvent', () => {
 
     expect(result).toBeNull();
     expect(sessionDetailMock).toHaveBeenCalledWith(null, { sessionId: 'session-1' });
-  });
-
-  it('returns null for non-party sessions', async () => {
-    sessionDetailMock.mockResolvedValue(makeSessionDetail({ sessionType: 'inferred' }));
-
-    const result = await buildSessionStatsUpdatedEvent('session-1');
-
-    expect(result).toBeNull();
   });
 
   it('maps party session detail into SessionStatsUpdated with ticks', async () => {
@@ -140,6 +133,7 @@ describe('buildSessionStatsUpdatedEvent', () => {
       climbedAt: `2024-01-15T10:${String(i).padStart(2, '0')}:00.000Z`,
       upvotes: 0,
       totalAttempts: 1,
+      betaLinks: [],
     }));
     const detail = makeSessionDetail({ ticks });
     sessionDetailMock.mockResolvedValue(detail);

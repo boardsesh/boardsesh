@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { getImageUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
+import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
 describe('getImageUrl', () => {
@@ -102,6 +102,16 @@ describe('buildOverlayUrl', () => {
   it('appends thumbnail=1 when thumbnail is true', () => {
     const url = buildOverlayUrl(boardDetails, 'p1r12', true);
     expect(url).toContain('&thumbnail=1');
+  });
+
+  it('supports JPEG format in board render URLs', () => {
+    const url = buildBoardRenderUrl(boardDetails, 'p1r12', {
+      thumbnail: true,
+      includeBackground: true,
+      format: 'jpg',
+    });
+
+    expect(url).toContain('format=jpg');
   });
 
   it('omits thumbnail param when false', () => {

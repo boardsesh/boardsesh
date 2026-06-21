@@ -11,6 +11,8 @@ export const betaLinksTypeDefs = /* GraphQL */ `
     thumbnail: String
     isListed: Boolean
     createdAt: String
+    tickUuid: ID
+    boardId: Int
   }
 
   """
@@ -22,6 +24,20 @@ export const betaLinksTypeDefs = /* GraphQL */ `
     climbName: String
     boardType: String!
     layoutId: Int
+  }
+
+  """
+  Live, unsaved metadata for a shared Instagram/TikTok URL — used by the mobile
+  share flow to preview the post and auto-match the climb from the caption
+  before anything is attached. Best-effort: any field can be null if the post is
+  private/unavailable or the platform doesn't expose it (caption is currently
+  Instagram-only). Never throws — the user can still attach manually.
+  """
+  type BetaLinkPreview {
+    link: String!
+    thumbnail: String
+    username: String
+    caption: String
   }
 
   "A single scraped Instagram post fed to the beta-import scanner."

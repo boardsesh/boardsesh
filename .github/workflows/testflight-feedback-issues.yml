@@ -1,0 +1,58 @@
+name: TestFlight Feedback Issues
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log issues that would be created without writing to GitHub'
+        required: false
+        type: boolean
+        default: false
+      lookback_hours:
+        description: 'How far back to scan TestFlight feedback'
+        required: false
+        default: '72'
+
+concurrency:
+  group: testflight-feedback-issues
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync TestFlight feedback to GitHub issues
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_BUNDLE_ID: com.boardsesh.app
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours || '72' }}
+        run: |
+          args=(--lookback-hours "$LOOKBACK_HOURS")
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          vp run testflight:feedback-issues -- "${args[@]}"

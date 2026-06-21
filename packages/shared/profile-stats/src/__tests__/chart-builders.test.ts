@@ -9,6 +9,7 @@ import {
   buildFlashRedpointBars,
   buildStatisticsSummary,
   buildVPointsTimeline,
+  buildActivityHeatmap,
 } from '../chart-builders';
 import type { LogbookEntry } from '../types';
 
@@ -195,6 +196,43 @@ describe('buildWeeklyBars', () => {
     expect(keys).toContain('2024-W52');
     expect(keys).toContain('2025-W1');
     expect(result.find((b) => b.key === '2024-W52')!.label).toContain("'24");
+  });
+
+  // Regression: derive-view-model concatenates per-board tick arrays in
+  // BOARD_TYPES order (Object.values(...).flat()), each newest-first, so the
+  // combined array is NOT globally sorted. An early board (Kilter, 2024) whose
+  // oldest tick is newer than a later board's newest is impossible, but the
+  // reverse — an early board entirely older than a later board — makes
+  // entries[0] (treated as newest) older than entries[last] (treated as
+  // oldest), so first > last, the week loop never runs, and the whole chart
+  // disappears.
+  it('spans the full range for unsorted multi-board input (regression A5-you-profile-001)', () => {
+    // Kilter ticks from early 2024 (newest-first), then Tension ticks from
+    // late 2024 (newest-first) — concatenated, NOT globally sorted, and within
+    // the 52-week cap. Before the fix, entries[0] (treated as global-newest)
+    // was the Kilter March tick while entries[last] (treated as global-oldest)
+    // was the Tension October tick, so first > last and the loop produced no
+    // weeks → the whole chart returned null.
+    const kilterEarly2024 = [
+      makeEntry({ climbed_at: '2024-03-15T12:00:00Z', difficulty: 22 }),
+      makeEntry({ climbed_at: '2024-03-01T12:00:00Z', difficulty: 22 }),
+    ];
+    const tensionLate2024 = [
+      makeEntry({ climbed_at: '2024-10-15T12:00:00Z', difficulty: 16 }),
+      makeEntry({ climbed_at: '2024-10-01T12:00:00Z', difficulty: 16 }),
+    ];
+    const unsorted = [...kilterEarly2024, ...tensionLate2024];
+
+    const result = buildWeeklyBars(unsorted);
+    expect(result).not.toBeNull();
+    const keys = result!.map((b) => b.key);
+    // Range must cover both the March and October weeks, not collapse to empty.
+    expect(keys).toContain(
+      `${dayjs('2024-03-01T12:00:00Z').isoWeekYear()}-W${dayjs('2024-03-01T12:00:00Z').isoWeek()}`,
+    );
+    expect(keys).toContain(
+      `${dayjs('2024-10-15T12:00:00Z').isoWeekYear()}-W${dayjs('2024-10-15T12:00:00Z').isoWeek()}`,
+    );
   });
 });
 
@@ -444,5 +482,56 @@ describe('buildVPointsTimeline', () => {
     )!;
     expect(result.weekLabels).toHaveLength(1);
     expect(result.series[0].data).toEqual([1]);
+  });
+});
+
+describe('buildActivityHeatmap', () => {
+  it('returns null for an empty logbook', () => {
+    expect(buildActivityHeatmap([])).toBeNull();
+  });
+
+  it('returns null when all activity predates the trailing window', () => {
+    expect(buildActivityHeatmap([makeEntry({ climbed_at: dayjs().subtract(3, 'year').toISOString() })])).toBeNull();
+  });
+
+  it('counts ascents per day on a whole-week-aligned grid', () => {
+    const today = dayjs();
+    const result = buildActivityHeatmap([
+      makeEntry({ climbed_at: today.toISOString() }),
+      makeEntry({ climbed_at: today.toISOString() }),
+      makeEntry({ climbed_at: today.subtract(1, 'day').toISOString() }),
+    ])!;
+    expect(result.days.length % 7).toBe(0);
+    expect(result.weeks).toBe(result.days.length / 7);
+    expect(result.maxCount).toBe(2);
+    expect(result.days.find((day) => day.date === today.format('YYYY-MM-DD'))!.count).toBe(2);
+  });
+
+  it('counts attempts as activity (you still showed up)', () => {
+    const result = buildActivityHeatmap([makeEntry({ status: 'attempt', climbed_at: dayjs().toISOString() })])!;
+    expect(result.maxCount).toBe(1);
+  });
+
+  it('honours a custom window size', () => {
+    const result = buildActivityHeatmap([makeEntry({ climbed_at: dayjs().toISOString() })], 4)!;
+    expect(result.weeks).toBe(4);
+    expect(result.days.length).toBe(28);
+  });
+
+  it('anchors the grid to a provided `today` (deterministic, ISO-week aligned)', () => {
+    const today = dayjs('2024-06-12'); // a Wednesday
+    const result = buildActivityHeatmap([makeEntry({ climbed_at: '2024-06-12T12:00:00Z' })], 53, today)!;
+    expect(result.weeks).toBe(53);
+    expect(result.days.length).toBe(53 * 7);
+    // End/start derive purely from `today` (no tick parsing), so these are
+    // timezone-independent: the grid ends on that ISO week's Sunday.
+    expect(result.endDate).toBe(today.endOf('isoWeek').format('YYYY-MM-DD'));
+    expect(result.startDate).toBe(
+      today
+        .endOf('isoWeek')
+        .subtract(53 * 7 - 1, 'day')
+        .startOf('isoWeek')
+        .format('YYYY-MM-DD'),
+    );
   });
 });

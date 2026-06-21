@@ -13,7 +13,30 @@ type BoardImageNativeProps = {
   boardWidth: number;
   boardHeight: number;
   mirrored?: boolean;
+  /**
+   * Render lit holds as filled dots (filled style) instead of the default
+   * stroke-only outlines. The full-size play view leaves this false — thin
+   * strokes stay legible when large — but small surfaces like the 40×40
+   * accessory thumbnail pass true so holds read as solid dots once scaled
+   * down. Threaded into the render cache key, so the two styles cache as
+   * separate PNGs (see useNativeClimbRender).
+   */
+  filledStyle?: boolean;
+  /**
+   * Target overlay/background width in px for small surfaces (e.g. the
+   * 40×40 accessory thumbnail). Forwarded to useNativeClimbRender so the
+   * Rust renderer + bundled background resolve at a small size instead of
+   * the board's native ~1080px — avoiding a main-thread downscale. Omit
+   * for the full-size play view (renders at native board width).
+   */
+  renderWidth?: number;
   style?: ViewStyle;
+  /**
+   * testID forwarded to the holds-overlay layer, which only mounts once the async
+   * overlay render is ready — lets screenshot/e2e flows wait for the lit board to
+   * appear. The full-size play-drawer board sets this; thumbnails leave it unset.
+   */
+  overlayTestID?: string;
 };
 
 /**
@@ -36,7 +59,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
   boardWidth,
   boardHeight,
   mirrored,
+  filledStyle = false,
+  renderWidth,
   style,
+  overlayTestID,
 }: BoardImageNativeProps) {
   const { overlayUri, backgroundPaths, missingBackgroundCount } = useNativeClimbRender({
     frames,
@@ -44,6 +70,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
     layoutId,
     sizeId,
     setIds,
+    filledStyle,
+    renderWidth,
   });
 
   const containerStyle: ViewStyle = {
@@ -59,6 +87,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         backgroundPaths={backgroundPaths}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
+        overlayTestID={overlayTestID}
       />
     </View>
   );

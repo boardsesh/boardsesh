@@ -57,6 +57,35 @@ describe('generateVolumePlan', () => {
 });
 
 describe('generatePyramidPlan', () => {
+  it('builds a symmetric pyramid with one center peak for an odd climb count', () => {
+    const slots = generatePyramidPlan(
+      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps: 7, climbsPerStep: 1, targetGrade: 20 },
+      GRADES,
+    );
+
+    expect(slots.map((slot) => slot.grade)).toEqual([17, 18, 19, 20, 19, 18, 17]);
+    expect(slots.map((slot) => slot.section)).toEqual([
+      'increasing',
+      'increasing',
+      'increasing',
+      'peak',
+      'decreasing',
+      'decreasing',
+      'decreasing',
+    ]);
+    expect(slots.map((slot) => slot.index)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it('repeats each grade step by climbsPerStep', () => {
+    const slots = generatePyramidPlan(
+      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps: 5, climbsPerStep: 2, targetGrade: 20 },
+      GRADES,
+    );
+
+    expect(slots.map((slot) => slot.grade)).toEqual([18, 18, 19, 19, 20, 20, 19, 19, 18, 18]);
+    expect(slots.filter((slot) => slot.section === 'peak')).toHaveLength(2);
+  });
+
   it('peaks at the target grade exactly once per peak slot count', () => {
     const slots = generatePyramidPlan(
       { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps: 5, climbsPerStep: 1, targetGrade: 20 },
@@ -90,6 +119,17 @@ describe('generateLadderPlan', () => {
     expect(sections.has('decreasing')).toBe(false);
     expect(slots.filter((slot) => slot.section === 'peak').every((slot) => slot.grade === 18)).toBe(true);
     expect(slots).toHaveLength(4 * 2);
+  });
+
+  it('does not walk above the target when warm-up ends near the target', () => {
+    const slots = generateLadderPlan(
+      { ...DEFAULT_LADDER_OPTIONS, warmUp: 'standard', numberOfSteps: 5, climbsPerStep: 1, targetGrade: 22 },
+      GRADES,
+    );
+
+    const mainSlots = slots.filter((slot) => slot.section !== 'warmUp');
+    expect(mainSlots.map((slot) => slot.grade)).toEqual([18, 19, 20, 21, 22]);
+    expect(Math.max(...mainSlots.map((slot) => slot.grade))).toBe(22);
   });
 });
 

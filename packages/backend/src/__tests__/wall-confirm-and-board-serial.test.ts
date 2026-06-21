@@ -55,8 +55,8 @@ vi.mock('../services/room-manager', () => ({
     // Recent-climbs ring buffer used by confirmClimbOnWall.
     pushRecentClimb: vi.fn().mockResolvedValue(undefined),
     isRecentClimb: vi.fn().mockResolvedValue(true),
-    // Mutations now return Session! (matching takeControl / releaseControl)
-    // and call these helpers to build the response payload.
+    // Mutations now return Session! and call these helpers to build the
+    // response payload.
     getSessionUsers: vi.fn().mockResolvedValue([]),
     getSessionById: vi.fn().mockResolvedValue({
       name: 'Test Session',
@@ -74,7 +74,6 @@ vi.mock('../services/room-manager', () => ({
       queue: [],
       currentClimbQueueItem: null,
     }),
-    getSessionDriverParticipantId: vi.fn().mockResolvedValue(null),
     getSessionLeaderConnectionId: vi.fn().mockResolvedValue(null),
   },
 }));
@@ -107,11 +106,6 @@ vi.mock('../graphql/resolvers/shared/helpers', async () => {
 
 vi.mock('../services/apns', () => ({
   endLiveActivity: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../jobs/inferred-session-builder', () => ({
-  adoptRecentTicksForSession: vi.fn(),
-  extractBoardType: vi.fn(() => 'kilter'),
 }));
 
 // Import after mocks are wired so the module under test picks them up.
@@ -167,7 +161,7 @@ describe('confirmClimbOnWall mutation', () => {
 
     const result = await sessionMutations.confirmClimbOnWall(undefined, { climbUuid: validClimbUuid }, ctx);
 
-    // Resolver now returns Session! (mirrors takeControl / releaseControl).
+    // Resolver now returns Session! (mirrors reportWallDisconnect).
     expect(result).toMatchObject({
       id: 'session-1',
       participantId: 'participant-1',
@@ -253,7 +247,7 @@ describe('confirmClimbOnWall mutation', () => {
   });
 
   it('accepts a confirm for a climb that is no longer current but is still recent (navigate-on race)', async () => {
-    // The driver navigated on between BLE write and mutation arrival: the
+    // A member navigated on between BLE write and mutation arrival: the
     // session's current climb has moved past the one being confirmed, but the
     // ring buffer still has the climbUuid because it was authoritative
     // moments ago. confirmClimbOnWall should accept it.
@@ -289,7 +283,7 @@ describe('setSessionBoardSerial mutation', () => {
 
     const result = await sessionMutations.setSessionBoardSerial(undefined, { serial: validSerial }, ctx);
 
-    // Resolver now returns Session! (mirrors takeControl / releaseControl).
+    // Resolver now returns Session! (mirrors reportWallDisconnect).
     expect(result).toMatchObject({
       id: 'session-1',
       lastConnectedBoardSerial: validSerial,
@@ -333,7 +327,7 @@ describe('setSessionBoardSerial mutation', () => {
   it('returns the authoritative serial from the room manager, not the input (concurrent-writer race)', async () => {
     // Another writer landed between our write and our read-back. The
     // resolver should return what the room manager says is current, not the
-    // value we tried to set — matches takeControl/releaseControl/confirm.
+    // value we tried to set — matches reportWallDisconnect / confirm.
     roomManagerMock.setSessionBoardSerialAndReturnPrevious.mockResolvedValueOnce(null);
     roomManagerMock.getSessionBoardSerial.mockResolvedValueOnce('KB-RACER-0001');
     const ctx = makeCtx();
@@ -361,6 +355,18 @@ describe('setSessionBoardSerial mutation', () => {
     const ctx = makeCtx();
     await expect(sessionMutations.setSessionBoardSerial(undefined, { serial: 'has spaces!' }, ctx)).rejects.toThrow(
       /serial/i,
+    );
+    expect(roomManagerMock.setSessionBoardSerialAndReturnPrevious).not.toHaveBeenCalled();
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('throws when ctx.participantId is missing and does not mutate state or publish', async () => {
+    // Regression guard: an earlier revision placed the participantId hard-error
+    // AFTER the roomManager write and SessionBoardSerialChanged publish, so
+    // anonymous callers still mutated Redis and broadcast before being rejected.
+    const ctx = makeCtx({ participantId: undefined, connectionId: 'conn-anon-1' });
+    await expect(sessionMutations.setSessionBoardSerial(undefined, { serial: validSerial }, ctx)).rejects.toThrow(
+      /requires ctx\.participantId/,
     );
     expect(roomManagerMock.setSessionBoardSerialAndReturnPrevious).not.toHaveBeenCalled();
     expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();

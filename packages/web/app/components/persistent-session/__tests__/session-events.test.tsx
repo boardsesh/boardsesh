@@ -77,7 +77,6 @@ function buildSession(overrides?: Partial<Session>): Session {
       sequence: 0,
     },
     isLeader: false,
-    driverParticipantId: null,
     lastConnectedBoardSerial: null,
     clientId: 'participant-anon',
     participantId: 'participant-anon',
@@ -96,64 +95,23 @@ function buildSession(overrides?: Partial<Session>): Session {
 // ---------------------------------------------------------------------------
 
 describe('applySessionEvent reducer', () => {
-  it('DriverChanged flips state.driverParticipantId to the new driver', () => {
+  it('WallDisconnected is a no-op on the durable session state (lightbulb is UI-only)', () => {
+    // Always-live model: WallDisconnected only clears the client-side
+    // wall-confirmed lightbulb. It must NOT mutate the durable session roster
+    // and must NOT clear the current climb. The pure reducer returns prev
+    // unchanged (the UI layer reacts to the event separately).
     const prev = buildSession();
-    expect(prev.driverParticipantId).toBeNull();
-
     const next = applySessionEvent(prev, {
-      __typename: 'DriverChanged',
-      driverParticipantId: 'participant-new',
-      previousDriverParticipantId: null,
+      __typename: 'WallDisconnected',
+      disconnectedByParticipantId: 'participant-new',
     });
+    expect(next).toBe(prev);
 
-    expect(next).not.toBe(prev);
-    expect(next?.driverParticipantId).toBe('participant-new');
-    // Other fields untouched.
-    expect(next?.id).toBe(prev.id);
-    expect(next?.boardPath).toBe(prev.boardPath);
-    expect(next?.clientId).toBe(prev.clientId);
-    expect(next?.participantId).toBe(prev.participantId);
-    expect(next?.users).toBe(prev.users);
-    expect(next?.isLeader).toBe(prev.isLeader);
-  });
-
-  it('DriverChanged clears state.driverParticipantId when the new driver is null', () => {
-    // Coerces `undefined`/missing field to null too — the local Session uses
-    // the tighter `string | null` shape, but the wire payload is `Maybe<ID>`.
-    const prev = buildSession({ driverParticipantId: 'participant-old' });
-
-    const cleared = applySessionEvent(prev, {
-      __typename: 'DriverChanged',
-      driverParticipantId: null,
-      previousDriverParticipantId: 'participant-old',
-    });
-    expect(cleared?.driverParticipantId).toBeNull();
-
-    // Wire shape can also send undefined — same outcome.
-    const clearedUndefined = applySessionEvent(prev, {
-      __typename: 'DriverChanged',
-      previousDriverParticipantId: 'participant-old',
+    // Missing/undefined disconnectedByParticipantId is handled the same way.
+    const nextUndefined = applySessionEvent(prev, {
+      __typename: 'WallDisconnected',
     } as SessionEvent);
-    expect(clearedUndefined?.driverParticipantId).toBeNull();
-  });
-
-  it('DriverChanged event payload carries previousDriverParticipantId end-to-end', () => {
-    // The reducer doesn't itself populate previousDriverParticipantId on the
-    // Session (it's an event-only field for "X took the wall from Y" toasts).
-    // Verify the payload survives reducer execution untouched and that the
-    // resulting Session reflects only the new driver.
-    const prev = buildSession({ driverParticipantId: 'participant-old' });
-    const event: SessionEvent = {
-      __typename: 'DriverChanged',
-      driverParticipantId: 'participant-new',
-      previousDriverParticipantId: 'participant-old',
-    };
-
-    const next = applySessionEvent(prev, event);
-    expect(next?.driverParticipantId).toBe('participant-new');
-    // Reducer doesn't store previousDriverParticipantId — it's pure event
-    // metadata for subscribers. Just confirm the event object is unmodified.
-    expect(event.__typename === 'DriverChanged' ? event.previousDriverParticipantId : null).toBe('participant-old');
+    expect(nextUndefined).toBe(prev);
   });
 
   it('SessionBoardSerialChanged updates lastConnectedBoardSerial', () => {
@@ -174,11 +132,12 @@ describe('applySessionEvent reducer', () => {
     expect(cleared?.lastConnectedBoardSerial).toBeNull();
   });
 
-  it('Restore session, then DriverChanged flows through the reducer correctly', () => {
+  it('Restore session, then SessionBoardSerialChanged flows through the reducer correctly', () => {
     // Simulates: persisted session restored via IndexedDB -> JOIN_SESSION
-    // sets the initial `Session` -> server broadcasts DriverChanged. The
-    // reducer must update only driverParticipantId, leaving all the join-time
-    // identity fields (clientId, participantId, boardPath, queueState) intact.
+    // sets the initial `Session` -> server broadcasts SessionBoardSerialChanged.
+    // The reducer must update only lastConnectedBoardSerial, leaving all the
+    // join-time identity fields (clientId, participantId, boardPath, queueState)
+    // intact.
     const restored = buildSession({
       id: 'session-restore',
       clientId: 'client-restore',
@@ -188,12 +147,11 @@ describe('applySessionEvent reducer', () => {
     });
 
     const next = applySessionEvent(restored, {
-      __typename: 'DriverChanged',
-      driverParticipantId: 'participant-restore',
-      previousDriverParticipantId: null,
+      __typename: 'SessionBoardSerialChanged',
+      lastConnectedBoardSerial: 'AURORA-restore',
     });
 
-    expect(next?.driverParticipantId).toBe('participant-restore');
+    expect(next?.lastConnectedBoardSerial).toBe('AURORA-restore');
     expect(next?.id).toBe('session-restore');
     expect(next?.clientId).toBe('client-restore');
     expect(next?.participantId).toBe('participant-restore');
@@ -204,9 +162,8 @@ describe('applySessionEvent reducer', () => {
   it('returns null when prev is null (no session to mutate)', () => {
     expect(
       applySessionEvent(null, {
-        __typename: 'DriverChanged',
-        driverParticipantId: 'p',
-        previousDriverParticipantId: null,
+        __typename: 'WallDisconnected',
+        disconnectedByParticipantId: 'p',
       }),
     ).toBeNull();
     expect(
@@ -218,7 +175,7 @@ describe('applySessionEvent reducer', () => {
   });
 
   it('SessionEnded leaves the previous session in place (lifecycle handles teardown)', () => {
-    const prev = buildSession({ driverParticipantId: 'participant-end' });
+    const prev = buildSession();
     const next = applySessionEvent(prev, {
       __typename: 'SessionEnded',
       reason: 'manual',
@@ -296,7 +253,7 @@ function createWrapper() {
 }
 
 describe('PersistentSession mutations (solo / error handling)', () => {
-  it('solo takeControl(null) silently no-ops when there is no active session', async () => {
+  it('solo reportWallDisconnect silently no-ops when there is no active session', async () => {
     // No active session seeded — provider mounts but never activates.
     const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
 
@@ -308,54 +265,7 @@ describe('PersistentSession mutations (solo / error handling)', () => {
 
     await expect(
       act(async () => {
-        await result.current.takeControl(null);
-      }),
-    ).resolves.toBeUndefined();
-    expect(mockExecute).not.toHaveBeenCalled();
-  });
-
-  it('solo takeControl(item) silently no-ops when there is no active session', async () => {
-    const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
-    await waitFor(() => {
-      expect(result.current.isLocalQueueLoaded).toBe(true);
-    });
-    expect(result.current.session).toBeNull();
-
-    await expect(
-      act(async () => {
-        await result.current.takeControl({
-          uuid: 'queue-item-solo',
-          climb: {
-            uuid: 'climb-solo',
-            setter_username: 'setter',
-            name: 'Solo Climb',
-            description: '',
-            frames: '',
-            angle: 40,
-            ascensionist_count: 0,
-            difficulty: '7A',
-            quality_average: '3.5',
-            stars: 3,
-            difficulty_error: '0.5',
-            mirrored: false,
-            benchmark_difficulty: null,
-          },
-          suggested: false,
-        });
-      }),
-    ).resolves.toBeUndefined();
-    expect(mockExecute).not.toHaveBeenCalled();
-  });
-
-  it('solo releaseControl silently no-ops when there is no active session', async () => {
-    const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
-    await waitFor(() => {
-      expect(result.current.isLocalQueueLoaded).toBe(true);
-    });
-
-    await expect(
-      act(async () => {
-        await result.current.releaseControl();
+        await result.current.reportWallDisconnect();
       }),
     ).resolves.toBeUndefined();
     expect(mockExecute).not.toHaveBeenCalled();

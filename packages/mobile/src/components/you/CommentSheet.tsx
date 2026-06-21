@@ -2,40 +2,53 @@ import { type RefObject, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import BottomSheet, { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useTranslation } from 'react-i18next';
+import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
-import { Avatar } from '../Avatar';
+import { PressableAvatar } from '../PressableAvatar';
 import { Icon } from '../Icon';
 import { Sheet } from '../Sheet';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useComments, useAddComment } from '../../lib/graphql/hooks';
 import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import { hapticLight } from '../../lib/haptics';
-import { brandColors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useToast } from '../../providers/toast-provider';
 
 type CommentSheetProps = {
   sheetRef: RefObject<BottomSheet | null>;
-  sessionId: string | null;
+  /** The commented entity (a session or a tick); `null` while closed. */
+  entityId: string | null;
+  /** Defaults to `'session'` so existing session call sites stay unchanged. */
+  entityType?: SocialEntityType;
   onClose: () => void;
 };
 
-/** Comment thread for a session, with an inline composer. */
-export function CommentSheet({ sheetRef, sessionId, onClose }: CommentSheetProps) {
+/** Comment thread for a social entity (session or tick), with an inline composer. */
+export function CommentSheet({ sheetRef, entityId, entityType = 'session', onClose }: CommentSheetProps) {
   const { t } = useTranslation('you');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
+  const { showToast } = useToast();
   const [draft, setDraft] = useState('');
 
-  const commentsQuery = useComments('session', sessionId ?? undefined, !!sessionId);
+  const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
   const addComment = useAddComment();
   const comments = commentsQuery.data?.comments ?? [];
 
   const submit = () => {
     const body = draft.trim();
-    if (!body || !sessionId) return;
+    if (!body || !entityId) return;
     hapticLight();
-    addComment.mutate({ entityType: 'session', entityId: sessionId, body });
-    setDraft('');
+    // Clear the draft only once the comment lands. On failure keep the text in
+    // the composer and surface a toast so it isn't silently lost. The send
+    // button is disabled while the mutation is pending, so no double-send.
+    addComment.mutate(
+      { entityType, entityId, body },
+      {
+        onSuccess: () => setDraft(''),
+        onError: () => showToast(t('mobile.comments.sendError'), 'error'),
+      },
+    );
   };
 
   return (
@@ -45,7 +58,6 @@ export function CommentSheet({ sheetRef, sessionId, onClose }: CommentSheetProps
       scrollable
       fullWindowOverlay
       onClose={onClose}
-      contentContainerStyle={styles.content}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
@@ -77,7 +89,7 @@ export function CommentSheet({ sheetRef, sessionId, onClose }: CommentSheetProps
       <Text variant="title3" style={styles.title}>
         {t('mobile.comments.title')}
       </Text>
-      {commentsQuery.isPending && sessionId ? (
+      {commentsQuery.isPending && entityId ? (
         <View style={styles.centered}>
           <ActivityIndicator />
         </View>
@@ -88,7 +100,12 @@ export function CommentSheet({ sheetRef, sessionId, onClose }: CommentSheetProps
       ) : (
         comments.map((comment) => (
           <View key={comment.uuid} style={styles.commentRow}>
-            <Avatar uri={comment.userAvatarUrl} name={comment.userDisplayName} size={32} />
+            <PressableAvatar
+              userId={comment.userId}
+              uri={comment.userAvatarUrl}
+              name={comment.userDisplayName}
+              size={32}
+            />
             <View style={styles.commentBody}>
               <View style={styles.commentMeta}>
                 <Text variant="subheadline" style={styles.commentName}>
@@ -108,7 +125,6 @@ export function CommentSheet({ sheetRef, sessionId, onClose }: CommentSheetProps
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: spacing[6] },
   title: { paddingHorizontal: spacing[4], paddingTop: spacing[2], paddingBottom: spacing[3] },
   centered: { paddingVertical: spacing[10], alignItems: 'center' },
   empty: { paddingHorizontal: spacing[4], paddingVertical: spacing[6], opacity: 0.6 },

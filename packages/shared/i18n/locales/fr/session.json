@@ -1,4 +1,9 @@
 {
+  "boardMismatch": {
+    "title": "Passez à {{board}} pour grimper cette voie",
+    "subtitle": "C'est une voie {{board}}. Changez de planche pour la mettre en file.",
+    "cta": "Changer de planche"
+  },
   "metadata": {
     "detail": {
       "notFoundTitle": "Session introuvable"
@@ -18,6 +23,28 @@
       "gradeRange": " de {{first}} à {{last}}"
     }
   },
+  "boardPresence": {
+    "title": "Sur le mur maintenant",
+    "open": "Sur le mur",
+    "openAria": "Voir ce qui est sur le mur",
+    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}",
+    "nowOnWallAnnouncement": "Sur le mur maintenant : {{name}}",
+    "close": "Fermer",
+    "switchBoard": "Changer de mur",
+    "switchBoardAria": "Passer à un autre mur",
+    "setByLine": "Ouvert par {{setter}}",
+    "litByLine": "Allumé par {{name}}",
+    "emptyTitle": "Personne sur ce mur pour l'instant",
+    "emptyBody": "Connecte-toi et envoie un bloc pour lancer l'historique.",
+    "historyHeader": "Allumés sur ce mur",
+    "statsHeader": "Ce mur",
+    "statSent": "enchaînements",
+    "statClimbers": "grimpeurs",
+    "statHardest": "le plus dur",
+    "statTopGrade": "la plus fréquente",
+    "wallChanged": "Tu as changé le mur",
+    "undo": "Annuler"
+  },
   "detail": {
     "subtitleSends_one": "{{count}} enchaînement",
     "subtitleSends_other": "{{count}} enchaînements",
@@ -34,6 +61,22 @@
     "deleteAscentConfirm": "Tu es sûr ? Cette action est irréversible.",
     "delete": "Supprimer",
     "climberFallback": "Grimpeur",
+    "setBy": "créé par {{username}}",
+    "weekday": {
+      "sunday": "dimanche",
+      "monday": "lundi",
+      "tuesday": "mardi",
+      "wednesday": "mercredi",
+      "thursday": "jeudi",
+      "friday": "vendredi",
+      "saturday": "samedi"
+    },
+    "partOfDay": {
+      "morning": "matin",
+      "afternoon": "après-midi",
+      "evening": "soir",
+      "night": "nuit"
+    },
     "unknownClimb": "Bloc inconnu",
     "attemptOnNth": "au {{ordinal}} essai",
     "totalAttempts": "{{count}} au total",
@@ -43,7 +86,6 @@
     "ordinalSecond": "{{n}}e",
     "ordinalThird": "{{n}}e",
     "ordinalDefault": "{{n}}e",
-    "sessionNotesPlaceholder": "Notes ou objectif de session…",
     "noClimbsYet": "Aucun bloc pour l'instant",
     "logSomeClimbs": "Enregistre quelques blocs pour voir la répartition par cotation",
     "climbsLogged_one": "{{count}} bloc enregistré",
@@ -72,11 +114,6 @@
     "notFound": {
       "title": "Session introuvable",
       "subtitle": "Cette session est introuvable. Elle a peut-être été supprimée."
-    },
-    "userSearch": {
-      "title": "Ajouter un grimpeur",
-      "placeholder": "Rechercher par nom…",
-      "noUsersFound": "Aucun utilisateur trouvé"
     }
   },
   "join": {
@@ -155,10 +192,32 @@
     "saveToAppleHealth": "Enregistrer dans Apple Santé",
     "savingToAppleHealth": "Enregistrement dans Apple Santé…",
     "savedToAppleHealth": "Enregistré dans Apple Santé",
+    "savedToAppleHealthWithoutCalories": "Enregistré sans calories",
     "saveToAppleHealthRetry": "Enregistrer dans Apple Santé (réessayer)",
+    "loadErrorTitle": "Impossible de charger ta session",
+    "loadErrorMessage": "Tes voies sont enregistrées, seul le récap n'a pas chargé. Réessaie ou reviens en arrière.",
+    "retry": "Réessayer",
     "minutes": "{{count}} min",
     "hours": "{{count}} h",
-    "hoursAndMinutes": "{{hours}} h {{mins}} min"
+    "hoursAndMinutes": "{{hours}} h {{mins}} min",
+    "shareToStrava": "Partager sur Strava",
+    "sharingToStrava": "Partage sur Strava…",
+    "sharedToStrava": "Partagé sur Strava",
+    "shareToStravaFailed": "Impossible de partager sur Strava",
+    "flashes": "Flashs",
+    "heroNiceSession": "Belle séance.",
+    "heroCrushedIt": "Tu as tout déroulé.",
+    "heroCrewSession": "Belle séance d'équipe.",
+    "heroLoggedWork": "Du bon boulot.",
+    "featuredSendsLabel_one": "enchaînement",
+    "featuredSendsLabel_other": "enchaînements",
+    "featuredAttemptsLabel_one": "essai",
+    "featuredAttemptsLabel_other": "essais",
+    "hardestSendTitle": "Enchaînement le plus dur",
+    "effortTitle": "À retenter",
+    "effortBody": "Ce projet ne bouge pas. Tu l'auras.",
+    "crew": "L'équipe",
+    "crewStatLine": "{{sends}} enchaînements · {{flashes}} flashs · {{attempts}} essais"
   },
   "overview": {
     "goal": "Objectif : {{goal}}"
@@ -194,10 +253,7 @@
       "logAttempt": "Enregistrer un essai",
       "showParticipants": "Afficher les participants",
       "hideParticipants": "Masquer les participants",
-      "openPlayDrawer": "Ouvrir le bloc du mur",
-      "userIsDriving": "{{username}} est au contrôle",
-      "returnToWallClimb": "Revenir au bloc de {{username}}",
-      "returnToWallClimbNoDriver": "Revenir au bloc du mur"
+      "openPlayDrawer": "Ouvrir le bloc du mur"
     },
     "offline": {
       "idle": "Hors ligne",
@@ -228,12 +284,6 @@
   "queueProvider": {
     "offlineLimitReached": "Tu as atteint la limite hors ligne de la file d'attente. Reconnecte-toi pour synchroniser tes blocs."
   },
-  "driverToast": {
-    "firstDriver": "{{newDriver}} pilote le mur.",
-    "tookFromOther": "{{newDriver}} a pris le mur à {{previousDriver}}.",
-    "tookFromYou": "{{newDriver}} t'a pris le mur.",
-    "unknownDriver": "Quelqu'un"
-  },
   "mobile": {
     "logbook": {
       "title": "Carnet",
@@ -248,9 +298,7 @@
     "similarClimbs": {
       "title": "Voies similaires",
       "empty": "Aucune voie similaire trouvee",
-      "retry": "Reessayer",
-      "sends_one": "{{count}} envoi",
-      "sends_other": "{{count}} envois"
+      "retry": "Reessayer"
     },
     "community": {
       "title": "Communaute",
@@ -258,15 +306,16 @@
       "ascensionists_one": "{{count}} grimpeur",
       "ascensionists_other": "{{count}} grimpeurs",
       "avgQuality": "Qualite moyenne",
-      "gradeByAngle": "Cotation par angle"
+      "ascentsByAngle": "Ascensions par angle"
     },
     "betaVideos": {
       "title": "Videos Beta",
+      "crewTitle": "Beta de ce groupe",
+      "cardLabelByUploader": "Beta par {{name}}",
       "empty": "Pas encore de videos beta. Soyez le premier a partager !",
       "videoCount_one": "{{count}} video",
       "videoCount_other": "{{count}} videos",
       "addButton": "Joindre une video beta",
-      "addTitle": "Joindre une video beta",
       "urlPlaceholder": "Collez un lien TikTok ou Instagram",
       "submitButton": "Joindre",
       "submitting": "En cours...",
@@ -277,7 +326,29 @@
       "cardLabelWithUser": "Video beta de @{{username}}",
       "cardLabel": "Video beta",
       "openError": "Impossible d ouvrir ce lien",
-      "urlInvalid": "Doit etre une URL Instagram ou TikTok"
+      "urlInvalid": "Doit etre une URL Instagram ou TikTok",
+      "shareTargetTitle": "Joindre ta beta",
+      "shareTargetPrompt": "Touche le bloc que tu as grimpe",
+      "shareSearchPlaceholder": "Cherche dans tes blocs enregistres",
+      "shareNoAscents": "Enregistre un bloc d abord, puis joins ta beta",
+      "shareNoResults": "Aucun bloc enregistre ne correspond",
+      "shareSignIn": "Connecte-toi pour joindre ta beta",
+      "shareSignInButton": "Se connecter",
+      "shareClose": "Fermer",
+      "shareReadingCaption": "Lecture de la description...",
+      "shareSuggestedTitle": "Trouve dans la description",
+      "shareOtherAscents": "Tes autres ascensions",
+      "shareTitle": "Partage ton beta",
+      "step1Title": "Copie ta légende",
+      "step2Title": "Publie-le en reel",
+      "step3Title": "Renvoie-le vers Boardsesh",
+      "copyCaption": "Copier la légende",
+      "captionCopied": "Légende copiée — colle-la dans ton reel",
+      "openInstagram": "Ouvrir Instagram",
+      "instagramNotInstalled": "Instagram n'est pas installé — on a ouvert le site web",
+      "instagramOpenFailed": "Impossible d'ouvrir Instagram",
+      "shareBackInstructions": "Deux façons de le récupérer : sur ton reel appuie sur Partager et choisis Boardsesh (peut-être sous Plus), ou copie le lien du reel et colle-le ci-dessous. Dans les deux cas, on l'associera à cette voie.",
+      "pasteSectionLabel": "Tu as déjà un lien ?"
     },
     "angleSelector": {
       "title": "Choisir l'angle",
@@ -289,19 +360,58 @@
       "removeClimb": "Supprimer le bloc",
       "positionLabel": "position {{position}}",
       "syncError": "Erreur de synchronisation de la file",
+      "outOfSyncRefreshed": "La file était désynchronisée. Actualisée depuis ton groupe.",
       "sessionCreateError": "Impossible de créer la session",
+      "noBoardSelected": "Choisissez d'abord un board",
       "actionFailed": "Action échouée. Réessayez.",
+      "rateLimited": "Trop de changements trop vite. Attends un instant.",
       "endSession": "Terminer la session",
       "endSessionConfirm": "Êtes-vous sûr de vouloir terminer cette session ?",
       "climbCount_one": "{{count}} bloc",
       "climbCount_other": "{{count}} blocs",
-      "logAscent": "Enregistrer l'ascension"
+      "logAscent": "Enregistrer l'ascension",
+      "alreadyLogged": "Enregistré",
+      "dragHandleAria": "Glisser pour réorganiser {{name}}"
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",
       "toggleHistory": "Afficher l'historique",
       "editQueue": "Modifier la file",
       "doneEditing": "Terminé"
+    },
+    "queueSnackbar": {
+      "added": "Bloc ajouté à la file",
+      "open": "Ouvrir",
+      "openAria": "Ouvrir la file"
+    },
+    "boardPresence": {
+      "title": "Sur le mur maintenant",
+      "switchBoard": "Changer de mur",
+      "switchBoardAria": "Passer à un autre mur",
+      "close": "Fermer",
+      "setByLine": "Ouvert par {{setter}}",
+      "drivenByA11y": "{{name}} allume le mur. Ouvre le profil.",
+      "drivenByAnonA11y": "Quelqu'un allume le mur.",
+      "litAgoNow": "à l'instant",
+      "litAgoMinutes": "{{count}} min",
+      "litAgoHours": "{{count}} h",
+      "litAgoDays": "{{count}} j",
+      "litAgoWeeks": "{{count}} sem",
+      "sentByLine": "Enchaîné par {{name}}",
+      "emptyTitle": "Personne sur ce mur pour l'instant",
+      "emptyBody": "Connecte-toi et envoie un bloc pour lancer l'historique.",
+      "historyHeader": "Allumés sur ce mur",
+      "statsHeader": "Ce mur",
+      "statSent": "enchaînements",
+      "statClimbers": "grimpeurs",
+      "statHardest": "le plus dur",
+      "hardestSendLabel": "Plus dure enchaînée",
+      "statTopGrade": "la plus fréquente",
+      "wallChanged": "Tu as changé le mur",
+      "undo": "Annuler",
+      "undoAria": "Annuler le changement du mur",
+      "actionLoading": "Chargement du bloc",
+      "actionFailed": "Impossible de charger ce bloc. Réessayez."
     },
     "toast": {
       "sessionEnded": "Session terminée"
@@ -319,47 +429,100 @@
       "preGeneratorLadder": "Échelle",
       "preGeneratorGradeFocus": "Cotation ciblée",
       "preGeneratorTargetGrade": "Cotation visée",
-      "preStart": "Démarrer la session",
+      "preGeneratorWarmUp": "Échauffement",
+      "preGeneratorWarmUpStandard": "Standard",
+      "preGeneratorWarmUpExtended": "Long",
+      "preGeneratorWarmUpNone": "Aucun",
+      "preGeneratorMainSetClimbs": "Blocs principaux",
+      "preGeneratorMainSetVariability": "Écart de cotation",
+      "preGeneratorNumberOfSteps": "Paliers",
+      "preGeneratorClimbsPerStep": "Blocs par palier",
+      "preGeneratorNumberOfClimbs": "Blocs",
+      "preGeneratorMinAscents": "Enchaînements min.",
+      "preGeneratorMinAscentsOption": "{{value}}+",
+      "preGeneratorMinRating": "Note min.",
+      "preGeneratorMinRatingStarAccessibilityLabel_one": "Note minimale, {{count}} étoile et plus",
+      "preGeneratorMinRatingStarAccessibilityLabel_other": "Note minimale, {{count}} étoiles et plus",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_one": "Note minimale, {{count}} étoile et plus, sélectionnée",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_other": "Note minimale, {{count}} étoiles et plus, sélectionnée",
+      "preGeneratorMinRatingStarHint": "Touchez à nouveau la note sélectionnée pour l'effacer.",
+      "preGeneratorAny": "Tout",
+      "preGeneratorClimbBias": "Préférence",
+      "preGeneratorClimbBiasUnfamiliar": "Nouveaux",
+      "preGeneratorClimbBiasAttempted": "Déjà essayés",
+      "preGeneratorClimbBiasAny": "Tout",
+      "preGeneratorTallClimbsLabel": "Blocs hauts uniquement",
+      "preGeneratorTallClimbsDescription": "Utilise les rangées hautes 8x12 ou 10x12.",
+      "preGeneratorWideClimbsLabel": "Blocs larges uniquement",
+      "preGeneratorWideClimbsDescription": "Utilise l'extension latérale 10x10.",
+      "preGeneratorDecreaseOption": "Diminuer {{label}}",
+      "preGeneratorIncreaseOption": "Augmenter {{label}}",
+      "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
+      "preGeneratorOptionChartValue": "{{value}}, {{summary}}",
+      "preGeneratorChartPoint_one": "{{count}} bloc à {{grade}}",
+      "preGeneratorChartPoint_other": "{{count}} blocs à {{grade}}",
+      "preGeneratorChartProgressPoint": "bloc {{index}}, {{grade}}",
+      "preGeneratorTuning": "Réglages",
+      "preStart": "Démarrer",
       "preStarting": "Démarrage…",
       "preNoBoard": "Choisis un mur pour démarrer",
       "preStartError": "Impossible de démarrer la session. Réessaie.",
+      "preWorkoutPreviewTitle": "Aperçu de la séance",
+      "preWorkoutPreviewGenerating": "Création de ta séance…",
+      "preWorkoutPreviewEmpty": "Aucun bloc trouvé pour ce niveau. Essaie un autre.",
+      "preWorkoutPreviewError": "Impossible de créer l'aperçu. Réessaie.",
+      "preRegenerateClimbForClimb": "Changer {{name}}",
       "inStatsSends": "Enchaînées",
-      "inStatsAttempts": "Essais",
       "inStatsDuration": "Durée",
       "inStatsHardest": "Plus dure enchaînée",
       "inStatsGrades": "Répartition par cotation",
-      "inQueueTitle": "File",
-      "inQueueEmpty": "File vide — parcours des voies pour ajouter.",
+      "inHistoryTitle": "Historique de la session",
+      "inHistoryEmpty": "Enregistre des blocs pour construire l'historique de ta session.",
+      "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "Terminer la session",
+      "inStop": "Arrêter",
       "notification": {
         "channelName": "Session d'escalade active",
         "channelDescription": "Garde ta planche connectée et affiche les commandes de session quand Boardsesh est en arrière-plan.",
         "contentTitleFallback": "Session d'escalade",
         "previous": "Précédent",
-        "next": "Suivant"
-      }
+        "next": "Suivant",
+        "relight": "Rallumer le mur",
+        "reconnect": "Se connecter à la planche",
+        "onWall": "{{name}} est sur le mur"
+      },
+      "inStatsFlashes": "Flashs",
+      "inLeaderboardTitle": "Qui grimpe",
+      "inLeaderboardClimber": "Grimpeur",
+      "inPresenceCount": "{{count}} en train de grimper",
+      "invite": "Inviter des grimpeurs",
+      "inviteTitle": "Inviter à cette session",
+      "inviteSubtitle": "Scannez pour rejoindre ou partagez le lien",
+      "inviteCopyLink": "Copier le lien",
+      "inviteCopied": "Lien copié",
+      "inviteShare": "Partager",
+      "inStatsHardestEach": "Les plus durs",
+      "inviteAction": "Inviter"
     }
   },
   "playView": {
+    "previewBadge": "Aperçu",
+    "setActive": "Activer",
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",
     "play": "Lire",
     "pause": "Pause",
     "replay": "Rejouer",
     "speed": "Vitesse de lecture",
-    "onWallChip": "SUR LE MUR · {{username}}",
-    "onWallChipNoDriver": "SUR LE MUR",
-    "drivingChip": "AU CONTRÔLE",
     "audienceCount_one": "{{count}} autre en train de regarder",
     "audienceCount_other": "{{count}} autres en train de regarder",
-    "returnToWallPill": "{{username}} · {{climbName}}",
-    "previewCoachmark": "Aperçu. Touche l'ampoule pour envoyer au mur.",
     "yourAscents_one": "Ton ascension ({{count}})",
     "yourAscents_other": "Tes ascensions ({{count}})",
     "triesCount_one": "{{count}} essai",
     "triesCount_other": "{{count}} essais",
     "tickError": "Impossible d'enregistrer ton tick. Sauvegardé en brouillon.",
     "shareError": "Impossible de partager — réessaie",
+    "favoriteError": "Impossible de mettre à jour tes favoris — réessaie",
     "closeAria": "Fermer",
     "actionBar": {
       "previousAria": "Bloc précédent",
@@ -372,10 +535,9 @@
       "openQueueAria": "Ouvrir la file d'attente",
       "queueCountAria": "File, {{count}} blocs",
       "lightbulb": {
-        "drivingNamed": "Tu contrôles «{{name}}». Touche pour relâcher.",
-        "driving": "Tu contrôles. Touche pour relâcher.",
-        "takeNamed": "Prendre le contrôle et envoyer «{{name}}»",
-        "take": "Prendre le contrôle du mur",
+        "turnOff": "Éteindre le mur",
+        "sendNamed": "Envoyer «{{name}}» au mur",
+        "send": "Envoyer la voie au mur",
         "coachmark": "Envoyer au mur"
       }
     },
@@ -405,5 +567,26 @@
       "starRating_one": "{{count}} etoile",
       "starRating_other": "{{count}} etoiles"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Session introuvable",
+    "participants": "Grimpeurs",
+    "title": "Session"
+  },
+  "mobileJoin": {
+    "loading": "Chargement de la session…",
+    "notFound": "Session introuvable",
+    "ended": "Cette session est terminée",
+    "error": "Impossible de charger cette session",
+    "retry": "Réessayer",
+    "confirmTitle": "Rejoindre la session de {{host}} ?",
+    "boardLabel": "{{board}} · {{count}} en train de grimper",
+    "join": "Rejoindre la session",
+    "cancel": "Annuler",
+    "switchTitle": "Quitter votre session actuelle ?",
+    "switchBody": "Vous quitterez votre session active pour rejoindre celle-ci.",
+    "signInToJoin": "Connectez-vous pour rejoindre",
+    "joinError": "Impossible de rejoindre la session",
+    "hostFallback": "un grimpeur"
   }
 }

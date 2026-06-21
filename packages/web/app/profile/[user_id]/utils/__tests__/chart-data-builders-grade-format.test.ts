@@ -19,6 +19,20 @@ vi.mock('@/app/lib/board-data', () => ({
 vi.mock('@/app/lib/grade-colors', () => ({
   V_GRADE_COLORS: { V3: '#FF7043', V6: '#E53935' } as Record<string, string>,
   FONT_GRADE_COLORS: { '6a': '#FF7043', '6a+': '#FF7043', '7a': '#E53935' } as Record<string, string>,
+  getGradeColor: (grade: string | null | undefined) => {
+    if (!grade) return undefined;
+    const vGradeMatch = grade.match(/V\d+/i);
+    if (vGradeMatch) {
+      return ({ V3: '#FF7043', V6: '#E53935' } as Record<string, string>)[vGradeMatch[0].toUpperCase()];
+    }
+    const fontGradeMatch = grade.match(/\d[abc]\+?/i);
+    if (fontGradeMatch) {
+      return ({ '6a': '#FF7043', '6a+': '#FF7043', '7a': '#E53935' } as Record<string, string>)[
+        fontGradeMatch[0].toLowerCase()
+      ];
+    }
+    return undefined;
+  },
   GradeDisplayFormat: {},
 }));
 
@@ -112,6 +126,17 @@ describe('buildWeeklyBars with font format', () => {
     const idx7A = segmentLabels.indexOf('7A');
     expect(idx6A).toBeLessThan(idx6APlus);
     expect(idx6APlus).toBeLessThan(idx7A);
+  });
+});
+
+describe('buildWeeklyBars with combined grade format', () => {
+  it('uses grade colors for combined V and Font segment keys', () => {
+    const result = buildWeeklyBars(entries, undefined, undefined, 'both');
+    expect(result).not.toBeNull();
+
+    const segments = result!.flatMap((bar) => bar.segments);
+    expect(segments.map((segment) => segment.label)).toEqual(expect.arrayContaining(['V3 / 6A', 'V6 / 7A']));
+    expect(segments.every((segment) => segment.color !== 'hsla(0, 0%, 78%, 0.7)')).toBe(true);
   });
 });
 

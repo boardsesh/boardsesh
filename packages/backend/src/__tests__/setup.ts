@@ -25,7 +25,6 @@ const TABLES_TO_RESET = [
   'board_session_participants',
   'board_sessions',
   'boardsesh_ticks',
-  'inferred_sessions',
   'board_climb_holds',
   'board_climb_stats',
   'board_climbs',
@@ -35,6 +34,8 @@ const TABLES_TO_RESET = [
   'user_climb_percentiles',
   'user_board_mappings',
   'mobile_refresh_tokens',
+  'integration_credentials',
+  'integration_exports',
   'users',
 ];
 

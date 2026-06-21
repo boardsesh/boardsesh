@@ -8,6 +8,7 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/ios-testflight-rn.yml'
   workflow_dispatch:
     inputs:
@@ -20,9 +21,125 @@ concurrency:
   group: ios-testflight-rn-${{ github.ref }}
   cancel-in-progress: true
 
+# ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
+# Declared at the workflow level so the cheap `gate` job (fingerprint resolve)
+# and the `build-and-upload` job (expo prebuild) resolve a byte-identical config
+# and can't drift. MUST stay identical to android-apk-rn.yml /
+# mobile-ota-production.yml — scripts/mobile-ci-env-parity.test.ts fails the
+# build if they do. Config-affecting vars (EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+# EXPO_UPDATES_URL, EXPO_UPDATES_CHANNEL) move the fingerprint runtimeVersion
+# directly; the rest reach it via the hashed .env file the jobs write. Don't add
+# other fingerprint-affecting vars here (EAS_BUILD, EAS_BUILD_PROFILE,
+# BOARDSESH_APP_VARIANT, …) — they're unset in the native build too.
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  # Self-hosted OTA (expo-open-ota). EXPO_UPDATES_URL is the server's manifest
+  # endpoint (e.g. https://ota.boardsesh.com/manifest), set as a repo variable
+  # so the domain isn't hardcoded; until it's set, app.config.ts falls back to
+  # the EAS URL and OTA stays inert (harmless). The channel is baked into the
+  # binary via Expo.plist by `expo prebuild`. See docs/mobile-ota-updates.md.
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+  # NOTE: currently inert at runtime — the mobile app has no
+  # @sentry/react-native wiring (no Sentry.init, no src/lib/sentry.ts), so this
+  # DSN is not read by the running app; client-side errors go to PostHog only
+  # (reportError → captureError). Kept so adding Sentry later needs no workflow
+  # change. Same DSN/project as web + backend; not secret — already hardcoded
+  # in packages/web and packages/backend source.
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  # PostHog product analytics. Intentionally the SAME project token as web
+  # (vars.NEXT_PUBLIC_POSTHOG_KEY) so a signed-in user's web + mobile activity
+  # resolves to one person. EXPO_PUBLIC_* vars are inlined into the JS bundle at
+  # build time; without this, analytics.ts sees no key and isAnalyticsEnabled is
+  # false, so every track() silently no-ops (the app shipped zero events before).
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+
 jobs:
-  build-and-upload:
+  # Fingerprint gate: resolve the iOS runtimeVersion fingerprint on a cheap Linux
+  # runner and skip the ~60-min macOS build when a binary with that fingerprint
+  # already shipped (a fingerprint-ios-<hash> tag exists). The OTA publish
+  # (mobile-ota-production.yml) still delivers the JS to matching binaries. This
+  # gate is the ONE canonical resolution: the build job embeds this exact value in
+  # the binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE (no macOS re-resolve) and tags
+  # it, so binary-rv == tag == the OTA-published rv by construction — no cross-OS
+  # divergence to over-build around or strand OTAs over. See docs/mobile-ota-updates.md.
+  gate:
+    # main-only: the iOS build is main-only by design (it uploads to TestFlight),
+    # so a dispatch forces a build only from main — there's no point running the
+    # gate off a feature branch where build-and-upload would skip anyway. (Android
+    # additionally builds artifacts from a feature-branch dispatch; iOS does not.)
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.fp.outputs.should_build }}
+      fingerprint: ${{ steps.fp.outputs.fingerprint }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      # The .env is hashed into the fingerprint, so it must be byte-identical to
+      # the build job's (same heredoc + same workflow env) or the gate would
+      # resolve a different fingerprint than the build bakes.
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EOF
+
+      - name: Resolve fingerprint and check for an existing native build
+        id: fp
+        run: |
+          set -uo pipefail
+          # No GOOGLE_MAPS_API_KEY here: iOS uses Apple Maps, so the iOS binary's
+          # fingerprint is resolved without it (the Android gate sets it).
+          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+          fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
+          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
+            echo "::warning::Could not resolve the iOS fingerprint — building to be safe."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "fingerprint=$fp" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual dispatch — building iOS regardless of fingerprint $fp."
+            exit 0
+          fi
+          tag="fingerprint-ios-$fp"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::iOS fingerprint $fp already built (tag $tag) — skipping the native build; the OTA delivers the JS."
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::iOS fingerprint $fp is new — running the native build."
+          fi
+
+  build-and-upload:
+    needs: gate
+    if: github.ref == 'refs/heads/main' && needs.gate.outputs.should_build == 'true'
+    permissions:
+      contents: write # push the fingerprint-ios-<hash> tag on a successful upload
     # macos-26 = Xcode 26 + iOS 26 SDK, which App Store Connect now requires
     # for all uploads. Expo SDK 56 / RN 0.85 ships a fmt that compiles cleanly
     # under Xcode 26's strict C++20 constexpr evaluator.
@@ -41,13 +158,15 @@ jobs:
       EXPORT_OPTIONS_PLIST: packages/mobile/ExportOptions.plist
       KEYCHAIN_NAME: build.keychain
       KEYCHAIN_PASSWORD: ${{ github.run_id }}
-      EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
-      EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
-      EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
-      # Activates Sentry at runtime in the shipped build (src/lib/sentry.ts gates
-      # on this var). Same DSN/project as web + backend; not secret — already
-      # hardcoded in packages/web and packages/backend source.
-      EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+      # Shared EXPO_PUBLIC_* / EXPO_UPDATES_* env lives at the workflow level
+      # (above) so the gate and build jobs resolve a byte-identical fingerprint.
+      #
+      # Pin the binary's runtimeVersion to the gate's canonical (Linux) fingerprint.
+      # app.config.ts reads this and emits it as a LITERAL runtimeVersion, so
+      # `expo prebuild` bakes this exact value into Expo.plist and the macOS runner
+      # never resolves its own (divergent) fingerprint. Job-level so it's live at
+      # prebuild AND the xcodebuild archive phase. See docs/mobile-ota-updates.md.
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.gate.outputs.fingerprint }}
 
     steps:
       - name: Checkout repository
@@ -65,8 +184,29 @@ jobs:
           EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
           EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
           EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
           EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
           EOF
+
+      # The binary embeds the gate's canonical fingerprint via
+      # EXPO_UPDATES_FINGERPRINT_OVERRIDE (job env above), so the macOS runner no
+      # longer re-resolves its own value — that cross-OS divergence is what
+      # stranded iOS OTAs (binary on the macOS hash, publish on the Linux hash).
+      # Record the gate value here so the tag step (final) tags exactly what the
+      # binary embeds: tag == binary-rv == published-rv by construction.
+      - name: Record fingerprint for tagging
+        run: |
+          set -uo pipefail
+          fp="${{ needs.gate.outputs.fingerprint }}"
+          if printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
+            echo "FINGERPRINT_IOS=$fp" >> "$GITHUB_ENV"
+            echo "::notice::iOS binary embeds gate fingerprint $fp (EXPO_UPDATES_FINGERPRINT_OVERRIDE); tagging that value on a successful upload."
+          else
+            echo "::warning::Gate produced no usable fingerprint; the binary self-resolves on macOS and no fingerprint-ios tag is pushed (next push rebuilds)."
+          fi
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
@@ -84,44 +224,83 @@ jobs:
         working-directory: packages/mobile/ios
         run: pod install
 
-      - name: Configure per-target code signing
+      - name: Setup Ruby and fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Setup App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: |
-          ruby <<'RUBY'
-          require 'xcodeproj'
-          project = Xcodeproj::Project.open('packages/mobile/ios/Boardsesh.xcodeproj')
+          set -euo pipefail
 
-          profiles = {
-            'Boardsesh'        => 'Boardsesh App Store Distribution Second',
-            'BoardseshWidgets' => 'Boardsesh Widgets App Store Distribution',
-          }
+          if [ -z "$APP_STORE_CONNECT_API_KEY_ID" ]; then
+            echo "::error::Missing APP_STORE_CONNECT_API_KEY_ID."
+            exit 1
+          fi
 
-          project.targets.each do |target|
-            next unless profiles.key?(target.name)
-            target.build_configurations.each do |config|
-              next unless config.name == 'Release'
-              config.build_settings['CODE_SIGN_STYLE']                = 'Manual'
-              config.build_settings['DEVELOPMENT_TEAM']               = '9L3HKPZBH3'
-              config.build_settings['CODE_SIGN_IDENTITY']             = 'Apple Distribution'
-              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = profiles[target.name]
-            end
-          end
+          if [ -z "$APP_STORE_CONNECT_API_KEY_BASE64" ]; then
+            echo "::error::Missing APP_STORE_CONNECT_API_KEY_BASE64."
+            exit 1
+          fi
 
-          project.save
-          puts 'Per-target code signing configured for: ' + profiles.keys.join(', ')
-          RUBY
+          mkdir -p ~/.private_keys
+          key_path="$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
 
+          if ! grep -q 'BEGIN PRIVATE KEY' "$key_path"; then
+            echo "::error::APP_STORE_CONNECT_API_KEY_BASE64 did not decode to an App Store Connect private key."
+            exit 1
+          fi
+
+          # Used by the fastlane build-number lane and the archive export below.
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      # Build number = latest TestFlight build for this marketing version + 1,
+      # queried from App Store Connect via fastlane. The ASC key is REQUIRED by
+      # this workflow (it uploads to TestFlight), so the "Setup App Store Connect
+      # API key" step above fails fast if the secret is missing. If the key is
+      # present but the query itself fails (transient ASC/network error), the lane
+      # falls back to offset + run_number so a flaky query doesn't break the build.
       - name: Compute build number
         id: build_number
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
+          set -euo pipefail
           offset=${{ github.event.inputs.build_number_offset || '100000' }}
-          bn=$(( offset + ${{ github.run_number }} ))
-          echo "value=$bn" >> "$GITHUB_OUTPUT"
-          echo "Build number: $bn"
+          export BUILD_NUMBER_FALLBACK=$(( offset + ${{ github.run_number }} ))
+          bundle exec fastlane ios next_build_number
+          echo "Build number: $(grep '^value=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)"
+
+      - name: Resolve mobile app version
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const appConfig = fs.readFileSync('packages/mobile/app.config.ts', 'utf8');
+          const versionMatch = appConfig.match(/\bversion:\s*['"]([^'"]+)['"]/);
+          if (!versionMatch) {
+            throw new Error('Could not find version in packages/mobile/app.config.ts');
+          }
+
+          const version = versionMatch[1];
+          fs.appendFileSync(process.env.GITHUB_ENV, `BOARDSESH_MOBILE_VERSION=${version}\n`);
+          NODE
 
       - name: Set build number
         working-directory: packages/mobile/ios
         run: |
-          agvtool new-version -all ${{ steps.build_number.outputs.value }}
+          set -euo pipefail
+          build_number=${{ steps.build_number.outputs.value }}
+          [ -n "${build_number}" ] || { echo "::error::Computed build number is empty"; exit 1; }
+          agvtool new-version -all "${build_number}"
 
       - name: Import code signing certificate
         env:
@@ -146,22 +325,142 @@ jobs:
       - name: Install provisioning profiles
         env:
           APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROVISIONING_PROFILE_BASE64 }}
-          WIDGET_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+          WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_WIDGETS_PROVISIONING_PROFILE_BASE64 || secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+          SHARE_EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
         run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$APP_PROFILE_BASE64" | base64 --decode \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
-          echo "$WIDGET_PROFILE_BASE64" | base64 --decode \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+          set -euo pipefail
 
-      - name: Setup App Store Connect API key
+          install_profile() {
+            local secret_name="$1"
+            local profile_label="$2"
+            local profile_name_env="$3"
+            local profile_bundle_id_env="$4"
+            local expected_bundle_id="$5"
+            local profile_base64="${!secret_name:-}"
+            local profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+
+            if [ -z "$profile_base64" ]; then
+              echo "::error::Missing $secret_name for the $profile_label provisioning profile."
+              exit 1
+            fi
+
+            mkdir -p "$profiles_dir"
+
+            local profile_file="$RUNNER_TEMP/${profile_label}.mobileprovision"
+            local plist_file="$RUNNER_TEMP/${profile_label}.plist"
+
+            printf '%s' "$profile_base64" | base64 --decode > "$profile_file"
+            if ! security cms -D -i "$profile_file" > "$plist_file"; then
+              echo "::error::$secret_name did not decode to a valid .mobileprovision file."
+              exit 1
+            fi
+
+            local profile_uuid
+            local profile_name
+            local application_identifier
+            local bundle_id
+
+            profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print UUID' "$plist_file")
+            profile_name=$(/usr/libexec/PlistBuddy -c 'Print Name' "$plist_file")
+            application_identifier=$(/usr/libexec/PlistBuddy -c 'Print Entitlements:application-identifier' "$plist_file")
+            bundle_id="${application_identifier#*.}"
+
+            if [ "$bundle_id" != "$expected_bundle_id" ]; then
+              echo "::error::$profile_label profile is for $bundle_id, expected $expected_bundle_id."
+              exit 1
+            fi
+
+            cp "$profile_file" "$profiles_dir/$profile_uuid.mobileprovision"
+            {
+              echo "$profile_name_env=$profile_name"
+              echo "$profile_bundle_id_env=$bundle_id"
+            } >> "$GITHUB_ENV"
+
+            echo "Installed $profile_label provisioning profile: $profile_name ($bundle_id)"
+          }
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          install_profile APP_PROFILE_BASE64 app IOS_APP_PROFILE_NAME IOS_APP_PROFILE_BUNDLE_ID com.boardsesh.app
+          install_profile WIDGETS_PROFILE_BASE64 widgets IOS_WIDGETS_PROFILE_NAME IOS_WIDGETS_PROFILE_BUNDLE_ID com.boardsesh.app.widgets
+          install_profile SHARE_EXTENSION_PROFILE_BASE64 share-extension IOS_SHARE_EXTENSION_PROFILE_NAME IOS_SHARE_EXTENSION_PROFILE_BUNDLE_ID com.boardsesh.app.share-extension
+
+      - name: Configure per-target code signing
+        # `ruby/setup-ruby` makes its freshly-installed Ruby the active one, and
+        # that Ruby has no global xcodeproj gem (the macOS runner's system Ruby
+        # did). xcodeproj is a fastlane dependency, so run under `bundle exec`
+        # with the fastlane Gemfile while keeping the repo root as cwd so the
+        # relative project path below still resolves.
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          BUNDLE_GEMFILE: ${{ github.workspace }}/fastlane/Gemfile
         run: |
-          mkdir -p ~/.private_keys
-          echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode \
-            > ~/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
+          bundle exec ruby <<'RUBY'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('packages/mobile/ios/Boardsesh.xcodeproj')
+
+          profiles = {
+            'Boardsesh' => ENV.fetch('IOS_APP_PROFILE_NAME'),
+            'BoardseshWidgets' => ENV.fetch('IOS_WIDGETS_PROFILE_NAME'),
+            'BoardseshBeta' => ENV.fetch('IOS_SHARE_EXTENSION_PROFILE_NAME'),
+          }
+
+          configured_targets = []
+
+          project.targets.each do |target|
+            next unless profiles.key?(target.name)
+
+            target.build_configurations.each do |config|
+              next unless config.name == 'Release'
+
+              config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
+              config.build_settings['DEVELOPMENT_TEAM'] = '9L3HKPZBH3'
+              config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = profiles[target.name]
+            end
+
+            configured_targets << target.name
+          end
+
+          missing_targets = profiles.keys - configured_targets
+          unless missing_targets.empty?
+            raise "Missing expected Xcode targets for signing: #{missing_targets.join(', ')}"
+          end
+
+          project.save
+          puts 'Per-target code signing configured for: ' + configured_targets.join(', ')
+          RUBY
+
+      - name: Write export options
+        run: |
+          cat > "$EXPORT_OPTIONS_PLIST" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>9L3HKPZBH3</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>$IOS_APP_PROFILE_BUNDLE_ID</key>
+                  <string>$IOS_APP_PROFILE_NAME</string>
+                  <key>$IOS_WIDGETS_PROFILE_BUNDLE_ID</key>
+                  <string>$IOS_WIDGETS_PROFILE_NAME</string>
+                  <key>$IOS_SHARE_EXTENSION_PROFILE_BUNDLE_ID</key>
+                  <string>$IOS_SHARE_EXTENSION_PROFILE_NAME</string>
+              </dict>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>destination</key>
+              <string>upload</string>
+          </dict>
+          </plist>
+          PLIST
 
       # The @sentry/react-native build phases upload JS source maps + native
       # dSYMs during `xcodebuild archive`. Without a token the upload errors and
@@ -182,8 +481,6 @@ jobs:
 
       - name: Archive
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           # Consumed by the @sentry/react-native build phases (sentry-cli). The
           # SENTRY_DISABLE_AUTO_UPLOAD gate above (via $GITHUB_ENV) decides whether
           # the upload actually runs.
@@ -195,18 +492,20 @@ jobs:
             -configuration Release \
             -archivePath "$ARCHIVE_PATH" \
             -destination "generic/platform=iOS" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8 \
-            -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.value }} \
             DEVELOPMENT_TEAM=9L3HKPZBH3
 
       - name: Export archive (uploads to TestFlight)
+        id: testflight_upload
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
+          if [ -z "$APP_STORE_CONNECT_ISSUER_ID" ]; then
+            echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."
+            exit 1
+          fi
+
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
@@ -224,6 +523,62 @@ jobs:
           path: packages/mobile/ios/build/export/*.ipa
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Notify deployments channel
+        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          CONTENT=$(printf '📱 **iOS RN TestFlight uploaded** on `%s`\n• version: %s\n• build: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$BOARDSESH_MOBILE_VERSION" "$BUILD_NUMBER" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
+
+      - name: Notify deployments channel of failure
+        if: github.ref == 'refs/heads/main' && failure()
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          CONTENT=$(printf '🚨 **iOS RN TestFlight failed** on `%s`\n• version: %s\n• build: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$BOARDSESH_MOBILE_VERSION" "$BUILD_NUMBER" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
+
+      # Record that a binary with this fingerprint shipped, so future JS-only
+      # pushes with the same fingerprint skip this build (the gate checks for the
+      # tag). Only on a successful TestFlight upload — a failed build must not
+      # create the tag or the next push would wrongly skip. Idempotent: a
+      # concurrent run that already pushed the tag is treated as success.
+      - name: Tag the shipped iOS fingerprint
+        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != ''
+        run: |
+          set -uo pipefail
+          tag="fingerprint-ios-${FINGERPRINT_IOS}"
+          git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
+          if git push origin "refs/tags/$tag"; then
+            echo "::notice::Tagged $tag — future JS-only pushes with this fingerprint skip the iOS native build."
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag already exists (concurrent run) — nothing to do."
+          else
+            echo "::error::Failed to push $tag."
+            exit 1
+          fi
 
       - name: Clean up keychain and credentials
         if: always()

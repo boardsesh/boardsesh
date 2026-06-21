@@ -133,7 +133,7 @@ export type SessionOgGradeRow = {
 };
 
 export type SessionOgSummary = {
-  sessionType: 'party' | 'inferred' | null;
+  sessionType: 'party' | null;
   sessionName: string;
   leaderName: string | null;
   participantNames: string[];
@@ -290,22 +290,6 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
 }
 
 export const getSessionOgSummary = cache(async (sessionId: string): Promise<SessionOgSummary> => {
-  let sessionType: 'party' | 'inferred' | null = null;
-  let sessionRow:
-    | {
-        name: string | null;
-        leader_name: string | null;
-        version_at: string | Date | null;
-        board_path: string | null;
-        board_slug: string | null;
-        board_angle: number | null;
-        board_type: string | null;
-        layout_id: number | null;
-        size_id: number | null;
-        set_ids: string | null;
-      }
-    | undefined;
-
   const partySessionResult = await executeRows<{
     name: string | null;
     leader_name: string | null;
@@ -357,57 +341,9 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
   `,
   );
 
-  if (partySessionResult[0]) {
-    sessionType = 'party';
-    sessionRow = partySessionResult[0];
-  } else {
-    const inferredSessionResult = await executeRows<{
-      name: string | null;
-      leader_name: string | null;
-      version_at: string | Date | null;
-      board_path: string | null;
-      board_slug: string | null;
-      board_angle: number | null;
-      board_type: string | null;
-      layout_id: number | null;
-      size_id: number | null;
-      set_ids: string | null;
-    }>(
-      dbz,
-      drizzleSql`
-      SELECT
-        s.name,
-        COALESCE(
-          NULLIF(TRIM(up.display_name), ''),
-          NULLIF(TRIM(u.name), '')
-        ) AS leader_name,
-        NULL::text AS board_path,
-        NULL::text AS board_slug,
-        NULL::bigint AS board_angle,
-        NULL::text AS board_type,
-        NULL::bigint AS layout_id,
-        NULL::bigint AS size_id,
-        NULL::text AS set_ids,
-        GREATEST(
-          COALESCE(s.last_tick_at, to_timestamp(0)),
-          COALESCE(s.created_at, to_timestamp(0)),
-          COALESCE((SELECT MAX(bt.updated_at) FROM boardsesh_ticks bt WHERE bt.inferred_session_id = ${sessionId}), to_timestamp(0))
-        ) AS version_at
-      FROM inferred_sessions s
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN user_profiles up ON up.user_id = s.user_id
-      WHERE s.id = ${sessionId}
-      LIMIT 1
-    `,
-    );
+  const sessionRow = partySessionResult[0];
 
-    if (inferredSessionResult[0]) {
-      sessionType = 'inferred';
-      sessionRow = inferredSessionResult[0];
-    }
-  }
-
-  if (!sessionType || !sessionRow) {
+  if (!sessionRow) {
     return {
       sessionType: null,
       sessionName: 'Climbing Session',
@@ -424,10 +360,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     };
   }
 
-  const tickWhereClause =
-    sessionType === 'party'
-      ? drizzleSql`bt.session_id = ${sessionId}`
-      : drizzleSql`bt.inferred_session_id = ${sessionId}`;
+  const tickWhereClause = drizzleSql`bt.session_id = ${sessionId}`;
 
   const [participantCountResult, participantResult, totalSendsResult, gradeResult, boardInfo] = await Promise.all([
     executeRows<{
@@ -503,7 +436,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
   }));
 
   return {
-    sessionType,
+    sessionType: 'party',
     sessionName: sessionRow.name || 'Climbing Session',
     leaderName: sessionRow.leader_name || null,
     participantNames: participantResult.map((row) => row.display_name),

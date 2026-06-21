@@ -1,11 +1,19 @@
-import type { ConnectionContext, EventsReplayResponse } from '@boardsesh/shared-schema';
+import type {
+  ConnectionContext,
+  EventsReplayResponse,
+  SessionHealthExport,
+  SessionStatus,
+} from '@boardsesh/shared-schema';
+import { eq } from 'drizzle-orm';
 import { roomManager, type DiscoverableSession } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { validateInput, requireSessionMember, requireAuthenticated } from '../shared/helpers';
 import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } from '../../../validation/schemas';
-import { generateSessionSummary } from './session-summary';
+import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
+import { dbRead } from '../../../db/client';
+import { sessions } from '../../../db/schema';
 
 export const sessionQueries = {
   /**
@@ -127,5 +135,49 @@ export const sessionQueries = {
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     return generateSessionSummary(sessionId);
+  },
+
+  /**
+   * Get viewer-specific session data for Apple Health. This is narrower than
+   * sessionSummary by design: Health workouts are personal records.
+   */
+  sessionHealthExport: async (
+    _: unknown,
+    { sessionId }: { sessionId: string },
+    ctx: ConnectionContext,
+  ): Promise<SessionHealthExport | null> => {
+    requireAuthenticated(ctx);
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    if (!ctx.userId) throw new Error('Authentication required to perform this operation');
+    return generateSessionHealthExport(sessionId, ctx.userId);
+  },
+
+  /**
+   * Presence-independent lifecycle check. Reads the durable session row so an
+   * ended session reads as ended even with zero connected participants — unlike
+   * `session`, which returns null whenever the live roster is empty and so can't
+   * tell an ended session apart from a dormant-but-active one. Clients call this
+   * on cold start to decide whether to restore or drop a persisted session id
+   * (#2683). No auth: it exposes only existence + ended-state, and auth may not
+   * be restored yet at cold start. Returns the bare SessionStatus enum; null
+   * means no such session.
+   */
+  sessionStatus: async (_: unknown, { sessionId }: { sessionId: string }): Promise<SessionStatus | null> => {
+    validateInput(SessionIdSchema, sessionId, 'sessionId');
+    const rows = await dbRead
+      .select({ status: sessions.status, endedAt: sessions.endedAt })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    // Ended-ness is the only durable signal. endedAt is ORed in as insurance
+    // against a skewed row (endSession and the inactivity sweep set status and
+    // endedAt together, so it can only diverge via manual edits). Everything
+    // else — including 'inactive', which the legacy DB CHECK (backend
+    // migration 0005) still permits but nothing writes — normalizes to
+    // 'active': a dormant row is exactly the restore-safe case this query
+    // exists to preserve (#2683).
+    return row.status === 'ended' || row.endedAt != null ? 'ended' : 'active';
   },
 };

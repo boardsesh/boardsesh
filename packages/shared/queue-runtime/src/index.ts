@@ -15,3 +15,11 @@ export type {
 
 export { createJoinSessionTracker } from './ensure-joined';
 export type { JoinSessionTracker, JoinSessionTrackerOptions } from './ensure-joined';
+
+export { applySessionRuntimeEvent, upsertRuntimeSessionUser } from './session-events';
+export type {
+  ApplySessionRuntimeEventOptions,
+  RuntimeSessionEvent,
+  RuntimeSessionState,
+  RuntimeSessionUser,
+} from './session-events';

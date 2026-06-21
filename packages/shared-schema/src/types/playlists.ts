@@ -21,6 +21,7 @@ export type DiscoverablePlaylist = {
   climbCount: number;
   creatorId: string;
   creatorName: string;
+  isGeneratedRecommendation: boolean;
 };
 
 export type SearchPlaylistsResult = {

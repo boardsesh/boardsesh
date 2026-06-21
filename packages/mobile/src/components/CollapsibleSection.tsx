@@ -25,6 +25,9 @@ type CollapsibleSectionProps = {
   headerAction?: ReactNode;
   /** Fires with the measured height of the header row whenever layout settles. */
   onHeaderLayout?: (height: number) => void;
+  /** Fires when the section expands/collapses (and once on mount). Lets a caller
+   *  gate expensive content (e.g. a query) on the section being open. */
+  onExpandedChange?: (expanded: boolean) => void;
   children: ReactNode;
 };
 
@@ -36,6 +39,7 @@ export function CollapsibleSection({
   resetKey,
   headerAction,
   onHeaderLayout,
+  onExpandedChange,
   children,
 }: CollapsibleSectionProps) {
   const handleHeaderLayout = useCallback(
@@ -67,6 +71,7 @@ export function CollapsibleSection({
       resetKey={resetKey}
       headerAction={headerAction}
       onHeaderLayoutEvent={onHeaderLayout ? handleHeaderLayout : undefined}
+      onExpandedChange={onExpandedChange}
     >
       {children}
     </CollapsibleSectionInternal>
@@ -80,6 +85,7 @@ function CollapsibleSectionInternal({
   resetKey,
   headerAction,
   onHeaderLayoutEvent,
+  onExpandedChange,
   children,
 }: {
   title: string;
@@ -91,6 +97,7 @@ function CollapsibleSectionInternal({
   // exposes just the measured height. Distinct names so the two signatures
   // never get conflated in callers or refactors.
   onHeaderLayoutEvent?: (event: LayoutChangeEvent) => void;
+  onExpandedChange?: (expanded: boolean) => void;
   children: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -105,6 +112,12 @@ function CollapsibleSectionInternal({
     setExpanded(defaultExpanded);
     chevronRotation.value = withTiming(defaultExpanded ? 1 : 0, { duration: timing.normal });
   }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Report expand/collapse (and the initial state) so a caller can gate
+  // expensive content — e.g. defer a drafts query until the section opens.
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
 
   const toggleExpanded = useCallback(() => {
     hapticSelection();

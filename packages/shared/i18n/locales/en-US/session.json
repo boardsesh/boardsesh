@@ -1,4 +1,9 @@
 {
+  "boardMismatch": {
+    "title": "Switch to {{board}} to climb this",
+    "subtitle": "This is a {{board}} climb. Switch boards to queue it.",
+    "cta": "Switch board"
+  },
   "metadata": {
     "detail": {
       "notFoundTitle": "Session Not Found"
@@ -18,6 +23,28 @@
       "gradeRange": " from {{first}} to {{last}}"
     }
   },
+  "boardPresence": {
+    "title": "Now on the wall",
+    "open": "On the wall",
+    "openAria": "See what's on the wall",
+    "openAriaWithClimb": "See what's on the wall: {{name}}",
+    "nowOnWallAnnouncement": "Now on the wall: {{name}}",
+    "close": "Close",
+    "switchBoard": "Switch board",
+    "switchBoardAria": "Switch to a different board",
+    "setByLine": "Set by {{setter}}",
+    "litByLine": "Lit by {{name}}",
+    "emptyTitle": "Nobody's on this wall yet",
+    "emptyBody": "Connect and send a climb to kick off the history.",
+    "historyHeader": "Lit on this wall",
+    "statsHeader": "This wall",
+    "statSent": "sends",
+    "statClimbers": "climbers",
+    "statHardest": "hardest",
+    "statTopGrade": "most sent",
+    "wallChanged": "You changed the wall",
+    "undo": "Undo"
+  },
   "detail": {
     "subtitleSends_one": "{{count}} send",
     "subtitleSends_other": "{{count}} sends",
@@ -34,6 +61,22 @@
     "deleteAscentConfirm": "Are you sure? This cannot be undone.",
     "delete": "Delete",
     "climberFallback": "Climber",
+    "setBy": "set by {{username}}",
+    "weekday": {
+      "sunday": "Sunday",
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday"
+    },
+    "partOfDay": {
+      "morning": "morning",
+      "afternoon": "afternoon",
+      "evening": "evening",
+      "night": "night"
+    },
     "unknownClimb": "Unknown Climb",
     "attemptOnNth": "on {{ordinal}} attempt",
     "totalAttempts": "{{count}} total",
@@ -43,7 +86,6 @@
     "ordinalSecond": "{{n}}nd",
     "ordinalThird": "{{n}}rd",
     "ordinalDefault": "{{n}}th",
-    "sessionNotesPlaceholder": "Session notes or goal...",
     "noClimbsYet": "No climbs yet",
     "logSomeClimbs": "Log some climbs to see your grade breakdown",
     "climbsLogged_one": "{{count}} climb logged",
@@ -72,11 +114,6 @@
     "notFound": {
       "title": "Session Not Found",
       "subtitle": "This session could not be found. It may have been removed."
-    },
-    "userSearch": {
-      "title": "Add Climber",
-      "placeholder": "Search by name...",
-      "noUsersFound": "No users found"
     }
   },
   "join": {
@@ -155,10 +192,32 @@
     "saveToAppleHealth": "Save to Apple Health",
     "savingToAppleHealth": "Saving to Apple Health…",
     "savedToAppleHealth": "Saved to Apple Health",
+    "savedToAppleHealthWithoutCalories": "Saved without calories",
     "saveToAppleHealthRetry": "Save to Apple Health (retry)",
+    "loadErrorTitle": "Couldn't load your session",
+    "loadErrorMessage": "Your climbs are saved — the recap just didn't load. Try again or head back.",
+    "retry": "Try again",
     "minutes": "{{count}}min",
     "hours": "{{count}}h",
-    "hoursAndMinutes": "{{hours}}h {{mins}}min"
+    "hoursAndMinutes": "{{hours}}h {{mins}}min",
+    "shareToStrava": "Share to Strava",
+    "sharingToStrava": "Sharing to Strava…",
+    "sharedToStrava": "Shared to Strava",
+    "shareToStravaFailed": "Couldn't share to Strava",
+    "flashes": "Flashes",
+    "heroNiceSession": "Nice session.",
+    "heroCrushedIt": "Crushed it.",
+    "heroCrewSession": "Solid crew session.",
+    "heroLoggedWork": "Logged the work.",
+    "featuredSendsLabel_one": "send",
+    "featuredSendsLabel_other": "sends",
+    "featuredAttemptsLabel_one": "attempt",
+    "featuredAttemptsLabel_other": "attempts",
+    "hardestSendTitle": "Hardest send",
+    "effortTitle": "Worth coming back to",
+    "effortBody": "That project's not going anywhere. You'll get it.",
+    "crew": "The crew",
+    "crewStatLine": "{{sends}} sends · {{flashes}} flashes · {{attempts}} attempts"
   },
   "overview": {
     "goal": "Goal: {{goal}}"
@@ -194,10 +253,7 @@
       "logAttempt": "Log attempt",
       "showParticipants": "Show participants",
       "hideParticipants": "Hide participants",
-      "openPlayDrawer": "Open the wall climb",
-      "userIsDriving": "{{username}} is driving",
-      "returnToWallClimb": "Return to {{username}}'s wall climb",
-      "returnToWallClimbNoDriver": "Return to the wall climb"
+      "openPlayDrawer": "Open the wall climb"
     },
     "offline": {
       "idle": "Offline",
@@ -228,12 +284,6 @@
   "queueProvider": {
     "offlineLimitReached": "You've hit the offline up-next limit. Reconnect to sync your climbs."
   },
-  "driverToast": {
-    "firstDriver": "{{newDriver}} is driving the wall.",
-    "tookFromOther": "{{newDriver}} took the wall from {{previousDriver}}.",
-    "tookFromYou": "{{newDriver}} took the wall from you.",
-    "unknownDriver": "Someone"
-  },
   "mobile": {
     "logbook": {
       "title": "Logbook",
@@ -248,9 +298,7 @@
     "similarClimbs": {
       "title": "Similar Climbs",
       "empty": "No similar climbs found",
-      "retry": "Try again",
-      "sends_one": "{{count}} send",
-      "sends_other": "{{count}} sends"
+      "retry": "Try again"
     },
     "community": {
       "title": "Community",
@@ -258,15 +306,16 @@
       "ascensionists_one": "{{count}} ascensionist",
       "ascensionists_other": "{{count}} ascensionists",
       "avgQuality": "Average quality",
-      "gradeByAngle": "Grade by angle"
+      "ascentsByAngle": "Ascents by angle"
     },
     "betaVideos": {
       "title": "Beta Videos",
+      "crewTitle": "Beta from this crew",
+      "cardLabelByUploader": "Beta by {{name}}",
       "empty": "No beta videos yet. Be the first to share!",
       "videoCount_one": "{{count}} video",
       "videoCount_other": "{{count}} videos",
       "addButton": "Attach a beta video",
-      "addTitle": "Attach a beta video",
       "urlPlaceholder": "Paste TikTok or Instagram URL",
       "submitButton": "Attach",
       "submitting": "Attaching...",
@@ -277,7 +326,29 @@
       "cardLabelWithUser": "Beta video by @{{username}}",
       "cardLabel": "Beta video",
       "openError": "Couldn't open this link",
-      "urlInvalid": "Needs to be an Instagram or TikTok URL"
+      "urlInvalid": "Needs to be an Instagram or TikTok URL",
+      "shareTargetTitle": "Attach your beta",
+      "shareTargetPrompt": "Tap the climb you sent it on",
+      "shareSearchPlaceholder": "Search your logged climbs",
+      "shareNoAscents": "Log a climb first, then pin your beta to it",
+      "shareNoResults": "No logged climbs match that",
+      "shareSignIn": "Sign in to attach your beta",
+      "shareSignInButton": "Sign in",
+      "shareClose": "Close",
+      "shareReadingCaption": "Reading the caption…",
+      "shareSuggestedTitle": "Matched from the caption",
+      "shareOtherAscents": "Your other ascents",
+      "shareTitle": "Share your beta",
+      "step1Title": "Copy your caption",
+      "step2Title": "Post it as a reel",
+      "step3Title": "Send it back to Boardsesh",
+      "copyCaption": "Copy caption",
+      "captionCopied": "Caption copied — paste it in your reel",
+      "openInstagram": "Open Instagram",
+      "instagramNotInstalled": "Instagram isn't installed — opened the website instead",
+      "instagramOpenFailed": "Couldn't open Instagram",
+      "shareBackInstructions": "Two ways back: on your reel tap Share and pick Boardsesh (it may be hiding under More), or copy the reel's link and paste it below. Either way, we'll match it to this climb.",
+      "pasteSectionLabel": "Already have a link?"
     },
     "angleSelector": {
       "title": "Choose Angle",
@@ -289,19 +360,58 @@
       "removeClimb": "Remove climb",
       "positionLabel": "position {{position}}",
       "syncError": "Queue sync error",
+      "outOfSyncRefreshed": "Queue was out of sync. Refreshed from your crew.",
       "sessionCreateError": "Couldn't create session",
+      "noBoardSelected": "Pick a board first",
       "actionFailed": "Action failed. Try again.",
+      "rateLimited": "Too many changes too fast. Give it a sec.",
       "endSession": "End session",
       "endSessionConfirm": "Are you sure you want to end this session?",
       "climbCount_one": "{{count}} climb",
       "climbCount_other": "{{count}} climbs",
-      "logAscent": "Log ascent"
+      "logAscent": "Log ascent",
+      "alreadyLogged": "Logged",
+      "dragHandleAria": "Drag to reorder {{name}}"
     },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",
       "toggleHistory": "Toggle history",
       "editQueue": "Edit queue",
       "doneEditing": "Done editing"
+    },
+    "queueSnackbar": {
+      "added": "Climb added to queue",
+      "open": "Open",
+      "openAria": "Open queue"
+    },
+    "boardPresence": {
+      "title": "Now on the wall",
+      "switchBoard": "Switch board",
+      "switchBoardAria": "Switch to a different board",
+      "close": "Close",
+      "setByLine": "Set by {{setter}}",
+      "drivenByA11y": "{{name}} is lighting the wall. Open profile.",
+      "drivenByAnonA11y": "Someone is lighting the wall.",
+      "litAgoNow": "now",
+      "litAgoMinutes": "{{count}}m",
+      "litAgoHours": "{{count}}h",
+      "litAgoDays": "{{count}}d",
+      "litAgoWeeks": "{{count}}w",
+      "sentByLine": "Sent by {{name}}",
+      "emptyTitle": "Nobody's on this wall yet",
+      "emptyBody": "Connect and send a climb to kick off the history.",
+      "historyHeader": "Lit on this wall",
+      "statsHeader": "This wall",
+      "statSent": "sends",
+      "statClimbers": "climbers",
+      "statHardest": "hardest",
+      "hardestSendLabel": "Hardest send",
+      "statTopGrade": "most sent",
+      "wallChanged": "You changed the wall",
+      "undo": "Undo",
+      "undoAria": "Undo the wall change",
+      "actionLoading": "Loading climb",
+      "actionFailed": "Couldn't load that climb. Try again."
     },
     "toast": {
       "sessionEnded": "Session ended"
@@ -319,47 +429,100 @@
       "preGeneratorLadder": "Ladder",
       "preGeneratorGradeFocus": "Grade Focus",
       "preGeneratorTargetGrade": "Target grade",
-      "preStart": "Start session",
+      "preGeneratorWarmUp": "Warm-up",
+      "preGeneratorWarmUpStandard": "Standard",
+      "preGeneratorWarmUpExtended": "Extended",
+      "preGeneratorWarmUpNone": "None",
+      "preGeneratorMainSetClimbs": "Main set climbs",
+      "preGeneratorMainSetVariability": "Grade spread",
+      "preGeneratorNumberOfSteps": "Steps",
+      "preGeneratorClimbsPerStep": "Climbs per step",
+      "preGeneratorNumberOfClimbs": "Climbs",
+      "preGeneratorMinAscents": "Min ascents",
+      "preGeneratorMinAscentsOption": "{{value}}+",
+      "preGeneratorMinRating": "Min rating",
+      "preGeneratorMinRatingStarAccessibilityLabel_one": "Min rating, {{count}} star and up",
+      "preGeneratorMinRatingStarAccessibilityLabel_other": "Min rating, {{count}} stars and up",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_one": "Min rating, {{count}} star and up, selected",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_other": "Min rating, {{count}} stars and up, selected",
+      "preGeneratorMinRatingStarHint": "Tap the selected rating again to clear it.",
+      "preGeneratorAny": "Any",
+      "preGeneratorClimbBias": "Climb bias",
+      "preGeneratorClimbBiasUnfamiliar": "Unfamiliar",
+      "preGeneratorClimbBiasAttempted": "Attempted",
+      "preGeneratorClimbBiasAny": "Any",
+      "preGeneratorTallClimbsLabel": "Tall climbs only",
+      "preGeneratorTallClimbsDescription": "Use the taller 8x12 or 10x12 rows.",
+      "preGeneratorWideClimbsLabel": "Wide climbs only",
+      "preGeneratorWideClimbsDescription": "Use the 10x10 side expansion.",
+      "preGeneratorDecreaseOption": "Decrease {{label}}",
+      "preGeneratorIncreaseOption": "Increase {{label}}",
+      "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
+      "preGeneratorOptionChartValue": "{{value}}, {{summary}}",
+      "preGeneratorChartPoint_one": "{{count}} climb at {{grade}}",
+      "preGeneratorChartPoint_other": "{{count}} climbs at {{grade}}",
+      "preGeneratorChartProgressPoint": "climb {{index}}, {{grade}}",
+      "preGeneratorTuning": "Tuning",
+      "preStart": "Start",
       "preStarting": "Starting…",
       "preNoBoard": "Pick a board to start",
       "preStartError": "Couldn't start session. Try again.",
+      "preWorkoutPreviewTitle": "Workout preview",
+      "preWorkoutPreviewGenerating": "Building your workout…",
+      "preWorkoutPreviewEmpty": "No climbs found for this grade. Try another.",
+      "preWorkoutPreviewError": "Couldn't build the preview. Try again.",
+      "preRegenerateClimbForClimb": "Regenerate {{name}}",
       "inStatsSends": "Sends",
-      "inStatsAttempts": "Attempts",
       "inStatsDuration": "Duration",
       "inStatsHardest": "Hardest send",
       "inStatsGrades": "Grade distribution",
-      "inQueueTitle": "Queue",
-      "inQueueEmpty": "Queue is empty — browse climbs to add.",
+      "inHistoryTitle": "Session history",
+      "inHistoryEmpty": "Log climbs to build your session history.",
+      "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "End session",
+      "inStop": "Stop",
       "notification": {
         "channelName": "Active climbing session",
         "channelDescription": "Keeps your board connected and shows session controls while Boardsesh runs in the background.",
         "contentTitleFallback": "Climbing session",
         "previous": "Previous",
-        "next": "Next"
-      }
+        "next": "Next",
+        "relight": "Relight wall",
+        "reconnect": "Connect to board",
+        "onWall": "{{name}} is on the wall"
+      },
+      "inStatsFlashes": "Flashes",
+      "inLeaderboardTitle": "Who's climbing",
+      "inLeaderboardClimber": "Climber",
+      "inPresenceCount": "{{count}} climbing",
+      "invite": "Invite climbers",
+      "inviteTitle": "Invite to this session",
+      "inviteSubtitle": "Scan to join, or share the link",
+      "inviteCopyLink": "Copy link",
+      "inviteCopied": "Link copied",
+      "inviteShare": "Share",
+      "inStatsHardestEach": "Hardest sends",
+      "inviteAction": "Invite"
     }
   },
   "playView": {
+    "previewBadge": "Preview",
+    "setActive": "Set active",
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",
     "play": "Play",
     "pause": "Pause",
     "replay": "Replay",
     "speed": "Playback speed",
-    "onWallChip": "ON WALL · {{username}}",
-    "onWallChipNoDriver": "ON WALL",
-    "drivingChip": "DRIVING",
     "audienceCount_one": "{{count}} other watching",
     "audienceCount_other": "{{count}} others watching",
-    "returnToWallPill": "{{username}} · {{climbName}}",
-    "previewCoachmark": "Previewing. Tap the lightbulb to send it to the wall.",
     "yourAscents_one": "Your Ascent ({{count}})",
     "yourAscents_other": "Your Ascents ({{count}})",
     "triesCount_one": "{{count}} try",
     "triesCount_other": "{{count}} tries",
     "tickError": "Couldn't save your tick — it's saved as a draft",
     "shareError": "Couldn't share — try again",
+    "favoriteError": "Couldn't update your favorites — try again",
     "closeAria": "Close",
     "actionBar": {
       "previousAria": "Previous climb",
@@ -372,10 +535,9 @@
       "openQueueAria": "Open up next",
       "queueCountAria": "Queue, {{count}} climbs",
       "lightbulb": {
-        "drivingNamed": "You’re driving “{{name}}”. Tap to release control.",
-        "driving": "You’re driving. Tap to release control.",
-        "takeNamed": "Take wall control and send “{{name}}”",
-        "take": "Take wall control",
+        "turnOff": "Turn off the board",
+        "sendNamed": "Send “{{name}}” to the wall",
+        "send": "Send the climb to the wall",
         "coachmark": "Send to the wall"
       }
     },
@@ -405,5 +567,26 @@
       "starRating_one": "{{count}} star",
       "starRating_other": "{{count}} stars"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Session not found",
+    "participants": "Climbers",
+    "title": "Session"
+  },
+  "mobileJoin": {
+    "loading": "Loading session…",
+    "notFound": "Session not found",
+    "ended": "This session has ended",
+    "error": "Couldn't load this session",
+    "retry": "Try again",
+    "confirmTitle": "Join {{host}}'s session?",
+    "boardLabel": "{{board}} · {{count}} climbing",
+    "join": "Join session",
+    "cancel": "Cancel",
+    "switchTitle": "Leave your current session?",
+    "switchBody": "You'll leave your active session to join this one.",
+    "signInToJoin": "Sign in to join",
+    "joinError": "Couldn't join the session",
+    "hostFallback": "a climber"
   }
 }

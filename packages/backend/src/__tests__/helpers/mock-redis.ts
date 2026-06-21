@@ -126,6 +126,27 @@ export const createMockRedis = (): MockRedis => {
       store.set(key, value);
       return 'OK';
     }),
+    // Supports `scan(cursor, 'MATCH', pattern, 'COUNT', n)` (used by
+    // DistributedState heartbeat/cleanup). Single-batch mock: returns cursor '0'
+    // (iteration complete) plus every key across the stores matching the glob.
+    scan: vi.fn(async (_cursor: string | number, ...args: unknown[]) => {
+      let pattern = '*';
+      for (let i = 0; i < args.length - 1; i++) {
+        if (typeof args[i] === 'string' && (args[i] as string).toUpperCase() === 'MATCH') {
+          pattern = String(args[i + 1]);
+        }
+      }
+      const re = new RegExp(
+        '^' +
+          pattern
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.') +
+          '$',
+      );
+      const allKeys = new Set<string>([...store.keys(), ...hashes.keys(), ...sets.keys(), ...sortedSets.keys()]);
+      return ['0', [...allKeys].filter((key) => re.test(key))];
+    }),
     watch: vi.fn(async () => 'OK'),
     unwatch: vi.fn(async () => 'OK'),
     multi: vi.fn(() => {
@@ -137,6 +158,10 @@ export const createMockRedis = (): MockRedis => {
         },
         hset: (key: string, ...fieldsAndValues: string[]) => {
           commands.push(() => mockRedis.hset(key, ...fieldsAndValues));
+          return chainable;
+        },
+        setex: (key: string, seconds: number, value: string) => {
+          commands.push(() => mockRedis.setex(key, seconds, value));
           return chainable;
         },
         expire: (_key: string, _seconds: number) => {

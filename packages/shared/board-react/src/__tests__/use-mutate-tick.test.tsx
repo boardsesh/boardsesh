@@ -13,6 +13,10 @@ const TICK_DEPENDENT_KEYS = [
   'logbook',
   'climb',
   'searchClimbs',
+  // The Sessions feed and session-detail cards aggregate from these caches and
+  // must refresh when a tick they contain is edited or deleted.
+  'sessionGroupedFeed',
+  'sessionDetail',
 ];
 
 const updateVars = {

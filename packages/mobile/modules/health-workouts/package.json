@@ -1,0 +1,7 @@
+{
+  "name": "@boardsesh/health-workouts-module",
+  "version": "0.1.0",
+  "description": "iOS-native bridge that writes finished climbing sessions to Apple Health as HKWorkouts. Ports the date parsing, metadata keys, and authorization semantics from the Capacitor HealthKitPlugin at repo-root mobile/.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

@@ -12,8 +12,16 @@ export type UseDiscoverPlaylistsOptions = {
   boardType?: string;
   /** Optional layout filter. Changing it resets pagination for both streams. */
   layoutId?: number;
+  /** Optional size filter for generated recommendations. */
+  sizeId?: number;
+  /** Optional angle filter for generated recommendations. */
+  angle?: number;
   /** Page size per stream per request. Defaults to 10 (matches the existing UX). */
   pageSize?: number;
+  /** Optional generated recommendation filter. */
+  generatedRecommendation?: boolean;
+  /** Whether requests should run. Defaults to true. */
+  enabled?: boolean;
   /** SSR-provided initial data. When supplied, the first page fetch is skipped. */
   initialData?: { popular: DiscoverablePlaylist[]; recent: DiscoverablePlaylist[] };
   /** Whether the SSR popular slice has more pages. Pass through the server's
@@ -51,7 +59,11 @@ export type UseDiscoverPlaylistsResult = {
 export function useDiscoverPlaylists({
   boardType,
   layoutId,
+  sizeId,
+  angle,
   pageSize = 10,
+  generatedRecommendation,
+  enabled = true,
   initialData,
   initialPopularHasMore,
   initialRecentHasMore,
@@ -63,7 +75,7 @@ export function useDiscoverPlaylists({
   const hasInitialData = initialData != null;
   const [popular, setPopular] = useState<DiscoverablePlaylist[]>(hasInitialData ? initialData.popular : []);
   const [recent, setRecent] = useState<DiscoverablePlaylist[]>(hasInitialData ? initialData.recent : []);
-  const [isLoading, setIsLoading] = useState(!hasInitialData);
+  const [isLoading, setIsLoading] = useState(enabled && !hasInitialData);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [popularHasMore, setPopularHasMore] = useState(hasInitialData ? (initialPopularHasMore ?? false) : false);
   const [recentHasMore, setRecentHasMore] = useState(hasInitialData ? (initialRecentHasMore ?? false) : false);
@@ -76,15 +88,31 @@ export function useDiscoverPlaylists({
   const popularHasMoreRef = useRef(popularHasMore);
   const recentHasMoreRef = useRef(recentHasMore);
   const isFetchingRef = useRef(false);
+  const activeFetchIdRef = useRef(0);
   const loadMoreFailCountRef = useRef(0);
+
+  const resetPagination = useCallback(() => {
+    popularPageRef.current = 0;
+    recentPageRef.current = 0;
+    popularHasMoreRef.current = false;
+    recentHasMoreRef.current = false;
+    loadMoreFailCountRef.current = 0;
+    setPopularHasMore(false);
+    setRecentHasMore(false);
+  }, []);
 
   const fetchPages = useCallback(
     async (popularPage: number, recentPage: number, isInitial: boolean) => {
-      if (isFetchingRef.current) return;
+      if (!enabled) return;
+      if (!isInitial && isFetchingRef.current) return;
+
+      const fetchId = activeFetchIdRef.current + 1;
+      activeFetchIdRef.current = fetchId;
       isFetchingRef.current = true;
 
       if (isInitial) {
         setIsLoading(true);
+        setIsLoadingMore(false);
       } else {
         setIsLoadingMore(true);
       }
@@ -98,6 +126,9 @@ export function useDiscoverPlaylists({
         pageSize,
         ...(boardType !== undefined && { boardType }),
         ...(layoutId !== undefined && { layoutId }),
+        ...(sizeId !== undefined && { sizeId }),
+        ...(angle !== undefined && { angle }),
+        ...(generatedRecommendation !== undefined && { generatedRecommendation }),
       };
 
       try {
@@ -113,6 +144,8 @@ export function useDiscoverPlaylists({
               })
             : Promise.resolve(null),
         ]);
+
+        if (activeFetchIdRef.current !== fetchId) return;
 
         if (popularRes) {
           const { playlists: nextPopular, hasMore: more } = popularRes.discoverPlaylists;
@@ -131,6 +164,7 @@ export function useDiscoverPlaylists({
         loadMoreFailCountRef.current = 0;
         setHasError(false);
       } catch (err: unknown) {
+        if (activeFetchIdRef.current !== fetchId) return;
         console.error('Failed to fetch discover playlists:', err);
         if (isInitial) {
           setHasError(true);
@@ -144,6 +178,7 @@ export function useDiscoverPlaylists({
           }
         }
       } finally {
+        if (activeFetchIdRef.current !== fetchId) return;
         if (isInitial) {
           setIsLoading(false);
         } else {
@@ -152,27 +187,34 @@ export function useDiscoverPlaylists({
         isFetchingRef.current = false;
       }
     },
-    [boardType, layoutId, pageSize, executeGraphQL],
+    [boardType, layoutId, sizeId, angle, pageSize, generatedRecommendation, enabled, executeGraphQL],
   );
 
   // Reset + re-fetch when filters change. Skip the very first run if SSR
   // already populated initialData for the current filter.
   const skipFirstFetchRef = useRef(hasInitialData);
   useEffect(() => {
+    if (!enabled) {
+      activeFetchIdRef.current += 1;
+      isFetchingRef.current = false;
+      skipFirstFetchRef.current = false;
+      setPopular([]);
+      setRecent([]);
+      resetPagination();
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      setHasError(false);
+      return;
+    }
     if (skipFirstFetchRef.current) {
       skipFirstFetchRef.current = false;
       return;
     }
     setPopular([]);
     setRecent([]);
-    popularPageRef.current = 0;
-    recentPageRef.current = 0;
-    popularHasMoreRef.current = false;
-    recentHasMoreRef.current = false;
-    setPopularHasMore(false);
-    setRecentHasMore(false);
+    resetPagination();
     void fetchPages(0, 0, true);
-  }, [fetchPages]);
+  }, [enabled, fetchPages, resetPagination]);
 
   const loadMore = useCallback(() => {
     if (isFetchingRef.current) return;
@@ -181,12 +223,9 @@ export function useDiscoverPlaylists({
   }, [fetchPages]);
 
   const refetch = useCallback(() => {
-    popularPageRef.current = 0;
-    recentPageRef.current = 0;
-    popularHasMoreRef.current = false;
-    recentHasMoreRef.current = false;
+    resetPagination();
     void fetchPages(0, 0, true);
-  }, [fetchPages]);
+  }, [fetchPages, resetPagination]);
 
   return {
     popular,

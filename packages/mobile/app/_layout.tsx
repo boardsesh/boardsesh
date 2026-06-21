@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
+import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 56's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -16,15 +16,21 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
+import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
+import { DialogProvider } from '../src/providers/dialog-provider';
 import { AuthProvider } from '../src/providers/auth-provider';
 import { I18nProvider } from '../src/providers/i18n-provider';
-import { BluetoothProvider } from '../src/providers/bluetooth-provider';
+import { BluetoothProviderWrapper } from '../src/providers/bluetooth-provider-wrapper';
 import { ToastProvider } from '../src/providers/toast-provider';
 import { QueueProvider } from '../src/providers/queue-provider';
+import { QueueSnackbarProvider } from '../src/providers/queue-snackbar-provider';
 import { DrawerHostProvider } from '../src/providers/drawer-host-provider';
-import { SessionScreenProvider } from '../src/providers/session-screen-provider';
-import { SessionScreenHost } from '../src/components/session-screen/SessionScreenHost';
-import { FeatureFlagsProvider } from '../src/providers/feature-flags-provider';
+import { BleControlSheetProvider } from '../src/providers/ble-control-sheet-provider';
+import { DeepLinkProvider } from '../src/providers/deep-link-provider';
+import { ShareTargetProvider } from '../src/providers/share-target-provider';
+import { TabBarHeightProvider } from '../src/providers/tab-bar-height-provider';
+import { FeatureFlagsProvider, type FeatureFlags } from '../src/providers/feature-flags-provider';
+import { MobileBoardPresenceProvider } from '../src/providers/board-presence-provider';
 import { PartyProfileProvider } from '../src/providers/party-profile-provider';
 import { ConnectionSettingsProvider } from '../src/providers/connection-settings-provider';
 import { FavoritesProvider } from '../src/providers/favorites-provider';
@@ -34,22 +40,48 @@ import { PlaylistsAdapterWrapper } from '../src/providers/playlists-adapter';
 import { BoardProvider } from '@boardsesh/board-react';
 import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
+import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
-import { LiveActivityBridge } from '../src/lib/live-activity/live-activity-bridge';
+import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { Text } from '../src/components/Text';
-import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { brandColors } from '../src/theme/colors';
 import { iosDarkColors } from '../src/theme/ios-colors';
 import { spacing } from '../src/theme/tokens';
-import { wrapWithSentry, reportError } from '../src/lib/sentry';
+import { glassStackScreenOptions } from '../src/theme/navigation';
+import { reportError } from '../src/lib/error-reporting';
+import { loadRequiredFonts } from '../src/lib/required-fonts';
+import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
+import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
+import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
+import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
+
+// The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
+// JS from Metro; a stray warning would pop a LogBox toast into a captured
+// screenshot. Suppress all LogBox UI in screenshot mode. EXPO_PUBLIC_SCREENSHOT_MODE
+// is inlined at build time, so this dead-strips from every normal build.
+if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+  LogBox.ignoreAllLogs(true);
+}
 
 const layoutStyles = StyleSheet.create({
   root: { flex: 1 },
 });
+
+function buildStaticFeatureFlags(): FeatureFlags | undefined {
+  const flags: FeatureFlags = {};
+
+  if (process.env.EXPO_PUBLIC_STRAVA_INTEGRATION === 'true') {
+    flags['strava-integration'] = true;
+  }
+
+  return Object.keys(flags).length > 0 ? flags : undefined;
+}
+
+const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
 
 const errorStyles = StyleSheet.create({
   container: {
@@ -75,6 +107,29 @@ const errorStyles = StyleSheet.create({
     width: '100%',
     maxWidth: 280,
   },
+  primaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    borderRadius: 12,
+    backgroundColor: brandColors.primaryFill,
+    paddingHorizontal: spacing[5],
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderColor: brandColors.primary,
+    paddingHorizontal: spacing[5],
+  },
+  pressedButton: {
+    opacity: 0.72,
+  },
+  buttonLabel: {
+    fontWeight: '700',
+  },
 });
 
 type ErrorBoundaryProps = {
@@ -97,23 +152,44 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   }, [error]);
 
   const handleGoHome = () => {
-    router.replace('/(tabs)/boards');
+    router.replace('/(tabs)/home');
   };
 
   return (
     <View style={errorStyles.container}>
       <View style={errorStyles.iconContainer}>
+        {/* Static brand colour on purpose: this boundary can render outside the
+            ThemeProvider (the crash screen), where useTheme() would throw — so
+            it can't read the scheme-aware brand. */}
         <Icon name="warning" size={48} color={brandColors.warning} />
       </View>
       <Text variant="title2" style={errorStyles.title}>
         Something went wrong
       </Text>
       <Text variant="body" style={errorStyles.message}>
-        The app hit an unexpected error. You can try again or head back to your boards.
+        The app hit an unexpected error. You can try again or head back home.
       </Text>
       <View style={errorStyles.buttonRow}>
-        <Button title="Try again" onPress={retry} variant="filled" size="large" />
-        <Button title="Go to boards" onPress={handleGoHome} variant="outlined" size="large" />
+        <Pressable
+          onPress={retry}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+          style={({ pressed }) => [errorStyles.primaryButton, pressed && errorStyles.pressedButton]}
+        >
+          <Text variant="body" color={brandColors.onPrimary} style={errorStyles.buttonLabel}>
+            Try again
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={handleGoHome}
+          accessibilityRole="button"
+          accessibilityLabel="Go home"
+          style={({ pressed }) => [errorStyles.secondaryButton, pressed && errorStyles.pressedButton]}
+        >
+          <Text variant="body" color={brandColors.primary} style={errorStyles.buttonLabel}>
+            Go home
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -131,33 +207,21 @@ function ClimbActionsDataWrapper({ children }: { children: ReactNode }) {
   );
 }
 
-function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  const { data: activeBoard } = useActiveBoard();
-
-  if (!activeBoard) {
-    return <>{children}</>;
-  }
-
-  return (
-    <BluetoothProvider boardName={activeBoard.boardType} layoutId={activeBoard.layoutId} sizeId={activeBoard.sizeId}>
-      <LiveActivityBridge
-        boardName={activeBoard.boardType}
-        layoutId={activeBoard.layoutId}
-        sizeId={activeBoard.sizeId}
-        setIds={activeBoard.setIds}
-      />
-      {children}
-    </BluetoothProvider>
-  );
-}
-
 // Supplies the active board name to the shared BoardProvider. The API types
 // `boardType` as a loose string, so it's validated to a `BoardName | null`.
 // A null board keeps logbook fetches idle and makes mutations throw rather
 // than send an empty `boardType`.
 function BoardProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
-  return <BoardProvider boardName={toBoardName(activeBoard?.boardType)}>{children}</BoardProvider>;
+  return (
+    <BoardProvider boardName={toBoardName(activeBoard?.boardType)} boardUuid={activeBoard?.uuid}>
+      {/* Screenshot builds only (inlined check → dead-strips in normal builds):
+          auto-activate the user's first board so board-backed shots aren't stuck
+          on the "No board selected" picker. */}
+      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && <ScreenshotBoardAutoActivator />}
+      {children}
+    </BoardProvider>
+  );
 }
 
 // Dark-aware navigation theme so screen/scene backgrounds adapt — without it,
@@ -186,8 +250,7 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
       {/* Drive the system status-bar icon contrast from the *resolved* scheme
           (honours the in-app appearance override), not "auto" — under Android's
           mandatory edge-to-edge the bar is transparent over app content, so a
-          forced dark theme on a light OS must still get light icons. Matches the
-          pattern already used in SessionScreenHost.
+          forced dark theme on a light OS must still get light icons.
           Note: the Android 3-button navigation-bar icon contrast is NOT driven
           here — under edge-to-edge that needs react-native-edge-to-edge's
           <SystemBars> (a new native dep), deferred to a device-tested follow-up. */}
@@ -198,26 +261,58 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 }
 
 function RootLayout() {
-  const onAuthReady = useCallback(() => {
-    SplashScreen.hideAsync();
+  const [authReady, setAuthReady] = useState(false);
+  const [fontsReady, setFontsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadRequiredFonts()
+      .catch((error: unknown) => {
+        reportError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setFontsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const onAuthReady = useCallback(() => {
+    setAuthReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !fontsReady) return;
+    void SplashScreen.hideAsync();
+  }, [authReady, fontsReady]);
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>
-      <I18nProvider>
-        <QueryProvider>
-          <ThemeProvider>
-            <FeatureFlagsProvider>
-              <AuthProvider onReady={onAuthReady}>
-                <PartyProfileProvider>
-                  <ConnectionSettingsProvider>
-                    <ToastProvider>
-                      <ClimbActionsDataWrapper>
-                        <QueueProvider>
-                          <BoardAdapterWrapper>
-                            <PlaylistsAdapterWrapper>
-                              <BoardProviderWrapper>
-                                {/* BottomSheetModalProvider sits inside the board
+      {/* PostHogProvider sits at the top so touch autocapture covers the whole
+          app. It owns the single PostHog client; manual events go through the
+          imperative wrapper in src/lib/analytics. No-ops (renders children
+          untouched) in dev / when no key is configured. */}
+      <AnalyticsProvider>
+        <I18nProvider>
+          <QueryProvider>
+            <ThemeProvider>
+              <MaterialThemeProvider>
+                {/* Inside MaterialThemeProvider (Paper Portal host) and above every
+                    provider that may call useConfirm (incl. Bluetooth). */}
+                <DialogProvider>
+                  <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
+                    <AuthProvider onReady={onAuthReady}>
+                      <PartyProfileProvider>
+                        <ConnectionSettingsProvider>
+                          <ToastProvider>
+                            <ClimbActionsDataWrapper>
+                              <QueueSnackbarProvider>
+                                <QueueProvider>
+                                  <BoardAdapterWrapper>
+                                    <PlaylistsAdapterWrapper>
+                                      <BoardProviderWrapper>
+                                        {/* BottomSheetModalProvider sits inside the board
                                     providers (gorhom's BottomSheetModal portals
                                     PlayDrawer → QuickTickBar here, so the host
                                     must be able to see BoardAdapter/BoardProvider
@@ -228,40 +323,132 @@ function RootLayout() {
                                     exist before the picker mounts or gorhom
                                     throws "BottomSheetModalInternalContext
                                     cannot be null". */}
-                                <BottomSheetModalProvider>
-                                  <BluetoothProviderWrapper>
-                                    <SessionScreenProvider>
-                                      <DrawerHostProvider>
-                                        <ThemedNavigation>
-                                          <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
-                                            <Stack.Screen name="(tabs)" />
-                                            <Stack.Screen
-                                              name="auth"
-                                              options={{ headerShown: false, gestureEnabled: false }}
-                                            />
-                                          </Stack>
-                                        </ThemedNavigation>
-                                        <PersistentQueueBar />
-                                        <SessionScreenHost />
-                                      </DrawerHostProvider>
-                                    </SessionScreenProvider>
-                                  </BluetoothProviderWrapper>
-                                </BottomSheetModalProvider>
-                              </BoardProviderWrapper>
-                            </PlaylistsAdapterWrapper>
-                          </BoardAdapterWrapper>
-                        </QueueProvider>
-                      </ClimbActionsDataWrapper>
-                    </ToastProvider>
-                  </ConnectionSettingsProvider>
-                </PartyProfileProvider>
-              </AuthProvider>
-            </FeatureFlagsProvider>
-          </ThemeProvider>
-        </QueryProvider>
-      </I18nProvider>
+                                        {/* Board presence ("now on the wall") owns the
+                                    connected boardId + the wall feed. Wraps
+                                    BottomSheetModalProvider so gorhom-portaled
+                                    sheets (PlayDrawer, BoardSheet) — which render
+                                    at the modal host, not their declaration site —
+                                    can still read the wall state through context.
+                                    Also OUTSIDE BluetoothProviderWrapper /
+                                    DrawerHostProvider so the BLE flow + Board sheet
+                                    can use it. */}
+                                        <MobileBoardPresenceProvider>
+                                          <BottomSheetModalProvider>
+                                            <BluetoothProviderWrapper>
+                                              {/* One BLE controls sheet (Re-light / Turn off /
+                                                  Disconnect) shared by the play-drawer lightbulb and
+                                                  the persistent bar's board control. Wraps
+                                                  DrawerHostProvider (which renders PlayDrawer as a
+                                                  sibling of its children) so both the drawer and the
+                                                  bar descend from it. */}
+                                              <BleControlSheetProvider>
+                                                <DrawerHostProvider>
+                                                  <DeepLinkProvider>
+                                                    <ShareTargetProvider>
+                                                      <TabBarHeightProvider>
+                                                        <UserDrawerProvider>
+                                                          <ThemedNavigation>
+                                                            <Stack
+                                                              // Root scenes keep the opaque, theme-aware nav background so a dark
+                                                              // backstop sits behind the tab screens (the tab stacks paint their own
+                                                              // transparent content over it). glassStackScreenOptions' transparent
+                                                              // contentStyle would expose the light window background at the top of the
+                                                              // screen in dark mode, where the floating chrome leaves it uncovered.
+                                                              // The header props still apply to root-level pushed screens (session, about).
+                                                              screenOptions={{
+                                                                ...glassStackScreenOptions,
+                                                                headerShown: false,
+                                                                contentStyle: undefined,
+                                                              }}
+                                                              initialRouteName="index"
+                                                            >
+                                                              <Stack.Screen name="index" />
+                                                              <Stack.Screen name="(tabs)" />
+                                                              <Stack.Screen
+                                                                name="auth"
+                                                                options={{ headerShown: false, gestureEnabled: false }}
+                                                              />
+                                                              {/* Public climber profiles + climber search, pushed from any
+                                                          tab (tappable avatars, the Home search action). */}
+                                                              <Stack.Screen name="users/[userId]/index" />
+                                                              {/* A climber's full beta-video grid — the "See all" target of
+                                                          the profile beta shelf. Sets its own solid header. */}
+                                                              <Stack.Screen name="users/[userId]/beta" />
+                                                              {/* Headerless push — hides the tab bar like the other pushed
+                                                          screens, with its own in-body search bar. NOT a modal: a native
+                                                          modal presentation traps the root play drawer beneath it when a
+                                                          climb is opened from a profile pushed off search. */}
+                                                              <Stack.Screen
+                                                                name="users/search"
+                                                                options={{ headerShown: false }}
+                                                              />
+                                                              <Stack.Screen name="users/connections" />
+                                                              <Stack.Screen
+                                                                name="join/[sessionId]"
+                                                                options={{ presentation: 'modal', headerShown: false }}
+                                                              />
+                                                              <Stack.Screen
+                                                                name="share-beta"
+                                                                options={{ presentation: 'modal', headerShown: false }}
+                                                              />
+                                                              {/* Board selection is a modal off the Climbs capsule /
+                                                      no-board CTA — board switching is rare, so it doesn't
+                                                      earn a tab. Its own _layout owns the headers. */}
+                                                              <Stack.Screen
+                                                                name="boards"
+                                                                options={{ presentation: 'modal', headerShown: false }}
+                                                              />
+                                                              {/* First-run welcome walkthrough. Full-screen cover
+                                                      over the Climbs tab; gesture disabled so the user
+                                                      leaves only via Skip / finish / the final CTA, never
+                                                      an accidental swipe-dismiss. */}
+                                                              <Stack.Screen
+                                                                name="onboarding"
+                                                                options={{
+                                                                  presentation: 'fullScreenModal',
+                                                                  headerShown: false,
+                                                                  gestureEnabled: false,
+                                                                  animation: 'fade',
+                                                                }}
+                                                              />
+                                                            </Stack>
+                                                          </ThemedNavigation>
+                                                          <PersistentQueueBar />
+                                                          {/* One-time tip floating above the tab bar / accessory bar,
+                                                            mounted next to PersistentQueueBar so it watches climb
+                                                            presence globally and overlays both the native (iOS 26) and
+                                                            JS bottom-bar variants. */}
+                                                          <AccessoryOnboardingTip />
+                                                          <OnboardingGate ready={authReady && fontsReady} />
+                                                        </UserDrawerProvider>
+                                                      </TabBarHeightProvider>
+                                                      <AnalyticsScreenTracker />
+                                                    </ShareTargetProvider>
+                                                  </DeepLinkProvider>
+                                                </DrawerHostProvider>
+                                              </BleControlSheetProvider>
+                                            </BluetoothProviderWrapper>
+                                          </BottomSheetModalProvider>
+                                        </MobileBoardPresenceProvider>
+                                      </BoardProviderWrapper>
+                                    </PlaylistsAdapterWrapper>
+                                  </BoardAdapterWrapper>
+                                </QueueProvider>
+                              </QueueSnackbarProvider>
+                            </ClimbActionsDataWrapper>
+                          </ToastProvider>
+                        </ConnectionSettingsProvider>
+                      </PartyProfileProvider>
+                    </AuthProvider>
+                  </FeatureFlagsProvider>
+                </DialogProvider>
+              </MaterialThemeProvider>
+            </ThemeProvider>
+          </QueryProvider>
+        </I18nProvider>
+      </AnalyticsProvider>
     </GestureHandlerRootView>
   );
 }
 
-export default wrapWithSentry(RootLayout);
+export default RootLayout;

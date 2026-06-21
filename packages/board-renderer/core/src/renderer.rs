@@ -1,10 +1,49 @@
 use std::collections::HashMap;
-use tiny_skia::{
-    Color as SkiaColor, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform,
-};
+use tiny_skia::{Color as SkiaColor, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 use crate::frames_parser::parse_frames;
-use crate::types::{HoldData, HoldRenderStyle, RenderConfig};
+use crate::types::{HoldData, HoldMarkerShape, HoldRenderStyle, RenderConfig};
+
+fn marker_shape_path(shape: HoldMarkerShape, cx: f32, cy: f32, r: f32) -> Option<tiny_skia::Path> {
+    match shape {
+        HoldMarkerShape::Circle => PathBuilder::from_circle(cx, cy, r),
+        HoldMarkerShape::TriangleUp => {
+            let mut builder = PathBuilder::new();
+            builder.move_to(cx, cy - r);
+            builder.line_to(cx + r * 0.866, cy + r * 0.5);
+            builder.line_to(cx - r * 0.866, cy + r * 0.5);
+            builder.close();
+            builder.finish()
+        }
+        HoldMarkerShape::TriangleDown => {
+            let mut builder = PathBuilder::new();
+            builder.move_to(cx - r * 0.866, cy - r * 0.5);
+            builder.line_to(cx + r * 0.866, cy - r * 0.5);
+            builder.line_to(cx, cy + r);
+            builder.close();
+            builder.finish()
+        }
+        HoldMarkerShape::Square => {
+            let half_side = r * 0.82;
+            let mut builder = PathBuilder::new();
+            builder.move_to(cx - half_side, cy - half_side);
+            builder.line_to(cx + half_side, cy - half_side);
+            builder.line_to(cx + half_side, cy + half_side);
+            builder.line_to(cx - half_side, cy + half_side);
+            builder.close();
+            builder.finish()
+        }
+        HoldMarkerShape::Diamond => {
+            let mut builder = PathBuilder::new();
+            builder.move_to(cx, cy - r);
+            builder.line_to(cx + r, cy);
+            builder.line_to(cx, cy + r);
+            builder.line_to(cx - r, cy);
+            builder.close();
+            builder.finish()
+        }
+    }
+}
 
 /// Render a transparent overlay with hold circles drawn on it.
 /// Returns RGBA pixel data and dimensions (width, height).
@@ -17,8 +56,7 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
         return Err("Output dimensions must be non-zero".into());
     }
 
-    let mut pixmap = Pixmap::new(output_width, output_height)
-        .ok_or("Failed to create pixmap")?;
+    let mut pixmap = Pixmap::new(output_width, output_height).ok_or("Failed to create pixmap")?;
 
     // Scale factors from SVG viewBox coords to pixel coords
     let scale_x = output_width as f32 / config.board_width;
@@ -35,7 +73,18 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
 
     // Lift constant state out of the per-hold loop
     let transform = Transform::identity();
-    let stroke_width = if config.thumbnail { 8.0 } else { 6.0 } * scale_x;
+    let stroke_width_multiplier = if config.stroke_width_multiplier.is_finite() {
+        config.stroke_width_multiplier.clamp(0.5, 2.0)
+    } else {
+        1.0
+    };
+    let stroke_width =
+        (if config.thumbnail { 8.0 } else { 6.0 }) * scale_x * stroke_width_multiplier;
+    let shape_size_multiplier = if config.shape_size_multiplier.is_finite() {
+        config.shape_size_multiplier.clamp(0.5, 2.0)
+    } else {
+        1.0
+    };
 
     let mut paint = Paint::default();
     paint.anti_alias = true;
@@ -67,12 +116,13 @@ pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), Stri
         let cx = render_hold.cx * scale_x;
         let cy = render_hold.cy * scale_y;
         let r = render_hold.r * scale_x;
+        let marker_r = r * shape_size_multiplier;
 
         let color = parsed.color;
 
         match parsed.render_style {
             HoldRenderStyle::Circle => {
-                let path = match PathBuilder::from_circle(cx, cy, r) {
+                let path = match marker_shape_path(parsed.shape, cx, cy, marker_r) {
                     Some(p) => p,
                     None => continue,
                 };
@@ -116,9 +166,30 @@ mod tests {
 
     fn test_config() -> RenderConfig {
         let mut hold_state_map = HashMap::new();
-        hold_state_map.insert(42, HoldStateInfo { color: "#00FF00".into(), render_style: Default::default() });
-        hold_state_map.insert(43, HoldStateInfo { color: "#00FFFF".into(), render_style: Default::default() });
-        hold_state_map.insert(44, HoldStateInfo { color: "#FF00FF".into(), render_style: Default::default() });
+        hold_state_map.insert(
+            42,
+            HoldStateInfo {
+                color: "#00FF00".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
+        hold_state_map.insert(
+            43,
+            HoldStateInfo {
+                color: "#00FFFF".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
+        hold_state_map.insert(
+            44,
+            HoldStateInfo {
+                color: "#FF00FF".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
 
         RenderConfig {
             board_width: 1080.0,
@@ -127,10 +198,30 @@ mod tests {
             frames: "p1r42p2r43p3r44".into(),
             mirrored: false,
             thumbnail: false,
+            stroke_width_multiplier: 1.0,
+            shape_size_multiplier: 1.0,
             holds: vec![
-                HoldData { id: 1, mirrored_hold_id: None, cx: 200.0, cy: 300.0, r: 20.0 },
-                HoldData { id: 2, mirrored_hold_id: None, cx: 500.0, cy: 600.0, r: 20.0 },
-                HoldData { id: 3, mirrored_hold_id: None, cx: 800.0, cy: 900.0, r: 20.0 },
+                HoldData {
+                    id: 1,
+                    mirrored_hold_id: None,
+                    cx: 200.0,
+                    cy: 300.0,
+                    r: 20.0,
+                },
+                HoldData {
+                    id: 2,
+                    mirrored_hold_id: None,
+                    cx: 500.0,
+                    cy: 600.0,
+                    r: 20.0,
+                },
+                HoldData {
+                    id: 3,
+                    mirrored_hold_id: None,
+                    cx: 800.0,
+                    cy: 900.0,
+                    r: 20.0,
+                },
             ],
             hold_state_map,
         }
@@ -150,7 +241,10 @@ mod tests {
         let (data, _, _) = render_overlay(&config).unwrap();
         // Check that at least some pixels have non-zero alpha
         let has_colored_pixels = data.chunks(4).any(|pixel| pixel[3] > 0);
-        assert!(has_colored_pixels, "Overlay should have non-transparent pixels");
+        assert!(
+            has_colored_pixels,
+            "Overlay should have non-transparent pixels"
+        );
     }
 
     #[test]
@@ -160,7 +254,10 @@ mod tests {
         let (data, _, _) = render_overlay(&config).unwrap();
         // All pixels should be fully transparent
         let all_transparent = data.chunks(4).all(|pixel| pixel[3] == 0);
-        assert!(all_transparent, "Empty frames should produce fully transparent image");
+        assert!(
+            all_transparent,
+            "Empty frames should produce fully transparent image"
+        );
     }
 
     #[test]
@@ -174,21 +271,98 @@ mod tests {
     fn test_render_above_marker_differs_from_circle_render() {
         let mut aux_config = test_config();
         aux_config.frames = "p1r46".into();
-        aux_config.hold_state_map.insert(46, HoldStateInfo {
-            color: "#FFE066".into(),
-            render_style: HoldRenderStyle::AboveMarker,
-        });
+        aux_config.hold_state_map.insert(
+            46,
+            HoldStateInfo {
+                color: "#FFE066".into(),
+                render_style: HoldRenderStyle::AboveMarker,
+                shape: Default::default(),
+            },
+        );
 
         let mut circle_config = test_config();
         circle_config.frames = "p1r46".into();
-        circle_config.hold_state_map.insert(46, HoldStateInfo {
-            color: "#FFE066".into(),
-            render_style: HoldRenderStyle::Circle,
-        });
+        circle_config.hold_state_map.insert(
+            46,
+            HoldStateInfo {
+                color: "#FFE066".into(),
+                render_style: HoldRenderStyle::Circle,
+                shape: Default::default(),
+            },
+        );
 
         let (aux_data, _, _) = render_overlay(&aux_config).unwrap();
         let (circle_data, _, _) = render_overlay(&circle_config).unwrap();
 
         assert_ne!(aux_data, circle_data);
+    }
+
+    #[test]
+    fn test_render_marker_shapes_produce_distinct_output() {
+        let circle_data = render_single_shape(HoldMarkerShape::Circle);
+
+        for shape in [
+            HoldMarkerShape::TriangleUp,
+            HoldMarkerShape::TriangleDown,
+            HoldMarkerShape::Square,
+            HoldMarkerShape::Diamond,
+        ] {
+            let data = render_single_shape(shape);
+            assert!(
+                data.chunks(4).any(|pixel| pixel[3] > 0),
+                "shape {shape:?} should draw non-transparent pixels"
+            );
+            assert_ne!(
+                data, circle_data,
+                "shape {shape:?} should differ from circle"
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_brush_thickness_changes_output() {
+        let mut thin_config = test_config();
+        thin_config.frames = "p1r42".into();
+        thin_config.stroke_width_multiplier = 0.5;
+
+        let mut thick_config = test_config();
+        thick_config.frames = "p1r42".into();
+        thick_config.stroke_width_multiplier = 2.0;
+
+        let (thin_data, _, _) = render_overlay(&thin_config).unwrap();
+        let (thick_data, _, _) = render_overlay(&thick_config).unwrap();
+
+        assert_ne!(thin_data, thick_data);
+    }
+
+    #[test]
+    fn test_render_shape_size_changes_output() {
+        let mut small_config = test_config();
+        small_config.frames = "p1r42".into();
+        small_config.shape_size_multiplier = 0.5;
+
+        let mut large_config = test_config();
+        large_config.frames = "p1r42".into();
+        large_config.shape_size_multiplier = 2.0;
+
+        let (small_data, _, _) = render_overlay(&small_config).unwrap();
+        let (large_data, _, _) = render_overlay(&large_config).unwrap();
+
+        assert_ne!(small_data, large_data);
+    }
+
+    fn render_single_shape(shape: HoldMarkerShape) -> Vec<u8> {
+        let mut config = test_config();
+        config.frames = "p1r42".into();
+        config.hold_state_map.insert(
+            42,
+            HoldStateInfo {
+                color: "#00FF00".into(),
+                render_style: HoldRenderStyle::Circle,
+                shape,
+            },
+        );
+        let (data, _, _) = render_overlay(&config).unwrap();
+        data
     }
 }

@@ -1,0 +1,44 @@
+name: Refresh Recommendations
+
+# Nightly: recompute setter popularity, mine PostHog "Climb Sent to Board
+# Success" into per-climb send stats, and regenerate the public per-board cohort
+# playlists. Idempotent — safe to re-run.
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC daily (off-peak)
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-recommendations
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Secrets (DATABASE_URL must be a WRITABLE connection; POSTHOG_PERSONAL_API_KEY
+    # optional — without it the send-stats step is skipped and sendBoost stays neutral).
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Refresh recommendations
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          # POSTHOG_PROJECT_ID defaults to the (non-secret) project id in the
+          # script; override here only if it ever changes. The send-stats step
+          # runs whenever POSTHOG_PERSONAL_API_KEY is present.
+        run: node --import tsx scripts/refresh-recommendations.ts

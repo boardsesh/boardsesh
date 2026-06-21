@@ -171,6 +171,32 @@ describe('useSaveTick', () => {
     });
   });
 
+  it('passes boardId through when a wall tick provides one', async () => {
+    mockRequest.mockResolvedValue({
+      saveTick: createSavedTick(),
+    });
+
+    const { wrapper } = createTestWrapper();
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(createTickOptions({ boardId: 77 }));
+    });
+
+    await waitFor(() => {
+      expect(mockRequest).toHaveBeenCalled();
+    });
+
+    expect(mockRequest.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          boardId: 77,
+        }),
+      }),
+    );
+  });
+
   it('creates optimistic entry on mutate', async () => {
     let resolveRequest: (value: unknown) => void;
     mockRequest.mockReturnValue(

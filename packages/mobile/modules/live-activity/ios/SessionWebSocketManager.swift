@@ -341,6 +341,11 @@ final class SessionWebSocketManager {
 
         let task = self.urlSession.webSocketTask(with: url, protocols: ["graphql-transport-ws"])
         self.webSocketTask = task
+        // Measure ping freshness from connect time. Without this, the first
+        // ping-timeout window after a reconnect compares against the stale
+        // pre-disconnect timestamp and can immediately tear the new socket
+        // down if the server is quiet, churning through reconnect attempts.
+        self.lastMessageReceived = Date()
         task.resume()
         self.sendConnectionInit()
         self.listenForMessages(for: task)
@@ -552,8 +557,7 @@ final class SessionWebSocketManager {
                 self.listenForMessages(for: task)
 
             case .failure(let error):
-                print("[SessionWS] Receive failed: \(error.localizedDescription)")
-                self.handleDisconnect(for: task)
+                self.handleReceiveFailure(error, for: task)
             }
         }
     }
@@ -734,40 +738,56 @@ final class SessionWebSocketManager {
     private func handleDisconnect(for task: URLSessionWebSocketTask) {
         stateQueue.async { [weak self] in
             guard let self = self else { return }
-
-            // Only process disconnect if this is still the current task.
-            // A stale task from a previous connection must not tear down the
-            // active connection.
-            guard self.webSocketTask === task else {
-                print("[SessionWS] Ignoring stale disconnect for superseded task")
-                return
-            }
-
-            self.isConnected = false
-            self.webSocketTask = nil
-            self.pingTimeoutTimer?.cancel()
-            self.pingTimeoutTimer = nil
-
-            guard !self.intentionalDisconnect else { return }
-
-            guard self.reconnectAttempt < self.maxReconnectAttempts else {
-                print("[SessionWS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached, giving up")
-                return
-            }
-
-            let delay = self.reconnectDelay()
-            self.reconnectAttempt += 1
-
-            // Cancel any previously scheduled reconnect to prevent duplicate
-            // connections piling up (e.g. rapid disconnect/reconnect during background).
-            self.reconnectWorkItem?.cancel()
-
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.openConnection()
-            }
-            self.reconnectWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            self.handleDisconnectOnQueue(for: task)
         }
+    }
+
+    private func handleReceiveFailure(_ error: Error, for task: URLSessionWebSocketTask) {
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            if self.webSocketTask === task && !self.intentionalDisconnect {
+                print("[SessionWS] Receive failed: \(error.localizedDescription)")
+            }
+            self.handleDisconnectOnQueue(for: task)
+        }
+    }
+
+    /// Must be called on `stateQueue`.
+    private func handleDisconnectOnQueue(for task: URLSessionWebSocketTask) {
+        // Only process disconnect if this is still the current task.
+        // A stale task from a previous connection must not tear down the
+        // active connection.
+        guard self.webSocketTask === task else {
+            if !self.intentionalDisconnect {
+                print("[SessionWS] Ignoring stale disconnect for superseded task")
+            }
+            return
+        }
+
+        self.isConnected = false
+        self.webSocketTask = nil
+        self.pingTimeoutTimer?.cancel()
+        self.pingTimeoutTimer = nil
+
+        guard !self.intentionalDisconnect else { return }
+
+        guard self.reconnectAttempt < self.maxReconnectAttempts else {
+            print("[SessionWS] Max reconnect attempts (\(self.maxReconnectAttempts)) reached, giving up")
+            return
+        }
+
+        let delay = self.reconnectDelay()
+        self.reconnectAttempt += 1
+
+        // Cancel any previously scheduled reconnect to prevent duplicate
+        // connections piling up (e.g. rapid disconnect/reconnect during background).
+        self.reconnectWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.openConnection()
+        }
+        self.reconnectWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     func reconnectDelay(attempt: Int? = nil) -> TimeInterval {

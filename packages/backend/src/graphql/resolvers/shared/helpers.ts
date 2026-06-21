@@ -1,5 +1,6 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { checkRateLimit } from '../../../utils/rate-limiter';
+import { GraphQLError } from 'graphql';
+import { checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
 import { getContext } from '../../context';
 import { getDistributedState } from '../../../services/distributed-state';
@@ -30,12 +31,46 @@ export const SESSION_MEMBER_RETRY_CONFIG = {
 } as const;
 
 /**
+ * Per-user rate-limit ceilings (requests/minute) for interactive party-session
+ * traffic, on dedicated buckets separate from the shared `default` (60/min).
+ *
+ * Before #2763 every queue + wall-control mutation shared `default`, so a
+ * two-person session exhausted it just by switching boulders (each swipe fans
+ * out to ~2 mutations; the setCurrentClimb coalescer also fires addQueueItem
+ * for superseded swipes) — every subsequent action then failed for up to 60s,
+ * surfacing as "the connection fails every time we switch boulders".
+ *
+ * `RATE_LIMIT_SESSION` covers user-gesture-driven queue + wall-control
+ * mutations; `RATE_LIMIT_PLAYBACK` isolates the per-frame publishPlaybackState
+ * broadcast so a playing variable-speed climb can't starve climb switching.
+ * Both are well above any human gesture rate (with fan-out) yet still cap a
+ * runaway client. Playback allows up to 60 publishes/sec so route playback
+ * sync can follow fast frame cadences without tripping the limiter. Mirrors
+ * the existing per-operation buckets for
+ * `confirmClimbOnWall` and `search-climbs`.
+ */
+export const RATE_LIMIT_SESSION_OP = 'session';
+export const RATE_LIMIT_SESSION = 1200;
+export const RATE_LIMIT_PLAYBACK_OP = 'playback';
+export const RATE_LIMIT_PLAYBACK = 3600;
+export const RATE_LIMIT_JOIN_SESSION_OP = 'joinSession';
+export const RATE_LIMIT_JOIN_SESSION = 600;
+export const RATE_LIMIT_CREATE_SESSION_OP = 'createSession';
+export const RATE_LIMIT_CREATE_SESSION = 180;
+export const RATE_LIMIT_END_SESSION_OP = 'endSession';
+export const RATE_LIMIT_END_SESSION = 180;
+export const RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP = 'confirmClimbOnWall';
+export const RATE_LIMIT_CONFIRM_CLIMB_ON_WALL = 600;
+export const RATE_LIMIT_SET_QUEUE_OP = 'setQueue';
+export const RATE_LIMIT_SET_QUEUE = 300;
+
+/**
  * Helper to require a session context.
  * Throws if the user is not in a session.
  */
 export function requireSession(ctx: ConnectionContext): string {
   if (!ctx.sessionId) {
-    logger.error(`[Auth] requireSession failed: connectionId=${ctx.connectionId}, sessionId=${ctx.sessionId}`);
+    logger.warn('[Auth] requireSession failed', { connectionId: ctx.connectionId, sessionId: ctx.sessionId });
     throw new Error(`Must be in a session to perform this operation (connectionId: ${ctx.connectionId})`);
   }
   return ctx.sessionId;
@@ -109,15 +144,19 @@ export async function requireSessionMember(
   }
 
   if (!finalCtx?.sessionId) {
-    logger.error(
-      `[Auth] requireSessionMember failed after ${maxRetries} retries: not in any session. connectionId=${ctx.connectionId}, requested=${sessionId}`,
-    );
+    logger.warn('[Auth] requireSessionMember failed after retries: not in any session', {
+      connectionId: ctx.connectionId,
+      requestedSessionId: sessionId,
+      maxRetries,
+    });
     throw new Error(`Unauthorized: not in any session (connectionId: ${ctx.connectionId}, requested: ${sessionId})`);
   }
   if (finalCtx.sessionId !== sessionId) {
-    logger.error(
-      `[Auth] requireSessionMember failed: session mismatch. connectionId=${ctx.connectionId}, have=${finalCtx.sessionId}, requested=${sessionId}`,
-    );
+    logger.warn('[Auth] requireSessionMember failed: session mismatch', {
+      connectionId: ctx.connectionId,
+      currentSessionId: finalCtx.sessionId,
+      requestedSessionId: sessionId,
+    });
     throw new Error(`Unauthorized: session mismatch (have: ${finalCtx.sessionId}, requested: ${sessionId})`);
   }
 }
@@ -164,11 +203,27 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   } else {
     key = ctx.connectionId;
   }
-  checkRateLimit(key, maxRequests);
 
-  // Tier 2: Distributed Redis rate limiting (authenticated users only)
-  if (ctx.isAuthenticated && ctx.userId) {
-    await checkRateLimitRedis(ctx.userId, operation, maxRequests, 60_000);
+  // Surface a structured RATE_LIMITED error (with retryAfterSeconds) so clients
+  // can branch on `extensions.code` instead of message-string matching, and the
+  // generic "Action failed" toast can be replaced with a specific, gentle
+  // message. Mirrors the CLIMB_IS_DUPLICATE extension pattern. The message text
+  // is preserved for older clients. See #2763.
+  try {
+    // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
+    checkRateLimit(key, maxRequests);
+
+    // Tier 2: Distributed Redis rate limiting (authenticated users only)
+    if (ctx.isAuthenticated && ctx.userId) {
+      await checkRateLimitRedis(ctx.userId, operation, maxRequests, 60_000);
+    }
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new GraphQLError(error.message, {
+        extensions: { code: 'RATE_LIMITED', operation, retryAfterSeconds: error.retryAfterSeconds },
+      });
+    }
+    throw error;
   }
 }
 

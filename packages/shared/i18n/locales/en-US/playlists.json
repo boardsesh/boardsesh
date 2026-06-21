@@ -19,10 +19,24 @@
     },
     "sections": {
       "jumpBackIn": "Jump Back In",
+      "pinned": "Pinned",
       "smart": "Your Picks",
-      "discover": "Discover"
+      "discover": "Discover",
+      "forYou": "For You",
+      "community": "Community Playlists"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "allPlaylists": {
+      "title": "My Playlists",
+      "seeAll": "See all",
+      "searchPlaceholder": "Filter by title",
+      "clearSearch": "Clear search",
+      "loadMoreError": "Couldn't load all your playlists.",
+      "noResults": "No playlists match \"{{query}}\""
     },
     "pin": {
+      "pin": "Pin",
+      "unpin": "Unpin",
       "pinAriaLabel": "Pin playlist",
       "unpinAriaLabel": "Unpin playlist",
       "pinFailed": "Failed to pin playlist",
@@ -43,7 +57,27 @@
       },
       "likedClimbs": {
         "title": "Liked Climbs",
-        "description": "All climbs you've hearted."
+        "description": "All climbs you've hearted.",
+        "empty": {
+          "title": "No likes yet",
+          "supporting": "Tap the heart on a climb to stash it here."
+        }
+      },
+      "crowdFavorites": {
+        "title": "Crowd Favorites",
+        "description": "The most-sent classics for your board you haven't done yet."
+      },
+      "hiddenGems": {
+        "title": "Hidden Gems",
+        "description": "Highly rated climbs for your board that haven't blown up yet."
+      },
+      "atYourLevel": {
+        "title": "At Your Level",
+        "description": "Climbs around your grade, dialed in to your board."
+      },
+      "fresh": {
+        "title": "Fresh",
+        "description": "New climbs for your board from setters worth following."
       },
       "notFound": {
         "title": "Smart playlist not found",
@@ -69,8 +103,18 @@
   "detail": {
     "share": "Share playlist",
     "actions": "Playlist actions",
+    "activateAll": "Queue every climb",
+    "boardMismatch": {
+      "title": "Switch to {{board}} to climb this playlist",
+      "subtitle": "These are {{board}} climbs. Switch boards to queue them.",
+      "cta": "Switch board"
+    },
+    "unrenderableClimb": {
+      "subtitle": "Board data is missing for this climb."
+    },
     "menu": {
       "generate": "Generate",
+      "editClimbs": "Edit climbs",
       "edit": "Edit",
       "delete": "Delete"
     },
@@ -105,6 +149,20 @@
       "tryAgain": "Try Again"
     }
   },
+  "editClimbs": {
+    "done": "Done",
+    "editDetailsAria": "Edit playlist details",
+    "removeAria": "Remove {{name}}",
+    "dragHandleAria": "Drag to reorder {{name}}",
+    "removeConfirm": {
+      "title": "Remove climb?",
+      "message": "Remove \"{{name}}\" from this playlist?",
+      "confirm": "Remove",
+      "cancel": "Cancel"
+    },
+    "removeFailed": "Couldn't remove the climb",
+    "reorderFailed": "Couldn't save the new order"
+  },
   "edit": {
     "title": "Edit Playlist",
     "fields": {
@@ -114,6 +172,7 @@
       "descriptionPlaceholder": "Optional description for your playlist...",
       "color": "Color",
       "icon": "Icon",
+      "iconHint": "Type any emoji, or pick one below",
       "removeIcon": "Remove",
       "visibility": "Visibility",
       "publicHint": "Public playlists can be viewed by anyone with the link",
@@ -173,6 +232,8 @@
       "climbBias": "Climb Bias",
       "tallClimbsLabel": "Tall Climbs Only",
       "tallClimbsTooltip": "Show only climbs that use holds in the bottom 8 rows (only available on 8x12 and 10x12 boards)",
+      "wideClimbsLabel": "Wide Climbs Only",
+      "wideClimbsTooltip": "Show only climbs that use the 10x10 side expansion holds",
       "mainSetClimbs": "Main Set Climbs",
       "mainSetVariability": "Main Set Variability",
       "numberOfSteps": "Number of Steps",

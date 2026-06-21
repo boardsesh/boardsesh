@@ -19,6 +19,33 @@
   "activityFeed": {
     "signInPrompt": "Connectez-vous pour suivre les grimpeurs de votre crew."
   },
+  "mobile": {
+    "home": {
+      "betaTitle": "Beta récente",
+      "betaEmpty": "Aucune vidéo beta pour le moment",
+      "betaError": "Impossible de charger les vidéos beta.",
+      "betaOpenError": "Impossible d'ouvrir cette vidéo beta.",
+      "betaCardLabel": "Ouvrir la vidéo beta",
+      "feedTitle": "De votre crew",
+      "signInTitle": "Connectez-vous pour voir votre fil",
+      "signInBody": "Suivez des grimpeurs et des ouvreurs pour voir leurs enchaînements et nouveaux blocs ici.",
+      "searchAction": "Chercher des grimpeurs",
+      "emptyTitle": "Aucune activité pour le moment",
+      "emptyBody": "Suivez des grimpeurs et des ouvreurs pour remplir ce fil.",
+      "unknownClimb": "Bloc inconnu",
+      "sessionsTitle": "Sessions récentes",
+      "betaTitleBoard": "Beta récente sur ce board",
+      "boardEmptyTitle": "Calme sur {{board}} en ce moment",
+      "boardEmptyBody": "Sois le premier à enregistrer une session, ou regarde ce que grimpent les autres.",
+      "boardEmptyCta": "Voir tout le monde",
+      "scope": {
+        "myCrew": "Mon crew",
+        "everyone": "Tout le monde",
+        "findGym": "Trouver une salle près de toi",
+        "hint": "Change les voies que vous voyez"
+      }
+    }
+  },
   "ascentsFeed": {
     "mirrored": "Miroir",
     "benchmark": "Référence",
@@ -191,10 +218,37 @@
   },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} bloc",
-    "climbCount_other": "{{count}} blocs"
+    "climbCount_other": "{{count}} blocs",
+    "sendsCount_one": "{{count}} réussite",
+    "sendsCount_other": "{{count}} réussites",
+    "flashesCount_one": "{{count}} flash",
+    "flashesCount_other": "{{count}} flashs",
+    "hardestGrade": "{{grade}} plus dur",
+    "status": {
+      "flash": "Flash",
+      "send": "Réussite",
+      "attempt": "Essai"
+    },
+    "hardest": "Plus dur",
+    "betaEyebrow": "Bêta",
+    "betaBy": "Bêta par {{name}}",
+    "gradeSpread": "Éventail de cotations de {{min}} à {{max}}, {{sends}} réussites",
+    "unknownClimb": "Bloc inconnu",
+    "attempts_one": "{{count}} essai",
+    "attempts_other": "{{count}} essais",
+    "openHint": "Ouvre la session",
+    "openHardestClimb": "Ouvrir {{climb}}"
   },
   "sessionSummary": {
     "completed": "Session terminée"
+  },
+  "socialActions": {
+    "upvoteWithCount_one": "Aimer, {{count}} j'aime",
+    "upvoteWithCount_other": "Aimer, {{count}} j'aime",
+    "removeUpvoteWithCount_one": "Retirer le j'aime, {{count}} j'aime",
+    "removeUpvoteWithCount_other": "Retirer le j'aime, {{count}} j'aime",
+    "openCommentsWithCount_one": "Ouvrir les commentaires, {{count}} commentaire",
+    "openCommentsWithCount_other": "Ouvrir les commentaires, {{count}} commentaires"
   },
   "socialFeedItem": {
     "climbed": "a enchaîné"

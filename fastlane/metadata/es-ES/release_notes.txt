@@ -1,0 +1,12 @@
+Boardsesh 2.0 es una reconstrucción nativa completa. Toda la app está reescrita, así que va rápida donde antes se atascaba. Las listas ruedan suaves y la búsqueda es instantánea.
+
+La misma app, solo que más rápida:
+- Busca una vía y enciende las presas por Bluetooth en Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper y So iLL.
+- Llégate a cualquier pared y mira lo que hay puesto ahora mismo: la vía encendida, quién la encendió, el grado, el ángulo y el aperturista, en vivo según la gente escala.
+- Escala con tu equipo en una sesión en vivo: una cola compartida a la que cualquiera añade, reordena y lleva.
+- Lleva la sesión desde la pantalla de bloqueo y el Dynamic Island en iOS 17+ con Live Activities.
+- Monta un entrenamiento de Volumen, Pirámide, Escalera o Foco en grado y envía las vías al muro de una en una.
+- Apunta encadenes, flashes e intentos y mira cómo tus grados se dibujan en la pestaña Progreso.
+- Guarda tus sesiones en Apple Health e importa tu logbook antiguo de Kilter y Tension desde Aurora Climbing.
+
+Gratis, sin anuncios, código abierto.

@@ -70,6 +70,26 @@ export const userBoards = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     // UUID lookup
     uuidIdx: index('user_boards_uuid_idx').on(table.uuid),
+    // Board presence: the LED supplier can't be trusted to keep serials
+    // unique, so a serial may map to MANY active boards (e.g. the same serial
+    // shipped to two gyms). We only forbid a single owner from binding the
+    // same serial to two of their own boards. `resolveBoardForSerial` returns
+    // the candidates and the user picks; the per-owner unique partial index
+    // still makes a same-owner bind race fail-safe (the loser re-reads).
+    // Excludes the system user (seeded public catalog boards): the location
+    // sync mirrors the upstream catalog verbatim, so the system owner can
+    // legitimately hold the "same serial shipped to two gyms" rows described
+    // above. Mirrors the uniqueOwnerConfigIdx exclusion.
+    // Partial so serial-less/blank and soft-deleted rows don't collide.
+    uniqueOwnerSerialIdx: uniqueIndex('user_boards_unique_owner_serial')
+      .on(table.ownerId, table.serialNumber)
+      .where(
+        sql`${table.serialNumber} IS NOT NULL AND ${table.serialNumber} <> '' AND ${table.deletedAt} IS NULL AND ${table.ownerId} != '00000000-0000-0000-0000-000000000000'`,
+      ),
+    // Serial lookups now return many rows; keep them indexed.
+    serialLookupIdx: index('user_boards_serial_idx')
+      .on(table.serialNumber)
+      .where(sql`${table.serialNumber} IS NOT NULL AND ${table.serialNumber} <> '' AND ${table.deletedAt} IS NULL`),
   }),
 );
 

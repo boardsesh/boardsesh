@@ -2,6 +2,30 @@ export function isNoMatchClimb(description: string | null | undefined): boolean 
   return /^no match/i.test(description || '');
 }
 
+/** Canonical marker prepended to a description to flag a "no match" climb. */
+const NO_MATCH_PREFIX = 'No match\n';
+
+/**
+ * Toggle the "no match" marker on a climb description. Aurora encodes the
+ * no-match rule as a description that starts with "no match" (see
+ * {@link isNoMatchClimb}). Enabling prepends a canonical marker when one isn't
+ * already present; disabling strips a leading no-match line. A real
+ * `is_no_match` column is the proper long-term home — this keeps the convention
+ * in one place until that lands.
+ */
+export function withNoMatch(description: string | null | undefined, enabled: boolean): string {
+  const current = description ?? '';
+  if (enabled) {
+    return isNoMatchClimb(current) ? current : `${NO_MATCH_PREFIX}${current}`;
+  }
+  // Only strip our own canonical marker — "no match" as the entire first line
+  // (optionally followed by a newline). Arbitrary user prose that merely starts
+  // with "no match…" (e.g. "No matching feet allowed") is left intact so
+  // toggling off can never delete a real description. A real is_no_match column
+  // is the proper fix.
+  return current.replace(/^no match(?:\r?\n|$)/i, '');
+}
+
 /**
  * Convert an Aurora quality rating (1-3) to a Boardsesh quality rating (1-5).
  *

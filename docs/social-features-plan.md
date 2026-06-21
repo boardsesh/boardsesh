@@ -55,7 +55,7 @@ The polymorphic system uses a string enum `entity_type` to identify what's being
 | `proposal`       | A community proposal on a climb    | proposal `uuid`                | Discussion thread on the proposal   |
 | `board`          | A user-created board entity        | board `uuid`                   | Board discussion / community thread |
 
-The `session` entity type has been implemented — see [`docs/inferred-sessions.md`](./inferred-sessions.md) for the inferred session system, session-grouped activity feed, and session editing mutations (rename, add/remove users).
+The `session` entity type is backed by explicitly-created `board_sessions` rows. Solo ticks are not auto-grouped into sessions.
 
 **Key distinction**: A climb can have comments in two independent scopes:
 
@@ -3162,7 +3162,7 @@ Add `gym` to `social_entity_type` enum: `ALTER TYPE social_entity_type ADD VALUE
 
 ### Milestone 11: Enhanced Sessions
 
-> **Note**: Inferred sessions and session editing have been implemented. See [`docs/inferred-sessions.md`](./inferred-sessions.md) for the current system: automatic session grouping via 4-hour gap heuristic, session-grouped activity feed, and mutations for renaming sessions and adding/removing users. The plan below covers additional party mode enhancements not yet built.
+> **Note**: Sessions are explicit `board_sessions` rows. The old inferred-session system and edit mutations were removed; the plan below covers additional party mode enhancements not yet built.
 
 **User value**: "I can set goals for my session, see a summary when I'm done, and sessions automatically end when everyone leaves."
 
@@ -3254,7 +3254,7 @@ Constraints: Unique `(session_id, board_id)`. All boards must belong to the same
 
 **Backend:**
 
-1. Session summary aggregation: when generating feed items for ascents, group by `session_id` (or by timestamp proximity if no explicit session -- 2hr window)
+1. Session summary aggregation: when generating feed items for ascents, group by explicit `session_id` only. Solo ticks without a session stay out of session summaries.
 2. `sessionFeedSummary` query -- returns grouped ascent data for a session/time-window: grade distribution, participant list, hardest climbs
 3. @mention parsing: extract `@username` from comment body, resolve to `user_id`
 4. @mention notifications: new `mention` notification type, wire to notification pipeline

@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { type PartyProfile, getPartyProfile, clearPartyProfile, ensurePartyProfile } from '@/app/lib/party-profile-db';
+import { reconcileAnalyticsIdentity } from '@boardsesh/analytics';
 import { alias, identify, reset, setPersonProperties, track } from '@/app/lib/analytics';
 import { isAdminAnalyticsUrl } from '@/app/lib/analytics-paths';
 import { hasRecordedPosthogAlias, recordPosthogAlias } from '@/app/lib/posthog-alias-storage';
@@ -77,23 +78,26 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const profileId = profile?.id;
     if (!profileId) return;
 
-    if (sessionStatus === 'authenticated' && session?.user?.id) {
-      const userId = session.user.id;
-      if (lastAnalyticsDistinctId.current === userId) return;
+    const userId = session?.user?.id ?? null;
+    const previousDistinctId = lastAnalyticsDistinctId.current;
+    // True exactly on the run that transitions into an authenticated identity —
+    // used to fire the OAuth-pending drain once (mirrors the prior inline guard).
+    const justAuthenticated = sessionStatus === 'authenticated' && !!userId && previousDistinctId !== userId;
 
-      if (lastAnalyticsDistinctId.current && lastAnalyticsDistinctId.current !== profileId) {
-        reset();
-      }
-      if (lastAnalyticsDistinctId.current !== profileId) {
-        identify(profileId);
-        lastAnalyticsDistinctId.current = profileId;
-      }
-      if (profileId !== userId && !hasRecordedPosthogAlias(profileId, userId)) {
-        if (alias(userId)) {
-          recordPosthogAlias(profileId, userId);
-        }
-      }
-      identify(userId, session.user.email ? { email: session.user.email } : undefined);
+    // Pure anon → authed reconciliation shared with mobile. Drives reset /
+    // identify(anon) / alias(user) / identify(user, {email}) and dedupes the
+    // alias pair via posthog-alias-storage.
+    lastAnalyticsDistinctId.current = reconcileAnalyticsIdentity({
+      profileId,
+      authUserId: userId,
+      authEmail: session?.user?.email ?? null,
+      isAuthenticated: sessionStatus === 'authenticated',
+      lastDistinctId: previousDistinctId,
+      client: { identify, alias, reset },
+      aliasStore: { hasRecordedAlias: hasRecordedPosthogAlias, recordAlias: recordPosthogAlias },
+    });
+
+    if (justAuthenticated) {
       // Drain the OAuth-pending marker (if any) — this is the success signal
       // for OAuth flows where the actual sign-in happens via a server-side
       // redirect with no client callback to track from. Marker is set on
@@ -107,17 +111,6 @@ export const PartyProfileProvider: React.FC<{ children: React.ReactNode }> = ({ 
           });
         }
       });
-      lastAnalyticsDistinctId.current = userId;
-      return;
-    }
-
-    if (sessionStatus === 'unauthenticated') {
-      if (lastAnalyticsDistinctId.current === profileId) return;
-      if (lastAnalyticsDistinctId.current && lastAnalyticsDistinctId.current !== profileId) {
-        reset();
-      }
-      identify(profileId);
-      lastAnalyticsDistinctId.current = profileId;
     }
   }, [pathname, profile?.id, sessionStatus, session?.user?.id, session?.user?.email]);
 

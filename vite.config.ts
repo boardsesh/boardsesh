@@ -18,15 +18,58 @@ export default defineConfig({
     // formatting it produces noise diffs every time `vp check --fix`
     // runs without changing what ships, and the linter already ignores
     // the same path. Keep them in lock-step.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**'],
+    // CHANGELOG.md is generated (and owned/pushed) by the mobile OTA pipeline
+    // from PR Release Notes — never hand-format it, or the bot's output and a
+    // formatted copy would drift (and the push-to-main `vp check` would flag it).
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
   },
   lint: {
-    ignorePatterns: ['**/board-controller/**', 'mobile/**', 'packages/mobile/**'],
+    ignorePatterns: ['**/board-controller/**'],
     options: {
       typeAware: true,
       typeCheck: true,
     },
+    rules: {
+      // Catch unmemoized React context values (the inline `value={{ ... }}`
+      // anti-pattern that re-renders every consumer). Warn repo-wide so the
+      // pre-existing web/test violations don't fail CI; promoted to `error` for
+      // the mobile + shared-react surfaces below. See docs/react-native-performance.md.
+      //
+      // NOTE: vite-plus's bundled linter (@oxlint/plugins) does not currently
+      // *execute* these two off-by-default `react/*` rules — they show in
+      // `vp lint --rules` but never fire — so this is editor/raw-oxlint
+      // enforcement + a forward-looking guard, not CI enforcement today. The
+      // two mobile providers were fixed by hand to satisfy it.
+      'react/jsx-no-constructed-context-values': 'warn',
+      // Index keys defeat list reconciliation when rows reorder. Low-noise warn.
+      'react/no-array-index-key': 'warn',
+    },
     overrides: [
+      {
+        files: ['packages/mobile/**/*.{ts,tsx}', 'packages/shared/**/*.{ts,tsx}'],
+        rules: {
+          'react/jsx-no-constructed-context-values': 'error',
+          // Hermes ships an incomplete Intl: RelativeTimeFormat and ListFormat
+          // are missing on device, so any use crashes mobile release builds
+          // while tests pass on Node's full Intl (see the drafts-list crash).
+          // Use dayjs relativeTime via @boardsesh/profile-stats instead.
+          'no-restricted-properties': [
+            'error',
+            {
+              object: 'Intl',
+              property: 'RelativeTimeFormat',
+              message:
+                'Hermes does not implement Intl.RelativeTimeFormat — crashes mobile release builds. Use dayjs relativeTime via @boardsesh/profile-stats.',
+            },
+            {
+              object: 'Intl',
+              property: 'ListFormat',
+              message:
+                'Hermes does not implement Intl.ListFormat — crashes mobile release builds. Join the parts manually or via i18n.',
+            },
+          ],
+        },
+      },
       {
         files: ['packages/backend/src/**/*.ts'],
         rules: {
@@ -49,16 +92,22 @@ export default defineConfig({
       './packages/board-constants/vite.config.ts',
       './packages/aurora-sync/vite.config.ts',
       './packages/kilter-sync/vite.config.ts',
+      './packages/location-sync/vite.config.ts',
+      './packages/moonboard-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
+      './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
       './packages/shared/queue-runtime/vite.config.ts',
+      './packages/shared/board-presence/vite.config.ts',
+      './packages/shared/board-presence-react/vite.config.ts',
       './packages/shared/queue-react/vite.config.ts',
       './packages/shared/playlists-react/vite.config.ts',
       './packages/shared/party-profile/vite.config.ts',
+      './packages/shared/analytics/vite.config.ts',
       './packages/shared/climb-actions/vite.config.ts',
       './packages/shared/key-value-storage/vite.config.ts',
       './packages/shared/play-view/vite.config.ts',
@@ -83,6 +132,7 @@ export default defineConfig({
     },
     'packages/web/app/**/*.{ts,tsx}': () => ['vp run check:i18n', 'vp run check:i18n:orphans'],
     'packages/mobile/{src,app}/**/*.{ts,tsx}': () => 'vp run check:i18n:orphans',
+    'packages/mobile/**/*.{ts,tsx,swift}': () => 'vp run check:mobile-board-art-network',
     'packages/shared/i18n/locales/**/*.json': () => 'vp run check:i18n:orphans',
   },
   run: {
@@ -113,7 +163,31 @@ export default defineConfig({
         cache: false,
       },
       'db:seed-locations': {
-        command: 'bun run --filter=@boardsesh/db db:seed-locations',
+        command: 'true',
+        dependsOn: ['locations:aurora', 'locations:kilter', 'locations:moonboard'],
+        cache: false,
+      },
+      'db:dedupe-gyms': {
+        command: 'bun run --filter=@boardsesh/db db:dedupe-gyms',
+        // Intentionally no db:up dependency: this maintenance/reporting command
+        // often targets DB_URL against a remote database instead of local Docker.
+        cache: false,
+      },
+      'test:db': {
+        command: 'bun run --filter=@boardsesh/db test',
+      },
+      'locations:aurora': {
+        command: 'bun run --filter=@boardsesh/aurora-sync sync:locations',
+        dependsOn: ['db:up'],
+        cache: false,
+      },
+      'locations:kilter': {
+        command: 'bun run --filter=@boardsesh/kilter-sync sync:locations',
+        dependsOn: ['db:up'],
+        cache: false,
+      },
+      'locations:moonboard': {
+        command: 'bun run --filter=@boardsesh/moonboard-sync sync:locations',
         dependsOn: ['db:up'],
         cache: false,
       },
@@ -135,6 +209,17 @@ export default defineConfig({
       codegen: {
         command:
           'bun packages/shared-schema/scripts/print-schema.ts && graphql-codegen && vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/',
+        input: [
+          'codegen.ts',
+          'packages/shared-schema/scripts/print-schema.ts',
+          'packages/shared-schema/src/schema/**/*.ts',
+          'packages/shared-schema/src/types/**/*.ts',
+          'packages/shared/graphql/src/**/*.ts',
+          '!packages/shared/graphql/src/generated/**',
+          'packages/web/app/**/*.{ts,tsx}',
+          '!packages/web/app/lib/graphql/**',
+          '!packages/web/**/*.test.{ts,tsx}',
+        ],
       },
 
       // --- Build (topological order via dependsOn) ---
@@ -156,13 +241,21 @@ export default defineConfig({
       'build:sync-runtime': {
         command: 'bun run --filter=@boardsesh/sync-runtime build',
       },
+      'build:location-sync': {
+        command: 'bun run --filter=@boardsesh/location-sync build',
+        dependsOn: ['build:shared', 'build:constants', 'build:db'],
+      },
+      'build:moonboard-sync': {
+        command: 'bun run --filter=@boardsesh/moonboard-sync build',
+        dependsOn: ['build:db', 'build:location-sync'],
+      },
       'build:aurora': {
         command: 'bun run --filter=@boardsesh/aurora-sync build',
-        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:sync-runtime'],
+        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:location-sync', 'build:sync-runtime'],
       },
       'build:kilter': {
         command: 'bun run --filter=@boardsesh/kilter-sync build',
-        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:sync-runtime'],
+        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:location-sync', 'build:sync-runtime'],
       },
       'build:backend': {
         command: 'bun run --filter=boardsesh-backend build',
@@ -185,6 +278,34 @@ export default defineConfig({
         command: 'bun packages/web/scripts/check-orphaned-i18n-keys.ts',
         cache: false,
       },
+      'check:mobile-board-art-network': {
+        command: 'bun scripts/mobile-board-art-network-check.ts',
+        cache: false,
+      },
+      'generate:acknowledgements': {
+        command: 'node --import tsx scripts/fetch-acknowledgements.ts',
+        cache: false,
+      },
+      'generate:oss-licenses': {
+        command: 'node --import tsx scripts/generate-oss-licenses.ts',
+        cache: false,
+      },
+      'generate:changelog': {
+        command: 'node --import tsx scripts/generate-changelog.ts',
+        cache: false,
+      },
+      'check:changelog': {
+        command: 'node --import tsx scripts/generate-changelog.ts --check',
+        cache: false,
+      },
+      'check:commit-message': {
+        command: 'tsx scripts/check-commit-message.ts',
+        cache: false,
+      },
+      'check:release-notes': {
+        command: 'tsx scripts/check-release-notes.ts',
+        cache: false,
+      },
       'generate:ios-board-placement-data': {
         command: 'node --import tsx packages/board-constants/scripts/generate-ios-board-placement-data.ts',
         dependsOn: ['build:constants'],
@@ -203,6 +324,10 @@ export default defineConfig({
         command: 'node scripts/create-service-docker-context.mjs web',
         cache: false,
       },
+      'docker-context:sync': {
+        command: 'node scripts/create-service-docker-context.mjs sync',
+        cache: false,
+      },
       'test:service-deploy-inputs': {
         command: 'node --test scripts/check-service-deploy-inputs.test.mjs scripts/railway-deployment-status.test.mjs',
         cache: false,
@@ -214,7 +339,7 @@ export default defineConfig({
       },
       build: {
         command: 'true',
-        dependsOn: ['build:backend', 'build:web'],
+        dependsOn: ['build:backend', 'build:web', 'build:moonboard-sync'],
       },
 
       // --- Typecheck (depends on build for type declarations) ---
@@ -246,14 +371,28 @@ export default defineConfig({
       'typecheck:queue-react': {
         command: 'bun run --filter=@boardsesh/queue-react typecheck',
       },
+      'typecheck:board-presence': {
+        command: 'bun run --filter=@boardsesh/board-presence typecheck',
+        dependsOn: ['build:shared'],
+      },
+      'typecheck:board-presence-react': {
+        command: 'bun run --filter=@boardsesh/board-presence-react typecheck',
+        dependsOn: ['build:shared'],
+      },
       'typecheck:playlists-react': {
         command: 'bun run --filter=@boardsesh/playlists-react typecheck',
       },
       'typecheck:board-react': {
         command: 'bun run --filter=@boardsesh/board-react typecheck',
       },
+      'typecheck:create-climb-react': {
+        command: 'bun run --filter=@boardsesh/create-climb-react typecheck',
+      },
       'typecheck:party-profile': {
         command: 'bun run --filter=@boardsesh/party-profile typecheck',
+      },
+      'typecheck:analytics': {
+        command: 'bun run --filter=@boardsesh/analytics typecheck',
       },
       'typecheck:climb-actions': {
         command: 'bun run --filter=@boardsesh/climb-actions typecheck',
@@ -280,6 +419,7 @@ export default defineConfig({
       },
       'typecheck:climb-filters': {
         command: 'bun run --filter=@boardsesh/climb-filters typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:i18n': {
         command: 'bun run --filter=@boardsesh/i18n typecheck',
@@ -299,6 +439,18 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/kilter-sync typecheck',
         dependsOn: ['build:kilter'],
       },
+      'typecheck:aurora': {
+        command: 'bun run --filter=@boardsesh/aurora-sync typecheck',
+        dependsOn: ['build:aurora'],
+      },
+      'typecheck:location-sync': {
+        command: 'bun run --filter=@boardsesh/location-sync typecheck',
+        dependsOn: ['build:location-sync'],
+      },
+      'typecheck:moonboard-sync': {
+        command: 'bun run --filter=@boardsesh/moonboard-sync typecheck',
+        dependsOn: ['build:moonboard-sync'],
+      },
       'typecheck:sync-runtime': {
         command: 'bun run --filter=@boardsesh/sync-runtime typecheck',
         dependsOn: ['build:sync-runtime'],
@@ -314,9 +466,13 @@ export default defineConfig({
           'typecheck:queue',
           'typecheck:queue-runtime',
           'typecheck:queue-react',
+          'typecheck:board-presence',
+          'typecheck:board-presence-react',
           'typecheck:playlists-react',
           'typecheck:board-react',
+          'typecheck:create-climb-react',
           'typecheck:party-profile',
+          'typecheck:analytics',
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
           'typecheck:board-config',
@@ -330,13 +486,44 @@ export default defineConfig({
           'typecheck:graphql-client',
           'typecheck:mobile',
           'typecheck:kilter',
+          'typecheck:aurora',
+          'typecheck:location-sync',
+          'typecheck:moonboard-sync',
           'typecheck:sync-runtime',
         ],
+      },
+      // Footgun-proof scoped test runs. `vp test --project <name> run` (the
+      // `--project` flag BEFORE the `run` subcommand) silently treats the name
+      // as a filename filter and runs ~1 file — a false green. These aliases
+      // wrap the correct `vp test run --project <name>` form so the order can't
+      // be got wrong. cache:false so tests always re-run.
+      'test:mobile': {
+        command: 'vp test run --project mobile',
+        cache: false,
+      },
+      'test:web': {
+        command: 'vp test run --project web',
+        cache: false,
       },
 
       // --- Mobile validation ---
       'check:mobile-native-deps': {
         command: 'tsx scripts/mobile-native-deps-check.ts',
+        cache: false,
+      },
+      'check:mobile-ota-compat': {
+        command: 'tsx scripts/mobile-ota-compat-check.ts',
+        cache: false,
+      },
+      'check:mobile-patches': {
+        command: 'tsx scripts/mobile-patches-check.ts',
+        cache: false,
+      },
+      'check:mobile-variants': {
+        // Guards against raw theme-variant magic-string compares regrowing in
+        // mobile components — they must route through selectByVariant /
+        // createVariantComponent / a theme.* token (see theme/variants/README.md).
+        command: 'bash scripts/mobile-variant-guard.sh',
         cache: false,
       },
       'check:mobile-bundle': {
@@ -347,12 +534,48 @@ export default defineConfig({
         command: 'bash scripts/mobile-simulator-check.sh',
         cache: false,
       },
+      'mobile:ios': {
+        command: 'tsx scripts/mobile-ios-run.ts',
+        cache: false,
+      },
       'mobile:screenshot': {
         command: 'bash scripts/mobile-screenshot.sh',
         cache: false,
       },
+      'mobile:screenshots': {
+        command: 'tsx scripts/mobile-screenshots.ts',
+        cache: false,
+      },
+      'mobile:build-sim-app': {
+        command: 'tsx scripts/mobile-build-sim-app.ts',
+        cache: false,
+      },
+      'mobile:android-shots': {
+        command: 'tsx scripts/mobile-android-shots.ts',
+        cache: false,
+      },
+      'mobile:ios-shots': {
+        command: 'tsx scripts/mobile-ios-shots.ts',
+        cache: false,
+      },
+      'mobile:android-doctor': {
+        command: 'tsx scripts/mobile-android-doctor.ts',
+        cache: false,
+      },
+      'mobile:android-apk': {
+        command: 'tsx scripts/mobile-android-apk.ts',
+        cache: false,
+      },
+      'check:screenshot-dimensions': {
+        command: 'tsx scripts/assert-screenshot-dimensions.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
+        cache: false,
+      },
+      'mobile:ota-setup': {
+        command: 'tsx scripts/mobile-ota-setup.ts',
         cache: false,
       },
       'mobile:preview-build': {
@@ -361,6 +584,18 @@ export default defineConfig({
       },
       'mobile:dev-client-build': {
         command: 'tsx scripts/mobile-dev-client-build.ts',
+        cache: false,
+      },
+      'mobile:make-dev-icons': {
+        command: 'tsx scripts/mobile-make-dev-icons.ts',
+        cache: false,
+      },
+      'mobile:onboarding-assets': {
+        command: 'tsx scripts/mobile-onboarding-assets.ts',
+        cache: false,
+      },
+      'testflight:feedback-issues': {
+        command: 'tsx scripts/testflight-feedback-to-issues.ts',
         cache: false,
       },
 

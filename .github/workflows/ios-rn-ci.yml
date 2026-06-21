@@ -1,0 +1,140 @@
+name: iOS CI (React Native)
+
+on:
+  pull_request:
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'patches/**'
+      - 'vite.config.ts'
+      - 'scripts/prepare-rn-ios-tests.mjs'
+      - '.github/workflows/ios-rn-ci.yml'
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'patches/**'
+      - 'vite.config.ts'
+      - 'scripts/prepare-rn-ios-tests.mjs'
+      - '.github/workflows/ios-rn-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-rn-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # macos-26 is GA on GitHub-hosted runners and matches the RN TestFlight
+    # workflow's Xcode line; the PR workflow has passed on this label.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    env:
+      WORKSPACE_PATH: packages/mobile/ios/Boardsesh.xcworkspace
+      SCHEME: BoardseshTests
+      EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+      EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+      EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install Node.js dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check widget Swift duplicate drift
+        run: vp test run packages/mobile/src/lib/live-activity/__tests__/widget-target-drift.test.ts --reporter=agent
+
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EOF
+
+      - name: Expo prebuild (generate ios/)
+        working-directory: packages/mobile
+        run: bunx expo prebuild --platform ios --clean --no-install
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: packages/mobile/ios/Pods
+          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-rn-ci-
+            ${{ runner.os }}-pods-rn-
+
+      - name: Install CocoaPods dependencies
+        working-directory: packages/mobile/ios
+        run: pod install
+
+      - name: Add RN Swift test target
+        run: node scripts/prepare-rn-ios-tests.mjs
+
+      - name: Resolve simulator destination
+        id: simulator
+        run: |
+          DEVICE_NAME=$(xcrun simctl list devices available -j \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime in sorted(data['devices'].keys(), reverse=True):
+              if 'iOS' not in runtime:
+                  continue
+              for d in data['devices'][runtime]:
+                  if 'iPhone' in d['name'] and d['isAvailable']:
+                      print(d['name'])
+                      sys.exit(0)
+          sys.exit(1)
+          ")
+          echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $DEVICE_NAME"
+
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+            -workspace "$WORKSPACE_PATH" \
+            -scheme "$SCHEME" \
+            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run Swift unit tests
+        run: |
+          xcodebuild test-without-building \
+            -workspace "$WORKSPACE_PATH" \
+            -scheme "$SCHEME" \
+            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest'

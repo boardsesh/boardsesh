@@ -1,0 +1,126 @@
+appId: ${APP_ID}
+name: app-store screenshots android
+---
+# Play Store screenshots from the standalone screenshot APK. Unlike iOS, this APK already
+# contains the screenshot-mode JS bundle (the workflow builds it with
+# EXPO_PUBLIC_SCREENSHOT_MODE=1), so launch the app directly instead of opening an
+# expo-development-client URL, and there's no "Open in Boardsesh?" deep-link dialog.
+#
+# Google Play caps phone screenshots at 8. This set is the seven hero screens plus the
+# session-detail recap (the one extra over iOS's 10-shot set; party/playlist/logbook are
+# iOS-only for now — no room here).
+#
+# WAITING (why this differs from the iOS flow): the CI emulator runs on a software GL
+# renderer (swiftshader) against the PROD backend, so it is far slower than the iOS sim,
+# and — unlike iOS — there's no Metro `$screen /home` gate before the flow runs (this is a
+# release APK; the marker is __DEV__-only). So a bare `waitForAnimationToEnd` captured the
+# splash screen and skeleton loaders. Each shot now waits for real content:
+#   - testID anchors where they exist (`home-screen` clears the splash; `climb-row` proves
+#     the climb list loaded, replacing `climb-list-row-skeleton`).
+#   - `waitForAnimationToEnd: { timeout }` everywhere else — it's pixel-diff based, so it
+#     blocks on the skeleton shimmer until the data swaps in and the screen goes static,
+#     then continues (it never fails the flow, just proceeds on timeout).
+#
+# Screenshot-mode deep-link params (honoured because the APK is built with
+# EXPO_PUBLIC_SCREENSHOT_MODE=1):
+#   ://climbs?screenshotOpenFirst=1       -> auto-opens the first climb's board view
+#   ://climbs?screenshotOpenBoardSheet=1  -> opens the board-presence "now on the wall" sheet
+#   ://profile?screenshotTab=sessions     -> profile Sessions tab; auto-opens newest session
+# The board itself is auto-selected on boot in screenshot mode (auth-provider activates the
+# user's first saved board), so the board-backed shots need no in-flow board-pick step.
+#
+# Order: plain visits run before screenshot-param visits (no stale param leaks); board view
+# is near the end because the play drawer it opens overlays the whole app.
+
+- launchApp
+# Auto-signs-in on boot and lands on home. Wait for the home container to clear the native
+# splash, then let the "Everyone" feed shimmer settle into real cards.
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 00-home
+
+# Discover — playlist library ("For You" smart playlists + saved/community playlists).
+- openLink: com.boardsesh.app://discover
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 03-discover
+
+# Profile — progress tab (stats charts). Plain link FIRST so no stale screenshotTab param
+# carries over.
+- openLink: com.boardsesh.app://profile
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 05-profile
+
+# Session detail — the Sessions sub-tab auto-opens the newest session's recap in screenshot
+# mode, but only once the session list has loaded. Two settle-waits bracket the feed load
+# and the detail push.
+- openLink: com.boardsesh.app://profile?screenshotTab=sessions
+- waitForAnimationToEnd:
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 07-session-detail
+
+# Climbs — the main browse surface. Plain link FIRST (the list shot). Wait for a real row
+# (skeleton gone) so the list isn't captured mid-load.
+- openLink: com.boardsesh.app://climbs
+- extendedWaitUntil:
+    visible:
+      id: 'climb-row'
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 01-climbs
+
+# Workout generator — the Record screen with a workout pre-selected.
+- openLink: com.boardsesh.app://record
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 04-workout-generator
+
+# Board view — the full-screen play drawer intermittently failed to composite into
+# adb screencap when captured mid-session (~half the time blank). Capturing it via a
+# FRESH relaunch + reopen — the same pattern the never-flaky board sheet uses — fixes
+# the render: every fresh-launch capture in verification was a full ~1.1MB frame.
+# Just ONE round: back-to-back relaunches flaked with "Unable to launch app" (the
+# app hadn't fully terminated), and this single launch isn't adjacent to another, so
+# it stays as reliable as the start/sheet launches. The blank gate below is the
+# backstop. Every wait is a reliably-found anchor (home-screen, climb-row, overlay
+# marker), so the round never aborts the flow.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- extendedWaitUntil:
+    visible:
+      id: 'climb-row'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 02-board-view
+
+# Board sheet — relaunch first so the play drawer from the board-view shot is gone, then
+# open the board-presence sheet deterministically via the screenshot-mode param (no fragile
+# coordinate tap).
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+- waitForAnimationToEnd:
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 06-board-sheet

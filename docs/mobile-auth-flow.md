@@ -6,12 +6,23 @@ The mobile auth flow lets React Native (Expo) clients authenticate with the Boar
 
 ## Token exchange flow
 
-1. The mobile app opens the OAuth provider (Google/Apple) in a system browser via `expo-auth-session`.
+1. The mobile app opens the OAuth provider (Google/Apple) in a system browser via `expo-web-browser`'s `openAuthSessionAsync(url, 'com.boardsesh.app://auth/callback')` (`packages/mobile/src/lib/auth.ts`).
 2. The OAuth callback on the Next.js web app creates a **transfer token** -- an HMAC-SHA256 signed payload containing the authenticated `userId`, `iat`, and `exp`. The token is valid for 120 seconds.
-3. The web app redirects back to the mobile app with the transfer token in the deep link URL.
+3. The web app redirects to `com.boardsesh.app://auth/callback?transferToken=...`. How that callback reaches the app differs by platform -- see [Callback delivery](#callback-delivery-ios-vs-android) below.
 4. The mobile app sends the transfer token to `POST /auth/native/exchange`.
 5. The backend verifies the HMAC signature and expiry, checks for replay, then issues a JWT + refresh token pair.
 6. The mobile app stores both tokens in `expo-secure-store` and uses the JWT for all authenticated requests.
+
+## Callback delivery (iOS vs Android)
+
+The redirect to the `com.boardsesh.app://auth/callback` scheme is **not** uniformly delivered as a deep link:
+
+- **iOS:** `openAuthSessionAsync` uses `ASWebAuthenticationSession`, which _consumes_ the redirect and returns it as the function's result: `{ type: 'success', url: 'com.boardsesh.app://auth/callback?transferToken=...' }`. The OS never delivers the URL to the app as a deep link, so expo-router never routes it. The login screen (`packages/mobile/app/auth/login.tsx`) must parse `result.url` (via `parseAuthCallbackParams` in `packages/mobile/src/lib/auth-callback-url.ts`) and route the token to the `/auth/callback` screen itself.
+- **Android:** `openAuthSessionAsync` is polyfilled with a Custom Tab plus a `Linking` URL listener. The redirect arrives as a real deep link, which expo-router _also_ routes -- so `/auth/callback` can mount twice for the same token: once from expo-router's own deep-link handling and once from the login screen's explicit navigation.
+
+Because transfer tokens are one-time use, `app/auth/callback.tsx` deduplicates the exchange with a module-level `Set` of already-exchanged tokens. The duplicate mount shows the spinner until `AuthProvider` redirects out of the auth group; without the dedup, the second exchange would hit the replay guard (`409`) and flash an error after a successful login. The set grows by one short string per login attempt for the process lifetime, which is negligible.
+
+A `?error=...` query param on the callback (e.g. `session_missing`, `token_issue_failed`) means the web side could not issue a token; the login screen surfaces it as a translated error.
 
 ## Token format
 

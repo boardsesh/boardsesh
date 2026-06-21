@@ -87,11 +87,32 @@ describe('findOwnedBoardForConfig', () => {
     expect(match?.uuid).toBe('b');
   });
 
+  it('matches an owned board whose set ids are in a different order', () => {
+    // Re-ticking a set in the builder re-appends it at the end, so the wire
+    // order can diverge from the stored order for the same physical board.
+    const match = findOwnedBoardForConfig(owned, { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '4,3' });
+    expect(match?.uuid).toBe('a');
+  });
+
+  it('matches regardless of whitespace or duplicate set ids', () => {
+    const match = findOwnedBoardForConfig(owned, {
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 2,
+      setIds: ' 3 , 4 , 4 ',
+    });
+    expect(match?.uuid).toBe('a');
+  });
+
   it('returns undefined when any field differs', () => {
     // same board/layout/size but different sets
-    expect(findOwnedBoardForConfig(owned, { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3' })).toBeUndefined();
+    expect(
+      findOwnedBoardForConfig(owned, { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3' }),
+    ).toBeUndefined();
     // different board type
-    expect(findOwnedBoardForConfig(owned, { boardType: 'decoy', layoutId: 1, sizeId: 2, setIds: '3,4' })).toBeUndefined();
+    expect(
+      findOwnedBoardForConfig(owned, { boardType: 'decoy', layoutId: 1, sizeId: 2, setIds: '3,4' }),
+    ).toBeUndefined();
   });
 
   it('returns undefined for an empty list', () => {

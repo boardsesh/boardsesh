@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -9,11 +9,13 @@ import {
   UpdatePlaylistInputSchema,
   AddClimbToPlaylistInputSchema,
   RemoveClimbFromPlaylistInputSchema,
+  ReorderPlaylistClimbInputSchema,
   FollowPlaylistInputSchema,
   PinPlaylistInputSchema,
 } from '../../../validation/schemas';
 import { getPlaylistFollowStats } from './queries';
 import { verifyPlaylistAccess } from './helpers/enrichment';
+import { computePlaylistReorderWrites } from './helpers/reorder';
 
 export const playlistMutations = {
   /**
@@ -331,6 +333,82 @@ export const playlistMutations = {
 
     // Update playlist updatedAt
     await db.update(dbSchema.playlists).set({ updatedAt: new Date() }).where(eq(dbSchema.playlists.id, playlistId));
+
+    return true;
+  },
+
+  /**
+   * Reorder a climb within a playlist by moving it to a new 0-based index.
+   *
+   * Single-move semantics: the server derives the climb's current index from the
+   * DB (so position gaps left by prior deletions don't matter, and the client
+   * never has to send a stale oldIndex), splices it to the clamped target index,
+   * then renumbers positions to a dense 0..n-1. Only rows whose position actually
+   * changed are written.
+   */
+  reorderPlaylistClimb: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
+    requireAuthenticated(ctx);
+    const validatedInput = validateInput(ReorderPlaylistClimbInputSchema, input, 'input');
+
+    const userId = ctx.userId!;
+
+    // Check ownership/access (same userId-match gate as add/remove climb).
+    const ownership = await db
+      .select({ id: dbSchema.playlists.id })
+      .from(dbSchema.playlistOwnership)
+      .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
+      .where(and(eq(dbSchema.playlists.uuid, validatedInput.playlistId), eq(dbSchema.playlistOwnership.userId, userId)))
+      .limit(1);
+
+    if (ownership.length === 0) {
+      throw new Error('Playlist not found or you do not have permission to edit it');
+    }
+
+    const playlistId = ownership[0].id;
+
+    await db.transaction(async (tx) => {
+      // Full ordered list — the same order clients see (position, then addedAt).
+      // `for('update')` locks these rows for the transaction so two overlapping
+      // reorders on the same playlist can't both read the same snapshot and have
+      // the second renumber clobber the first (silently losing a move).
+      const rows = await tx
+        .select({
+          id: dbSchema.playlistClimbs.id,
+          climbUuid: dbSchema.playlistClimbs.climbUuid,
+          position: dbSchema.playlistClimbs.position,
+        })
+        .from(dbSchema.playlistClimbs)
+        .where(eq(dbSchema.playlistClimbs.playlistId, playlistId))
+        .orderBy(asc(dbSchema.playlistClimbs.position), asc(dbSchema.playlistClimbs.addedAt))
+        .for('update');
+
+      // Throws if the climb isn't in the playlist; returns only the rows whose
+      // position actually shifts (dense 0..n-1 renumber).
+      const writes = computePlaylistReorderWrites(rows, validatedInput.climbUuid, validatedInput.newIndex);
+
+      // Persist every shifted row in ONE statement — a `CASE id WHEN … THEN …`
+      // update — rather than a write per row. A move to the front of a 100-climb
+      // playlist is then a single round-trip, not ~99. The position column has no
+      // unique constraint, so the intermediate state never collides.
+      if (writes.length > 0) {
+        const idColumn = dbSchema.playlistClimbs.id;
+        const positionCase = sql`case ${idColumn} ${sql.join(
+          writes.map((write) => sql`when ${write.id} then ${write.position}`),
+          sql` `,
+        )} end`;
+        await tx
+          .update(dbSchema.playlistClimbs)
+          .set({ position: positionCase })
+          .where(
+            inArray(
+              idColumn,
+              writes.map((write) => write.id),
+            ),
+          );
+      }
+
+      await tx.update(dbSchema.playlists).set({ updatedAt: new Date() }).where(eq(dbSchema.playlists.id, playlistId));
+    });
 
     return true;
   },

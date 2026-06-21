@@ -7,6 +7,7 @@
   },
   "rules": {
     "no-unused-vars": "error",
+    "react/no-array-index-key": "warn",
     "import/no-cycle": "error",
     "prefer-const": "error",
     "no-template-curly-in-string": "error",
@@ -90,6 +91,27 @@
     "import/no-named-as-default-member": "error",
     "import/no-self-import": "error"
   },
+  "overrides": [
+    {
+      "files": ["packages/mobile/**/*.{ts,tsx}", "packages/shared/**/*.{ts,tsx}"],
+      "rules": {
+        "react/jsx-no-constructed-context-values": "error",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "Intl",
+            "property": "RelativeTimeFormat",
+            "message": "Hermes does not implement Intl.RelativeTimeFormat — crashes mobile release builds. Use dayjs relativeTime via @boardsesh/profile-stats."
+          },
+          {
+            "object": "Intl",
+            "property": "ListFormat",
+            "message": "Hermes does not implement Intl.ListFormat — crashes mobile release builds. Join the parts manually or via i18n."
+          }
+        ]
+      }
+    }
+  ],
   "ignorePatterns": [
     "dist/**",
     "node_modules/**",

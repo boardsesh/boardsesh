@@ -14,7 +14,7 @@ export const ProposalStatusSchema = z.enum(['open', 'approved', 'rejected', 'sup
 /**
  * Community role type validation schema
  */
-export const CommunityRoleTypeSchema = z.enum(['admin', 'community_leader']);
+export const CommunityRoleTypeSchema = z.enum(['admin', 'community_leader', 'tester']);
 
 export const CreateProposalInputSchema = z.object({
   climbUuid: ExternalUUIDSchema,
@@ -60,11 +60,19 @@ export const FreezeClimbInputSchema = z.object({
   reason: z.string().max(500).optional().nullable(),
 });
 
-export const GrantRoleInputSchema = z.object({
-  userId: z.string().min(1, 'User ID cannot be empty'),
-  role: CommunityRoleTypeSchema,
-  boardType: BoardNameSchema.optional().nullable(),
-});
+export const GrantRoleInputSchema = z
+  .object({
+    userId: z.string().min(1, 'User ID cannot be empty'),
+    role: CommunityRoleTypeSchema,
+    boardType: BoardNameSchema.optional().nullable(),
+  })
+  // Tester access is global (userIsTester ignores board scope), so a board-scoped
+  // tester row would be a misleading no-op. Enforce the global invariant here rather
+  // than relying on the admin UI hiding the board picker.
+  .refine((input) => input.role !== 'tester' || input.boardType == null, {
+    message: 'Tester role is global and cannot be scoped to a board',
+    path: ['boardType'],
+  });
 
 export const RevokeRoleInputSchema = z.object({
   userId: z.string().min(1, 'User ID cannot be empty'),

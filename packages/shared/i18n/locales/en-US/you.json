@@ -16,25 +16,82 @@
   "tabs": {
     "progress": "Progress",
     "sessions": "Sessions",
-    "logbook": "Logbook"
+    "logbook": "Logbook",
+    "social": "Social",
+    "climbs": "Climbs"
   },
   "progress": {
     "title": "Progress"
   },
   "mobile": {
-    "settings": "Settings",
     "unknownName": "Climber",
     "cancel": "Cancel",
     "sessions": {
-      "empty": "No sessions logged yet — go climb something."
+      "weeklySends": "{{count}} sends this week",
+      "weekly": {
+        "sessions": "Sessions",
+        "sends": "Sends",
+        "flashes": "Flashes",
+        "attempts": "Attempts"
+      },
+      "streak": "{{count}} week streak",
+      "sectionToday": "Today",
+      "sectionThisWeek": "This week",
+      "sectionEarlier": "Earlier",
+      "emptyTitle": "No sessions yet",
+      "emptyBody": "Start a session and your climbs land here.",
+      "emptyCta": "Start a session"
     },
     "progress": {
       "empty": "Nothing logged yet — your stats show up once you start ticking climbs."
     },
+    "social": {
+      "title": "Social",
+      "followers": "Followers",
+      "following": "Following",
+      "findFriends": "Find",
+      "searchPlaceholder": "Search climbers",
+      "clearSearch": "Clear search",
+      "you": "You",
+      "followAction": "Follow",
+      "unfollowAction": "Unfollow",
+      "followUser": "Follow {{name}}",
+      "unfollowUser": "Unfollow {{name}}",
+      "followerCount_one": "{{count}} follower",
+      "followerCount_other": "{{count}} followers",
+      "followingCount": "{{count}} following",
+      "recentAscents_one": "{{count}} ascent this month",
+      "recentAscents_other": "{{count}} ascents this month",
+      "emptyFollowers": "No followers yet",
+      "emptyFollowing": "Not following anyone yet",
+      "searchHint": "Type at least 2 characters to search climbers",
+      "emptySearch": "No climbers found",
+      "emptySearchBody": "No climbers match \"{{query}}\".",
+      "loadError": "Couldn't load climbers",
+      "retry": "Try again",
+      "instagramLink": "Instagram",
+      "instagramOpenError": "Couldn't open Instagram"
+    },
+    "profile": {
+      "title": "Profile",
+      "errorTitle": "Couldn't load this profile",
+      "notFoundTitle": "Climber not found",
+      "notFoundBody": "We couldn't find that climber.",
+      "noClimbs": "No climbs created yet",
+      "climbsError": "Couldn't load climbs",
+      "betaShelf": {
+        "title": "Beta videos",
+        "seeAll": "See all",
+        "allTitle": "Beta videos",
+        "empty": "No beta videos yet",
+        "emptyBody": "Beta this climber shares shows up here."
+      }
+    },
     "comments": {
       "title": "Comments",
       "empty": "No comments yet — start the conversation",
-      "placeholder": "Add a comment…"
+      "placeholder": "Add a comment…",
+      "sendError": "Couldn't post your comment. Give it another go."
     },
     "filter": {
       "title": "Filters",
@@ -49,11 +106,17 @@
     },
     "logbook": {
       "empty": "Your logbook's empty — log your first send.",
+      "errorTitle": "Couldn't load your logbook",
+      "errorBody": "Check your connection and try again.",
+      "retry": "Try again",
       "editTitle": "Edit ascent",
       "statusLabel": "Status",
       "gradeLabel": "Grade",
       "qualityLabel": "Stars",
       "triesLabel": "Tries",
+      "dateLabel": "Date",
+      "timeLabel": "Time",
+      "futureTimeAdjusted": "Future time adjusted to now.",
       "commentLabel": "Comment",
       "commentPlaceholder": "How did it go?",
       "save": "Save",

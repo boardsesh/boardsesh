@@ -1,0 +1,1 @@
+Nouveau : chaque board a un historique live. Arrive et vois ce qui est allumé, qui l'a allumé, la cotation, l'inclinaison et les sends récents, avant de te connecter.

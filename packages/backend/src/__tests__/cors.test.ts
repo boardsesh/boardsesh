@@ -333,7 +333,7 @@ describe('CORS Handler', () => {
       const res = createMockRes();
       applyCorsHeaders(req, res);
 
-      expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     });
 
     it('always sets Access-Control-Allow-Headers', () => {

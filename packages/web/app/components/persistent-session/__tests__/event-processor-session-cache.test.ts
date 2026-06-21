@@ -4,7 +4,13 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEventProcessor } from '../hooks/use-event-processor';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
-import type { SessionEvent, SessionDetail, SessionDetailTick, SubscriptionQueueEvent } from '@boardsesh/shared-schema';
+import type {
+  SessionEvent,
+  SessionDetail,
+  SessionDetailTick,
+  SubscriptionQueueEvent,
+  BetaLinksGqlRow,
+} from '@boardsesh/shared-schema';
 import type { SessionStatsUpdated } from '@boardsesh/shared-schema/generated';
 import { SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
 
@@ -44,7 +50,7 @@ function createStatsEvent(
   };
 }
 
-function createTick(climbedAt: string): SessionDetailTick {
+function createTick(climbedAt: string, overrides: Partial<SessionDetailTick> = {}): SessionDetailTick {
   return {
     uuid: `tick-${climbedAt}`,
     climbUuid: 'climb-1',
@@ -59,6 +65,22 @@ function createTick(climbedAt: string): SessionDetailTick {
     boardType: 'kilter',
     userId: 'user-1',
     upvotes: 0,
+    ...overrides,
+  };
+}
+
+function betaRow(overrides: Partial<BetaLinksGqlRow> = {}): BetaLinksGqlRow {
+  return {
+    climbUuid: 'climb-1',
+    link: 'https://www.instagram.com/reel/abc/',
+    foreignUsername: 'setter',
+    angle: 40,
+    thumbnail: null,
+    isListed: true,
+    createdAt: '2026-04-30T08:00:00Z',
+    tickUuid: null,
+    boardId: null,
+    ...overrides,
   };
 }
 
@@ -139,8 +161,8 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(
       SESSION_DETAIL_QUERY_KEY('session-abc'),
       createExistingSession({
-        sessionType: 'inferred',
-        sessionName: 'My Inferred Session',
+        sessionType: 'party',
+        sessionName: 'My Session',
         ownerUserId: 'owner-123',
         upvotes: 5,
         downvotes: 1,
@@ -164,9 +186,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     });
 
     const cached = queryClient.getQueryData<SessionDetail>(SESSION_DETAIL_QUERY_KEY('session-abc'));
-    expect(cached!.sessionType).toBe('inferred');
+    expect(cached!.sessionType).toBe('party');
     expect(cached!.ownerUserId).toBe('owner-123');
-    expect(cached!.sessionName).toBe('My Inferred Session');
+    expect(cached!.sessionName).toBe('My Session');
     expect(cached!.upvotes).toBe(5);
     expect(cached!.commentCount).toBe(3);
     expect(cached!.totalSends).toBe(5);
@@ -258,6 +280,73 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     const cached = queryClient.getQueryData<SessionDetail>(SESSION_DETAIL_QUERY_KEY('session-abc'));
     expect(cached!.firstTickAt).toBe('2026-04-30T08:00:00Z');
     expect(cached!.lastTickAt).toBe('2026-04-30T09:00:00Z');
+  });
+
+  it('carries over per-tick beta links from the cache when the stats event omits them', () => {
+    const beta = betaRow();
+    queryClient.setQueryData(
+      SESSION_DETAIL_QUERY_KEY('session-abc'),
+      createExistingSession({ ticks: [createTick('2026-04-30T09:00:00Z', { betaLinks: [beta] })] }),
+    );
+
+    const refs = createRefs();
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    // The live SessionStatsUpdated event's ticks omit betaLinks (the subscription
+    // doesn't select them), so the optimistic merge must preserve the cached ones.
+    act(() => {
+      result.current.handleSessionEvent(createStatsEvent({ ticks: [createTick('2026-04-30T09:00:00Z')] }));
+    });
+
+    const cached = queryClient.getQueryData<SessionDetail>(SESSION_DETAIL_QUERY_KEY('session-abc'));
+    expect(cached!.ticks[0].betaLinks).toEqual([beta]);
+  });
+
+  it('keys the beta carry-over by boardType + climbUuid so a shared climb UUID across boards stays separate', () => {
+    const kilterBeta = betaRow({ climbUuid: 'shared-climb', link: 'https://www.instagram.com/reel/kilter/' });
+    const tensionBeta = betaRow({ climbUuid: 'shared-climb', link: 'https://www.tiktok.com/@t/video/1' });
+    queryClient.setQueryData(
+      SESSION_DETAIL_QUERY_KEY('session-abc'),
+      createExistingSession({
+        ticks: [
+          createTick('2026-04-30T09:00:00Z', {
+            uuid: 'tick-kilter',
+            boardType: 'kilter',
+            climbUuid: 'shared-climb',
+            betaLinks: [kilterBeta],
+          }),
+          createTick('2026-04-30T09:01:00Z', {
+            uuid: 'tick-tension',
+            boardType: 'tension',
+            climbUuid: 'shared-climb',
+            betaLinks: [tensionBeta],
+          }),
+        ],
+      }),
+    );
+
+    const refs = createRefs();
+    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+
+    act(() => {
+      result.current.handleSessionEvent(
+        createStatsEvent({
+          ticks: [
+            createTick('2026-04-30T09:00:00Z', { uuid: 'tick-kilter', boardType: 'kilter', climbUuid: 'shared-climb' }),
+            createTick('2026-04-30T09:01:00Z', {
+              uuid: 'tick-tension',
+              boardType: 'tension',
+              climbUuid: 'shared-climb',
+            }),
+          ],
+        }),
+      );
+    });
+
+    const cached = queryClient.getQueryData<SessionDetail>(SESSION_DETAIL_QUERY_KEY('session-abc'));
+    const byUuid = new Map(cached!.ticks.map((tick) => [tick.uuid, tick]));
+    expect(byUuid.get('tick-kilter')!.betaLinks).toEqual([kilterBeta]);
+    expect(byUuid.get('tick-tension')!.betaLinks).toEqual([tensionBeta]);
   });
 
   it('notifies session event subscribers', () => {

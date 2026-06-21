@@ -11,7 +11,6 @@ import { Sheet } from '../Sheet';
 import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { SectionHeader } from '../SectionHeader';
-import { brandColors } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -32,7 +31,7 @@ export function YouFilterSheet({
   onSelectTimeframe,
 }: YouFilterSheetProps) {
   const { t } = useTranslation('you');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
 
   const boardOptions = useMemo(() => ['all', ...BOARD_TYPES], []);
   const timeframeOptions = useMemo<{ key: UnifiedTimeframeType; label: string }[]>(
@@ -52,7 +51,6 @@ export function YouFilterSheet({
       scrollable
       fullWindowOverlay
       footer={<Button title={t('mobile.filter.done')} onPress={() => sheetRef.current?.close()} />}
-      contentContainerStyle={styles.content}
     >
       <Text variant="title3" style={styles.title}>
         {t('mobile.filter.title')}
@@ -86,9 +84,6 @@ export function YouFilterSheet({
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingBottom: spacing[6],
-  },
   title: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],

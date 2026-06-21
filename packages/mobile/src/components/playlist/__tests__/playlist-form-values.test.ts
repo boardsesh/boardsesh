@@ -39,7 +39,10 @@ describe('buildPlaylistFormValues', () => {
       icon: undefined,
       isPublic: false,
     });
-    expect(result).toEqual({ ok: true, values: { name: 'P', description: undefined, color: undefined, icon: undefined } });
+    expect(result).toEqual({
+      ok: true,
+      values: { name: 'P', description: undefined, color: undefined, icon: undefined },
+    });
   });
 
   it('create keeps a chosen colour + emoji', () => {

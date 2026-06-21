@@ -1,16 +1,24 @@
 /**
  * Tests for the widget-navigate REST handler.
  *
+ * Sessions are always-live: any authenticated session member may navigate the
+ * wall — there is no driver gate. The Live Activity token proves session
+ * membership (a row in activity_push_tokens bound to the sessionId).
+ *
  * Verifies:
  * - Missing Authorization header → 401.
  * - Bearer token not registered for sessionId → 401.
+ * - Bearer token bound to a different session → 410.
  * - Bearer token registered for sessionId → 200.
+ * - A token registered for the session with no bound userId still navigates
+ *   (200) — membership, not driver ownership, is what's required now.
  * - Per-session rate limit returns 429 after burst exhausted.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
+import { boardSessionParticipants } from '../db/schema';
 
 // ---------------------------------------------------------------------------
 // Mocks (must be hoisted before importing the handler)
@@ -26,6 +34,15 @@ type MockQueueState = {
 };
 
 const tokenLookupRows = vi.fn<() => Array<{ sessionId: string; userId: string | null }>>(() => []);
+// Durable board_session_participants lookup used by the widget-session guard.
+// Default: caller is a participant (non-empty). Separate from tokenLookupRows
+// so a test can simulate "token row exists but user isn't a participant".
+const participantRows = vi.fn<() => Array<{ sessionId: string }>>(() => [{ sessionId: 'participant-row' }]);
+// Durable session row used by the guard's ended-session check. Default active.
+const getSessionByIdMock = vi.fn<() => Promise<{ status: string; endedAt: Date | null } | null>>(async () => ({
+  status: 'active',
+  endedAt: null,
+}));
 const trackLiveActivityWidgetNavigationMock = vi.fn();
 const trackLiveActivityWidgetNavigationAttributionGapMock = vi.fn();
 const getQueueStateMock = vi.fn<() => Promise<MockQueueState>>(async () => ({
@@ -39,9 +56,17 @@ const getQueueStateMock = vi.fn<() => Promise<MockQueueState>>(async () => ({
 vi.mock('../db/client', () => {
   function makeChain() {
     const chain: Record<string, unknown> = {};
-    chain.from = vi.fn(() => chain);
+    let table: unknown = null;
+    chain.from = vi.fn((from: unknown) => {
+      table = from;
+      return chain;
+    });
     chain.where = vi.fn(() => chain);
-    chain.limit = vi.fn(async (_n: number) => tokenLookupRows());
+    // The auth lookup hits activity_push_tokens; the guard's membership lookup
+    // hits board_session_participants. Route each to its own mock.
+    chain.limit = vi.fn(async (_n: number) =>
+      table === boardSessionParticipants ? participantRows() : tokenLookupRows(),
+    );
     return chain;
   }
   return {
@@ -58,6 +83,7 @@ vi.mock('../handlers/cors', () => ({
 vi.mock('../services/room-manager', () => ({
   roomManager: {
     getQueueState: getQueueStateMock,
+    getSessionById: getSessionByIdMock,
   },
 }));
 
@@ -163,6 +189,8 @@ describe('handleWidgetNavigate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tokenLookupRows.mockReturnValue([]);
+    participantRows.mockReturnValue([{ sessionId: 'participant-row' }]);
+    getSessionByIdMock.mockResolvedValue({ status: 'active', endedAt: null });
     getQueueStateMock.mockResolvedValue({
       queue: [
         { uuid: 'q1', climb: { uuid: 'c1' } },
@@ -171,6 +199,36 @@ describe('handleWidgetNavigate', () => {
       currentClimbQueueItem: { uuid: 'q1', climb: { uuid: 'c1' } },
     });
     __resetWidgetRateLimitForTests();
+  });
+
+  it('returns 410 without navigating when the session has ended (stale token)', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    getSessionByIdMock.mockResolvedValue({ status: 'ended', endedAt: new Date('2026-01-01T00:00:00Z') });
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    const res = makeResponse();
+    await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(410);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 without navigating when the token user is not a participant', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    participantRows.mockReturnValue([]); // token row exists, but no participant record
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    const res = makeResponse();
+    await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(403);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('returns 401 when Authorization header is missing', async () => {
@@ -252,7 +310,10 @@ describe('handleWidgetNavigate', () => {
     });
   });
 
-  it('tracks an aggregate attribution-gap event when the registered token has no userId', async () => {
+  it('navigates for a registered token with no bound userId (membership suffices), attributing via the gap path', async () => {
+    // Always-live: a token registered for the session navigates even without a
+    // bound userId. With no userId we can't attribute the PostHog event to a
+    // person, so it flows through the attribution-gap path instead of 403ing.
     tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: null }]);
     const req = makeRequest({
       method: 'POST',
@@ -263,16 +324,17 @@ describe('handleWidgetNavigate', () => {
     await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
 
     expect(res.statusCode).toBe(200);
+    expect(mockNavigate).toHaveBeenCalledOnce();
     expect(trackLiveActivityWidgetNavigationMock).not.toHaveBeenCalled();
     expect(trackLiveActivityWidgetNavigationAttributionGapMock).toHaveBeenCalledWith({
       sessionId: SESSION_ID,
       action: 'next',
       outcome: 'success',
       statusCode: 200,
+      reason: 'missing_user_id',
       queueLength: 2,
       serverCurrentIndex: 0,
       targetIndex: 1,
-      reason: 'missing_user_id',
     });
   });
 

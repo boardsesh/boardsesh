@@ -9,6 +9,7 @@ import {
   isBetaVideoUrl,
   isInstagramUrl,
   isTikTokUrl,
+  normalizeBetaVideoUrl,
   mapBetaLinkRow,
   mapBetaLinksResponse,
   type BetaLink,
@@ -26,9 +27,12 @@ describe('isInstagramUrl', () => {
     expect(isInstagramUrl(url)).toBe(true);
   });
 
-  it.each(['https://example.com/p/xyz', 'https://youtube.com/watch?v=abc', ''])('rejects %s', (url) => {
-    expect(isInstagramUrl(url)).toBe(false);
-  });
+  it.each(['http://instagram.com/reel/abc/', 'https://example.com/p/xyz', 'https://youtube.com/watch?v=abc', ''])(
+    'rejects %s',
+    (url) => {
+      expect(isInstagramUrl(url)).toBe(false);
+    },
+  );
 
   it('preserves anchoring (no prefix slip-through)', () => {
     expect(isInstagramUrl('javascript:alert(1);https://instagram.com/p/abc/')).toBe(false);
@@ -40,15 +44,23 @@ describe('isTikTokUrl', () => {
     expect(isTikTokUrl(url)).toBe(true);
   });
 
-  it.each(['https://example.com/tiktok', ''])('rejects %s', (url) => {
-    expect(isTikTokUrl(url)).toBe(false);
-  });
+  it.each(['http://www.tiktok.com/@some.user/video/7359000000000000000', 'https://example.com/tiktok', ''])(
+    'rejects %s',
+    (url) => {
+      expect(isTikTokUrl(url)).toBe(false);
+    },
+  );
 });
 
 describe('isBetaVideoUrl', () => {
   it('accepts both platforms', () => {
     expect(isBetaVideoUrl(IG_REEL)).toBe(true);
     expect(isBetaVideoUrl(TIKTOK_LONG)).toBe(true);
+  });
+
+  it('rejects insecure platform urls', () => {
+    expect(isBetaVideoUrl('http://instagram.com/p/abc/')).toBe(false);
+    expect(isBetaVideoUrl('http://vm.tiktok.com/ZShortcode/')).toBe(false);
   });
 
   it('rejects other hosts', () => {
@@ -105,6 +117,46 @@ describe('getTikTokVideoId', () => {
   });
 });
 
+describe('normalizeBetaVideoUrl', () => {
+  it('strips the igsh share-attribution param from a reel url', () => {
+    expect(normalizeBetaVideoUrl('https://www.instagram.com/reel/DZlVfVhxKJZ/?igsh=NHB5ZXljZjV3bzB3')).toBe(
+      'https://www.instagram.com/reel/DZlVfVhxKJZ/',
+    );
+  });
+
+  it('strips any query string and fragment from Instagram urls', () => {
+    expect(normalizeBetaVideoUrl('https://instagram.com/p/Xyz123/?utm_source=share')).toBe(
+      'https://instagram.com/p/Xyz123/',
+    );
+    expect(normalizeBetaVideoUrl('https://www.instagram.com/tv/AbCdE12/#comments')).toBe(
+      'https://www.instagram.com/tv/AbCdE12/',
+    );
+  });
+
+  it('handles the instagr.am host and the no-trailing-slash form', () => {
+    expect(normalizeBetaVideoUrl('https://instagr.am/reel/abc/?igsh=x')).toBe('https://instagr.am/reel/abc/');
+    expect(normalizeBetaVideoUrl('https://www.instagram.com/reel/DZlVfVhxKJZ?igsh=x')).toBe(
+      'https://www.instagram.com/reel/DZlVfVhxKJZ',
+    );
+  });
+
+  it('leaves clean Instagram urls unchanged and is idempotent', () => {
+    expect(normalizeBetaVideoUrl(IG_REEL)).toBe(IG_REEL);
+    expect(normalizeBetaVideoUrl(normalizeBetaVideoUrl('https://instagram.com/p/Xyz123/?utm=a'))).toBe(
+      'https://instagram.com/p/Xyz123/',
+    );
+  });
+
+  it('leaves TikTok and unknown urls unchanged', () => {
+    expect(normalizeBetaVideoUrl(TIKTOK_LONG)).toBe(TIKTOK_LONG);
+    expect(normalizeBetaVideoUrl('https://www.tiktok.com/@u/video/123?is_from_webapp=1')).toBe(
+      'https://www.tiktok.com/@u/video/123?is_from_webapp=1',
+    );
+    expect(normalizeBetaVideoUrl('https://example.com/x?y=1')).toBe('https://example.com/x?y=1');
+    expect(normalizeBetaVideoUrl('')).toBe('');
+  });
+});
+
 describe('betaLinkIdentity', () => {
   it('uses instagram media id for IG urls', () => {
     expect(betaLinkIdentity(IG_REEL)).toBe('instagram:CAbCdEfGhIj');
@@ -128,6 +180,38 @@ describe('betaLinkIdentity', () => {
     const b = 'https://instagram.com/reel/SameId/?utm_source=share';
     expect(betaLinkIdentity(a)).toBe(betaLinkIdentity(b));
   });
+
+  // Alignment contract with migration 0128_direct_beta_tick_links.sql:
+  //   SQL Instagram regex: (www\.)?(instagram\.com|instagr\.am)/(p|reel|tv)/([[:alnum:]_-]+)/...
+  //     → shortcode is captured in SQL group 4; stored as 'instagram:' || match[4]
+  //   TS: non-capturing (?:www\.)?(?:...\.com)\/(?:p|reel|tv)\/([\w-]+)
+  //     → shortcode is group 1; identity = 'instagram:' + match[1]
+  //   Both extract the same shortcode string, so identities match.
+  //
+  //   SQL TikTok regex: ([a-z0-9-]+\.)*tiktok\.com/@...\/video\/([0-9]+)
+  //     → video id is captured in SQL group 2; stored as 'tiktok:' || match[2]
+  //   TS: non-capturing (?:[a-z0-9-]+\.)*tiktok\.com\/@[\w.-]+\/video\/(\d+)
+  //     → video id is group 1; identity = 'tiktok:' + match[1]
+  //   Both extract the same video id string, so identities match.
+  describe('SQL migration alignment', () => {
+    it('Instagram identity matches what SQL backfill group 4 would produce', () => {
+      expect(betaLinkIdentity('https://www.instagram.com/reel/CAbCdEfGhIj/')).toBe('instagram:CAbCdEfGhIj');
+      expect(betaLinkIdentity('https://instagr.am/p/Xyz123/')).toBe('instagram:Xyz123');
+      expect(betaLinkIdentity('https://www.instagram.com/tv/AbCdE12/')).toBe('instagram:AbCdE12');
+    });
+
+    it('TikTok identity matches what SQL backfill group 2 would produce', () => {
+      expect(betaLinkIdentity('https://www.tiktok.com/@some.user/video/7359000000000000000')).toBe(
+        'tiktok:7359000000000000000',
+      );
+      expect(betaLinkIdentity('https://tiktok.com/@climber/video/1234567890')).toBe('tiktok:1234567890');
+    });
+
+    it('raw: prefix matches what the SQL ELSE branch would produce', () => {
+      const url = 'https://vm.tiktok.com/ZShortcode/';
+      expect(betaLinkIdentity(url)).toBe(`raw:${url}`);
+    });
+  });
 });
 
 function makeLink(overrides: Partial<BetaLink> = {}): BetaLink {
@@ -139,6 +223,8 @@ function makeLink(overrides: Partial<BetaLink> = {}): BetaLink {
     thumbnail: '/static/beta-link-thumbnails/abc.jpg',
     is_listed: true,
     created_at: '2026-01-01T00:00:00Z',
+    tick_uuid: null,
+    board_id: null,
     ...overrides,
   };
 }
@@ -210,6 +296,8 @@ function makeRow(overrides: Partial<BetaLinksGqlRow> = {}): BetaLinksGqlRow {
     thumbnail: '/static/beta-link-thumbnails/abc.jpg',
     isListed: true,
     createdAt: '2026-01-01T00:00:00Z',
+    tickUuid: null,
+    boardId: null,
     ...overrides,
   };
 }
@@ -225,6 +313,8 @@ describe('mapBetaLinkRow', () => {
       thumbnail: '/static/beta-link-thumbnails/abc.jpg',
       is_listed: true,
       created_at: '2026-01-01T00:00:00Z',
+      tick_uuid: null,
+      board_id: null,
     });
   });
 

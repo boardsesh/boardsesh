@@ -31,10 +31,6 @@
     {
       "path": "/api/internal/cleanup",
       "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/internal/inferred-sessions-backfill",
-      "schedule": "30 5 * * *"
     }
   ]
 }

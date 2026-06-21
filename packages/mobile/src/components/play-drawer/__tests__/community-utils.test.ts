@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
-import { buildAngleGradeBars } from '../community-utils';
+import { buildAngleGradeBars, buildAscentScale, niceStep } from '../community-utils';
 
 function makeEntry(overrides: Partial<ClimbStatsHistoryEntry> = {}): ClimbStatsHistoryEntry {
   return {
@@ -33,17 +33,33 @@ describe('buildAngleGradeBars', () => {
     expect(bars[0].gradeName).toBe('6C');
   });
 
-  it('keeps only the latest snapshot per angle', () => {
+  it('uses combined labels when requested', () => {
+    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 21 })], 'both');
+    expect(bars[0].gradeName).toBe('V5+ / 6C+');
+  });
+
+  it('keeps only the latest snapshot per angle, including its ascent count', () => {
     const bars = buildAngleGradeBars(
       [
-        makeEntry({ angle: 40, displayDifficulty: 18, createdAt: '2026-01-01' }),
-        makeEntry({ angle: 40, displayDifficulty: 22, createdAt: '2026-03-01' }),
+        makeEntry({ angle: 40, displayDifficulty: 18, ascensionistCount: 5, createdAt: '2026-01-01' }),
+        makeEntry({ angle: 40, displayDifficulty: 22, ascensionistCount: 37, createdAt: '2026-03-01' }),
       ],
       'v-grade',
     );
     expect(bars).toHaveLength(1);
     expect(bars[0].difficulty).toBe(22);
     expect(bars[0].gradeName).toBe('V6');
+    expect(bars[0].sends).toBe(37);
+  });
+
+  it('carries the ascensionist count into sends', () => {
+    const bars = buildAngleGradeBars([makeEntry({ ascensionistCount: 42 })], 'v-grade');
+    expect(bars[0].sends).toBe(42);
+  });
+
+  it('defaults sends to 0 when ascensionistCount is null', () => {
+    const bars = buildAngleGradeBars([makeEntry({ ascensionistCount: null })], 'v-grade');
+    expect(bars[0].sends).toBe(0);
   });
 
   it('falls back to displayDifficulty over difficultyAverage, then skips null difficulties', () => {
@@ -61,5 +77,40 @@ describe('buildAngleGradeBars', () => {
   it('labels out-of-range difficulties with the rounded numeric value', () => {
     const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 99.4 })], 'v-grade');
     expect(bars[0].gradeName).toBe('99');
+  });
+});
+
+describe('niceStep', () => {
+  it('rounds raw steps up to the next 1/2/5 × 10ⁿ value', () => {
+    expect(niceStep(0)).toBe(1);
+    expect(niceStep(1)).toBe(1);
+    expect(niceStep(3)).toBe(5);
+    expect(niceStep(7)).toBe(10);
+    expect(niceStep(13)).toBe(20);
+    expect(niceStep(25)).toBe(50);
+    expect(niceStep(120)).toBe(200);
+  });
+});
+
+describe('buildAscentScale', () => {
+  it('keeps the top tick strictly above the tallest bar so its top-label has headroom', () => {
+    for (const peak of [0, 1, 2, 3, 4, 5, 10, 20, 37, 40, 100, 123, 1000, 1234]) {
+      const scale = buildAscentScale(peak);
+      expect(scale.maxValue).toBeGreaterThan(peak);
+      // The tick texts derived in the chart use noOfSections + 1 labels; the top
+      // tick must equal step × sections.
+      expect(scale.maxValue).toBe(scale.step * scale.noOfSections);
+    }
+  });
+
+  it('uses whole-number, evenly-spaced steps', () => {
+    expect(buildAscentScale(10)).toEqual({ maxValue: 15, noOfSections: 3, step: 5 });
+    expect(buildAscentScale(37)).toEqual({ maxValue: 40, noOfSections: 4, step: 10 });
+    expect(buildAscentScale(100)).toEqual({ maxValue: 150, noOfSections: 3, step: 50 });
+  });
+
+  it('stays sane for an empty / single-ascent chart', () => {
+    expect(buildAscentScale(0)).toEqual({ maxValue: 2, noOfSections: 2, step: 1 });
+    expect(buildAscentScale(1)).toEqual({ maxValue: 2, noOfSections: 2, step: 1 });
   });
 });

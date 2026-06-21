@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
 import { users } from '../src/schema/auth/users.js';
 import { userCredentials, userProfiles } from '../src/schema/auth/credentials.js';
 import { playlists, playlistOwnership, userPlaylistPins } from '../src/schema/app/playlists.js';
+import { seedPlaylistClimbs } from './seed-playlist-climbs.js';
 
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
 const TEST_USER_EMAIL = 'test@boardsesh.com';
@@ -48,6 +48,9 @@ function makePlaylistSeeds(): PlaylistSeed[] {
   const seeds: PlaylistSeed[] = [];
 
   // Kilter — Original 12x12 (layoutId=1)
+  // Projects 3/6/9 are public (i % 3 === 0). Kilter layoutId 1 is a
+  // well-populated layout in the dev DB, so these public playlists get real
+  // climbs and surface in Discover for screenshots.
   for (let i = 1; i <= 10; i++) {
     seeds.push({
       uuid: `00000000-0000-4000-8000-000000000${(100 + i).toString().padStart(3, '0')}`,
@@ -96,13 +99,17 @@ function makePlaylistSeeds(): PlaylistSeed[] {
   }
 
   // Tension — TB2 (layoutId=10)
+  // #1 is public. TB2 (layoutId 10) is a confirmed-populated Tension layout
+  // (it backs the recommendation cohorts), so this guarantees Discover has at
+  // least one climb-filled public Tension playlist even if the legacy Tension
+  // Original layout (layoutId 1) is sparse in the dev DB.
   for (let i = 1; i <= 5; i++) {
     seeds.push({
       uuid: `00000000-0000-4000-8000-000000000${(150 + i).toString().padStart(3, '0')}`,
       boardType: 'tension',
       layoutId: 10,
       name: `TB2 Crimps & Pinches ${i}`,
-      isPublic: false,
+      isPublic: i === 1,
       pin: i === 3,
     });
   }
@@ -125,6 +132,7 @@ function makePlaylistSeeds(): PlaylistSeed[] {
 
 async function seedTestUserPlaylists(db: ReturnType<typeof createScriptDb>['db']): Promise<void> {
   const seeds = makePlaylistSeeds();
+  let totalClimbs = 0;
   // Stagger timestamps so "ordered by lastAccessedAt desc" yields a
   // predictable order — index 0 is most-recent, last is oldest.
   const baseTimestamp = Date.now();
@@ -157,7 +165,10 @@ async function seedTestUserPlaylists(db: ReturnType<typeof createScriptDb>['db']
       })
       .onConflictDoUpdate({
         target: playlists.uuid,
-        set: { name: seed.name, color, icon, updatedAt: lastAccessedAt },
+        // Include isPublic so re-running against an existing DB converges the
+        // visibility flag (e.g. flips the Tension TB2 playlist public) — without
+        // it, Discover stays empty on a container built from an older image.
+        set: { name: seed.name, color, icon, isPublic: seed.isPublic, updatedAt: lastAccessedAt },
       })
       .returning({ id: playlists.id });
 
@@ -172,9 +183,16 @@ async function seedTestUserPlaylists(db: ReturnType<typeof createScriptDb>['db']
     if (seed.pin) {
       await db.insert(userPlaylistPins).values({ userId: TEST_USER_ID, playlistId, createdAt }).onConflictDoNothing();
     }
+
+    // Fill the playlist with real climbs so Discover and the playlist screens
+    // render content (the Discover resolver INNER JOINs playlist_climbs, so an
+    // empty public playlist shows nothing). Deterministic + idempotent.
+    totalClimbs += await seedPlaylistClimbs(db, { playlistId, boardType: seed.boardType, layoutId: seed.layoutId });
   }
 
-  console.info(`Seeded ${seeds.length} playlists for test user (${seeds.filter((s) => s.pin).length} pinned).`);
+  console.info(
+    `Seeded ${seeds.length} playlists for test user (${seeds.filter((seed) => seed.pin).length} pinned, ${totalClimbs} playlist-climbs).`,
+  );
 }
 
 async function createTestUser() {

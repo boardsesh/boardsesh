@@ -30,7 +30,7 @@ type Climb {
   difficulty: String!
   "Average quality rating from users"
   quality_average: String!
-  "Star rating (0-3)"
+  "Star rating (0-5), rounded from quality_average"
   stars: Float!
   "Difficulty uncertainty/spread"
   difficulty_error: String!
@@ -63,6 +63,10 @@ Input type for creating or updating a climb.
 """
 input ClimbInput {
   uuid: ID!
+  "Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board."
+  boardType: String
+  "Layout the climb belongs to. Round-tripped so a connected board can skip a climb set for another layout."
+  layoutId: Int
   setter_username: String!
   "Boardsesh user ID of the climb owner (null for Aurora-synced climbs)."
   userId: ID
@@ -352,13 +356,15 @@ type Session {
   queueState: QueueState!
   "Whether the current client is the session leader (presentation/backward compatibility only)"
   isLeader: Boolean!
-  "Stable participant id of the user currently driving the wall. Set via takeControl, cleared via releaseControl or driver disconnect. Distinct from isLeader, which is presentation/legacy only."
   driverParticipantId: ID
+    @deprecated(
+      reason: "Sessions are always-live; there is no driver. Always null. Kept one release for stale clients (cached web bundles, un-OTA'd native apps); remove after rollout."
+    )
   "Most recently observed BLE board serial for this session. Set when a participant pairs their phone to a physical board; broadcast as SessionBoardSerialChanged so late-joiners can auto-connect to the same board. Null when no board has been recorded."
   lastConnectedBoardSerial: String
   "Unique identifier for this client's connection"
   clientId: ID!
-  "Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) when comparing against driverParticipantId — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. TEMPORARILY NULLABLE: a follow-up release will flip this back to ID! once every Session-returning resolver has been audited to confirm it populates the field. Clients should treat null as 'unknown — fall back to clientId for self-checks'."
+  "Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) for self-checks against broadcast participant ids — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. TEMPORARILY NULLABLE: a follow-up release will flip this back to ID! once every Session-returning resolver has been audited to confirm it populates the field. Clients should treat null as 'unknown — fall back to clientId for self-checks'."
   participantId: ID
   "Optional session goal text"
   goal: String
@@ -372,6 +378,20 @@ type Session {
   isPermanent: Boolean!
   "Hex color for multi-session display"
   color: String
+}
+
+"""
+Durable session lifecycle status, independent of live presence. Backed by
+the persisted session row rather than Redis, so an ended session reads as
+ended even when no participants are currently connected. Lowercase values
+match the strings stored in board_sessions.status so resolvers and clients
+pass them through without mapping (same convention as TickStatus).
+"""
+enum SessionStatus {
+  "Live or dormant; safe for a client to restore on cold start"
+  active
+  "Explicitly ended, or auto-finished by the inactivity sweep"
+  ended
 }
 
 """
@@ -437,13 +457,22 @@ input CreateSessionInput {
 # ============================================
 
 """
-Grade count for session summary grade distribution.
+Per-grade ascent breakdown for the session summary.
 """
 type SessionGradeCount {
   "Grade name (e.g., 'V5')"
   grade: String!
-  "Number of sends at this grade"
+  "Total ascents at this grade (flash + send)."
   count: Int!
+    @deprecated(
+      reason: "Use flash + send. Kept additive so older mobile clients selecting { grade count } keep validating against the schema while they catch up."
+    )
+  "Flashes at this grade"
+  flash: Int!
+  "Sends (non-flash) at this grade"
+  send: Int!
+  "Failed attempts at this grade (implicit from multi-try sends)"
+  attempt: Int!
 }
 
 """
@@ -456,6 +485,14 @@ type SessionHardestClimb {
   climbName: String!
   "Grade name"
   grade: String!
+  "Lit-hold frames string, for rendering a board thumbnail (null for legacy climbs)"
+  frames: String
+  "Board layout id, needed to render the thumbnail"
+  layoutId: Int
+  "Board type the send was logged on (e.g. 'kilter', 'tension')"
+  boardType: String
+  "Whether the send was on the mirrored climb"
+  isMirror: Boolean
 }
 
 """
@@ -468,8 +505,10 @@ type SessionParticipant {
   displayName: String
   "Avatar URL"
   avatarUrl: String
-  "Total sends"
+  "Total sends (flash + send)"
   sends: Int!
+  "Total flashes"
+  flashes: Int!
   "Total attempts"
   attempts: Int!
 }
@@ -482,9 +521,11 @@ type SessionSummary {
   sessionId: ID!
   "Total successful sends"
   totalSends: Int!
+  "Total flashes (first-try sends)"
+  totalFlashes: Int!
   "Total attempts (including sends)"
   totalAttempts: Int!
-  "Grade distribution of sends"
+  "Grade distribution with flash/send/attempt breakdown (count kept for back-compat)"
   gradeDistribution: [SessionGradeCount!]!
   "Hardest climb sent during the session"
   hardestClimb: SessionHardestClimb
@@ -498,6 +539,57 @@ type SessionSummary {
   durationMinutes: Int
   "Session goal text"
   goal: String
+}
+
+"""
+One viewer-owned lap/event included in an Apple Health workout export.
+"""
+type SessionHealthExportLap {
+  "Tick UUID"
+  tickUuid: ID!
+  "Climb UUID"
+  climbUuid: String!
+  "Climb name"
+  climbName: String
+  "Grade name"
+  grade: String
+  "Tick status (flash, send, attempt)"
+  status: String!
+  "Number of attempts represented by this tick"
+  attemptCount: Int!
+  "Board type"
+  boardType: String!
+  "Climb angle"
+  angle: Int
+  "When the lap was logged"
+  climbedAt: String!
+}
+
+"""
+Viewer-specific export payload for writing a finished session to Apple Health.
+It intentionally contains only the requesting user's ticks and saved workout id.
+"""
+type SessionHealthExport {
+  "Session ID"
+  sessionId: ID!
+  "When the session started"
+  startedAt: String
+  "When the session ended"
+  endedAt: String
+  "Duration in minutes"
+  durationMinutes: Int
+  "Primary board type for this viewer's workout"
+  boardType: String!
+  "Viewer-owned sends"
+  totalSends: Int!
+  "Viewer-owned attempts, including the successful attempt on sends"
+  totalAttempts: Int!
+  "Hardest climb the viewer sent during the session"
+  hardestClimb: SessionHardestClimb
+  "Viewer-owned lap events"
+  laps: [SessionHealthExportLap!]!
+  "Existing Apple Health workout id saved for this viewer/session"
+  healthKitWorkoutId: String
 }
 
 # ============================================
@@ -541,6 +633,29 @@ type ClimbStatsHistoryEntry {
   createdAt: String!
 }
 
+"""
+Current statistics for a climb at one angle, read from the live stats table.
+One entry per angle the climb has been logged at.
+"""
+type ClimbStatsForAngle {
+  "Board angle in degrees"
+  angle: Int!
+  "Number of people who have completed this climb at this angle"
+  ascensionistCount: Int
+  "Average quality rating"
+  qualityAverage: Float
+  "Average difficulty rating"
+  difficultyAverage: Float
+  "Display difficulty value"
+  displayDifficulty: Float
+  "Human-readable grade label derived from displayDifficulty (e.g., 'V5', '6B+')"
+  difficulty: String
+  "Username of the first ascensionist"
+  faUsername: String
+  "When the first ascent was logged (ISO timestamp)"
+  faAt: String
+}
+
 # ============================================
 # User Management Types
 # ============================================
@@ -557,6 +672,8 @@ type UserProfile {
   displayName: String
   "URL to user's avatar image"
   avatarUrl: String
+  "Whether this user can reach tester-only developer tooling (has the tester or admin community role)"
+  isTester: Boolean!
 }
 
 """
@@ -763,7 +880,11 @@ input SaveTickInput {
   sizeId: Int
   "Set IDs for board resolution"
   setIds: String
-  "Optional Instagram post or reel URL to attach as beta for the climb"
+  "Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board)."
+  boardUuid: String
+  "Resolved shared board id (from resolveBoardForSerial) for the BLE-connected wall everyone is logging to. Used when no boardUuid is given; falls back to board-config resolution if it doesn't match the payload."
+  boardId: Int
+  "Optional Instagram or TikTok video URL to attach as beta for the climb"
   videoUrl: String
 }
 
@@ -784,6 +905,8 @@ input UpdateTickInput {
   isBenchmark: Boolean
   "User comment"
   comment: String
+  "When the climb was attempted (ISO 8601)"
+  climbedAt: String
 }
 
 """
@@ -797,17 +920,19 @@ input GetTicksInput {
 }
 
 """
-Input for attaching an Instagram video as beta for a climb.
+Input for attaching an Instagram or TikTok video as beta for a climb.
 """
 input AttachBetaLinkInput {
   "Board type"
   boardType: String!
   "Climb UUID"
   climbUuid: String!
-  "Instagram post or reel URL"
+  "Instagram or TikTok video URL"
   link: String!
   "Optional angle the video was climbed at"
   angle: Int
+  "Optional tick UUID this beta video belongs to"
+  tickUuid: ID
 }
 
 # ============================================
@@ -828,6 +953,10 @@ type AscentFeedItem {
   setterUsername: String
   "Board type"
   boardType: String!
+  "Specific board entity id, when this ascent is safe to associate with a named board"
+  boardId: Int
+  "Specific board display name, when this ascent is safe to associate with a named board"
+  boardDisplayName: String
   "Layout ID"
   layoutId: Int
   "Board angle"
@@ -1144,6 +1273,8 @@ type ActivityFeedItem {
   attemptCount: Int
   "User comment on the ascent"
   comment: String
+  "Number of comments on the social entity"
+  commentCount: Int
   "When this feed item was created (ISO 8601)"
   createdAt: String!
   "JSON-encoded metadata for type-specific data (e.g., session summary stats)"
@@ -1174,6 +1305,10 @@ input ActivityFeedInput {
   boardUuid: String
   "Filter sessions where this user is a participant"
   userId: String
+  "Restrict results to users followed by the authenticated viewer"
+  followingOnly: Boolean
+  "Include one daily hardest-send card for followed/user-filtered days without explicit sessions"
+  includeDailyHighlights: Boolean
 }
 
 """
@@ -1215,6 +1350,39 @@ type SessionGradeDistributionItem {
 }
 
 """
+A highlighted tick used by session feed cards.
+"""
+type SessionFeedTickHighlight {
+  uuid: ID!
+  userId: String!
+  climbUuid: String!
+  climbName: String
+  boardType: String!
+  layoutId: Int
+  angle: Int!
+  status: String!
+  attemptCount: Int!
+  difficulty: Int
+  difficultyName: String
+  quality: Int
+  isMirror: Boolean!
+  isBenchmark: Boolean!
+  isNoMatch: Boolean!
+  comment: String
+  frames: String
+  setterUsername: String
+  climbedAt: String!
+}
+
+"""
+A beta video paired with the tick it represents in a session feed card.
+"""
+type SessionFeedBetaHighlight {
+  tick: SessionFeedTickHighlight!
+  betaLink: BetaLink!
+}
+
+"""
 A session feed card representing a group of ticks from a climbing session.
 """
 type SessionFeedItem {
@@ -1230,6 +1398,10 @@ type SessionFeedItem {
   gradeDistribution: [SessionGradeDistributionItem!]!
   boardTypes: [String!]!
   hardestGrade: String
+  hardestSend: SessionFeedTickHighlight
+  featuredBeta: SessionFeedBetaHighlight
+  socialEntityType: SocialEntityType!
+  socialEntityId: String!
   firstTickAt: String!
   lastTickAt: String!
   durationMinutes: Int
@@ -1275,6 +1447,8 @@ type SessionDetailTick {
   upvotes: Int!
   "Total attempts (sum of attemptCount) since last successful ascent by this user on this climb"
   totalAttempts: Int
+  "Stored beta videos attached to this climb, batched with the session detail (no live enrichment). Populated by the session-detail query; absent on other selections that reuse this type (e.g. the live SessionStatsUpdated subscription)."
+  betaLinks: [BetaLink!]
 }
 
 """
@@ -1488,6 +1662,18 @@ input RemoveClimbFromPlaylistInput {
 }
 
 """
+Input for reordering a climb within a playlist (single move).
+"""
+input ReorderPlaylistClimbInput {
+  "Playlist ID"
+  playlistId: ID!
+  "Climb UUID to move"
+  climbUuid: String!
+  "Target 0-based index in the playlist's full ordered list"
+  newIndex: Int!
+}
+
+"""
 Input for getting user's playlists.
 """
 input GetUserPlaylistsInput {
@@ -1591,6 +1777,10 @@ input GetPlaylistClimbsInput {
   setIds: String
   "Board angle"
   angle: Int
+  "Active board type for grade rendering in all-boards mode (omit in specific-board mode). On-board climbs render their grade at activeAngle."
+  activeBoardName: String
+  "Selected wall angle to render grades at for on-active-board climbs in all-boards mode"
+  activeAngle: Int
   "Page number"
   page: Int
   "Page size"
@@ -1651,6 +1841,8 @@ type DiscoverablePlaylist {
   creatorId: ID!
   "Creator's display name"
   creatorName: String!
+  "Whether this is a system-generated recommendation playlist"
+  isGeneratedRecommendation: Boolean!
 }
 
 """
@@ -1661,10 +1853,16 @@ input DiscoverPlaylistsInput {
   boardType: String
   "Layout ID (optional — omit to discover across all layouts)"
   layoutId: Int
+  "Board size ID for generated recommendation filters"
+  sizeId: Int
+  "Board angle for generated recommendation filters"
+  angle: Int
   "Filter by name (partial match)"
   name: String
   "Filter by creator IDs"
   creatorIds: [ID!]
+  "Filter by generated recommendation status"
+  generatedRecommendation: Boolean
   "Sort by: 'recent' (default) or 'popular'"
   sortBy: String
   "Page number"
@@ -1748,17 +1946,31 @@ input GetUserFavoriteClimbsInput {
 # ============================================
 
 """
-A computed playlist generated from a user's logbook or favourites.
+A computed playlist generated from a user's logbook or favourites, or a
+recommendation computed from the catalog for the user's board.
+
+Logbook-derived:
 - FIVE_STARS: climbs the user has rated 5/5
 - MOST_REPEATED: climbs the user has logged the most attempts on
 - PROJECTS: climbs with the most attempts that have never been sent
 - LIKED_CLIMBS: climbs the user has favourited
+
+Recommendations (ranked within climbs that fit the user's biggest board,
+excluding ones they've already sent):
+- RECOMMENDED_CROWD_FAVORITES: proven classics for the board (ascents × rating)
+- RECOMMENDED_HIDDEN_GEMS: highly rated but low-ascent climbs
+- RECOMMENDED_AT_LEVEL: climbs near the user's grade band
+- RECOMMENDED_FRESH: recently set climbs, weighted toward popular setters
 """
 enum SmartPlaylistType {
   FIVE_STARS
   MOST_REPEATED
   PROJECTS
   LIKED_CLIMBS
+  RECOMMENDED_CROWD_FAVORITES
+  RECOMMENDED_HIDDEN_GEMS
+  RECOMMENDED_AT_LEVEL
+  RECOMMENDED_FRESH
 }
 
 """
@@ -1797,10 +2009,16 @@ Input for fetching a smart playlist.
 input GetSmartPlaylistInput {
   "Smart playlist type"
   type: SmartPlaylistType!
-  "User whose logbook to compute from"
+  "User whose logbook (or board) to compute from"
   userId: ID!
   "Filter to a board type (optional)"
   boardName: String
+  "Recommendation: the specific owned board (uuid) to recommend for"
+  boardUuid: String
+  "Recommendation board-size override (the size the user is browsing)"
+  sizeId: Int
+  "Recommendation board-angle override"
+  angle: Int
   "Page number"
   page: Int
   "Page size"
@@ -1925,6 +2143,8 @@ type BoardSerialConfig {
   sizeId: Int!
   "Comma-separated set IDs at last connect"
   setIds: String!
+  "API/protocol level from the BLE device name (the @N suffix); null if never observed"
+  apiLevel: Int
   "When the recording was last updated"
   updatedAt: String!
   "Linked saved board UUID (when the connect happened from a /b/{slug}/... route)"
@@ -2103,6 +2323,27 @@ input SearchBoardsInput {
   limit: Int
   "Offset for pagination"
   offset: Int
+}
+
+"""
+Input for recording the board configuration seen when connecting to a
+controller over BLE (serial + config + advertised API level).
+"""
+input RecordBoardSerialInput {
+  "Controller box serial number"
+  serialNumber: String!
+  "Board type (kilter, tension, ...)"
+  boardName: String!
+  "Layout ID at connect"
+  layoutId: Int!
+  "Size ID at connect"
+  sizeId: Int!
+  "Comma-separated set IDs at connect"
+  setIds: String!
+  "API/protocol level parsed from the BLE device name (the @N suffix)"
+  apiLevel: Int
+  "Optional UUID of a saved board to link (when connecting from a /b/{slug}/... route)"
+  boardUuid: String
 }
 
 # ============================================
@@ -2587,6 +2828,7 @@ enum ProposalStatus {
 enum CommunityRoleType {
   admin
   community_leader
+  tester
 }
 
 """
@@ -2834,6 +3076,8 @@ type PublicUserProfile {
   displayName: String
   "Avatar URL"
   avatarUrl: String
+  "Instagram profile URL, if the user has set one"
+  instagramUrl: String
   "Number of followers"
   followerCount: Int!
   "Number of users being followed"
@@ -3134,38 +3378,6 @@ type VoteSummary {
   voteScore: Int!
   "Current user's vote (-1, 0, or 1)"
   userVote: Int!
-}
-
-"""
-Input for updating an inferred session's metadata.
-"""
-input UpdateInferredSessionInput {
-  "ID of the inferred session to update"
-  sessionId: ID!
-  "New session name (optional)"
-  name: String
-  "New session description/notes (optional)"
-  description: String
-}
-
-"""
-Input for adding a user to an inferred session.
-"""
-input AddUserToSessionInput {
-  "ID of the inferred session"
-  sessionId: ID!
-  "User ID to add"
-  userId: ID!
-}
-
-"""
-Input for removing a user from an inferred session.
-"""
-input RemoveUserFromSessionInput {
-  "ID of the inferred session"
-  sessionId: ID!
-  "User ID to remove"
-  userId: ID!
 }
 
 """
@@ -3471,6 +3683,8 @@ type BetaLink {
   thumbnail: String
   isListed: Boolean
   createdAt: String
+  tickUuid: ID
+  boardId: Int
 }
 
 """
@@ -3482,6 +3696,20 @@ type RecentBetaLink {
   climbName: String
   boardType: String!
   layoutId: Int
+}
+
+"""
+Live, unsaved metadata for a shared Instagram/TikTok URL — used by the mobile
+share flow to preview the post and auto-match the climb from the caption
+before anything is attached. Best-effort: any field can be null if the post is
+private/unavailable or the platform doesn't expose it (caption is currently
+Instagram-only). Never throws — the user can still attach manually.
+"""
+type BetaLinkPreview {
+  link: String!
+  thumbnail: String
+  username: String
+  caption: String
 }
 
 "A single scraped Instagram post fed to the beta-import scanner."
@@ -3543,6 +3771,54 @@ type InstagramBetaScanResult {
   unmatched: [InstagramBetaUnmatched!]!
 }
 
+# ============================================
+# External Platform Integration Types
+# ============================================
+
+"""
+Server-side external platform integrations. Device-local integrations
+(Apple Health, Health Connect) are intentionally absent — they never hold
+server-side credentials and are managed entirely on the device.
+"""
+enum IntegrationProvider {
+  STRAVA
+}
+
+"""
+Connection state of one external platform integration for the current user.
+"""
+type IntegrationStatus {
+  provider: IntegrationProvider!
+  "Whether the user has linked an account for this provider"
+  connected: Boolean!
+  "Display name of the linked external account (e.g. Strava athlete name)"
+  externalAccountName: String
+  "Whether finished sessions upload automatically"
+  autoSyncEnabled: Boolean!
+  "Credential health: 'active' | 'expired' | 'error' | 'revoked'. Null when not connected."
+  status: String
+  "ISO 8601 timestamp of the last successful upload"
+  lastSyncAt: String
+  "Most recent sync or token error, if any"
+  lastError: String
+}
+
+"""
+Result of exporting a session to an external platform.
+"""
+type IntegrationExportResult {
+  provider: IntegrationProvider!
+  sessionId: ID!
+  "Activity ID on the external platform; null when the export failed"
+  externalActivityId: String
+  "Web URL of the activity on the external platform"
+  externalActivityUrl: String
+  "ISO 8601 timestamp of the export"
+  syncedAt: String
+  "Error message when the export failed"
+  error: String
+}
+
 """
 Root query type for all read operations.
 """
@@ -3576,6 +3852,21 @@ type Query {
   Available for ended sessions or active sessions with ticks.
   """
   sessionSummary(sessionId: ID!): SessionSummary
+
+  """
+  Get viewer-specific session data for an Apple Health workout export.
+  Requires authentication and returns only the requesting user's ticks.
+  """
+  sessionHealthExport(sessionId: ID!): SessionHealthExport
+
+  """
+  Lightweight, presence-independent lifecycle check for a session.
+  Reads the durable session row (not live Redis presence), so it tells an
+  ended session apart from one that is merely empty. Returns null when the
+  session does not exist. Clients use this on cold start to decide whether
+  to restore or drop a persisted session id.
+  """
+  sessionStatus(sessionId: ID!): SessionStatus
 
   # ============================================
   # Board Configuration Queries
@@ -3636,6 +3927,12 @@ type Query {
   Returns snapshots captured during shared sync for trend analysis.
   """
   climbStatsHistory(boardName: String!, climbUuid: ID!): [ClimbStatsHistoryEntry!]!
+
+  """
+  Get current per-angle statistics for a climb from the live stats table.
+  Returns one entry for each angle the climb has been logged at.
+  """
+  climbStatsForAngles(boardName: String!, climbUuid: ID!): [ClimbStatsForAngle!]!
 
   # ============================================
   # User Management Queries (require auth)
@@ -3713,6 +4010,14 @@ type Query {
   Includes enriched climb data for display.
   """
   userAscentsFeed(userId: ID!, input: AscentFeedInput): AscentFeedResult!
+
+  """
+  Suggest the user's logged ascents that a shared reel caption is about, by
+  matching the caption against their whole logbook's climb names. Returns full
+  ascent rows (with board art) for the matched climbs, strongest match first.
+  Powers the mobile share-beta picker.
+  """
+  userAscentCaptionMatches(userId: ID!, caption: String!): [AscentFeedItem!]!
 
   """
   Get public ascent feed grouped by climb and day.
@@ -3905,12 +4210,12 @@ type Query {
 
   """
   Get session-grouped activity feed (public, no auth required).
-  Groups ticks into sessions (party mode or inferred by 4-hour gap).
+  Groups ticks by explicitly-created sessions.
   """
   sessionGroupedFeed(input: ActivityFeedInput): SessionFeedResult!
 
   """
-  Get full detail for a single session (party mode or inferred).
+  Get full detail for a single explicitly-created session.
   """
   sessionDetail(sessionId: ID!): SessionDetail
 
@@ -3918,6 +4223,39 @@ type Query {
   Get a feed of newly created climbs for a board type and layout.
   """
   newClimbFeed(input: NewClimbFeedInput!): NewClimbFeedResult!
+
+  """
+  Backfill the recent "now on the wall" history for a board (last ~50, 24h
+  window) from the Redis FIFO. Used by late joiners before the live
+  `boardNowPlaying` subscription takes over.
+  """
+  boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+
+  """
+  Durable history of what was pushed to a board (survives past the 24h Redis
+  window), newest-first by `seq`. For keyset paging pass the `seq` of the
+  last item from the previous page as `before` (not `sentAt`) — `seq` is
+  unique and monotonic per board, so paging never repeats or skips even when
+  several sends share a `sentAt` second. A non-integer `before` is rejected
+  with BAD_USER_INPUT. `limit` is capped at 100. This is the lasting "what
+  was on the wall" record; `boardRecentClimbs` is the hot 24h cache.
+  """
+  boardHistory(boardId: Int!, limit: Int, before: String): [BoardPresenceClimb!]!
+
+  """
+  Lightweight stats for a board's wall feed — durable counts derived from
+  `boardsesh_ticks` stamped with this board_id, plus the live window.
+  """
+  boardPresenceStats(boardId: Int!): BoardPresenceStats!
+
+  """
+  The board's current connection holder — who's connected and writing right now
+  (the most recent confirmed sender), or null when the board is free. For
+  late-joiner initial state before the `boardNowPlaying` /
+  `BoardConnectionChanged` stream warms up. Anonymous holders carry null
+  user/name/avatar (clients render a "?").
+  """
+  boardConnection(boardId: Int!): BoardConnectionHolder
 
   """
   Get the current user's new climb subscriptions.
@@ -4122,8 +4460,10 @@ type Query {
   most-recent-first. Matches both videos this user added directly and
   videos posted under the Instagram handle linked from their profile.
   Returns only rows whose thumbnails are cached in our S3.
+  Paginate with offset (the page size is limit); the caller infers
+  "has more" from a full page coming back.
   """
-  userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+  userBetaLinks(userId: String!, limit: Int = 50, offset: Int = 0): [RecentBetaLink!]!
 
   """
   Resolve scraped Instagram posts against Boardsesh: which beta videos are
@@ -4131,6 +4471,21 @@ type Query {
   attaches the missing ones via the attachBetaLink mutation.
   """
   instagramBetaScan(input: InstagramBetaScanInput!): InstagramBetaScanResult!
+
+  """
+  Live preview metadata for a shared Instagram/TikTok URL, before it's
+  attached. Powers the mobile share flow: shows the post thumbnail/caption and
+  lets the client auto-match the climb from the caption. Best-effort — returns
+  null fields rather than throwing when the post is unavailable.
+  """
+  betaLinkPreview(link: String!): BetaLinkPreview!
+
+  """
+  Connection state of every supported external platform integration for the
+  current user, including never-connected providers (connected: false).
+  Requires authentication.
+  """
+  integrations: [IntegrationStatus!]!
 }
 
 """
@@ -4165,7 +4520,7 @@ type Mutation {
   """
   End a session (active participant only).
   """
-  endSession(sessionId: ID!): SessionSummary
+  endSession(sessionId: ID!, timezone: String): SessionSummary
 
   """
   Update display name and avatar in the current session.
@@ -4219,40 +4574,54 @@ type Mutation {
   setQueue(queue: [ClimbQueueItemInput!]!, currentClimbQueueItem: ClimbQueueItemInput): QueueState!
 
   """
-  Claim wall-control authority in the current session and optionally broadcast a climb.
-  Any session participant may call — yank-on-press by design. If `climb` is provided, also
-  appends it to the queue (when not already present) and sets it as the current climb,
-  mirroring `setCurrentClimb`'s side effects. Publishes `DriverChanged`.
+  Deprecated. Sessions are always-live, so there is no wall driver to claim. Kept one
+  release as an inert compat shim for stale clients (cached web bundles, un-OTA'd native
+  apps) that still call it: if `climb` is provided it is set as the current climb (so the
+  stale client's wall change still propagates), otherwise it is a no-op. Never publishes
+  `DriverChanged`. Remove after the rollout window.
   """
   takeControl(climb: ClimbQueueItemInput): Session!
+    @deprecated(
+      reason: "Always-live; no driver. Sets the climb (if given) and returns the session. Remove after rollout."
+    )
 
   """
-  Release wall-control authority. Clears the driver only when the caller is the current
-  driver (idempotent otherwise). Publishes `DriverChanged { driverParticipantId: null }`.
+  Deprecated. No wall driver exists; inert no-op kept one release for stale clients.
+  Returns the session unchanged and never publishes `DriverChanged`. Remove after rollout.
   """
-  releaseControl: Session!
+  releaseControl: Session! @deprecated(reason: "Always-live; no driver. No-op. Remove after rollout.")
 
   """
   Confirm to all session participants that a climb was successfully relayed to the wall
-  over BLE from this client's phone. Any session participant may call (no driver
-  requirement) — the BLE-capable phone that handled the send is the source of truth for
-  confirmation. The server stamps `confirmedAt` and `confirmedByParticipantId` from
-  the caller's identity; clients cannot forge either field. Publishes
-  `WallConfirmedClimb`. The optional `queueItemUuid` disambiguates the press when
-  the same climb is queued twice. Returns the resolved Session so optimistic-UI callers
-  can apply server-derived state without a follow-up query (symmetric with
-  `takeControl` / `releaseControl`). Session identity is resolved from the WebSocket
-  connection context — no `sessionId` argument is required.
+  over BLE from this client's phone. Any session participant may call — the BLE-capable
+  phone that handled the send is the source of truth for confirmation. The server stamps
+  `confirmedAt` and `confirmedByParticipantId` from the caller's identity; clients
+  cannot forge either field. Publishes `WallConfirmedClimb`. The optional
+  `queueItemUuid` disambiguates the press when the same climb is queued twice. Returns
+  the resolved Session so optimistic-UI callers can apply server-derived state without a
+  follow-up query. Session identity is resolved from the WebSocket connection context —
+  no `sessionId` argument is required.
   """
   confirmClimbOnWall(climbUuid: ID!, queueItemUuid: ID): Session!
+
+  """
+  Report that this client's BLE link to the wall dropped (explicit lightbulb-off or a
+  detected drop), so every session participant turns the queue-control-bar lightbulb off.
+  The current climb is unchanged — pressing the lightbulb re-asserts (re-sends) it.
+  Publishes `WallDisconnected`. The session-scoped counterpart to board-presence's
+  `reportBoardDisconnect`. Session identity is resolved from the WebSocket connection
+  context — no `sessionId` argument is required.
+  """
+  reportWallDisconnect: Session!
 
   """
   Record the BLE board serial that this client paired with so other (mobile)
   participants can auto-connect to the same physical board. Any session participant
   may call. Idempotent: when the stored serial already matches, no event fires.
-  Publishes `SessionBoardSerialChanged` on change. Returns the resolved Session for
-  optimistic-UI symmetry with `takeControl` / `releaseControl`. Session identity is
-  resolved from the WebSocket connection context — no `sessionId` argument is required.
+  Publishes `SessionBoardSerialChanged` on change. Returns the resolved Session so
+  optimistic-UI callers can apply server-derived state without a follow-up query.
+  Session identity is resolved from the WebSocket connection context — no
+  `sessionId` argument is required.
   """
   setSessionBoardSerial(serial: String!): Session!
 
@@ -4262,14 +4631,90 @@ type Mutation {
   angle is the only route-level dimension that members observe as a group;
   climb URLs are managed by setCurrentClimb. Any participant may call —
   angle is presentational and doesn't drive BLE (hold positions are sent
-  per-climb), so the queue-control-bar pivot's "only driver moves the wall"
-  rule doesn't apply. Idempotent: when the stored boardPath already matches,
-  no event fires. Publishes `SessionBoardPathChanged` on change. Returns
-  the resolved Session for optimistic-UI symmetry with takeControl /
-  releaseControl. Session identity is resolved from the WebSocket connection
+  per-climb). Idempotent: when the stored boardPath already matches, no event
+  fires. Publishes `SessionBoardPathChanged` on change. Returns the resolved
+  Session so optimistic-UI callers can apply server-derived state without a
+  follow-up query. Session identity is resolved from the WebSocket connection
   context — no `sessionId` argument is required.
   """
   setSessionBoardPath(boardPath: String!): Session!
+
+  # ============================================
+  # Board Presence Mutations ("now on the wall")
+  # ============================================
+
+  """
+  Legacy serial resolver, kept for already-shipped clients that can't render
+  a disambiguation prompt: always returns a single board. Serials are no
+  longer globally unique, so when several boards share one this auto-picks
+  (the caller's own board if present, else the oldest) and remembers it.
+  New clients should call `resolveBoardCandidatesForSerial`. The board config
+  args are used only to create the board the first time a serial is seen.
+  """
+  resolveBoardForSerial(
+    serial: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+  ): ResolvedBoard!
+
+  """
+  Resolve a BLE serial for clients that can disambiguate. Returns a single
+  `board` when the serial is unambiguous (remembered choice, only one match,
+  or freshly created), or a list of `candidates` when several boards share
+  the serial and the user must pick which wall they're at. Confirm the pick
+  with `chooseBoardForSerial`. The config args create the board the first
+  time a serial is seen.
+  """
+  resolveBoardCandidatesForSerial(
+    serial: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+  ): ResolveBoardResult!
+
+  """
+  Confirm which board a (non-unique) serial routes to after the user picks
+  from a disambiguation prompt. Remembers the choice per user so the prompt
+  doesn't reappear, and returns the bound board. The board must be active and
+  actually carry the serial.
+  """
+  chooseBoardForSerial(boardId: Int!, serial: String!): ResolvedBoard!
+
+  """
+  Resolve the wall feed for the selected named board. This binds to the actual
+  board entity, so board sheet stats/history are available before Bluetooth
+  connects and stay aligned with board-scoped ticks.
+  """
+  resolveBoardForUuid(boardUuid: ID!): ResolvedBoard!
+
+  """
+  Resolve the shared board feed for boards without a BLE serial. This is a
+  per-config fallback in v1: every caller with the same board type, layout,
+  size, and set IDs gets the same shared board id.
+  """
+  resolveBoardForConfig(boardType: String!, layoutId: Int!, sizeId: Int!, setIds: String!): ResolvedBoard!
+
+  """
+  Report the climb a connected phone just lit on the wall to the board's live
+  "now on the wall" feed. Auth-optional — anyone connected to the board emits
+  (logged-in or anonymous); a logged-in sender's identity is derived
+  server-side (never client-supplied), an anonymous sender carries no name or
+  avatar. Also makes the caller the board's current connection holder (the
+  "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
+  no confirm/timeout handshake. `angle` is the wall angle (null = unspecified).
+  """
+  reportBoardClimb(boardId: Int!, climb: ClimbQueueItemInput!, angle: Int): Boolean!
+
+  """
+  Report that this client disconnected its BLE link to `boardId` (the explicit
+  lightbulb-off, or a detected drop). Clears the board's connection holder when
+  this caller held it, so the "who's connected" indicator goes free. No-op when
+  someone else now holds it. Auth-optional. Returns whether the slot was freed.
+  """
+  reportBoardDisconnect(boardId: Int!): Boolean!
 
   # ============================================
   # User Management Mutations (require auth)
@@ -4334,7 +4779,7 @@ type Mutation {
   updateTick(uuid: ID!, input: UpdateTickInput!): Tick!
 
   """
-  Attach an Instagram post or reel as beta for a climb. Idempotent on
+  Attach an Instagram or TikTok video as beta for a climb. Idempotent on
   (boardType, climbUuid, link).
   """
   attachBetaLink(input: AttachBetaLinkInput!): Boolean!
@@ -4395,6 +4840,11 @@ type Mutation {
   Remove a climb from a playlist.
   """
   removeClimbFromPlaylist(input: RemoveClimbFromPlaylistInput!): Boolean!
+
+  """
+  Reorder a climb within a playlist by moving it to a new index (owner/editor).
+  """
+  reorderPlaylistClimb(input: ReorderPlaylistClimbInput!): Boolean!
 
   """
   Update only lastAccessedAt for a playlist (does not update updatedAt).
@@ -4494,6 +4944,13 @@ type Mutation {
   """
   unfollowBoard(input: FollowBoardInput!): Boolean!
 
+  """
+  Record the board configuration seen when connecting to a controller over
+  BLE, keyed by serial. Upserts the current user's serial→config recording.
+  Returns null when a saved board already matches the connect (nothing to record).
+  """
+  recordBoardSerial(input: RecordBoardSerialInput!): BoardSerialConfig
+
   # ============================================
   # Gym Entity Mutations (require auth)
   # ============================================
@@ -4538,34 +4995,12 @@ type Mutation {
   """
   linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
-  # ============================================
-  # Session Editing Mutations (require auth)
-  # ============================================
-
   """
-  Update an inferred session's name and/or description.
-  Must be a participant of the session.
-  """
-  updateInferredSession(input: UpdateInferredSessionInput!): SessionDetail
-
-  """
-  Add a user to an inferred session by reassigning their overlapping ticks.
-  Must be a participant of the session.
-  """
-  addUserToSession(input: AddUserToSessionInput!): SessionDetail
-
-  """
-  Remove a user from an inferred session, restoring their ticks to original sessions.
-  Must be a participant of the session.
-  """
-  removeUserFromSession(input: RemoveUserFromSessionInput!): SessionDetail
-
-  """
-  Record that an inferred session has been mirrored to Apple HealthKit,
+  Record that an explicitly-created session has been mirrored to Apple HealthKit,
   storing the workout UUID for de-duplication and UI status.
   Must be a participant of the session.
   """
-  setInferredSessionHealthKitWorkoutId(sessionId: ID!, workoutId: String!): Boolean!
+  setSessionHealthKitWorkoutId(sessionId: ID!, workoutId: String!): Boolean!
 
   # ============================================
   # Notification Mutations (require auth)
@@ -4707,6 +5142,38 @@ type Mutation {
   associated with the user.
   """
   submitAppFeedback(input: SubmitAppFeedbackInput!): Boolean!
+
+  # ============================================
+  # External Platform Integration Mutations
+  # ============================================
+
+  """
+  Mint a short-lived, single-use handoff code for starting the provider's
+  browser OAuth flow (GET /integrations/:provider/start?handoff=...). Keeps
+  the session token out of URLs, where it would persist in logs and browser
+  history. Requires authentication.
+  """
+  createIntegrationOAuthHandoff(provider: IntegrationProvider!): String!
+
+  """
+  Unlink an external platform integration. Revokes the token on the
+  provider's side (best-effort) and deletes the stored credentials.
+  Requires authentication.
+  """
+  disconnectIntegration(provider: IntegrationProvider!): Boolean!
+
+  """
+  Toggle automatic upload of finished sessions for a connected integration.
+  Requires authentication.
+  """
+  setIntegrationAutoSync(provider: IntegrationProvider!, enabled: Boolean!): IntegrationStatus!
+
+  """
+  Export an ended session to an external platform. Idempotent: returns the
+  existing export when the session was already uploaded (e.g. by auto-sync).
+  Caller must be a participant of the session. Requires authentication.
+  """
+  syncSessionToIntegration(provider: IntegrationProvider!, sessionId: ID!): IntegrationExportResult!
 }
 
 """
@@ -4738,6 +5205,13 @@ type Subscription {
   """
   newClimbCreated(boardType: String!, layoutId: Int!): NewClimbCreatedEvent!
 
+  """
+  Subscribe to the live "now on the wall" feed for a shared board (board_id
+  resolved from the BLE serial). Membership-free: any authenticated user who
+  has connected to the board can watch. Sessions are not involved.
+  """
+  boardNowPlaying(boardId: Int!): BoardPresenceEvent!
+
   # ESP32 subscribes to receive LED commands - uses API key auth via connectionParams
   controllerEvents(sessionId: ID!): ControllerEvent!
 }
@@ -4752,6 +5226,7 @@ union SessionEvent =
   | LeaderChanged
   | DriverChanged
   | WallConfirmedClimb
+  | WallDisconnected
   | SessionBoardSerialChanged
   | SessionBoardPathChanged
   | SessionEnded
@@ -4792,12 +5267,15 @@ type LeaderChanged {
 }
 
 """
-Event when the wall driver changes (the participant authorized to drive the wall via the queue-control-bar pivot's lightbulb). Null when no member is currently driving.
+DEPRECATED. Sessions are always-live; there is no wall driver. This type and its
+SessionEvent union membership are kept one release purely so stale clients (cached web
+bundles, un-OTA'd native apps) whose `sessionUpdates` documents still contain
+`... on DriverChanged` keep passing GraphQL validation. The backend never publishes it.
+Remove after the rollout window. (GraphQL has no @deprecated for union members/object
+types, hence this comment.)
 """
 type DriverChanged {
-  "Stable participant id of the new driver, or null when control was released"
   driverParticipantId: ID
-  "Stable participant id of the previous driver, or null when there was none (e.g. the very first take of the session, or after a release). Lets clients render 'X took the wall from Y' toasts and populate the Phase 5 previousDriver analytics property without local bookkeeping."
   previousDriverParticipantId: ID
 }
 
@@ -4817,6 +5295,19 @@ type WallConfirmedClimb {
   confirmedByParticipantId: ID!
   "UUID of the queue item that triggered this send, or null when the BLE-capable phone reported only a climb UUID. Lets clients disambiguate when the same climb is queued twice — without this, both queue entries' pending lightbulbs would clear on a single confirmation."
   queueItemUuid: ID
+}
+
+"""
+Event broadcast when the device that was relaying the session's climb to the
+wall over BLE drops its connection (an explicit lightbulb-off, a detected BLE
+drop, or the WebSocket closing). Clients turn the queue-control-bar lightbulb
+off — the session no longer knows its climb is lit, and someone outside the
+session may have changed the wall. The current climb is unchanged; pressing the
+lightbulb re-asserts (re-sends) it. Symmetric with WallConfirmedClimb.
+"""
+type WallDisconnected {
+  "Stable participant id of the member whose connection was relaying the climb, or null for a system/crash backstop (WebSocket close)"
+  disconnectedByParticipantId: ID
 }
 
 """
@@ -4961,6 +5452,8 @@ type CurrentClimbChanged {
   stateHash: String!
   "New current climb (null to clear)"
   item: ClimbQueueItem
+  "Raw Aurora frames for an unknown BLE climb when no database match exists"
+  frames: String
   "ID of the client that made this change"
   clientId: ID
   "Correlation ID for request tracking"
@@ -5079,6 +5572,8 @@ type LedUpdate {
   climbGrade: String
   gradeColor: String
   boardPath: String
+  "Compact Aurora frames string for rendering a climb thumbnail."
+  frames: String
   """
   Board angle in degrees. Nullable - null means angle not specified.
   Note: 0 is a valid angle value, so null should be used to indicate "no angle"
@@ -5240,4 +5735,215 @@ input SubmitAppFeedbackInput {
   Optional debug context (current climb, party session, URL, user agent).
   """
   context: FeedbackContextInput
+}
+
+# ============================================
+# Board Presence — "now on the wall"
+#
+# Real-time view of the climb currently lit on a shared physical board,
+# keyed on a shared board_id (userBoards.id, resolved from the BLE serial).
+# Decoupled from sessions: anyone who has connected to the board can watch
+# its live feed. Membership-free, no driver. See docs / the board-presence epic.
+# ============================================
+
+"""
+A climb reported as lit on a physical board. Denormalised for display (mirrors
+the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
+"""
+type BoardPresenceClimb {
+  "UUID of the climb lit on the wall"
+  climbUuid: String!
+  "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
+  queueItemUuid: String
+  "Climb name"
+  name: String
+  "Grade name (e.g. V6 / 7A+) at the reported angle"
+  grade: String
+  "Grade colour as a hex string"
+  gradeColor: String
+  "Aurora frames string for rendering a thumbnail"
+  frames: String
+  "Board angle in degrees. Null means unspecified (0 is a valid angle)."
+  angle: Int
+  "Catalog route setter display name (who set the climb)"
+  setter: String
+  "Display name of the Boardsesh user who lit it. Server-derived from the caller; never client-supplied."
+  sentByDisplayName: String
+  "Avatar URL of the user who lit it. Server-derived."
+  sentByAvatarUrl: String
+  "Boardsesh user id of the climber who lit it, for linking to their profile. Server-derived; null for an anonymous sender."
+  sentByUserId: ID
+  "ISO 8601 timestamp when the report was received (server-stamped)"
+  sentAt: String!
+  "Monotonic per-board sequence number for ordering and late-joiner dedup"
+  seq: Int!
+}
+
+"""
+Event: a climb was set (lit) on the wall.
+"""
+type BoardClimbSet {
+  "The climb now on the wall"
+  climb: BoardPresenceClimb!
+}
+
+"""
+Event: the wall was cleared (best-effort — only emitted on a deliberate
+disconnect; an involuntary BLE drop leaves the last climb sticky).
+"""
+type BoardClimbCleared {
+  "ISO 8601 timestamp when the wall was cleared"
+  clearedAt: String!
+  "Monotonic per-board sequence number"
+  seq: Int!
+}
+
+"""
+Event: this board's durable stats changed (a tick was logged on the wall).
+Carries the freshly recomputed snapshot so subscribers update their tiles live
+instead of re-fetching — the stat counterpart of `BoardClimbSet`.
+"""
+type BoardStatsUpdated {
+  "Recomputed stats snapshot for the board"
+  stats: BoardPresenceStats!
+  "Monotonic per-board sequence number (shared counter with climb events)"
+  seq: Int!
+}
+
+"""
+The current "who's connected / writing" holder for a board. The holder is the
+emitter of the most recent confirmed send (`reportBoardClimb`). A logged-in
+holder carries name + avatar; an anonymous holder carries only nulls (clients
+render a "?"). A null holder means the board is free.
+"""
+type BoardConnectionHolder {
+  "Logged-in user id; null for an anonymous holder."
+  userId: ID
+  "Display name; null for an anonymous holder."
+  displayName: String
+  "Avatar URL; null for an anonymous holder."
+  avatarUrl: String
+  "ISO 8601 timestamp of the holder's most recent confirmed send."
+  lastSentAt: String
+}
+
+"""
+Event: the board's connection holder changed (a different emitter took the wall
+via a confirmed send, or the holder disconnected). `holder` is null when the
+board went free.
+"""
+type BoardConnectionChanged {
+  "The current holder, or null when the board is free."
+  holder: BoardConnectionHolder
+  "Monotonic per-board sequence number (shared counter with climb events)."
+  seq: Int!
+}
+
+"""
+Union of board-presence events streamed by `boardNowPlaying`.
+"""
+union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+
+"""
+The first climber to send the hardest grade logged on this wall.
+"""
+type BoardPresenceHardestSend {
+  "UUID of the hardest sent climb"
+  climbUuid: String!
+  "Climb name"
+  name: String
+  "Grade name (e.g. V6 / 7A+)"
+  grade: String!
+  "Boardsesh user id of the climber"
+  sentByUserId: String!
+  "Display name of the climber"
+  sentByDisplayName: String
+  "Avatar URL of the climber"
+  sentByAvatarUrl: String
+  "ISO 8601 timestamp of the send"
+  sentAt: String!
+}
+
+"""
+A board resolved from a BLE serial — the one shared board everyone at this
+physical wall sees. `boardId` is the shared key for the presence channel.
+"""
+type ResolvedBoard {
+  "Shared board id (userBoards.id), keyed 1:1 to the serial"
+  boardId: Int!
+  "Display name of the board (e.g. 'Garage Kilter')"
+  boardName: String!
+  "Board type (kilter, tension, ...)"
+  boardType: String!
+  "Layout id"
+  layoutId: Int!
+  "Size id"
+  sizeId: Int!
+  "Comma-separated set ids"
+  setIds: String!
+}
+
+"""
+One board sharing a (non-unique) BLE serial, shown to the user when a serial
+maps to more than one board so they can pick which wall they're at. Location
+fields are redacted for non-public boards the caller doesn't own.
+"""
+type BoardCandidate {
+  "Shared board id (userBoards.id)"
+  boardId: Int!
+  "Board uuid"
+  boardUuid: ID!
+  "Display name of the board"
+  boardName: String!
+  "Board type (kilter, tension, ...)"
+  boardType: String!
+  "Layout id"
+  layoutId: Int!
+  "Size id"
+  sizeId: Int!
+  "Comma-separated set ids"
+  setIds: String!
+  "Human-readable location (null when redacted)"
+  locationName: String
+  "Linked gym name (null when redacted or no gym)"
+  gymName: String
+  "True when the calling user owns this board"
+  isOwnedByMe: Boolean!
+  "Whether the board is publicly listed"
+  isPublic: Boolean!
+  "ISO 8601 of the most recent tick on this board, if any"
+  lastSentAt: String
+}
+
+"""
+Result of resolving a BLE serial that may map to several boards. Exactly one
+of `board` / `candidates` is set: `board` when the serial is unambiguous
+(remembered choice, only one match, or freshly created), `candidates` when
+the user must pick which wall they're at (confirm with `chooseBoardForSerial`).
+"""
+type ResolveBoardResult {
+  "Set when the serial resolves to a single board"
+  board: ResolvedBoard
+  "Set when several boards share the serial and the user must choose"
+  candidates: [BoardCandidate!]
+}
+
+"""
+Lightweight live + durable stats for a board's wall feed. Durable counts are
+derived from `boardsesh_ticks` stamped with this board_id; "right now" comes
+from the live Redis window.
+"""
+type BoardPresenceStats {
+  "Distinct climbs sent/logged on this wall"
+  climbsSentCount: Int!
+  "Distinct climbers seen on this wall"
+  distinctClimbersCount: Int!
+  "Hardest grade sent on this wall (name), if any"
+  hardestGrade: String
+  "First send at the hardest grade logged on this wall, if any"
+  hardestSend: BoardPresenceHardestSend
+  "Most-sent grade on this wall (name), if any"
+  topGrade: String
+  "ISO 8601 timestamp of the most recent send on this wall"
+  lastSentAt: String
 }

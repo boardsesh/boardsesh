@@ -55,6 +55,11 @@ export type Climb = {
 // Input type for Climb (matches GraphQL ClimbInput)
 export type ClimbInput = {
   uuid: string;
+  // Board the climb belongs to. Round-tripped through the queue so a connected
+  // board can skip a climb set for a different board/layout instead of
+  // dark-firing the wall.
+  boardType?: string;
+  layoutId?: number | null;
   setter_username: string;
   // Boardsesh user ID of the climb owner; nullable for Aurora-synced climbs.
   userId?: string | null;

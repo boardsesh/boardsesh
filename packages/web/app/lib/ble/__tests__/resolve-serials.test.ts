@@ -66,6 +66,7 @@ function recordedConfig(serialNumber: string, overrides: Partial<BoardSerialConf
     layoutId: 2,
     sizeId: 5,
     setIds: '1',
+    apiLevel: null,
     updatedAt: new Date(0).toISOString(),
     boardUuid: null,
     boardSlug: null,

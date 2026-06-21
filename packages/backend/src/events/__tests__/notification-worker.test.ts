@@ -8,14 +8,25 @@ import type { SocialEvent } from '@boardsesh/shared-schema';
  */
 describe('NotificationWorker event routing', () => {
   // The routing table maps event types to handler methods
-  const SUPPORTED_EVENTS: SocialEvent['type'][] = ['comment.created', 'comment.reply', 'vote.cast', 'follow.created'];
-
-  const FUTURE_EVENTS: SocialEvent['type'][] = [
+  const SUPPORTED_EVENTS: SocialEvent['type'][] = [
+    'comment.created',
+    'comment.reply',
+    'vote.cast',
+    'follow.created',
+    'ascent.logged',
     'climb.created',
     'proposal.created',
     'proposal.voted',
     'proposal.approved',
     'proposal.rejected',
+  ];
+
+  const FEED_FANOUT_EVENTS: SocialEvent['type'][] = [
+    'ascent.logged',
+    'comment.created',
+    'comment.reply',
+    'climb.created',
+    'proposal.approved',
   ];
 
   it('has handlers for all currently supported event types', () => {
@@ -25,12 +36,22 @@ describe('NotificationWorker event routing', () => {
     expect(SUPPORTED_EVENTS).toContain('comment.reply');
     expect(SUPPORTED_EVENTS).toContain('vote.cast');
     expect(SUPPORTED_EVENTS).toContain('follow.created');
+    expect(SUPPORTED_EVENTS).toContain('ascent.logged');
+    expect(SUPPORTED_EVENTS).toContain('climb.created');
+    expect(SUPPORTED_EVENTS).toContain('proposal.created');
+    expect(SUPPORTED_EVENTS).toContain('proposal.voted');
+    expect(SUPPORTED_EVENTS).toContain('proposal.approved');
+    expect(SUPPORTED_EVENTS).toContain('proposal.rejected');
   });
 
-  it('documents future event types that are not yet wired', () => {
-    // These events are defined in the SocialEvent type but not
-    // handled by the worker yet. They should be silently skipped.
-    expect(FUTURE_EVENTS).toHaveLength(5);
+  it('documents events that also write activity feed rows', () => {
+    expect(FEED_FANOUT_EVENTS).toEqual([
+      'ascent.logged',
+      'comment.created',
+      'comment.reply',
+      'climb.created',
+      'proposal.approved',
+    ]);
   });
 
   describe('self-notification guard', () => {

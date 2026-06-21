@@ -1,0 +1,463 @@
+# Uploads native store screenshots to App Store Connect / Google Play.
+#
+# Screenshots only — no binary, no text metadata, no review submission. The
+# screenshots are captured fresh by `vp run mobile:screenshots` (see
+# scripts/mobile-screenshots.ts) into the canonical trees:
+#
+#   app-stores/apple/screenshots/<app-store-locale>/<device>/NN-name.png
+#   app-stores/google/screenshots/<device>/NN-name.png
+#
+# App Store Connect wants <screenshots_path>/<locale>/NN-name.png, so we stage
+# each locale into a flat temp path and prefix each file with its device slug to
+# avoid cross-device filename collisions. deliver routes each image to its display
+# slot by pixel dimensions; the NN- filename prefixes still set display order
+# inside each slot.
+#
+# Google Play wants metadata_path/android/<locale>/images/phoneScreenshots/*.png,
+# so we stage the captured phone screenshots into that fastlane supply layout.
+
+require "fileutils"
+require "tmpdir"
+
+opt_out_usage
+default_platform(:ios)
+
+REPO_ROOT = File.expand_path("..", __dir__)
+APPLE_SCREENSHOTS_ROOT = File.join(REPO_ROOT, "app-stores", "apple", "screenshots")
+GOOGLE_SCREENSHOTS_DIR = File.join(REPO_ROOT, "app-stores", "google", "screenshots", "pixel-2")
+EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR"].freeze
+SUPPLY_LOCALE = "en-US"
+
+APP_IDENTIFIER = "com.boardsesh.app"
+
+# Committed store listing text. deliver reads <metadata_path>/<locale>/*.txt;
+# supply reads the same under an android/ root. These trees are the source of
+# truth for the listing copy — see app-stores/apple|google/*.md for the pointers
+# and the operational material (review notes, privacy labels) that can't be
+# uploaded.
+#
+# Anchor to REPO_ROOT (an absolute path), NOT __dir__. fastlane evaluates the
+# Fastfile through instance_eval, where __dir__ resolves to "." rather than this
+# file's directory — so File.join(__dir__, ...) yields a *relative* path like
+# "./metadata/android". deliver runs from fastlane/ so "./metadata" happens to
+# resolve, but supply runs from the repo root, where "./metadata/android" does
+# not exist ("Could not find folder ./metadata/android"). REPO_ROOT is already
+# absolutised via File.expand_path, so these paths resolve from any CWD.
+APPLE_METADATA_DIR = File.join(REPO_ROOT, "fastlane", "metadata")
+ANDROID_METADATA_DIR = File.join(REPO_ROOT, "fastlane", "metadata", "android")
+
+# Marketing version, read from the Expo app config. Anchored to a top-level
+# `version:` line whose value starts with a digit (semver), so a nested plugin
+# `version:` can't be matched by accident. The build workflows parse the same
+# field — keep them in sync if the config layout changes.
+def mobile_app_version
+  config_path = File.join(REPO_ROOT, "packages", "mobile", "app.config.ts")
+  match = File.read(config_path).match(/^[ \t]*version:\s*['"](\d[^'"]*)['"]/)
+  UI.user_error!("Could not find version in #{config_path}") unless match
+  match[1]
+end
+
+# App Store Connect API key from the same env vars the screenshot/TestFlight
+# workflows already provide (APP_STORE_CONNECT_API_KEY_ID / _ISSUER_ID and
+# ASC_KEY_PATH pointing at the decoded .p8).
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+    issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH"),
+    is_key_content_base64: false,
+    in_house: false
+  )
+end
+
+# Hand a resolved number back to the calling GitHub Actions step via the step's
+# output file (consumed as steps.<id>.outputs.value). No-op when run locally.
+def emit_ci_output(value)
+  github_output = ENV["GITHUB_OUTPUT"]
+  return if github_output.nil? || github_output.empty?
+  File.open(github_output, "a") { |file| file.puts("value=#{value}") }
+end
+
+def pngs_for_locale(locale)
+  locale_dir = File.join(APPLE_SCREENSHOTS_ROOT, locale)
+  unless Dir.exist?(locale_dir)
+    UI.user_error!("Missing screenshots for App Store locale #{locale}. Run `vp run mobile:screenshots -- --locales all --devices common` first.")
+  end
+
+  device_dirs = Dir.children(locale_dir).select { |entry| File.directory?(File.join(locale_dir, entry)) }.sort
+  UI.user_error!("No device screenshot folders found for App Store locale #{locale}.") if device_dirs.empty?
+
+  device_dirs.to_h do |device_slug|
+    pngs = Dir.glob(File.join(locale_dir, device_slug, "*.png")).sort
+    UI.user_error!("No PNGs found for App Store locale #{locale}, device #{device_slug}.") if pngs.empty?
+    [device_slug, pngs]
+  end
+end
+
+def screenshot_manifest
+  UI.user_error!("No screenshots directory at #{APPLE_SCREENSHOTS_ROOT}. Run `vp run mobile:screenshots` first.") unless Dir.exist?(APPLE_SCREENSHOTS_ROOT)
+
+  unexpected_locales = Dir.children(APPLE_SCREENSHOTS_ROOT)
+    .select { |entry| File.directory?(File.join(APPLE_SCREENSHOTS_ROOT, entry)) }
+    .reject { |locale| EXPECTED_DELIVER_LOCALES.include?(locale) }
+    .sort
+  unless unexpected_locales.empty?
+    UI.user_error!("Unknown App Store screenshot locale folder(s): #{unexpected_locales.join(', ')}.")
+  end
+
+  manifest = EXPECTED_DELIVER_LOCALES.to_h { |locale| [locale, pngs_for_locale(locale)] }
+  reference_locale = EXPECTED_DELIVER_LOCALES.first
+  reference_devices = manifest.fetch(reference_locale).keys.sort
+
+  manifest.each do |locale, devices|
+    device_slugs = devices.keys.sort
+    if device_slugs != reference_devices
+      UI.user_error!("Device folders for #{locale} are #{device_slugs.join(', ')}, expected #{reference_devices.join(', ')}.")
+    end
+
+    reference_devices.each do |device_slug|
+      expected_names = manifest.fetch(reference_locale).fetch(device_slug).map { |path| File.basename(path) }
+      actual_names = devices.fetch(device_slug).map { |path| File.basename(path) }
+      if actual_names != expected_names
+        UI.user_error!("Screenshot files for #{locale}/#{device_slug} do not match #{reference_locale}/#{device_slug}.")
+      end
+    end
+  end
+
+  manifest
+end
+
+def staged_filename(device_slug, png_path)
+  basename = File.basename(png_path)
+  staged = basename.sub(/\A(\d+)-/, "\\1-#{device_slug}-")
+  staged == basename ? "#{device_slug}-#{basename}" : staged
+end
+
+# A precautionary retry for the store screenshot uploads. App Store Connect throws
+# sporadic 500s (Spaceship::InternalServerError) that deliver only auto-retries on
+# 503, so a single bad gateway response would otherwise fail the whole upload (seen
+# in run 27719803749). Retries ONLY transient server-side errors (5xx / timeout /
+# temporary) with a short linear backoff; a real failure (bad credentials, a
+# rejected screenshot) is re-raised on the first attempt rather than looped on.
+# Both deliver (sync_screenshots) and supply (sync_image_upload) run in sync mode,
+# so a retried upload reconciles against the staged files instead of duplicating.
+TRANSIENT_UPLOAD_ERROR = /5\d\d|server error|timed?\s?out|timeout|temporar|try again|connection reset|bad gateway|service unavailable|internal server/i
+
+def with_upload_retries(max_attempts: 3, base_sleep: 30)
+  attempt = 0
+  begin
+    attempt += 1
+    yield
+  rescue => error
+    transient = error.message.to_s.match?(TRANSIENT_UPLOAD_ERROR) ||
+                error.class.name.to_s.match?(/InternalServerError|TemporaryError|ServerError|Timeout/)
+    raise if !transient || attempt >= max_attempts
+    delay = base_sleep * attempt
+    UI.important("Store upload attempt #{attempt}/#{max_attempts} hit a transient error (#{error.class}: #{error.message.to_s.lines.first&.strip}). Retrying in #{delay}s…")
+    sleep(delay)
+    retry
+  end
+end
+
+# supply resolves a SINGLE release in the target track (default: production)
+# before it uploads listing metadata / images / screenshots — even though those
+# are app-global, not release-specific (perform_upload_meta -> fetch_track_and_release!).
+# When the production track holds more than one release (a staged or halted
+# rollout, or a new release still in review alongside the live one) it aborts with
+# "More than one release found in this track. Please specify with the :version_code
+# option to select a release." Pin it to the highest production version code so the
+# resolution is unambiguous; the app-global listing applies the same either way,
+# and skip_upload_changelogs means the selected release itself is never touched.
+# Returns nil when the track can't be read (or is empty), leaving a single-release
+# track to resolve on its own.
+def play_production_version_code(json_key_data)
+  codes = Array(
+    google_play_track_version_codes(
+      package_name: APP_IDENTIFIER,
+      json_key_data: json_key_data,
+      track: "production"
+    )
+  ).map(&:to_i)
+  return nil if codes.empty?
+  UI.message("Pinning the production version_code to #{codes.max} so supply can resolve a single release.")
+  codes.max
+rescue => error
+  UI.important("Could not read production version codes (#{error.message}); uploading without an explicit version_code.")
+  nil
+end
+
+platform :ios do
+  desc "Upload App Store screenshots to App Store Connect (no binary, no metadata, no review)"
+  lane :screenshots do
+    manifest = screenshot_manifest
+
+    staging_dir = Dir.mktmpdir("asc-screenshots-")
+    begin
+      manifest.each do |locale, devices|
+        locale_dir = File.join(staging_dir, locale)
+        FileUtils.mkdir_p(locale_dir)
+        staged_count = 0
+        devices.each do |device_slug, pngs|
+          pngs.each do |png|
+            FileUtils.cp(png, File.join(locale_dir, staged_filename(device_slug, png)))
+            staged_count += 1
+          end
+        end
+        UI.message("Staged #{staged_count} screenshot(s) into #{locale_dir}")
+      end
+
+      api_key = app_store_connect_api_key(
+        key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+        issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+        key_filepath: ENV.fetch("ASC_KEY_PATH"),
+        # ASC_KEY_PATH is a real .p8 file on disk (decoded in CI), not base64 content.
+        is_key_content_base64: false,
+        in_house: false
+      )
+
+      with_upload_retries do
+        upload_to_app_store(
+          api_key: api_key,
+          app_identifier: "com.boardsesh.app",
+          screenshots_path: staging_dir,
+          skip_binary_upload: true,
+          skip_metadata: true,
+          skip_app_version_update: true,
+          overwrite_screenshots: true,
+          sync_screenshots: true,
+          submit_for_review: false,
+          run_precheck_before_submit: false,
+          # force: true is mandatory in CI — without it deliver opens an HTML
+          # preview in a browser and blocks until timeout.
+          force: true
+        )
+      end
+    ensure
+      FileUtils.remove_entry(staging_dir) if staging_dir && Dir.exist?(staging_dir)
+    end
+  end
+
+  desc "Upload App Store listing text + What's New to the editable version (no binary, no screenshots, no review)"
+  lane :metadata do
+    upload_to_app_store(
+      api_key: asc_api_key,
+      app_identifier: APP_IDENTIFIER,
+      metadata_path: APPLE_METADATA_DIR,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: false,
+      # Only edit the current editable version's text; never create or retitle a version.
+      skip_app_version_update: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      # force: true — same reason as the screenshots lane: no interactive HTML preview in CI.
+      force: true
+    )
+  end
+
+  desc "Print the next iOS build number (latest TestFlight build for this marketing version + 1)"
+  lane :next_build_number do
+    fallback = ENV["BUILD_NUMBER_FALLBACK"].to_s
+    number =
+      begin
+        latest = latest_testflight_build_number(
+          api_key: asc_api_key,
+          app_identifier: APP_IDENTIFIER,
+          version: mobile_app_version,
+          # Returned when this version has no builds yet, so a fresh train starts at 1.
+          initial_build_number: 0
+        )
+        latest.to_i + 1
+      rescue => error
+        # Covers both a failed ASC query and missing credentials (asc_api_key's
+        # ENV.fetch raises here too, since it's evaluated inside this begin).
+        UI.important("Could not resolve the build number from App Store Connect: #{error.message}")
+        UI.user_error!("No build number from App Store Connect and BUILD_NUMBER_FALLBACK is unset.") if fallback.empty?
+        UI.important("Falling back to BUILD_NUMBER_FALLBACK=#{fallback}")
+        fallback.to_i
+      end
+
+    UI.success("iOS build number: #{number}")
+    emit_ci_output(number)
+    number
+  end
+end
+
+platform :android do
+  desc "Upload Play Store phone screenshots to Google Play (no binary, no text metadata)"
+  lane :screenshots do
+    unless Dir.exist?(GOOGLE_SCREENSHOTS_DIR)
+      UI.user_error!("No screenshots directory at #{GOOGLE_SCREENSHOTS_DIR}. Run `vp run mobile:screenshots -- --platform android` first.")
+    end
+
+    pngs = Dir.glob(File.join(GOOGLE_SCREENSHOTS_DIR, "*.png")).sort
+    if pngs.length < 2
+      UI.user_error!("Found #{pngs.length} PNG(s) in #{GOOGLE_SCREENSHOTS_DIR}. Refusing to upload fewer than 2 Play phone screenshots.")
+    end
+    if pngs.length > 8
+      UI.user_error!("Found #{pngs.length} PNG(s) in #{GOOGLE_SCREENSHOTS_DIR}. Google Play accepts at most 8 phone screenshots.")
+    end
+
+    staging_dir = Dir.mktmpdir("play-screenshots-")
+    begin
+      metadata_dir = File.join(staging_dir, "android")
+      phone_dir = File.join(metadata_dir, SUPPLY_LOCALE, "images", "phoneScreenshots")
+      FileUtils.mkdir_p(phone_dir)
+      pngs.each { |png| FileUtils.cp(png, File.join(phone_dir, File.basename(png))) }
+      UI.message("Staged #{pngs.length} Play phone screenshot(s) into #{phone_dir}")
+
+      json_key_data = ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")
+      version_code = play_production_version_code(json_key_data)
+      with_upload_retries do
+        upload_to_play_store(
+          package_name: APP_IDENTIFIER,
+          json_key_data: json_key_data,
+          version_code: version_code,
+          metadata_path: metadata_dir,
+          skip_upload_apk: true,
+          skip_upload_aab: true,
+          skip_upload_metadata: true,
+          skip_upload_changelogs: true,
+          skip_upload_images: true,
+          skip_upload_screenshots: false,
+          sync_image_upload: true,
+          # See the comment on the `metadata` lane: never let fastlane silently
+          # swallow Google's "send these for review" rejection. A green run must
+          # mean the screenshots are actually queued for review, not stranded
+          # unsubmitted in the Play Console.
+          rescue_changes_not_sent_for_review: false,
+          timeout: 300
+        )
+      end
+    ensure
+      FileUtils.remove_entry(staging_dir) if staging_dir && Dir.exist?(staging_dir)
+    end
+  end
+
+  desc "Upload Play Store listing text (title + short/full description) — no binary, no changelog, no images"
+  lane :metadata do
+    json_key_data = ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")
+    upload_to_play_store(
+      package_name: APP_IDENTIFIER,
+      json_key_data: json_key_data,
+      version_code: play_production_version_code(json_key_data),
+      metadata_path: ANDROID_METADATA_DIR,
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: false,
+      # "What's new" ships with the AAB at release time (whatsNewDirectory in
+      # android-apk-rn.yml, sourced from changelogs/default.txt), so leave the
+      # release notes untouched here.
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      # Do NOT let fastlane silently swallow Google's review gate. By default
+      # supply commits with changes_not_sent_for_review: false (i.e. "send these
+      # for review"), but Google rejects a listing-only edit (no AAB) with
+      # "Please set the query parameter changesNotSentForReview to true". The
+      # fastlane default rescue_changes_not_sent_for_review: true catches that,
+      # silently re-commits with changesNotSentForReview=true, and prints
+      # "Successfully finished the upload" — so CI is green while the changes sit
+      # in the Play Console as "ready to send for review" and never publish (the
+      # exact reason the live listing kept showing the old icon/copy). Setting it
+      # false makes that case fail loudly so we see Google's real response on the
+      # next run instead of a false green.
+      rescue_changes_not_sent_for_review: false,
+      timeout: 300
+    )
+  end
+
+  desc "Upload Play Store listing images (high-res icon, feature graphic) — no binary, no text, no screenshots"
+  lane :images do
+    json_key_data = ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")
+    upload_to_play_store(
+      package_name: APP_IDENTIFIER,
+      json_key_data: json_key_data,
+      version_code: play_production_version_code(json_key_data),
+      metadata_path: ANDROID_METADATA_DIR,
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      # Upload the app images present under <locale>/images/ (icon.png 512x512,
+      # featureGraphic.png 1024x500 when added).
+      skip_upload_images: false,
+      # Phone screenshots are owned by the screenshots lane; leave them alone.
+      skip_upload_screenshots: true,
+      # supply never deletes app images, so committing just icon.png updates the
+      # icon and leaves any live feature graphic untouched. sync_image_upload only
+      # toggles a sha256 skip-if-unchanged for images, so it's deliberately
+      # omitted (don't flip it on: for screenshots, false means delete-all-then-
+      # reupload, which is why the screenshots lane sets it true).
+      # See the comment on the `metadata` lane: surface Google's "send for
+      # review" rejection instead of silently committing changes that never
+      # publish.
+      rescue_changes_not_sent_for_review: false,
+      timeout: 300
+    )
+  end
+
+  desc "Print the next Android versionCode (sideload floor raised to the Play ceiling, never below it)"
+  lane :next_version_code do
+    # VERSION_CODE_FALLBACK is the deterministic sideload line: offset (2_000_000)
+    # + github.run_number, set by android-apk-rn.yml. It is the versionCode that
+    # has shipped on every GitHub Release sideload APK, so it is the LIVE ceiling
+    # of the channel users actually sideload — currently ~2_000_2xx.
+    #
+    # It is a FLOOR, not a "fallback". The Google Play internal track sits in the
+    # low hundreds (it started fresh from the bootstrap upload), so deriving the
+    # shared versionCode from Play alone drags it far BELOW the sideload ceiling:
+    # build 285 shipped 2_000_285, then build 289 (which first read Play) shipped
+    # 190, and Android then rejects every sideload upgrade with
+    # INSTALL_FAILED_VERSION_DOWNGRADE (190 < 2_000_285). The Play query may only
+    # RAISE the number above this floor, never lower it. See
+    # docs/android-sideload-build.md.
+    fallback = ENV["VERSION_CODE_FALLBACK"].to_s
+    floor = fallback.empty? ? nil : fallback.to_i
+
+    json_key_data = ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"].to_s
+    play_next =
+      begin
+        # No service account yet (first-upload bootstrap) -> floor only.
+        UI.user_error!("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is empty.") if json_key_data.empty?
+        codes = []
+        %w[production beta alpha internal].each do |track|
+          begin
+            codes.concat(
+              Array(
+                google_play_track_version_codes(
+                  package_name: APP_IDENTIFIER,
+                  json_key_data: json_key_data,
+                  track: track
+                )
+              )
+            )
+          rescue => track_error
+            # An empty/non-existent track (e.g. no alpha) is expected — skip it.
+            UI.important("Could not read '#{track}' track: #{track_error.message}")
+          end
+        end
+        UI.user_error!("No version codes on any track.") if codes.empty?
+        codes.map(&:to_i).max + 1
+      rescue => error
+        UI.important("google_play_track_version_codes failed: #{error.message}")
+        nil
+      end
+
+    # max(sideload floor, Play ceiling + 1). Keeps every sideload upgrade valid
+    # while staying strictly above whatever Play already has, so the AAB uploads
+    # cleanly too. Errors only when BOTH inputs are missing.
+    code = [floor, play_next].compact.max
+    UI.user_error!("No version code: Google Play query returned nothing and VERSION_CODE_FALLBACK is unset.") if code.nil?
+
+    if floor && play_next && play_next > floor
+      UI.important("Play ceiling (#{play_next}) is above the sideload floor (#{floor}); using #{code}.")
+    elsif floor && play_next
+      UI.important("Play ceiling (#{play_next}) is at/below the sideload floor (#{floor}); holding the floor at #{code}.")
+    end
+
+    UI.success("Android versionCode: #{code}")
+    emit_ci_output(code)
+    code
+  end
+end

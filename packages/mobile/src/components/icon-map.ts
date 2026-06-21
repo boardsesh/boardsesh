@@ -19,6 +19,7 @@ export const iconMap = {
   settings: { ios: 'gearshape', android: 'cog-outline' },
   'settings.fill': { ios: 'gearshape.fill', android: 'cog' },
   server: { ios: 'server.rack', android: 'server-network' },
+  logout: { ios: 'rectangle.portrait.and.arrow.right', android: 'logout' },
 
   // Navigation
   'chevron.right': { ios: 'chevron.right', android: 'chevron-right' },
@@ -39,12 +40,19 @@ export const iconMap = {
   'more.actions': { ios: 'ellipsis.circle', android: 'dots-horizontal-circle-outline' },
   'more.actions.fill': { ios: 'ellipsis.circle.fill', android: 'dots-horizontal-circle' },
   copy: { ios: 'doc.on.doc', android: 'content-copy' },
+  'doc.text': { ios: 'doc.text', android: 'file-document-outline' },
+  mail: { ios: 'envelope', android: 'email-outline' },
+  paw: { ios: 'pawprint.fill', android: 'paw' },
   flag: { ios: 'flag', android: 'flag-outline' },
+  link: { ios: 'link', android: 'link-variant' },
+  github: { ios: 'chevron.left.forwardslash.chevron.right', android: 'github' },
+  upload: { ios: 'square.and.arrow.up', android: 'upload-outline' },
   delete: { ios: 'trash', android: 'delete-outline' },
   'delete.fill': { ios: 'trash.fill', android: 'delete' },
   edit: { ios: 'pencil', android: 'pencil-outline' },
   pin: { ios: 'pin', android: 'pin-outline' },
   'pin.fill': { ios: 'pin.fill', android: 'pin' },
+  transfer: { ios: 'arrow.left.arrow.right', android: 'swap-horizontal' },
   tag: { ios: 'tag', android: 'tag-outline' },
   'check.small': { ios: 'checkmark', android: 'check' },
   flash: { ios: 'bolt.fill', android: 'flash' },
@@ -54,14 +62,35 @@ export const iconMap = {
   mirror: { ios: 'arrow.triangle.2.circlepath', android: 'sync' },
   lightbulb: { ios: 'lightbulb', android: 'lightbulb-on-outline' },
   'lightbulb.fill': { ios: 'lightbulb.fill', android: 'lightbulb-on' },
+  'lightbulb.slash': { ios: 'lightbulb.slash', android: 'lightbulb-off' },
   angle: { ios: 'angle', android: 'angle-acute' },
   tick: { ios: 'checkmark.circle.fill', android: 'check-circle' },
   'tick.outline': { ios: 'checkmark.circle', android: 'check-circle-outline' },
+  // Ascent-status "attempted" marker (tried, didn't send). A circled X that
+  // mirrors the circled check used for `send`, so the climb-row status glyphs
+  // (bolt / check / x) read as one matched set.
+  'ascent.attempt': { ios: 'xmark.circle', android: 'close-circle-outline' },
+  // Intrinsic climb-attribute glyphs shown after the name (web parity:
+  // climb-card/climb-icons.tsx © benchmark + ⊘ no-match).
+  'no.match': { ios: 'hand.raised.slash', android: 'hand-back-right-off-outline' },
+  benchmark: { ios: 'c.circle', android: 'copyright' },
   bluetooth: { ios: 'antenna.radiowaves.left.and.right', android: 'bluetooth' },
   'bluetooth.connected': { ios: 'antenna.radiowaves.left.and.right', android: 'bluetooth-connect' },
   'bluetooth.off': { ios: 'antenna.radiowaves.left.and.right.slash', android: 'bluetooth-off' },
   playlist: { ios: 'folder.badge.plus', android: 'folder-plus-outline' },
   send: { ios: 'paperplane.fill', android: 'send' },
+
+  // Create climb
+  flame: { ios: 'flame', android: 'fire' },
+  lock: { ios: 'lock', android: 'lock-outline' },
+  visibility: { ios: 'eye', android: 'eye-outline' },
+  'visibility.off': { ios: 'eye.slash', android: 'eye-off-outline' },
+  'play.circle': { ios: 'play.circle', android: 'play-circle-outline' },
+  'square.and.arrow.up.on.square': { ios: 'square.and.arrow.up.on.square', android: 'tray-arrow-up' },
+  eraser: { ios: 'eraser', android: 'eraser' },
+  'hand.raised': { ios: 'hand.raised', android: 'hand-back-right-outline' },
+  undo: { ios: 'arrow.uturn.backward', android: 'undo' },
+  redo: { ios: 'arrow.uturn.forward', android: 'redo' },
 
   // Status
   info: { ios: 'info.circle', android: 'information-outline' },
@@ -72,8 +101,10 @@ export const iconMap = {
   // Social
   person: { ios: 'person', android: 'account-outline' },
   'person.fill': { ios: 'person.fill', android: 'account' },
+  'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
   people: { ios: 'person.2', android: 'account-multiple-outline' },
   'people.fill': { ios: 'person.2.fill', android: 'account-multiple' },
+  discord: { ios: 'bubble.left.and.bubble.right.fill', android: 'discord' },
   notification: { ios: 'bell', android: 'bell-outline' },
   'notification.fill': { ios: 'bell.fill', android: 'bell' },
 
@@ -87,6 +118,7 @@ export const iconMap = {
   'end.session': { ios: 'stop.circle', android: 'stop-circle-outline' },
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
+  'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },
 
   // Math
   minus: { ios: 'minus', android: 'minus' },
@@ -99,8 +131,10 @@ export const iconMap = {
   // Misc
   star: { ios: 'star', android: 'star-outline' },
   'star.fill': { ios: 'star.fill', android: 'star' },
+  crown: { ios: 'crown.fill', android: 'crown' },
   location: { ios: 'location', android: 'map-marker-outline' },
   'location.fill': { ios: 'location.fill', android: 'map-marker' },
+  calendar: { ios: 'calendar', android: 'calendar-outline' },
   clock: { ios: 'clock', android: 'clock-outline' },
   filter: { ios: 'line.3.horizontal.decrease', android: 'filter-variant' },
   sort: { ios: 'arrow.up.arrow.down', android: 'sort-variant' },

@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-interface DevNetworkingPlugin {
+type DevNetworkingPlugin = {
   applyBoardseshDevNetworkingInfoPlist(infoPlist: Record<string, unknown>): Record<string, unknown>;
   TAILSCALE_ATS_EXCEPTION: Record<string, unknown>;
   TAILSCALE_DOMAIN: string;
-}
+};
 
 const devNetworkingPlugin = require('../../../plugins/with-boardsesh-dev-networking.js') as DevNetworkingPlugin;
 

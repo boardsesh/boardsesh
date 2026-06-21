@@ -13,6 +13,7 @@ import { END_SESSION as END_SESSION_GQL, type EndSessionResponse } from '@boards
 import { emitSessionEnded } from '@/app/lib/session-lifecycle-tracking';
 import type { SessionSummary } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '../../queue-control/types';
+import { getBrowserTimezone } from '@/app/lib/browser-timezone';
 
 type UseSessionIdManagementParams = {
   isOffBoardMode: boolean;
@@ -70,9 +71,8 @@ export function useSessionIdManagement({
   //     when the user creates a session from THIS provider's route (no
   //     navigation, same baseBoardPath as the page they're on), nothing
   //     else picks up the new id. Without this sync, isPersistentSessionActive
-  //     stays false, deriveIsDriver returns true (solo branch), and the
-  //     drawer lightbulb keeps reading as "lit BLE" instead of flipping to
-  //     "party, no driver claimed yet".
+  //     stays false and the drawer lightbulb keeps reading as "lit BLE"
+  //     (solo) instead of the session-scoped wall-confirmed indicator.
   //
   // Guarded on persistentSessionId being non-null so the cookie value isn't
   // wiped during the initial IndexedDB-load window (where activeSession is
@@ -181,7 +181,7 @@ export function useSessionIdManagement({
     if (endingSessionId && wsAuthToken) {
       const client = createGraphQLHttpClient(wsAuthToken);
       client
-        .request<EndSessionResponse>(END_SESSION_GQL, { sessionId: endingSessionId })
+        .request<EndSessionResponse>(END_SESSION_GQL, { sessionId: endingSessionId, timezone: getBrowserTimezone() })
         .then((response: EndSessionResponse) => {
           if (response.endSession) setSessionSummary(response.endSession);
         })

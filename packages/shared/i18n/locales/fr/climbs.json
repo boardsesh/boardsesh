@@ -1,6 +1,6 @@
 {
-  "sends_one": "{{count}} enchaînement",
-  "sends_other": "{{count}} enchaînements",
+  "sends_one": "{{formattedCount}} enchaînement",
+  "sends_other": "{{formattedCount}} enchaînements",
   "metadata": {
     "list": {
       "title": "Blocs {{boardName}} à {{angle}}°",
@@ -536,8 +536,9 @@
   "mobile": {
     "emptyState": {
       "noBoard": {
-        "title": "Aucun board sélectionné",
-        "subtitle": "Ajoutez un board pour parcourir les blocs"
+        "title": "Suis ton mur",
+        "subtitle": "Choisis le board où tu grimpes pour parcourir ses blocs et voir ce qui est allumé en ce moment.",
+        "cta": "Trouver mon board"
       },
       "noClimbs": {
         "title": "Aucun bloc trouvé",
@@ -549,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Bloc introuvable",
-      "addToQueue": "Ajouter à la file",
-      "logAscent": "Enregistrer un enchaînement",
-      "sent_one": "Enchaîné {{count}} fois",
-      "sent_other": "Enchaîné {{count}} fois",
-      "sentWithAttempts_one": "Enchaîné {{count}} fois en {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Enchaîné {{count}} fois en {{attempts}} {{attemptWord}}",
-      "attempt_one": "essai",
-      "attempt_other": "essais",
-      "send_one": "enchaînement",
-      "send_other": "enchaînements"
+      "notFound": "Bloc introuvable"
     },
     "logAscent": {
       "attempt": "Essai",
@@ -630,14 +621,16 @@
       "setters": "Ouvreurs",
       "none": "Aucun",
       "tall": "Voies hautes uniquement",
+      "tallClimbs": "Voies hautes",
       "tallDescription": "Atteignent le haut du mur",
       "wide": "Voies larges uniquement",
+      "wideClimbs": "Voies larges",
       "wideDescription": "Utilisent l'extension 10x10",
       "betaVideos": "Avec vidéo de beta uniquement",
+      "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
       "searchSetters": "Rechercher des ouvreurs",
       "noSetters": "Aucun ouvreur",
-      "cancel": "Annuler",
       "done": "OK",
       "clearAll": "Tout effacer"
     },
@@ -646,33 +639,152 @@
       "clearRecent": "Effacer",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
-      "gradeMax": "Jusqu'à {{grade}}",
-      "ascents": "{{count}}+ ascensions",
-      "rating": "{{count}}+ étoiles",
+      "gradeMax": "≤{{grade}}",
+      "ascents": "{{count}}+ 🧗",
+      "rating": "{{count}}+ ⭐",
       "more": "+{{count}} de plus",
+      "setterName": "Par {{setter}}",
       "settersCount_one": "{{count}} ouvreur",
       "settersCount_other": "{{count}} ouvreurs",
       "climbsCount_one": "{{count}} voie",
       "climbsCount_other": "{{count}} voies",
-      "grade": "Niveau",
-      "anyGrade": "Tout niveau",
       "gradeClear": "Tous",
-      "gradeHint": "Touchez un niveau · un second pour une plage",
       "filters": "Filtres",
-      "removeFilter": "Retirer le filtre {{name}}"
+      "filterCountAria": "Filtres, {{count}} actifs",
+      "filterHint": "Ouvre tous les filtres de blocs",
+      "gradeAction": "Définir la plage de cotation",
+      "gradeOpenHint": "Ouvre le sélecteur de cotation",
+      "gradeCloseHint": "Ferme le sélecteur de cotation",
+      "boardSwitcherHint": "Ouvre le sélecteur de board",
+      "allClimbs": "Toutes les voies"
+    },
+    "gradeRail": {
+      "setFilterAria": "Filtrer par cotation {{grade}}",
+      "selectedFilterAria": "Filtre de cotation {{grade}} sélectionné",
+      "rangeFilterAria": "{{grade}} est dans la plage de cotations sélectionnée",
+      "anyGradeAria": "Toutes les cotations sélectionnées",
+      "clearFilterAria": "Effacer le filtre de cotation",
+      "closeAria": "Fermer le sélecteur de cotation",
+      "rangeHint": "Touchez une autre cotation pour créer une plage",
+      "setLogGradeAria": "Enregistrer la cotation {{grade}}",
+      "selectedLogGradeAria": "Cotation {{grade}} sélectionnée pour le carnet",
+      "consensusGradeAria": "{{grade}}, cotation consensus"
     },
     "climbRow": {
       "addToQueue": "Ajouter à la file",
       "toggleFavorite": "Basculer favori",
       "share": "Partager le bloc",
-      "projectFallback": "Projet"
+      "projectFallback": "Projet",
+      "ascentStatus": {
+        "flash": "Flashé",
+        "send": "Enchaîné",
+        "attempt": "Essayé"
+      },
+      "noMatch": "Une main par prise",
+      "benchmark": "Benchmark"
     },
     "climbActions": {
+      "preview": "Aperçu",
       "copyLink": "Copier le lien",
-      "report": "Signaler",
       "linkCopied": "Lien copié",
       "tick": "Enregistrer une croix",
-      "openInApp": "Ouvrir dans l'app Aurora"
+      "addBetaVideo": "Ajouter une vidéo beta",
+      "openInApp": "Ouvrir dans l'app Aurora",
+      "fork": "Remix this climb",
+      "edit": "Modifier la voie",
+      "editEntry": "Modifier l'entrée du carnet"
+    },
+    "create": {
+      "brush": {
+        "start": "Départ",
+        "hand": "Main",
+        "finish": "Fin",
+        "foot": "Pied",
+        "erase": "Effacer"
+      },
+      "counts": {
+        "start": "Départ : {{count}}/2",
+        "finish": "Fin : {{count}}/2"
+      },
+      "actions": {
+        "clear": "Effacer les prises",
+        "setActive": "Définir comme voie active",
+        "undo": "Annuler",
+        "redo": "Rétablir"
+      },
+      "holdRole": {
+        "title": "Définir le rôle de la prise",
+        "clear": "Effacer"
+      },
+      "settings": {
+        "draftLabel": "Enregistrer comme brouillon",
+        "draftDescription": "Les brouillons restent privés jusqu’à publication.",
+        "showAllHoldsLabel": "Afficher toutes les prises",
+        "showAllHoldsDescription": "Met en évidence chaque prise cliquable du panneau.",
+        "noMatchLabel": "Une main par prise",
+        "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
+      },
+      "drafts": {
+        "holds_one": "{{count}} prise",
+        "holds_other": "{{count}} prises",
+        "sectionTitle": "Brouillons en cours"
+      },
+      "unavailable": {
+        "title": "Création indisponible ici",
+        "subtitle": "Cette configuration de panneau ne permet pas de créer des voies."
+      },
+      "fab": {
+        "ariaLabel": "Créer une voie"
+      },
+      "header": {
+        "newClimb": "Nouvelle voie"
+      },
+      "save": {
+        "idle": "Enregistrer",
+        "login": "Connectez-vous pour enregistrer",
+        "saving": "Enregistrement…",
+        "done": "Enregistré",
+        "draftToast": "Brouillon enregistré",
+        "publishedToast": "Voie publiée"
+      }
+    },
+    "holdFilter": {
+      "title": "Types de prise",
+      "include": "Inclure",
+      "exclude": "Exclure",
+      "applyModeLabel": "Inclure ou exclure",
+      "includedSuffix": "incluse",
+      "excludedSuffix": "exclue",
+      "hint": "Touchez les prises du mur pour filtrer selon le type requis.",
+      "summaryCount_one": "{{count}} prise",
+      "summaryCount_other": "{{count}} prises",
+      "type": {
+        "starting": "Départ",
+        "hand": "Main",
+        "finish": "Arrivée",
+        "foot": "Pied",
+        "any": "Toute"
+      }
+    },
+    "zoneFilter": {
+      "title": "Zone du mur",
+      "summaryActive": "Activée",
+      "enable": "Ajouter une zone",
+      "clearZone": "Effacer la zone",
+      "allHolds": "Toutes les prises",
+      "anyHold": "Une prise",
+      "modeLabel": "Quelles prises doivent tenir dans la zone",
+      "hint": "Ajoutez une zone pour trouver des blocs qui restent dans une partie du mur.",
+      "activeHint": "Faites glisser la boîte et ses coins pour régler la zone. Toutes les prises doivent tenir dedans ; passez à Une prise pour garder les blocs qui l'atteignent.",
+      "regionLabel": "Zone du mur",
+      "regionHint": "Balayez vers le haut ou le bas pour déplacer la zone sur le mur.",
+      "corner": {
+        "topLeft": "Coin supérieur gauche",
+        "topRight": "Coin supérieur droit",
+        "bottomLeft": "Coin inférieur gauche",
+        "bottomRight": "Coin inférieur droit",
+        "hint": "Balayez vers le haut ou le bas pour agrandir ou réduire la zone depuis ce coin."
+      }
     }
   }
 }

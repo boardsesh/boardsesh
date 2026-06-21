@@ -31,6 +31,12 @@ export const playlists = pgTable(
     kilterId: text('kilter_id'), // The circuit UUID from Kilter
     kilterSyncedAt: timestamp('kilter_synced_at'),
 
+    // Marker for system-generated recommendation playlists (public cohort
+    // playlists like "Best of Kilter 10x12 @ 40°"). Holds a deterministic
+    // cohort+variant key (e.g. `kilter:8:25:40:crowd-favorites`) so the nightly
+    // job upserts the same playlist in place; null for user-created playlists.
+    generatedRecommendation: text('generated_recommendation'),
+
     // Timestamps
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -39,6 +45,8 @@ export const playlists = pgTable(
   (table) => ({
     // Index for efficient lookup by board + layout
     boardLayoutIdx: index('playlists_board_layout_idx').on(table.boardType, table.layoutId),
+    // Unique per cohort+variant so the generator upserts idempotently.
+    generatedRecommendationIdx: uniqueIndex('playlists_generated_recommendation_idx').on(table.generatedRecommendation),
     // Index for UUID lookups
     uuidIdx: index('playlists_uuid_idx').on(table.uuid),
     // Index for ordering by updatedAt (used in userPlaylists query)

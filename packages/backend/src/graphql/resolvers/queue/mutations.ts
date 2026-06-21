@@ -2,7 +2,18 @@ import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/s
 import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
-import { requireSession, applyRateLimit, validateInput, MAX_RETRIES } from '../shared/helpers';
+import {
+  requireSession,
+  applyRateLimit,
+  validateInput,
+  MAX_RETRIES,
+  RATE_LIMIT_SESSION,
+  RATE_LIMIT_SESSION_OP,
+  RATE_LIMIT_PLAYBACK,
+  RATE_LIMIT_PLAYBACK_OP,
+  RATE_LIMIT_SET_QUEUE,
+  RATE_LIMIT_SET_QUEUE_OP,
+} from '../shared/helpers';
 import {
   ClimbQueueItemSchema,
   QueueIndexSchema,
@@ -26,7 +37,7 @@ export const queueMutations = {
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx); // Apply default rate limit
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     // Validate input
@@ -123,7 +134,7 @@ export const queueMutations = {
    */
   removeQueueItem: async (_: unknown, { uuid }: { uuid: string }, ctx: ConnectionContext) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     // Validate input
@@ -160,7 +171,7 @@ export const queueMutations = {
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     // Validate inputs
@@ -216,7 +227,7 @@ export const queueMutations = {
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     // Validate input
@@ -267,7 +278,7 @@ export const queueMutations = {
    */
   mirrorCurrentClimb: async (_: unknown, { mirrored }: { mirrored: boolean }, ctx: ConnectionContext) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     const currentState = await roomManager.getQueueState(sessionId);
@@ -317,7 +328,7 @@ export const queueMutations = {
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
 
     // Validate input
@@ -356,7 +367,7 @@ export const queueMutations = {
     ctx: ConnectionContext,
   ) => {
     const startTime = performance.now();
-    await applyRateLimit(ctx, 30); // Lower limit for bulk operations
+    await applyRateLimit(ctx, RATE_LIMIT_SET_QUEUE, RATE_LIMIT_SET_QUEUE_OP);
     const sessionId = requireSession(ctx);
 
     // Validate queue size to prevent memory exhaustion
@@ -432,7 +443,7 @@ export const queueMutations = {
     },
     ctx: ConnectionContext,
   ) => {
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_PLAYBACK, RATE_LIMIT_PLAYBACK_OP);
     const sessionId = requireSession(ctx);
 
     const currentState = await roomManager.getQueueState(sessionId);

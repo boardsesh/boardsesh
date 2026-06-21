@@ -3,8 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { classifyBleFailure, isDisconnectionError } from '@/app/lib/ble/connection-error';
+import {
+  classifyBleFailure,
+  classifyBleFailureReason,
+  type BleSendFailureReason,
+} from '@boardsesh/ble-protocol/connection-error';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { normaliseSetIds } from '@/app/lib/ble/board-config-match';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { RECORD_BOARD_SERIAL } from '@boardsesh/graphql/operations';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { track } from '@/app/lib/analytics';
 import * as Sentry from '@sentry/nextjs';
 import type { BoardDetails } from '@/app/lib/types';
@@ -62,6 +70,7 @@ type UseBoardBluetoothOptions = {
    * this re-creates `sendFramesToBoard` so the auto-sender repaints the
    * current climb with the new colours. */
   ledColorOverrides?: LedColorOverrides;
+  analyticsBoardId?: number | null;
   /** Fires once per successful connect with the parsed BLE serial (null when
    * the device name didn't carry one — e.g., moonboard). Used by
    * BluetoothProvider to broadcast SessionBoardSerialChanged into the party
@@ -70,31 +79,44 @@ type UseBoardBluetoothOptions = {
 };
 
 /**
- * Fire-and-forget POST to record the (serial, board config) mapping for the
- * authenticated user. Failures are swallowed — connect must not block on this.
+ * Fire-and-forget GraphQL mutation recording the (serial, board config, API
+ * level) the user was on when connecting. Failures are swallowed — connect must
+ * not block on this. The mutation requires auth, so a missing token is skipped
+ * rather than fired (a guaranteed 401), matching the mobile path.
  */
-function recordBoardSerial(serialNumber: string, boardDetails: BoardDetails, boardUuid: string | undefined): void {
+function recordBoardSerial(
+  serialNumber: string,
+  boardDetails: BoardDetails,
+  boardUuid: string | undefined,
+  apiLevel: number,
+  token: string | null,
+): void {
   // Sort + dedupe before joining so the recording is canonical regardless of
   // how the route emitted set_ids — `matchesBoardDetails` also normalises on
   // read, but keeping the stored value canonical means recorded entries
   // produced by different routes are byte-equal.
   const setIds = [...new Set(boardDetails.set_ids)].sort((a, b) => a - b).join(',');
-  // Empty set_ids would serialise to "" and the route's Zod schema rejects
-  // empty strings — the POST 400s and the `.catch` swallows it silently, so
+  // Empty set_ids would serialise to "" and the input Zod schema rejects empty
+  // strings — the mutation would error and the `.catch` would swallow it, so
   // the serial would never get recorded. Skip the call deliberately instead.
   if (!setIds) return;
-  void fetch('/api/internal/board-serials', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      serialNumber,
-      boardName: boardDetails.board_name,
-      layoutId: boardDetails.layout_id,
-      sizeId: boardDetails.size_id,
-      setIds,
-      boardUuid,
-    }),
-  }).catch(() => {});
+  // Skip when signed out — the mutation is auth-gated, so firing it without a
+  // token is a guaranteed 401 round-trip on every anonymous connect.
+  if (!token) return;
+  const client = createGraphQLHttpClient(token);
+  void client
+    .request(RECORD_BOARD_SERIAL, {
+      input: {
+        serialNumber,
+        boardName: boardDetails.board_name,
+        layoutId: boardDetails.layout_id,
+        sizeId: boardDetails.size_id,
+        setIds,
+        apiLevel,
+        boardUuid,
+      },
+    })
+    .catch(() => {});
 }
 
 type BoardConfigurationRequest = {
@@ -140,10 +162,16 @@ export function useBoardBluetooth({
   boardUuid,
   onConnectionChange,
   ledColorOverrides,
+  analyticsBoardId,
   onConnectSuccess,
 }: UseBoardBluetoothOptions) {
   const { showMessage } = useSnackbar();
   const { t } = useTranslation('common');
+  // Auth token for the fire-and-forget serial recording mutation. Kept in a ref
+  // so the stable `connect` callback reads the latest value without re-creating.
+  const { token: wsAuthToken } = useWsAuthToken();
+  const authTokenRef = useRef<string | null>(null);
+  authTokenRef.current = wsAuthToken;
   const [loading, setLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   // The board this device last successfully connected to, with the identity of
@@ -185,12 +213,30 @@ export function useBoardBluetooth({
   // connection can fire several disconnects in a row. Reset once we reconnect
   // (or the user explicitly disconnects) so the next genuine drop prompts again.
   const boardTakenPromptShownRef = useRef(false);
+  // True from the moment a connect attempt starts until it settles — and the
+  // device picker being open counts as in-flight. A second concurrent connect()
+  // would start a second native scan and trip "Already scanning. Stopping now."
+  // on iOS (e.g. the wall-confirm 2s fallback firing while the user is still
+  // choosing a board in the picker). A ref, not the `loading` state, because
+  // state updates are async: two rapid calls both read the stale `false`.
+  const connectInFlightRef = useRef(false);
   // Latest config-matched reconnect serial, mirrored from the derived value
   // below so handleDisconnection's "take it back" action can silently reconnect
   // to the same board without taking the derived value (or boardDetails) as a
   // dep, which would re-create the callback and re-register the disconnect
   // listener on every change.
   const reconnectSerialRef = useRef<string | null>(null);
+
+  // The reason the most recent `sendFramesToBoard` returned `false`. The
+  // AutoSender reads this synchronously right after its own `await` resolves to
+  // `false` to label `Climb Sent to Board Failure` with the real cause —
+  // `disconnected` dominates, not the old catch-all `characteristic_unavailable`.
+  // Set immediately before EVERY `return false` below (never reset elsewhere);
+  // the AutoSender only reads it on the `false` branch, so a stale value left by
+  // a prior successful send is never observed. Writes serialise through
+  // `writeChainRef`, so a concurrent play-view send can't overwrite this between
+  // a failing call resolving and the AutoSender's same-microtask read.
+  const lastSendFailureReasonRef = useRef<BleSendFailureReason | null>(null);
 
   // Device picker state for custom Capacitor scanning.
   // pickerRejectRef holds the pending promise's reject so unmount cleanup
@@ -338,6 +384,7 @@ export function useBoardBluetooth({
               },
             );
             showMessage('This climb has unrecognised hold data and cannot be sent to the board.', 'error');
+            lastSendFailureReasonRef.current = 'incompatible_climb';
             return false;
           }
 
@@ -376,6 +423,7 @@ export function useBoardBluetooth({
         if (mirrored && boardDetails.supportsMirroring === true) {
           if (!boardDetails.holdsData || Object.keys(boardDetails.holdsData).length === 0) {
             console.error('Cannot mirror frames: holdsData is missing or empty');
+            lastSendFailureReasonRef.current = 'missing_mirror_data';
             return false;
           }
           framesToSend = convertToMirroredFramesString(frames, boardDetails.holdsData);
@@ -398,6 +446,7 @@ export function useBoardBluetooth({
               'Board configuration may be incorrect or LED data may need regeneration.',
           );
           showMessage('Could not send to board — LED data missing for this board configuration.', 'error');
+          lastSendFailureReasonRef.current = 'missing_led_placements';
           return false;
         }
 
@@ -429,6 +478,7 @@ export function useBoardBluetooth({
             },
           );
           showMessage('This climb is for a different board configuration.', 'error');
+          lastSendFailureReasonRef.current = 'incompatible_climb';
           return false;
         }
 
@@ -466,19 +516,26 @@ export function useBoardBluetooth({
           return;
         }
         console.error('Error sending frames to board:', error);
+        const failureReason = classifyBleFailureReason(error);
+        lastSendFailureReasonRef.current = failureReason;
         // A write that fails because the GATT link is gone (the board dropped or
         // another device grabbed it — these boards are last-connection-wins) is
         // the only signal we get when the adapter's disconnect event never
-        // fires. Mark the connection lost so the lightbulb stops showing
-        // "connected" and a deliberate reconnect can run. handleDisconnection
-        // dedups its own take-back prompt, so a burst of failing writes is safe.
-        if (isDisconnectionError(error)) {
+        // fires. Record the tug-of-war (mirrors mobile's BluetoothConnectionStolen)
+        // and mark the connection lost so the lightbulb stops showing "connected"
+        // and a deliberate reconnect can run. handleDisconnection dedups its own
+        // take-back prompt, so a burst of failing writes is safe.
+        if (failureReason === 'disconnected') {
+          track(SHARED_EVENTS.BluetoothConnectionStolen, {
+            boardLayout: `${boardDetails.layout_name}`,
+            boardId: analyticsBoardId ?? undefined,
+          });
           handleDisconnection();
         }
         return false;
       }
     },
-    [boardDetails, showMessage, ledColorOverrides, serialisedWrite, handleDisconnection],
+    [boardDetails, showMessage, ledColorOverrides, serialisedWrite, handleDisconnection, analyticsBoardId],
   );
 
   const configureConnectedBoard = useCallback(
@@ -509,6 +566,17 @@ export function useBoardBluetooth({
         console.error('Cannot connect to Bluetooth without board details');
         return false;
       }
+
+      // A connect attempt (possibly with the device picker still open) is
+      // already running. Starting a second one here scans again while the first
+      // scan is live, which trips "Already scanning. Stopping now." on the
+      // native iOS shell. Ignore the re-entrant call; the in-flight attempt
+      // stands. Sequential connects (reconnect to a different board) still work
+      // — the flag clears in `finally` below.
+      if (connectInFlightRef.current) {
+        return false;
+      }
+      connectInFlightRef.current = true;
 
       setLoading(true);
 
@@ -567,6 +635,7 @@ export function useBoardBluetooth({
         connectedAtRef.current = Date.now();
         track('Bluetooth Connection Success', {
           boardLayout: `${boardDetails.layout_name}`,
+          boardId: analyticsBoardId ?? undefined,
         });
 
         // Auto-record the (serial, current config) mapping for serial→config lookups.
@@ -575,7 +644,7 @@ export function useBoardBluetooth({
         if (boardDetails.board_name !== 'moonboard') {
           parsedSerial = parseSerialNumber(connection.deviceName) ?? null;
           if (parsedSerial) {
-            recordBoardSerial(parsedSerial, boardDetails, boardUuid);
+            recordBoardSerial(parsedSerial, boardDetails, boardUuid, apiLevelRef.current, authTokenRef.current);
             // Remember the board (and which config it was paired against) so a
             // later involuntary drop can be recovered with a silent reconnect.
             setLastConnectedBoard({ serial: parsedSerial, configKey: boardIdentityKey(boardDetails) });
@@ -639,6 +708,9 @@ export function useBoardBluetooth({
         }
       } finally {
         setLoading(false);
+        // Release the re-entrancy guard so the next deliberate connect (or a
+        // take-back reconnect) can run.
+        connectInFlightRef.current = false;
         // Re-arm the take-back prompt once a connect attempt finishes, whether
         // it succeeded or failed. Resetting only on success would leave the
         // guard stuck true after a failed take-back, so a later genuine drop
@@ -653,6 +725,7 @@ export function useBoardBluetooth({
       handleDisconnection,
       boardDetails,
       boardUuid,
+      analyticsBoardId,
       onConnectionChange,
       onConnectSuccess,
       sendFramesToBoard,
@@ -756,6 +829,7 @@ export function useBoardBluetooth({
     connect,
     disconnect,
     sendFramesToBoard,
+    lastSendFailureReasonRef,
     pickerState,
     reconnectSerialForCurrentBoard,
   };

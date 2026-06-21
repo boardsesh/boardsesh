@@ -1,0 +1,1 @@
+ALTER TYPE "public"."community_role_type" ADD VALUE 'tester';

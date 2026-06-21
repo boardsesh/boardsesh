@@ -1,0 +1,22 @@
+{
+  "name": "thumbnail-client",
+  "version": "1.0.0",
+  "description": "Backend board-render thumbnail URL builder and fetcher for Boardsesh controller firmware",
+  "keywords": ["esp32", "thumbnail", "boardsesh", "board-render"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcodejongh/boardsesh.git"
+  },
+  "authors": [
+    {
+      "name": "Boardsesh",
+      "email": "hello@boardsesh.com"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": ["espressif32", "native"],
+  "dependencies": {
+    "log-buffer": "*"
+  }
+}

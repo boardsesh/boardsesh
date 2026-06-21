@@ -6,9 +6,10 @@
 // opened here; connecting happens later when the user enters play mode.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { State } from 'react-native-ble-plx';
 import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID, parseSerialNumber } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
+import { waitForBlePoweredOn } from './availability';
+import { requestBleRuntimePermissions } from './use-ble-permissions';
 
 const SCAN_TIMEOUT_MS = 15_000;
 
@@ -28,6 +29,7 @@ export function useBoardScan(): BoardScan {
   const [serials, setSerials] = useState<string[]>([]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanningRef = useRef(false);
+  const scanAttemptRef = useRef(0);
   // A device event can land in the BLE callback just after unmount; gate the
   // state writes so we don't setState on an unmounted component.
   const mountedRef = useRef(true);
@@ -46,13 +48,22 @@ export function useBoardScan(): BoardScan {
   const start = useCallback(async () => {
     if (scanningRef.current) return;
 
-    let powered = false;
-    try {
-      powered = (await bleManager.state()) === State.PoweredOn;
-    } catch {
-      powered = false;
+    const scanAttempt = scanAttemptRef.current + 1;
+    scanAttemptRef.current = scanAttempt;
+    const isCurrentScanAttempt = () => mountedRef.current && scanAttemptRef.current === scanAttempt;
+
+    const permissionsGranted = await requestBleRuntimePermissions();
+    if (!isCurrentScanAttempt()) return;
+
+    if (!permissionsGranted) {
+      setStatus('unavailable');
+      return;
     }
-    if (!powered) {
+
+    const bluetoothPoweredOn = await waitForBlePoweredOn();
+    if (!isCurrentScanAttempt()) return;
+
+    if (!bluetoothPoweredOn) {
       setStatus('unavailable');
       return;
     }
@@ -63,7 +74,7 @@ export function useBoardScan(): BoardScan {
     scanningRef.current = true;
 
     bleManager.startDeviceScan([AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID], null, (error, device) => {
-      if (!mountedRef.current) return;
+      if (!isCurrentScanAttempt()) return;
       if (error) {
         stop();
         setStatus('unavailable');
@@ -78,12 +89,14 @@ export function useBoardScan(): BoardScan {
     });
 
     timeoutRef.current = setTimeout(() => {
+      if (!isCurrentScanAttempt()) return;
       stop();
       setStatus('done');
     }, SCAN_TIMEOUT_MS);
   }, [stop]);
 
   const reset = useCallback(() => {
+    scanAttemptRef.current += 1;
     stop();
     setSerials([]);
     setStatus('idle');
@@ -94,6 +107,7 @@ export function useBoardScan(): BoardScan {
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      scanAttemptRef.current += 1;
       stop();
     };
   }, [stop]);

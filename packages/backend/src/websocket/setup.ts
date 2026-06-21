@@ -180,6 +180,15 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           // Get the latest context state (sessionId may have been updated)
           const latestContext = getContext(context.connectionId);
 
+          // Board-presence crash backstop: if this connection held a board's
+          // writer slot, free it (compare-and-delete, no-op once someone else
+          // took over). Runs for solo (no-session) holders too, which take the
+          // removeClient branch below — so it must be here, the single WS-close
+          // chokepoint, and before disconnectClient/removeClient delete the
+          // client record it reads. The clean path is the client's BLE-drop
+          // reportBoardDisconnect; this only covers crashes.
+          await roomManager.clearBoardWriterForConnection(context.connectionId);
+
           // Handle session cleanup
           if (latestContext?.sessionId) {
             const result = await roomManager.disconnectClient(context.connectionId);

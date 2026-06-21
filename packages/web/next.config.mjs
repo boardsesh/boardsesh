@@ -14,6 +14,7 @@ const nextConfig = {
   // This eliminates the need to pre-build packages before running the web app
   transpilePackages: [
     '@boardsesh/board-constants',
+    '@boardsesh/aurora-sync',
     '@boardsesh/shared-schema',
     '@boardsesh/db',
     '@boardsesh/crypto',
@@ -28,6 +29,7 @@ const nextConfig = {
     '@boardsesh/playlists-react',
     '@boardsesh/board-react',
     '@boardsesh/party-profile',
+    '@boardsesh/analytics',
     '@boardsesh/climb-actions',
     '@boardsesh/play-view',
     '@boardsesh/playback-react',

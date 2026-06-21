@@ -1,4 +1,4 @@
-export { BoardRenderer } from './BoardRenderer';
 export { BoardHoldOverlay } from './BoardHoldOverlay';
+export { HoldMarkerShapeElement, HoldMarkerShapeSvg } from './HoldMarkerShape';
 export { useParseFrames } from './use-parse-frames';
-export type { BoardRendererProps, BoardHold, HoldPlacement } from './types';
+export type { BoardHold, HoldPlacement } from './types';

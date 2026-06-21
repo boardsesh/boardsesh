@@ -96,11 +96,6 @@ vi.mock('../db/client', () => ({
   },
 }));
 
-vi.mock('../jobs/inferred-session-builder', () => ({
-  adoptRecentTicksForSession: vi.fn().mockResolvedValue(undefined),
-  extractBoardType: vi.fn().mockReturnValue('kilter'),
-}));
-
 function makeWsAuthenticatedCtx(userId: string): ConnectionContext {
   return {
     connectionId: 'ws-conn-abc-123',

@@ -13,7 +13,6 @@ import {
 import { users } from '../auth/users';
 import { boardSessions } from './sessions';
 import { userBoards } from './boards';
-import { inferredSessions } from './inferred-sessions';
 
 /**
  * Tick status enum
@@ -71,16 +70,6 @@ export const boardseshTicks = pgTable(
     // Optional link to group session (if tick was during party mode)
     sessionId: text('session_id').references(() => boardSessions.id, { onDelete: 'set null' }),
 
-    // Optional link to inferred session (for ticks not in party mode)
-    inferredSessionId: text('inferred_session_id').references(() => inferredSessions.id, {
-      onDelete: 'set null',
-    }),
-
-    // Stores original inferredSessionId before manual reassignment (for undo)
-    previousInferredSessionId: text('previous_inferred_session_id').references(() => inferredSessions.id, {
-      onDelete: 'set null',
-    }),
-
     // Optional link to the board entity this tick was recorded on
     boardId: bigint('board_id', { mode: 'number' }).references(() => userBoards.id, {
       onDelete: 'set null',
@@ -116,8 +105,6 @@ export const boardseshTicks = pgTable(
     kilterSyncPendingIdx: index('boardsesh_ticks_kilter_sync_pending_idx').on(table.kilterId, table.userId),
     // Index for session queries
     sessionIdx: index('boardsesh_ticks_session_idx').on(table.sessionId),
-    // Index for inferred session queries
-    inferredSessionIdx: index('boardsesh_ticks_inferred_session_idx').on(table.inferredSessionId),
     // Index for climbed_at for sorting
     climbedAtIdx: index('boardsesh_ticks_climbed_at_idx').on(table.climbedAt),
     // Composite index for user logbook feed queries that filter by user and sort/group by date

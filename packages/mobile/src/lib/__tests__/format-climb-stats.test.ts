@@ -28,14 +28,18 @@ describe('formatCount', () => {
 });
 
 describe('formatSends', () => {
-  it('uses singular for 1 send', () => {
-    expect(formatSends(1)).toBe('1 send');
+  // Fake translate mirroring the en-US `sends` plural key shape.
+  const t = (_key: string, o: { count: number; formattedCount: string }) =>
+    `${o.formattedCount} send${o.count === 1 ? '' : 's'}`;
+
+  it('passes the true count for plural selection (singular for 1)', () => {
+    expect(formatSends(1, t)).toBe('1 send');
   });
 
-  it('uses plural for multiple sends', () => {
-    expect(formatSends(5)).toBe('5 sends');
-    expect(formatSends(0)).toBe('0 sends');
-    expect(formatSends(1500)).toBe('1.5k sends');
+  it('uses plural and the compact formatted count', () => {
+    expect(formatSends(5, t)).toBe('5 sends');
+    expect(formatSends(0, t)).toBe('0 sends');
+    expect(formatSends(1500, t)).toBe('1.5k sends');
   });
 });
 

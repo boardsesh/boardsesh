@@ -28,6 +28,27 @@ let initAttempted = false;
 let missingProjectKeyLogged = false;
 const loggedQueuedEvents = new Set<BackendAnalyticsEvent>();
 
+function readOptionalEnv(envName: string): string | null {
+  const rawValue = process.env[envName];
+  if (!rawValue) return null;
+
+  const trimmedValue = rawValue.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function getProjectKeyConfig(): {
+  projectKey: string;
+  envName: 'POSTHOG_PROJECT_KEY' | 'NEXT_PUBLIC_POSTHOG_KEY';
+} | null {
+  const backendProjectKey = readOptionalEnv('POSTHOG_PROJECT_KEY');
+  if (backendProjectKey) return { projectKey: backendProjectKey, envName: 'POSTHOG_PROJECT_KEY' };
+
+  const publicProjectKey = readOptionalEnv('NEXT_PUBLIC_POSTHOG_KEY');
+  if (publicProjectKey) return { projectKey: publicProjectKey, envName: 'NEXT_PUBLIC_POSTHOG_KEY' };
+
+  return null;
+}
+
 function sanitizeProperties(properties: AnalyticsProperties | undefined): SanitizedAnalyticsProperties {
   const sanitized: SanitizedAnalyticsProperties = {};
   if (!properties) return sanitized;
@@ -44,19 +65,23 @@ function sanitizeProperties(properties: AnalyticsProperties | undefined): Saniti
 function getPosthogClient(): PostHog | null {
   if (posthogClient) return posthogClient;
 
-  const projectKey = process.env.POSTHOG_PROJECT_KEY;
-  if (!projectKey) {
+  const projectKeyConfig = getProjectKeyConfig();
+  if (!projectKeyConfig) {
     if (!missingProjectKeyLogged) {
       missingProjectKeyLogged = true;
-      logger.warn('[PostHog] POSTHOG_PROJECT_KEY is not set; backend analytics disabled');
+      logger.warn('[PostHog] POSTHOG_PROJECT_KEY/NEXT_PUBLIC_POSTHOG_KEY is not set; backend analytics disabled');
     }
     return null;
   }
   if (initAttempted) return null;
   initAttempted = true;
 
-  const host = process.env.POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST;
-  const client = new PostHog(projectKey, {
+  const host = readOptionalEnv('POSTHOG_HOST') ?? DEFAULT_POSTHOG_HOST;
+  if (projectKeyConfig.envName === 'NEXT_PUBLIC_POSTHOG_KEY') {
+    logger.warn('[PostHog] Using NEXT_PUBLIC_POSTHOG_KEY for backend analytics; prefer POSTHOG_PROJECT_KEY');
+  }
+
+  const client = new PostHog(projectKeyConfig.projectKey, {
     host,
     flushAt: POSTHOG_FLUSH_AT,
     flushInterval: POSTHOG_FLUSH_INTERVAL_MS,
@@ -73,7 +98,12 @@ function getPosthogClient(): PostHog | null {
 }
 
 function getAnalyticsEnvironment(): string {
-  return process.env.POSTHOG_ENVIRONMENT ?? process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? 'development';
+  return (
+    readOptionalEnv('POSTHOG_ENVIRONMENT') ??
+    readOptionalEnv('SENTRY_ENVIRONMENT') ??
+    readOptionalEnv('NODE_ENV') ??
+    'development'
+  );
 }
 
 export function captureBackendEvent(eventName: BackendAnalyticsEvent, options: CaptureBackendEventOptions): boolean {

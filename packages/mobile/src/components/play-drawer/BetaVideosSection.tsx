@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback } from 'react';
 import { ScrollView, View, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
@@ -6,36 +6,26 @@ import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useBetaLinks } from '../../lib/graphql/hooks';
-import { useAuth } from '../../providers/auth-provider';
+import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { brandColors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { BetaVideoCard, BETA_CARD_WIDTH, BETA_CARD_HEIGHT } from './BetaVideoCard';
-import { BetaVideoAddSheet, type BetaVideoAddSheetHandle } from './BetaVideoAddSheet';
 
 type BetaVideosSectionProps = {
   climbUuid: string;
   boardName: string;
-  angle: number;
 };
 
 const SKELETON_COUNT = 3;
 const CARD_GAP = spacing[3];
 
-export const BetaVideosSection = memo(function BetaVideosSection({
-  climbUuid,
-  boardName,
-  angle,
-}: BetaVideosSectionProps) {
+// The "+" add button now lives in the section header (DeferredSections passes it
+// as the CollapsibleSection headerAction, so it sits to the right of the "Beta
+// Videos" title). This component just renders the count + carousel + states.
+export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, boardName }: BetaVideosSectionProps) {
   const { t } = useTranslation('session');
-  const { isAuthenticated } = useAuth();
-  const addSheetRef = useRef<BetaVideoAddSheetHandle>(null);
+  const { brandColors } = useTheme();
   const { data: links, isLoading, isError, refetch, isRefetching } = useBetaLinks(boardName, climbUuid);
-
-  const handleOpenAddSheet = useCallback(() => {
-    void Haptics.selectionAsync();
-    addSheetRef.current?.open();
-  }, []);
 
   const handleRetry = useCallback(() => {
     void Haptics.selectionAsync();
@@ -46,25 +36,13 @@ export const BetaVideosSection = memo(function BetaVideosSection({
 
   return (
     <View>
-      <View style={styles.headerRow}>
-        {hasContent && (
+      {hasContent && (
+        <View style={styles.headerRow}>
           <Text variant="footnote" color={iosSystemColors.systemGray}>
             {t('mobile.betaVideos.videoCount', { count: links.length })}
           </Text>
-        )}
-        <View style={styles.headerSpacer} />
-        {isAuthenticated && (
-          <Pressable
-            onPress={handleOpenAddSheet}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.betaVideos.addButton')}
-            style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
-            hitSlop={8}
-          >
-            <Icon name="add" size={22} color={brandColors.primary} />
-          </Pressable>
-        )}
-      </View>
+        </View>
+      )}
 
       {isLoading ? (
         <ScrollView
@@ -90,8 +68,9 @@ export const BetaVideosSection = memo(function BetaVideosSection({
             accessibilityLabel={t('mobile.betaVideos.retry')}
             style={({ pressed }) => [
               styles.retryButton,
+              { borderColor: brandColors.primary },
               isRefetching && styles.retryButtonDisabled,
-              pressed && !isRefetching && styles.retryButtonPressed,
+              pressed && !isRefetching && { backgroundColor: `${brandColors.primary}1A` },
             ]}
           >
             <Text variant="footnote" color={brandColors.primary}>
@@ -120,10 +99,6 @@ export const BetaVideosSection = memo(function BetaVideosSection({
           ))}
         </ScrollView>
       )}
-
-      {isAuthenticated && (
-        <BetaVideoAddSheet ref={addSheetRef} boardName={boardName} climbUuid={climbUuid} angle={angle} />
-      )}
     </View>
   );
 });
@@ -133,20 +108,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingBottom: spacing[2],
-    minHeight: 24,
-  },
-  headerSpacer: {
-    flex: 1,
-  },
-  addButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: borderRadius.full,
-  },
-  addButtonPressed: {
-    backgroundColor: `${brandColors.primary}1A`,
   },
   scrollContent: {
     gap: CARD_GAP,
@@ -178,12 +139,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: brandColors.primary,
   },
   retryButtonDisabled: {
     opacity: 0.5,
-  },
-  retryButtonPressed: {
-    backgroundColor: `${brandColors.primary}1A`,
   },
 });

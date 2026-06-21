@@ -13,3 +13,5 @@ export * from './proposals';
 export * from './boards';
 export * from './gyms';
 export * from './feedback';
+export * from './board-presence';
+export * from './integrations';

@@ -52,7 +52,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/app-store-screenshots.spec.ts', '**/layout-screenshots.spec.ts', '**/help-screenshots.spec.ts'],
+      testIgnore: ['**/layout-screenshots.spec.ts', '**/help-screenshots.spec.ts'],
     },
 
     // Help page screenshots - mobile viewport (390×844, iPhone 14 logical size).
@@ -65,23 +65,7 @@ export default defineConfig({
       testMatch: ['**/help-screenshots.spec.ts'],
     },
 
-    // App Store screenshots - iPhone 14 Plus 6.5" (428×926 @ 3× = 1284×2778).
-    // Run in CI via the `screenshots` job; locally with:
-    //   cd packages/web && bunx playwright test --project=app-store-screenshots
-    {
-      name: 'app-store-screenshots',
-      use: {
-        viewport: { width: 428, height: 926 },
-        deviceScaleFactor: 3,
-        isMobile: true,
-        hasTouch: true,
-        userAgent:
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
-      },
-      testMatch: ['**/app-store-screenshots.spec.ts'],
-    },
-
-    // Board-layout screenshots - same iPhone 16 Pro Max viewport as app-store.
+    // Board-layout screenshots - iPhone 16 Pro Max viewport.
     // Captures every supported Kilter/Tension layout so board-rendering
     // regressions show up in the PR comment gallery.
     {

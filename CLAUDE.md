@@ -15,6 +15,16 @@ Boardsesh is a monorepo. Next.js 16 web app + React Native (Expo) mobile app for
 - No buzzwords. Concrete numbers, plain language.
 - Default to action. Full autonomy except no data deletion without asking.
 
+## PR Lifecycle (mandatory)
+
+We'll always create a PR, never asks if a PR should be created, open as a draft. After every PR is created, **always** subscribe to PR feedback until the PR is merged or closed.
+
+- **CI failures**: diagnose and push a fix. Retry until green. If a failure is genuinely out of scope, explain and block on the user.
+- **Merge conflicts**: rebase on `main` and `git push --force-with-lease` — don't ask first.
+- **Review feedback**: fix minor, cosmetic, and style comments autonomously and push. For correctness disagreements, architectural changes, or ambiguous instructions, use `AskUserQuestion` before acting.
+- **Release notes**: every PR description must include the `## Release Notes` section from the PR template. Write in climber voice — describe what the user gets, not what the code does. Internal-only changes (refactor, CI, deps, tests) get `none`.
+- **Ready to merge signal**: once CI is green, no unresolved review comments remain, and there are no conflicts, remove the draft status from the PR marking it ready for review.
+
 ## Monorepo Structure
 
 ```
@@ -54,7 +64,7 @@ Common commands:
 
 - `vp check` — format + lint (canonical validation; pre-commit)
 - `vp test` / `vp test run --reporter=agent` — tests (always use `--reporter=agent` to save context)
-- `vp test --project web|backend|mobile` — scope tests
+- `vp test run --project web|backend|mobile` — scope tests. **`--project` MUST come after `run`.** `vp test --project mobile run` (flag before `run`) silently treats the name as a filename filter and runs ~1 file — a false green. Prefer the footgun-proof aliases `vp run test:mobile` / `vp run test:web`.
 - `vp run dev` — start DB + backend + web
 - `vp run dev:mobile` — start mobile dev server (Metro)
 - `vp run db:up` / `vp run db:migrate` / `vp run db:studio`
@@ -62,6 +72,7 @@ Common commands:
 - `vp run check:i18n` — fails on hardcoded English strings under `packages/web/app/`
 - `vp run check:mobile-bundle` — headless Metro bundle check (Linux-safe)
 - `vp run check:mobile-simulator`, `vp run mobile:screenshot` — macOS only
+- `vp run mobile:ios` — local Expo iOS build with the shared Boardsesh Xcode cache
 - `vp run mobile:publish` — EAS Update for current branch
 - `vp run test:e2e` — Playwright; auto-starts the dev DB + web server
 
@@ -93,7 +104,7 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
-- `docs/ai-design-guidelines.md` — UI design tokens and patterns
+- `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web still on the legacy rose/sage palette, pending migration)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
 
@@ -159,6 +170,8 @@ Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection vi
 
 Adding a new locale: update `SUPPORTED_LOCALES` and friends in `app/lib/i18n/config.ts`, add catalog dir, language switcher, sitemap.
 
+**Spanish terminology:** Spanish translations follow a fixed glossary. Most importantly, a climbing board is **"plafón"** (masculine — _el plafón_, plural _plafones_), never "tabla"/"tablero"/"tabla de escalada" or raw English "board"; fix article/adjective agreement when you swap the word. Brand product names ("Kilter Board", "Tension Board", "MoonBoard") stay as-is. Full terminology, grammar rules, and exceptions: **`docs/i18n-spanish-glossary.md`** — follow it for every Spanish string you add.
+
 ### Copy & microcopy
 
 - Describe what the user gets, not what the feature does.
@@ -190,7 +203,7 @@ For indexable pages:
 
 ## Mobile Development (packages/mobile/)
 
-React Native + Expo SDK 53, React Native 0.79, Expo Router 5.
+React Native + Expo SDK 56, React Native 0.85, Expo Router 56.
 
 ### Stack
 
@@ -203,7 +216,7 @@ React Native + Expo SDK 53, React Native 0.79, Expo Router 5.
 
 ### Mobile vs. web
 
-- **No `vp check` lint** — mobile is excluded. Use `vp run typecheck:mobile`.
+- **Lint via `vp check`** — runs for mobile just like other packages. Use `vp run typecheck:mobile` for type-only checks.
 - **Own i18n provider** at `packages/mobile/src/providers/i18n-provider.tsx`. No web i18n rules apply.
 - **No web dev-server workflow** — use `vp run dev:mobile` (Metro) instead. The QA-notes-into-`/api/internal/dev-metadata` flow is web-only; on mobile the `DevMetadataPanel` (More tab) reads `.boardsesh/qa-notes.md` via env injection.
 - **Styling**: `StyleSheet.create` + theme provider. No MUI, no `style`-prop avoidance rule.
@@ -216,10 +229,39 @@ React Native + Expo SDK 53, React Native 0.79, Expo Router 5.
 After mobile changes:
 
 1. `vp run typecheck:mobile` — always.
-2. `vp test --project mobile` — always.
+2. `vp run test:mobile` (or `vp test run --project mobile`) — always. Do **not** use `vp test --project mobile run` — the flag-before-`run` order runs ~1 file (false green).
 3. `vp run check:mobile-bundle` — Metro bundle check (Linux-safe; highest-value).
 4. `vp run check:mobile-simulator` — macOS only; skips on Linux.
 5. `vp run mobile:screenshot` — macOS only.
+
+### Mobile performance checklist (PR review)
+
+For any list, provider, gesture, or board-art change, confirm:
+
+- **List virtualized?** `FlashList` / `BottomSheetFlatList`, never `.map()` in a `ScrollView`. Any `loadMore` is one page per end-reach, not a drain-until-`hasMore`.
+- **Row memoized & `renderItem` deps clean?** Row is `React.memo`'d; `renderItem` is a `useCallback` whose deps have **no array `.length`** and **no inline closures**; `keyExtractor` hoisted.
+- **Provider value memoized & state/actions split?** Context `value` is `useMemo`'d; a volatile array (logbook, reducer state, roster) is not bundled with the stable callbacks consumers depend on. Enforced for `packages/mobile/**` + `packages/shared/**` by `react/jsx-no-constructed-context-values` (error).
+- **Per-row hook O(1)?** Reads a pre-built index (`Map`), never `array.filter`/scan per row.
+- **Worklet `runOnJS` gated?** No `runOnJS(setState)` per frame — gate on a value change; mirror read JS values into shared values instead of listing them in the gesture `useMemo` deps.
+- **New effect bounded?** No unbounded `loadMore` loops or per-frame state churn.
+
+Full rationale + repo examples: `docs/react-native-performance.md`.
+
+### Local iOS builds
+
+Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `expo run:ios`. The wrapper points generated `packages/mobile/ios/build` at a shared cache under `~/Library/Caches/boardsesh/xcode/packages-mobile-ios/build`, so separate git worktrees reuse the same Xcode build products. Override with `BOARDSESH_IOS_BUILD_CACHE_DIR=/path/to/cache` only when deliberately isolating a cache. Do not pass `--no-build-cache`; it clears iOS derived data and defeats the shared-cache workflow.
+
+### App Store screenshots (cached dev-client + Metro)
+
+`vp run mobile:screenshots` (`scripts/mobile-screenshots.ts`) drives Maestro over iOS simulators. The app it installs is a Debug **dev-client** that loads its JS from **Metro** at runtime — the screenshot behaviour (`EXPO_PUBLIC_SCREENSHOT_MODE`, theme, locale, workout) is baked into the Metro JS bundle, **not** the native binary. So the native `.app` is reusable: only the JS regenerates per run.
+
+- Pass `--app-path <Boardsesh.app>` to install a prebuilt/cached app (CI's common path). Without it, the script builds one via `vp run mobile:build-sim-app` (`scripts/mobile-build-sim-app.ts` → `expo prebuild` + `pod install` + `xcodebuild build -sdk iphonesimulator -configuration Debug`; **not** `expo run:ios`, whose launch step hangs in CI). Use `--clean` for a deterministic from-scratch build.
+- The default Apple capture is `--devices common --locales all`: iPhone 16 Pro Max, iPhone 14 Plus, and iPhone 16 Pro for app locales `en-US`, `es`, and `fr`. The Spanish app locale is written to both App Store Connect folders, `es-ES` and `es-MX`.
+- `.github/workflows/mobile-screenshots-ios.yml` caches the `.app` (`actions/cache`) keyed on **native inputs only**: `packages/mobile/app.config.ts`, `plugins/**`, `modules/**`, `package.json`, `patches/**`, and the root `package.json` (which pins `@expo/cli` / `react-native-screens`), plus `runner.os`/`runner.arch`. JS/TS-only and web-only changes (including `bun.lock` churn) are a cache hit and skip the ~30-min native build; any native-input change busts the key and rebuilds. Bump the `-v1-` salt to force a rebuild. A native-dep change must invalidate the key — when adding native config, confirm it's covered by one of those globs.
+
+### Android emulator screenshots (local, dev-client + Metro)
+
+For quick ad-hoc shots of the live app on an Android emulator (the fast KVM path on Linux/Intel), `vp run mobile:android-shots` (`scripts/mobile-android-shots.ts`) boots an x86*64 emulator, installs a cached **dev-client** APK (`com.boardsesh.app.dev`, universal `arm64-v8a`+`x86_64`), starts Metro, and captures with `adb exec-out screencap`. Same `EXPO_PUBLIC_SCREENSHOT*_`env as iOS; the deep-link scheme is`com.boardsesh.app://`for both variants (only the package differs). The APK comes from the latest`rn-android-dev-_`release (or a local Gradle fallback). One-time setup:`vp run mobile:android-doctor`(bootstraps the SDK + JDK 21 under`~/.cache/boardsesh/`). Full guide: `docs/android-emulator-screenshots.md`. This is distinct from `vp run mobile:screenshots --platform android`, which installs a standalone store APK with bundled JS.
 
 ### OTA preview distribution (EAS Update)
 
@@ -232,3 +274,9 @@ Four preview channels (`preview-1` ... `preview-4`), one per test device. Publis
 CI: `mobile-eas-update.yml` auto-publishes on every push to a non-main branch touching `packages/mobile/` or shared packages, and comments on the PR. `EXPO_TOKEN` secret required.
 
 A new preview build is only needed when native deps change (new Expo plugin, new native module, SDK bump). JS/TS changes ride OTA.
+
+### OTA production distribution (self-hosted expo-open-ota)
+
+Production/TestFlight builds use **self-hosted** OTA, not EAS hosting — see `docs/mobile-ota-updates.md`. TestFlight/Play builds (bare `expo prebuild`) bake in `EXPO_UPDATES_CHANNEL: production` and point `updates.url` at our expo-open-ota server (`EXPO_UPDATES_URL`). Production OTAs **auto-publish on every push to `main`** via `.github/workflows/mobile-ota-production.yml` (manual: `vp run mobile:publish -- --channel production`; runs `eoas publish`, needs `EXPO_UPDATES_URL` + `EXPO_TOKEN`). Preview builds stay on the EAS free tier (above). One-time infra: `vp run mobile:ota-setup` (run with no arg for the runbook).
+
+runtimeVersion uses the **`fingerprint`** policy (a hash of the native project), so a JS-only change keeps the same fingerprint and the OTA lands, while any native change yields a new fingerprint that old binaries won't pull (no `appVersion` footgun, no manual `version` bump for OTA compatibility). **Fingerprint parity is the one rule:** the OTA publish must resolve `app.config.ts` to the same config the native build did, so `mobile-ota-production.yml` mirrors the native workflows' env (guarded by `scripts/mobile-ci-env-parity.test.ts`) and publishes per-platform (iOS without `GOOGLE_MAPS_API_KEY`, Android with it — the key perturbs both fingerprints). Resolve a fingerprint with `bunx expo-updates runtimeversion:resolve --platform ios|android`.

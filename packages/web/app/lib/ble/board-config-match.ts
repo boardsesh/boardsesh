@@ -1,10 +1,17 @@
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+// set_ids parsing/normalisation is shared with the backend's recordBoardSerial
+// resolver (which compares a recording against a saved board), so it lives in
+// @boardsesh/board-config. Re-exported here to keep the BLE call sites' import
+// path stable.
+import { parseSetIds, normaliseSetIds } from '@boardsesh/board-config';
 import { getBoardDetails } from '@/app/lib/board-constants';
 import { constructBoardSlugListUrl, constructClimbListWithSlugs } from '@/app/lib/url-utils';
 import { parseSerialNumber } from '@/app/components/board-bluetooth-control/bluetooth-aurora';
 import type { DiscoveredDevice } from '@/app/lib/ble/types';
 import type { ResolvedBoardEntry } from './resolve-serials';
+
+export { parseSetIds, normaliseSetIds };
 
 /**
  * Narrow a string from the DB / wire to the closed `BoardName` union. Returns
@@ -13,38 +20,6 @@ import type { ResolvedBoardEntry } from './resolve-serials';
  */
 function asBoardName(value: string): BoardName | undefined {
   return (SUPPORTED_BOARDS as readonly string[]).includes(value) ? (value as BoardName) : undefined;
-}
-
-/**
- * Parse a comma-separated set_ids string into a number[]. Accepts an array
- * directly (passthrough) so call sites that already have the normalised form
- * can share this helper.
- */
-export function parseSetIds(setIds: string | number[]): number[] {
-  if (Array.isArray(setIds)) return setIds;
-  return setIds
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n));
-}
-
-/**
- * Normalise a comma-separated set_ids string to a deduped, numerically-sorted
- * representation so order/whitespace differences don't trigger spurious
- * mismatches. Sorts numerically (not lexicographically) so multi-digit ids
- * compare the same way the write-path emits them: ["10","2"] → "2,10".
- */
-export function normaliseSetIds(setIds: string): string {
-  return [
-    ...new Set(
-      setIds
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    ),
-  ]
-    .sort((a, b) => Number(a) - Number(b))
-    .join(',');
 }
 
 export type ResolvedBoardConfig = {

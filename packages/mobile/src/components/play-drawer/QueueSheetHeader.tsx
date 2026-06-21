@@ -3,7 +3,7 @@ import { View, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { brandColors } from '../../theme/colors';
+import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
@@ -32,6 +32,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   onClearAll,
 }: QueueSheetHeaderProps) {
   const { t } = useTranslation('session');
+  const { brandColors } = useTheme();
 
   const handleToggleHistory = useCallback(() => {
     hapticSelection();
@@ -86,7 +87,11 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           accessibilityRole="button"
           accessibilityLabel={t('mobile.queueSheet.toggleHistory')}
           hitSlop={8}
-          style={[styles.headerButton, showHistory && styles.headerButtonActive]}
+          style={[
+            styles.headerButton,
+            showHistory && styles.headerButtonActive,
+            showHistory && { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` },
+          ]}
         >
           <Icon name="history" size={22} color={showHistory ? brandColors.primary : iosSystemColors.systemGray} />
         </Pressable>
@@ -121,7 +126,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           hitSlop={8}
           style={styles.headerButton}
         >
-          <Icon name="close" size={18} color={iosSystemColors.systemGray} />
+          <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
         </Pressable>
       </View>
     </View>
@@ -163,7 +168,5 @@ const styles = StyleSheet.create({
   },
   headerButtonActive: {
     borderWidth: 1,
-    borderColor: brandColors.primary,
-    backgroundColor: `${brandColors.primary}14`,
   },
 });

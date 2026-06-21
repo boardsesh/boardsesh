@@ -40,12 +40,15 @@
     "lint-fix": "vp lint --fix",
     "sync:catalog": "tsx src/cli/index.ts catalog",
     "sync:daemon": "tsx src/cli/index.ts daemon",
+    "sync:locations": "tsx src/cli/index.ts locations --skip-if-missing-credentials",
+    "sync:repair-stats": "tsx src/cli/index.ts repair-stats",
     "sync:user": "tsx src/cli/index.ts user"
   },
   "dependencies": {
     "@boardsesh/board-constants": "*",
     "@boardsesh/crypto": "*",
     "@boardsesh/db": "*",
+    "@boardsesh/location-sync": "*",
     "@boardsesh/sync-runtime": "*",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",

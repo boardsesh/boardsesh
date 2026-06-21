@@ -12,12 +12,15 @@
   "profile": {
     "title": "Profile",
     "subtitle": "Customize how you appear on Boardsesh",
+    "editAction": "Edit Profile",
     "avatar": {
       "label": "Avatar",
       "upload": "Upload",
       "change": "Change",
       "remove": "Remove",
-      "hint": "JPG, PNG, GIF, or WebP. Up to 10MB — auto-compressed."
+      "hint": "JPG, PNG, GIF, or WebP. Up to 10MB — auto-compressed.",
+      "hintMobile": "Cropped square and compressed automatically.",
+      "permissionDenied": "Allow photo access in Settings to choose an avatar."
     },
     "displayName": {
       "label": "Display Name",
@@ -210,6 +213,7 @@
     "unlinkSuccess": "Account unlinked successfully",
     "unlinkError": "Failed to unlink account",
     "unlinkPartial": "We disconnected on our side, but the Kilter app may still be signed in. Sign out of Kilter there too if you want to fully cut the link.",
+    "loadRetry": "Try again",
     "import": {
       "steps": {
         "climbs": "Importing draft climbs",
@@ -217,8 +221,7 @@
         "dedup": "Checking for duplicates",
         "ascents": "Importing ascents",
         "attempts": "Importing attempts",
-        "circuits": "Importing circuits",
-        "sessions": "Building sessions"
+        "circuits": "Importing circuits"
       },
       "fileLabel": "Upload Aurora JSON export file",
       "tooLarge": "File is too large (max 200MB). Please check you selected the correct file.",
@@ -268,6 +271,29 @@
       "namePlaceholder": "[YOUR NAME]",
       "emailPlaceholder": "[YOUR EMAIL]",
       "body": "Hey there!\n\nEx-app user here. I was wondering if I could get a copy of my data so I can save my logbooks and other data for personal tracking records.\n\nMy username is {{name}}, and this should be under this email ({{email}}).\n\nThanks!\n\n{{name}}"
+    },
+    "mobile": {
+      "connectedAs": "Connected as {{name}}",
+      "connected": "Connected",
+      "notConnected": "Not connected",
+      "kilterConnected": "Kilter connected",
+      "kilterNotAllowed": "Kilter sync is not enabled for this account yet.",
+      "kilterConnectFailed": "Couldn't connect Kilter. Try again.",
+      "linkSuccess": "{{boardName}} linked",
+      "unlinkSuccess": "{{boardName}} unlinked",
+      "unlinkPartial": "{{boardName}} was removed here, but the provider session may still be live.",
+      "invalidCredentials": "That username or password didn't work.",
+      "rateLimited": "Too many attempts. Try again later.",
+      "requestFailed": "Couldn't save that link. Try again.",
+      "loadFailed": "Couldn't load your board accounts.",
+      "importMissingUser": "Pick an Aurora JSON export file.",
+      "importBoardWarning": "This looks like {{layoutName}}. Import to {{boardName}} only if that's right.",
+      "importPreviewIntro": "Import data from {{username}} to {{boardName}}:",
+      "importPartial": "Import partially finished. Re-importing the file is safe.",
+      "importFailed": "Import failed. Try again.",
+      "importInterrupted": "Import stopped before it finished. Re-importing the file is safe.",
+      "requestDataFailed": "Couldn't open email. Try again.",
+      "passwordHelp": "Your credentials are encrypted before they are stored."
     }
   },
   "healthkit": {
@@ -284,7 +310,8 @@
     "successRating": "Thanks — logged.",
     "successBug": "Bug logged — thanks.",
     "errorRating": "Couldn't send — we'll keep your feedback.",
-    "closeAria": "Close"
+    "closeAria": "Close",
+    "joinDiscord": "Join Discord"
   },
   "feedbackForm": {
     "missingHeading": "What's missing?",
@@ -296,6 +323,10 @@
     "bugPlaceholder": "What were you doing? What did you expect vs see?",
     "ratingPlaceholder": "What's on your mind?",
     "remainingChars": "{{count}} more characters to go",
+    "sessionRecordingLabel": "Turn on session recording",
+    "sessionRecordingDescription": "Help us fix your bug faster by turning on session recording and reproducing the bug. You can turn it off after.",
+    "starRating_one": "{{count}} star",
+    "starRating_other": "{{count}} stars",
     "nextAria": "Next"
   },
   "feedbackBanner": {
@@ -339,9 +370,20 @@
     "intro": "Our records show this board has a different config than you have configured.",
     "currentLabel": "<strong>You're configured for:</strong>",
     "recordedLabel": "<strong>Recorded for this controller:</strong>",
+    "mobileCurrentLabel": "You're configured for: {{config}}",
+    "mobileRecordedLabel": "Recorded for this controller: {{config}}",
+    "mobileConfigValue": "{{board}} layout {{layoutId}}, size {{sizeId}}, sets {{setIds}}",
+    "mobileUnknownConfig": "Unknown board config",
+    "mobileSkippedSpillToast_one": "Skipped {{name}} — it's set for a different board",
+    "mobileSkippedSpillToast_other": "Skipped {{count}} climbs set for a different board",
+    "mobileSwitchFailed": "Couldn't switch to that board's config. Try Connect anyway.",
     "cancel": "Cancel",
     "connectAnyway": "Connect anyway",
-    "switchToCorrect": "Switch to correct config"
+    "switchToCorrect": "Switch to correct config",
+    "mobileConnectAnyway": "Connect anyway",
+    "mobileConnectAnywayWarning": "Our records show this controller belongs to another board setup. Connecting anyway may light climbs incorrectly.",
+    "mobileSwitchSetup": "Switch board setup",
+    "mobileUseRecordedSetup": "Use recorded setup"
   },
   "devicePicker": {
     "title": "Select your board",
@@ -366,13 +408,53 @@
     "devicesFound_other": "{{count}} boards found",
     "noDevicesFound": "No boards found nearby",
     "cancel": "Cancel",
-    "unknownBoard": "Unknown Board",
-    "disconnected": "Board disconnected",
-    "reconnect": "Reconnect",
     "connectBoard": "Connect Board",
-    "notAvailable": "Bluetooth is not available",
+    "relightBoard": "Re-light board",
+    "turnOff": "Turn off the board",
+    "holdForControls": "Hold for board controls",
+    "sendFailedTitle": "Couldn't light board",
+    "connectionFailedTitle": "Couldn't connect",
+    "permissionRequired": "Bluetooth permission required",
+    "errorPermissionDenied": "Allow Bluetooth permissions to connect a board.",
     "errorLedMissing": "Could not send to board — LED data missing for this board configuration.",
     "errorIncompatible": "This climb is for a different board configuration.",
-    "errorConnectionFailed": "Could not connect to the board. Make sure it is powered on and nearby."
+    "barControl": {
+      "connectedLabel": "Board connected, you have control",
+      "connectedHint": "Opens board controls",
+      "peerLabel": "On {{name}}'s wall",
+      "peerLabelAnonymous": "On the wall",
+      "peerHint": "Opens the climb on the wall",
+      "disconnectedLabel": "Board disconnected",
+      "disconnectedHint": "Connect to the board"
+    }
+  },
+  "integrations": {
+    "title": "Connected apps",
+    "appleHealth": {
+      "title": "Apple Health",
+      "autoSave": "Save sessions automatically",
+      "autoSaveDescription": "Finished sessions are added to Apple Health as climbing workouts with estimated calories.",
+      "permissionDenied": "Health access is off. Allow Boardsesh to write workouts in Settings.",
+      "openSettings": "Open Settings"
+    },
+    "strava": {
+      "title": "Strava",
+      "connect": "Connect with Strava",
+      "connectedAs": "Connected as {{name}}",
+      "connected": "Connected",
+      "autoSync": "Upload sessions automatically",
+      "autoSyncDescription": "Finished sessions appear on your Strava feed as rock climbing activities.",
+      "disconnect": "Disconnect",
+      "disconnectConfirmTitle": "Disconnect Strava?",
+      "disconnectConfirmBody": "New sessions will stop uploading to Strava. Activities already uploaded stay on Strava.",
+      "reconnect": "Reconnect",
+      "expired": "Connection expired. Reconnect to keep uploading."
+    },
+    "toast": {
+      "connected": "Strava connected",
+      "connectFailed": "Couldn't connect to Strava",
+      "disconnected": "Strava disconnected",
+      "disconnectFailed": "Couldn't disconnect Strava. Try again."
+    }
   }
 }

@@ -49,7 +49,7 @@ vi.mock('../../theme/tokens', () => ({
 }));
 
 vi.mock('../../theme/colors', () => ({
-  brandColors: { tint: '#8C4A52' },
+  brandColors: { tint: '#6D28D9' },
 }));
 
 vi.mock('../../theme/animations', () => ({
@@ -72,7 +72,7 @@ describe('PressableSurface', () => {
   it('defaults the Android ripple to the brand tint', () => {
     ctrl.os = 'android';
     const { container } = render(<PressableSurface>x</PressableSurface>);
-    expect(container.querySelector('[data-ripple-color="#8C4A52"]')).not.toBeNull();
+    expect(container.querySelector('[data-ripple-color="#6D28D9"]')).not.toBeNull();
   });
 
   it('honours an explicit rippleColor on Android', () => {

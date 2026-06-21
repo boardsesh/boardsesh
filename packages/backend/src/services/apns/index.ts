@@ -19,6 +19,7 @@ import {
   trackLiveActivityPushDeliveryAttributionGap,
 } from '../analytics/live-activity';
 import { logger } from '../../utils/logger';
+import { type BoardHolder, deriveBoardConnection } from './board-connection';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,7 +34,27 @@ export interface LiveActivityContentState {
   hasNext: boolean;
   hasPrevious: boolean;
   climbUuid: string;
+  /**
+   * Per-token board-connection state, derived from the board's current holder
+   * (see board-connection.ts). OPTIONAL on the device: when omitted, iOS falls
+   * back to its own App-Group state. The base `buildContentStateFromQueueState`
+   * never sets these — they're stamped per-group at send time once the holder is
+   * resolved (see `sendGroupedNotification`).
+   */
+  boardConnection?: 'connectedByMe' | 'heldByPeer' | 'disconnected';
+  /** The peer holder's display name; only set alongside `heldByPeer`. */
+  holderDisplayName?: string;
 }
+
+/**
+ * Resolves the current board holder for a session, or null when it can't be
+ * determined (no board mapping, no Redis, anonymous-only holder, or a lookup
+ * error). Injected at server startup via `setSessionHolderResolver` so this
+ * module stays decoupled from pubsub/Redis and is unit-testable. When the
+ * resolver returns null the send path OMITS boardConnection (device falls back
+ * to its own App-Group state).
+ */
+export type SessionHolderResolver = (sessionId: string) => Promise<BoardHolder | null>;
 
 /** Source attribution for the structured per-send log line. */
 type SendSource = 'event' | 'heartbeat' | 'registration';
@@ -91,6 +112,23 @@ const DEFAULT_DEBOUNCE_MS = 1_000;
 let provider: apn.Provider | null = null;
 let bundleId: string = '';
 let configured = false;
+
+/**
+ * The injected board-holder resolver. Wired at server startup so the send path
+ * can resolve a session's holder ONCE per send and stamp each token's
+ * boardConnection. Null until wired (and in tests that don't set it), in which
+ * case boardConnection is omitted and devices fall back to their own state.
+ */
+let sessionHolderResolver: SessionHolderResolver | null = null;
+
+/**
+ * Wire the board-holder resolver. Called once at server startup with a closure
+ * over pubsub (see server.ts). Keeps this module free of a direct pubsub/Redis
+ * dependency and lets tests inject a deterministic holder.
+ */
+export function setSessionHolderResolver(resolver: SessionHolderResolver | null): void {
+  sessionHolderResolver = resolver;
+}
 
 // Mutable so tests can shrink the windows to milliseconds rather than awaiting
 // the production-grade 1 s debounce + multi-second retry delays against real
@@ -439,6 +477,80 @@ async function sendNotification(
   }
 }
 
+/**
+ * Resolve the session's board holder ONCE (the hot-path contract: one holder
+ * lookup per send, never per token), then send the `update` push GROUPED by each
+ * token's derived board-connection state.
+ *
+ * When the holder can't be resolved (no resolver wired, no board mapping, no
+ * Redis, anonymous holder, or a lookup error) the whole set is sent as a single
+ * group with boardConnection OMITTED — the prior behaviour, and the device then
+ * falls back to its own App-Group state.
+ *
+ * When the holder IS known, registrations split into (typically ≤2) groups by
+ * derived state — the holder's own device(s) get 'connectedByMe', everyone else
+ * gets 'heldByPeer' (+ holderDisplayName). Each group is a separate
+ * `sendNotification` call so the existing structured logging / analytics /
+ * stale-token (410) handling keeps operating on the registrations it was given.
+ */
+async function sendGroupedNotification(
+  sessionId: string,
+  registrations: LiveActivityTokenRegistration[],
+  baseContentState: LiveActivityContentState,
+  options: SendOptions = {},
+): Promise<void> {
+  if (registrations.length === 0) return;
+
+  let holder: BoardHolder | null = null;
+  if (sessionHolderResolver) {
+    try {
+      holder = await sessionHolderResolver(sessionId);
+    } catch (error) {
+      // Tolerate a failing lookup: omit boardConnection and let the device fall
+      // back to its own state. Debug-level — a missing holder is the common case
+      // (no board paired yet), not an error worth surfacing at info/error.
+      logger.debug(`[APNs] Holder lookup failed for session ${sessionId}; omitting boardConnection:`, error);
+      holder = null;
+    }
+  }
+
+  if (!holder) {
+    await sendNotification(sessionId, registrations, 'update', baseContentState, options);
+    return;
+  }
+
+  // Group registrations by their serialized per-token board-connection patch so
+  // every distinct state is one send. In practice this is ≤2 groups
+  // (connectedByMe for the holder's device(s), heldByPeer for the rest).
+  const groups = new Map<
+    string,
+    { contentState: LiveActivityContentState; registrations: LiveActivityTokenRegistration[] }
+  >();
+  for (const registration of registrations) {
+    const derived = deriveBoardConnection({
+      tokenUserId: registration.userId,
+      holderUserId: holder.holderUserId,
+      holderDisplayName: holder.holderDisplayName,
+    });
+    const groupKey = `${derived.boardConnection}|${derived.holderDisplayName ?? ''}`;
+    let group = groups.get(groupKey);
+    if (!group) {
+      group = {
+        contentState: { ...baseContentState, ...derived },
+        registrations: [],
+      };
+      groups.set(groupKey, group);
+    }
+    group.registrations.push(registration);
+  }
+
+  await Promise.all(
+    [...groups.values()].map((group) =>
+      sendNotification(sessionId, group.registrations, 'update', group.contentState, options),
+    ),
+  );
+}
+
 function trackSessionEndedForRegistrations(sessionId: string, registrations: LiveActivityTokenRegistration[]): void {
   const tokenCountsByUserId = new Map<string, number>();
   let unattributedTokenCount = 0;
@@ -531,7 +643,7 @@ async function executeDebouncedSend(sessionId: string): Promise<void> {
     return;
   }
 
-  await sendNotification(sessionId, registrations, 'update', entry.latestState, { source });
+  await sendGroupedNotification(sessionId, registrations, entry.latestState, { source });
 }
 
 // ---------------------------------------------------------------------------
@@ -592,7 +704,7 @@ export async function sendLiveActivityUpdateToTokens(
 ): Promise<void> {
   if (!configured) return;
   if (registrations.length === 0) return;
-  await sendNotification(sessionId, registrations, 'update', contentState, {
+  await sendGroupedNotification(sessionId, registrations, contentState, {
     source: options.source ?? 'registration',
   });
 }
@@ -660,6 +772,7 @@ export function __resetApnsForTests(): void {
   provider = null;
   bundleId = '';
   configured = false;
+  sessionHolderResolver = null;
   DEBOUNCE_MS = DEFAULT_DEBOUNCE_MS;
   DB_RETRY_DELAYS_MS = DEFAULT_DB_RETRY_DELAYS_MS;
 }

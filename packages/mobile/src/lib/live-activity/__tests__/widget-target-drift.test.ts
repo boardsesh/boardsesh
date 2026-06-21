@@ -24,8 +24,10 @@ const DUPLICATED_FILES = [
   'ClimbSessionAttributes.swift',
   'NextClimbIntent.swift',
   'PreviousClimbIntent.swift',
+  'ReconnectBoardIntent.swift',
   'SharedConstants.swift',
   'SharedKeychain.swift',
+  'TakeControlIntent.swift',
   'WidgetNetworking.swift',
 ];
 

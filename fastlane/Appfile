@@ -1,0 +1,6 @@
+# App Store Connect target for the screenshot-upload lane (see Fastfile).
+#
+# Authentication is via App Store Connect API key only (see the `screenshots`
+# lane) — intentionally no `apple_id` here, so deliver never falls back to
+# Apple-ID / app-specific-password auth.
+app_identifier("com.boardsesh.app")

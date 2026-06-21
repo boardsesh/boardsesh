@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-interface ManifestElement {
+type ManifestElement = {
   $: Record<string, string>;
-}
+};
 
-interface AndroidManifestShape {
+type AndroidManifestShape = {
   manifest: {
     application?: Array<{
       $: Record<string, string>;
@@ -16,13 +16,13 @@ interface AndroidManifestShape {
       receiver?: ManifestElement[];
     }>;
   };
-}
+};
 
-interface SessionServicePlugin {
+type SessionServicePlugin = {
   addSessionService(manifest: AndroidManifestShape): AndroidManifestShape;
   SERVICE_NAME: string;
   RECEIVER_NAME: string;
-}
+};
 
 const plugin = require('../../../plugins/with-android-session-service.js') as SessionServicePlugin;
 

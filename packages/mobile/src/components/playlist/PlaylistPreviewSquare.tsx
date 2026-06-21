@@ -6,6 +6,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius } from '../../theme/tokens';
 import { PLAYLIST_COLORS, isValidHexColor } from './playlist-colors';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
+import { resolvePlaylistEmojiIcon } from './playlist-icon';
 
 export type PlaylistPreviewSquareProps = {
   /** Playlist colour (hex). Falls back to a cycling palette colour. */
@@ -50,6 +51,7 @@ export function PlaylistPreviewSquare({
   // both read well.
   const emojiSize = Math.round(size * 0.42);
   const iconSize = Math.round(size * 0.38);
+  const emojiIcon = resolvePlaylistEmojiIcon(icon);
 
   const withBackdrop = showBoardBackdrop && !!boardType;
 
@@ -71,12 +73,12 @@ export function PlaylistPreviewSquare({
       ) : null}
       {/* Soft top-left highlight, mirroring web's diagonal white gradient. */}
       <View style={styles.highlight} pointerEvents="none" />
-      {icon ? (
+      {emojiIcon ? (
         <Text
           style={[styles.emoji, { fontSize: emojiSize, lineHeight: Math.round(emojiSize * 1.3) }]}
           allowFontScaling={false}
         >
-          {icon}
+          {emojiIcon}
         </Text>
       ) : (
         <Icon name="tag" size={iconSize} color={iosSystemColors.white} />

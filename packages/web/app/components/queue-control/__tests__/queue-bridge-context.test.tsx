@@ -244,11 +244,9 @@ function createDefaultPersistentSession(overrides?: Record<string, unknown>) {
     setQueue: vi.fn(() => Promise.resolve()),
     mirrorCurrentClimb: vi.fn(() => Promise.resolve()),
     replaceQueueItem: vi.fn(() => Promise.resolve()),
-    takeControl: vi.fn(() => Promise.resolve()),
-    releaseControl: vi.fn(() => Promise.resolve()),
+    reportWallDisconnect: vi.fn(() => Promise.resolve()),
     triggerResync: vi.fn(),
     participantId: null,
-    driverParticipantId: null,
     ...overrides,
   };
 }
@@ -369,8 +367,7 @@ function extractActions(ctx: GraphQLQueueContextType): GraphQLQueueActionsType {
     endSession: ctx.endSession,
     dismissSessionSummary: ctx.dismissSessionSummary,
     disconnect: ctx.disconnect,
-    takeControl: ctx.takeControl,
-    releaseControl: ctx.releaseControl,
+    reportWallDisconnect: ctx.reportWallDisconnect,
   };
 }
 
@@ -717,8 +714,8 @@ describe('queue-bridge-context', () => {
     // getNextClimbQueueItem now delegates to the shared @boardsesh/play-view
     // helper (`findNextQueueItemWithSuggestions`) so the bridge's off-board
     // swipe path stays in lockstep with mobile. These cases pin the behaviour
-    // the delegation brings, plus the web-only `from` / `suggestionsOnly`
-    // wrappers the bridge keeps around the shared helper.
+    // the delegation brings, plus the web-only `from` wrapper the bridge keeps
+    // around the shared helper.
     // -------------------------------------------------------------------
     describe('getNextClimbQueueItem delegation parity', () => {
       const bd = createTestBoardDetails();
@@ -842,25 +839,6 @@ describe('queue-bridge-context', () => {
         expect(next?.climb.uuid).toBe('c');
         expect(next?.uuid).toBe('playlist-peek:c');
         expect(next?.suggested).toBe(true);
-      });
-
-      it('returns null for suggestionsOnly (web-only branch preserved)', () => {
-        // The bridge has no search results plumbed through, so suggestionsOnly
-        // stays a no-op even after delegating the rest to the shared helper.
-        const item1 = createTestQueueItem(climbA, 'u1');
-        const source = createPlaylistSuggestionSource({
-          playlistUuid: 'playlist-1',
-          activatedClimb: climbA,
-          climbs: [climbA, climbB, climbC],
-          boardDetails: bd,
-        });
-        const { result } = renderWithLocalQueue([item1], item1);
-
-        act(() => {
-          result.current!.setPlaylistSuggestionSource(source);
-        });
-
-        expect(result.current!.getNextClimbQueueItem({ suggestionsOnly: true })).toBeNull();
       });
 
       it('produces a stable playlist-peek uuid across repeated calls in the same state', () => {
@@ -1459,16 +1437,14 @@ describe('queue-bridge-context', () => {
     });
 
     // -------------------------------------------------------------------
-    // Driver-state plumbing — the queue-control-bar pivot's lightbulb path.
-    // The bridge is the off-board surface PR 2's drawer lightbulb will rely
-    // on, so the takeControl / releaseControl wiring and isDriver derivation
-    // need parity with the on-board QueueContext.
+    // Wall-disconnect plumbing — always-live model. The bridge forwards a
+    // BLE drop to ps.reportWallDisconnect so every member's wall-confirmed
+    // lightbulb clears, and no-ops in solo / mid-reconnect.
     // -------------------------------------------------------------------
-    describe('adapter driver-state plumbing (party mode)', () => {
+    describe('adapter reportWallDisconnect plumbing (party mode)', () => {
       const bd = createTestBoardDetails();
-      const climb1 = createTestClimb({ uuid: 'c1', name: 'Climb 1' });
       const activeSession = {
-        sessionId: 'party-driver-1',
+        sessionId: 'party-wall-1',
         boardPath: '/kilter/1/10/1,2/40/list',
         boardDetails: bd,
         parsedParams: {
@@ -1481,7 +1457,7 @@ describe('queue-bridge-context', () => {
         participantId: 'participant-self',
       };
 
-      function renderWithDriverState(psOverrides?: Record<string, unknown>) {
+      function renderWithSession(psOverrides?: Record<string, unknown>) {
         mockPersistentSession = createDefaultPersistentSession({
           activeSession,
           queue: [],
@@ -1498,66 +1474,24 @@ describe('queue-bridge-context', () => {
         return renderHook(() => useTestQueueContext(), { wrapper });
       }
 
-      it('takeControl(climb) delegates to ps.takeControl with a freshly built queue item', async () => {
-        const { result } = renderWithDriverState();
+      it('reportWallDisconnect delegates to ps.reportWallDisconnect', async () => {
+        const { result } = renderWithSession();
         await act(async () => {
-          await result.current!.takeControl(climb1);
+          await result.current!.reportWallDisconnect();
         });
-        expect(mockPersistentSession.takeControl).toHaveBeenCalledTimes(1);
-        const arg = (mockPersistentSession.takeControl as ReturnType<typeof vi.fn>).mock.calls[0][0];
-        expect(arg).not.toBeNull();
-        expect(arg.climb.uuid).toBe('c1');
+        expect(mockPersistentSession.reportWallDisconnect).toHaveBeenCalledTimes(1);
       });
 
-      it('takeControl() without a climb delegates to ps.takeControl(null) to claim the driver only', async () => {
-        const { result } = renderWithDriverState();
+      it('reportWallDisconnect is a no-op (no ps call) while the WS is reconnecting', async () => {
+        const { result } = renderWithSession({ hasConnected: false });
         await act(async () => {
-          await result.current!.takeControl();
+          await result.current!.reportWallDisconnect();
         });
-        expect(mockPersistentSession.takeControl).toHaveBeenCalledTimes(1);
-        expect((mockPersistentSession.takeControl as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBeNull();
-      });
-
-      it('releaseControl delegates to ps.releaseControl', async () => {
-        const { result } = renderWithDriverState();
-        await act(async () => {
-          await result.current!.releaseControl();
-        });
-        expect(mockPersistentSession.releaseControl).toHaveBeenCalledTimes(1);
-      });
-
-      it('takeControl is a no-op (no ps call) while the WS is reconnecting', async () => {
-        const { result } = renderWithDriverState({ hasConnected: false });
-        await act(async () => {
-          await result.current!.takeControl(climb1);
-        });
-        // Guarded by hasConnected to avoid the throw from use-queue-mutations
-        // when the WS client ref is null mid-reconnect.
-        expect(mockPersistentSession.takeControl).not.toHaveBeenCalled();
-      });
-
-      it('exposes isDriver=true when the local participantId matches driverParticipantId', () => {
-        const { result } = renderWithDriverState({ driverParticipantId: 'participant-self' });
-        expect(result.current!.isDriver).toBe(true);
-        expect(result.current!.driverParticipantId).toBe('participant-self');
-      });
-
-      it('exposes isDriver=false when another participant holds the driver role', () => {
-        const { result } = renderWithDriverState({ driverParticipantId: 'participant-other' });
-        expect(result.current!.isDriver).toBe(false);
-        expect(result.current!.driverParticipantId).toBe('participant-other');
-      });
-
-      it('exposes isDriver=false when the wall is unclaimed in party mode', () => {
-        const { result } = renderWithDriverState({ driverParticipantId: null });
-        expect(result.current!.isDriver).toBe(false);
-        expect(result.current!.driverParticipantId).toBeNull();
+        expect(mockPersistentSession.reportWallDisconnect).not.toHaveBeenCalled();
       });
     });
 
-    it('exposes isDriver=true in solo (no active party session) regardless of other state', () => {
-      // Solo has no driver concept; the bridge degrades to "local user drives"
-      // so the drawer lightbulb in PR 2 can render the lit state when BLE is up.
+    it('reportWallDisconnect is a no-op in solo (no active party session)', async () => {
       mockPersistentSession = createDefaultPersistentSession({
         activeSession: null,
         localBoardDetails: createTestBoardDetails(),
@@ -1566,8 +1500,10 @@ describe('queue-bridge-context', () => {
         <QueueBridgeProvider>{children}</QueueBridgeProvider>
       );
       const { result } = renderHook(() => useTestQueueContext(), { wrapper });
-      expect(result.current!.isDriver).toBe(true);
-      expect(result.current!.driverParticipantId).toBeNull();
+      await act(async () => {
+        await result.current!.reportWallDisconnect();
+      });
+      expect(mockPersistentSession.reportWallDisconnect).not.toHaveBeenCalled();
     });
   });
 
@@ -1786,8 +1722,7 @@ describe('queue-bridge-context', () => {
         endSession: vi.fn(),
         dismissSessionSummary: vi.fn(),
         disconnect: vi.fn(),
-        takeControl: vi.fn(async () => null),
-        releaseControl: vi.fn(async () => {}),
+        reportWallDisconnect: vi.fn(async () => {}),
       };
 
       const fakeCtx1 = createFakeQueueContext({ queue: [], ...stableActions });

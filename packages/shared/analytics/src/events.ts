@@ -1,0 +1,138 @@
+// Cross-platform event names fired by BOTH web and mobile. Defining them once
+// here is the whole point of the package: it stops the two platforms drifting on
+// a name (`"Tick Logged"` vs `"Tick logged"`) which would silently split one
+// funnel into two in PostHog.
+//
+// `track()` deliberately still accepts a plain `string`, so this catalog is
+// opt-in — reference `SHARED_EVENTS.TickLogged` at shared call sites to get the
+// guarantee, while platform-only events (web's `$web_vitals`, etc.) stay free
+// strings with zero churn to existing sites.
+export const SHARED_EVENTS = {
+  // Auth
+  LoginAttempted: 'Login Attempted',
+  LoginSucceeded: 'Login Succeeded',
+  LoginFailed: 'Login Failed',
+  // A user dismissing the provider sheet or the browser is intent, not a failure.
+  // Kept distinct from LoginFailed so the failure metric isn't inflated by cancels.
+  LoginCancelled: 'Login Cancelled',
+  Logout: 'Logout',
+  // Queue / session
+  AddToQueue: 'Add to Queue',
+  ClimbAddedToQueue: 'Climb Added to Queue',
+  ClimbRemovedFromQueue: 'Climb Removed from Queue',
+  QueueReordered: 'Queue Reordered',
+  QueueCleared: 'Queue Cleared',
+  QueueNavigation: 'Queue Navigation',
+  WallAdvance: 'Wall Advance',
+  SetActiveClimb: 'Set Active Climb',
+  PlayDrawerOpened: 'Play Drawer Opened',
+  SessionStarted: 'Session Started',
+  SessionEnded: 'Session Ended',
+  AngleChanged: 'Angle Changed',
+  // Climb actions
+  FavoriteToggle: 'Favorite Toggle',
+  MirrorClimb: 'Mirror Climb',
+  ClimbShared: 'Climb Shared',
+  OpenInAuroraApp: 'Open in Aurora App',
+  CreatePlaylist: 'Create Playlist',
+  AddToPlaylist: 'Add to Playlist',
+  RemoveFromPlaylist: 'Remove from Playlist',
+  // Create climb
+  ClimbCreated: 'Climb Created',
+  ClimbUpdated: 'Climb Updated',
+  ClimbCreateFailed: 'Climb Create Failed',
+  // Workout / session-queue generator
+  WorkoutGeneratorOpened: 'Workout Generator Opened',
+  SessionQueueGenerated: 'Session Queue Generated',
+  // Deep-link session join
+  SessionJoined: 'Session Joined',
+  // Logbook
+  LogbookRowClicked: 'Logbook Row Clicked',
+  // Ticks / logbook
+  TickButtonClicked: 'Tick Button Clicked',
+  QuickTickSaved: 'Quick Tick Saved',
+  QuickTickFailed: 'Quick Tick Failed',
+  TickLogged: 'Tick Logged',
+  // Bluetooth / hardware
+  BluetoothConnectionSuccess: 'Bluetooth Connection Success',
+  BluetoothConnectionFailed: 'Bluetooth Connection Failed',
+  BluetoothDisconnected: 'Bluetooth Disconnected',
+  // BLE lifecycle telemetry — added so a session recording (and PostHog) shows
+  // what the radio actually did. BluetoothConnectionStolen is the tug-of-war
+  // signal: a write failed with a disconnect error while we believed we were
+  // connected (another device grabbed the last-connection-wins board).
+  BluetoothScanStarted: 'Bluetooth Scan Started',
+  BluetoothConnectionStolen: 'Bluetooth Connection Stolen',
+  // Fired once per device-picker session (on close) with tallies of how each
+  // listed device's board preview resolved: saved board, recorded serial
+  // config, current-board fallback, or no preview at all. Measures how often
+  // the serial→board resolution actually pays off in the picker UI.
+  BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
+  ClimbSentToBoardSuccess: 'Climb Sent to Board Success',
+  ClimbSentToBoardFailure: 'Climb Sent to Board Failure',
+  // A queued climb set for a DIFFERENT board/layout than the connected board was
+  // skipped instead of dark-firing the wall. Props: skippedClimbUuid,
+  // skippedCount, advancedToClimbUuid (null when no compatible climb remained),
+  // active board config, and the skipped climb's board config.
+  BleQueueClimbSkipped: 'BLE Queue Climb Skipped',
+  // The "this controller belongs to another board setup" dialog was shown when a
+  // scanned serial resolved to a different board config than the active one, and
+  // how the user resolved it. Resolved `action`: 'cancel' | 'connect_anyway' |
+  // 'switch_setup' | 'switch_failed'.
+  BleBoardConfigMismatchShown: 'BLE Board Config Mismatch Shown',
+  BleBoardConfigMismatchResolved: 'BLE Board Config Mismatch Resolved',
+  // Search
+  ClimbSearchPerformed: 'Climb Search Performed',
+  SearchHoldFilterChanged: 'Search Hold Filter Changed',
+  SearchHoldFilterCleared: 'Search Hold Filter Cleared',
+  SearchZoneEnabled: 'Search Zone Enabled',
+  SearchZoneUpdated: 'Search Zone Updated',
+  SearchZoneCleared: 'Search Zone Cleared',
+  SearchZoneModeChanged: 'Search Zone Mode Changed',
+  // Beta videos
+  BetaVideoLinkClicked: 'Beta Video Link Clicked',
+  BetaVideoClimbClicked: 'Beta Video Climb Clicked',
+  // "Share your beta" outbound flow: caption copied to clipboard, and Instagram
+  // launched to post the reel. Web fires the matching raw-string names today, so
+  // both platforms land in one funnel.
+  BetaCaptionCopied: 'Beta Caption Copied',
+  BetaInstagramOpened: 'Beta Instagram Opened',
+  // Onboarding tour (first-run walkthrough). Web fires the same names from its
+  // step-based guided tour; the mobile welcome carousel reuses them so both
+  // platforms land in one PostHog funnel.
+  OnboardingTourStarted: 'Onboarding Tour Started',
+  OnboardingTourStepViewed: 'Onboarding Tour Step Viewed',
+  OnboardingTourStepAdvanced: 'Onboarding Tour Step Advanced',
+  OnboardingTourCompleted: 'Onboarding Tour Completed',
+  OnboardingTourSkipped: 'Onboarding Tour Skipped',
+  // Activation: the user bound a board straight from the first-run handoff — the
+  // real activation metric (board history turns on here), distinct from tapping
+  // through the framing screen. Props: { boardType, source: 'onboarding' }.
+  OnboardingBoardActivated: 'Onboarding Board Activated',
+  BetaVideoAdded: 'Beta Video Added',
+  // Board presence — "now on the wall" (board-level collaboration, keyed on the
+  // shared board_id resolved from the BLE serial). `boardId` is attached as an
+  // event PROPERTY at the call sites — never the raw serial. These self-instrument
+  // the previously-invisible "viewed the wall" / "reported to the wall" behaviour.
+  BoardClimbReported: 'Board Climb Reported',
+  BoardNowPlayingReceived: 'Board Now Playing Received',
+  BoardSheetOpened: 'Board Sheet Opened',
+  BoardHistoryViewed: 'Board History Viewed',
+  BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
+  // Fired after a board-history catch-up completes. Props:
+  // { boardId?, reason: 'gap' | 'reconnect' | 'foreground' | 'manual',
+  //   recoveredThroughSeqDelta }. `recoveredThroughSeqDelta > 0` means live
+  //   events were silently dropped (Redis pub/sub has no replay) and just
+  //   recovered — the signal for "history was slow/stale to update".
+  BoardHistoryCatchUp: 'Board History Catch Up',
+  // External platform integrations (Apple Health, Strava). Props:
+  // { integration: 'apple_health' | 'strava', trigger?: 'auto' | 'manual',
+  //   enabled?: boolean }
+  IntegrationConnected: 'Integration Connected',
+  IntegrationDisconnected: 'Integration Disconnected',
+  IntegrationAutoSyncToggled: 'Integration Auto Sync Toggled',
+  SessionExportedToIntegration: 'Session Exported to Integration',
+} as const;
+
+export type SharedEventKey = keyof typeof SHARED_EVENTS;
+export type SharedEventName = (typeof SHARED_EVENTS)[SharedEventKey];

@@ -18,7 +18,7 @@ type BuildBoardRenderUrlOptions = {
   thumbnail?: boolean;
   includeBackground?: boolean;
   variant?: 'default' | 'og';
-  format?: 'webp' | 'png';
+  format?: 'webp' | 'png' | 'jpg' | 'jpeg';
 };
 
 /**

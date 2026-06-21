@@ -1,13 +1,13 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Entrena mejor en tu tabla de escalada",
-      "description": "Registra tus encadenes en Kilter, Tension y MoonBoard. Una sola app para todas tus tablas de escalada.",
+      "title": "Boardsesh - Entrena mejor en tu plafón",
+      "description": "Registra tus encadenes en Kilter, Tension y MoonBoard. Una sola app para todos tus plafones.",
       "ogDescription": "Compatible con Kilter, Tension y MoonBoard. Sigue sesiones, controla los LED, escala en grupo."
     },
     "about": {
       "title": "Acerca de",
-      "description": "Una sola app para todas las tablas de escalada. Código abierto y dirigida por la comunidad."
+      "description": "Una sola app para todos los plafones. Código abierto y dirigida por la comunidad."
     },
     "help": {
       "title": "Ayuda",
@@ -15,7 +15,7 @@
     },
     "docs": {
       "title": "Documentación de la API",
-      "description": "Documentación de la API REST y WebSocket de Boardsesh: integración con tablas de entrenamiento de escalada interactivas."
+      "description": "Documentación de la API REST y WebSocket de Boardsesh: integración con plafones de entrenamiento de escalada interactivos."
     },
     "legal": {
       "title": "Política Legal y de Propiedad Intelectual",
@@ -36,7 +36,7 @@
     "onboardingHeader": "Hazlo tuyo",
     "install": {
       "iosTitle": "Descarga la app de Boardsesh",
-      "iosDescription": "Ilumina las presas de tu tabla de escalada directamente desde el móvil",
+      "iosDescription": "Ilumina las presas de tu plafón directamente desde el móvil",
       "androidLiveTitle": "Descarga la app de Boardsesh",
       "androidLiveDescription": "Ya disponible en Google Play"
     },
@@ -49,7 +49,7 @@
       "crewDescription": "Sigue a amigos y mira qué están escalando",
       "playlistTitle": "Crea una playlist",
       "playlistDescription": "Prepara tus problemas antes de ir al rocódromo",
-      "bluetoothTitle": "Conecta tu tabla",
+      "bluetoothTitle": "Conecta tu plafón",
       "bluetoothDescription": "Vincula por Bluetooth e ilumina tu siguiente problema",
       "discordTitle": "Únete al grupo en Discord",
       "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene"
@@ -66,11 +66,11 @@
     "headerTitle": "Acerca de",
     "hero": {
       "title": "Registra, Entrena y Escala en Grupo",
-      "subtitle": "Una sola app para todas las tablas de escalada"
+      "subtitle": "Una sola app para todos los plafones"
     },
     "vision": {
       "title": "Nuestra Visión",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Cada tabla tiene su propia app y su propio jardín cerrado. Tu entrenamiento no debería estar encerrado en ninguno de ellos.",
+      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Cada plafón tiene su propia app y su propio jardín cerrado. Tu entrenamiento no debería estar encerrado en ninguno de ellos.",
       "p2": "Boardsesh funciona con todas para que tú solo te dediques a escalar."
     },
     "features": {
@@ -79,7 +79,7 @@
       "queueDescription": "Turnaos sin el típico «¿quién va ahora?»",
       "partyLabel": "Modo Fiesta.",
       "partyDescription": "Comparte una sesión y escala en grupo en tiempo real",
-      "multiBoardLabel": "Multi-tabla.",
+      "multiBoardLabel": "Multi-plafón.",
       "multiBoardDescription": "Compatible con Kilter, Tension, MoonBoard y más",
       "communityLabel": "Dirigida por la comunidad.",
       "communityDescription": "Construida y mejorada por gente que realmente escala",
@@ -105,7 +105,7 @@
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "intro1": "Boardsesh es una app de código abierto para controlar tablas de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
+    "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "collect": {
       "title": "Qué recogemos",
       "accountLabel": "Información de cuenta.",
@@ -119,7 +119,7 @@
     },
     "bluetooth": {
       "title": "Bluetooth",
-      "body": "Boardsesh usa Bluetooth Low Energy (BLE) para conectar con el controlador de LEDs de tu tabla. La conexión Bluetooth se utiliza únicamente para enviar comandos de iluminación de presas a la tabla. Ningún dato personal se transmite por Bluetooth. La app no lee datos de la tabla más allá de la identificación básica del dispositivo durante el emparejamiento."
+      "body": "Boardsesh usa Bluetooth Low Energy (BLE) para conectar con el controlador de LEDs de tu plafón. La conexión Bluetooth se utiliza únicamente para enviar comandos de iluminación de presas al plafón. Ningún dato personal se transmite por Bluetooth. La app no lee datos del plafón más allá de la identificación básica del dispositivo durante el emparejamiento."
     },
     "location": {
       "title": "Datos de ubicación",
@@ -132,7 +132,7 @@
       "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
       "vercelLink": "la política de privacidad de Vercel",
       "auroraLabel": "API de Aurora Climbing.",
-      "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por las tablas Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
+      "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por los plafones Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
       "auroraLink": "Aurora Climbing",
       "auroraBodyEnd": " para sus prácticas de datos.",
       "posthogLabel": "PostHog.",
@@ -183,19 +183,19 @@
     "headerTitle": "Legal",
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
-      "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con tablas de entrenamiento de escalada con LEDs estandarizadas (Kilter Board, Tension Board, MoonBoard y otras). No tiene fines comerciales y está mantenida íntegramente por voluntarios.",
+      "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). No tiene fines comerciales y está mantenida íntegramente por voluntarios.",
       "p2": "Creemos que los escaladores deben tener la libertad de elegir cómo interactúan con el hardware que han comprado y que los datos creados por la comunidad deben seguir siendo accesibles para la comunidad."
     },
     "climbData": {
       "title": "Nuestra Posición sobre los Datos de los Bloques",
       "facts": {
         "title": "Los bloques son datos factuales",
-        "p1": "Un bloque en una tabla estandarizada es una lista de posiciones de presas sobre un layout fijo y estandarizado (por ejemplo, «empieza en A5, usa B12, C3, D18, termina en K11»), combinada con un grado y un ángulo del muro. Esto es información factual y funcional —comparable a una posición de ajedrez, un conjunto de coordenadas GPS o un número de teléfono— y no una obra creativa de autoría.",
-        "p2": "Según la ley de derechos de autor de EE. UU., los hechos no son protegibles por copyright (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Una tabla estandarizada con un número finito de presas (normalmente 200–500) produce definiciones de bloques que son intrínsecamente limitadas, factuales y funcionales."
+        "p1": "Un bloque en un plafón estandarizado es una lista de posiciones de presas sobre un layout fijo y estandarizado (por ejemplo, «empieza en A5, usa B12, C3, D18, termina en K11»), combinada con un grado y un ángulo del muro. Esto es información factual y funcional —comparable a una posición de ajedrez, un conjunto de coordenadas GPS o un número de teléfono— y no una obra creativa de autoría.",
+        "p2": "Según la ley de derechos de autor de EE. UU., los hechos no son protegibles por copyright (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Un plafón estandarizado con un número finito de presas (normalmente 200–500) produce definiciones de bloques que son intrínsecamente limitadas, factuales y funcionales."
       },
       "community": {
         "title": "La base de datos la crea la comunidad",
-        "p1": "Las bases de datos de bloques de estas tablas son casi en su totalidad contenido generado por los usuarios. Cada escalador crea y envía bloques. Los fabricantes de las tablas no son los autores de este contenido: solo proporcionan una plataforma para enviarlo y mostrarlo.",
+        "p1": "Las bases de datos de bloques de estos plafones son casi en su totalidad contenido generado por los usuarios. Cada escalador crea y envía bloques. Los fabricantes de los plafones no son los autores de este contenido: solo proporcionan una plataforma para enviarlo y mostrarlo.",
         "p2": "La situación de licencia varía según el fabricante, pero en ningún caso un fabricante es dueño de los datos de bloques de la comunidad:",
         "aurora": "<strong>Aurora Climbing</strong> (Kilter Board, Tension Board y otras): los Términos de Uso de Aurora les otorgan una «licencia perpetua, sin restricciones, ilimitada, no exclusiva e irrevocable» sobre el contenido enviado por los usuarios. Lo importante es que esta licencia es <strong>no exclusiva</strong>: no transfiere la propiedad a Aurora ni impide que el creador original (o terceros) usen, recopilen o presenten de forma independiente los mismos datos factuales.",
         "moonLabel": "Moon Climbing (MoonBoard):",
@@ -217,20 +217,20 @@
     },
     "interop": {
       "title": "Interoperabilidad y Compatibilidad de Hardware",
-      "intro": "Este proyecto ofrece software y diseños de hardware compatibles con tablas de escalada estandarizadas. Los escaladores que han comprado estas tablas tienen derecho a usar software y controladores de terceros con su propio hardware.",
+      "intro": "Este proyecto ofrece software y diseños de hardware compatibles con plafones de escalada estandarizados. Los escaladores que han comprado estos plafones tienen derecho a usar software y controladores de terceros con su propio hardware.",
       "software": {
         "title": "Interoperabilidad de software",
-        "body": "Nuestra app se comunica con los controladores de las tablas mediante protocolos Bluetooth estándar. El protocolo de comunicación Bluetooth que usan estas tablas no está cifrado y se basa en hardware de consumo (LEDs direccionables WS2812B controlados por controladores Bluetooth estándar). Implementar una interfaz Bluetooth compatible con fines de interoperabilidad está reconocido como lícito tanto en el derecho de EE. UU. como en el de la UE (<em>Sega Enterprises Ltd. v. Accolade, Inc.</em>, 977 F.2d 1510 (9th Cir. 1992); Directiva 2009/24/CE de la UE, artículo 6)."
+        "body": "Nuestra app se comunica con los controladores de los plafones mediante protocolos Bluetooth estándar. El protocolo de comunicación Bluetooth que usan estos plafones no está cifrado y se basa en hardware de consumo (LEDs direccionables WS2812B controlados por controladores Bluetooth estándar). Implementar una interfaz Bluetooth compatible con fines de interoperabilidad está reconocido como lícito tanto en el derecho de EE. UU. como en el de la UE (<em>Sega Enterprises Ltd. v. Accolade, Inc.</em>, 977 F.2d 1510 (9th Cir. 1992); Directiva 2009/24/CE de la UE, artículo 6)."
       },
       "controller": {
         "title": "Controlador de código abierto",
-        "p1": "Este proyecto también ofrece diseños de hardware y firmware de controlador en código abierto. El controlador es una implementación independiente y original que se comunica usando el mismo protocolo Bluetooth que los controladores oficiales. Está construido sobre componentes de consumo (microcontroladores estándar y LEDs WS2812B) y no incorpora ningún firmware, código o diseño de hardware propietario de ningún fabricante de tablas. No se conoce la existencia de patentes que cubran los sistemas de controlador LED utilizados por ningún fabricante de tablas actual.",
+        "p1": "Este proyecto también ofrece diseños de hardware y firmware de controlador en código abierto. El controlador es una implementación independiente y original que se comunica usando el mismo protocolo Bluetooth que los controladores oficiales. Está construido sobre componentes de consumo (microcontroladores estándar y LEDs WS2812B) y no incorpora ningún firmware, código o diseño de hardware propietario de ningún fabricante de plafones. No se conoce la existencia de patentes que cubran los sistemas de controlador LED utilizados por ningún fabricante de plafones actual.",
         "p2": "Nuestro controlador está diseñado para ser interoperable tanto con el software de este proyecto como, a discreción del usuario, con las apps oficiales del fabricante. Cualquier interoperabilidad de este tipo la inicia el usuario final con su propio hardware."
       }
     },
     "trademark": {
       "title": "Uso de Marcas Registradas",
-      "body": "Usamos los nombres de tablas y productos (por ejemplo, «Kilter Board», «MoonBoard», «Tension Board») únicamente para describir la compatibilidad e interoperabilidad de hardware. Estos nombres son marcas registradas de sus respectivos propietarios. Este proyecto no está afiliado, respaldado ni patrocinado por Aurora Climbing, Moon Climbing ni ningún fabricante de tablas."
+      "body": "Usamos los nombres de plafones y productos (por ejemplo, «Kilter Board», «MoonBoard», «Tension Board») únicamente para describir la compatibilidad e interoperabilidad de hardware. Estos nombres son marcas registradas de sus respectivos propietarios. Este proyecto no está afiliado, respaldado ni patrocinado por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones."
     },
     "dmca": {
       "title": "DMCA y Solicitudes de Retirada",
@@ -246,8 +246,8 @@
     "community": {
       "title": "Una Nota para la Comunidad",
       "p1": "La comunidad escaladora tiene una larga tradición de compartir beta abiertamente. Este proyecto existe con ese espíritu. No tratamos de perjudicar a ninguna empresa: solo intentamos dar a los escaladores mejores herramientas para interactuar con el hardware que ya poseen y con los datos que han ayudado a crear.",
-      "p2": "Los fabricantes siguen beneficiándose de este ecosistema. Nuestro proyecto genera demanda para sus productos físicos (presas, tablas, paneles), donde sí aportan un valor real. Simplemente creemos que los escaladores merecen poder elegir cómo interactúan con su hardware.",
-      "p3": "Si eres un fabricante de tablas y te gustaría hablar de colaborar o tienes alguna preocupación, estamos abiertos al diálogo. Escríbenos."
+      "p2": "Los fabricantes siguen beneficiándose de este ecosistema. Nuestro proyecto genera demanda para sus productos físicos (presas, plafones, paneles), donde sí aportan un valor real. Simplemente creemos que los escaladores merecen poder elegir cómo interactúan con su hardware.",
+      "p3": "Si eres un fabricante de plafones y te gustaría hablar de colaborar o tienes alguna preocupación, estamos abiertos al diálogo. Escríbenos."
     },
     "thirdParty": {
       "title": "Avisos de Terceros",
@@ -291,7 +291,7 @@
       "accessLabel": "Para acceder al mapa de calor:",
       "access1": "Abre el panel de búsqueda y despliega la sección «Presas»",
       "access2": "Pulsa el botón «Mostrar mapa de calor»",
-      "access3": "La tabla mostrará una capa de color que va de verde (poco uso) a rojo (mucho uso)",
+      "access3": "El plafón mostrará una capa de color que va de verde (poco uso) a rojo (mucho uso)",
       "modesLabel": "Modos de color disponibles:",
       "modes": {
         "ascentsLabel": "Encadenes:",
@@ -306,9 +306,9 @@
       "outro": "Usa los interruptores para mostrar/ocultar los números de presa e incluir/excluir las presas de pie."
     },
     "holdClassification": {
-      "q": "¿Cómo clasifico las presas de mi tabla?",
+      "q": "¿Cómo clasifico las presas de mi plafón?",
       "imgAlt": "Asistente de clasificación de presas",
-      "intro": "La clasificación de presas te permite crear valoraciones personales para cada presa de tu tabla, ayudándote a entender tus puntos fuertes y a encontrar bloques que te encajen.",
+      "intro": "La clasificación de presas te permite crear valoraciones personales para cada presa de tu plafón, ayudándote a entender tus puntos fuertes y a encontrar bloques que te encajen.",
       "attrsLabel": "Atributos de clasificación:",
       "attrs": {
         "holdTypeLabel": "Tipo de presa:",
@@ -320,12 +320,12 @@
         "pullDirectionLabel": "Dirección de tracción:",
         "pullDirectionBody": "Ángulo óptimo de tracción de 0 a 360"
       },
-      "outro": "Las clasificaciones son personales y se guardan en tu cuenta, así puedes ir construyendo con el tiempo una comprensión a medida de tu tabla."
+      "outro": "Las clasificaciones son personales y se guardan en tu cuenta, así puedes ir construyendo con el tiempo una comprensión a medida de tu plafón."
     },
     "partyMode": {
       "q": "¿Cómo empiezo una sesión colaborativa?",
       "imgAlt": "Sesión del Modo Fiesta activa",
-      "intro": "El Modo Fiesta permite que varios escaladores compartan una cola y se vayan turnando en la tabla en tiempo real.",
+      "intro": "El Modo Fiesta permite que varios escaladores compartan una cola y se vayan turnando en el plafón en tiempo real.",
       "startLabel": "Para empezar una sesión:",
       "start1": "Toca el icono de la bombilla en la barra de la cola, abajo",
       "start2": "Ve a la pestaña «Empezar sesión» e inicia sesión si aún no lo has hecho",
@@ -343,7 +343,7 @@
       "featuresLabel": "Funciones de la sesión:",
       "feature1": "Sincronización de la cola en tiempo real en todos los dispositivos",
       "feature2": "Varios usuarios pueden añadir/quitar bloques",
-      "feature3": "El líder de la sesión controla lo que se muestra en la tabla",
+      "feature3": "El líder de la sesión controla lo que se muestra en el plafón",
       "feature4": "Traspaso automático del liderazgo si el líder actual se desconecta",
       "feature5": "La sesión se mantiene tras recargar la página y reconexiones"
     },
@@ -389,12 +389,12 @@
     },
     "mirroring": {
       "q": "¿Cómo hago un bloque en espejo?",
-      "intro": "El espejo de bloques invierte todas las presas al lado opuesto de la tabla, perfecto para entrenamiento de fuerza bilateral.",
+      "intro": "El espejo de bloques invierte todas las presas al lado opuesto del plafón, perfecto para entrenamiento de fuerza bilateral.",
       "howLabel": "Para hacer un bloque en espejo:",
       "step1": "Busca el bloque que quieres invertir",
       "step2": "Busca el icono de espejo en las acciones del bloque",
       "step3": "Actívalo para invertir el bloque horizontalmente",
-      "outro": "Cuando estés conectado por Bluetooth, la tabla con LEDs mostrará automáticamente el patrón invertido. Esta función está disponible en tablas compatibles como la Kilter Homewall."
+      "outro": "Cuando estés conectado por Bluetooth, el plafón con LEDs mostrará automáticamente el patrón invertido. Esta función está disponible en plafones compatibles como la Kilter Homewall."
     },
     "searchFilters": {
       "q": "¿Qué filtros de búsqueda hay disponibles?",
@@ -425,11 +425,11 @@
     "searchByHold": {
       "q": "¿Cómo busco por presas concretas?",
       "imgAlt": "Buscar por presa",
-      "intro": "Buscar por Presa te permite encontrar bloques que usen (o eviten) presas concretas de la tabla.",
+      "intro": "Buscar por Presa te permite encontrar bloques que usen (o eviten) presas concretas del plafón.",
       "howLabel": "Para buscar por presas:",
       "step1": "Abre el panel de búsqueda y despliega la sección «Presas»",
       "step2": "Elige el modo «Incluir» o «Excluir» en el desplegable",
-      "step3": "Toca las presas de la tabla para seleccionarlas",
+      "step3": "Toca las presas del plafón para seleccionarlas",
       "step4": "Los resultados se actualizan automáticamente conforme seleccionas presas",
       "includeLabel": "Modo incluir:",
       "includeBody": "Los bloques deben usar las presas seleccionadas",
@@ -437,17 +437,17 @@
       "excludeBody": "Los bloques no deben usar las presas seleccionadas"
     },
     "bluetooth": {
-      "q": "¿Cómo conecto los LEDs de mi tabla?",
-      "intro": "Boardsesh usa Web Bluetooth para controlar el sistema de LEDs de tu tabla directamente desde el navegador.",
+      "q": "¿Cómo conecto los LEDs de mi plafón?",
+      "intro": "Boardsesh usa Web Bluetooth para controlar el sistema de LEDs de tu plafón directamente desde el navegador.",
       "requirementsLabel": "Requisitos:",
       "req1": "Navegador Chrome (recomendado) u otro navegador compatible con Web Bluetooth",
       "req2": "Usuarios de iOS: usa la app de Boardsesh (Safari no soporta Web Bluetooth)",
       "req3": "Bluetooth activado en tu dispositivo",
-      "req4": "Tabla encendida y al alcance",
+      "req4": "Plafón encendido y al alcance",
       "connectLabel": "Para conectar:",
       "connect1": "Toca el icono de la bombilla en la barra de la cola",
-      "connect2": "Selecciona tu tabla en la lista de dispositivos",
-      "connect3": "Una vez conectada, los LEDs muestran automáticamente el bloque actual",
+      "connect2": "Selecciona tu plafón en la lista de dispositivos",
+      "connect3": "Una vez conectado, los LEDs muestran automáticamente el bloque actual",
       "outro": "La conexión admite patrones en espejo y se actualizará automáticamente cuando cambies de bloque."
     },
     "userSync": {
@@ -503,10 +503,10 @@
     },
     "overview": {
       "title": "Resumen de la API de Boardsesh",
-      "intro": "Boardsesh ofrece dos APIs complementarias para interactuar con tablas de entrenamiento de escalada interactivas (Kilter, Tension):",
+      "intro": "Boardsesh ofrece dos APIs complementarias para interactuar con plafones de entrenamiento de escalada interactivos (Kilter, Tension):",
       "rest": {
         "title": "API REST",
-        "intro": "Usa la API REST para operaciones sin estado, como buscar bloques, obtener la configuración de la tabla o autenticar usuarios. La API REST es ideal para:",
+        "intro": "Usa la API REST para operaciones sin estado, como buscar bloques, obtener la configuración del plafón o autenticar usuarios. La API REST es ideal para:",
         "feature1": "Obtener datos y estadísticas de bloques",
         "feature2": "Registro y autenticación de usuarios",
         "feature3": "Gestión de perfil",

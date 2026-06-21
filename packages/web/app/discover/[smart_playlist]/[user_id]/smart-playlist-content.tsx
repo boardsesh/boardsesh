@@ -61,6 +61,9 @@ export default function SmartPlaylistContent({
   const queueActions = useOptionalQueueActions();
   const activeQueueBoardInfo = useQueueBridgeBoardInfo();
   const preset = smartPlaylistByType(smartPlaylistType);
+  // Recommendations are personal to the viewer (the backend returns empty for
+  // anyone else), so they aren't shareable — hide the share affordance.
+  const isRecommendation = smartPlaylistType.startsWith('RECOMMENDED_');
 
   const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(() => findMatchingBoard(initialMyBoards));
   useClearPlaylistSuggestionSourceOnUnmount(queueActions);
@@ -290,11 +293,13 @@ export default function SmartPlaylistContent({
             </div>
           </div>
 
-          <div className={styles.heroActions}>
-            <IconButton onClick={handleShare} aria-label={t('detail.share')}>
-              <IosShare />
-            </IconButton>
-          </div>
+          {!isRecommendation && (
+            <div className={styles.heroActions}>
+              <IconButton onClick={handleShare} aria-label={t('detail.share')}>
+                <IosShare />
+              </IconButton>
+            </div>
+          )}
         </div>
 
         <div className={styles.climbsSection}>

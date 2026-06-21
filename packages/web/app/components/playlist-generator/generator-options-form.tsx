@@ -37,7 +37,11 @@ import {
 } from './types';
 import styles from './generator-options-form.module.css';
 
-import { KILTER_HOMEWALL_LAYOUT_ID, isKilterHomewallTallSizeId } from '@/app/lib/board-constants';
+import {
+  KILTER_HOMEWALL_LAYOUT_ID,
+  isKilterHomewallTallSizeId,
+  isKilterHomewallWideSizeId,
+} from '@/app/lib/board-constants';
 
 const qualityBucketRowSx: SxProps<Theme> = {
   alignItems: 'stretch',
@@ -84,6 +88,7 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
   // Check if we should show the tall climbs filter.
   const isKilterHomewall = boardDetails.board_name === 'kilter' && boardDetails.layout_id === KILTER_HOMEWALL_LAYOUT_ID;
   const showTallClimbsFilter = isKilterHomewall && isKilterHomewallTallSizeId(boardDetails.size_id);
+  const showWideClimbsFilter = isKilterHomewall && isKilterHomewallWideSizeId(boardDetails.size_id);
 
   // Helper to update options
   const updateOption = <K extends keyof GeneratorOptions>(key: K, value: GeneratorOptions[K]) => {
@@ -255,6 +260,21 @@ const GeneratorOptionsForm: React.FC<GeneratorOptionsFormProps> = ({
             <MuiSwitch
               checked={options.onlyTallClimbs}
               onChange={(_, checked) => updateOption('onlyTallClimbs', checked)}
+            />
+          </div>
+        )}
+
+        {/* Wide Climbs Only */}
+        {showWideClimbsFilter && (
+          <div className={styles.formRow}>
+            <MuiTooltip title={t('generator.options.wideClimbsTooltip')}>
+              <Typography variant="body2" component="span" className={styles.label}>
+                {t('generator.options.wideClimbsLabel')}
+              </Typography>
+            </MuiTooltip>
+            <MuiSwitch
+              checked={options.onlyWideClimbs}
+              onChange={(_, checked) => updateOption('onlyWideClimbs', checked)}
             />
           </div>
         )}

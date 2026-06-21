@@ -1,11 +1,14 @@
 import { View, StyleSheet } from 'react-native';
-import { Avatar } from '../Avatar';
+import { PressableAvatar } from '../PressableAvatar';
 import { Text } from '../Text';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { useTheme } from '../../providers/theme-provider';
 
-type Participant = { userId: string; displayName?: string | null; avatarUrl?: string | null };
+// userId is the profile to open on tap; it's nullable because some rosters
+// include unauthenticated connections (e.g. session presence), which have no
+// linked profile. PressableAvatar degrades those to a plain, non-tappable avatar.
+type Participant = { userId?: string | null; displayName?: string | null; avatarUrl?: string | null };
 
 type AvatarGroupProps = {
   participants: Participant[];
@@ -19,7 +22,7 @@ export function AvatarGroup({ participants, size = 32, max = 3 }: AvatarGroupPro
 
   if (participants.length <= 1) {
     const only = participants[0];
-    return <Avatar uri={only?.avatarUrl} name={only?.displayName} size={size} />;
+    return <PressableAvatar userId={only?.userId} uri={only?.avatarUrl} name={only?.displayName} size={size} />;
   }
 
   const shown = participants.slice(0, max);
@@ -30,7 +33,7 @@ export function AvatarGroup({ participants, size = 32, max = 3 }: AvatarGroupPro
     <View style={styles.row}>
       {shown.map((participant, index) => (
         <View
-          key={participant.userId}
+          key={participant.userId ?? `anon-${index}`}
           style={[
             styles.ring,
             {
@@ -40,7 +43,12 @@ export function AvatarGroup({ participants, size = 32, max = 3 }: AvatarGroupPro
             },
           ]}
         >
-          <Avatar uri={participant.avatarUrl} name={participant.displayName} size={size} />
+          <PressableAvatar
+            userId={participant.userId}
+            uri={participant.avatarUrl}
+            name={participant.displayName}
+            size={size}
+          />
         </View>
       ))}
       {overflow > 0 && (

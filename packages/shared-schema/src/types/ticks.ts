@@ -57,6 +57,16 @@ export type SaveTickInput = {
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
+  /**
+   * Specific board entity this tick is on, by uuid. When provided, takes
+   * precedence over `(layoutId, sizeId, setIds)` resolution and lets ticks
+   * attach to a board the climber doesn't own (e.g. a seeded gym board).
+   */
+  boardUuid?: string;
+  // Resolved shared board id (from resolveBoardForSerial) for the BLE-connected
+  // wall everyone is logging to. Used when no boardUuid is given; falls back to
+  // board-config resolution if it doesn't match the payload.
+  boardId?: number | null;
   videoUrl?: string | null;
 };
 
@@ -70,4 +80,5 @@ export type AttachBetaLinkInput = {
   climbUuid: string;
   link: string;
   angle?: number | null;
+  tickUuid?: string | null;
 };

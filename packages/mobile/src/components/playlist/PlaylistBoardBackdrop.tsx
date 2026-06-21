@@ -21,32 +21,37 @@ type PlaylistBoardBackdropProps = {
 function PlaylistBoardBackdropImpl({ boardType, layoutId }: PlaylistBoardBackdropProps) {
   const config = useMemo(() => getBoardConfigForPlaylist(boardType, layoutId), [boardType, layoutId]);
 
+  // This backdrop is blurred + dimmed to 35% opacity, so the 416px thumb
+  // variant is plenty — and it keeps expo-image from resampling a ~1080px
+  // source on the main thread.
+  const backdropConfig = useMemo(() => (config ? { ...config, variant: 'thumb' as const } : null), [config]);
+
   // Sync fast-path so production builds paint the backdrop on the first frame.
   const [path, setPath] = useState<string | null>(() => {
-    if (!config) return null;
-    return tryGetBackgroundPathsSync(config)?.paths[0] ?? null;
+    if (!backdropConfig) return null;
+    return tryGetBackgroundPathsSync(backdropConfig)?.paths[0] ?? null;
   });
 
   // Re-resolve when the board changes, and cover the dev path where assets are
   // served over Metro and must be materialized to disk first.
   useEffect(() => {
-    if (!config) {
+    if (!backdropConfig) {
       setPath(null);
       return;
     }
-    const sync = tryGetBackgroundPathsSync(config);
+    const sync = tryGetBackgroundPathsSync(backdropConfig);
     if (sync?.paths[0]) {
       setPath(sync.paths[0]);
       return;
     }
     let cancelled = false;
-    void ensureBackgroundsCached(config).then((result) => {
+    void ensureBackgroundsCached(backdropConfig).then((result) => {
       if (!cancelled) setPath(result?.paths[0] ?? null);
     });
     return () => {
       cancelled = true;
     };
-  }, [config]);
+  }, [backdropConfig]);
 
   if (!config || !path) return null;
 
@@ -58,6 +63,8 @@ function PlaylistBoardBackdropImpl({ boardType, layoutId }: PlaylistBoardBackdro
       blurRadius={12}
       cachePolicy="memory-disk"
       transition={0}
+      // Decorative backdrop from a small thumb source — no main-thread resize.
+      allowDownscaling={false}
     />
   );
 }

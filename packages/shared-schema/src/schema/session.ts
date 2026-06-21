@@ -41,13 +41,15 @@ export const sessionTypeDefs = /* GraphQL */ `
     queueState: QueueState!
     "Whether the current client is the session leader (presentation/backward compatibility only)"
     isLeader: Boolean!
-    "Stable participant id of the user currently driving the wall. Set via takeControl, cleared via releaseControl or driver disconnect. Distinct from isLeader, which is presentation/legacy only."
     driverParticipantId: ID
+      @deprecated(
+        reason: "Sessions are always-live; there is no driver. Always null. Kept one release for stale clients (cached web bundles, un-OTA'd native apps); remove after rollout."
+      )
     "Most recently observed BLE board serial for this session. Set when a participant pairs their phone to a physical board; broadcast as SessionBoardSerialChanged so late-joiners can auto-connect to the same board. Null when no board has been recorded."
     lastConnectedBoardSerial: String
     "Unique identifier for this client's connection"
     clientId: ID!
-    "Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) when comparing against driverParticipantId — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. TEMPORARILY NULLABLE: a follow-up release will flip this back to ID! once every Session-returning resolver has been audited to confirm it populates the field. Clients should treat null as 'unknown — fall back to clientId for self-checks'."
+    "Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) for self-checks against broadcast participant ids — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. TEMPORARILY NULLABLE: a follow-up release will flip this back to ID! once every Session-returning resolver has been audited to confirm it populates the field. Clients should treat null as 'unknown — fall back to clientId for self-checks'."
     participantId: ID
     "Optional session goal text"
     goal: String
@@ -61,6 +63,20 @@ export const sessionTypeDefs = /* GraphQL */ `
     isPermanent: Boolean!
     "Hex color for multi-session display"
     color: String
+  }
+
+  """
+  Durable session lifecycle status, independent of live presence. Backed by
+  the persisted session row rather than Redis, so an ended session reads as
+  ended even when no participants are currently connected. Lowercase values
+  match the strings stored in board_sessions.status so resolvers and clients
+  pass them through without mapping (same convention as TickStatus).
+  """
+  enum SessionStatus {
+    "Live or dormant; safe for a client to restore on cold start"
+    active
+    "Explicitly ended, or auto-finished by the inactivity sweep"
+    ended
   }
 
   """
@@ -126,13 +142,22 @@ export const sessionTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
-  Grade count for session summary grade distribution.
+  Per-grade ascent breakdown for the session summary.
   """
   type SessionGradeCount {
     "Grade name (e.g., 'V5')"
     grade: String!
-    "Number of sends at this grade"
+    "Total ascents at this grade (flash + send)."
     count: Int!
+      @deprecated(
+        reason: "Use flash + send. Kept additive so older mobile clients selecting { grade count } keep validating against the schema while they catch up."
+      )
+    "Flashes at this grade"
+    flash: Int!
+    "Sends (non-flash) at this grade"
+    send: Int!
+    "Failed attempts at this grade (implicit from multi-try sends)"
+    attempt: Int!
   }
 
   """
@@ -145,6 +170,14 @@ export const sessionTypeDefs = /* GraphQL */ `
     climbName: String!
     "Grade name"
     grade: String!
+    "Lit-hold frames string, for rendering a board thumbnail (null for legacy climbs)"
+    frames: String
+    "Board layout id, needed to render the thumbnail"
+    layoutId: Int
+    "Board type the send was logged on (e.g. 'kilter', 'tension')"
+    boardType: String
+    "Whether the send was on the mirrored climb"
+    isMirror: Boolean
   }
 
   """
@@ -157,8 +190,10 @@ export const sessionTypeDefs = /* GraphQL */ `
     displayName: String
     "Avatar URL"
     avatarUrl: String
-    "Total sends"
+    "Total sends (flash + send)"
     sends: Int!
+    "Total flashes"
+    flashes: Int!
     "Total attempts"
     attempts: Int!
   }
@@ -171,9 +206,11 @@ export const sessionTypeDefs = /* GraphQL */ `
     sessionId: ID!
     "Total successful sends"
     totalSends: Int!
+    "Total flashes (first-try sends)"
+    totalFlashes: Int!
     "Total attempts (including sends)"
     totalAttempts: Int!
-    "Grade distribution of sends"
+    "Grade distribution with flash/send/attempt breakdown (count kept for back-compat)"
     gradeDistribution: [SessionGradeCount!]!
     "Hardest climb sent during the session"
     hardestClimb: SessionHardestClimb
@@ -187,5 +224,56 @@ export const sessionTypeDefs = /* GraphQL */ `
     durationMinutes: Int
     "Session goal text"
     goal: String
+  }
+
+  """
+  One viewer-owned lap/event included in an Apple Health workout export.
+  """
+  type SessionHealthExportLap {
+    "Tick UUID"
+    tickUuid: ID!
+    "Climb UUID"
+    climbUuid: String!
+    "Climb name"
+    climbName: String
+    "Grade name"
+    grade: String
+    "Tick status (flash, send, attempt)"
+    status: String!
+    "Number of attempts represented by this tick"
+    attemptCount: Int!
+    "Board type"
+    boardType: String!
+    "Climb angle"
+    angle: Int
+    "When the lap was logged"
+    climbedAt: String!
+  }
+
+  """
+  Viewer-specific export payload for writing a finished session to Apple Health.
+  It intentionally contains only the requesting user's ticks and saved workout id.
+  """
+  type SessionHealthExport {
+    "Session ID"
+    sessionId: ID!
+    "When the session started"
+    startedAt: String
+    "When the session ended"
+    endedAt: String
+    "Duration in minutes"
+    durationMinutes: Int
+    "Primary board type for this viewer's workout"
+    boardType: String!
+    "Viewer-owned sends"
+    totalSends: Int!
+    "Viewer-owned attempts, including the successful attempt on sends"
+    totalAttempts: Int!
+    "Hardest climb the viewer sent during the session"
+    hardestClimb: SessionHardestClimb
+    "Viewer-owned lap events"
+    laps: [SessionHealthExportLap!]!
+    "Existing Apple Health workout id saved for this viewer/session"
+    healthKitWorkoutId: String
   }
 `;

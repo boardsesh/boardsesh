@@ -69,7 +69,6 @@ const initialState: QueueState = {
   lastReceivedSequence: null,
   lastReceivedStateHash: null,
   needsResync: false,
-  optimisticDriverParticipantId: null,
 };
 
 describe('queueReducer', () => {
@@ -371,6 +370,27 @@ describe('queueReducer', () => {
       expect(result.queue).toEqual(newQueue);
       expect(result.currentClimbQueueItem).toEqual(existingCurrentClimb);
     });
+
+    it('should clear current climb when explicitly set to null', () => {
+      const existingCurrentClimb = mockClimbQueueItem;
+      const stateWithCurrentClimb: QueueState = {
+        ...initialState,
+        currentClimbQueueItem: existingCurrentClimb,
+      };
+
+      const action: QueueAction = {
+        type: 'UPDATE_QUEUE',
+        payload: {
+          queue: [],
+          currentClimbQueueItem: null,
+        },
+      };
+
+      const result = queueReducer(stateWithCurrentClimb, action);
+
+      expect(result.queue).toEqual([]);
+      expect(result.currentClimbQueueItem).toBeNull();
+    });
   });
 
   describe('INITIAL_QUEUE_DATA', () => {
@@ -390,6 +410,27 @@ describe('queueReducer', () => {
 
       expect(result.queue).toEqual(newQueue);
       expect(result.currentClimbQueueItem).toEqual(newCurrentClimb);
+      expect(result.initialQueueDataReceivedFromPeers).toBe(true);
+    });
+
+    it('should clear current climb when explicitly set to null', () => {
+      const stateWithCurrentClimb: QueueState = {
+        ...initialState,
+        currentClimbQueueItem: mockClimbQueueItem,
+      };
+
+      const action: QueueAction = {
+        type: 'INITIAL_QUEUE_DATA',
+        payload: {
+          queue: [],
+          currentClimbQueueItem: null,
+        },
+      };
+
+      const result = queueReducer(stateWithCurrentClimb, action);
+
+      expect(result.queue).toEqual([]);
+      expect(result.currentClimbQueueItem).toBeNull();
       expect(result.initialQueueDataReceivedFromPeers).toBe(true);
     });
   });

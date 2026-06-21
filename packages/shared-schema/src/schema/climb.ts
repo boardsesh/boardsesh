@@ -26,7 +26,7 @@ export const climbTypeDefs = /* GraphQL */ `
     difficulty: String!
     "Average quality rating from users"
     quality_average: String!
-    "Star rating (0-3)"
+    "Star rating (0-5), rounded from quality_average"
     stars: Float!
     "Difficulty uncertainty/spread"
     difficulty_error: String!
@@ -59,6 +59,10 @@ export const climbTypeDefs = /* GraphQL */ `
   """
   input ClimbInput {
     uuid: ID!
+    "Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board."
+    boardType: String
+    "Layout the climb belongs to. Round-tripped so a connected board can skip a climb set for another layout."
+    layoutId: Int
     setter_username: String!
     "Boardsesh user ID of the climb owner (null for Aurora-synced climbs)."
     userId: ID

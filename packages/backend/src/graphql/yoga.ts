@@ -8,6 +8,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 import { logger } from '../utils/logger';
+import { wasErrorReported } from '../utils/sentry-dedupe';
 
 /**
  * Create and configure the GraphQL Yoga instance
@@ -87,6 +88,9 @@ export function createYogaInstance() {
         for (const arg of args) {
           if (!(arg instanceof Error)) continue;
           if (arg instanceof GraphQLError && !arg.originalError) continue;
+          // A resolver already reported this with finer-grained tags/context
+          // (e.g. createSession); don't emit a duplicate event.
+          if (wasErrorReported(arg)) continue;
           Sentry.captureException(arg, { tags: { source: 'graphql-yoga' } });
         }
       },

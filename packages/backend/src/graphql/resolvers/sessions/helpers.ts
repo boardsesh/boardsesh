@@ -17,21 +17,17 @@ type SessionQueueState = {
 /**
  * Optional pre-resolved values that callers pass in to skip the helper's
  * internal Redis lookups. Used when the resolver already knows a field —
- * `joinSession` has fresh `users`/`queueState`/`name`; `takeControl` knows
- * the driver it just wrote; `releaseControl` knows `null` after a successful
- * clear.
+ * `joinSession` has fresh `users`/`queueState`/`name`.
  *
  * Convention: an explicit `null` (or any value) is a real override and skips
  * the fetch. `undefined` (or key absent) triggers the fetch. So pre-resolved
- * but legitimately-null values like `driverParticipantId: null` from
- * `releaseControl` are honoured, while `name: undefined` still defers to
- * `sessionData.name`.
+ * but legitimately-null values like `lastConnectedBoardSerial: null` are
+ * honoured, while `name: undefined` still defers to `sessionData.name`.
  */
 export type SessionPayloadInputs = {
   users?: SessionUser[];
   queueState?: SessionQueueState;
   sessionData?: SessionDbRow | null;
-  driverParticipantId?: string | null;
   lastConnectedBoardSerial?: string | null;
   leaderConnectionId?: string | null;
   name?: string | null;
@@ -53,8 +49,8 @@ function override<T>(value: T | undefined, fetch: () => Promise<T>): Promise<T> 
 }
 
 /**
- * Build the 16-field Session GraphQL payload, fanning the four-to-six
- * independent Redis reads into a single `Promise.all`. Replaces the verbatim
+ * Build the Session GraphQL payload, fanning the independent Redis reads into
+ * a single `Promise.all`. Replaces the verbatim
  * `id`/`name`/`boardPath`/`users`/`queueState`/`isLeader`/...-shaped return
  * objects in every Session-returning resolver. Pass `inputs.X` to short-
  * circuit a specific lookup when the caller already has the value.
@@ -74,15 +70,13 @@ export async function buildSessionPayload(
       ? Promise.resolve<string | null>(null)
       : override(inputs.leaderConnectionId, () => roomManager.getSessionLeaderConnectionId(sessionId));
 
-  const [users, queueState, sessionData, driverParticipantId, lastConnectedBoardSerial, leaderConnectionId] =
-    await Promise.all([
-      override(inputs.users, () => roomManager.getSessionUsers(sessionId)),
-      override(inputs.queueState, () => roomManager.getQueueState(sessionId)),
-      override(inputs.sessionData, () => roomManager.getSessionById(sessionId)),
-      override(inputs.driverParticipantId, () => roomManager.getSessionDriverParticipantId(sessionId)),
-      override(inputs.lastConnectedBoardSerial, () => roomManager.getSessionBoardSerial(sessionId)),
-      leaderFetch,
-    ]);
+  const [users, queueState, sessionData, lastConnectedBoardSerial, leaderConnectionId] = await Promise.all([
+    override(inputs.users, () => roomManager.getSessionUsers(sessionId)),
+    override(inputs.queueState, () => roomManager.getQueueState(sessionId)),
+    override(inputs.sessionData, () => roomManager.getSessionById(sessionId)),
+    override(inputs.lastConnectedBoardSerial, () => roomManager.getSessionBoardSerial(sessionId)),
+    leaderFetch,
+  ]);
 
   return {
     id: sessionId,
@@ -100,7 +94,6 @@ export async function buildSessionPayload(
       currentClimbQueueItem: queueState.currentClimbQueueItem,
     },
     isLeader: inputs.isLeader !== undefined ? inputs.isLeader : leaderConnectionId === ctx.connectionId,
-    driverParticipantId,
     lastConnectedBoardSerial,
     clientId: inputs.clientId !== undefined ? inputs.clientId : ctx.connectionId,
     participantId: inputs.participantId ?? ctx.participantId ?? ctx.connectionId ?? '',

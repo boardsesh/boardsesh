@@ -20,10 +20,20 @@
       "import": "./src/moonboard.ts",
       "default": "./src/moonboard.ts"
     },
+    "./connection-error": {
+      "types": "./src/connection-error.ts",
+      "import": "./src/connection-error.ts",
+      "default": "./src/connection-error.ts"
+    },
     "./transport": {
       "types": "./src/transport.ts",
       "import": "./src/transport.ts",
       "default": "./src/transport.ts"
+    },
+    "./scan-constants": {
+      "types": "./src/scan-constants.ts",
+      "import": "./src/scan-constants.ts",
+      "default": "./src/scan-constants.ts"
     }
   },
   "scripts": {

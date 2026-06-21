@@ -23,11 +23,12 @@ public class BoardBleModule: Module {
     private let bufferQueue = DispatchQueue(label: "com.boardsesh.app.BoardBleModule.buffer")
     private var pendingEvents: [PendingEvent] = []
     private var hasListener = false
+    private var isDraining = false
 
     public func definition() -> ModuleDefinition {
         Name("BoardBle")
 
-        Events("scanResult", "disconnected")
+        Events("scanResult", "disconnected", "connected")
 
         OnCreate {
             BoardBleManager.shared.setEventHandlers(
@@ -38,28 +39,31 @@ public class BoardBleModule: Module {
                             "name": result.name ?? ""
                         ],
                         "localName": result.name ?? "",
-                        "rssi": result.rssi
+                        "rssi": result.rssi,
+                        "serviceUuids": result.serviceUuids
                     ])
                 },
                 onDisconnect: { [weak self] deviceId in
                     self?.emitOrBuffer(name: "disconnected", body: ["deviceId": deviceId])
+                },
+                onConnected: { [weak self] deviceId, deviceName in
+                    self?.emitOrBuffer(name: "connected", body: [
+                        "deviceId": deviceId,
+                        "deviceName": deviceName ?? ""
+                    ])
                 }
             )
         }
 
         OnDestroy {
-            BoardBleManager.shared.setEventHandlers(onScanResult: nil, onDisconnect: nil)
+            BoardBleManager.shared.setEventHandlers(onScanResult: nil, onDisconnect: nil, onConnected: nil)
         }
 
         OnStartObserving {
             self.bufferQueue.sync {
                 self.hasListener = true
-                let buffered = self.pendingEvents
-                self.pendingEvents = []
-                for event in buffered {
-                    self.sendEvent(event.name, event.body)
-                }
             }
+            self.drainPendingEvents()
         }
 
         OnStopObserving {
@@ -130,6 +134,17 @@ public class BoardBleModule: Module {
             BoardBleManager.shared.cancelWrites()
         }
 
+        // Presence of this function doubles as the JS feature gate for the
+        // newer native surface (unfiltered scanning, the `connected` event,
+        // connection adoption) — see BoardBleNativeModule in src/index.ts.
+        AsyncFunction("getConnectedDevice") { () -> [String: Any]? in
+            guard let device = BoardBleManager.shared.connectedDeviceInfo else { return nil }
+            return [
+                "deviceId": device.deviceId,
+                "name": device.name ?? ""
+            ]
+        }
+
         AsyncFunction("configureBoard") { (options: ConfigureBoardOptions) -> Void in
             BoardBleManager.shared.configure(
                 BoardBleConfiguration(
@@ -146,17 +161,36 @@ public class BoardBleModule: Module {
 
     private func emitOrBuffer(name: String, body: [String: Any]) {
         bufferQueue.sync {
-            if hasListener {
-                sendEvent(name, body)
-            } else {
-                pendingEvents.append(PendingEvent(name: name, body: body))
-                // Cap buffer growth in case the JS layer never attaches.
-                // Scan results are the only high-volume event and they're
-                // safely discarded if old.
-                if pendingEvents.count > 200 {
-                    pendingEvents.removeFirst(pendingEvents.count - 200)
-                }
+            pendingEvents.append(PendingEvent(name: name, body: body))
+            // Cap buffer growth in case the JS layer never attaches.
+            // Scan results are the only high-volume event and they're
+            // safely discarded if old.
+            if pendingEvents.count > 200 {
+                pendingEvents.removeFirst(pendingEvents.count - 200)
             }
+        }
+        drainPendingEvents()
+    }
+
+    /// Sends buffered events FIFO while a listener is attached. `sendEvent`
+    /// runs OUTSIDE `bufferQueue` so a synchronously re-entrant emission can
+    /// never deadlock the serial queue; `isDraining` keeps the drain
+    /// single-flight so concurrent callers can't interleave events out of
+    /// order.
+    private func drainPendingEvents() {
+        while true {
+            let next: PendingEvent? = bufferQueue.sync {
+                guard hasListener, !isDraining, !pendingEvents.isEmpty else { return nil }
+                isDraining = true
+                return pendingEvents.removeFirst()
+            }
+            guard let next else { return }
+            sendEvent(next.name, next.body)
+            let hasMore: Bool = bufferQueue.sync {
+                isDraining = false
+                return hasListener && !pendingEvents.isEmpty
+            }
+            if !hasMore { return }
         }
     }
 }

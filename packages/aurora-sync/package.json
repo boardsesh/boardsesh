@@ -28,6 +28,11 @@
       "types": "./src/sync/index.ts",
       "import": "./src/sync/index.ts",
       "default": "./src/sync/index.ts"
+    },
+    "./json-import": {
+      "types": "./src/sync/json-import.ts",
+      "import": "./src/sync/json-import.ts",
+      "default": "./src/sync/json-import.ts"
     }
   },
   "scripts": {
@@ -40,17 +45,21 @@
     "lint-fix": "vp lint --fix",
     "sync:all": "tsx src/cli/index.ts all",
     "sync:daemon": "tsx src/cli/index.ts daemon",
+    "sync:locations": "tsx src/cli/index.ts locations",
     "sync:user": "tsx src/cli/index.ts user"
   },
   "dependencies": {
+    "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
     "@boardsesh/crypto": "*",
     "@boardsesh/db": "*",
+    "@boardsesh/location-sync": "*",
     "@boardsesh/shared-schema": "*",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
-    "postgres": "^3.4.8"
+    "postgres": "^3.4.8",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",

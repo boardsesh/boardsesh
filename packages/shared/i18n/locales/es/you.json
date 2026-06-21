@@ -2,7 +2,7 @@
   "metadata": {
     "dashboard": {
       "title": "Tú",
-      "description": "Tu tabla de escalada en Boardsesh"
+      "description": "Tu plafón de escalada en Boardsesh"
     },
     "logbook": {
       "title": "Historial",
@@ -16,31 +16,88 @@
   "tabs": {
     "progress": "Progreso",
     "sessions": "Sesiones",
-    "logbook": "Historial"
+    "logbook": "Historial",
+    "social": "Social",
+    "climbs": "Bloques"
   },
   "progress": {
     "title": "Progreso"
   },
   "mobile": {
-    "settings": "Ajustes",
     "unknownName": "Escalador",
     "cancel": "Cancelar",
     "sessions": {
-      "empty": "Aún no hay sesiones — ve a escalar algo."
+      "weeklySends": "{{count}} encadenes esta semana",
+      "weekly": {
+        "sessions": "Sesiones",
+        "sends": "Encadenes",
+        "flashes": "Flashes",
+        "attempts": "Intentos"
+      },
+      "streak": "Racha de {{count}} semanas",
+      "sectionToday": "Hoy",
+      "sectionThisWeek": "Esta semana",
+      "sectionEarlier": "Anterior",
+      "emptyTitle": "Aún no hay sesiones",
+      "emptyBody": "Inicia una sesión y tus vías aparecerán aquí.",
+      "emptyCta": "Empezar una sesión"
     },
     "progress": {
       "empty": "Nada registrado todavía — tus estadísticas aparecen cuando empieces a registrar vías."
     },
+    "social": {
+      "title": "Social",
+      "followers": "Seguidores",
+      "following": "Siguiendo",
+      "findFriends": "Buscar",
+      "searchPlaceholder": "Buscar escaladores",
+      "clearSearch": "Limpiar búsqueda",
+      "you": "Tú",
+      "followAction": "Seguir",
+      "unfollowAction": "No seguir",
+      "followUser": "Seguir a {{name}}",
+      "unfollowUser": "Dejar de seguir a {{name}}",
+      "followerCount_one": "{{count}} seguidor",
+      "followerCount_other": "{{count}} seguidores",
+      "followingCount": "{{count}} siguiendo",
+      "recentAscents_one": "{{count}} ascenso este mes",
+      "recentAscents_other": "{{count}} ascensos este mes",
+      "emptyFollowers": "Aún no tienes seguidores",
+      "emptyFollowing": "Aún no sigues a nadie",
+      "searchHint": "Escribe al menos 2 caracteres para buscar escaladores",
+      "emptySearch": "No se encontraron escaladores",
+      "emptySearchBody": "Ningún escalador coincide con \"{{query}}\".",
+      "loadError": "No se pudieron cargar los escaladores",
+      "retry": "Inténtalo de nuevo",
+      "instagramLink": "Instagram",
+      "instagramOpenError": "No se pudo abrir Instagram"
+    },
+    "profile": {
+      "title": "Perfil",
+      "errorTitle": "No se pudo cargar este perfil",
+      "notFoundTitle": "Escalador no encontrado",
+      "notFoundBody": "No pudimos encontrar a ese escalador.",
+      "noClimbs": "Aún no hay bloques creados",
+      "climbsError": "No se pudieron cargar los bloques",
+      "betaShelf": {
+        "title": "Vídeos de beta",
+        "seeAll": "Ver todos",
+        "allTitle": "Vídeos de beta",
+        "empty": "Aún no hay vídeos de beta",
+        "emptyBody": "La beta que comparte este escalador aparece aquí."
+      }
+    },
     "comments": {
       "title": "Comentarios",
       "empty": "Aún no hay comentarios — abre la conversación",
-      "placeholder": "Añade un comentario…"
+      "placeholder": "Añade un comentario…",
+      "sendError": "No se pudo publicar tu comentario. Inténtalo de nuevo."
     },
     "filter": {
       "title": "Filtros",
       "timeRange": "Periodo",
-      "board": "Tabla",
-      "allBoards": "Todas las tablas",
+      "board": "Plafón",
+      "allBoards": "Todos los plafones",
       "all": "Todo",
       "year": "Año",
       "month": "Mes",
@@ -49,11 +106,17 @@
     },
     "logbook": {
       "empty": "Tu historial está vacío — registra tu primer encadene.",
+      "errorTitle": "No se pudo cargar tu historial",
+      "errorBody": "Comprueba tu conexión e inténtalo de nuevo.",
+      "retry": "Inténtalo de nuevo",
       "editTitle": "Editar ascenso",
       "statusLabel": "Estado",
       "gradeLabel": "Grado",
       "qualityLabel": "Estrellas",
       "triesLabel": "Intentos",
+      "dateLabel": "Fecha",
+      "timeLabel": "Hora",
+      "futureTimeAdjusted": "Hora futura ajustada a ahora.",
       "commentLabel": "Comentario",
       "commentPlaceholder": "¿Cómo fue?",
       "save": "Guardar",

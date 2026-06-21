@@ -1,4 +1,9 @@
 {
+  "boardMismatch": {
+    "title": "Cambia a {{board}} para escalar este bloque",
+    "subtitle": "Este es un bloque de {{board}}. Cambia de plafón para ponerlo en cola.",
+    "cta": "Cambiar de plafón"
+  },
   "metadata": {
     "detail": {
       "notFoundTitle": "Sesión no encontrada"
@@ -18,6 +23,28 @@
       "gradeRange": " de {{first}} a {{last}}"
     }
   },
+  "boardPresence": {
+    "title": "Ahora en el muro",
+    "open": "En el muro",
+    "openAria": "Ver qué hay en el muro",
+    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}",
+    "nowOnWallAnnouncement": "Ahora en el muro: {{name}}",
+    "close": "Cerrar",
+    "switchBoard": "Cambiar de muro",
+    "switchBoardAria": "Cambiar a otro muro",
+    "setByLine": "Abierto por {{setter}}",
+    "litByLine": "Encendido por {{name}}",
+    "emptyTitle": "Aún no hay nadie en este muro",
+    "emptyBody": "Conéctate y envía un bloque para empezar el historial.",
+    "historyHeader": "Encendidos en este muro",
+    "statsHeader": "Este muro",
+    "statSent": "encadenes",
+    "statClimbers": "escaladores",
+    "statHardest": "más difícil",
+    "statTopGrade": "más repetido",
+    "wallChanged": "Has cambiado el muro",
+    "undo": "Deshacer"
+  },
   "detail": {
     "subtitleSends_one": "{{count}} encadene",
     "subtitleSends_other": "{{count}} encadenes",
@@ -34,6 +61,22 @@
     "deleteAscentConfirm": "¿Estás seguro? Esto no se puede deshacer.",
     "delete": "Eliminar",
     "climberFallback": "Escalador",
+    "setBy": "creado por {{username}}",
+    "weekday": {
+      "sunday": "domingo",
+      "monday": "lunes",
+      "tuesday": "martes",
+      "wednesday": "miércoles",
+      "thursday": "jueves",
+      "friday": "viernes",
+      "saturday": "sábado"
+    },
+    "partOfDay": {
+      "morning": "por la mañana",
+      "afternoon": "por la tarde",
+      "evening": "al anochecer",
+      "night": "por la noche"
+    },
     "unknownClimb": "Bloque desconocido",
     "attemptOnNth": "al {{ordinal}} intento",
     "totalAttempts": "{{count}} en total",
@@ -43,7 +86,6 @@
     "ordinalSecond": "{{n}}º",
     "ordinalThird": "{{n}}º",
     "ordinalDefault": "{{n}}º",
-    "sessionNotesPlaceholder": "Notas de la sesión u objetivo...",
     "noClimbsYet": "Sin bloques todavía",
     "logSomeClimbs": "Registra algunos bloques para ver el desglose por grados",
     "climbsLogged_one": "{{count}} bloque registrado",
@@ -72,11 +114,6 @@
     "notFound": {
       "title": "Sesión no encontrada",
       "subtitle": "No se pudo encontrar esta sesión. Puede que haya sido eliminada."
-    },
-    "userSearch": {
-      "title": "Añadir escalador",
-      "placeholder": "Buscar por nombre...",
-      "noUsersFound": "No se encontraron usuarios"
     }
   },
   "join": {
@@ -107,8 +144,8 @@
     "dialogTitle": "Crear sesión",
     "dialogSubmit": "Crear sesión",
     "started": "¡Sesión empezada!",
-    "selectBoardWarning": "Selecciona un board primero",
-    "boardsNearYou": "Boards cerca de ti",
+    "selectBoardWarning": "Selecciona un plafón primero",
+    "boardsNearYou": "Plafones cerca de ti",
     "loggedInBlurb": "Registra tus bloques e invita a otros a unirse.",
     "anonymousBlurb": "Métete sin cuenta. Inicia sesión más tarde para guardar tu progreso.",
     "signInForMore": "Inicia sesión para más funciones",
@@ -130,7 +167,7 @@
     },
     "generateQueue": {
       "button": "Generar cola de entrenamiento",
-      "buttonHint": "Elige un board primero",
+      "buttonHint": "Elige un plafón primero",
       "regenerate": "Regenerar",
       "clear": "Limpiar",
       "summary_one": "{{count}} bloque en cola",
@@ -155,10 +192,32 @@
     "saveToAppleHealth": "Guardar en Apple Health",
     "savingToAppleHealth": "Guardando en Apple Health…",
     "savedToAppleHealth": "Guardado en Apple Health",
+    "savedToAppleHealthWithoutCalories": "Guardado sin calorías",
     "saveToAppleHealthRetry": "Guardar en Apple Health (reintentar)",
+    "loadErrorTitle": "No se pudo cargar tu sesión",
+    "loadErrorMessage": "Tus vías están guardadas, solo falló el resumen. Inténtalo de nuevo o vuelve atrás.",
+    "retry": "Reintentar",
     "minutes": "{{count}}min",
     "hours": "{{count}}h",
-    "hoursAndMinutes": "{{hours}}h {{mins}}min"
+    "hoursAndMinutes": "{{hours}}h {{mins}}min",
+    "shareToStrava": "Compartir en Strava",
+    "sharingToStrava": "Compartiendo en Strava…",
+    "sharedToStrava": "Compartido en Strava",
+    "shareToStravaFailed": "No se pudo compartir en Strava",
+    "flashes": "Flashes",
+    "heroNiceSession": "Buena sesión.",
+    "heroCrushedIt": "¡Lo reventaste!",
+    "heroCrewSession": "Buena sesión en equipo.",
+    "heroLoggedWork": "Buen trabajo.",
+    "featuredSendsLabel_one": "encadene",
+    "featuredSendsLabel_other": "encadenes",
+    "featuredAttemptsLabel_one": "intento",
+    "featuredAttemptsLabel_other": "intentos",
+    "hardestSendTitle": "Encadene más duro",
+    "effortTitle": "Para volver a por ello",
+    "effortBody": "Ese proyecto no se va a ningún lado. Caerá.",
+    "crew": "El equipo",
+    "crewStatLine": "{{sends}} encadenes · {{flashes}} flashes · {{attempts}} intentos"
   },
   "overview": {
     "goal": "Objetivo: {{goal}}"
@@ -194,10 +253,7 @@
       "logAttempt": "Registrar intento",
       "showParticipants": "Mostrar participantes",
       "hideParticipants": "Ocultar participantes",
-      "openPlayDrawer": "Abrir el bloque del muro",
-      "userIsDriving": "{{username}} está al mando",
-      "returnToWallClimb": "Volver al bloque de {{username}}",
-      "returnToWallClimbNoDriver": "Volver al bloque del muro"
+      "openPlayDrawer": "Abrir el bloque del muro"
     },
     "offline": {
       "idle": "Sin conexión",
@@ -228,12 +284,6 @@
   "queueProvider": {
     "offlineLimitReached": "Has alcanzado el límite de la cola sin conexión. Vuelve a conectarte para sincronizar tus vías."
   },
-  "driverToast": {
-    "firstDriver": "{{newDriver}} está manejando la pared.",
-    "tookFromOther": "{{newDriver}} le quitó la pared a {{previousDriver}}.",
-    "tookFromYou": "{{newDriver}} te quitó la pared.",
-    "unknownDriver": "Alguien"
-  },
   "mobile": {
     "logbook": {
       "title": "Registro",
@@ -248,9 +298,7 @@
     "similarClimbs": {
       "title": "Escaladas similares",
       "empty": "No se encontraron escaladas similares",
-      "retry": "Reintentar",
-      "sends_one": "{{count}} envío",
-      "sends_other": "{{count}} envíos"
+      "retry": "Reintentar"
     },
     "community": {
       "title": "Comunidad",
@@ -258,15 +306,16 @@
       "ascensionists_one": "{{count}} ascensionista",
       "ascensionists_other": "{{count}} ascensionistas",
       "avgQuality": "Calidad promedio",
-      "gradeByAngle": "Grado por ángulo"
+      "ascentsByAngle": "Ascensos por ángulo"
     },
     "betaVideos": {
       "title": "Videos Beta",
+      "crewTitle": "Beta de este grupo",
+      "cardLabelByUploader": "Beta de {{name}}",
       "empty": "Sin videos beta todavía. ¡Sé el primero en compartir!",
       "videoCount_one": "{{count}} video",
       "videoCount_other": "{{count}} videos",
       "addButton": "Adjuntar un video beta",
-      "addTitle": "Adjuntar un video beta",
       "urlPlaceholder": "Pega un enlace de TikTok o Instagram",
       "submitButton": "Adjuntar",
       "submitting": "Adjuntando...",
@@ -277,31 +326,92 @@
       "cardLabelWithUser": "Video beta de @{{username}}",
       "cardLabel": "Video beta",
       "openError": "No se pudo abrir este enlace",
-      "urlInvalid": "Debe ser una URL de Instagram o TikTok"
+      "urlInvalid": "Debe ser una URL de Instagram o TikTok",
+      "shareTargetTitle": "Adjunta tu beta",
+      "shareTargetPrompt": "Toca el bloque que escalaste",
+      "shareSearchPlaceholder": "Busca en tus bloques registrados",
+      "shareNoAscents": "Registra un bloque primero y luego adjunta tu beta",
+      "shareNoResults": "Ningún bloque registrado coincide",
+      "shareSignIn": "Inicia sesión para adjuntar tu beta",
+      "shareSignInButton": "Iniciar sesión",
+      "shareClose": "Cerrar",
+      "shareReadingCaption": "Leyendo la descripción…",
+      "shareSuggestedTitle": "Encontrado en la descripción",
+      "shareOtherAscents": "Tus otros ascensos",
+      "shareTitle": "Comparte tu beta",
+      "step1Title": "Copia tu descripción",
+      "step2Title": "Publícalo como reel",
+      "step3Title": "Envíalo de vuelta a Boardsesh",
+      "copyCaption": "Copiar descripción",
+      "captionCopied": "Descripción copiada — pégala en tu reel",
+      "openInstagram": "Abrir Instagram",
+      "instagramNotInstalled": "Instagram no está instalado — abrimos la web en su lugar",
+      "instagramOpenFailed": "No se pudo abrir Instagram",
+      "shareBackInstructions": "Dos formas de traerlo: en tu reel toca Compartir y elige Boardsesh (puede estar en Más), o copia el enlace del reel y pégalo abajo. En ambos casos lo emparejaremos con esta vía.",
+      "pasteSectionLabel": "¿Ya tienes el enlace?"
     },
     "angleSelector": {
       "title": "Elegir ángulo",
       "fromVerticalHint": "Medido desde la vertical",
-      "diagramAria": "Tablero inclinado a {{angle}}° desde la vertical"
+      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",
       "removeClimb": "Eliminar bloque",
       "positionLabel": "posición {{position}}",
       "syncError": "Error de sincronización de cola",
+      "outOfSyncRefreshed": "La cola estaba desincronizada. Se actualizó con tu grupo.",
       "sessionCreateError": "No se pudo crear la sesión",
+      "noBoardSelected": "Selecciona un plafón primero",
       "actionFailed": "Acción fallida. Inténtalo de nuevo.",
+      "rateLimited": "Demasiados cambios muy rápido. Espera un momento.",
       "endSession": "Terminar sesión",
       "endSessionConfirm": "¿Estás seguro de que quieres terminar esta sesión?",
       "climbCount_one": "{{count}} bloque",
       "climbCount_other": "{{count}} bloques",
-      "logAscent": "Registrar ascenso"
+      "logAscent": "Registrar ascenso",
+      "alreadyLogged": "Registrado",
+      "dragHandleAria": "Arrastra para reordenar {{name}}"
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
       "editQueue": "Editar cola",
       "doneEditing": "Listo"
+    },
+    "queueSnackbar": {
+      "added": "Bloque añadido a la cola",
+      "open": "Abrir",
+      "openAria": "Abrir cola"
+    },
+    "boardPresence": {
+      "title": "Ahora en el muro",
+      "switchBoard": "Cambiar de muro",
+      "switchBoardAria": "Cambiar a otro muro",
+      "close": "Cerrar",
+      "setByLine": "Abierto por {{setter}}",
+      "drivenByA11y": "{{name}} está encendiendo el muro. Abre el perfil.",
+      "drivenByAnonA11y": "Alguien está encendiendo el muro.",
+      "litAgoNow": "ahora",
+      "litAgoMinutes": "{{count}} min",
+      "litAgoHours": "{{count}} h",
+      "litAgoDays": "{{count}} d",
+      "litAgoWeeks": "{{count}} sem",
+      "sentByLine": "Encadenado por {{name}}",
+      "emptyTitle": "Aún no hay nadie en este muro",
+      "emptyBody": "Conéctate y envía un bloque para empezar el historial.",
+      "historyHeader": "Encendidos en este muro",
+      "statsHeader": "Este muro",
+      "statSent": "encadenes",
+      "statClimbers": "escaladores",
+      "statHardest": "más difícil",
+      "hardestSendLabel": "Encadene más duro",
+      "statTopGrade": "más repetido",
+      "wallChanged": "Has cambiado el muro",
+      "undo": "Deshacer",
+      "undoAria": "Deshacer el cambio del muro",
+      "actionLoading": "Cargando el bloque",
+      "actionFailed": "No se pudo cargar ese bloque. Inténtalo de nuevo."
     },
     "toast": {
       "sessionEnded": "Sesión terminada"
@@ -311,7 +421,7 @@
       "headerActive": "Sesión",
       "minimize": "Minimizar sesión",
       "recordTab": "Grabar",
-      "preBoardLabel": "Tabla",
+      "preBoardLabel": "Plafón",
       "preGeneratorLabel": "Entrenamiento",
       "preGeneratorOff": "Apagado",
       "preGeneratorVolume": "Volumen",
@@ -319,47 +429,100 @@
       "preGeneratorLadder": "Escalera",
       "preGeneratorGradeFocus": "Grado fijo",
       "preGeneratorTargetGrade": "Grado objetivo",
-      "preStart": "Empezar sesión",
+      "preGeneratorWarmUp": "Calentamiento",
+      "preGeneratorWarmUpStandard": "Normal",
+      "preGeneratorWarmUpExtended": "Largo",
+      "preGeneratorWarmUpNone": "Sin",
+      "preGeneratorMainSetClimbs": "Bloques principales",
+      "preGeneratorMainSetVariability": "Rango de grado",
+      "preGeneratorNumberOfSteps": "Pasos",
+      "preGeneratorClimbsPerStep": "Bloques por paso",
+      "preGeneratorNumberOfClimbs": "Bloques",
+      "preGeneratorMinAscents": "Mín. encadenes",
+      "preGeneratorMinAscentsOption": "{{value}}+",
+      "preGeneratorMinRating": "Valoración mín.",
+      "preGeneratorMinRatingStarAccessibilityLabel_one": "Valoración mínima, {{count}} estrella o más",
+      "preGeneratorMinRatingStarAccessibilityLabel_other": "Valoración mínima, {{count}} estrellas o más",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_one": "Valoración mínima, {{count}} estrella o más, seleccionada",
+      "preGeneratorMinRatingStarSelectedAccessibilityLabel_other": "Valoración mínima, {{count}} estrellas o más, seleccionada",
+      "preGeneratorMinRatingStarHint": "Toca la valoración seleccionada otra vez para quitarla.",
+      "preGeneratorAny": "Cualquiera",
+      "preGeneratorClimbBias": "Preferencia",
+      "preGeneratorClimbBiasUnfamiliar": "Nuevos",
+      "preGeneratorClimbBiasAttempted": "Probados",
+      "preGeneratorClimbBiasAny": "Cualquiera",
+      "preGeneratorTallClimbsLabel": "Solo bloques altos",
+      "preGeneratorTallClimbsDescription": "Usa las filas altas 8x12 o 10x12.",
+      "preGeneratorWideClimbsLabel": "Solo bloques anchos",
+      "preGeneratorWideClimbsDescription": "Usa la extensión lateral 10x10.",
+      "preGeneratorDecreaseOption": "Reducir {{label}}",
+      "preGeneratorIncreaseOption": "Aumentar {{label}}",
+      "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
+      "preGeneratorOptionChartValue": "{{value}}, {{summary}}",
+      "preGeneratorChartPoint_one": "{{count}} bloque en {{grade}}",
+      "preGeneratorChartPoint_other": "{{count}} bloques en {{grade}}",
+      "preGeneratorChartProgressPoint": "bloque {{index}}, {{grade}}",
+      "preGeneratorTuning": "Ajustes",
+      "preStart": "Empezar",
       "preStarting": "Empezando…",
-      "preNoBoard": "Elige una tabla para empezar",
+      "preNoBoard": "Elige un plafón para empezar",
       "preStartError": "No se pudo iniciar la sesión. Inténtalo de nuevo.",
+      "preWorkoutPreviewTitle": "Vista previa del entrenamiento",
+      "preWorkoutPreviewGenerating": "Creando tu entrenamiento…",
+      "preWorkoutPreviewEmpty": "No hay bloques para este grado. Prueba otro.",
+      "preWorkoutPreviewError": "No se pudo crear la vista previa. Inténtalo de nuevo.",
+      "preRegenerateClimbForClimb": "Cambiar {{name}}",
       "inStatsSends": "Encadenes",
-      "inStatsAttempts": "Intentos",
       "inStatsDuration": "Duración",
       "inStatsHardest": "Encadene más duro",
       "inStatsGrades": "Distribución de grados",
-      "inQueueTitle": "Cola",
-      "inQueueEmpty": "Cola vacía — explora vías para añadir.",
+      "inHistoryTitle": "Historial de la sesión",
+      "inHistoryEmpty": "Registra bloques para crear el historial de tu sesión.",
+      "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "Terminar sesión",
+      "inStop": "Parar",
       "notification": {
         "channelName": "Sesión de escalada activa",
-        "channelDescription": "Mantiene tu tablero conectado y muestra los controles de la sesión mientras Boardsesh está en segundo plano.",
+        "channelDescription": "Mantiene tu plafón conectado y muestra los controles de la sesión mientras Boardsesh está en segundo plano.",
         "contentTitleFallback": "Sesión de escalada",
         "previous": "Anterior",
-        "next": "Siguiente"
-      }
+        "next": "Siguiente",
+        "relight": "Reactivar el muro",
+        "reconnect": "Conectar al plafón",
+        "onWall": "{{name}} está en el muro"
+      },
+      "inStatsFlashes": "Flashes",
+      "inLeaderboardTitle": "Quién escala",
+      "inLeaderboardClimber": "Escalador",
+      "inPresenceCount": "{{count}} escalando",
+      "invite": "Invitar escaladores",
+      "inviteTitle": "Invitar a esta sesión",
+      "inviteSubtitle": "Escanea para unirte o comparte el enlace",
+      "inviteCopyLink": "Copiar enlace",
+      "inviteCopied": "Enlace copiado",
+      "inviteShare": "Compartir",
+      "inStatsHardestEach": "Más difíciles",
+      "inviteAction": "Invitar"
     }
   },
   "playView": {
+    "previewBadge": "Vista previa",
+    "setActive": "Activar",
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",
     "play": "Reproducir",
     "pause": "Pausar",
     "replay": "Repetir",
     "speed": "Velocidad de reproducción",
-    "onWallChip": "EN EL MURO · {{username}}",
-    "onWallChipNoDriver": "EN EL MURO",
-    "drivingChip": "AL MANDO",
     "audienceCount_one": "{{count}} más mirando",
     "audienceCount_other": "{{count}} más mirando",
-    "returnToWallPill": "{{username}} · {{climbName}}",
-    "previewCoachmark": "Vista previa. Toca la bombilla para enviar al muro.",
     "yourAscents_one": "Tu ascenso ({{count}})",
     "yourAscents_other": "Tus ascensos ({{count}})",
     "triesCount_one": "{{count}} intento",
     "triesCount_other": "{{count}} intentos",
     "tickError": "No se pudo guardar tu marca — guardada como borrador",
     "shareError": "No se pudo compartir — inténtalo otra vez",
+    "favoriteError": "No se pudieron actualizar tus favoritos — inténtalo otra vez",
     "closeAria": "Cerrar",
     "actionBar": {
       "previousAria": "Bloque anterior",
@@ -372,10 +535,9 @@
       "openQueueAria": "Abrir cola",
       "queueCountAria": "Cola, {{count}} bloques",
       "lightbulb": {
-        "drivingNamed": "Estás controlando “{{name}}”. Toca para soltar.",
-        "driving": "Estás controlando. Toca para soltar.",
-        "takeNamed": "Tomar el control y enviar “{{name}}”",
-        "take": "Tomar el control del muro",
+        "turnOff": "Apagar el muro",
+        "sendNamed": "Enviar “{{name}}” al muro",
+        "send": "Enviar la vía al muro",
         "coachmark": "Enviar al muro"
       }
     },
@@ -405,5 +567,26 @@
       "starRating_one": "{{count}} estrella",
       "starRating_other": "{{count}} estrellas"
     }
+  },
+  "mobileDetail": {
+    "notFound": "Sesión no encontrada",
+    "participants": "Escaladores",
+    "title": "Sesión"
+  },
+  "mobileJoin": {
+    "loading": "Cargando sesión…",
+    "notFound": "Sesión no encontrada",
+    "ended": "Esta sesión ha terminado",
+    "error": "No se pudo cargar esta sesión",
+    "retry": "Reintentar",
+    "confirmTitle": "¿Unirte a la sesión de {{host}}?",
+    "boardLabel": "{{board}} · {{count}} escalando",
+    "join": "Unirse a la sesión",
+    "cancel": "Cancelar",
+    "switchTitle": "¿Salir de tu sesión actual?",
+    "switchBody": "Saldrás de tu sesión activa para unirte a esta.",
+    "signInToJoin": "Inicia sesión para unirte",
+    "joinError": "No se pudo unir a la sesión",
+    "hostFallback": "un escalador"
   }
 }

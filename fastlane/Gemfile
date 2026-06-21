@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+
+# Pinned for reproducibility; the committed Gemfile.lock is the exact pin and
+# ruby/setup-ruby installs from it in CI. Bump deliberately with `bundle update`.
+gem "fastlane", "~> 2.236"

@@ -13,7 +13,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { getStoredActiveBoard, setStoredActiveBoard } from '../active-board-store';
+import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 
@@ -46,4 +46,18 @@ export function useSetActiveBoard() {
     },
     [queryClient],
   );
+}
+
+/**
+ * Returns a clearer that drops the active board: removed from storage and the
+ * `['activeBoard']` cache set to `null`. Used when the active board is deleted
+ * or unfollowed — the app's contract is "no active board → route to the picker"
+ * (see this module's header), so we never auto-pick a replacement.
+ */
+export function useClearActiveBoard() {
+  const queryClient = useQueryClient();
+  return useCallback(async () => {
+    await clearStoredActiveBoard();
+    queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, null);
+  }, [queryClient]);
 }

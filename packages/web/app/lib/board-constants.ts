@@ -28,8 +28,8 @@ export const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number;
     grasshopper: { layout_id: 1, size_id: 4, set_ids: [1, 2] },
     soill: { layout_id: 1, size_id: 1, set_ids: [1] },
   };
-export const KILTER_HOMEWALL_LAYOUT_ID = 8;
-export const KILTER_HOMEWALL_PRODUCT_ID = 7;
+// KILTER_HOMEWALL_LAYOUT_ID / KILTER_HOMEWALL_PRODUCT_ID are re-exported above
+// via `export * from '@boardsesh/board-constants/product-sizes'`.
 export const BOARD_NAME_PREFIX_REGEX = new RegExp(`^(?:${SUPPORTED_BOARDS.join('|')})\\s*(?:board)?\\s*`, 'i');
 
 export function isAuroraBoardName(boardName: string): boardName is AuroraBoardName {

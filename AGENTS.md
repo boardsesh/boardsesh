@@ -86,6 +86,7 @@ Boardsesh is a monorepo containing a Next.js 16 application for controlling stan
 - No AI-generated images ever. Real photos or diagrams only.
 - No buzzwords. Concrete numbers and simple language.
 - No unnecessary check-ins. Default to action. Full autonomy except no data deletion without asking.
+- Do not leave completed code or documentation changes local-only. Unless the user explicitly opts out, publish validated changes in a pull request and share the PR with the user.
 
 ## GitHub Issue Fix Workflow
 
@@ -186,6 +187,9 @@ This project uses [Vite+](https://viteplus.dev) (`vp`) as its unified toolchain 
 - `vp lint` - Lint all packages
 - `vp fmt` - Format all files with Oxfmt
 - `vp run dev` - Start development databases, backend, and web server
+- `vp run dev:mobile` - Start the React Native (Expo) Metro dev server
+- `vp run mobile:android-shots` - Boot an Android emulator, run the app against Metro, and capture screenshots via adb (Linux/KVM friendly). One-time setup: `vp run mobile:android-doctor`. Full guide: `docs/android-emulator-screenshots.md`
+- `vp run mobile:ios-shots` - Boot an iOS simulator, run the app against Metro, and capture screenshots via `xcrun simctl` (macOS only). Full guide: `docs/ios-simulator-screenshots.md`
 - `vp run dev:backend` - Start database and backend only
 - `vp run dev:web` - Start database and web server only
 - `vp run db:up` - Start development databases and run migrations only
@@ -204,7 +208,7 @@ This project uses [Vite+](https://viteplus.dev) (`vp`) as its unified toolchain 
 
 - `vp run test:e2e` - Full Playwright run: brings up the pre-built dev DB, exports the seeded test user, and runs every spec in `packages/web/e2e/`. Playwright's `webServer` config auto-starts `vp run dev` (backend + web) for you.
 - `vp run test:e2e:setup` - Only bring up the dev DB. Useful when iterating on a single spec: after setup, run `bun run --filter=@boardsesh/web test:e2e -- e2e/<spec>.spec.ts` (or use `test:e2e:ui` for the Playwright UI).
-- The seeded test user is `test@boardsesh.com` / `test`, exported as `TEST_USER_EMAIL`/`TEST_USER_PASSWORD` by the script so screenshot specs (`app-store-screenshots`, `help-screenshots`) run end-to-end without 1Password.
+- The seeded test user is `test@boardsesh.com` / `test`, exported as `TEST_USER_EMAIL`/`TEST_USER_PASSWORD` by the script so screenshot specs (`help-screenshots`, `layout-screenshots`) run end-to-end without 1Password.
 
 ### Database Commands (run from root or packages/db/)
 
@@ -314,6 +318,7 @@ We are using next.js app router, it's important we try to use server side compon
 - Always use CSS media queries for mobile/responsive design
 - For rendering avoid JavaScript breakpoint detection & Grid.useBreakpoint()
 - While we work together, be careful to remove any code you no longer use, so we dont end up with lots of deadcode
+- Prefer skeleton or shadow content for loading states. Use spinners only when representative placeholder content is not reasonably possible, such as a single indeterminate action with no stable content shape.
 - **Dark mode uses white input fields** — This is intentional for contrast. All input components (TextField, Select, Autocomplete, etc.) have white backgrounds in dark mode via `darkTokens.semantic.inputSurface`. Do not change them to dark backgrounds.
 - **Never use `any` type** - The `no-explicit-any` lint rule is set to `deny` across all packages. Use `unknown`, proper types, or `as unknown as SpecificType` for type assertions. No exceptions - `any` defeats the purpose of TypeScript
 - **Never hardcode user-facing strings** - All visible text must come from the i18n catalogs in `packages/web/i18n/locales/`. See the Internationalisation section below for the call-site pattern. CI runs `vp run check:i18n` on every PR, which fails the build if a `.tsx` file under `packages/web/app/` introduces a hardcoded English string. Pre-existing violations are silenced with `// i18n-ignore-next-line` (or `{/* i18n-ignore-next-line */}`) comments — chip away at these by translating them and removing the marker.

@@ -1,13 +1,21 @@
 'use client';
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useDeferredValue } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useMemo,
+  useDeferredValue,
+} from 'react';
+import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useTranslation } from 'react-i18next';
 import { track } from '@/app/lib/analytics';
-import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import { TickBadgeAvatar } from '@/app/components/session/tick-badge-avatar';
 import type { ClimbQueueItem } from '../queue-control/types';
 import { usePathname } from 'next/navigation';
 import { useQueueActions, useCurrentClimb, useQueueList, useSessionData } from '../graphql-queue';
@@ -100,8 +108,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   /**
    * Lightbulb pending state (queue-control-bar pivot, Phase 3).
    *
-   * Set when the user presses the lightbulb to take control (party non-driver
-   * branch) — between the press and the matching `WallConfirmedClimb`, the
+   * Set when the user presses the lightbulb to connect + send the current climb
+   * to the board — between the press and the matching `WallConfirmedClimb`, the
    * lightbulb renders with a soft pulse so the user can see we're waiting.
    * Cleared either way when `useWallConfirmFallback` resolves (confirm,
    * timeout, or session-swap cancellation).
@@ -169,28 +177,24 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const {
     viewOnlyMode,
     isPersistentSessionActive,
-    isDriver,
+    wallConfirmed,
     lastConnectedBoardSerial,
-    connectionState,
     participantId,
     users: sessionUsers,
-    driverParticipantId,
   } = isOpen ? sessionData : deferredSession;
-  const {
-    mirrorClimb,
-    getNextClimbQueueItem,
-    getPreviousClimbQueueItem,
-    setCurrentClimbQueueItem,
-    takeControl,
-    releaseControl,
-  } = useQueueActions();
+  const { mirrorClimb, getNextClimbQueueItem, getPreviousClimbQueueItem, setCurrentClimbQueueItem } = useQueueActions();
   const {
     isConnected: isBluetoothConnected,
     isBluetoothSupported,
     connect: bluetoothConnect,
-    reassertWall,
+    disconnect: bluetoothDisconnect,
     reconnectSerialForCurrentBoard,
   } = useBluetoothContext();
+
+  // Board-presence connection holder — "someone is connected to and writing the
+  // wall right now" (seeded for late joiners via fetchConnection). Used only to
+  // light the party lightbulb; null when the board is free or unbound.
+  const boardPresenceCurrent = useContext(BoardPresenceCurrentContext);
 
   // In a party session, the drawer-local `drawerDisplayedItem` (set by browse
   // callers via the open-drawer event payload) takes precedence over the wall
@@ -271,60 +275,35 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const hasSuccessfulAscent = filteredLogbook.some((asc) => asc.is_ascent);
   const ascentCount = filteredLogbook.length;
 
-  // Card-swipe navigation. In an active party session, prev/next walks the
-  // drawer-local preview state without broadcasting (browse-doesn't-yank). In
-  // solo, it mutates the wall climb like today so BLE keeps sending.
-  //
-  // Non-driver swipe (party + isDriver===false): walks the suggested-climbs
-  // feed only — skip the shared queue, which is "the climbs the driver
-  // committed to" and not a non-driver's preview surface (pivot rule 5).
-  // Drivers (and solo, where isDriver is always true) get the existing
-  // queue → suggestions fall-through.
+  // Card-swipe navigation. Always-live model: every participant (solo or
+  // party) navigates the shared queue, and prev/next/swipe broadcasts the new
+  // wall climb to everyone.
   //
   // When the user enters via a /view/{uuid} direct hit, the climbs list is
   // empty until React Query resolves — in that window getNextClimbQueueItem
   // returns null and the `!!nextItem` check below naturally disables nav.
   // Once `suggestedClimbs` populate, swipe + prev/next light up against them.
   const navigateFromItem = effectiveItem ?? null;
-  const swipeSuggestionsOnly = isPersistentSessionActive && !isDriver;
-  const nextItem = getNextClimbQueueItem({ from: navigateFromItem, suggestionsOnly: swipeSuggestionsOnly });
-  const prevItem = getPreviousClimbQueueItem({ from: navigateFromItem, suggestionsOnly: swipeSuggestionsOnly });
+  const nextItem = getNextClimbQueueItem({ from: navigateFromItem });
+  const prevItem = getPreviousClimbQueueItem({ from: navigateFromItem });
 
-  // The pivot's preview-vs-broadcast fork: in party, non-drivers preview
-  // (drawer-local state, no wall change); drivers broadcast (wall climb +
-  // BLE send). Solo always broadcasts. Phase 1 routed every party tap to
-  // preview; PR3 narrows that to "party AND not driving" so driver
-  // gestures inside the drawer (swipe, prev/next) walk the queue/
-  // suggestions and update the wall as the spec requires.
+  // Always-live broadcast path: clear any lingering drawer-local preview so the
+  // drawer's `effectiveItem = drawerDisplayedItem ?? wallClimb` fall-through
+  // reads the freshly-broadcast wall climb, then set the new current climb
+  // (which broadcasts via the persistent-session subscription in party).
   const advanceTo = useCallback(
     (item: ClimbQueueItem, method: 'swipePlayViewDrawer' | 'playViewDrawer', direction: 'next' | 'previous') => {
-      if (isPersistentSessionActive && !isDriver) {
-        setDrawerDisplayedItem?.(item);
-        track('Queue Navigation', { direction, method, mode: 'preview' });
-        // Pivot Phase 5: non-driver preview swipe is intentionally NOT a
-        // Wall Advance — nothing reaches the wall, so the success-metric
-        // pipeline shouldn't count it as a broadcast advance.
-      } else {
-        // Broadcast path: clear any lingering drawer-local preview so the
-        // drawer's `effectiveItem = drawerDisplayedItem ?? wallClimb`
-        // fall-through reads the freshly-broadcast wall climb instead of a
-        // stale preview from before the user became driver.
-        setDrawerDisplayedItem?.(null);
-        setCurrentClimbQueueItem(item);
-        track('Queue Navigation', { direction, method, mode: 'broadcast' });
-        // Pivot Phase 5: drawer broadcast paths are by definition driver
-        // (or solo, which we treat as driver). The method discriminates
-        // swipe vs button.
-        track('Wall Advance', {
-          source: method === 'swipePlayViewDrawer' ? 'drawer_swipe' : 'drawer_button',
-          pressedByRole: 'driver',
-          direction,
-          mode: isPersistentSessionActive ? 'party' : 'solo',
-          boardLayout: boardDetails.layout_name ?? '',
-        });
-      }
+      setDrawerDisplayedItem?.(null);
+      setCurrentClimbQueueItem(item);
+      track('Queue Navigation', { direction, method, mode: 'broadcast' });
+      track('Wall Advance', {
+        source: method === 'swipePlayViewDrawer' ? 'drawer_swipe' : 'drawer_button',
+        direction,
+        mode: isPersistentSessionActive ? 'party' : 'solo',
+        boardLayout: boardDetails.layout_name ?? '',
+      });
     },
-    [isPersistentSessionActive, isDriver, setCurrentClimbQueueItem, setDrawerDisplayedItem, boardDetails.layout_name],
+    [isPersistentSessionActive, setCurrentClimbQueueItem, setDrawerDisplayedItem, boardDetails.layout_name],
   );
 
   // First-run coachmark — pulses the lightbulb once with the "Send to the
@@ -337,8 +316,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     void getPreference<boolean>('swipeHint:lightbulbSeen').then((seen) => {
       if (cancelled) return;
       if (seen) return;
-      // Don't trample an already-armed coachmark (e.g. previewCoachmark
-      // armed on a swipe before the drawer-open effect resolved).
+      // Don't trample an already-armed coachmark (e.g. one armed on a
+      // swipe before the drawer-open effect resolved).
       if (lightbulbCoachmarkKeyRef.current) return;
       lightbulbCoachmarkKeyRef.current = 'swipeHint:lightbulbSeen';
       setShowLightbulbCoachmark(true);
@@ -348,96 +327,36 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     };
   }, [isOpen]);
 
-  // Tracks which one-shot pulse is currently armed so the shared
-  // `onLightbulbCoachmarkSeen` handler persists the right IDB key. Two
-  // distinct one-shots ride on the same lightbulb-pulse animation: the
-  // original "Send to the wall" coachmark (first drawer open ever) and
-  // the new partyPreview coachmark (first non-driver swipe in a party
-  // session) speced by the queue-control-bar pivot doc + flagged in the
-  // group-session feedback review.
-  const lightbulbCoachmarkKeyRef = useRef<'swipeHint:lightbulbSeen' | 'swipeHint:partyPreviewSeen' | null>(null);
-  const [lightbulbCoachmarkText, setLightbulbCoachmarkText] = useState<string | null>(null);
+  // Tracks the one-shot pulse currently armed so `onLightbulbCoachmarkSeen`
+  // persists the right IDB key. The "Send to the wall" coachmark fires once on
+  // the first drawer open ever.
+  const lightbulbCoachmarkKeyRef = useRef<'swipeHint:lightbulbSeen' | null>(null);
   const handleLightbulbCoachmarkSeen = useCallback(() => {
     setShowLightbulbCoachmark(false);
     const key = lightbulbCoachmarkKeyRef.current;
     lightbulbCoachmarkKeyRef.current = null;
-    setLightbulbCoachmarkText(null);
     if (key) void setPreference(key, true);
   }, []);
-
-  // Non-driver swipe coachmark (queue-control-bar pivot, rule 5 + group-
-  // session feedback fix). On the first swipe a non-driver in a party
-  // session takes inside the drawer, pulse the lightbulb once with a
-  // tooltip explaining that swipe is preview-only and the lightbulb is
-  // the path to send. Tracked in a ref so a re-render between the swipe
-  // and the read doesn't double-fire.
-  const previewCoachmarkArmedRef = useRef(false);
-  const maybeArmPreviewCoachmark = useCallback(() => {
-    if (previewCoachmarkArmedRef.current) return;
-    if (!swipeSuggestionsOnly) return;
-    previewCoachmarkArmedRef.current = true;
-    void getPreference<boolean>('swipeHint:partyPreviewSeen').then((seen) => {
-      if (seen) return;
-      // Don't trample an already-armed lightbulb coachmark — the first-open
-      // one wins (it's already been visible for at least a beat).
-      if (lightbulbCoachmarkKeyRef.current) return;
-      lightbulbCoachmarkKeyRef.current = 'swipeHint:partyPreviewSeen';
-      setLightbulbCoachmarkText(t('playView.previewCoachmark'));
-      setShowLightbulbCoachmark(true);
-    });
-  }, [swipeSuggestionsOnly, t]);
-
-  // Resolve the driver's user record for the grabber-row peripheral cue.
-  // The mini session bar resolves its own copy from the same fields.
-  const driverUser = useMemo(() => {
-    if (!driverParticipantId) return null;
-    return sessionUsers.find((u) => u.id === driverParticipantId) ?? null;
-  }, [driverParticipantId, sessionUsers]);
-
-  const handleReturnToWallClimb = useCallback(() => {
-    setDrawerDisplayedItem?.(null);
-  }, [setDrawerDisplayedItem]);
 
   const navigate = useCallback(
     (direction: 'next' | 'previous', source: 'swipePlayViewDrawer' | 'playViewDrawer') => {
       const getter = direction === 'next' ? getNextClimbQueueItem : getPreviousClimbQueueItem;
-      const item = getter({ from: navigateFromItem, suggestionsOnly: swipeSuggestionsOnly });
+      const item = getter({ from: navigateFromItem });
       if (!item || viewOnlyMode) return;
       advanceTo(item, source, direction);
     },
-    [getNextClimbQueueItem, getPreviousClimbQueueItem, navigateFromItem, swipeSuggestionsOnly, viewOnlyMode, advanceTo],
+    [getNextClimbQueueItem, getPreviousClimbQueueItem, navigateFromItem, viewOnlyMode, advanceTo],
   );
 
-  // When a non-driver has swiped off the wall climb in browse mode, the
-  // most-recent "previous" climb in their mental model is the wall climb
-  // itself (where they just came from). Snap-back via swipe-left mirrors
-  // the mini session bar's "return to wall climb" button so both gestures
-  // resolve drift the same way.
-  const isDriftedFromWall =
-    !isDriver &&
-    isPersistentSessionActive &&
-    drawerDisplayedItem != null &&
-    currentClimbQueueItem != null &&
-    drawerDisplayedItem.climb.uuid !== currentClimbQueueItem.climb.uuid;
-
   const handleSwipeNext = useCallback(() => {
-    maybeArmPreviewCoachmark();
     navigate('next', 'swipePlayViewDrawer');
-  }, [navigate, maybeArmPreviewCoachmark]);
+  }, [navigate]);
   const handleSwipePrevious = useCallback(() => {
-    if (isDriftedFromWall) {
-      setDrawerDisplayedItem?.(null);
-      return;
-    }
-    maybeArmPreviewCoachmark();
     navigate('previous', 'swipePlayViewDrawer');
-  }, [navigate, maybeArmPreviewCoachmark, isDriftedFromWall, setDrawerDisplayedItem]);
+  }, [navigate]);
 
   const canSwipeNext = !viewOnlyMode && !!nextItem;
-  // While drifted from the wall, "previous" always resolves to the wall climb
-  // (handleSwipePrevious snap-back path), so swipe-back is always enabled even
-  // if the suggestions feed has no further previous item.
-  const canSwipePrevious = !viewOnlyMode && (isDriftedFromWall || !!prevItem);
+  const canSwipePrevious = !viewOnlyMode && !!prevItem;
 
   // Tick FAB → inline tick bar
   const handleTickFabClick = useCallback(() => {
@@ -459,12 +378,8 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   }, [showMessage, t]);
 
   const handlePrevNavClick = useCallback(() => {
-    if (isDriftedFromWall) {
-      setDrawerDisplayedItem?.(null);
-      return;
-    }
     navigate('previous', 'playViewDrawer');
-  }, [navigate, isDriftedFromWall, setDrawerDisplayedItem]);
+  }, [navigate]);
   // Wall-confirm watcher: armed by handleLightbulbClick, dismissed by the
   // local wall-confirm bus or fires a connect fallback after 2 s. Owns its
   // own unmount cleanup so the drawer doesn't need to thread that wiring.
@@ -478,7 +393,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   const handleWallConfirmTimeout = useCallback((info: { climbUuid: string }) => {
     setPendingClimbUuid((current) => (current === info.climbUuid ? null : current));
   }, []);
-  const { armWatcher: armWallConfirmWatcher, cancelWatcher: cancelWallConfirmWatcher } = useWallConfirmFallback(
+  const { armWatcher: armWallConfirmWatcher } = useWallConfirmFallback(
     {
       isBluetoothConnected,
       isBluetoothSupported,
@@ -500,200 +415,67 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
   }, [isPersistentSessionActive, pendingClimbUuid]);
 
   /**
-   * Wall Control Released — yanked + disconnect variants (Phase 5 analytics).
+   * Lightbulb press: a plain connect/disconnect toggle (matches mobile).
+   * Always-live model — there is no driver role and no "re-send" gesture.
    *
-   *  - 'yanked': a server-driven `DriverChanged` arrives naming someone else
-   *    while we were the previous driver. Detect by tracking the previously-
-   *    observed isDriver state with a ref and firing when it transitions
-   *    from true → false in an active party session. This catches both the
-   *    "someone else took it" yank and the explicit-release path (the
-   *    release-from-self also flips isDriver to false). We disambiguate by
-   *    consulting `pendingReleaseReasonRef` — if a manual release just fired,
-   *    suppress the yanked event for the same transition.
-   *  - 'disconnect': we're the driver and the WS connection drops. Detect
-   *    by watching `connectionState` while `isDriver` is true.
-   */
-  const wasDriverRef = useRef(isDriver);
-  const wasConnectedRef = useRef(connectionState === 'connected');
-  // Set to 'manual' by handleLightbulbClick right before it calls
-  // releaseControl(); the isDriver flip that follows is then attributed to
-  // the manual release rather than counted as a yank.
-  const pendingReleaseReasonRef = useRef<'manual' | null>(null);
-
-  useEffect(() => {
-    const boardLayout = boardDetails.layout_name ?? '';
-    const wasDriver = wasDriverRef.current;
-    wasDriverRef.current = isDriver;
-
-    // Driver flipped from true → false while still in a party session →
-    // yanked OR manual. Manual flips set the suppression ref; everything
-    // else is a yank.
-    if (wasDriver && !isDriver && isPersistentSessionActive) {
-      const pending = pendingReleaseReasonRef.current;
-      pendingReleaseReasonRef.current = null;
-      if (pending !== 'manual') {
-        track('Wall Control Released', {
-          reason: 'yanked',
-          mode: 'party',
-          boardLayout,
-        });
-      }
-    }
-  }, [isDriver, isPersistentSessionActive, boardDetails.layout_name]);
-
-  useEffect(() => {
-    const boardLayout = boardDetails.layout_name ?? '';
-    const wasConnected = wasConnectedRef.current;
-    const isNowConnected = connectionState === 'connected';
-    wasConnectedRef.current = isNowConnected;
-
-    if (
-      wasConnected &&
-      !isNowConnected &&
-      // Use the latest known driver flag — fire only when we were driving
-      // at the moment the disconnect happened.
-      wasDriverRef.current &&
-      isPersistentSessionActive
-    ) {
-      track('Wall Control Released', {
-        reason: 'disconnect',
-        mode: 'party',
-        boardLayout,
-      });
-    }
-  }, [connectionState, isPersistentSessionActive, boardDetails.layout_name]);
-
-  /**
-   * Lightbulb press: toggle the driver role.
-   *
-   * - When the local user is NOT driving, press takes control via
-   *   `takeControl(currentClimb)` and arms the 2-second wall-confirm
-   *   watcher. While driving, every subsequent prev/next/swipe broadcasts
-   *   (per the advanceTo driver fork) and the AutoSender forwards each
-   *   climb change to the wall — so the lit lightbulb means "I'm driving;
-   *   the wall follows what I do."
-   *
-   * - When the local user IS already driving, press releases via
-   *   `releaseControl()`. The lightbulb darkens; subsequent prev/next/
-   *   swipe go back to preview-only.
-   *
-   * Watcher fallbacks (only on the take-control branch):
-   *  - Already BLE-connected → trust the AutoSender's in-flight write.
-   *  - Stored session board serial + native shell → auto-connect.
-   *  - Otherwise → connect() which opens the device picker dialog.
+   *  - BLE-connected → disconnect (turn the board off). The drop path releases
+   *    the session wall + board-presence holder so every member's lightbulb
+   *    clears.
+   *  - Not BLE-connected → connect (silent reconnect to the last board on
+   *    native shells, otherwise the device picker). The fresh AutoSender pushes
+   *    the current climb on mount; arm the 2-second wall-confirm watcher so the
+   *    bulb pulses until WallConfirmedClimb lands (the watcher no-ops once
+   *    connected).
    */
   const handleLightbulbClick = useCallback(() => {
     const boardLayout = boardDetails.layout_name ?? '';
-    // `previousDriver` analytic property: who held the wall before the
-    // local user pressed? Use the live `driverParticipantId` from session
-    // data — null means "none", local participantId means "self" (a no-op
-    // re-take), otherwise some other party member held it.
-    const previousDriver: 'none' | 'self' | 'other' =
-      sessionData.driverParticipantId == null
-        ? 'none'
-        : sessionData.driverParticipantId === participantId
-          ? 'self'
-          : 'other';
 
-    // Party + driver: release control (give the wall away). Cancel any
-    // in-flight watcher so the fallback doesn't fire after the role is
-    // already released.
-    if (isPersistentSessionActive && isDriver) {
-      cancelWallConfirmWatcher();
-      setPendingClimbUuid(null);
-      // Suppress the upcoming isDriver true→false flip from being counted
-      // as a yank by the analytics watcher below.
-      pendingReleaseReasonRef.current = 'manual';
-      void releaseControl();
-      track('Wall Control Released', {
-        reason: 'manual',
-        mode: 'party',
-        boardLayout,
-      });
+    if (isBluetoothConnected) {
+      // Disconnect. BLE-layer + handleConnectionChange handle analytics and the
+      // session/board-presence holder release on the resulting drop.
+      bluetoothDisconnect();
       return;
     }
-    // Solo: BLE-centric — the lightbulb's filled state means "a board is
-    // paired." Tap when not paired opens the picker directly (no 2s watcher
-    // needed; there's no other device that might emit a wall-confirm).
-    // Tap when paired sends the displayed climb to the wall — `takeControl`
-    // short-circuits to `setCurrentClimb` in solo, which the BLE AutoSender
-    // picks up. Re-pressing the exact same frames is deduped at the BLE layer
-    // by the send-payload signature; the deeper "actually disconnect BLE" path
-    // stays on the long-press into the light-control drawer.
-    if (!isPersistentSessionActive) {
-      if (!isBluetoothConnected) {
-        track('Wall Control Taken', {
-          source: 'lightbulb_drawer',
-          previousDriver,
-          mode: 'solo',
-          boardLayout,
-          climbUuid: currentClimb?.uuid ?? null,
-        });
-        // Silent reconnect to the board we were last on (native shells only —
-        // Web Bluetooth ignores a target serial and always shows the chooser).
-        // Null when nothing's remembered or the user switched boards, so we
-        // open the picker. Don't pass frames: the fresh AutoSender re-pushes
-        // the current climb on mount (passing them risks a double-write).
-        if (reconnectSerialForCurrentBoard && isNativeApp()) {
-          void bluetoothConnect(undefined, undefined, reconnectSerialForCurrentBoard);
-        } else {
-          void bluetoothConnect();
-        }
-        return;
-      }
-      if (!currentClimb) return;
-      void takeControl(currentClimb);
-      // Force a re-push even when the climb is unchanged — re-tapping the
-      // lightbulb should re-light the wall. If the link is secretly dead (the
-      // board was grabbed but no disconnect event fired), the failing write
-      // trips disconnect detection and darkens the bulb so the next tap
-      // reconnects.
-      reassertWall();
-      setDrawerDisplayedItem?.(null);
-      track('Wall Control Taken', {
-        source: 'lightbulb_drawer',
-        previousDriver,
-        mode: 'solo',
-        boardLayout,
-        climbUuid: currentClimb.uuid,
-      });
-      return;
-    }
-    // Party + non-driver: take + arm the 2s wall-confirm watcher. The
-    // watcher fires the picker fallback if no BLE-paired peer emits a
-    // confirmation in time — exactly what the pivot's lightbulb is for.
-    if (!currentClimb) return;
-    void takeControl(currentClimb);
-    setDrawerDisplayedItem?.(null);
-    setPendingClimbUuid(currentClimb.uuid);
+
     track('Wall Control Taken', {
       source: 'lightbulb_drawer',
-      previousDriver,
-      mode: 'party',
+      mode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
-      climbUuid: currentClimb.uuid,
+      climbUuid: currentClimb?.uuid ?? null,
     });
-    armWallConfirmWatcher({
-      climbUuid: currentClimb.uuid,
-      mode: 'party',
-      boardLayout,
-    });
+    // Silent reconnect to the board we were last on (native shells only — Web
+    // Bluetooth ignores a target serial and always shows the chooser). Null
+    // when nothing's remembered or the user switched boards, so we open the
+    // picker. Don't pass frames: the fresh AutoSender re-pushes the current
+    // climb on mount (passing them risks a double-write).
+    if (reconnectSerialForCurrentBoard && isNativeApp()) {
+      void bluetoothConnect(undefined, undefined, reconnectSerialForCurrentBoard);
+    } else {
+      void bluetoothConnect();
+    }
+    // Pulse the bulb until the climb is confirmed on the wall. We just initiated
+    // the connect above, so arm pulse-only: the watcher must NOT fire its own
+    // connect fallback on timeout. Re-connecting 2s later is redundant once the
+    // first connect lands, and firing it while the device picker is still open
+    // starts a second scan that trips "Already scanning. Stopping now." on iOS.
+    if (currentClimb) {
+      setPendingClimbUuid(currentClimb.uuid);
+      armWallConfirmWatcher({
+        climbUuid: currentClimb.uuid,
+        mode: isPersistentSessionActive ? 'party' : 'solo',
+        boardLayout,
+        pulseOnly: true,
+      });
+    }
   }, [
     currentClimb,
-    takeControl,
-    releaseControl,
-    setDrawerDisplayedItem,
-    isDriver,
     isPersistentSessionActive,
     isBluetoothConnected,
     bluetoothConnect,
-    reassertWall,
+    bluetoothDisconnect,
     reconnectSerialForCurrentBoard,
     armWallConfirmWatcher,
-    cancelWallConfirmWatcher,
     boardDetails.layout_name,
-    participantId,
-    sessionData.driverParticipantId,
   ]);
   const handleNextNavClick = useCallback(() => navigate('next', 'playViewDrawer'), [navigate]);
   const handleOpenActionsMenu = useCallback(() => {
@@ -891,7 +673,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
               // resets the pinch zoom.
               zoomResetKey={currentClimb.uuid}
               nextClimb={nextItem?.climb}
-              previousClimb={isDriftedFromWall ? (currentClimbQueueItem?.climb ?? prevItem?.climb) : prevItem?.climb}
+              previousClimb={prevItem?.climb}
               onSwipeNext={handleSwipeNext}
               onSwipePrevious={handleSwipePrevious}
               canSwipeNext={canSwipeNext}
@@ -945,14 +727,10 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
         </div>
 
         <MiniSessionBar
-          isDriver={isDriver}
           isPersistentSessionActive={isPersistentSessionActive}
           sessionUsers={sessionUsers}
           participantId={participantId}
-          driverParticipantId={driverParticipantId}
           currentClimbQueueItem={currentClimbQueueItem}
-          drawerDisplayedItem={drawerDisplayedItem}
-          onReturnToWallClimb={handleReturnToWallClimb}
         />
 
         {/* Action bar */}
@@ -970,10 +748,15 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
             onToggleFavorite={toggleFavorite}
             onOpenActions={handleOpenActionsMenu}
             onOpenQueue={handleOpenQueueDrawer}
-            lightbulbActive={isPersistentSessionActive ? isDriver : isBluetoothConnected}
+            lightbulbActive={
+              isPersistentSessionActive
+                ? wallConfirmed || isBluetoothConnected || boardPresenceCurrent?.holder != null
+                : isBluetoothConnected
+            }
+            lightbulbConnected={isBluetoothConnected}
             lightbulbPending={pendingClimbUuid != null}
             lightbulbCoachmark={showLightbulbCoachmark && !pendingClimbUuid}
-            lightbulbCoachmarkText={lightbulbCoachmarkText ?? t('playView.actionBar.lightbulb.coachmark')}
+            lightbulbCoachmarkText={t('playView.actionBar.lightbulb.coachmark')}
             onLightbulbCoachmarkSeen={handleLightbulbCoachmarkSeen}
             displayedClimbName={currentClimb?.name ?? null}
             onLightbulb={handleLightbulbClick}
@@ -1032,7 +815,7 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     toggleFavorite,
     handleOpenActionsMenu,
     handleOpenQueueDrawer,
-    isDriver,
+    wallConfirmed,
     handleLightbulbClick,
     handleOpenLightDrawer,
     angle,
@@ -1047,10 +830,6 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     currentClimbQueueItem,
     sessionUsers,
     participantId,
-    driverParticipantId,
-    drawerDisplayedItem,
-    handleReturnToWallClimb,
-    lightbulbCoachmarkText,
     playback,
     carouselCurrentClimb,
   ]);
@@ -1091,29 +870,6 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
           >
             <CloseOutlined />
           </IconButton>
-          {/* Grabber-row driver dot: a small driver avatar pinned to the
-              top-left, beside the drawer's grabber. Gives a peripheral
-              "who's driving" cue even when the user's eye is on the climb
-              header or board renderer (the mini session bar lives near the
-              bottom of the drawer). Renders only in a party session with a
-              driver present; the local user being the driver hides it
-              (they don't need to be told they're driving). */}
-          {isPersistentSessionActive && driverUser && !isDriver && (
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 10,
-                left: 12,
-                zIndex: 2,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.5,
-                pointerEvents: 'none',
-              }}
-            >
-              <TickBadgeAvatar user={driverUser} hasTicked={false} isDriver size={18} />
-            </Box>
-          )}
           <div
             className={styles.drawerContent}
             onTouchStart={handleBoardTouchStart}

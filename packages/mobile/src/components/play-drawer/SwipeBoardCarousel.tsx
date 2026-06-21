@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Pressable, Text, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Pressable,
+  Text,
+  StyleSheet,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useDerivedValue,
@@ -16,6 +24,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { Icon } from '../Icon';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
+import { computeContainedBoardSize } from './play-drawer-layout';
 import { timing } from '../../theme/animations';
 import { overlays } from '../../theme/tokens';
 
@@ -72,15 +81,36 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 }: SwipeBoardCarouselProps) {
   const { t } = useTranslation('session');
   const { width: screenWidth } = useWindowDimensions();
-  // Starts at 0; populated by onLayout. clampTranslation returns zero for the
-  // first frame before layout fires — fine since the user can't pinch in
-  // pre-layout. The pinch hook re-reads this value, no remount needed.
-  const [containerHeight, setContainerHeight] = useState(0);
+  // Measured box the board is laid out into. The board is sized to *fit* this
+  // box (contain) so the play drawer's full-screen first view can keep the
+  // action bar and a Beta-videos teaser on screen instead of the tall board
+  // pushing them below the fold. Starts at 0; populated by onLayout. The zoom
+  // hook mirrors these into shared values, so updating after first layout
+  // doesn't rebuild the gestures.
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  const { boardWidth, boardHeight } = boardRenderData;
+  const aspectRatio = boardWidth / boardHeight;
+  // Contain the board within the measured box, preserving aspect ratio and
+  // centering. Letterboxes (horizontally on tall boards, vertically on wide
+  // ones) so the whole climb stays visible while the box drives the height.
+  const boardBox = useMemo(
+    () => computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio),
+    [containerSize, aspectRatio],
+  );
+  const boardStyle = useMemo<ViewStyle | undefined>(
+    () => (boardBox ? { width: boardBox.width, height: boardBox.height } : undefined),
+    [boardBox],
+  );
+  // The carousel works in board-width units: a letterboxed (narrower) board
+  // must slide off by its own width and the peek board must enter edge-adjacent.
+  // Using screenWidth instead leaves a gap equal to the letterbox margins.
+  const boardWidthForSwipe = boardBox?.width ?? screenWidth;
 
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
     enabled,
-    containerWidth: screenWidth,
-    containerHeight,
+    containerWidth: boardBox?.width ?? screenWidth,
+    containerHeight: boardBox?.height ?? containerSize.height,
   });
 
   const onResetZoomReadyRef = useRef(onResetZoomReady);
@@ -105,7 +135,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     onSwipePrevious,
     canSwipeNext,
     canSwipePrevious,
-    boardWidth: screenWidth,
+    boardWidth: boardWidthForSwipe,
     enabled,
     isZoomedSV,
   });
@@ -136,17 +166,16 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 
   const peekStyle = useAnimatedStyle(() => {
     if (translateX.value === 0) {
-      return { opacity: 0, transform: [{ translateX: screenWidth }] };
+      return { opacity: 0, transform: [{ translateX: boardWidthForSwipe }] };
     }
     const offset = computePeekOffset({
       direction: peekDirection.value,
       swipeOffset: translateX.value,
-      viewportWidth: screenWidth,
+      viewportWidth: boardWidthForSwipe,
     });
     return { opacity: 1, transform: [{ translateX: offset }] };
   });
 
-  const { boardWidth, boardHeight } = boardRenderData;
   const peekFrames = jsDirection === 'next' ? nextFrames : prevFrames;
 
   // Outer composition: pinch + swipe always. zoomPan is rendered separately
@@ -159,14 +188,26 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   );
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setContainerHeight(event.nativeEvent.layout.height);
+    const { width, height } = event.nativeEvent.layout;
+    setContainerSize((prev) =>
+      Math.abs(prev.width - width) > 1 || Math.abs(prev.height - height) > 1 ? { width, height } : prev,
+    );
   }, []);
 
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.container} onLayout={handleLayout}>
-        <Animated.View style={[styles.boardWrapper, currentStyle]}>
-          <Animated.View style={animatedZoomStyle}>
+        {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+          // Screenshot mode: render the board in PLAIN (non-reanimated) Views.
+          // The swipe/zoom `Animated.View` wrappers promote the board to a render
+          // layer that Android's `adb screencap` (Maestro's capture) intermittently
+          // misses inside the play-drawer modal — the board-view shot came out blank
+          // ~half the time even with a redraw swipe. The transforms are identity at
+          // rest, so the static board is pixel-identical without them; the simpler
+          // board-presence sheet (no carousel) already captures reliably, confirming
+          // the carousel layer is the culprit. overlayTestID anchors on the painted
+          // holds overlay.
+          <View style={[styles.boardWrapper, boardBox ? { width: boardBox.width } : null]}>
             <BoardImageNative
               frames={currentFrameOverride ?? currentFrames}
               boardName={boardName}
@@ -176,9 +217,27 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              style={boardStyle}
+              overlayTestID="play-drawer-board-overlay"
             />
+          </View>
+        ) : (
+          <Animated.View style={[styles.boardWrapper, boardBox ? { width: boardBox.width } : null, currentStyle]}>
+            <Animated.View style={animatedZoomStyle}>
+              <BoardImageNative
+                frames={currentFrameOverride ?? currentFrames}
+                boardName={boardName}
+                layoutId={layoutId}
+                sizeId={sizeId}
+                setIds={setIds}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                mirrored={mirrored}
+                style={boardStyle}
+              />
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
+        )}
 
         <Animated.View style={[styles.peekWrapper, peekStyle]} pointerEvents="none">
           {peekFrames && (
@@ -191,6 +250,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              style={boardStyle}
             />
           )}
         </Animated.View>
@@ -227,9 +287,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   boardWrapper: {
     width: '100%',
+    alignItems: 'center',
   },
   peekWrapper: {
     position: 'absolute',
@@ -237,6 +300,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   zoomPanOverlay: {
     position: 'absolute',

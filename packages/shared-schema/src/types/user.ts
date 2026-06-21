@@ -7,6 +7,7 @@ export type UserProfile = {
   email: string;
   displayName?: string;
   avatarUrl?: string;
+  isTester: boolean;
 };
 
 export type UpdateProfileInput = {

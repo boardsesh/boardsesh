@@ -72,6 +72,7 @@ vi.mock('../generator-options-form', () => ({
     mainSetClimbs: 1,
     mainSetVariability: 0,
     onlyTallClimbs: false,
+    onlyWideClimbs: false,
   }),
 }));
 

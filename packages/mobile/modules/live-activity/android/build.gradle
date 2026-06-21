@@ -12,13 +12,21 @@ version = '1.0.0'
 
 android {
   namespace 'com.boardsesh.liveactivity'
-  compileSdk 35
+  compileSdk 36
 
   defaultConfig {
     minSdk 24
     // Required by expo-module-gradle-plugin's publication setup.
     versionCode 1
     versionName '1.0.0'
+  }
+
+  testOptions {
+    unitTests {
+      // Robolectric needs the merged Android resources/manifest on the unit-test
+      // classpath to build the foreground-service notification under test.
+      includeAndroidResources true
+    }
   }
 }
 
@@ -31,4 +39,16 @@ dependencies {
   // (also covers NotificationCompat/ContextCompat). expo-modules-core comes from
   // the plugin above.
   implementation 'androidx.core:core-ktx:1.13.1'
+
+  // JVM unit tests for the session-presence lifecycle (sessionActive flag) and
+  // the foreground-service retry path. Robolectric runs the real Android
+  // framework classes (Build.VERSION, Intent, Service, ServiceCompat) on the
+  // JVM; mockk drives the injectable startForegroundService seam and the static
+  // ServiceCompat promotion outcomes. Run via gradle after `expo prebuild`
+  // (.github/workflows/android-pr-rn.yml runs :…:testDebugUnitTest on PRs); the
+  // repo's `vp`/CI flow has no Kotlin test runner.
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.14.1'
+  testImplementation 'androidx.test:core:1.6.1'
+  testImplementation 'io.mockk:mockk:1.13.13'
 }

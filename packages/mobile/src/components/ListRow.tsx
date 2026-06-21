@@ -18,6 +18,8 @@ type ListRowProps = {
   showSeparator?: boolean;
   separatorInset?: number;
   style?: ViewStyle;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 export function ListRow({
@@ -31,6 +33,8 @@ export function ListRow({
   showSeparator = true,
   separatorInset = 16,
   style,
+  accessibilityLabel,
+  accessibilityHint,
 }: ListRowProps) {
   const { systemColors } = useTheme();
 
@@ -78,7 +82,8 @@ export function ListRow({
         feedback="opacity"
         opacityTo={0.7}
         accessibilityRole="button"
-        accessibilityLabel={title}
+        accessibilityLabel={accessibilityLabel ?? title}
+        accessibilityHint={accessibilityHint}
         style={[styles.container, style]}
       >
         {content}

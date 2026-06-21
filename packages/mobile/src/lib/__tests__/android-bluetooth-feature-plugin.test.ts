@@ -4,21 +4,21 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-interface UsesFeature {
+type UsesFeature = {
   $: Record<string, string>;
-}
+};
 
-interface AndroidManifestShape {
+type AndroidManifestShape = {
   manifest: {
     'uses-feature'?: UsesFeature[];
     'uses-permission'?: UsesFeature[];
   };
-}
+};
 
-interface BluetoothFeaturePlugin {
+type BluetoothFeaturePlugin = {
   addBluetoothLeFeature(androidManifest: AndroidManifestShape): AndroidManifestShape;
   FEATURE_NAME: string;
-}
+};
 
 const plugin = require('../../../plugins/with-android-bluetooth-feature.js') as BluetoothFeaturePlugin;
 

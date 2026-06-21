@@ -1,10 +1,12 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
 /**
- * Shape of the native module. Both fields are optional because we need
+ * Shape of the native module. All fields are optional because we need
  * to bridge two binary generations:
  *
- *  - New binaries (post-overlay-only rewrite) export `renderHoldsOverlay`,
+ *  - Marker-aware binaries export `renderHoldsOverlayWithMarkers`, which
+ *    understands shape, brush, and size override fields in the config.
+ *  - Overlay-only binaries export `renderHoldsOverlay`,
  *    which writes a transparent PNG containing only the hold markers.
  *  - Old binaries export `renderComposite`, which composites the holds on
  *    top of background images and writes a single combined PNG. Calling
@@ -15,6 +17,7 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
  * everyone to install a fresh native build first.
  */
 type BoardRendererNativeModule = {
+  renderHoldsOverlayWithMarkers?(configJson: string, cacheKey: string): Promise<string>;
   renderHoldsOverlay?(configJson: string, cacheKey: string): Promise<string>;
   renderComposite?(configJson: string, backgroundPaths: string[], cacheKey: string): Promise<string>;
 };
@@ -26,6 +29,8 @@ type BoardRendererNativeModule = {
 // module 'BoardRenderer'` error in the JS console even though the
 // hook's fallback path handles it gracefully.
 export const boardRendererNative = requireOptionalNativeModule<BoardRendererNativeModule>('BoardRenderer');
+export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
+  'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 
 // Heuristic: does this error look like "the native binary doesn't actually
 // implement this method"? Some Expo NativeModulesProxy configurations
@@ -46,10 +51,52 @@ function looksLikeMissingNativeMethod(error: unknown): boolean {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonDefaultMultiplier(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value !== 1;
+}
+
+function configRequiresModernRenderer(configJson: string): boolean {
+  let parsedConfig: unknown;
+  try {
+    parsedConfig = JSON.parse(configJson);
+  } catch {
+    return false;
+  }
+  if (!isRecord(parsedConfig)) return false;
+  if (isNonDefaultMultiplier(parsedConfig.stroke_width_multiplier)) return true;
+  if (isNonDefaultMultiplier(parsedConfig.shape_size_multiplier)) return true;
+
+  const holdStateMap = parsedConfig.hold_state_map;
+  if (!isRecord(holdStateMap)) return false;
+  return Object.values(holdStateMap).some((stateInfo) => {
+    if (!isRecord(stateInfo)) return false;
+    return typeof stateInfo.shape === 'string' && stateInfo.shape !== 'circle';
+  });
+}
+
 export async function renderHoldsOverlay(configJson: string, cacheKey: string): Promise<string> {
   if (!boardRendererNative) {
     throw new Error('BoardRenderer native module is not available');
   }
+
+  if (configRequiresModernRenderer(configJson)) {
+    if (typeof boardRendererNative.renderHoldsOverlayWithMarkers !== 'function') {
+      throw new Error(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+    }
+    try {
+      return await boardRendererNative.renderHoldsOverlayWithMarkers(configJson, cacheKey);
+    } catch (error) {
+      if (looksLikeMissingNativeMethod(error)) {
+        throw new Error(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+      }
+      throw error;
+    }
+  }
+
   if (typeof boardRendererNative.renderHoldsOverlay === 'function') {
     // Fast path: typeof said it's a function. On most binaries this just
     // works. On binaries whose NativeModulesProxy lies about method

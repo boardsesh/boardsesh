@@ -1,4 +1,4 @@
-import { V_GRADE_COLORS, FONT_GRADE_COLORS } from '@/app/lib/grade-colors';
+import { getGradeColor } from '@/app/lib/grade-colors';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import {
   BOARD_TYPES,
@@ -66,9 +66,7 @@ export const getLayoutColor = (boardType: string, layoutId: number | null | unde
  * and raises lightness for a cohesive, muted look.
  */
 export const getGradeChartColor = (grade: string): string => {
-  // Try V-grade first (strip trailing "+"), then Font grade (lowercase)
-  const normalized = grade.replace(/\+$/, '');
-  const hexColor = V_GRADE_COLORS[normalized] ?? FONT_GRADE_COLORS[grade.toLowerCase()];
+  const hexColor = getGradeColor(grade);
   if (!hexColor) return 'hsla(0, 0%, 78%, 0.7)';
 
   // Convert hex to HSL for smoother control

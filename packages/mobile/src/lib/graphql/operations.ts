@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request';
 import type {
   UserProfile,
+  UpdateProfileInput,
   UserBoard,
   UserBoardConnection,
   Climb,
@@ -18,7 +19,14 @@ import type {
   PublicUserProfile,
   FollowConnection,
   TickStatus,
+  SessionUser,
+  SessionStatus,
+  SessionFeedParticipant,
+  SessionGradeDistributionItem,
+  SessionHealthExport,
+  UserSearchConnection,
 } from '@boardsesh/shared-schema';
+import type { SubscriptionQueueItem } from '../queue-conversion';
 
 // ============================================
 // Field Fragments (string interpolation, not GQL fragments)
@@ -64,7 +72,10 @@ const BOARD_FIELDS = `
 
 const CLIMB_SEARCH_FIELDS = `
   uuid
+  boardType
+  layoutId
   setter_username
+  userId
   name
   frames
   angle
@@ -80,10 +91,14 @@ const CLIMB_SEARCH_FIELDS = `
   created_at
   userAscents
   userAttempts
+  framesCount
+  framesPace
 `;
 
 const CLIMB_DETAIL_FIELDS = `
   uuid
+  boardType
+  layoutId
   setter_username
   userId
   name
@@ -102,6 +117,8 @@ const CLIMB_DETAIL_FIELDS = `
   is_draft
   created_at
   published_at
+  framesCount
+  framesPace
 `;
 
 // ============================================
@@ -115,12 +132,33 @@ export const GET_PROFILE = gql`
       email
       displayName
       avatarUrl
+      isTester
     }
   }
 `;
 
 export type GetProfileQueryResponse = {
   profile: UserProfile | null;
+};
+
+export const UPDATE_PROFILE = gql`
+  mutation UpdateProfile($input: UpdateProfileInput!) {
+    updateProfile(input: $input) {
+      id
+      email
+      displayName
+      avatarUrl
+      isTester
+    }
+  }
+`;
+
+export type UpdateProfileMutationVariables = {
+  input: UpdateProfileInput;
+};
+
+export type UpdateProfileMutationResponse = {
+  updateProfile: UserProfile;
 };
 
 export const GET_PUBLIC_PROFILE = gql`
@@ -408,27 +446,62 @@ export type GetClimbQueryResponse = {
 const SESSION_SUMMARY_FIELDS = `
   sessionId
   totalSends
+  totalFlashes
   totalAttempts
   gradeDistribution {
     grade
-    count
+    flash
+    send
+    attempt
   }
   hardestClimb {
     climbUuid
     climbName
     grade
+    frames
+    layoutId
+    boardType
+    isMirror
   }
   participants {
     userId
     displayName
     avatarUrl
     sends
+    flashes
     attempts
   }
   startedAt
   endedAt
   durationMinutes
   goal
+`;
+
+const SESSION_HEALTH_EXPORT_FIELDS = `
+  sessionId
+  startedAt
+  endedAt
+  durationMinutes
+  boardType
+  totalSends
+  totalAttempts
+  hardestClimb {
+    climbUuid
+    climbName
+    grade
+  }
+  laps {
+    tickUuid
+    climbedAt
+    climbUuid
+    climbName
+    grade
+    status
+    attemptCount
+    boardType
+    angle
+  }
+  healthKitWorkoutId
 `;
 
 export const CREATE_SESSION = gql`
@@ -507,6 +580,22 @@ export type GetSessionSummaryQueryResponse = {
   sessionSummary: SessionSummary | null;
 };
 
+export const GET_SESSION_HEALTH_EXPORT = gql`
+  query GetSessionHealthExport($sessionId: ID!) {
+    sessionHealthExport(sessionId: $sessionId) {
+      ${SESSION_HEALTH_EXPORT_FIELDS}
+    }
+  }
+`;
+
+export type GetSessionHealthExportQueryVariables = {
+  sessionId: string;
+};
+
+export type GetSessionHealthExportQueryResponse = {
+  sessionHealthExport: SessionHealthExport | null;
+};
+
 export const GET_NEARBY_SESSIONS = gql`
   query GetNearbySessions($latitude: Float!, $longitude: Float!, $radiusMeters: Float) {
     nearbySessions(latitude: $latitude, longitude: $longitude, radiusMeters: $radiusMeters) {
@@ -537,6 +626,85 @@ export type DiscoverableSessionItem = {
 
 export type GetNearbySessionsQueryResponse = {
   nearbySessions: DiscoverableSessionItem[];
+};
+
+// Read-only session preview, used by the join-confirmation screen to show the
+// host, board, and participant count before the user commits to joining. The
+// `session` query does not join the session — joining happens via JOIN_SESSION
+// once the user confirms (see QueueProvider.joinSession).
+export const GET_SESSION = gql`
+  query GetSession($sessionId: ID!) {
+    session(sessionId: $sessionId) {
+      id
+      name
+      boardPath
+      color
+      goal
+      startedAt
+      endedAt
+      users {
+        id
+        username
+        isLeader
+        avatarUrl
+        userId
+        connectionState
+      }
+    }
+  }
+`;
+
+export type GetSessionQueryVariables = {
+  sessionId: string;
+};
+
+export type SessionPreview = {
+  id: string;
+  name: string | null;
+  boardPath: string;
+  color: string | null;
+  goal: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  users: SessionUser[];
+};
+
+export type GetSessionQueryResponse = {
+  session: SessionPreview | null;
+};
+
+// Presence-independent lifecycle check, read on cold start to decide whether a
+// persisted session id should be restored or dropped (#2683). Unlike GET_SESSION
+// (gated on live roster, so an ended session and a dormant-but-active solo
+// session both read as null), this hits the durable session row. Returns the
+// SessionStatus enum directly; null means the session does not exist.
+export const SESSION_STATUS = gql`
+  query SessionStatus($sessionId: ID!) {
+    sessionStatus(sessionId: $sessionId)
+  }
+`;
+
+export type SessionStatusQueryResponse = {
+  sessionStatus: SessionStatus | null;
+};
+
+// Authoritative queue snapshot for the active session, fetched after a queue
+// mutation fails so the local optimistic delta can't silently diverge from
+// peers until the next reconnect FullSync. The shape mirrors the FullSync
+// `state.queue` / `state.currentClimbQueueItem` selection — items map through
+// `toClimbQueueItem` and feed an INITIAL_QUEUE_DATA dispatch. Declared after
+// SUBSCRIPTION_CLIMB_FIELDS is interpolated below.
+export type GetSessionQueueStateQueryVariables = {
+  sessionId: string;
+};
+
+export type GetSessionQueueStateQueryResponse = {
+  session: {
+    queueState: {
+      queue: SubscriptionQueueItem[];
+      currentClimbQueueItem: SubscriptionQueueItem | null;
+    };
+  } | null;
 };
 
 // ============================================
@@ -758,6 +926,35 @@ export type GetFollowingQueryResponse = {
   following: FollowConnection;
 };
 
+export const SEARCH_USERS = gql`
+  query SearchUsers($input: SearchUsersInput!) {
+    searchUsers(input: $input) {
+      results {
+        user {
+          id
+          displayName
+          avatarUrl
+          followerCount
+          followingCount
+          isFollowedByMe
+        }
+        recentAscentCount
+        matchReason
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+export type SearchUsersQueryVariables = {
+  input: { query: string; boardType?: string; limit?: number; offset?: number };
+};
+
+export type SearchUsersQueryResponse = {
+  searchUsers: UserSearchConnection;
+};
+
 export const FOLLOW_USER = gql`
   mutation FollowUser($input: FollowInput!) {
     followUser(input: $input)
@@ -810,9 +1007,14 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         leaderId
         leaderConnectionId
       }
-      ... on DriverChanged {
-        driverParticipantId
-        previousDriverParticipantId
+      ... on WallConfirmedClimb {
+        climbUuid
+        confirmedAt
+        confirmedByParticipantId
+        queueItemUuid
+      }
+      ... on WallDisconnected {
+        disconnectedByParticipantId
       }
       ... on SessionEnded {
         reason
@@ -822,9 +1024,58 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         boardPath
         changedByParticipantId
       }
+      ... on SessionBoardSerialChanged {
+        lastConnectedBoardSerial
+      }
+      ... on SessionStatsUpdated {
+        sessionId
+        totalSends
+        totalFlashes
+        totalAttempts
+        tickCount
+        participants {
+          userId
+          displayName
+          avatarUrl
+          sends
+          flashes
+          attempts
+        }
+        gradeDistribution {
+          grade
+          flash
+          send
+          attempt
+        }
+        boardTypes
+        hardestGrade
+        durationMinutes
+        goal
+      }
     }
   }
 `;
+
+/**
+ * Aggregate live-session stats pushed over `sessionUpdates` (the
+ * `SessionStatsUpdated` event). Mirrors the feed/detail stat shape so the
+ * in-session analytics view can render flashes + the flash/send/attempt grade
+ * split without a separate poll. Ticks are intentionally omitted (the live view
+ * shows aggregates only).
+ */
+export type SessionLiveStatsEvent = {
+  sessionId: string;
+  totalSends: number;
+  totalFlashes: number;
+  totalAttempts: number;
+  tickCount: number;
+  participants: SessionFeedParticipant[];
+  gradeDistribution: SessionGradeDistributionItem[];
+  boardTypes: string[];
+  hardestGrade?: string | null;
+  durationMinutes?: number | null;
+  goal?: string | null;
+};
 
 // Envelope for the session-updates subscription. Fields specific to events the
 // mobile app reacts to are optional so a plain `__typename` + field check
@@ -832,8 +1083,40 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
 // fall through the guard. Extend as more event handling lands.
 export type SessionUpdateEvent = {
   __typename: string;
+  // SessionBoardPathChanged
   boardPath?: string;
   changedByParticipantId?: string | null;
+  // UserJoined / UserPresenceChanged
+  user?: SessionUser;
+  // UserLeft
+  userId?: string;
+  // LeaderChanged
+  leaderId?: string | null;
+  leaderConnectionId?: string | null;
+  // WallConfirmedClimb
+  climbUuid?: string;
+  confirmedAt?: string;
+  confirmedByParticipantId?: string | null;
+  queueItemUuid?: string | null;
+  // WallDisconnected
+  disconnectedByParticipantId?: string | null;
+  // SessionBoardSerialChanged
+  lastConnectedBoardSerial?: string | null;
+  // SessionEnded
+  reason?: string | null;
+  newPath?: string | null;
+  // SessionStatsUpdated (aggregate fields — see SessionLiveStatsEvent)
+  sessionId?: string;
+  totalSends?: number;
+  totalFlashes?: number;
+  totalAttempts?: number;
+  tickCount?: number;
+  participants?: SessionFeedParticipant[];
+  gradeDistribution?: SessionGradeDistributionItem[];
+  boardTypes?: string[];
+  hardestGrade?: string | null;
+  durationMinutes?: number | null;
+  goal?: string | null;
 };
 
 // Fields the queue UI needs from each climb in a subscription payload.
@@ -844,6 +1127,8 @@ export type SessionUpdateEvent = {
 // re-opened drawer can't render the grade.
 const SUBSCRIPTION_CLIMB_FIELDS = `
   uuid
+  boardType
+  layoutId
   name
   frames
   setter_username
@@ -854,6 +1139,10 @@ const SUBSCRIPTION_CLIMB_FIELDS = `
   stars
   difficulty_error
   benchmark_difficulty
+  mirrored
+  is_no_match
+  framesCount
+  framesPace
 `;
 
 // QueueItemAdded.item is ClimbQueueItem! and CurrentClimbChanged.item is
@@ -906,6 +1195,22 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
         stateHash
         mirroredUuid: uuid
         mirrored
+      }
+    }
+  }
+`;
+
+// Authoritative queue snapshot for the active session. Fetched over the HTTP
+// transport (it's a query, not a subscription) after a queue mutation fails, so
+// the local optimistic delta is reconciled against the server immediately
+// instead of waiting for the next reconnect FullSync. Selects the same climb
+// fields as the FullSync state so items map cleanly through toClimbQueueItem.
+export const GET_SESSION_QUEUE_STATE = gql`
+  query GetSessionQueueState($sessionId: ID!) {
+    session(sessionId: $sessionId) {
+      queueState {
+        queue { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
+        currentClimbQueueItem { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
       }
     }
   }

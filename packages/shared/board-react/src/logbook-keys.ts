@@ -23,6 +23,17 @@ export type LogbookEntry = {
   commentCount: number;
 };
 
+/**
+ * Index key for a climb's ticks at a given angle. Used to group the logbook
+ * into `BoardContextType.logbookByClimbAngle` so per-row consumers (e.g. the
+ * climb-list ascent-status glyph) do an O(1) lookup instead of scanning the
+ * whole logbook on every render. Keep the reader and the index builder using
+ * this same helper so the keys can't drift.
+ */
+export function logbookClimbAngleKey(climbUuid: string, angle: number): string {
+  return `${climbUuid}:${angle}`;
+}
+
 // The camelCase server-side shape (matches `GetTicksQueryResponse['ticks'][n]`
 // and `SaveTickMutationResponse['saveTick']`). Kept structural so the helper
 // works regardless of which GraphQL operation produced it.

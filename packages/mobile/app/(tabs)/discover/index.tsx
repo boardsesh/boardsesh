@@ -1,7 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { FAB } from 'react-native-paper';
 import {
   useDiscoverPlaylists,
   useUserPlaylists,
@@ -9,63 +13,119 @@ import {
   useSmartPlaylistCounts,
   usePlaylistMutations,
 } from '@boardsesh/playlists-react';
-import type { DiscoverablePlaylist, Playlist } from '@boardsesh/graphql/operations/playlists';
+import type { DiscoverablePlaylist, Playlist, SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { SectionHeader } from '../../../src/components/SectionHeader';
-import {
-  PlaylistCard,
-  PlaylistScrollSection,
-  BoardFilterStrip,
-  CreatePlaylistFab,
-  PlaylistFormSheet,
-  type PlaylistFormValues,
-} from '../../../src/components/playlist';
-import type { BoardFilterSelection } from '../../../src/components/playlist';
-import { SMART_PLAYLISTS } from '../../../src/lib/smart-playlists';
+import { HorizontalScrollSection } from '../../../src/components/HorizontalScrollSection';
+import { PlaylistCard, PlaylistFormSheet, type PlaylistFormValues } from '../../../src/components/playlist';
+import { DiscoverTopChrome } from '../../../src/components/chrome';
+import { SMART_PLAYLISTS, type SmartPlaylistPresentation } from '../../../src/lib/smart-playlists';
 import { useAuth } from '../../../src/providers/auth-provider';
+import { useTheme } from '../../../src/providers/theme-provider';
 import { useToast } from '../../../src/providers/toast-provider';
+import { reportHandledError } from '../../../src/lib/error-reporting';
 import { useAuthToken } from '../../../src/lib/graphql/use-auth-token';
-import { useMyBoards, useProfile } from '../../../src/lib/graphql/hooks';
+import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BAR_CONTENT_HEIGHT, TAB_BAR_HEIGHT } from '../../../src/components/queue-control/persistent-queue-bar';
-import { brandColors } from '../../../src/theme/colors';
+import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { iconMap } from '../../../src/components/icon-map';
+import { selectByVariant } from '../../../src/theme/variants';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
+import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
+
+const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
+  'LIKED_CLIMBS',
+  'FIVE_STARS',
+  'PROJECTS',
+  'MOST_REPEATED',
+  'RECOMMENDED_CROWD_FAVORITES',
+  'RECOMMENDED_HIDDEN_GEMS',
+  'RECOMMENDED_AT_LEVEL',
+  'RECOMMENDED_FRESH',
+];
+
+const PINNED_SMART_PLAYLISTS_STORAGE_PREFIX = 'boardsesh_pinned_smart_playlists_v1';
+
+function isForYouSmartPlaylistType(value: unknown): value is SmartPlaylistType {
+  return typeof value === 'string' && FOR_YOU_SMART_PLAYLIST_TYPES.includes(value as SmartPlaylistType);
+}
+
+function parsePinnedSmartPlaylistTypes(raw: string | null): SmartPlaylistType[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<SmartPlaylistType>();
+    const pinnedTypes: SmartPlaylistType[] = [];
+    for (const maybeType of parsed) {
+      if (!isForYouSmartPlaylistType(maybeType) || seen.has(maybeType)) continue;
+      seen.add(maybeType);
+      pinnedTypes.push(maybeType);
+    }
+    return pinnedTypes;
+  } catch {
+    return [];
+  }
+}
+
+function pinnedSmartPlaylistsStorageKey(userId: string): string {
+  return `${PINNED_SMART_PLAYLISTS_STORAGE_PREFIX}_${userId}`;
+}
 
 export default function DiscoverLibrary() {
   const { t } = useTranslation('playlists');
+  const { brandColors, variant } = useTheme();
+  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const bottomChrome = useBottomChromeMetrics();
+  // The screen sits ABOVE the in-flow Material tab bar, so the FAB's `bottom` is
+  // measured from the tab-bar top. It only needs to clear the docked queue accessory
+  // bar (a root overlay that covers the screen's bottom edge when a climb is queued),
+  // plus a 16dp gap. Computed directly rather than via floatingControlBottom /
+  // fixedFooterBottom, which re-add the tab-bar height (built for full-screen overlays)
+  // and floated the FAB ~tab-bar-height too high above the accessory bar.
+  const createFabBottom = (bottomChrome.jsQueueToolbarVisible ? MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT : 0) + spacing[4];
   const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data: token = null, isLoading: tokenLoading } = useAuthToken();
-  const { data: profile } = useProfile();
-  const { data: activeBoard } = useActiveBoard();
-  const { data: myBoards } = useMyBoards(undefined, { enabled: isAuthenticated });
+  const { data: profile, isLoading: profileLoading } = useProfile();
+  const { data: activeBoard, isLoading: activeBoardLoading } = useActiveBoard();
+  const queryClient = useQueryClient();
 
   const userId = profile?.id ?? null;
   const effectiveToken = isAuthenticated ? token : null;
 
-  // Board filter — defaults to "All". Selecting a chip scopes every section to
-  // that board's boardType + layoutId (the shared hooks reset on filter change).
-  const boards = useMemo(() => myBoards?.boards ?? [], [myBoards]);
-  const [boardFilter, setBoardFilter] = useState<BoardFilterSelection | null>(null);
-  const filterBoardType = boardFilter?.boardType;
-  const filterLayoutId = boardFilter?.layoutId;
+  // The board pill in the top chrome is the default filter: every section scopes
+  // to the active board's boardType + layoutId (the shared hooks reset on
+  // change). With no active board yet, sections stay unscoped so a signed-out or
+  // not-yet-onboarded user still sees community playlists.
+  const filterBoardType = activeBoard?.boardType;
+  const filterLayoutId = activeBoard?.layoutId;
 
-  // Smart-playlist counts gate which "Your Picks" cards render.
-  const { data: smartCounts, isLoading: smartCountsLoading } = useSmartPlaylistCounts({
+  // Measured top-chrome height so the scroll content clears the floating islands
+  // (seeded to the safe-area top + a row, like the Climbs list).
+  const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
+
+  const {
+    data: smartCounts,
+    isLoading: smartCountsLoading,
+    isError: smartCountsError,
+    refetch: refetchSmartCounts,
+  } = useSmartPlaylistCounts({
     token: effectiveToken,
     tokenLoading,
     isAuthenticated,
   });
 
-  // Owned playlists (paginated). Feeds "Jump Back In" + the pinned fallback pool.
+  // Owned playlists (paginated). Feeds the "See all" affordance and receives
+  // refreshes after creates/pin changes.
   const {
     playlists: userPlaylists,
     isLoading: userLoading,
     isLoadingMore: userLoadingMore,
+    hasError: userError,
     loadMore: loadMoreUser,
     refetch: refetchUser,
   } = useUserPlaylists({
@@ -79,69 +139,166 @@ export default function DiscoverLibrary() {
     token: effectiveToken,
     boardType: filterBoardType,
     layoutId: filterLayoutId,
-    candidatePlaylists: userPlaylists,
+    candidatePlaylists: [],
   });
 
   // Community playlists (popular + recent streams, merged).
   const {
-    popular,
-    recent,
-    isLoading: discoverLoading,
-    isLoadingMore: discoverLoadingMore,
-    loadMore: loadMoreDiscover,
+    popular: communityPopular,
+    recent: communityRecent,
+    isLoading: communityLoading,
+    isLoadingMore: communityLoadingMore,
+    hasError: communityError,
+    loadMore: loadMoreCommunity,
+    refetch: refetchCommunity,
   } = useDiscoverPlaylists({
     boardType: filterBoardType,
     layoutId: filterLayoutId,
     pageSize: 10,
+    generatedRecommendation: false,
+    enabled: !activeBoardLoading,
   });
 
-  // Pinned playlists lead "Jump Back In"; owned playlists follow with pinned
-  // ones removed so they don't appear twice.
-  const jumpBackIn = useMemo(() => {
-    const pinnedUuids = new Set(pinnedPlaylists.map((playlist) => playlist.uuid));
-    return [...pinnedPlaylists, ...userPlaylists.filter((playlist) => !pinnedUuids.has(playlist.uuid))];
-  }, [pinnedPlaylists, userPlaylists]);
-
-  // Merge popular + recent, de-duped and excluding the current user's own.
-  const discoverItems = useMemo(() => {
+  // Merge community popular + recent, de-duped and excluding the current user's own.
+  const communityItems = useMemo(() => {
     const merged: DiscoverablePlaylist[] = [];
     const seen = new Set<string>();
-    for (const playlist of [...popular, ...recent]) {
+    for (const playlist of [...communityPopular, ...communityRecent]) {
       if (seen.has(playlist.uuid)) continue;
       if (userId && playlist.creatorId === userId) continue;
       seen.add(playlist.uuid);
       merged.push(playlist);
     }
     return merged;
-  }, [popular, recent, userId]);
+  }, [communityPopular, communityRecent, userId]);
 
-  const smartCardsToShow = useMemo(() => {
-    if (!userId || !smartCounts) return [];
-    return SMART_PLAYLISTS.map((preset) => {
-      const found = smartCounts.find((entry) => entry.type === preset.type);
-      return { preset, count: found?.count ?? 0 };
-    }).filter((entry) => entry.count > 0);
-  }, [userId, smartCounts]);
+  const smartCountsByType = useMemo(
+    () => new Map((smartCounts ?? []).map((smartCount) => [smartCount.type, smartCount.count])),
+    [smartCounts],
+  );
+
+  const [pinnedSmartPlaylistTypes, setPinnedSmartPlaylistTypes] = useState<SmartPlaylistType[]>([]);
+  const [smartPinsHydrated, setSmartPinsHydrated] = useState(false);
+  const pinnedSmartPlaylistTypesRef = useRef<SmartPlaylistType[]>([]);
+  const smartPinsTouchedRef = useRef(false);
+
+  useEffect(() => {
+    smartPinsTouchedRef.current = false;
+    setSmartPinsHydrated(false);
+    if (!userId) {
+      pinnedSmartPlaylistTypesRef.current = [];
+      setPinnedSmartPlaylistTypes([]);
+      setSmartPinsHydrated(true);
+      return;
+    }
+
+    let cancelled = false;
+    AsyncStorage.getItem(pinnedSmartPlaylistsStorageKey(userId))
+      .then((raw) => {
+        if (cancelled || smartPinsTouchedRef.current) return;
+        const loadedPinnedTypes = parsePinnedSmartPlaylistTypes(raw);
+        pinnedSmartPlaylistTypesRef.current = loadedPinnedTypes;
+        setPinnedSmartPlaylistTypes(loadedPinnedTypes);
+        setSmartPinsHydrated(true);
+      })
+      .catch(() => {
+        if (cancelled || smartPinsTouchedRef.current) return;
+        pinnedSmartPlaylistTypesRef.current = [];
+        setPinnedSmartPlaylistTypes([]);
+        setSmartPinsHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const persistPinnedSmartPlaylistTypes = useCallback(
+    (nextPinnedTypes: SmartPlaylistType[]) => {
+      if (!userId) return;
+      void AsyncStorage.setItem(pinnedSmartPlaylistsStorageKey(userId), JSON.stringify(nextPinnedTypes)).catch(() => {
+        // Non-critical preference write; keep the in-memory pin state usable.
+      });
+    },
+    [userId],
+  );
+
+  const handleToggleSmartPin = useCallback(
+    (smartPlaylistType: SmartPlaylistType) => {
+      if (!smartPinsHydrated) return;
+      smartPinsTouchedRef.current = true;
+      const previousPinnedTypes = pinnedSmartPlaylistTypesRef.current;
+      const nextPinnedTypes = previousPinnedTypes.includes(smartPlaylistType)
+        ? previousPinnedTypes.filter((pinnedType) => pinnedType !== smartPlaylistType)
+        : [smartPlaylistType, ...previousPinnedTypes.filter((pinnedType) => pinnedType !== smartPlaylistType)];
+      pinnedSmartPlaylistTypesRef.current = nextPinnedTypes;
+      setPinnedSmartPlaylistTypes(nextPinnedTypes);
+      persistPinnedSmartPlaylistTypes(nextPinnedTypes);
+    },
+    [persistPinnedSmartPlaylistTypes, smartPinsHydrated],
+  );
+
+  const forYouSmartCards = useMemo(() => {
+    if (!userId || smartCounts == null) return [];
+    return FOR_YOU_SMART_PLAYLIST_TYPES.map((smartPlaylistType) => {
+      if (pinnedSmartPlaylistTypes.includes(smartPlaylistType)) return null;
+      const preset = SMART_PLAYLISTS.find((smartPlaylist) => smartPlaylist.type === smartPlaylistType);
+      if (!preset) return null;
+      return { preset, count: smartCountsByType.get(smartPlaylistType) ?? 0 };
+    }).filter((entry): entry is { preset: (typeof SMART_PLAYLISTS)[number]; count: number } => entry !== null);
+  }, [pinnedSmartPlaylistTypes, smartCounts, smartCountsByType, userId]);
+
+  const pinnedSmartPlaylistTypeSet = useMemo(() => new Set(pinnedSmartPlaylistTypes), [pinnedSmartPlaylistTypes]);
+
+  const pinnedSmartCards = useMemo(() => {
+    if (!userId || smartCounts == null) return [];
+    return pinnedSmartPlaylistTypes
+      .map((smartPlaylistType) => {
+        const preset = SMART_PLAYLISTS.find((smartPlaylist) => smartPlaylist.type === smartPlaylistType);
+        if (!preset) return null;
+        return { preset, count: smartCountsByType.get(smartPlaylistType) ?? 0 };
+      })
+      .filter((entry): entry is { preset: SmartPlaylistPresentation; count: number } => entry !== null);
+  }, [pinnedSmartPlaylistTypes, smartCounts, smartCountsByType, userId]);
+
+  const pinnedPlaylistUuids = useMemo(
+    () => new Set(pinnedPlaylists.map((playlist) => playlist.uuid)),
+    [pinnedPlaylists],
+  );
+  const visiblePinnedSmartLimit =
+    pinnedSmartCards.length > 0 && pinnedPlaylists.length > 0 ? 8 - Math.min(pinnedPlaylists.length, 4) : 8;
+  const visiblePinnedSmartCards = useMemo(
+    () => pinnedSmartCards.slice(0, visiblePinnedSmartLimit),
+    [pinnedSmartCards, visiblePinnedSmartLimit],
+  );
+  const visiblePinnedPlaylists = useMemo(
+    () => pinnedPlaylists.slice(0, Math.max(8 - visiblePinnedSmartCards.length, 0)),
+    [pinnedPlaylists, visiblePinnedSmartCards.length],
+  );
+  const hasVisiblePinnedItems = visiblePinnedSmartCards.length + visiblePinnedPlaylists.length > 0;
+
+  const unpinnedUserPlaylists = useMemo(() => {
+    return userPlaylists.filter((playlist) => !pinnedPlaylistUuids.has(playlist.uuid));
+  }, [pinnedPlaylistUuids, userPlaylists]);
 
   const goToPlaylist = useCallback((uuid: string) => {
     router.push(`/(tabs)/discover/${uuid}`);
   }, []);
 
-  const goToSmart = useCallback((type: string) => {
-    router.push(`/(tabs)/discover/smart/${type}`);
+  const goToSmartPlaylist = useCallback((smartPlaylistType: SmartPlaylistType) => {
+    router.push(`/(tabs)/discover/smart/${smartPlaylistType}`);
   }, []);
 
   const { showToast } = useToast();
   const { createPlaylist, pinPlaylist, unpinPlaylist } = usePlaylistMutations();
 
-  // Create flow — the FAB needs a board (boardType + layoutId). Prefer the
-  // active board filter, fall back to the user's active board; with neither,
-  // guide the user to pick a board first (mirrors web's "select a board").
-  const createBoard = useMemo(() => {
-    if (boardFilter) return { boardType: boardFilter.boardType, layoutId: boardFilter.layoutId };
-    if (activeBoard) return { boardType: activeBoard.boardType, layoutId: activeBoard.layoutId };
-    return null;
-  }, [boardFilter, activeBoard]);
+  // Create flow — needs a board (boardType + layoutId). Use the active board (the
+  // pill's selection); with none, guide the user to pick one first (mirrors web's
+  // "select a board").
+  const createBoard = useMemo(
+    () => (activeBoard ? { boardType: activeBoard.boardType, layoutId: activeBoard.layoutId } : null),
+    [activeBoard],
+  );
 
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -149,7 +306,7 @@ export default function DiscoverLibrary() {
   const handleCreatePress = useCallback(() => {
     if (!createBoard) {
       showToast(t('bottomTabBar.selectBoardForPlaylist'), 'info');
-      router.push('/(tabs)/boards');
+      router.push('/boards');
       return;
     }
     setCreateVisible(true);
@@ -170,34 +327,55 @@ export default function DiscoverLibrary() {
         });
         setCreateVisible(false);
         showToast(t('bottomTabBar.createdPlaylistToast', { name: created.name }), 'success');
+        // refetchUser() only refreshes useUserPlaylists' own useState store
+        // (the Discover/all shelves). The Add-to-Playlist picker reads the
+        // react-query ['userPlaylists'] cache instead, which that refetch never
+        // touches — and the mobile QueryProvider wires no focus/online refetch,
+        // so the new playlist would stay missing from the picker for the rest
+        // of the session. Prepend it directly so it shows up immediately.
+        queryClient.setQueryData<Playlist[]>(['userPlaylists'], (prev) => (prev ? [created, ...prev] : [created]));
         refetchUser();
         router.push(`/(tabs)/discover/${created.uuid}`);
       } catch (err) {
         console.error('Failed to create playlist:', err);
+        reportHandledError(err, { tags: { source: 'playlist', op: 'create' } });
         showToast(t('bottomTabBar.createPlaylistFailed'), 'error');
       } finally {
         setCreating(false);
       }
     },
-    [createBoard, createPlaylist, showToast, t, refetchUser],
+    [createBoard, createPlaylist, queryClient, showToast, t, refetchUser],
   );
 
-  // Pin / unpin straight from a "Jump Back In" card. The shared-hook arrays
-  // aren't ours to mutate optimistically, so refetch both lists once the
-  // mutation lands and let the pinned ordering + icon re-derive.
-  const handleToggleCardPin = useCallback(
-    async (playlist: Playlist) => {
+  const togglePlaylistPin = useCallback(
+    async (playlistUuid: string, isPinned: boolean) => {
       try {
-        if (playlist.isPinnedByMe) await unpinPlaylist(playlist.uuid);
-        else await pinPlaylist(playlist.uuid);
+        if (isPinned) await unpinPlaylist(playlistUuid);
+        else await pinPlaylist(playlistUuid);
         refetchUser();
         refetchPinned();
-      } catch (err) {
-        console.error('Failed to toggle pin:', err);
-        showToast(t(playlist.isPinnedByMe ? 'library.pin.unpinFailed' : 'library.pin.pinFailed'), 'error');
+      } catch {
+        showToast(t(isPinned ? 'library.pin.unpinFailed' : 'library.pin.pinFailed'), 'error');
       }
     },
-    [pinPlaylist, unpinPlaylist, refetchUser, refetchPinned, showToast, t],
+    [pinPlaylist, refetchPinned, refetchUser, showToast, t, unpinPlaylist],
+  );
+
+  // Pin / unpin straight from a playlist card. The shared-hook arrays aren't
+  // ours to mutate optimistically, so refetch both lists once the mutation lands
+  // and let the pinned ordering + icon re-derive.
+  const handleToggleCardPin = useCallback(
+    (playlist: Playlist) => {
+      void togglePlaylistPin(playlist.uuid, playlist.isPinnedByMe);
+    },
+    [togglePlaylistPin],
+  );
+
+  const handleToggleDiscoverPin = useCallback(
+    (playlistUuid: string) => {
+      void togglePlaylistPin(playlistUuid, pinnedPlaylistUuids.has(playlistUuid));
+    },
+    [pinnedPlaylistUuids, togglePlaylistPin],
   );
 
   // Refresh owned + pinned when returning to the tab (e.g. after editing,
@@ -220,15 +398,40 @@ export default function DiscoverLibrary() {
 
   const showSignInPrompt = !isAuthenticated && !authLoading;
 
+  // The first-page fetch of one (or both) sections failed and the hub is empty
+  // — show a retry rather than the "no playlists yet" empty state, which would
+  // mislead a user who actually has playlists into thinking they have none.
+  const showLoadError =
+    (userError || smartCountsError || communityError) &&
+    userPlaylists.length === 0 &&
+    !hasVisiblePinnedItems &&
+    forYouSmartCards.length === 0 &&
+    communityItems.length === 0 &&
+    !userLoading;
+
+  const handleRetryLoad = useCallback(() => {
+    if (userError) refetchUser();
+    if (smartCountsError) void refetchSmartCounts();
+    if (communityError) refetchCommunity();
+  }, [userError, smartCountsError, communityError, refetchUser, refetchSmartCounts, refetchCommunity]);
+
   return (
     <View style={styles.flex}>
       <ScrollView
         style={styles.flex}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom: BAR_CONTENT_HEIGHT + TAB_BAR_HEIGHT + insets.bottom + spacing[6] }}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={{
+          paddingTop: chromeHeight,
+          paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],
+        }}
+        scrollIndicatorInsets={{ top: chromeHeight }}
         keyboardShouldPersistTaps="handled"
       >
-        <BoardFilterStrip boards={boards} selectedBoardUuid={boardFilter?.uuid ?? null} onSelect={setBoardFilter} />
+        {/* The screen's identity, in-body under the floating chrome (the grey
+            "Discover" stack header is gone). */}
+        <Text variant="largeTitle" style={styles.screenTitle}>
+          {t('bottomTabBar.discover')}
+        </Text>
 
         {showSignInPrompt ? (
           <Pressable style={styles.signInBanner} onPress={() => router.push('/auth/login')} accessibilityRole="button">
@@ -247,13 +450,13 @@ export default function DiscoverLibrary() {
           </Pressable>
         ) : null}
 
-        {/* Your Picks — smart-playlist grid (non-empty presets only). */}
-        {smartCardsToShow.length > 0 ? (
+        {/* Pinned — dense grid capped at four rows of two. */}
+        {isAuthenticated && hasVisiblePinnedItems ? (
           <View style={styles.section}>
-            <SectionHeader title={t('library.sections.smart')} />
+            <SectionHeader title={t('library.sections.pinned')} />
             <View style={styles.grid}>
-              {smartCardsToShow.map(({ preset, count }, index) => (
-                <View key={preset.slug} style={styles.gridItem}>
+              {visiblePinnedSmartCards.map(({ preset, count }, index) => (
+                <View key={preset.type} style={styles.gridItem}>
                   <PlaylistCard
                     name={t(preset.titleI18nKey)}
                     climbCount={count}
@@ -261,7 +464,24 @@ export default function DiscoverLibrary() {
                     icon={preset.icon}
                     variant="grid"
                     index={index}
-                    onPress={() => goToSmart(preset.type)}
+                    onPress={() => goToSmartPlaylist(preset.type)}
+                    isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
+                    onTogglePin={smartPinsHydrated ? () => handleToggleSmartPin(preset.type) : undefined}
+                  />
+                </View>
+              ))}
+              {visiblePinnedPlaylists.map((playlist, index) => (
+                <View key={playlist.uuid} style={styles.gridItem}>
+                  <PlaylistCard
+                    name={playlist.name}
+                    climbCount={playlist.climbCount}
+                    color={playlist.color}
+                    icon={playlist.icon}
+                    variant="grid"
+                    index={visiblePinnedSmartCards.length + index}
+                    onPress={() => goToPlaylist(playlist.uuid)}
+                    isPinned={playlist.isPinnedByMe}
+                    onTogglePin={() => handleToggleCardPin(playlist)}
                   />
                 </View>
               ))}
@@ -269,15 +489,17 @@ export default function DiscoverLibrary() {
           </View>
         ) : null}
 
-        {/* Jump Back In — pinned + owned playlists. */}
-        {isAuthenticated && (userLoading || jumpBackIn.length > 0) ? (
-          <PlaylistScrollSection
-            title={t('library.sections.jumpBackIn')}
-            loading={userLoading && jumpBackIn.length === 0}
+        {/* My Playlists — user's own playlists, excluding the pinned grid above. */}
+        {isAuthenticated && (userLoading || unpinnedUserPlaylists.length > 0) ? (
+          <HorizontalScrollSection
+            title={t('library.allPlaylists.title')}
+            actionLabel={userPlaylists.length > 0 ? t('library.allPlaylists.seeAll') : undefined}
+            onActionPress={userPlaylists.length > 0 ? () => router.push('/(tabs)/discover/all') : undefined}
+            loading={userLoading && unpinnedUserPlaylists.length === 0}
             isLoadingMore={userLoadingMore}
             onEndReached={loadMoreUser}
           >
-            {jumpBackIn.map((playlist, index) => (
+            {unpinnedUserPlaylists.map((playlist, index) => (
               <PlaylistCard
                 key={playlist.uuid}
                 name={playlist.name}
@@ -291,18 +513,38 @@ export default function DiscoverLibrary() {
                 onTogglePin={() => handleToggleCardPin(playlist)}
               />
             ))}
-          </PlaylistScrollSection>
+          </HorizontalScrollSection>
         ) : null}
 
-        {/* Discover — community playlists. */}
-        {discoverLoading || discoverItems.length > 0 ? (
-          <PlaylistScrollSection
-            title={t('library.sections.discover')}
-            loading={discoverLoading && discoverItems.length === 0}
-            isLoadingMore={discoverLoadingMore}
-            onEndReached={loadMoreDiscover}
+        {/* For You — the same smart-playlist cards as web, in mobile product order. */}
+        {isAuthenticated && userId && (smartCountsLoading || forYouSmartCards.length > 0) ? (
+          <HorizontalScrollSection title={t('library.sections.forYou')} loading={smartCountsLoading}>
+            {forYouSmartCards.map(({ preset, count }, index) => (
+              <PlaylistCard
+                key={preset.type}
+                name={t(preset.titleI18nKey)}
+                climbCount={count}
+                color={preset.color}
+                icon={preset.icon}
+                variant="scroll"
+                index={index}
+                onPress={() => goToSmartPlaylist(preset.type)}
+                isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
+                onTogglePin={smartPinsHydrated ? () => handleToggleSmartPin(preset.type) : undefined}
+              />
+            ))}
+          </HorizontalScrollSection>
+        ) : null}
+
+        {/* Community Playlists — user-made public playlists. */}
+        {communityLoading || communityItems.length > 0 ? (
+          <HorizontalScrollSection
+            title={t('library.sections.community')}
+            loading={communityLoading && communityItems.length === 0}
+            isLoadingMore={communityLoadingMore}
+            onEndReached={loadMoreCommunity}
           >
-            {discoverItems.map((playlist, index) => (
+            {communityItems.map((playlist, index) => (
               <PlaylistCard
                 key={playlist.uuid}
                 name={playlist.name}
@@ -310,21 +552,54 @@ export default function DiscoverLibrary() {
                 color={playlist.color}
                 icon={playlist.icon}
                 variant="scroll"
+                metaLabel={t('library.communityByline', {
+                  creatorName: playlist.creatorName,
+                  climbCount: t('detail.climbCount', { count: playlist.climbCount }),
+                })}
                 index={index}
                 onPress={() => goToPlaylist(playlist.uuid)}
+                isPinned={isAuthenticated && pinnedPlaylistUuids.has(playlist.uuid)}
+                onTogglePin={isAuthenticated ? () => handleToggleDiscoverPin(playlist.uuid) : undefined}
               />
             ))}
-          </PlaylistScrollSection>
+          </HorizontalScrollSection>
         ) : null}
 
-        {/* Empty state: signed in, nothing anywhere, nothing loading. */}
+        {/* Load error: a section's first page failed and the hub is empty.
+            Offer a retry instead of falsely claiming the library is empty. */}
+        {showLoadError ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+            <Text variant="headline" style={styles.emptyTitle}>
+              {t('library.errors.loadTitle')}
+            </Text>
+            <Text variant="subheadline" style={styles.emptySubtitle}>
+              {t('library.errors.loadDescription')}
+            </Text>
+            <Pressable
+              onPress={handleRetryLoad}
+              accessibilityRole="button"
+              accessibilityLabel={t('library.errors.tryAgain')}
+              hitSlop={8}
+            >
+              <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
+                {t('library.errors.tryAgain')}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
         {isAuthenticated &&
         !userLoading &&
-        !discoverLoading &&
         !smartCountsLoading &&
-        jumpBackIn.length === 0 &&
-        discoverItems.length === 0 &&
-        smartCardsToShow.length === 0 ? (
+        !communityLoading &&
+        !profileLoading &&
+        !showLoadError &&
+        !hasVisiblePinnedItems &&
+        userPlaylists.length === 0 &&
+        forYouSmartCards.length === 0 &&
+        communityItems.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />
             <Text variant="headline" style={styles.emptyTitle}>
@@ -337,14 +612,40 @@ export default function DiscoverLibrary() {
         ) : null}
 
         {/* Initial spinner before any section has resolved. */}
-        {(authLoading || tokenLoading) && jumpBackIn.length === 0 && discoverItems.length === 0 ? (
+        {(authLoading || tokenLoading) &&
+        !hasVisiblePinnedItems &&
+        userPlaylists.length === 0 &&
+        forYouSmartCards.length === 0 &&
+        communityItems.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" />
           </View>
         ) : null}
       </ScrollView>
 
-      {isAuthenticated ? <CreatePlaylistFab onPress={handleCreatePress} /> : null}
+      <DiscoverTopChrome
+        canCreate={isAuthenticated}
+        onCreate={handleCreatePress}
+        onOpenBoardSwitcher={() => router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/discover' } })}
+        onHeightChange={setChromeHeight}
+      />
+
+      {/* Material's primary create affordance is an M3 FAB — the canonical place for
+          a screen's "new" action. Liquid Glass keeps the create "+" island in the
+          floating chrome (via CollapsingTopChrome), so the FAB is material-only. */}
+      {isMaterial && isAuthenticated ? (
+        <FAB
+          icon={iconMap.plus.android}
+          onPress={handleCreatePress}
+          accessibilityLabel={t('library.createFab.ariaLabel')}
+          // Solid brand fill (the app's filled-button colour), not Paper's default
+          // `primaryContainer` tonal variant — that muted tone reads as washed-out /
+          // semi-transparent over the dark feed.
+          color={brandColors.onPrimary as string}
+          mode="elevated"
+          style={[styles.createFab, { bottom: createFabBottom, backgroundColor: brandColors.primaryFill }]}
+        />
+      ) : null}
 
       <PlaylistFormSheet
         mode="create"
@@ -360,6 +661,18 @@ export default function DiscoverLibrary() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  // Material create FAB: bottom-trailing, the list scrolls under it; the host sets
+  // `bottom` from the variant-correct floating-control offset (clears tab bar +
+  // queue accessory).
+  createFab: {
+    position: 'absolute',
+    right: spacing[4],
+  },
+  screenTitle: {
+    paddingHorizontal: spacing[4],
+    paddingTop: 0,
+    paddingBottom: spacing[2],
   },
   section: {
     marginTop: spacing[2],
@@ -415,6 +728,10 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     opacity: 0.4,
     textAlign: 'center',
+  },
+  retryCta: {
+    marginTop: spacing[3],
+    fontWeight: '600',
   },
   loadingContainer: {
     paddingTop: spacing[10] * 3,

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rounded placeholder shown behind the climb thumbnail before it loads (and as
+     a subtle frame after). RemoteViews ImageViews can't clip, so the loaded
+     bitmap is rounded in code (BoardSessionService.roundCorners). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/session_image_placeholder" />
+    <corners android:radius="8dp" />
+</shape>

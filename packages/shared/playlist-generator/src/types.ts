@@ -16,6 +16,7 @@ export type BaseGeneratorOptions = {
   minAscents: number;
   minRating: number;
   onlyTallClimbs: boolean;
+  onlyWideClimbs: boolean;
 };
 
 export type VolumeOptions = {
@@ -60,7 +61,7 @@ export const WORKOUT_TYPES: WorkoutTypeInfo[] = [
   { type: 'gradeFocus', icon: 'focus' },
 ];
 
-export const WARM_UP_OPTIONS: WarmUpType[] = ['standard', 'extended', 'none'];
+export const WARM_UP_OPTIONS: WarmUpType[] = ['none', 'standard', 'extended'];
 
 export const EFFORT_LEVELS: EffortLevel[] = ['moderate', 'challenging', 'veryDifficult', 'maxEffort'];
 
@@ -68,45 +69,49 @@ export const CLIMB_BIAS_OPTIONS: ClimbBias[] = ['unfamiliar', 'attempted', 'any'
 
 export const DEFAULT_VOLUME_OPTIONS: Omit<VolumeOptions, 'targetGrade'> = {
   type: 'volume',
-  warmUp: 'standard',
+  warmUp: 'none',
   mainSetClimbs: 20,
   mainSetVariability: 0,
   climbBias: 'unfamiliar',
   minAscents: 5,
   minRating: 2,
   onlyTallClimbs: false,
+  onlyWideClimbs: false,
 };
 
 export const DEFAULT_PYRAMID_OPTIONS: Omit<PyramidOptions, 'targetGrade'> = {
   type: 'pyramid',
-  warmUp: 'standard',
+  warmUp: 'none',
   numberOfSteps: 5,
   climbsPerStep: 1,
   climbBias: 'unfamiliar',
   minAscents: 5,
   minRating: 2,
   onlyTallClimbs: false,
+  onlyWideClimbs: false,
 };
 
 export const DEFAULT_LADDER_OPTIONS: Omit<LadderOptions, 'targetGrade'> = {
   type: 'ladder',
-  warmUp: 'standard',
+  warmUp: 'none',
   numberOfSteps: 5,
   climbsPerStep: 2,
   climbBias: 'unfamiliar',
   minAscents: 5,
   minRating: 2,
   onlyTallClimbs: false,
+  onlyWideClimbs: false,
 };
 
 export const DEFAULT_GRADE_FOCUS_OPTIONS: Omit<GradeFocusOptions, 'targetGrade'> = {
   type: 'gradeFocus',
-  warmUp: 'standard',
+  warmUp: 'none',
   numberOfClimbs: 15,
   climbBias: 'unfamiliar',
   minAscents: 5,
   minRating: 2,
   onlyTallClimbs: false,
+  onlyWideClimbs: false,
 };
 
 export const WARM_UP_CONFIG = {

@@ -16,6 +16,12 @@ type UseZoomPanGestureOptions = {
   enabled?: boolean;
   containerWidth: number;
   containerHeight: number;
+  /** When set, the 1-finger zoom-pan only activates after the finger moves this
+   * many px in either axis. Use this when the pan is composed with stationary
+   * tap/long-press gestures on the same overlay (the interactive boards), so a
+   * slightly-sloppy stationary tap isn't stolen by the pan. Left unset, the pan
+   * keeps its default activation (the play-drawer carousel relies on that). */
+  panActivationOffset?: number;
 };
 
 type UseZoomPanGestureReturn = {
@@ -23,6 +29,19 @@ type UseZoomPanGestureReturn = {
   zoomPanGesture: GestureType;
   isZoomed: boolean;
   isZoomedSV: SharedValue<boolean>;
+  /** Live zoom scale on the UI thread, so an overlay inside the transform can
+   * convert screen-pixel drag deltas into unscaled board-pixel deltas. */
+  scaleSV: SharedValue<number>;
+  /** Live pan translation on the UI thread. With scaleSV + the container size,
+   * an overlay above the transform can invert animatedZoomStyle to map a screen
+   * tap back into board-local coordinates (see use-zoomed-hold-tap-gesture). */
+  translateXSV: SharedValue<number>;
+  translateYSV: SharedValue<number>;
+  /** Live container size on the UI thread — the transform's center origin
+   * (containerWidth/2, containerHeight/2). Mirrored so the inverse-transform
+   * worklet reads it without re-creating gesture objects on a layout change. */
+  containerWidthSV: SharedValue<number>;
+  containerHeightSV: SharedValue<number>;
   resetZoom: () => void;
   animatedZoomStyle: AnimatedStyle;
 };
@@ -54,6 +73,7 @@ export function useZoomPanGesture({
   enabled = true,
   containerWidth,
   containerHeight,
+  panActivationOffset,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -194,32 +214,48 @@ export function useZoomPanGesture({
   // parent BottomSheetScrollView from scrolling. With maxPointers(1) it
   // also fails harmlessly during 2-finger pinches, so the outer pinch
   // gesture stays responsive even with this overlay above the board.
-  const zoomPanGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .minPointers(1)
-        .maxPointers(1)
-        .onStart(() => {
-          'worklet';
-          savedTranslateX.value = translateX.value;
-          savedTranslateY.value = translateY.value;
-        })
-        .onUpdate((event) => {
-          'worklet';
-          if (scale.value <= MIN_SCALE) return;
-          const newX = savedTranslateX.value + event.translationX;
-          const newY = savedTranslateY.value + event.translationY;
-          const clamped = clampTranslation(newX, newY, scale.value, containerWidthSV.value, containerHeightSV.value);
-          translateX.value = clamped.x;
-          translateY.value = clamped.y;
-        })
-        .onEnd(() => {
-          'worklet';
-          savedTranslateX.value = translateX.value;
-          savedTranslateY.value = translateY.value;
-        }),
-    [scale, translateX, translateY, savedTranslateX, savedTranslateY, containerWidthSV, containerHeightSV],
-  );
+  const zoomPanGesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .minPointers(1)
+      .maxPointers(1)
+      .onStart(() => {
+        'worklet';
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        if (scale.value <= MIN_SCALE) return;
+        const newX = savedTranslateX.value + event.translationX;
+        const newY = savedTranslateY.value + event.translationY;
+        const clamped = clampTranslation(newX, newY, scale.value, containerWidthSV.value, containerHeightSV.value);
+        translateX.value = clamped.x;
+        translateY.value = clamped.y;
+      })
+      .onEnd(() => {
+        'worklet';
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      });
+    // Composed with stationary tap/long-press on the interactive boards: require
+    // a deliberate drag so a stationary tap falls through to the tap detector
+    // instead of being eaten by the pan.
+    if (panActivationOffset != null) {
+      pan
+        .activeOffsetX([-panActivationOffset, panActivationOffset])
+        .activeOffsetY([-panActivationOffset, panActivationOffset]);
+    }
+    return pan;
+  }, [
+    scale,
+    translateX,
+    translateY,
+    savedTranslateX,
+    savedTranslateY,
+    containerWidthSV,
+    containerHeightSV,
+    panActivationOffset,
+  ]);
 
   const animatedZoomStyle = useAnimatedStyle(() => ({
     // [translate, scale] order: RN matrix-composes left-to-right, so scale
@@ -233,6 +269,11 @@ export function useZoomPanGesture({
     zoomPanGesture,
     isZoomed,
     isZoomedSV,
+    scaleSV: scale,
+    translateXSV: translateX,
+    translateYSV: translateY,
+    containerWidthSV,
+    containerHeightSV,
     resetZoom,
     animatedZoomStyle,
   };

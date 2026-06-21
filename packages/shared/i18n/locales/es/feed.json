@@ -19,6 +19,33 @@
   "activityFeed": {
     "signInPrompt": "Inicia sesión para ver un feed de los escaladores que sigues."
   },
+  "mobile": {
+    "home": {
+      "betaTitle": "Beta reciente",
+      "betaEmpty": "Aún no hay vídeos de beta",
+      "betaError": "No se pudieron cargar los vídeos de beta.",
+      "betaOpenError": "No se pudo abrir ese vídeo de beta.",
+      "betaCardLabel": "Abrir vídeo de beta",
+      "feedTitle": "De tu crew",
+      "signInTitle": "Inicia sesión para ver tu feed",
+      "signInBody": "Sigue a escaladores y equipadores para ver sus encadenes y bloques nuevos aquí.",
+      "searchAction": "Buscar escaladores",
+      "emptyTitle": "Aún no hay actividad",
+      "emptyBody": "Sigue a escaladores y equipadores para llenar esto.",
+      "unknownClimb": "Bloque desconocido",
+      "sessionsTitle": "Sesiones recientes",
+      "betaTitleBoard": "Beta reciente en este plafón",
+      "boardEmptyTitle": "Tranquilo en {{board}} ahora mismo",
+      "boardEmptyBody": "Sé el primero en registrar una sesión, o mira qué está escalando el resto.",
+      "boardEmptyCta": "Ver a todos",
+      "scope": {
+        "myCrew": "Mi crew",
+        "everyone": "Todos",
+        "findGym": "Busca un gimnasio cerca",
+        "hint": "Cambia de quién ves las vías"
+      }
+    }
+  },
   "ascentsFeed": {
     "mirrored": "Espejo",
     "benchmark": "Referencia",
@@ -182,7 +209,7 @@
   },
   "search": {
     "minCharsHint": "Escribe al menos 2 caracteres para buscar",
-    "noBoards": "No hay tablas para \"{{query}}\"",
+    "noBoards": "No hay plafones para \"{{query}}\"",
     "noGyms": "No hay gimnasios para \"{{query}}\"",
     "noPlaylists": "No hay listas para \"{{query}}\"",
     "noUsers": "No hay usuarios ni setters para \"{{query}}\"",
@@ -191,10 +218,37 @@
   },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} bloque",
-    "climbCount_other": "{{count}} bloques"
+    "climbCount_other": "{{count}} bloques",
+    "sendsCount_one": "{{count}} encadene",
+    "sendsCount_other": "{{count}} encadenes",
+    "flashesCount_one": "{{count}} flash",
+    "flashesCount_other": "{{count}} flashes",
+    "hardestGrade": "{{grade}} más difícil",
+    "status": {
+      "flash": "Flash",
+      "send": "Encadene",
+      "attempt": "Intento"
+    },
+    "hardest": "Más difícil",
+    "betaEyebrow": "Beta",
+    "betaBy": "Beta de {{name}}",
+    "gradeSpread": "Rango de grados de {{min}} a {{max}}, {{sends}} encadenes",
+    "unknownClimb": "Bloque desconocido",
+    "attempts_one": "{{count}} intento",
+    "attempts_other": "{{count}} intentos",
+    "openHint": "Abre la sesión",
+    "openHardestClimb": "Abrir {{climb}}"
   },
   "sessionSummary": {
     "completed": "Sesión completada"
+  },
+  "socialActions": {
+    "upvoteWithCount_one": "Me gusta, {{count}} me gusta",
+    "upvoteWithCount_other": "Me gusta, {{count}} me gusta",
+    "removeUpvoteWithCount_one": "Quitar me gusta, {{count}} me gusta",
+    "removeUpvoteWithCount_other": "Quitar me gusta, {{count}} me gusta",
+    "openCommentsWithCount_one": "Abrir comentarios, {{count}} comentario",
+    "openCommentsWithCount_other": "Abrir comentarios, {{count}} comentarios"
   },
   "socialFeedItem": {
     "climbed": "escaló"

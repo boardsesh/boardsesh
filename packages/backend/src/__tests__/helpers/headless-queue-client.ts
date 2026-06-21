@@ -106,7 +106,6 @@ type RawSessionEvent =
   | { __typename: 'UserLeft'; userId: string }
   | { __typename: 'UserPresenceChanged'; user: SessionUserView }
   | { __typename: 'LeaderChanged'; leaderId: string; leaderConnectionId: string | null }
-  | { __typename: 'DriverChanged'; driverParticipantId: string | null; previousDriverParticipantId: string | null }
   | {
       __typename: 'WallConfirmedClimb';
       climbUuid: string;
@@ -114,6 +113,7 @@ type RawSessionEvent =
       confirmedByParticipantId: string;
       queueItemUuid: string | null;
     }
+  | { __typename: 'WallDisconnected'; disconnectedByParticipantId: string | null }
   | { __typename: 'SessionBoardSerialChanged'; lastConnectedBoardSerial: string | null }
   | { __typename: 'SessionBoardPathChanged'; boardPath: string; changedByParticipantId: string | null }
   | { __typename: 'SessionEnded'; reason: string; newPath: string | null }
@@ -126,7 +126,6 @@ type JoinSessionData = {
     participantId: string;
     isLeader: boolean;
     boardPath: string;
-    driverParticipantId: string | null;
     lastConnectedBoardSerial: string | null;
     users: SessionUserView[];
     queueState: ServerQueueStateView;
@@ -274,10 +273,10 @@ export class HeadlessParticipant {
 
   // Session-level view, fed by the SESSION_UPDATES subscription
   users: SessionUserView[] = [];
-  driverParticipantId: string | null = null;
   boardSerial: string | null = null;
   boardPath: string;
   wallConfirmations: Array<{ climbUuid: string; queueItemUuid: string | null }> = [];
+  wallDisconnects: Array<{ disconnectedByParticipantId: string | null }> = [];
   boardPathChanges = 0;
 
   // Local queue state — driven by the real reducer
@@ -369,7 +368,6 @@ export class HeadlessParticipant {
     this.participantId = joined.participantId;
     this.isLeader = joined.isLeader;
     this.users = joined.users;
-    this.driverParticipantId = joined.driverParticipantId;
     this.boardSerial = joined.lastConnectedBoardSerial;
     // Re-key the coordinator to the backend-assigned clientId (echo suppression
     // matches the server's CurrentClimbChanged.clientId against this). Dispose
@@ -493,11 +491,11 @@ export class HeadlessParticipant {
       case 'UserLeft':
         this.users = this.users.filter((u) => u.id !== event.userId);
         break;
-      case 'DriverChanged':
-        this.driverParticipantId = event.driverParticipantId;
-        break;
       case 'WallConfirmedClimb':
         this.wallConfirmations.push({ climbUuid: event.climbUuid, queueItemUuid: event.queueItemUuid });
+        break;
+      case 'WallDisconnected':
+        this.wallDisconnects.push({ disconnectedByParticipantId: event.disconnectedByParticipantId });
         break;
       case 'SessionBoardSerialChanged':
         this.boardSerial = event.lastConnectedBoardSerial;
@@ -571,17 +569,12 @@ export class HeadlessParticipant {
     await this.mutations.setCurrentClimb(item, shouldAddToQueue, correlationId);
   }
 
-  /** Faithful "take the wall" path. `takeControl(climb)` broadcasts the climb
-   *  with `clientId` = this connection, so the reducer suppresses our own echo —
-   *  meaning the caller must set current optimistically, exactly like the app.
-   *  The driver role lands for everyone (including us) via the DriverChanged
-   *  session event. */
-  async takeWall(item: ClimbQueueItem): Promise<void> {
-    this.dispatch({
-      type: 'DELTA_UPDATE_CURRENT_CLIMB',
-      payload: { item, shouldAddToQueue: true, isServerEvent: false },
-    });
-    await this.mutations.takeControl(item);
+  /** Report that the wall connection relaying this session's current climb
+   *  dropped. Best-effort session mutation; peers clear their lit-lightbulb
+   *  state via the WallDisconnected session event (recorded in
+   *  `wallDisconnects`). */
+  async reportWallDisconnect(): Promise<void> {
+    await this.mutations.reportWallDisconnect();
   }
 
   /** Reorder a queue item via the raw `reorderQueueItem` mutation. The shared
@@ -652,7 +645,6 @@ const SESSION_QUERY = `
   query Session($sessionId: ID!) {
     session(sessionId: $sessionId) {
       id
-      driverParticipantId
       lastConnectedBoardSerial
       users { id username isLeader avatarUrl userId connectionState }
       queueState {
@@ -692,7 +684,6 @@ const RESYNC_QUERY = `
 `;
 
 export type ServerSessionView = {
-  driverParticipantId: string | null;
   lastConnectedBoardSerial: string | null;
   users: SessionUserView[];
   queueState: {

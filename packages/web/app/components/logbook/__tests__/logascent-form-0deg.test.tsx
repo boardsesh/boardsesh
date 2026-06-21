@@ -24,6 +24,7 @@ vi.mock('react-i18next', () => ({
 
 const mockSaveTick = vi.fn();
 const mockLogbookRef: { current: LogbookEntry[] } = { current: [] };
+const mockPresenceControls = vi.hoisted(() => ({ boardId: null as number | null }));
 
 vi.mock('../../board-provider/board-provider-context', () => ({
   useBoardProvider: () => ({
@@ -36,6 +37,14 @@ vi.mock('../../board-provider/board-provider-context', () => ({
     isInitialized: true,
     getLogbook: vi.fn(),
     saveClimb: vi.fn(),
+  }),
+}));
+
+vi.mock('../../board-presence/board-presence-context', () => ({
+  useBoardPresenceControls: () => ({
+    enabled: mockPresenceControls.boardId !== null,
+    boardId: mockPresenceControls.boardId,
+    resolveAndBindBoard: vi.fn(),
   }),
 }));
 
@@ -116,6 +125,7 @@ describe('LogAscentForm — 0° regression', () => {
     mockLogbookRef.current = [];
     mockSaveTick.mockResolvedValue(undefined);
     mockEffectiveAngle.current = null;
+    mockPresenceControls.boardId = null;
   });
 
   it('enables submit and shows the angle when useEffectiveAngle resolves to 0', () => {
@@ -146,6 +156,22 @@ describe('LogAscentForm — 0° regression', () => {
       // `number | null` — this assertion catches a regression to the
       // coercion path.
       angle: 0,
+    });
+  });
+
+  it('stamps the active presence board id when logging from the full form', async () => {
+    mockEffectiveAngle.current = 0;
+    mockPresenceControls.boardId = 77;
+    const onClose = vi.fn();
+
+    renderForm({ currentClimb: makeClimb(), boardDetails: makeBoardDetails(), onClose });
+
+    fireEvent.click(screen.getByRole('button', { name: /Log at 0°/i }));
+
+    await waitFor(() => expect(mockSaveTick).toHaveBeenCalled());
+    expect(mockSaveTick.mock.calls[0][0]).toMatchObject({
+      climbUuid: 'climb-1',
+      boardId: 77,
     });
   });
 

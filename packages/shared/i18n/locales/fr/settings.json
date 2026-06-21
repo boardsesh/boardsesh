@@ -12,12 +12,15 @@
   "profile": {
     "title": "Profil",
     "subtitle": "Choisissez comment vous apparaissez sur Boardsesh",
+    "editAction": "Modifier le profil",
     "avatar": {
       "label": "Photo de profil",
       "upload": "Importer",
       "change": "Modifier",
       "remove": "Retirer",
-      "hint": "JPG, PNG, GIF ou WebP. Jusqu'à 10 Mo, compression automatique."
+      "hint": "JPG, PNG, GIF ou WebP. Jusqu'à 10 Mo, compression automatique.",
+      "hintMobile": "Recadrée en carré et compressée automatiquement.",
+      "permissionDenied": "Autorisez l'accès aux photos dans Réglages pour choisir une photo de profil."
     },
     "displayName": {
       "label": "Nom affiché",
@@ -210,6 +213,30 @@
     "unlinkSuccess": "Compte délié",
     "unlinkError": "Déliaison du compte impossible",
     "unlinkPartial": "Nous avons délié votre compte de notre côté, mais l'app Kilter peut rester connectée. Déconnectez-vous aussi dans Kilter si vous voulez couper le lien complètement.",
+    "loadRetry": "Réessayer",
+    "mobile": {
+      "connectedAs": "Connecté en tant que {{name}}",
+      "connected": "Connecté",
+      "notConnected": "Non connecté",
+      "kilterConnected": "Kilter connecté",
+      "kilterNotAllowed": "La synchronisation Kilter n'est pas encore activée pour ce compte.",
+      "kilterConnectFailed": "Impossible de connecter Kilter. Réessaie.",
+      "linkSuccess": "{{boardName}} lié",
+      "unlinkSuccess": "{{boardName}} délié",
+      "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
+      "invalidCredentials": "Cet identifiant ou ce mot de passe n'a pas fonctionné.",
+      "rateLimited": "Trop de tentatives. Réessaie plus tard.",
+      "requestFailed": "Impossible d'enregistrer ce lien. Réessaie.",
+      "loadFailed": "Impossible de charger tes comptes de board.",
+      "importMissingUser": "Choisis un fichier d'export JSON Aurora.",
+      "importBoardWarning": "Cela ressemble à {{layoutName}}. Importe vers {{boardName}} seulement si c'est correct.",
+      "importPreviewIntro": "Importer les données de {{username}} vers {{boardName}} :",
+      "importPartial": "Import partiellement terminé. Réimporter le fichier est sans risque.",
+      "importFailed": "L'import a échoué. Réessaie.",
+      "importInterrupted": "L'import s'est arrêté avant la fin. Réimporter le fichier est sans risque.",
+      "requestDataFailed": "Impossible d'ouvrir l'e-mail. Réessaie.",
+      "passwordHelp": "Tes identifiants sont chiffrés avant d'être stockés."
+    },
     "import": {
       "steps": {
         "climbs": "Importation des brouillons de blocs",
@@ -217,8 +244,7 @@
         "dedup": "Vérification des doublons",
         "ascents": "Importation des ascensions",
         "attempts": "Importation des essais",
-        "circuits": "Importation des circuits",
-        "sessions": "Construction des sessions"
+        "circuits": "Importation des circuits"
       },
       "fileLabel": "Importer un fichier d'export JSON Aurora",
       "tooLarge": "Fichier trop volumineux (max 200 Mo). Vérifiez que vous avez choisi le bon fichier.",
@@ -284,7 +310,8 @@
     "successRating": "Merci, c'est noté.",
     "successBug": "Bug enregistré, merci.",
     "errorRating": "Envoi impossible. On garde votre retour.",
-    "closeAria": "Fermer"
+    "closeAria": "Fermer",
+    "joinDiscord": "Rejoindre Discord"
   },
   "feedbackForm": {
     "missingHeading": "Qu'est-ce qui manque ?",
@@ -296,6 +323,10 @@
     "bugPlaceholder": "Que faisiez-vous ? Qu'attendiez-vous et qu'avez-vous vu ?",
     "ratingPlaceholder": "Qu'avez-vous en tête ?",
     "remainingChars": "Encore {{count}} caractères à écrire",
+    "starRating_one": "{{count}} étoile",
+    "starRating_other": "{{count}} étoiles",
+    "sessionRecordingLabel": "Activer l'enregistrement de session",
+    "sessionRecordingDescription": "Aidez-nous à corriger votre bug plus vite en activant l'enregistrement de session et en reproduisant le problème. Vous pourrez le désactiver ensuite.",
     "nextAria": "Suivant"
   },
   "feedbackBanner": {
@@ -339,9 +370,20 @@
     "intro": "D'après nos enregistrements, ce board est configuré différemment de votre réglage actuel.",
     "currentLabel": "<strong>Votre configuration :</strong>",
     "recordedLabel": "<strong>Enregistré pour ce contrôleur :</strong>",
+    "mobileCurrentLabel": "Votre configuration : {{config}}",
+    "mobileRecordedLabel": "Enregistré pour ce contrôleur : {{config}}",
+    "mobileConfigValue": "{{board}} layout {{layoutId}}, taille {{sizeId}}, sets {{setIds}}",
+    "mobileUnknownConfig": "Configuration du board inconnue",
+    "mobileSkippedSpillToast_one": "{{name}} ignorée — elle est pour un autre board",
+    "mobileSkippedSpillToast_other": "{{count}} voies ignorées, prévues pour un autre board",
+    "mobileSwitchFailed": "Impossible de passer à la configuration de ce board. Essayez Connecter quand même.",
     "cancel": "Annuler",
     "connectAnyway": "Connecter quand même",
-    "switchToCorrect": "Passer à la bonne configuration"
+    "switchToCorrect": "Passer à la bonne configuration",
+    "mobileConnectAnyway": "Connecter quand même",
+    "mobileConnectAnywayWarning": "D'après nos enregistrements, ce contrôleur appartient à une autre configuration de board. Connecter quand même pourrait allumer les voies de façon incorrecte.",
+    "mobileSwitchSetup": "Changer de board",
+    "mobileUseRecordedSetup": "Utiliser la configuration enregistrée"
   },
   "devicePicker": {
     "title": "Sélectionnez votre board",
@@ -366,13 +408,53 @@
     "devicesFound_other": "{{count}} panneaux trouvés",
     "noDevicesFound": "Aucun panneau trouvé à proximité",
     "cancel": "Annuler",
-    "unknownBoard": "Panneau inconnu",
-    "disconnected": "Panneau déconnecté",
-    "reconnect": "Reconnecter",
     "connectBoard": "Connecter le panneau",
-    "notAvailable": "Le Bluetooth n'est pas disponible",
+    "relightBoard": "Rallumer le panneau",
+    "turnOff": "Éteindre le panneau",
+    "holdForControls": "Maintenir pour les commandes",
+    "sendFailedTitle": "Impossible d'allumer le board",
+    "connectionFailedTitle": "Connexion impossible",
+    "permissionRequired": "Autorisation Bluetooth requise",
+    "errorPermissionDenied": "Autorisez le Bluetooth pour connecter un panneau.",
     "errorLedMissing": "Impossible d'envoyer au panneau — données LED manquantes pour cette configuration.",
     "errorIncompatible": "Ce bloc est pour une configuration de panneau différente.",
-    "errorConnectionFailed": "Impossible de se connecter au panneau. Vérifiez qu'il est allumé et à proximité."
+    "barControl": {
+      "connectedLabel": "Panneau connecté, vous avez le contrôle",
+      "connectedHint": "Ouvre les commandes du panneau",
+      "peerLabel": "Sur le mur de {{name}}",
+      "peerLabelAnonymous": "Sur le mur",
+      "peerHint": "Ouvre la voie sur le mur",
+      "disconnectedLabel": "Panneau déconnecté",
+      "disconnectedHint": "Se connecter au panneau"
+    }
+  },
+  "integrations": {
+    "title": "Applications connectées",
+    "appleHealth": {
+      "title": "Apple Health",
+      "autoSave": "Enregistrer les séances automatiquement",
+      "autoSaveDescription": "Les séances terminées sont ajoutées à Apple Health comme entraînements d'escalade avec une estimation des calories.",
+      "permissionDenied": "L'accès à Santé est désactivé. Autorisez Boardsesh à écrire des entraînements dans Réglages.",
+      "openSettings": "Ouvrir Réglages"
+    },
+    "strava": {
+      "title": "Strava",
+      "connect": "Se connecter avec Strava",
+      "connectedAs": "Connecté en tant que {{name}}",
+      "connected": "Connecté",
+      "autoSync": "Téléverser les séances automatiquement",
+      "autoSyncDescription": "Les séances terminées apparaissent sur votre fil Strava comme activités d'escalade.",
+      "disconnect": "Déconnecter",
+      "disconnectConfirmTitle": "Déconnecter Strava ?",
+      "disconnectConfirmBody": "Les nouvelles séances ne seront plus envoyées à Strava. Les activités déjà envoyées restent sur Strava.",
+      "reconnect": "Reconnecter",
+      "expired": "Connexion expirée. Reconnectez-vous pour continuer à téléverser."
+    },
+    "toast": {
+      "connected": "Strava connecté",
+      "connectFailed": "Impossible de se connecter à Strava",
+      "disconnected": "Strava déconnecté",
+      "disconnectFailed": "Impossible de déconnecter Strava. Réessayez."
+    }
   }
 }

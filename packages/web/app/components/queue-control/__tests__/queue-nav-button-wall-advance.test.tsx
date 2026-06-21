@@ -19,10 +19,9 @@ const mockSetCurrentClimbQueueItem = vi.fn();
 const mockGetNextClimbQueueItem = vi.fn();
 const mockGetPreviousClimbQueueItem = vi.fn();
 
-let sessionDataMock: { viewOnlyMode: boolean; isPersistentSessionActive: boolean; isDriver: boolean } = {
+let sessionDataMock: { viewOnlyMode: boolean; isPersistentSessionActive: boolean } = {
   viewOnlyMode: false,
   isPersistentSessionActive: false,
-  isDriver: true,
 };
 
 vi.mock('../../graphql-queue', () => ({
@@ -87,27 +86,29 @@ describe('QueueNavButton Wall Advance event', () => {
     vi.clearAllMocks();
     mockGetNextClimbQueueItem.mockReturnValue(sampleItem);
     mockGetPreviousClimbQueueItem.mockReturnValue(sampleItem);
-    sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: false, isDriver: true };
+    sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: false };
   });
 
-  it('fires Wall Advance with bar_button source + driver role in solo mode', () => {
+  it('fires Wall Advance with bar_button source in solo mode', () => {
     render(<QueueNavButton direction="next" boardDetails={boardDetails} />);
 
     fireEvent.click(screen.getByRole('button'));
 
     const call = findWallAdvanceCall();
     expect(call).toBeTruthy();
+    // Always-live model: no pressedByRole — every press is an unqualified
+    // broadcast advance.
     expect(call?.[1]).toMatchObject({
       source: 'bar_button',
-      pressedByRole: 'driver',
       direction: 'next',
       mode: 'solo',
       boardLayout: 'Original',
     });
+    expect(call?.[1]).not.toHaveProperty('pressedByRole');
   });
 
-  it('reports pressedByRole=non_driver when a non-driver presses in a party session', () => {
-    sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: true, isDriver: false };
+  it('fires Wall Advance with mode=party when any participant presses in a party session', () => {
+    sessionDataMock = { viewOnlyMode: false, isPersistentSessionActive: true };
     render(<QueueNavButton direction="previous" boardDetails={boardDetails} />);
 
     fireEvent.click(screen.getByRole('button'));
@@ -116,11 +117,11 @@ describe('QueueNavButton Wall Advance event', () => {
     expect(call).toBeTruthy();
     expect(call?.[1]).toMatchObject({
       source: 'bar_button',
-      pressedByRole: 'non_driver',
       direction: 'previous',
       mode: 'party',
       boardLayout: 'Original',
     });
+    expect(call?.[1]).not.toHaveProperty('pressedByRole');
   });
 
   it('still fires Queue Navigation alongside Wall Advance (analytics continuity)', () => {

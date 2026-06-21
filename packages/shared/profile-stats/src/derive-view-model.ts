@@ -6,6 +6,7 @@ import {
   buildAggregatedFlashRedpointBars,
   buildStatisticsSummary,
   buildVPointsTimeline,
+  buildActivityHeatmap,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -18,6 +19,7 @@ import type {
   RawVPointsTimeline,
   RawStatisticsSummary,
   RawGradeHighlight,
+  RawActivityHeatmap,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -42,6 +44,7 @@ export type ProfileViewModel = {
   aggregatedFlashRedpointBars: RawGroupedBar[] | null;
   statisticsSummary: RawStatisticsSummary;
   vPointsTimeline: RawVPointsTimeline | null;
+  activityHeatmap: RawActivityHeatmap | null;
   hardestSend: RawGradeHighlight | null;
   hardestFlash: RawGradeHighlight | null;
 };
@@ -88,6 +91,8 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
 
   const vPointsTimeline = buildVPointsTimeline(filteredBoardsTicks, timeframe, fromDate, toDate);
 
+  const activityHeatmap = buildActivityHeatmap(filteredLogbook);
+
   const { hardestSend, hardestFlash } = computeHardest(filteredBoardsTicks, gradeFormat);
 
   return {
@@ -97,6 +102,7 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     aggregatedFlashRedpointBars,
     statisticsSummary,
     vPointsTimeline,
+    activityHeatmap,
     hardestSend,
     hardestFlash,
   };

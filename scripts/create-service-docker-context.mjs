@@ -25,6 +25,13 @@ const services = {
     dockerfile: 'Dockerfile.web',
     rootPackageName: '@boardsesh/web',
   },
+  sync: {
+    dockerfile: 'Dockerfile.sync',
+    // All sync CLIs in one image. The source layer is the union of these roots'
+    // transitive workspace deps; the daemon/CLI to run is chosen by the container
+    // command, not baked into the image.
+    rootPackageNames: ['@boardsesh/kilter-sync', '@boardsesh/aurora-sync', '@boardsesh/moonboard-sync'],
+  },
 };
 
 const dependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies'];
@@ -115,7 +122,10 @@ function getServiceSourcePackageDirs(serviceName, repoRoot = defaultRepoRoot) {
   const service = requireKnownService(serviceName);
   const workspacesByName = getWorkspacePackageMap(repoRoot);
   const seenPackageNames = new Set();
-  const stack = [service.rootPackageName];
+  // A service roots from one package (rootPackageName) or several (rootPackageNames,
+  // e.g. the combined sync image). Union their transitive workspace-dependency walks.
+  const rootPackageNames = service.rootPackageNames ?? [service.rootPackageName];
+  const stack = [...rootPackageNames];
 
   while (stack.length > 0) {
     const packageName = stack.pop();
@@ -200,6 +210,20 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
   for (const rootFile of ['package.json', 'bun.lock']) {
     copyFileCreatingParent(join(absoluteRepoRoot, rootFile), join(absoluteOutputDir, 'manifests', rootFile));
     copyFileCreatingParent(join(absoluteRepoRoot, rootFile), join(absoluteOutputDir, 'source', rootFile));
+  }
+
+  // Bun resolves `patchedDependencies` paths relative to the package.json that
+  // declares them, so the install layer needs the patch files next to the copied
+  // root manifest. Without them `bun install --frozen-lockfile` aborts with
+  // "Couldn't find patch file" and the image build fails.
+  const rootPackageJson = readJson(join(absoluteRepoRoot, 'package.json'));
+  for (const patchRelativePath of Object.values(rootPackageJson.patchedDependencies ?? {}).map(String)) {
+    const absolutePatchPath = join(absoluteRepoRoot, patchRelativePath);
+    if (!existsSync(absolutePatchPath)) {
+      throw new Error(`package.json patchedDependencies references ${patchRelativePath}, but that file is missing`);
+    }
+    copyFileCreatingParent(absolutePatchPath, join(absoluteOutputDir, 'manifests', patchRelativePath));
+    copyFileCreatingParent(absolutePatchPath, join(absoluteOutputDir, 'source', patchRelativePath));
   }
 
   for (const packageJsonPath of getWorkspacePackageJsonPaths(absoluteRepoRoot)) {

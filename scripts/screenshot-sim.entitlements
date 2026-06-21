@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <!--
+    Entitlements for the screenshots simulator build (scripts/mobile-build-sim-app.ts).
+
+    The generated packages/mobile/ios/Boardsesh/Boardsesh.entitlements uses
+    `$(AppIdentifierPrefix)group.com.boardsesh.app`, which only resolves from a
+    provisioning profile. A simulator build has no profile, so Xcode strips that
+    entitlement to nothing — and with NO keychain-access-group the app has no
+    default keychain access group, so expo-secure-store fails ("a required
+    entitlement isn't present") and the auth token can't be saved, breaking login.
+
+    These are literal values (no profile-dependent prefix). The simulator doesn't
+    enforce the team-id prefix on keychain access groups, so this is enough for
+    SecureStore to work. Only the keychain + app-group keys are needed for the
+    screenshot flow; push/associated-domains/healthkit aren't exercised on the sim.
+  -->
+  <dict>
+    <key>com.apple.security.application-groups</key>
+    <array>
+      <string>group.com.boardsesh.app</string>
+    </array>
+    <key>keychain-access-groups</key>
+    <array>
+      <string>group.com.boardsesh.app</string>
+    </array>
+  </dict>
+</plist>

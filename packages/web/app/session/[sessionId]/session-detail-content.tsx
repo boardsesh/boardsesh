@@ -11,13 +11,8 @@ import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
-import TextField from '@mui/material/TextField';
-import CircularProgress from '@mui/material/CircularProgress';
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
-import EditOutlined from '@mui/icons-material/EditOutlined';
-import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import ChatBubbleOutlineOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -44,7 +39,6 @@ import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { useSessionDetail } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { Climb, BoardDetails } from '@/app/lib/types';
-import UserSearchDialog from './user-search-dialog';
 import SessionOverviewPanel, {
   buildSessionSummaryParts,
 } from '@/app/components/session-details/session-overview-panel';
@@ -301,11 +295,7 @@ export default function SessionDetailContent({
   const optionalSessionData = useOptionalSessionData();
   const isPersistentSessionActive = !!optionalSessionData?.isPersistentSessionActive;
 
-  const {
-    session: hookSession,
-    updateSession: updateSessionMutation,
-    addUser: addUserMutation,
-  } = useSessionDetail({
+  const { session: hookSession } = useSessionDetail({
     sessionId: sessionIdProp ?? initialSession?.sessionId,
     initialData: initialSession,
     enabled: !embedded,
@@ -313,20 +303,13 @@ export default function SessionDetailContent({
 
   const session = embedded ? initialSession : hookSession;
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [sessionCommentsOpen, setSessionCommentsOpen] = useState(false);
-
-  const saving = updateSessionMutation.isPending || addUserMutation.isPending;
 
   const { boards: myBoards } = useMyBoards(true);
 
   // Derive values from session with null-safe defaults so hooks below can run unconditionally.
   // The actual null check / early return happens after all hooks are called.
   const sessionId = session?.sessionId ?? '';
-  const sessionType = session?.sessionType;
   const sessionName = session?.sessionName;
   const participants = session?.participants ?? [];
   const totalSends = session?.totalSends ?? 0;
@@ -345,9 +328,7 @@ export default function SessionDetailContent({
   const commentCount = session?.commentCount ?? 0;
 
   const currentUserId = authSession?.user?.id;
-  const isInferred = sessionType === 'inferred';
   const isParticipant = currentUserId ? participants.some((p) => p.userId === currentUserId) : false;
-  const canEdit = isInferred && isParticipant;
 
   const isMultiUser = participants.length > 1;
   const displayName = sessionName || generateSessionName(firstTickAt, boardTypes);
@@ -358,10 +339,14 @@ export default function SessionDetailContent({
       ? {
           sessionId,
           totalSends,
+          totalFlashes,
           totalAttempts,
           gradeDistribution: gradeDistribution.map((g) => ({
             grade: g.grade,
             count: (g.flash ?? 0) + (g.send ?? 0),
+            flash: g.flash ?? 0,
+            send: g.send ?? 0,
+            attempt: g.attempt ?? 0,
           })),
           hardestClimb: null,
           participants: [],
@@ -501,32 +486,6 @@ export default function SessionDetailContent({
       );
     },
     [ticksByClimb, participantMap, isMultiUser, currentUserId, handleDeleteTick, deleteTick.isPending],
-  );
-
-  const handleStartEdit = useCallback(() => {
-    setEditName(sessionName || '');
-    setEditDescription(goal || '');
-    setIsEditing(true);
-  }, [sessionName, goal]);
-
-  const handleCancelEdit = useCallback(() => {
-    setIsEditing(false);
-  }, []);
-
-  const handleSaveEdit = useCallback(async () => {
-    await updateSessionMutation.mutateAsync({
-      name: editName || null,
-      description: editDescription || null,
-    });
-    setIsEditing(false);
-  }, [updateSessionMutation, editName, editDescription]);
-
-  const handleAddUser = useCallback(
-    async (userId: string) => {
-      setAddUserDialogOpen(false);
-      await addUserMutation.mutateAsync(userId);
-    },
-    [addUserMutation],
   );
 
   const noopLoadMore = useCallback(() => {}, []);
@@ -725,44 +684,16 @@ export default function SessionDetailContent({
             <ArrowBackOutlined />
           </IconButton>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            {isEditing ? (
-              <TextField
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder={generateSessionName(firstTickAt, boardTypes)}
-                size="small"
-                fullWidth
-                autoFocus
-              />
-            ) : (
-              <Typography variant="h6" noWrap>
-                {displayName}
-              </Typography>
-            )}
+            <Typography variant="h6" noWrap>
+              {displayName}
+            </Typography>
             <Typography variant="caption" color="text.secondary">
               {formatDate(firstTickAt)}
             </Typography>
           </Box>
-          {!isEditing && (
-            <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
-              <IosShare fontSize="small" />
-            </IconButton>
-          )}
-          {canEdit && !isEditing && (
-            <IconButton size="small" onClick={handleStartEdit}>
-              <EditOutlined fontSize="small" />
-            </IconButton>
-          )}
-          {isEditing && (
-            <Box sx={{ display: 'flex', gap: 0.5 }}>
-              <IconButton size="small" onClick={handleCancelEdit} disabled={saving}>
-                <CloseOutlined fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={handleSaveEdit} disabled={saving} color="primary">
-                {saving ? <CircularProgress size={18} /> : <CheckOutlined fontSize="small" />}
-              </IconButton>
-            </Box>
-          )}
+          <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
+            <IosShare fontSize="small" />
+          </IconButton>
         </Box>
       )}
 
@@ -775,31 +706,19 @@ export default function SessionDetailContent({
           gap: 2,
         }}
       >
-        {isEditing ? (
-          <TextField
-            value={editDescription}
-            onChange={(e) => setEditDescription(e.target.value)}
-            placeholder={t('detail.sessionNotesPlaceholder')}
-            size="small"
-            fullWidth
-            multiline
-            minRows={2}
-          />
-        ) : (
-          <SessionOverviewPanel
-            totalSends={totalSends}
-            totalFlashes={totalFlashes}
-            totalAttempts={totalAttempts}
-            tickCount={tickCount}
-            gradeDistribution={gradeDistribution}
-            boardTypes={boardTypes}
-            hardestGrade={hardestGrade}
-            durationMinutes={durationMinutes}
-            goal={goal}
-            afterParticipants={!embedded ? afterParticipants : undefined}
-            compact={embedded}
-          />
-        )}
+        <SessionOverviewPanel
+          totalSends={totalSends}
+          totalFlashes={totalFlashes}
+          totalAttempts={totalAttempts}
+          tickCount={tickCount}
+          gradeDistribution={gradeDistribution}
+          boardTypes={boardTypes}
+          hardestGrade={hardestGrade}
+          durationMinutes={durationMinutes}
+          goal={goal}
+          afterParticipants={!embedded ? afterParticipants : undefined}
+          compact={embedded}
+        />
 
         {/* Collapsible pills for embedded (drawer) mode */}
         {embedded && embeddedSections.length > 0 && (
@@ -883,14 +802,6 @@ export default function SessionDetailContent({
           </FavoritesProvider>
         </VoteSummaryProvider>
       )}
-
-      {/* Add User Dialog */}
-      <UserSearchDialog
-        open={addUserDialogOpen}
-        onClose={() => setAddUserDialogOpen(false)}
-        onSelectUser={handleAddUser}
-        excludeUserIds={participants.map((p) => p.userId)}
-      />
     </Box>
   );
 }

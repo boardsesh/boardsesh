@@ -260,6 +260,8 @@ export const setterFollowQueries = {
           name: tables.climbs.name,
           description: tables.climbs.description,
           frames: tables.climbs.frames,
+          frames_count: tables.climbs.framesCount,
+          frames_pace: tables.climbs.framesPace,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -294,11 +296,13 @@ export const setterFollowQueries = {
         name: result.name || '',
         description: result.description || '',
         frames: result.frames || '',
+        framesCount: result.frames_count ?? null,
+        framesPace: result.frames_pace ?? null,
         angle,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',
-        stars: getClimbStars(boardName, result.quality_average),
+        stars: getClimbStars(result.quality_average),
         difficulty_error: result.difficulty_error?.toString() || '0',
         benchmark_difficulty:
           result.benchmark_difficulty && result.benchmark_difficulty > 0
@@ -346,6 +350,8 @@ export const setterFollowQueries = {
           name: tables.climbs.name,
           description: tables.climbs.description,
           frames: tables.climbs.frames,
+          frames_count: tables.climbs.framesCount,
+          frames_pace: tables.climbs.framesPace,
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -392,11 +398,13 @@ export const setterFollowQueries = {
           name: result.name || '',
           description: result.description || '',
           frames: result.frames || '',
+          framesCount: result.frames_count ?? null,
+          framesPace: result.frames_pace ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           ascensionist_count: Number(result.ascensionist_count || 0),
           difficulty: getGradeLabel(result.difficulty_id),
           quality_average: result.quality_average?.toString() || '0',
-          stars: getClimbStars(boardName, result.quality_average),
+          stars: getClimbStars(result.quality_average),
           difficulty_error: result.difficulty_error?.toString() || '0',
           benchmark_difficulty:
             result.benchmark_difficulty && result.benchmark_difficulty > 0
@@ -488,6 +496,8 @@ export const setterFollowQueries = {
       name: string | null;
       description: string | null;
       frames: string | null;
+      frames_count: number | null;
+      frames_pace: number | null;
       stats_angle: number | null;
       ascensionist_count: number | null;
       difficulty_id: number | null;
@@ -508,6 +518,8 @@ export const setterFollowQueries = {
           c.name,
           c.description,
           c.frames,
+          c.frames_count,
+          c.frames_pace,
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
@@ -536,6 +548,8 @@ export const setterFollowQueries = {
         owned_climbs.name,
         owned_climbs.description,
         owned_climbs.frames,
+        owned_climbs.frames_count,
+        owned_climbs.frames_pace,
         best.angle AS stats_angle,
         best.ascensionist_count,
         ROUND(best.display_difficulty::numeric, 0)::int AS difficulty_id,
@@ -564,11 +578,13 @@ export const setterFollowQueries = {
         name: result.name || '',
         description: result.description || '',
         frames: result.frames || '',
+        framesCount: result.frames_count ?? null,
+        framesPace: result.frames_pace ?? null,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',
-        stars: getClimbStars(boardName, result.quality_average),
+        stars: getClimbStars(result.quality_average),
         difficulty_error: result.difficulty_error?.toString() || '0',
         benchmark_difficulty:
           result.benchmark_difficulty && result.benchmark_difficulty > 0
@@ -589,7 +605,7 @@ export const setterFollowQueries = {
     { input }: { input: { query: string; boardType?: string; limit?: number; offset?: number } },
     ctx: ConnectionContext,
   ) => {
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'searchUsersAndSetters');
 
     const validatedInput = validateInput(SearchUsersInputSchema, input, 'input');
     const query = validatedInput.query;
@@ -768,7 +784,7 @@ export const setterFollowMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 30, 'follow');
+    await applyRateLimit(ctx, 30, 'followSetter');
 
     const validatedInput = validateInput(FollowSetterInputSchema, input, 'input');
     const myUserId = ctx.userId!;
@@ -836,7 +852,7 @@ export const setterFollowMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 30, 'follow');
+    await applyRateLimit(ctx, 30, 'unfollowSetter');
 
     const validatedInput = validateInput(FollowSetterInputSchema, input, 'input');
     const myUserId = ctx.userId!;

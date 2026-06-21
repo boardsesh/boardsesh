@@ -8,14 +8,14 @@ import { useTranslation } from 'react-i18next';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
 import { execute } from '@boardsesh/graphql-client';
 import { useAuth } from './auth-provider';
-import { useQueue } from './queue-provider';
+import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getHttpClient } from '../lib/graphql/client';
 import { getWsClient } from '../lib/graphql/ws-client';
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
-  const { sessionId } = useQueue();
+  const { sessionId } = useQueueSessionId();
   const { showToast } = useToast();
   const { t } = useTranslation('climbs');
 

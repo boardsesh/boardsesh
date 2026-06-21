@@ -1,13 +1,18 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager, View, StyleSheet } from 'react-native';
+import { memo, useCallback, useMemo } from 'react';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import * as Haptics from 'expo-haptics';
 import type { Climb } from '@boardsesh/shared-schema';
 import { CollapsibleSection } from '../CollapsibleSection';
+import { Icon } from '../Icon';
 import { LogbookSection } from './LogbookSection';
 import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BetaVideosSection } from './BetaVideosSection';
-import { spacing } from '../../theme/tokens';
+import { useAuth } from '../../providers/auth-provider';
+import { useTheme } from '../../providers/theme-provider';
+import { spacing, borderRadius } from '../../theme/tokens';
+import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
 
 type DeferredSectionsProps = {
   climb: Climb;
@@ -17,9 +22,14 @@ type DeferredSectionsProps = {
   setIds: string;
   angle: number;
   enabled: boolean;
+  contentEnabled: boolean;
   onSimilarClimbPress: (climb: Climb) => void;
-  /** Reports the measured height of the Beta Videos section header (drives peek snap-point). */
+  /** Reports the measured height of the Beta Videos section header (drives the play
+   *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
   onBetaHeaderLayout?: (height: number) => void;
+  /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
+   *  signed-in users; absent (undefined) hides it. */
+  onAddBetaVideo?: () => void;
 };
 
 /**
@@ -35,12 +45,27 @@ export const DeferredSections = memo(function DeferredSections({
   setIds,
   angle,
   enabled,
+  contentEnabled,
   onSimilarClimbPress,
   onBetaHeaderLayout,
+  onAddBetaVideo,
 }: DeferredSectionsProps) {
   const { t } = useTranslation('session');
-  const [readyToRender, setReadyToRender] = useState(false);
-  const previousClimbUuid = useRef(climb.uuid);
+  const { isAuthenticated } = useAuth();
+  const { brandColors } = useTheme();
+
+  const handleAddBetaVideoPress = useCallback(() => {
+    void Haptics.selectionAsync();
+    onAddBetaVideo?.();
+  }, [onAddBetaVideo]);
+  // Defer the JS-heavy below-fold sections until just after the drawer's open
+  // animation and only after the user has started scrolling below the fold.
+  // Beta videos stay eager below because their header/body is the user's first
+  // scroll affordance once the drawer opens.
+  // Re-defers per climb (resetKey = uuid) and — unlike a bare
+  // runAfterInteractions — falls back to a bounded timeout, so a starved
+  // interaction queue can't leave these sections blank until the drawer reopens.
+  const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
 
   // Tally shown next to the collapsed Logbook header so the user sees their
   // history without expanding. Mirrors LogbookSection's summary fallback.
@@ -53,46 +78,34 @@ export const DeferredSections = memo(function DeferredSections({
     return null;
   }, [climb.userAscents, climb.userAttempts, t]);
 
-  // Both effects key on climb.uuid. React runs effects in declaration order
-  // within the same commit, so the reset below always fires before the
-  // InteractionManager re-schedule — readyToRender goes false, then the
-  // deferred callback sets it back to true after animations settle.
-  useEffect(() => {
-    if (climb.uuid !== previousClimbUuid.current) {
-      previousClimbUuid.current = climb.uuid;
-      setReadyToRender(false);
-    }
-  }, [climb.uuid]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setReadyToRender(false);
-      return;
-    }
-
-    const handle = InteractionManager.runAfterInteractions(() => {
-      setReadyToRender(true);
-    });
-
-    return () => {
-      handle.cancel();
-    };
-  }, [enabled, climb.uuid]);
-
   if (!enabled) {
     return null;
   }
 
-  // Beta Videos section renders eagerly so its header height is laid out
-  // immediately — this is what drives the play drawer's peek snap-point.
-  // Without eager render the snap-point would only become known after
-  // InteractionManager fires, causing the drawer to visibly jump from full
-  // to peek on first open. BetaVideosSection's data fetch is React Query and
-  // cheap to schedule; only the JS-heavy sub-sections wait below.
+  // Keep Beta Videos eager so it can measure immediately and tease real content
+  // at the bottom of the first screen. The heavier Logbook/Community/Similar
+  // sections still wait for scroll + the interaction queue.
   return (
     <View style={styles.container}>
-      <CollapsibleSection title={t('mobile.betaVideos.title')} keepExpanded onHeaderLayout={onBetaHeaderLayout}>
-        <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />
+      <CollapsibleSection
+        title={t('mobile.betaVideos.title')}
+        keepExpanded
+        onHeaderLayout={onBetaHeaderLayout}
+        headerAction={
+          isAuthenticated && onAddBetaVideo ? (
+            <Pressable
+              onPress={handleAddBetaVideoPress}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.betaVideos.addButton')}
+              hitSlop={8}
+              style={({ pressed }) => [styles.addButton, pressed && { backgroundColor: `${brandColors.primary}1A` }]}
+            >
+              <Icon name="add" size={22} color={brandColors.primary} />
+            </Pressable>
+          ) : undefined
+        }
+      >
+        <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />
       </CollapsibleSection>
 
       {readyToRender && (
@@ -138,5 +151,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     paddingBottom: spacing[4],
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.full,
   },
 });

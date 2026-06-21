@@ -2,7 +2,12 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, desc, isNotNull, like, or, sql } from 'drizzle-orm';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { fetchInstagramMeta, getInstagramMediaId, isInstagramUrl } from '../../../lib/instagram-meta';
+import {
+  fetchInstagramMeta,
+  getInstagramMediaId,
+  isInstagramUrl,
+  normalizeBetaVideoUrl,
+} from '../../../lib/instagram-meta';
 import { fetchTikTokMeta, getTikTokCacheId, isTikTokUrl } from '../../../lib/tiktok-meta';
 import {
   cacheInstagramThumbnail,
@@ -14,6 +19,8 @@ import {
 } from '../../../lib/beta-link-thumbnails';
 import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
 type BetaLinkResult = {
   climbUuid: string;
@@ -23,6 +30,8 @@ type BetaLinkResult = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  tickUuid: string | null;
+  boardId: number | null;
 };
 
 type RecentBetaLinkResult = {
@@ -30,6 +39,13 @@ type RecentBetaLinkResult = {
   climbName: string | null;
   boardType: string;
   layoutId: number | null;
+};
+
+type BetaLinkPreviewResult = {
+  link: string;
+  thumbnail: string | null;
+  username: string | null;
+  caption: string | null;
 };
 
 const RECENT_BETA_LINKS_MAX_LIMIT = 50;
@@ -115,12 +131,14 @@ const ENRICH_CONCURRENCY = 5;
 function passthroughResult(row: Row): BetaLinkResult {
   return {
     climbUuid: row.climbUuid,
-    link: row.link,
+    link: normalizeBetaVideoUrl(row.link),
     foreignUsername: row.foreignUsername,
     angle: row.angle,
     thumbnail: isOurS3Url(row.thumbnail) ? row.thumbnail : null,
     isListed: row.isListed,
     createdAt: row.createdAt,
+    tickUuid: row.tickUuid,
+    boardId: row.boardId,
   };
 }
 
@@ -172,12 +190,14 @@ async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | 
   if (haveCachedThumbnail) {
     return {
       climbUuid: row.climbUuid,
-      link: row.link,
+      link: normalizeBetaVideoUrl(row.link),
       foreignUsername: row.foreignUsername,
       angle: row.angle,
       thumbnail: row.thumbnail,
       isListed: row.isListed,
       createdAt: row.createdAt,
+      tickUuid: row.tickUuid,
+      boardId: row.boardId,
     };
   }
 
@@ -212,12 +232,14 @@ async function enrichRow(row: Row, cfg: EnrichConfig): Promise<BetaLinkResult | 
 
   return {
     climbUuid: row.climbUuid,
-    link: row.link,
+    link: normalizeBetaVideoUrl(row.link),
     foreignUsername: newUsername,
     angle: row.angle,
     thumbnail,
     isListed: row.isListed,
     createdAt: row.createdAt,
+    tickUuid: row.tickUuid,
+    boardId: row.boardId,
   };
 }
 
@@ -275,6 +297,8 @@ type CachedRecentBetaLinkRow = {
   thumbnail: string | null;
   is_listed: boolean | null;
   created_at: string | null;
+  tick_uuid: string | null;
+  board_id: number | null;
   climb_name: string | null;
   layout_id: number | null;
 };
@@ -297,6 +321,8 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
         bl.thumbnail,
         bl.is_listed,
         bl.created_at,
+        bl.tick_uuid,
+        bl.board_id,
         bc.name AS climb_name,
         bc.layout_id AS layout_id,
         ROW_NUMBER() OVER (
@@ -310,7 +336,7 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
         AND bl.thumbnail IS NOT NULL
         AND bl.thumbnail LIKE ${`${STATIC_THUMBNAIL_PREFIX}%`}
     )
-    SELECT board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at, climb_name, layout_id
+    SELECT board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at, tick_uuid, board_id, climb_name, layout_id
     FROM ranked
     WHERE foreign_username IS NULL OR user_rank <= ${HOME_PER_USER_CAP}
     ORDER BY created_at DESC
@@ -422,6 +448,54 @@ export const betaLinkQueries = {
     return enriched.filter((r): r is BetaLinkResult => r !== null);
   },
 
+  // Live, unsaved preview of a shared Instagram/TikTok URL for the mobile share
+  // flow. Returns the thumbnail/caption so the client can show the post and
+  // auto-match the climb from the caption before attaching. Best-effort: a
+  // private/unavailable post (or a non-IG/TikTok URL) yields null fields rather
+  // than an error, so the user can still attach manually. Auth + the same 30/min
+  // limit as beta-link writes guard the outbound IG/TikTok fetch. Thumbnail is
+  // the platform CDN URL (not S3-cached) — it's a throwaway preview, not yet a
+  // persisted beta link. Caption is Instagram-only for now.
+  betaLinkPreview: async (
+    _: unknown,
+    { link }: { link: string },
+    ctx: ConnectionContext,
+  ): Promise<BetaLinkPreviewResult> => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 30, 'beta-link-preview');
+
+    // Strip Instagram share-attribution params so the preview echoes the same
+    // clean URL we'd store, and the meta fetch keys off the canonical form.
+    const normalizedLink = normalizeBetaVideoUrl(link);
+    const preview: BetaLinkPreviewResult = {
+      link: normalizedLink,
+      thumbnail: null,
+      username: null,
+      caption: null,
+    };
+
+    if (isInstagramUrl(normalizedLink)) {
+      const meta = await fetchInstagramMeta(normalizedLink);
+      if (meta.status === 'ok') {
+        preview.thumbnail = meta.thumbnail;
+        preview.username = meta.username;
+        preview.caption = meta.caption;
+      }
+      return preview;
+    }
+
+    if (isTikTokUrl(normalizedLink)) {
+      const meta = await fetchTikTokMeta(normalizedLink);
+      if (meta.status === 'ok') {
+        preview.thumbnail = meta.thumbnail;
+        preview.username = meta.username;
+      }
+      return preview;
+    }
+
+    return preview;
+  },
+
   // Powers the home-screen "Fresh beta" slider. We deliberately read only
   // pre-cached rows here — fanning out the live IG/TikTok enrichment in
   // `betaLinks` across the whole table is the failure mode this resolver
@@ -455,12 +529,14 @@ export const betaLinkQueries = {
       filtered.push({
         betaLink: {
           climbUuid: r.climb_uuid,
-          link: r.link,
+          link: normalizeBetaVideoUrl(r.link),
           foreignUsername: r.foreign_username,
           angle: r.angle,
           thumbnail: r.thumbnail,
           isListed: r.is_listed,
           createdAt: r.created_at,
+          tickUuid: r.tick_uuid ?? null,
+          boardId: r.board_id ?? null,
         },
         climbName: r.climb_name,
         boardType: r.board_type,
@@ -484,9 +560,14 @@ export const betaLinkQueries = {
   // resolver there.
   userBetaLinks: async (
     _: unknown,
-    { userId, limit }: { userId: string; limit?: number | null },
+    { userId, limit, offset }: { userId: string; limit?: number | null; offset?: number | null },
   ): Promise<RecentBetaLinkResult[]> => {
     const cappedLimit = Math.min(Math.max(limit ?? USER_BETA_LINKS_DEFAULT_LIMIT, 1), USER_BETA_LINKS_MAX_LIMIT);
+    // Offset paging: the client advances by `limit` per page and infers
+    // hasMore from a full page coming back. The post-fetch KayaClimb filter
+    // below can shrink a page below `limit`, which the client reads as the
+    // end — acceptable since KayaClimb rows are rare and being phased out.
+    const safeOffset = Math.max(offset ?? 0, 0);
 
     // Look up the user's IG handle from their profile, if set. Independent
     // query so we don't pay the cost of a second join when no profile row
@@ -525,7 +606,17 @@ export const betaLinkQueries = {
             : eq(dbSchema.boardBetaLinks.createdByUserId, userId),
         ),
       )
-      .orderBy(desc(dbSchema.boardBetaLinks.createdAt))
+      // createdAt is not unique, so offset paging needs a deterministic
+      // tie-breaker — without one, rows sharing a createdAt around a page
+      // boundary can reorder between requests and the shelf would duplicate or
+      // skip videos. The PK (boardType, climbUuid, link) makes the order total.
+      .orderBy(
+        desc(dbSchema.boardBetaLinks.createdAt),
+        desc(dbSchema.boardBetaLinks.boardType),
+        desc(dbSchema.boardBetaLinks.climbUuid),
+        desc(dbSchema.boardBetaLinks.link),
+      )
+      .offset(safeOffset)
       .limit(cappedLimit);
 
     return rows

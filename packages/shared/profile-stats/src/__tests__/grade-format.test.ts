@@ -20,11 +20,13 @@ describe('font vs v-grade mapping', () => {
   it('getDifficultyMapping switches label set', () => {
     expect(getDifficultyMapping('v-grade')[22]).toBe('V6');
     expect(getDifficultyMapping('font')[22]).toBe('7A');
+    expect(getDifficultyMapping('both')[22]).toBe('V6 / 7A');
   });
 
   it('sortGrades orders by numeric difficulty in both formats', () => {
     expect(sortGrades(['V6', 'V3', 'V11'], 'v-grade')).toEqual(['V3', 'V6', 'V11']);
     expect(sortGrades(['7A', '6A', '6A+'], 'font')).toEqual(['6A', '6A+', '7A']);
+    expect(sortGrades(['V6 / 7A', 'V3 / 6A', 'V3+ / 6A+'], 'both')).toEqual(['V3 / 6A', 'V3+ / 6A+', 'V6 / 7A']);
   });
 });
 
@@ -72,6 +74,11 @@ describe('builders honor font format', () => {
       'font',
     );
     expect(layoutPercentages[0].grades).toEqual({ '6A': 3, '6A+': 2, '7A': 5 });
+  });
+
+  it('buildAggregatedStackedBars uses combined labels when requested', () => {
+    const result = buildAggregatedStackedBars(ticks, 'all', 'both')!;
+    expect(result.bars.map((b) => b.label)).toEqual(['V3 / 6A', 'V3+ / 6A+', 'V6 / 7A']);
   });
 
   it('v-grade format still produces V labels', () => {

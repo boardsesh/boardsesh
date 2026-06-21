@@ -18,10 +18,26 @@ enum SharedConstants {
     /// taps here. Distinct from `serverUrlKey` because the backend lives on a
     /// different host than the web app.
     static let widgetNavigateUrlKey = "bs_widget_navigate_url"
+    /// Fully-qualified backend `/api/widget/take-control` URL. The widget
+    /// POSTs non-driver lightbulb taps here before enabling local navigation.
+    static let widgetTakeControlUrlKey = "bs_widget_take_control_url"
     static let boardNameKey = "bs_board_name"
     static let layoutIdKey = "bs_layout_id"
     static let sizeIdKey = "bs_size_id"
     static let setIdsKey = "bs_set_ids"
+    /// File paths to the bundled board-background webp layer(s) for the active
+    /// board, resolved on the JS side (expo-asset) and staged here by
+    /// `startSession`. ThumbnailFetcher composites these behind the server's
+    /// holds-only overlay so the widget shows the board photo without fetching
+    /// board art over the network (the no-network-board-art rule). Empty when no
+    /// bundled background resolved — the overlay is then written as-is.
+    static let boardBackgroundPathsKey = "bs_board_background_paths"
+    /// Version of the cached Live Activity thumbnail's content contract. When it
+    /// differs from `ThumbnailFetcher.cacheVersion`, the (update-surviving) App
+    /// Group thumbnail cache is purged so an upgraded build doesn't serve the
+    /// previous build's images (e.g. overlay-only thumbnails from before board
+    /// compositing).
+    static let thumbnailCacheVersionKey = "bs_thumbnail_cache_version"
     static let pendingActionKey = "bs_pending_action"
     /// Action ("next" | "previous") associated with the most recent Darwin
     /// notification. Always written by the intent; the Darwin handler reads
@@ -38,6 +54,13 @@ enum SharedConstants {
     /// server echo is treated as own-echo.
     static let widgetNavigateCorrelationIdKey = "bs_widget_navigate_correlation_id"
     static let bleBoardConfigKey = "bs_ble_board_config"
+    /// CBPeripheral.identifier (a per-install, per-device stable UUID — not the
+    /// hardware address) of the last successfully connected board. Persisted by
+    /// BoardBleManager on connect and cleared on a deliberate disconnect, so the
+    /// Live Activity lightbulb's ReconnectBoardIntent can retrieve + reconnect to
+    /// the same board without a fresh device pick. Left intact on an unexpected
+    /// drop precisely so that reconnect path stays available.
+    static let bleLastPeripheralUuidKey = "bs_ble_last_peripheral_uuid"
     /// Legacy key — auth token now lives in `SharedKeychain` under
     /// `SharedKeychain.authTokenKey`. Kept here only so upgrade paths can
     /// `removeObject` any leftover plaintext value from earlier installs.
@@ -46,6 +69,22 @@ enum SharedConstants {
     /// `SharedKeychain` under `SharedKeychain.livePushTokenKey`. Kept here
     /// only for the same migration cleanup as `authTokenKey`.
     static let livePushTokenKey = "bs_live_push_token"
+    /// Whether the current app-side session state allows widget Previous/Next
+    /// to control the wall. For party sessions JS keeps this true only for the
+    /// current driver; for local sessions it stays true.
+    static let widgetNavigationAllowedKey = "bs_widget_navigation_allowed"
+    /// Distinguishes real party sessions from local-only Live Activities whose
+    /// generated sessionId is only an ActivityKit identifier.
+    static let partySessionKey = "bs_party_session"
+    /// Last-known board-connection state from THIS device's POV
+    /// ("connectedByMe" | "heldByPeer" | "disconnected"). Mirrors the pushed
+    /// `ClimbSessionAttributes.ContentState.boardConnection` into the App Group
+    /// so widget intents (which run without the pushed state) and the native
+    /// WebSocket content-state builder have a fallback source of truth.
+    static let boardConnectionKey = "bs_board_connection"
+    /// Display name of the peer holding the board when `boardConnectionKey` is
+    /// "heldByPeer" (absent otherwise). Companion to `boardConnectionKey`.
+    static let holderDisplayNameKey = "bs_holder_display_name"
 
     // MARK: Darwin Notification
 
@@ -55,6 +94,11 @@ enum SharedConstants {
     /// Gone, signaling that the cached APNs push token is bound to a different
     /// session and the main app should re-register.
     static let pushRegistrationStaleNotification = "com.boardsesh.app.pushRegistrationStale"
+
+    /// Fallback for the Live Activity lightbulb's ReconnectBoardIntent: if iOS
+    /// runs that intent in the widget extension (which can't link BoardBleManager),
+    /// it posts this so the live main app reconnects BLE to the last known board.
+    static let bleReconnectNotification = "com.boardsesh.app.bleReconnect"
 
     // MARK: Live Activity
 
@@ -183,10 +227,99 @@ enum SharedQueueState {
             URLQueryItem(name: "set_ids", value: setIds),
             URLQueryItem(name: "frames", value: item.frames),
             URLQueryItem(name: "thumbnail", value: "1"),
+            // 2.0: let the server composite the board photo behind the holds
+            // overlay (matches the legacy Capacitor app, which renders correctly).
+            // On-device bundled-board-art compositing is deferred — see the
+            // "offline board art" revisit issue. The widget then just displays the
+            // finished image; no local webp decode/composite needed.
             URLQueryItem(name: "include_background", value: "1"),
+            // Darken the board photo behind the holds so the lit climb reads
+            // clearly at thumbnail size — mirrors the mobile climb list's
+            // LayeredClimbImage `dim` (rgba(0,0,0,0.18)). Bump
+            // ThumbnailFetcher.cacheVersion whenever this value changes.
+            URLQueryItem(name: "dim_background", value: "0.18"),
         ]
 
         return components?.url
+    }
+}
+
+// MARK: - Shared Widget Wall Control
+
+struct SharedWidgetWallControl {
+    let navigationAllowed: Bool
+    let requiresServerAuthorization: Bool
+}
+
+enum SharedWidgetTakeControlAction: Equatable {
+    case enableLocalNavigation
+    case alreadyAllowed
+    case requestServerAuthorization
+}
+
+enum SharedWidgetWallControlState {
+    static func save(navigationAllowed: Bool, isPartySession: Bool, to defaults: UserDefaults) {
+        defaults.set(navigationAllowed, forKey: SharedConstants.widgetNavigationAllowedKey)
+        defaults.set(isPartySession, forKey: SharedConstants.partySessionKey)
+    }
+
+    /// Mirror of the pushed `ContentState.boardConnection` / `.holderDisplayName`
+    /// into the App Group, so widget intents (which run without the pushed
+    /// state) and the native WebSocket content-state builder have a fallback
+    /// source of truth. Pass nil to clear (e.g. a heldByPeer state with an
+    /// anonymous holder leaves the display name absent).
+    static func saveBoardConnection(_ boardConnection: String?, holderDisplayName: String?, to defaults: UserDefaults) {
+        if let boardConnection {
+            defaults.set(boardConnection, forKey: SharedConstants.boardConnectionKey)
+        } else {
+            defaults.removeObject(forKey: SharedConstants.boardConnectionKey)
+        }
+        if let holderDisplayName {
+            defaults.set(holderDisplayName, forKey: SharedConstants.holderDisplayNameKey)
+        } else {
+            defaults.removeObject(forKey: SharedConstants.holderDisplayNameKey)
+        }
+    }
+
+    static func loadBoardConnection(from defaults: UserDefaults) -> (boardConnection: String?, holderDisplayName: String?) {
+        (
+            defaults.string(forKey: SharedConstants.boardConnectionKey),
+            defaults.string(forKey: SharedConstants.holderDisplayNameKey)
+        )
+    }
+
+    static func load(from defaults: UserDefaults) -> SharedWidgetWallControl {
+        let storedPartySession = defaults.object(forKey: SharedConstants.partySessionKey) as? Bool
+        let storedSessionId = defaults.string(forKey: SharedConstants.sessionIdKey)
+        let inferredPartySession = storedSessionId.map { !$0.hasPrefix("local-") } ?? false
+        let isPartySession = storedPartySession ?? inferredPartySession
+        if !isPartySession {
+            return SharedWidgetWallControl(navigationAllowed: true, requiresServerAuthorization: false)
+        }
+        return SharedWidgetWallControl(
+            navigationAllowed: defaults.bool(forKey: SharedConstants.widgetNavigationAllowedKey),
+            requiresServerAuthorization: true
+        )
+    }
+}
+
+enum SharedWidgetTakeControlRuntime {
+    static func action(for wallControl: SharedWidgetWallControl) -> SharedWidgetTakeControlAction {
+        if !wallControl.requiresServerAuthorization {
+            return .enableLocalNavigation
+        }
+        if wallControl.navigationAllowed {
+            return .alreadyAllowed
+        }
+        return .requestServerAuthorization
+    }
+
+    static func markControlClaimed(isPartySession: Bool, to defaults: UserDefaults) {
+        SharedWidgetWallControlState.save(
+            navigationAllowed: true,
+            isPartySession: isPartySession,
+            to: defaults
+        )
     }
 }
 

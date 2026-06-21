@@ -177,9 +177,15 @@ export type ClimbSearchResult = {
 export type ClimbRow = {
   uuid: string;
   setter_username: string;
+  /** Owner (creator) user id; null for Aurora-imported climbs. Used for edit-ownership gating. */
+  userId: string | null;
   name: string;
   description: string;
   frames: string;
+  /** Board the climb belongs to (the searched board). Carried so the queue's BLE
+   *  spill guard can skip a climb set for a different board/layout. */
+  boardType: string;
+  layoutId: number;
   angle: number;
   ascensionist_count: number;
   difficulty: string;
@@ -190,4 +196,8 @@ export type ClimbRow = {
   is_draft: boolean;
   created_at: string | null;
   published_at: string | null;
+  /** Animation frame count (1 for static climbs, >1 for variable-speed routes/circuits). */
+  framesCount: number | null;
+  /** Per-frame playback pace in Aurora's native unit (treated as ms). 0/null when unset. */
+  framesPace: number | null;
 };

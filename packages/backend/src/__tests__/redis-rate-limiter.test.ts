@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
+import { RateLimitError } from '../utils/rate-limiter';
 
 // Use vi.hoisted() so mock variables are available when vi.mock factories run
 const { mockEval, mockIsRedisConnected, mockCheckRateLimit } = vi.hoisted(() => ({
@@ -19,9 +20,16 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
-vi.mock('../utils/rate-limiter', () => ({
-  checkRateLimit: mockCheckRateLimit,
-}));
+// Spread the real module so the genuine RateLimitError class survives — both
+// checkRateLimitRedis (which throws it) and its catch (`instanceof RateLimitError`)
+// depend on the real class, not the mocked checkRateLimit.
+vi.mock('../utils/rate-limiter', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/rate-limiter')>();
+  return {
+    ...actual,
+    checkRateLimit: mockCheckRateLimit,
+  };
+});
 
 describe('checkRateLimitRedis', () => {
   beforeEach(() => {
@@ -150,7 +158,9 @@ describe('checkRateLimitRedis', () => {
     });
 
     it('re-throws rate limit errors even when Redis has issues', async () => {
-      mockEval.mockRejectedValue(new Error('Rate limit exceeded. Try again in 30 seconds.'));
+      // A RateLimitError surfacing from the eval path must never be swallowed as
+      // a Redis failure — it's the throttle signal, detected by instanceof.
+      mockEval.mockRejectedValue(new RateLimitError(30));
 
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).rejects.toThrow('Rate limit exceeded');
     });

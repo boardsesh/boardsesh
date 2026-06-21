@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { PlaylistsAdapterProvider, type ExecutePlaylistsGraphQL, type PlaylistsAdapter } from '../adapter';
 import { noopRecentsAdapter } from '../recents-adapter';
 import { useDiscoverPlaylists } from '../use-discover-playlists';
 import { usePinnedPlaylists } from '../use-pinned-playlists';
-import type { DiscoverablePlaylist, Playlist } from '@boardsesh/graphql/operations/playlists';
+import type {
+  DiscoverablePlaylist,
+  DiscoverPlaylistsInput,
+  DiscoverPlaylistsQueryResponse,
+  Playlist,
+} from '@boardsesh/graphql/operations/playlists';
 
 function makeDiscoverable(uuid: string): DiscoverablePlaylist {
   return {
@@ -19,8 +24,20 @@ function makeDiscoverable(uuid: string): DiscoverablePlaylist {
     climbCount: 3,
     creatorId: 'creator-1',
     creatorName: 'Creator One',
+    isGeneratedRecommendation: false,
   };
 }
+
+function makeDiscoverResponse(uuid: string): DiscoverPlaylistsQueryResponse {
+  return {
+    discoverPlaylists: { playlists: [makeDiscoverable(uuid)], totalCount: 1, hasMore: false },
+  };
+}
+
+type PendingDiscoverRequest = {
+  input: DiscoverPlaylistsInput;
+  resolve: (response: DiscoverPlaylistsQueryResponse) => void;
+};
 
 function buildWrapper(adapter: Partial<PlaylistsAdapter>) {
   const fullAdapter: PlaylistsAdapter = {
@@ -54,6 +71,148 @@ describe('useDiscoverPlaylists (shared)', () => {
     expect(result.current.recent).toHaveLength(1);
     expect(result.current.hasMore).toBe(false);
     expect(result.current.hasError).toBe(false);
+  });
+
+  it('forwards the generated recommendation filter to both streams', async () => {
+    const executeGraphQL = vi.fn(async () => ({
+      discoverPlaylists: { playlists: [makeDiscoverable('generated')], totalCount: 1, hasMore: false },
+    })) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+
+    const { result } = renderHook(
+      () =>
+        useDiscoverPlaylists({
+          boardType: 'kilter',
+          layoutId: 8,
+          sizeId: 25,
+          angle: 40,
+          generatedRecommendation: true,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(executeGraphQL).toHaveBeenCalledTimes(2);
+    expect(executeGraphQL).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      expect.objectContaining({
+        input: expect.objectContaining({
+          boardType: 'kilter',
+          layoutId: 8,
+          sizeId: 25,
+          angle: 40,
+          generatedRecommendation: true,
+          sortBy: 'popular',
+        }),
+      }),
+    );
+    expect(executeGraphQL).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({
+        input: expect.objectContaining({
+          boardType: 'kilter',
+          layoutId: 8,
+          sizeId: 25,
+          angle: 40,
+          generatedRecommendation: true,
+          sortBy: 'recent',
+        }),
+      }),
+    );
+  });
+
+  it('forwards the community playlist filter to both streams', async () => {
+    const executeGraphQL = vi.fn(async () => ({
+      discoverPlaylists: { playlists: [makeDiscoverable('community')], totalCount: 1, hasMore: false },
+    })) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+
+    const { result } = renderHook(() => useDiscoverPlaylists({ generatedRecommendation: false }), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(executeGraphQL).toHaveBeenCalledTimes(2);
+    expect(executeGraphQL).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      expect.objectContaining({
+        input: expect.objectContaining({ generatedRecommendation: false, sortBy: 'popular' }),
+      }),
+    );
+    expect(executeGraphQL).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({
+        input: expect.objectContaining({ generatedRecommendation: false, sortBy: 'recent' }),
+      }),
+    );
+  });
+
+  it('waits to fetch until enabled becomes true', async () => {
+    const executeGraphQL = vi.fn(async () => makeDiscoverResponse('enabled')) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+    const initialHookProps = { enabled: false };
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useDiscoverPlaylists({ enabled, generatedRecommendation: true }),
+      { initialProps: initialHookProps, wrapper },
+    );
+
+    expect(result.current.isLoading).toBe(false);
+    expect(executeGraphQL).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(executeGraphQL).toHaveBeenCalledTimes(2);
+    expect(result.current.popular.map((playlist) => playlist.uuid)).toEqual(['enabled']);
+    expect(result.current.recent.map((playlist) => playlist.uuid)).toEqual(['enabled']);
+  });
+
+  it('lets a filter reset supersede an in-flight initial fetch', async () => {
+    const pendingRequests: PendingDiscoverRequest[] = [];
+    const executeGraphQL = vi.fn(
+      (_query: string, variables: { input: DiscoverPlaylistsInput }) =>
+        new Promise<DiscoverPlaylistsQueryResponse>((resolve) => {
+          pendingRequests.push({ input: variables.input, resolve });
+        }),
+    ) as unknown as ExecutePlaylistsGraphQL;
+    const { wrapper } = buildWrapper({ executeGraphQL });
+    const initialHookProps: { boardType?: string } = { boardType: undefined };
+
+    const { result, rerender } = renderHook(
+      ({ boardType }: { boardType?: string }) =>
+        useDiscoverPlaylists({ boardType, layoutId: 8, sizeId: 25, angle: 40, generatedRecommendation: true }),
+      { initialProps: initialHookProps, wrapper },
+    );
+
+    await waitFor(() => expect(pendingRequests).toHaveLength(2));
+    rerender({ boardType: 'kilter' });
+
+    await waitFor(() => expect(pendingRequests).toHaveLength(4));
+    expect(pendingRequests[0].input.boardType).toBeUndefined();
+    expect(pendingRequests[2].input.boardType).toBe('kilter');
+
+    await act(async () => {
+      pendingRequests[0].resolve(makeDiscoverResponse('stale-popular'));
+      pendingRequests[1].resolve(makeDiscoverResponse('stale-recent'));
+      await Promise.resolve();
+    });
+
+    expect(result.current.popular).toEqual([]);
+    expect(result.current.recent).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+
+    await act(async () => {
+      pendingRequests[2].resolve(makeDiscoverResponse('scoped-popular'));
+      pendingRequests[3].resolve(makeDiscoverResponse('scoped-recent'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.popular.map((playlist) => playlist.uuid)).toEqual(['scoped-popular']);
+    expect(result.current.recent.map((playlist) => playlist.uuid)).toEqual(['scoped-recent']);
   });
 
   it('sets hasError when the initial fetch rejects', async () => {

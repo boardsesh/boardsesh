@@ -15,6 +15,9 @@ RUN apk add --no-cache bash curl unzip && \
 # workspace manifests for the Bun install layer and only backend source after it.
 COPY manifests/package.json manifests/bun.lock ./
 COPY manifests/packages ./packages
+# Patch files referenced by package.json's patchedDependencies must be present
+# before install, or `bun install --frozen-lockfile` can't find them.
+COPY manifests/patches ./patches
 
 # Install dependencies (--production is incompatible with --frozen-lockfile in Bun)
 RUN bun install --frozen-lockfile

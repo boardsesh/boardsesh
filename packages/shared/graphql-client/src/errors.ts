@@ -13,6 +13,8 @@ export type GraphQLErrorExtensions = {
   code?: string;
   existingClimbUuid?: string | null;
   existingClimbName?: string | null;
+  // Seconds until the rate-limit window resets (carried by RATE_LIMITED).
+  retryAfterSeconds?: number;
   [key: string]: unknown;
 };
 
@@ -27,6 +29,18 @@ export function isClimbDuplicateExtension(
   existingClimbName?: string | null;
 } {
   return extensions?.code === 'CLIMB_IS_DUPLICATE';
+}
+
+/**
+ * Type guard for the RATE_LIMITED extension shape. The backend throttles
+ * per-user, per-operation; when a burst trips a bucket the resolver rejects
+ * with this code so callers can show a specific "slow down" message and read
+ * `retryAfterSeconds` instead of swallowing it into a generic failure toast.
+ */
+export function isRateLimitedExtension(
+  extensions: GraphQLErrorExtensions | null | undefined,
+): extensions is GraphQLErrorExtensions & { code: 'RATE_LIMITED'; retryAfterSeconds?: number } {
+  return extensions?.code === 'RATE_LIMITED';
 }
 
 /**

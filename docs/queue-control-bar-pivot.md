@@ -1,5 +1,7 @@
 # Queue Control Bar Pivot — Bar Mirrors the Wall, Lightbulb Controls the Driver
 
+> **Superseded (2026-06): the driver / preview-only model described below has been retired.** Group sessions are now always-live — any participant's climb change broadcasts to everyone and is relayed to the board by whoever holds a BLE connection. The lightbulb is now a send/re-assert affordance, not a driver claim; when the relaying connection drops, a `WallDisconnected` session event turns the lightbulb off for everyone while preserving the current climb. See docs/websocket-implementation.md for the current model.
+
 **Status:** Phases 1–3 + simplified Phase 4 shipped in #2198 on 2026-05-18. A follow-up PR (2026-05-23) closes the remaining gaps: Phase 3 queue-list 5-item history + center-on-open, Phase 5 `Wall Advance` + `Session Board Serial Set` events, bar prev/next "on the wall" aria-label polish, hand-off toast (Open Q2), stale board-serial defensive clear (Open Q5), `isLeader` audit. See the "What shipped vs spec" appendix at the bottom for the full divergence list. Earlier stack (#2188, #2195, #2197) collapsed into #2198 after the design simplification on 2026-05-17.
 **Decision date:** 2026-05-16 (original); simplified 2026-05-17
 **Driven by:** Observed user-testing pain in large-group party sessions, supported by 3 months of Vercel Analytics + 1 week of PostHog
@@ -195,6 +197,12 @@ _Goal:_ make BLE delivery observable as a backend-visible event, and use that ev
   - _Web, or no stored serial:_ open `DevicePickerDialog`. User picks a board, BLE establishes, `BluetoothAutoSender` ships automatically.
 - _Bar prev/next is not gated by this state._ Bar prev/next still fires the advance broadcast unconditionally. If nobody has BLE, the wall doesn't physically change — but the next time anyone presses the drawer lightbulb, that drawer's 2-second timer expires and they fall through to the picker / auto-connect flow, which fixes the situation. We accept that bar prev/next can be a no-op on the wall in the no-BLE case; the drawer lightbulb is where the system recovers.
 - _Why this replaces the old Phase 4._ The earlier design tracked BLE-holder presence in the room manager, fired `WallOffline` / `WallOnline` events, ran a 5-second grace period on disconnect, and routed advance mutations to specific holders. That mechanism is gone. The relay is implicit: any phone with BLE that receives the broadcast can deliver, and the `WallConfirmedClimb` event tells everyone whether delivery happened. The driver concept stays (it gates the drawer lightbulb's take-control semantics), but it is not coupled to whether the wall is online.
+
+#### Trust model for `setSessionBoardSerial`
+
+`setSessionBoardSerial` is gated only by `requireSessionMember`, which accepts anonymous participants (the same trust level we grant for `addToQueue` and other browse mutations). That means any anonymous joiner with a valid share link can redirect the party's stored auto-connect target to an arbitrary board serial. Unlike `takeControl` / `releaseControl` — which are transient (driver state flips back the next time someone takes control) — this is a persistent side-effect: the next lightbulb-fallback auto-connect across the whole session will dial that serial.
+
+We accept this for now because party sessions are share-link gated and the failure mode is recoverable (the next legit BLE-connector overwrites the stored serial). If we see griefing in production, tighten the guard to authenticated-only or "current driver only" before the write.
 
 Files: `packages/shared-schema/src/schema/session.ts`, `packages/shared-schema/src/types/events.ts`, `packages/backend/src/services/room-manager/room-manager.ts`, `packages/backend/src/graphql/resolvers/sessions/mutations.ts` (new `confirmClimbOnWall` and `setSessionBoardSerial` mutations), `packages/web/app/components/play-view/play-view-drawer.tsx` (the timer + fallback logic), `packages/web/app/components/board-bluetooth-control/bluetooth-context.tsx` (call `setSessionBoardSerial` after a successful connect; call `confirmClimbOnWall` after a successful frame send).
 

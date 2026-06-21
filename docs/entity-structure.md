@@ -239,19 +239,19 @@ A session represents a climbing session on one or more boards — the real-time 
 
 **Current properties:**
 
-| Property             | Type               | Notes                                           |
-| -------------------- | ------------------ | ----------------------------------------------- |
-| `id`                 | `text`             | PK                                              |
-| `board_path`         | `text`             | `/{board_type}/{layout_id}/{size_id}/{set_ids}` |
-| `created_at`         | `timestamp`        | DEFAULT now()                                   |
-| `last_activity`      | `timestamp`        | DEFAULT now(), updated on interaction           |
-| `status`             | `text`             | 'active', 'inactive', 'ended'                   |
-| `latitude`           | `double precision` | Nullable, for discovery                         |
-| `longitude`          | `double precision` | Nullable, for discovery                         |
-| `discoverable`       | `boolean`          | DEFAULT false                                   |
-| `created_by_user_id` | `text`             | FK → users.id, SET NULL                         |
-| `name`               | `text`             | Nullable, display name                          |
-| `board_id`           | `bigint`           | FK → user_boards.id, SET NULL                   |
+| Property             | Type               | Notes                                                                   |
+| -------------------- | ------------------ | ----------------------------------------------------------------------- |
+| `id`                 | `text`             | PK                                                                      |
+| `board_path`         | `text`             | `/{board_type}/{layout_id}/{size_id}/{set_ids}`                         |
+| `created_at`         | `timestamp`        | DEFAULT now()                                                           |
+| `last_activity`      | `timestamp`        | DEFAULT now(), updated on interaction                                   |
+| `status`             | `text`             | 'active', 'ended' (legacy CHECK also permits 'inactive', never written) |
+| `latitude`           | `double precision` | Nullable, for discovery                                                 |
+| `longitude`          | `double precision` | Nullable, for discovery                                                 |
+| `discoverable`       | `boolean`          | DEFAULT false                                                           |
+| `created_by_user_id` | `text`             | FK → users.id, SET NULL                                                 |
+| `name`               | `text`             | Nullable, display name                                                  |
+| `board_id`           | `bigint`           | FK → user_boards.id, SET NULL                                           |
 
 **Planned additions:**
 
@@ -430,7 +430,7 @@ The activity feed shows social activity from followed users and boards.
 | Enhancement                      | Description                                                               |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | SSR with URL filtering           | Move filtering to URL search params for server-rendering and deep linking |
-| Session summaries                | Group ascents by session or timestamp proximity (2hr window)              |
+| Session summaries                | Group ascents by explicit `session_id`; solo ticks are not grouped        |
 | Multi-user session summaries     | "Bob, Marco, Anton sent 32 problems"                                      |
 | Grade bar chart in summaries     | Reuse `profile-stats-charts.tsx` pattern                                  |
 | Hardest climbs slideshow         | Image slideshow of 5 hardest climbs per session                           |

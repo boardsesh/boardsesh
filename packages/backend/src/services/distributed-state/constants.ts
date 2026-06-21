@@ -41,19 +41,13 @@ export const KEYS = {
     `boardsesh:participant:${sessionId}:${participantId}:connections`,
   // String: sessionId -> connectionId of leader
   sessionLeader: (sessionId: string) => `boardsesh:session:${sessionId}:leader`,
-  // String: sessionId -> participantId of the wall driver. Distinct from
-  // sessionLeader: driver is stable across reconnects (keyed by participantId)
-  // and is the wall-control authority introduced by the queue-control-bar
-  // pivot's lightbulb gesture. Empty / missing key means "no driver" — the
-  // wall is unclaimed.
-  sessionDriver: (sessionId: string) => `boardsesh:session:${sessionId}:driver`,
   // String: sessionId -> last-connected BLE board serial. Set by
   // `setSessionBoardSerial`; consumed by mobile clients on join so a second
   // phone can auto-pair with the same physical board as the first.
   sessionBoardSerial: (sessionId: string) => `boardsesh:session:${sessionId}:boardSerial`,
   // LIST: sessionId -> recent climbUuids that have been broadcast as the
   // session's current climb. Used by `confirmClimbOnWall` to accept confirms
-  // that arrive after a quick navigate (BLE write completes, then the driver
+  // that arrive after a quick navigate (BLE write completes, then a member
   // moves on before the mutation reaches the server). LPUSH-ed on every
   // current-climb write and trimmed to RECENT_CLIMBS_BUFFER_SIZE.
   sessionRecentClimbs: (sessionId: string) => `boardsesh:session:${sessionId}:recentClimbs`,
@@ -84,7 +78,7 @@ export const TTL = {
 export const UNSET_SENTINEL = '__UNSET__';
 
 // Number of recent climbUuids retained per session for confirmClimbOnWall
-// correlation. Three covers a fast-navigate race (driver moves on while a BLE
+// correlation. Three covers a fast-navigate race (a member moves on while a BLE
 // confirm is in flight) without making it cheap for a malicious peer to spam
 // fake confirms against a rolling window — the buffer turns over every time
 // the wall actually changes.

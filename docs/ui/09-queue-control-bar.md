@@ -110,17 +110,13 @@ Appears below the session header when `participantsExpanded` is true. Uses CSS g
 
 #### E.2.5 TickBadgeAvatar component
 
-Each avatar can show up to two badge overlays composited together:
+Each avatar can show a tick badge overlay:
 
 1. **Tick badge (bottom-right):** Green circle (16x16, `themeTokens.colors.success`) with white `CheckOutlined` icon (10px). Visible when the participant has ticked the current climb. Determined by merging backend `tickedBy` array on the queue item with locally tracked `localTickedClimbs` set.
 
-2. **Driver badge (top-right):** Primary-colored circle with white `Lightbulb` icon (10px). Visible when the participant's `id` matches `driverParticipantId`. Uses `themeTokens.badge.small` sizing.
+#### E.2.6 Participant deduplication
 
-Both badges can appear simultaneously on the same avatar.
-
-#### E.2.6 Participant deduplication and driver sorting
-
-Session users are deduplicated by `userId` (stable DB UUID), falling back to connection `id` for unauthenticated users. After dedup, the driver is floated to position 0 in the array so the driver's avatar (with its lightbulb badge) always appears first in the AvatarGroup. Non-drivers keep their existing order (stable sort).
+Session users are deduplicated by `userId` (stable DB UUID), falling back to connection `id` for unauthenticated users. After dedup, participants keep their existing order (stable sort). (In the always-live model there is no driver to float to position 0.)
 
 ---
 
@@ -642,27 +638,24 @@ type QueueState = {
   hasDoneFirstFetch: boolean
   needsResync: boolean
   pendingCurrentClimbUpdates: Map<string, ...>
-  optimisticDriverParticipantId: string | null
 }
 ```
 
 #### E.8.3 Key actions
 
-| Action                                | Behavior                                                                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addToQueue(climb, source)`           | Creates `ClimbQueueItem` with UUID, dispatches `DELTA_ADD_QUEUE_ITEM`, broadcasts via persistent session if connected, buffers if offline               |
-| `removeFromQueue(item)`               | Dispatches `DELTA_REMOVE_QUEUE_ITEM`, broadcasts removal                                                                                                |
-| `setCurrentClimb(climb, options)`     | Creates item, dispatches `DELTA_UPDATE_CURRENT_CLIMB` with `insertAfterCurrent: true`, broadcasts, returns the new item                                 |
-| `setCurrentClimbQueueItem(item)`      | Sets an existing queue item as current (no new item creation)                                                                                           |
-| `previewClimbFromBrowse(climb)`       | Solo/driver: calls `setCurrentClimb` + opens drawer. Party non-driver: opens drawer with preview only (no wall mutation)                                |
-| `mirrorClimb()`                       | Toggles mirrored flag on current climb, dispatches `DELTA_MIRROR_CURRENT_CLIMB`                                                                         |
-| `takeControl(climb?)`                 | Claims driver authority. Solo: degrades to `setCurrentClimb`. Party: calls server `takeControl` mutation, dispatches optimistic `OPTIMISTIC_SET_DRIVER` |
-| `releaseControl()`                    | Releases driver authority (party only, no-op in solo)                                                                                                   |
-| `setQueue(newQueue)`                  | Bulk replace after reorder, broadcasts full queue via `persistentSession.setQueue()`                                                                    |
-| `getNextClimbQueueItem(options?)`     | Walk forward: queue first, then suggestions. With `suggestionsOnly: true`, walks only suggestions (non-driver party path)                               |
-| `getPreviousClimbQueueItem(options?)` | Walk backward: queue only by default. With `suggestionsOnly: true`, walks suggestions backward                                                          |
-| `replaceQueueItem(uuid, climb)`       | Replace an existing item's climb (used by create form during edit)                                                                                      |
-| `fetchMoreClimbs()`                   | Trigger next page of search results for suggestions                                                                                                     |
+| Action                                | Behavior                                                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `addToQueue(climb, source)`           | Creates `ClimbQueueItem` with UUID, dispatches `DELTA_ADD_QUEUE_ITEM`, broadcasts via persistent session if connected, buffers if offline |
+| `removeFromQueue(item)`               | Dispatches `DELTA_REMOVE_QUEUE_ITEM`, broadcasts removal                                                                                  |
+| `setCurrentClimb(climb, options)`     | Creates item, dispatches `DELTA_UPDATE_CURRENT_CLIMB` with `insertAfterCurrent: true`, broadcasts, returns the new item                   |
+| `setCurrentClimbQueueItem(item)`      | Sets an existing queue item as current (no new item creation)                                                                             |
+| `previewClimbFromBrowse(climb)`       | Calls `setCurrentClimb` + opens drawer. In a session this broadcasts to everyone (always-live)                                            |
+| `mirrorClimb()`                       | Toggles mirrored flag on current climb, dispatches `DELTA_MIRROR_CURRENT_CLIMB`                                                           |
+| `setQueue(newQueue)`                  | Bulk replace after reorder, broadcasts full queue via `persistentSession.setQueue()`                                                      |
+| `getNextClimbQueueItem(options?)`     | Walk forward: queue first, then suggestions. With `suggestionsOnly: true`, walks only suggestions                                         |
+| `getPreviousClimbQueueItem(options?)` | Walk backward: queue only by default. With `suggestionsOnly: true`, walks suggestions backward                                            |
+| `replaceQueueItem(uuid, climb)`       | Replace an existing item's climb (used by create form during edit)                                                                        |
+| `fetchMoreClimbs()`                   | Trigger next page of search results for suggestions                                                                                       |
 
 #### E.8.4 Queue restoration
 
@@ -708,11 +701,10 @@ The `useQueueEventSubscription` hook subscribes to `persistentSession.subscribeT
 - `viewOnlyMode` is true when connected to a session but can't mutate (e.g., read-only viewer)
 - `guardMutation()` returns true (blocks) when mutation is not allowed; callers check and early-return
 
-#### E.8.7 Driver state
+#### E.8.7 Wall-confirmed state
 
-- `driverParticipantId`: Server-authoritative participant ID of the wall driver. Overlaid with `optimisticDriverParticipantId` during the brief window between `takeControl` call and `DriverChanged` broadcast landing.
-- `isDriver`: Derived via `deriveIsDriver({ isPersistentSessionActive, participantId, driverParticipantId })`. True in solo mode. In party, true only when local participant matches driver.
-- **Driver handoff toasts:** When `DriverChanged` event arrives and the new driver is not the local user, a toast surfaces who took control: "X took control", "X took control from you", or "X is now driving".
+- Sessions are always-live: there is no driver to track. Any participant's climb change broadcasts to everyone and is relayed to the board by whoever holds a BLE connection.
+- Wall-confirmed state comes from session events: `WallConfirmedClimb` lights the lightbulb, `WallDisconnected` turns it off (the current climb is preserved). Pressing the lightbulb re-asserts the current climb to the board.
 
 ---
 
@@ -721,15 +713,13 @@ The `useQueueEventSubscription` hook subscribes to `persistentSession.subscribeT
 The `PlayViewDrawer` is rendered from the queue control bar but documented separately. Key integration points:
 
 - `activeDrawer === 'play'` controls open state
-- `drawerDisplayedItem` state holds a climb when opened via browse (non-driver party preview) or direct `/view/{uuid}` hit
+- `drawerDisplayedItem` state holds a climb when opened via browse or direct `/view/{uuid}` hit
 - Reset to null on drawer close and when `activeDrawer` leaves 'play'
-- `PLAY_DRAWER_EVENT` listener stores climb payloads for preview mode
+- `PLAY_DRAWER_EVENT` listener stores climb payloads
 
 **MiniSessionBar** (inside the play-view drawer):
 
-- Morphs between four states: non-driver on wall, non-driver drifted, driver, solo/no party
-- Non-driver drifted shows back-button to return to wall climb
-- Driver shows lit lightbulb + "DRIVING" text
+- Shows the current climb on the wall; the lightbulb re-asserts the current climb (lit when `WallConfirmedClimb` confirms it, unlit after `WallDisconnected`)
 - Audience AvatarGroup on the right side
 - Warm whisper tint background: `color-mix(in srgb, warning 5%, transparent)`
 

@@ -6,6 +6,7 @@ import {
   getGradeTintColor,
   hexToHSL,
   formatGrade,
+  formatGradeByDifficultyId,
   formatVGrade,
   formatFontGrade,
   softenColor,
@@ -167,6 +168,10 @@ describe('formatVGrade', () => {
     expect(formatVGrade('V10')).toBe('V10');
   });
 
+  it('preserves a plus suffix on a bare V label', () => {
+    expect(formatVGrade('V5+')).toBe('V5+');
+  });
+
   it('returns null for missing / unparseable input', () => {
     expect(formatVGrade(null)).toBeNull();
     expect(formatVGrade(undefined)).toBeNull();
@@ -198,6 +203,7 @@ describe('formatGrade', () => {
   it('routes to V or Font based on format', () => {
     expect(formatGrade('6c+/V5', 'v-grade')).toBe('V5+');
     expect(formatGrade('6c+/V5', 'font')).toBe('6C+');
+    expect(formatGrade('6c+/V5', 'both')).toBe('V5+ / 6C+');
   });
 
   it('defaults to V via DEFAULT_GRADE_DISPLAY_FORMAT export', () => {
@@ -208,6 +214,26 @@ describe('formatGrade', () => {
   it('returns null gracefully', () => {
     expect(formatGrade(null, 'v-grade')).toBeNull();
     expect(formatGrade(undefined, 'font')).toBeNull();
+    expect(formatGrade(null, 'both')).toBeNull();
+  });
+
+  it('falls back to whichever scale can be parsed when formatting both', () => {
+    expect(formatGrade('V10', 'both')).toBe('V10');
+    expect(formatGrade('7b+', 'both')).toBe('7B+');
+  });
+});
+
+describe('formatGradeByDifficultyId', () => {
+  it('formats known difficulty ids in every display format', () => {
+    expect(formatGradeByDifficultyId(21, 'v-grade')).toBe('V5+');
+    expect(formatGradeByDifficultyId(21, 'font')).toBe('6C+');
+    expect(formatGradeByDifficultyId(21, 'both')).toBe('V5+ / 6C+');
+  });
+
+  it('returns null for missing or unknown ids', () => {
+    expect(formatGradeByDifficultyId(null, 'both')).toBeNull();
+    expect(formatGradeByDifficultyId(undefined, 'both')).toBeNull();
+    expect(formatGradeByDifficultyId(999, 'both')).toBeNull();
   });
 });
 

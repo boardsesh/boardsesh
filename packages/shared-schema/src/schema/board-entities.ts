@@ -107,6 +107,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     sizeId: Int!
     "Comma-separated set IDs at last connect"
     setIds: String!
+    "API/protocol level from the BLE device name (the @N suffix); null if never observed"
+    apiLevel: Int
     "When the recording was last updated"
     updatedAt: String!
     "Linked saved board UUID (when the connect happened from a /b/{slug}/... route)"
@@ -285,6 +287,27 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     limit: Int
     "Offset for pagination"
     offset: Int
+  }
+
+  """
+  Input for recording the board configuration seen when connecting to a
+  controller over BLE (serial + config + advertised API level).
+  """
+  input RecordBoardSerialInput {
+    "Controller box serial number"
+    serialNumber: String!
+    "Board type (kilter, tension, ...)"
+    boardName: String!
+    "Layout ID at connect"
+    layoutId: Int!
+    "Size ID at connect"
+    sizeId: Int!
+    "Comma-separated set IDs at connect"
+    setIds: String!
+    "API/protocol level parsed from the BLE device name (the @N suffix)"
+    apiLevel: Int
+    "Optional UUID of a saved board to link (when connecting from a /b/{slug}/... route)"
+    boardUuid: String
   }
 
   # ============================================

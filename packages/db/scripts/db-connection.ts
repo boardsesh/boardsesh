@@ -13,9 +13,9 @@ config({ path: path.resolve(__dirname, '../../web/.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.development.local') });
 
 export function getScriptDatabaseUrl(): string {
-  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  const databaseUrl = process.env.DB_URL || process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!databaseUrl) {
-    console.error('DATABASE_URL or POSTGRES_URL is not set');
+    console.error('DATABASE_URL, POSTGRES_URL, or DB_URL is not set');
     process.exit(1);
   }
 

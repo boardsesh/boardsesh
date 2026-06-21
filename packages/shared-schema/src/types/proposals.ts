@@ -2,7 +2,7 @@
 
 export type ProposalType = 'grade' | 'classic' | 'benchmark';
 export type ProposalStatus = 'open' | 'approved' | 'rejected' | 'superseded';
-export type CommunityRoleType = 'admin' | 'community_leader';
+export type CommunityRoleType = 'admin' | 'community_leader' | 'tester';
 
 export type Proposal = {
   uuid: string;

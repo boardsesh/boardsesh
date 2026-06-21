@@ -4,7 +4,7 @@
 
 **Web component:** `packages/web/app/components/bottom-tab-bar/bottom-tab-bar.tsx`
 
-**Mobile status:** Map to Expo Router tab layout at `packages/mobile/app/(tabs)/`
+**Mobile layout:** `packages/mobile/app/(tabs)/_layout.tsx`
 
 **Layout:**
 The bottom tab bar is fixed at the bottom of the screen. On mobile it spans edge-to-edge with safe area padding at the bottom. On desktop it constrains to `maxWidth: 480px` centered.
@@ -45,13 +45,34 @@ There are **5 tabs** (the web has a 6th "Create" tab but it is between Discover 
 - **Create tab**: Same fallback logic as Climbs tab but navigates to the `/create` variant of the URL. Opens Board Selector Drawer with `isCreateClimbFlow=true` when no board context.
 - **You tab**: If `sessionStatus !== 'loading'` and user is not authenticated, prevents navigation and opens auth modal with title `bottomTabBar.youSignInTitle` and description `bottomTabBar.youSignInDescription`. On auth success, navigates to `/you`.
 
-**Mobile adaptation notes:**
+#### Mobile: dual tab bar variants
 
-- Map to Expo Router `(tabs)` layout with `<Tabs>` component
-- Use `expo-blur` `BlurView` for frosted glass background
-- Safe area handled by `react-native-safe-area-context`
-- Tab icons from `@expo/vector-icons` MaterialIcons set
-- Active session context from shared queue provider
+The mobile tab bar has two distinct implementations chosen by the active UI variant (set in the More tab under "UI Style"):
+
+**Liquid Glass variant** (default on iOS 26+):
+
+- Uses `expo-router/unstable-native-tabs` `NativeTabs` — a native UIKit tab bar.
+- 5 tabs: Boards, Climbs, Record, Discover, Profile.
+- Tab icons: SF Symbols (`sf=`) on iOS, Material Design strings (`md=`) on Android.
+- Record tab shows a `NativeTabs.Trigger.Badge` with `brandColors.success` background when a board is Bluetooth-connected or a session is live.
+- `QueueBottomAccessory` mounts as a `NativeTabs.BottomAccessory` platter (current climb + tick) — this native accessory is Liquid Glass–only.
+- `minimizeBehavior="onScrollDown"` hides the bar while scrolling the climbs list (requires the `react-native-screens` patch at `patches/react-native-screens@4.25.2.patch`).
+
+**Material variant**:
+
+- Uses Expo Router `<Tabs>` with a custom JS tab bar (`MaterialTabBar`, `packages/mobile/src/components/navigation/MaterialTabBar.tsx`).
+- Same 5 tabs as the Liquid Glass variant.
+- Tab icons: `MaterialCommunityIcons` (active/inactive glyph pairs, e.g. `view-dashboard` / `view-dashboard-outline`).
+- Record tab shows a badge dot (`tabBarBadge`) styled with `brandColors.success` when the same conditions apply.
+- The climb/tick chrome uses `PersistentQueueBar` as a docked opaque active-context bar above the tab bar instead of the native `BottomAccessory`.
+- Opaque elevated surface with an M3 tonal active-indicator pill behind the focused icon.
+
+`_layout.tsx` reads `variant` directly from `useTheme()` (the stored UI-variant preference) and renders the appropriate navigator. `useEffectiveSurfaceMode()` is a separate hook used by surface-rendering components such as `GlassSurface` to apply the a11y (`reduceTransparency`) overlay on top of the stored preference.
+
+**Mobile tab set differs from the web table above:** The 5 mobile tabs are Boards, Climbs, Record, Discover, Profile. Climbs is the default route (`unstable_settings.initialRouteName = 'climbs'`); there is no separate "Create" or "Feed" tab.
+
+- **Board selection is a full-screen modal** (`app/boards/`), not the web's `BoardSelectorDrawer`. The board pill in the Climbs / Discover top chrome opens it (`/boards`).
+- **No board context shows a CTA, not a selector.** On a cold start with no active board the Climbs list renders a "select a board" prompt rather than auto-opening a drawer; tapping it routes to the `/boards` modal.
 
 ### Header Patterns
 

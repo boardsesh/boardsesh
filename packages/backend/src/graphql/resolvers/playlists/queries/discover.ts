@@ -1,4 +1,4 @@
-import { eq, and, or, isNull, inArray, desc, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, inArray, desc, sql, isNotNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -21,6 +21,7 @@ const PUBLIC_PLAYLIST_SELECT = {
   creatorId: dbSchema.playlistOwnership.userId,
   creatorName: sql<string>`COALESCE(${dbSchema.users.name}, 'Anonymous')`,
   climbCount: sql<number>`count(DISTINCT ${dbSchema.playlistClimbs.id})::int`,
+  generatedRecommendation: dbSchema.playlists.generatedRecommendation,
 } as const;
 
 /** Shared GROUP BY columns for public playlist queries. */
@@ -37,6 +38,7 @@ const PUBLIC_PLAYLIST_GROUP_BY = [
   dbSchema.playlists.updatedAt,
   dbSchema.playlistOwnership.userId,
   dbSchema.users.name,
+  dbSchema.playlists.generatedRecommendation,
 ] as const;
 
 /** Build the base query for public playlists with owner join + climb join. */
@@ -74,9 +76,12 @@ export const discoverPlaylists = async (
     input: {
       boardType?: string;
       layoutId?: number;
+      sizeId?: number | null;
+      angle?: number | null;
       name?: string;
       creatorIds?: string[];
       sortBy?: 'recent' | 'popular';
+      generatedRecommendation?: boolean | null;
       page?: number;
       pageSize?: number;
     };
@@ -101,6 +106,24 @@ export const discoverPlaylists = async (
   }
   if (input.creatorIds && input.creatorIds.length > 0) {
     conditions.push(inArray(dbSchema.playlistOwnership.userId, input.creatorIds));
+  }
+  if (input.generatedRecommendation != null) {
+    conditions.push(
+      input.generatedRecommendation
+        ? isNotNull(dbSchema.playlists.generatedRecommendation)
+        : isNull(dbSchema.playlists.generatedRecommendation),
+    );
+  }
+  if (
+    input.generatedRecommendation === true &&
+    input.boardType &&
+    input.layoutId != null &&
+    input.sizeId != null &&
+    input.angle != null
+  ) {
+    conditions.push(
+      sql`${dbSchema.playlists.generatedRecommendation} LIKE ${`${input.boardType}:${input.layoutId}:${input.sizeId}:${input.angle}:%`}`,
+    );
   }
 
   const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));

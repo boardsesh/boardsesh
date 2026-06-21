@@ -1,11 +1,54 @@
 import { gql } from 'graphql-request';
-import type { ActivityFeedInput, SessionFeedResult, SessionDetail } from '@boardsesh/shared-schema';
+import type { ActivityFeedInput, ActivityFeedResult, SessionFeedResult, SessionDetail } from '@boardsesh/shared-schema';
+
+// ============================================
+// Activity Feed Queries
+// ============================================
+
+export const GET_ACTIVITY_FEED = gql`
+  query GetActivityFeed($input: ActivityFeedInput) {
+    activityFeed(input: $input) {
+      items {
+        id
+        type
+        entityType
+        entityId
+        boardUuid
+        actorId
+        actorDisplayName
+        actorAvatarUrl
+        climbName
+        climbUuid
+        boardType
+        layoutId
+        gradeName
+        status
+        angle
+        frames
+        setterUsername
+        commentBody
+        isMirror
+        isBenchmark
+        isNoMatch
+        difficulty
+        difficultyName
+        quality
+        attemptCount
+        comment
+        commentCount
+        createdAt
+      }
+      cursor
+      hasMore
+    }
+  }
+`;
 
 // ============================================
 // Session-Grouped Feed Queries
 // ============================================
 
-const SESSION_FEED_ITEM_FIELDS = `
+const SESSION_SUMMARY_FIELDS = `
   sessionId
   sessionType
   sessionName
@@ -40,6 +83,67 @@ const SESSION_FEED_ITEM_FIELDS = `
   commentCount
 `;
 
+const SESSION_FEED_ITEM_FIELDS = `
+  ${SESSION_SUMMARY_FIELDS}
+  hardestSend {
+    uuid
+    userId
+    climbUuid
+    climbName
+    boardType
+    layoutId
+    angle
+    status
+    attemptCount
+    difficulty
+    difficultyName
+    quality
+    isMirror
+    isBenchmark
+    isNoMatch
+    comment
+    frames
+    setterUsername
+    climbedAt
+  }
+  featuredBeta {
+    tick {
+      uuid
+      userId
+      climbUuid
+      climbName
+      boardType
+      layoutId
+      angle
+      status
+      attemptCount
+      difficulty
+      difficultyName
+      quality
+      isMirror
+      isBenchmark
+      isNoMatch
+      comment
+      frames
+      setterUsername
+      climbedAt
+    }
+    betaLink {
+      climbUuid
+      link
+      foreignUsername
+      angle
+      thumbnail
+      isListed
+      createdAt
+      tickUuid
+      boardId
+    }
+  }
+  socialEntityType
+  socialEntityId
+`;
+
 export const GET_SESSION_GROUPED_FEED = gql`
   query GetSessionGroupedFeed($input: ActivityFeedInput) {
     sessionGroupedFeed(input: $input) {
@@ -55,7 +159,7 @@ export const GET_SESSION_GROUPED_FEED = gql`
 export const GET_SESSION_DETAIL = gql`
   query GetSessionDetail($sessionId: ID!) {
     sessionDetail(sessionId: $sessionId) {
-      ${SESSION_FEED_ITEM_FIELDS}
+      ${SESSION_SUMMARY_FIELDS}
       healthKitWorkoutId
       ticks {
         uuid
@@ -79,103 +183,19 @@ export const GET_SESSION_DETAIL = gql`
         climbedAt
         upvotes
         totalAttempts
-      }
-    }
-  }
-`;
-
-// ============================================
-// Session Editing Mutations
-// ============================================
-
-export const UPDATE_INFERRED_SESSION = gql`
-  mutation UpdateInferredSession($input: UpdateInferredSessionInput!) {
-    updateInferredSession(input: $input) {
-      ${SESSION_FEED_ITEM_FIELDS}
-      ticks {
-        uuid
-        userId
-        climbUuid
-        climbName
-        boardType
-        layoutId
-        angle
-        status
-        attemptCount
-        difficulty
-        difficultyName
-        quality
-        isMirror
-        isBenchmark
-        isNoMatch
-        comment
-        frames
-        setterUsername
-        climbedAt
-        upvotes
-        totalAttempts
-      }
-    }
-  }
-`;
-
-export const ADD_USER_TO_SESSION = gql`
-  mutation AddUserToSession($input: AddUserToSessionInput!) {
-    addUserToSession(input: $input) {
-      ${SESSION_FEED_ITEM_FIELDS}
-      ticks {
-        uuid
-        userId
-        climbUuid
-        climbName
-        boardType
-        layoutId
-        angle
-        status
-        attemptCount
-        difficulty
-        difficultyName
-        quality
-        isMirror
-        isBenchmark
-        isNoMatch
-        comment
-        frames
-        setterUsername
-        climbedAt
-        upvotes
-        totalAttempts
-      }
-    }
-  }
-`;
-
-export const REMOVE_USER_FROM_SESSION = gql`
-  mutation RemoveUserFromSession($input: RemoveUserFromSessionInput!) {
-    removeUserFromSession(input: $input) {
-      ${SESSION_FEED_ITEM_FIELDS}
-      ticks {
-        uuid
-        userId
-        climbUuid
-        climbName
-        boardType
-        layoutId
-        angle
-        status
-        attemptCount
-        difficulty
-        difficultyName
-        quality
-        isMirror
-        isBenchmark
-        isNoMatch
-        comment
-        frames
-        setterUsername
-        climbedAt
-        upvotes
-        totalAttempts
+        betaLinks {
+          climbUuid
+          link
+          foreignUsername
+          angle
+          thumbnail
+          isListed
+          createdAt
+          tickUuid
+          # boardId is kept for BetaLinksGqlRow type parity and flows through
+          # dedupeBetaLinks — it is not displayed by the session-detail carousel.
+          boardId
+        }
       }
     }
   }
@@ -183,7 +203,7 @@ export const REMOVE_USER_FROM_SESSION = gql`
 
 export const SET_SESSION_HEALTHKIT_WORKOUT_ID = gql`
   mutation SetSessionHealthKitWorkoutId($sessionId: ID!, $workoutId: String!) {
-    setInferredSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)
+    setSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)
   }
 `;
 
@@ -193,6 +213,14 @@ export const SET_SESSION_HEALTHKIT_WORKOUT_ID = gql`
 
 export type GetSessionGroupedFeedQueryVariables = {
   input?: ActivityFeedInput;
+};
+
+export type GetActivityFeedQueryVariables = {
+  input?: ActivityFeedInput;
+};
+
+export type GetActivityFeedQueryResponse = {
+  activityFeed: ActivityFeedResult;
 };
 
 export type GetSessionGroupedFeedQueryResponse = {

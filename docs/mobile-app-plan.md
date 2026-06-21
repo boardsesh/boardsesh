@@ -198,103 +198,14 @@ The Expo Modules API bridges SwiftUI views into React Native. The same `<BoardRe
 
 This gives iOS users the best possible performance on the most critical views while Android still gets a native equivalent without maintaining a separate app.
 
-## iOS design system
+## Design system
 
-The app does not use a pre-built component library like react-native-paper (Material Design). Instead, it uses a custom iOS-first design system built on React Native primitives and iOS-native libraries. Material Design on iOS creates an uncanny valley — recognizably "not right" to every iPhone user. The goal is the quality bar set by apps like Things 3, Halide, and Bear.
-
-### Design tokens: iOS system alignment
-
-The design system uses iOS semantic colors, not hardcoded values. On iOS, these resolve to Apple's dynamic system colors that automatically adapt to light mode, dark mode, accessibility settings (increased contrast, reduce transparency), and Display Zoom.
-
-| Token                        | iOS mapping                         | Usage                                        |
-| ---------------------------- | ----------------------------------- | -------------------------------------------- |
-| `colors.background`          | `UIColor.systemBackground`          | Primary background                           |
-| `colors.secondaryBackground` | `UIColor.secondarySystemBackground` | Grouped table sections, cards                |
-| `colors.tertiaryBackground`  | `UIColor.tertiarySystemBackground`  | Nested content within cards                  |
-| `colors.groupedBackground`   | `UIColor.systemGroupedBackground`   | Settings-style grouped lists                 |
-| `colors.label`               | `UIColor.label`                     | Primary text                                 |
-| `colors.secondaryLabel`      | `UIColor.secondaryLabel`            | Subtitle text, metadata                      |
-| `colors.tertiaryLabel`       | `UIColor.tertiaryLabel`             | Placeholder text                             |
-| `colors.separator`           | `UIColor.separator`                 | List dividers (with leading inset)           |
-| `colors.tint`                | Brand `#8C4A52`                     | App accent color (passed to iOS tint system) |
-| `colors.fill`                | `UIColor.systemFill`                | Toggle track, slider fill                    |
-| `colors.success`             | Brand `#6B9080`                     | Success states, confirmations                |
-| `colors.warning`             | Brand `#C4943C`                     | Warning states                               |
-| `colors.error`               | Brand `#B8524C`                     | Error states, destructive actions            |
-
-On Android, these map to Material 3 dynamic color equivalents.
-
-### Typography
-
-System font (`San Francisco` on iOS, `Roboto` on Android) via React Native's default font family. No custom fonts.
-
-| Style         | iOS equivalent | Size | Weight   | Use                               |
-| ------------- | -------------- | ---- | -------- | --------------------------------- |
-| `largeTitle`  | `.largeTitle`  | 34pt | Bold     | Screen headers (large title mode) |
-| `title1`      | `.title`       | 28pt | Bold     | Section headers                   |
-| `title2`      | `.title2`      | 22pt | Bold     | Card titles                       |
-| `title3`      | `.title3`      | 20pt | Semibold | Subsection headers                |
-| `headline`    | `.headline`    | 17pt | Semibold | Climb names, labels               |
-| `body`        | `.body`        | 17pt | Regular  | Default text                      |
-| `callout`     | `.callout`     | 16pt | Regular  | Secondary content                 |
-| `subheadline` | `.subheadline` | 15pt | Regular  | Metadata, timestamps              |
-| `footnote`    | `.footnote`    | 13pt | Regular  | Tertiary info, helper text        |
-| `caption1`    | `.caption`     | 12pt | Regular  | Badges, small labels              |
-| `caption2`    | `.caption2`    | 11pt | Regular  | Minimal annotations               |
-
-**Dynamic Type support is required.** All text uses `allowFontScaling` (default true) and must be tested at all seven accessibility sizes.
-
-### Iconography: SF Symbols
-
-All icons use SF Symbols on iOS (via `expo-symbols`), with Material Symbols fallback on Android. SF Symbols match the system font weight, support variable rendering, and animate natively.
-
-| Action     | SF Symbol                           | Notes                                      |
-| ---------- | ----------------------------------- | ------------------------------------------ |
-| Search     | `magnifyingglass`                   |                                            |
-| Bluetooth  | `antenna.radiowaves.left.and.right` |                                            |
-| Queue/list | `list.bullet`                       |                                            |
-| Previous   | `chevron.left`                      |                                            |
-| Next       | `chevron.right`                     |                                            |
-| Favorite   | `heart` / `heart.fill`              | Outlined when inactive, filled when active |
-| Settings   | `gearshape`                         |                                            |
-| Profile    | `person.crop.circle`                |                                            |
-| Tick/Send  | `checkmark.circle.fill`             |                                            |
-| Comment    | `bubble.left`                       |                                            |
-| Share      | `square.and.arrow.up`               |                                            |
-| More       | `ellipsis.circle`                   |                                            |
-| Close      | `xmark`                             |                                            |
-| Add        | `plus.circle`                       |                                            |
-| Playlist   | `folder.badge.plus`                 |                                            |
-
-### Haptic feedback
-
-Every interactive element gets appropriate haptic feedback via `expo-haptics`.
-
-| Interaction                  | Haptic type            | When                                |
-| ---------------------------- | ---------------------- | ----------------------------------- |
-| Tab switch                   | `selection`            | On tab press                        |
-| List item tap                | `light` impact         | On press, before navigation         |
-| Button press                 | `light` impact         | On press down                       |
-| Toggle switch                | `medium` impact        | On state change                     |
-| Swipe action threshold       | `medium` impact        | When swipe crosses action threshold |
-| Pull-to-refresh trigger      | `medium` impact        | When pull passes refresh threshold  |
-| Long press activate          | `heavy` impact         | When context menu appears           |
-| Success (tick saved)         | `success` notification | After tick confirmation             |
-| Error (connection lost)      | `error` notification   | On BLE disconnect                   |
-| Queue item added             | `success` notification | After add to queue                  |
-| Delete confirmation          | `warning` notification | Before destructive action           |
-| Climb navigation (prev/next) | `selection`            | On each climb change                |
-
-### Spring animation presets
-
-All animations use spring physics via `react-native-reanimated`'s `withSpring()`, not CSS-style timing functions.
-
-| Preset        | Damping | Stiffness | Mass | Use                                 |
-| ------------- | ------- | --------- | ---- | ----------------------------------- |
-| `snappy`      | 0.85    | 400       | 0.7  | Button press/release, tab switch    |
-| `interactive` | 0.86    | 300       | 1.0  | Drag release, sheet snap            |
-| `gentle`      | 0.7     | 200       | 1.0  | Screen transitions, expand/collapse |
-| `bouncy`      | 0.6     | 300       | 0.7  | Success celebrations, add-to-queue  |
+> The mobile design system — Velvet Send palette, typography, spacing/radii, motion, haptics,
+> iconography, the Liquid Glass / Material variant model, and the `useTheme()` consumption pattern —
+> is documented in [ai-design-guidelines.md](./ai-design-guidelines.md), grounded in the live code
+> under `packages/mobile/src/theme/`. The principle holds: an iOS-native feel (Apple HIG, SF Symbols,
+> spring physics, system colours) on iOS, Material 3 elsewhere — never Material Design on iOS, which
+> reads as an uncanny valley to iPhone users.
 
 ## iOS interaction patterns
 

@@ -3,7 +3,7 @@
 // per-shape branching.
 
 import type { BoardName, UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { toBoardName } from '@boardsesh/board-config';
+import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 
 export function userBoardToItem(board: UserBoard, activeUuid?: string | null): DiscoveryBoardItem | null {
@@ -52,11 +52,17 @@ export type BoardConfigKey = {
  * guard when a popular/custom config the user already has is selected.
  */
 export function findOwnedBoardForConfig(boards: UserBoard[], config: BoardConfigKey): UserBoard | undefined {
+  // Compare set ids order/format-insensitively: '24,25,26,27' and '25,26,27,24'
+  // are the same physical board. Re-ticking a set in the builder re-appends it
+  // at the end of the array, so the wire order can diverge from the stored
+  // order even for the user's own board. Without normalising, the match misses,
+  // CREATE_BOARD fires, and the server inserts a near-duplicate UserBoard.
+  const configSetIds = normaliseSetIds(config.setIds);
   return boards.find(
     (b) =>
       b.boardType === config.boardType &&
       b.layoutId === config.layoutId &&
       b.sizeId === config.sizeId &&
-      b.setIds === config.setIds,
+      normaliseSetIds(b.setIds) === configSetIds,
   );
 }

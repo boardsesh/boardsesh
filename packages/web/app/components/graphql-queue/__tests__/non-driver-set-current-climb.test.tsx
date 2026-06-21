@@ -5,13 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@/app/lib/types';
 import type { ClimbQueueItem } from '../../queue-control/types';
 
-// Verifies the queue-control-bar pivot spec: the bar's prev/next button is
-// reachable by every session participant, not just the driver. The bar calls
-// `setCurrentClimbQueueItem`, which routes to `persistentSession.setCurrentClimb`.
-// Backend `setCurrentClimb` is unrestricted (no isLeader / isDriver gate —
-// verified against packages/backend/src/graphql/resolvers/queue/mutations.ts).
-// Test guards against future regression where the client path would start
-// gating the mutation on isDriver.
+// Always-live model: the bar's prev/next button is reachable by every session
+// participant. The bar calls `setCurrentClimbQueueItem`, which routes to
+// `persistentSession.setCurrentClimb`. Backend `setCurrentClimb` is unrestricted
+// (no isLeader / driver gate). Test guards against a future regression where the
+// client path would start gating the mutation on a role.
 
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: vi.fn() }),
@@ -38,8 +36,8 @@ vi.mock('../../queue-control/hooks/use-queue-data-fetching', () => ({
 
 const mockPersistentSessionSetCurrentClimb = vi.fn().mockResolvedValue(undefined);
 
-// Party session active. Driver is someone else (`participant-driver`), local
-// user is `participant-1` — so deriveIsDriver returns false.
+// Party session active. Local user is `participant-1`. Always-live: no driver
+// role; any participant can advance the wall climb.
 const mockPersistentSession = {
   activeSession: {
     sessionId: 'session-1',
@@ -65,8 +63,6 @@ const mockPersistentSession = {
   clientId: 'client-1',
   participantId: 'participant-1',
   isLeader: false,
-  // Driver is a peer, not us.
-  driverParticipantId: 'participant-driver',
   users: [],
   currentClimbQueueItem: null,
   queue: [],
@@ -86,9 +82,8 @@ const mockPersistentSession = {
   mirrorCurrentClimb: vi.fn().mockResolvedValue(undefined),
   setQueue: vi.fn().mockResolvedValue(undefined),
   replaceQueueItem: vi.fn().mockResolvedValue(undefined),
-  takeControl: vi.fn().mockResolvedValue(undefined),
-  releaseControl: vi.fn().mockResolvedValue(undefined),
   confirmClimbOnWall: vi.fn().mockResolvedValue(undefined),
+  reportWallDisconnect: vi.fn().mockResolvedValue(undefined),
   setSessionBoardSerial: vi.fn().mockResolvedValue(undefined),
   offlineBufferRef: { current: [] as unknown[] },
   lastReceivedSequenceRef: { current: null as number | null },
@@ -217,19 +212,17 @@ function createWrapper() {
   };
 }
 
-describe('Non-driver setCurrentClimbQueueItem (bar prev/next)', () => {
+describe('Any-participant setCurrentClimbQueueItem (bar prev/next)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('routes through persistentSession.setCurrentClimb for a non-driver participant', () => {
+  it('routes through persistentSession.setCurrentClimb for any session participant', () => {
     const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
 
-    // Sanity: this client is in a party session but isn't the driver.
+    // Sanity: this client is in a party session.
     expect(result.current.isPersistentSessionActive).toBe(true);
-    expect(result.current.driverParticipantId).toBe('participant-driver');
     expect(result.current.participantId).toBe('participant-1');
-    expect(result.current.isDriver).toBe(false);
 
     const targetItem: ClimbQueueItem = {
       uuid: 'queue-item-1',
@@ -241,11 +234,10 @@ describe('Non-driver setCurrentClimbQueueItem (bar prev/next)', () => {
       result.current.setCurrentClimbQueueItem(targetItem);
     });
 
-    // The mutation should still fire — pivot rule 4 (bar prev/next is
-    // available to every participant). If a regression added an `isDriver`
-    // gate to QueueContext.setCurrentClimbQueueItem, this assertion would
-    // fail. Backend `setCurrentClimb` resolver (queue/mutations.ts) doesn't
-    // gate either, so the wire call goes through end-to-end.
+    // The mutation fires for any participant (always-live, no driver gate). If
+    // a regression re-added a role gate to setCurrentClimbQueueItem, this would
+    // fail. Backend `setCurrentClimb` resolver doesn't gate either, so the wire
+    // call goes through end-to-end.
     expect(mockPersistentSessionSetCurrentClimb).toHaveBeenCalledTimes(1);
     const [calledItem, shouldAddToQueue, correlationId] = mockPersistentSessionSetCurrentClimb.mock.calls[0];
     expect(calledItem.uuid).toBe(targetItem.uuid);

@@ -13,6 +13,9 @@ type UseCarouselGestureOptions = {
   boardWidth: number;
   enabled?: boolean;
   isZoomedSV?: SharedValue<boolean>;
+  /** When true (Reduce Motion), commit the swap instantly with no slide-off /
+   *  spring snap-back. The gesture still works; only the animation is dropped. */
+  reduceMotion?: boolean;
 };
 
 type UseCarouselGestureReturn = {
@@ -31,6 +34,7 @@ export function useCarouselGesture({
   boardWidth,
   enabled = true,
   isZoomedSV,
+  reduceMotion = false,
 }: UseCarouselGestureOptions): UseCarouselGestureReturn {
   const translateX = useSharedValue(0);
   const isAnimating = useSharedValue(false);
@@ -44,6 +48,33 @@ export function useCarouselGesture({
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
 
+  // Mirror Reduce Motion into a shared value for the same reason — flipping it
+  // shouldn't rebuild the gesture.
+  const reduceMotionSV = useSharedValue(reduceMotion);
+  useEffect(() => {
+    reduceMotionSV.value = reduceMotion;
+  }, [reduceMotion, reduceMotionSV]);
+
+  // Mirror the slide-off distance (board width) into a shared value so the
+  // post-layout change from screenWidth to the contained board width doesn't
+  // rebuild the gesture mid-session.
+  const boardWidthSV = useSharedValue(boardWidth);
+  useEffect(() => {
+    boardWidthSV.value = boardWidth;
+  }, [boardWidth, boardWidthSV]);
+
+  // Mirror swipe availability into shared values for the same reason — these
+  // flip at queue boundaries (and on queue mutations during the commit window),
+  // and recomposing the gesture then would hit the same iOS RNGH wedge.
+  const canSwipeNextSV = useSharedValue(canSwipeNext);
+  useEffect(() => {
+    canSwipeNextSV.value = canSwipeNext;
+  }, [canSwipeNext, canSwipeNextSV]);
+  const canSwipePreviousSV = useSharedValue(canSwipePrevious);
+  useEffect(() => {
+    canSwipePreviousSV.value = canSwipePrevious;
+  }, [canSwipePrevious, canSwipePreviousSV]);
+
   const callbacksRef = useRef({ onSwipeNext, onSwipePrevious });
   callbacksRef.current = { onSwipeNext, onSwipePrevious };
 
@@ -54,8 +85,25 @@ export function useCarouselGesture({
     [],
   );
 
+  // The three JS callbacks below are captured ONCE by the gesture memo (it
+  // composes a single time per mount) — they must only close over refs and
+  // shared values. Route any new render-scoped value through callbacksRef.
   const triggerHaptic = () => {
     hapticMedium();
+  };
+
+  // Reduce Motion: the worklet already snapped translateX to 0, so just fire the
+  // navigation callback with no slide-off / clip delay.
+  const commitImmediate = (direction: 'next' | 'previous') => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    if (direction === 'next') {
+      callbacksRef.current.onSwipeNext();
+    } else {
+      callbacksRef.current.onSwipePrevious();
+    }
   };
 
   const scheduleCommit = (direction: 'next' | 'previous') => {
@@ -135,8 +183,8 @@ export function useCarouselGesture({
 
           let offset = event.translationX;
 
-          if (offset < 0 && !canSwipeNext) offset = 0;
-          if (offset > 0 && !canSwipePrevious) offset = 0;
+          if (offset < 0 && !canSwipeNextSV.value) offset = 0;
+          if (offset > 0 && !canSwipePreviousSV.value) offset = 0;
 
           translateX.value = offset;
 
@@ -150,28 +198,40 @@ export function useCarouselGesture({
           if (isAnimating.value) return;
 
           const offset = translateX.value;
+          const skipAnimation = reduceMotionSV.value;
 
-          if (offset < -SWIPE_THRESHOLD && canSwipeNext) {
-            isAnimating.value = true;
-            translateX.value = withTiming(-boardWidth, { duration: EXIT_DURATION });
-            runOnJS(scheduleCommit)('next');
-          } else if (offset > SWIPE_THRESHOLD && canSwipePrevious) {
-            isAnimating.value = true;
-            translateX.value = withTiming(boardWidth, { duration: EXIT_DURATION });
-            runOnJS(scheduleCommit)('previous');
+          if (offset < -SWIPE_THRESHOLD && canSwipeNextSV.value) {
+            if (skipAnimation) {
+              translateX.value = 0;
+              runOnJS(commitImmediate)('next');
+            } else {
+              isAnimating.value = true;
+              translateX.value = withTiming(-boardWidthSV.value, { duration: EXIT_DURATION });
+              runOnJS(scheduleCommit)('next');
+            }
+          } else if (offset > SWIPE_THRESHOLD && canSwipePreviousSV.value) {
+            if (skipAnimation) {
+              translateX.value = 0;
+              runOnJS(commitImmediate)('previous');
+            } else {
+              isAnimating.value = true;
+              translateX.value = withTiming(boardWidthSV.value, { duration: EXIT_DURATION });
+              runOnJS(scheduleCommit)('previous');
+            }
           } else {
-            translateX.value = withSpring(0, springs.interactive);
+            translateX.value = skipAnimation ? 0 : withSpring(0, springs.interactive);
           }
         }),
     [
-      canSwipeNext,
-      canSwipePrevious,
-      boardWidth,
+      canSwipeNextSV,
+      canSwipePreviousSV,
+      boardWidthSV,
       translateX,
       isAnimating,
       hasTriggeredHaptic,
       isZoomedSV,
       enabledSV,
+      reduceMotionSV,
       directionLock,
       startTouchX,
       startTouchY,

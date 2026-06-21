@@ -1,8 +1,13 @@
 # Android sideload build (React Native rewrite)
 
-`.github/workflows/android-apk-rn.yml` builds a signed, sideloadable Android APK
-for the Expo React Native app in `packages/mobile/` and attaches it to a GitHub
-Release. This is the Android counterpart to `ios-testflight-rn.yml` (iOS).
+`.github/workflows/android-apk-rn.yml` builds a signed, sideloadable arm64
+Android APK for the Expo React Native app in `packages/mobile/` and attaches it
+to a GitHub Release. This is the Android counterpart to `ios-testflight-rn.yml`
+(iOS).
+
+There's also a separate **dev-client** build for Metro-server testing —
+`android-apk-dev-client.yml`, installs side-by-side as "Boardsesh Dev". See
+[Dev-client APK](#dev-client-apk-boardsesh-dev) below.
 
 ## Why a workflow and not EAS
 
@@ -16,29 +21,37 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 
 - **Trigger:** push to `main` touching `packages/mobile/**` (+ the shared
   packages it imports), and manual `workflow_dispatch`.
-- **Output:** a GitHub Release tagged `rn-android-2.0.<run_number>` with
-  `app-release.apk` attached, plus a 30-day build artifact.
+- **Output:** a GitHub Release tagged `rn-android-<major>.<minor>.<run_number>`
+  with `boardsesh-rn-android-arm64-v8a.apk` attached, plus a 30-day build
+  artifact.
 - The job runs in the `Production` GitHub Environment so it can read the
-  Production-scoped `SENTRY_AUTH_TOKEN`.
+  signing and deployment-notification secrets.
 
-Steps: `bun install` → write `.env` (prod URLs + Sentry DSN) → gate Sentry
-upload on `SENTRY_AUTH_TOKEN` (`SENTRY_DISABLE_AUTO_UPLOAD`) → `expo prebuild`
-→ set `versionCode` → decode keystore → `gradlew assembleRelease` → verify the
-APK signature (`apksigner verify --print-certs`) → publish the Release.
+Steps: `bun install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
+Gradle source-map upload (`SENTRY_DISABLE_AUTO_UPLOAD`) → `expo prebuild` → set
+`versionCode` → derive the app version from `app.config.ts` → decode keystore →
+`gradlew assembleRelease` → verify the APK signature (`apksigner verify
+--print-certs`) → publish the Release → notify the deploy channel → build the
+Play AAB.
+
+The sideload APK is intentionally `arm64-v8a` only. That covers modern physical
+Android devices while keeping the GitHub Release build reliable on
+`ubuntu-latest`. The Play Store path still receives a signed AAB, so Play can
+serve the right APKs for its supported device set.
 
 ## Signing
 
 The release APK is signed with the **same keystore as the Capacitor app**, via
 the existing repo secrets — no new secrets:
 
-| Secret | Used for |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | base64 of the `.keystore`, decoded at build time |
-| `ANDROID_KEYSTORE_PASSWORD` | store password |
-| `ANDROID_KEY_ALIAS` | key alias |
-| `ANDROID_KEY_PASSWORD` | key password |
-| `SENTRY_AUTH_TOKEN` (optional) | source-map upload; build stays green without it |
-| `GOOGLE_MAPS_API_KEY` (optional) | Android map tiles; map is blank without it |
+| Secret                              | Used for                                         |
+| ----------------------------------- | ------------------------------------------------ |
+| `ANDROID_KEYSTORE_BASE64`           | base64 of the `.keystore`, decoded at build time |
+| `ANDROID_KEYSTORE_PASSWORD`         | store password                                   |
+| `ANDROID_KEY_ALIAS`                 | key alias                                        |
+| `ANDROID_KEY_PASSWORD`              | key password                                     |
+| `GOOGLE_MAPS_API_KEY` (optional)    | Android map tiles; map is blank without it       |
+| `DISCORD_DEPLOY_WEBHOOK` (optional) | best-effort release notification                 |
 
 Signing is injected by the `with-android-release-signing` config plugin
 (`packages/mobile/plugins/`), which rewrites the prebuild-generated
@@ -54,23 +67,45 @@ own signing.
 Both the Capacitor app (`mobile/`, `android-release.yml`) and the RN rewrite
 (`packages/mobile/`) ship the **same package `com.boardsesh.app`** signed with
 the **same key**, so an RN APK upgrades a Capacitor install in place. To keep
-that direction valid, the RN build sets:
+that direction valid, the RN build computes the versionCode as:
 
 ```
-versionCode = version_code_offset (default 2000000) + github.run_number
+versionCode = max(
+  version_code_offset (default 2000000) + github.run_number,  # sideload floor
+  max(Play track versionCodes) + 1                            # Play ceiling
+)
 ```
 
-The offset keeps the RN line strictly above the Capacitor line (which uses a raw
-`run_number` in the low thousands), so RN always supersedes. The trade-off is
-deliberate: **the RN rewrite is the successor.** A Capacitor release can no
-longer upgrade a device already on the RN build.
+The `offset + run_number` term is the **sideload floor** — the deterministic
+line that every GitHub Release APK has shipped on, and the channel users
+actually sideload. The offset keeps it strictly above the Capacitor line (which
+uses a raw `run_number` in the low thousands), so RN always supersedes. The
+trade-off is deliberate: **the RN rewrite is the successor.** A Capacitor
+release can no longer upgrade a device already on the RN build.
+
+`fastlane android next_version_code` (see `fastlane/Fastfile`) resolves the
+number. The Play query may only **raise** the result above the sideload floor,
+never lower it.
+
+> **Why the floor is a hard floor, not a fallback.** Build 285 shipped
+> versionCode `2000285`. Build 289 was the first to read the Play track and —
+> because that lane returned the Play ceiling **instead of** the floor — shipped
+> versionCode `190` (Play's internal track started fresh in the low hundreds).
+> `190 < 2000285`, so every sideloader hit `INSTALL_FAILED_VERSION_DOWNGRADE` and
+> could no longer install the new APK over their existing one. The fix takes the
+> **max** of the floor and the Play ceiling, so the sideload line can never
+> regress while still staying above whatever Play already has (the AAB uploads
+> cleanly too). Builds 289–298 are the affected range; build 299+ jumps back to
+> `2000299`, which supersedes both the last good sideload build (`2000285`) and
+> the broken `190` builds, so every device converges on one upgrade.
 
 Two invariants to respect:
 
 1. **Don't rename `android-apk-rn.yml`.** `github.run_number` resets to 1 on
-   rename/recreate. If you must, bump `version_code_offset` (the
-   `workflow_dispatch` input) past the current production ceiling first, or new
-   builds become un-installable over existing ones.
+   rename/recreate, which would drop the sideload floor below installed builds.
+   If you must, bump `version_code_offset` (the `workflow_dispatch` input) past
+   the current production ceiling first, or new builds become un-installable
+   over existing ones.
 2. **Capacitor publishing is already disabled.** `android-release.yml` still
    builds the Capacitor app for CI validation, but its GitHub-Release and
    Play-Store-upload steps were removed so it can't publish a lower-versionCode
@@ -82,12 +117,27 @@ The same workflow also builds a signed **AAB** (`./gradlew bundleRelease`, same
 prebuild / `release` signingConfig / `versionCode` as the APK, so the two
 channels never diverge) and uploads it to the Google Play **internal testing**
 track via [`r0adkll/upload-google-play`](https://github.com/r0adkll/upload-google-play)
-(pinned to a commit SHA). The APK stays the sideload channel (GitHub Release);
-the AAB is the Play channel.
+(pinned to a commit SHA). The APK stays the arm64 sideload channel (GitHub
+Release); the AAB is the Play channel.
 
-`bundleRelease` runs with `SENTRY_DISABLE_AUTO_UPLOAD=true` because
-`assembleRelease` already uploaded the source maps for the same release/dist —
-this avoids a duplicate upload.
+The GitHub Release is created before the AAB/Play steps. A Play-specific failure
+should not block the already-signed sideload APK from being published. The
+workflow keeps the job green when the Play upload fails and emits a warning with
+the manual follow-up. If Play reports `You must let us know whether your app uses
+any Foreground Service permissions`, complete the Play Console foreground
+service declaration for `FOREGROUND_SERVICE_CONNECTED_DEVICE`, then rerun the
+workflow or upload the saved AAB artifact by hand.
+
+After the GitHub Release is created, the workflow posts the release URL to the
+deployments Discord webhook. The notification is best-effort: if the webhook is
+unset or Discord rejects the request, the APK release remains successful and the
+run logs a warning.
+
+Both `assembleRelease` and `bundleRelease` run with
+`SENTRY_DISABLE_AUTO_UPLOAD=true`. Runtime Sentry remains active through
+`EXPO_PUBLIC_SENTRY_DSN`, but the Gradle source-map upload is disabled until the
+`@sentry/react-native` upload task is compatible with the Gradle version
+generated by Expo prebuild.
 
 ### One-time bootstrap (manual — the Play API can't do the first upload)
 
@@ -127,14 +177,121 @@ consequences:
   app doesn't yet declare `autoVerify` App Link intent filters — that needs
   deep-link route handling first; tracked separately.)
 
+### Google Sign-In requires SHA-1 registration (per signing key)
+
+Native Google Sign-In (`@react-native-google-signin`, used by the login screen)
+resolves the Android OAuth client by **package name + signing-certificate
+SHA-1**, _not_ by the `androidClientId` string. So the `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+baked into the build is never consulted by the native flow (it exists only for
+backend-audience parity) — what matters is that the **SHA-1 of the key that
+signed the running APK** is registered as an Android OAuth client, in the same
+Google Cloud project as the `webClientId` the app ships
+(`401523882502-…`, project **401523882502**).
+
+If it isn't, `GoogleSignin.signIn()` fails **before any network call** — so the
+backend never logs anything, and the login screen shows the generic "Sign in
+didn't complete." (The classic Play Services flow reported this as
+`DEVELOPER_ERROR` / status 10; the Credential Manager flow in current
+`@react-native-google-signin` surfaces an unmapped error instead, which is why
+the code below keys off "not a known status code" rather than a specific code.)
+`login.tsx` forwards the native `.code` to PostHog as `failure_detail` /
+`native_error_code`, and a local dev build prints a hint — see
+`nativeSignInErrorCode` in `packages/mobile/src/lib/native-auth-analytics.ts`.
+
+**Spotting it in PostHog.** This lands in error tracking as a handled exception
+tagged `source: native-auth`, `provider: google` — message `DEVELOPER_ERROR` on
+the classic flow, or a generic `Error` with the troubleshooting URL on the
+Credential Manager flow. It was the single highest-volume mobile issue in June
+2026 (163 occurrences, 11 users). A spike here is almost always an unregistered
+signing key, not a code regression — it can't be fixed in-repo. Work the table
+below: enumerate every key currently shipping `com.boardsesh.app`, confirm each
+SHA-1 has an Android OAuth client in project **401523882502**, and add any that's
+missing. (Because handled exceptions without a JS stack group together, that same
+PostHog issue can also absorb unrelated handled errors — filter to
+`source = native-auth` rather than reading the whole bucket as Google Sign-In.)
+
+`com.boardsesh.app` is signed by up to three different keys, each needing its own
+Android OAuth client (same package, different SHA-1 — they coexist):
+
+| Where it runs                                                        | Signing key                         | How to get the SHA-1                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sideload GitHub Release APK (this workflow)                          | upload key (`ANDROID_KEYSTORE_*`)   | `apksigner verify --print-certs <apk>` — currently `12:21:33:D0:1B:E4:B0:05:0C:62:6D:ED:27:74:46:AD:D4:EC:CC:B2`                                                                                                                                                                                                                                                                               |
+| Play install — internal track **and public production rollout**      | Play app-signing key (Google holds) | **App signing key certificate** SHA-1 `14:E9:A5:67:87:E7:43:E4:30:9B:66:92:C6:56:E9:AD:05:F6:D0:F2` — Google re-signs the upload, so it's _not_ the upload-key SHA-1 above. Find it via the Play Console search bar (`app signing`) or the `…/app/<id>/keymanagement` URL; it's under the integrity/security area, not "Setup". This is the row that blocked the June 2026 production rollout. |
+| Local `expo run:android` / debug-signed PR APK (`android-pr-rn.yml`) | Expo debug keystore                 | after a prebuild: `keytool -list -v -keystore packages/mobile/android/app/debug.keystore -alias androiddebugkey -storepass android`                                                                                                                                                                                                                                                            |
+
+To register: GCP Console → **APIs & Services → Credentials → Create credentials →
+OAuth client ID → Android**, package `com.boardsesh.app`, paste the SHA-1.
+Propagation takes a few minutes; no rebuild is needed — the registration is
+server-side, so an already-installed APK starts working once it lands.
+
+Use `apksigner verify --print-certs` to read an APK's signer — `keytool -printcert
+-jarfile` only understands the legacy v1/JAR signature and prints nothing for
+these v2/v3-signed release APKs.
+
 ### versionCode
 
-No separate version source: the AAB inherits the exact `versionCode` the "Set
-version code" step seds in (`offset + run_number`), shared with the APK. Play
-enforces strictly-increasing `versionCode` per track, which `run_number`
-monotonicity satisfies. `eas.json`'s `appVersionSource: remote` governs only
-`eas build`/`eas submit` — do **not** enable EAS auto-increment for Android, or
-it would fight the gradle version source.
+No separate version source: the app version is read from
+`packages/mobile/app.config.ts`, and the AAB inherits the exact `versionCode`
+the "Set version code" step seds in (`max(offset + run_number, Play ceiling + 1)`
+— see [versionCode and coexistence](#versioncode-and-coexistence-with-the-capacitor-app)),
+shared with the APK. Play enforces strictly-increasing `versionCode` per track,
+which the floor's `run_number` monotonicity satisfies. `eas.json`'s
+`appVersionSource: remote` governs only `eas build`/`eas submit` — do **not**
+enable EAS auto-increment for Android, or it would fight the gradle version
+source.
 
 For production later, promote from internal and use Play's staged rollout (set
 `track: production` + `status: inProgress` + `userFraction` on the upload step).
+
+## Dev-client APK ("Boardsesh Dev")
+
+`.github/workflows/android-apk-dev-client.yml` is a separate build for testers
+who need to run local JS without compiling the app themselves. It produces a
+**debug / dev-client** APK: `./gradlew assembleDebug` of the prebuilt project
+embeds `expo-dev-client`'s launcher, so the APK ships no bundled JS — it opens
+the "Development servers" screen and loads JavaScript from a Metro dev server.
+Start Metro with `vp run dev:mobile`, then enter its URL in the launcher (or
+switch between worktrees' servers from the dev menu). The APK is **universal**
+(`arm64-v8a` + `x86_64`), so it also runs on an x86_64 emulator — see
+[Android emulator screenshots](./android-emulator-screenshots.md) for the local
+`vp run mobile:android-shots` flow that downloads and drives it automatically.
+
+It installs **side-by-side** with the production app. `app.config.ts` reads
+`BOARDSESH_APP_VARIANT=dev` (set as a job env var) and switches to:
+
+- **name** `Boardsesh Dev`
+- **android.package** `com.boardsesh.app.dev` (distinct package → coexists with
+  `com.boardsesh.app`)
+- **icons** the reddish hue-shifted set in `packages/mobile/dev-assets/`
+
+`scheme`, the iOS bundle id, and the iOS entitlement/App-Group block stay on the
+production values — the variant is Android-identity + icons only.
+
+The reddish icons are generated from the production brand PNGs by
+`scripts/mobile-make-dev-icons.ts` (a hue rotation via `sharp`, not new art).
+Regenerate them when the brand mark changes:
+
+```
+vp run mobile:make-dev-icons
+```
+
+The three PNGs under `packages/mobile/dev-assets/` are committed so local
+`BOARDSESH_APP_VARIANT=dev` prebuilds resolve them. They live outside `assets/`
+on purpose: `assetBundlePatterns: ['assets/**']` would otherwise pull them into
+every production OTA bundle.
+
+**No signing secrets.** Debug builds self-sign with the deterministic Expo
+template `debug.keystore`, so the signature is stable run-to-run and a newer dev
+APK upgrades the previous `com.boardsesh.app.dev` install in place. The workflow
+runs without the `Production` environment and uploads both a 30-day artifact and
+a per-run **prerelease** tagged `rn-android-dev-<run_number>`.
+
+Known limitations of the dev variant:
+
+- **Native Google Sign-In** won't work until a Google OAuth Android client is
+  registered for `com.boardsesh.app.dev` + the template debug keystore's SHA-1
+  (see [Google Sign-In requires SHA-1 registration](#google-sign-in-requires-sha-1-registration-per-signing-key)).
+  Everything else — Metro switching, BLE, the rest of the UI — works.
+- **App Links autoVerify** won't verify for the dev package (the served
+  `assetlinks.json` is scoped to production), so `boardsesh.com/join/...` links
+  open via the chooser rather than directly.

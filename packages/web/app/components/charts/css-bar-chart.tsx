@@ -26,8 +26,6 @@ type CssBarChartProps = {
   ariaLabel?: string;
   /** Max number of x-axis labels to display; surplus labels are hidden. */
   maxLabels?: number;
-  /** Render x-axis labels at a -45° angle (useful for dense charts). */
-  angledLabels?: boolean;
 };
 
 export const CssBarChart = React.memo(function CssBarChart({
@@ -37,7 +35,6 @@ export const CssBarChart = React.memo(function CssBarChart({
   showLegend = true,
   ariaLabel = 'Bar chart',
   maxLabels,
-  angledLabels = false,
 }: CssBarChartProps) {
   // Pivot data: bars have segments, MUI wants series (one per unique segment label/color)
   const { series, categories } = useMemo(() => {
@@ -89,7 +86,7 @@ export const CssBarChart = React.memo(function CssBarChart({
 
   let bottomMargin = 4;
   if (showLegend) {
-    bottomMargin = angledLabels ? 40 : 24;
+    bottomMargin = 24;
   }
 
   return (
@@ -103,6 +100,9 @@ export const CssBarChart = React.memo(function CssBarChart({
         },
       }}
     >
+      {/* No explicit height: the chart fills the responsive Box above so it
+          matches the box on mobile too (a fixed height would overflow and clip
+          the x-axis labels). */}
       <BarChart
         series={series}
         xAxis={[
@@ -110,10 +110,9 @@ export const CssBarChart = React.memo(function CssBarChart({
             data: categories,
             scaleType: 'band' as const,
             ...(tickInterval ? { tickInterval } : {}),
-            tickLabelStyle: angledLabels ? { angle: -45, textAnchor: 'end', fontSize: 9 } : { fontSize: 9 },
+            tickLabelStyle: { fontSize: 11 },
           },
         ]}
-        height={height}
         margin={{ top: 4, bottom: bottomMargin, left: 0, right: 0 }}
         yAxis={[{ position: 'none' }]}
         hideLegend
@@ -189,16 +188,16 @@ export const GroupedBarChart = React.memo(function GroupedBarChart({
         },
       }}
     >
+      {/* No explicit height: fills the responsive Box above (see CssBarChart). */}
       <BarChart
         series={series}
         xAxis={[
           {
             data: categories,
             scaleType: 'band' as const,
-            tickLabelStyle: { fontSize: 9 },
+            tickLabelStyle: { fontSize: 11 },
           },
         ]}
-        height={height}
         margin={{ top: 4, bottom: 24, left: 0, right: 0 }}
         yAxis={[{ position: 'none' }]}
         hideLegend

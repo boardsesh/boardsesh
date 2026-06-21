@@ -156,49 +156,22 @@ describe('getSessionOgSummary', () => {
     expect(summary.found).toBe(true);
   });
 
-  it('parses legacy board paths and falls back to inferred sessions cleanly', async () => {
-    executeMock
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          name: 'Solo Volume Day',
-          leader_name: 'Alex',
-          version_at: '2024-01-05T00:00:00.000Z',
-          board_path: null,
-          board_slug: null,
-          board_angle: null,
-          board_type: null,
-          layout_id: null,
-          size_id: null,
-          set_ids: null,
-        },
-      ])
-      .mockResolvedValueOnce([{ participant_count: 1 }])
-      .mockResolvedValueOnce([{ display_name: 'Alex' }])
-      .mockResolvedValueOnce([{ total_sends: 1 }])
-      .mockResolvedValueOnce([{ difficulty: 12, cnt: 1 }]);
+  it('returns not-found data when the session is not explicit', async () => {
+    executeMock.mockResolvedValueOnce([]);
 
     const { getSessionOgSummary } = await import('../dynamic-og-data');
-    const summary = await getSessionOgSummary('inferred-123');
+    const summary = await getSessionOgSummary('missing-session');
 
-    const inferredQuery = executeMock.mock.calls[1][0] as {
-      queryChunks?: Array<{ value?: string[] }>;
-    };
-    const inferredSql = (inferredQuery.queryChunks || [])
-      .map((chunk) => (Array.isArray(chunk?.value) ? chunk.value.join('') : ''))
-      .join('');
-
-    expect(inferredSql).toContain('FROM inferred_sessions s');
-    expect(executeMock).toHaveBeenCalledTimes(6);
-    expect(summary.sessionType).toBe('inferred');
-    expect(summary.sessionName).toBe('Solo Volume Day');
-    expect(summary.leaderName).toBe('Alex');
-    expect(summary.participantNames).toEqual(['Alex']);
-    expect(summary.participantCount).toBe(1);
-    expect(summary.totalSends).toBe(1);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(summary.sessionType).toBeNull();
+    expect(summary.sessionName).toBe('Climbing Session');
+    expect(summary.leaderName).toBeNull();
+    expect(summary.participantNames).toEqual([]);
+    expect(summary.participantCount).toBe(0);
+    expect(summary.totalSends).toBe(0);
     expect(summary.boardLabel).toBeNull();
     expect(summary.boardPreviewPath).toBeNull();
-    expect(summary.found).toBe(true);
+    expect(summary.found).toBe(false);
   });
 
   it('uses board config from legacy board paths when present', async () => {

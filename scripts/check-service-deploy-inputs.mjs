@@ -80,7 +80,16 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
   const manifestPackagesCopy = 'COPY manifests/packages ./packages';
   const sourcePackagesCopy = 'COPY source/packages ./packages';
 
-  for (const copyLine of [manifestRootCopy, manifestPackagesCopy]) {
+  const requiredPreInstallCopies = [manifestRootCopy, manifestPackagesCopy];
+
+  // patchedDependencies are resolved during install, so the patch files must be
+  // copied into the install layer or `bun install --frozen-lockfile` fails.
+  const rootPackageJson = JSON.parse(readRepoFile(repoRoot, 'package.json'));
+  if (Object.keys(rootPackageJson.patchedDependencies ?? {}).length > 0) {
+    requiredPreInstallCopies.push('COPY manifests/patches ./patches');
+  }
+
+  for (const copyLine of requiredPreInstallCopies) {
     const copyIndex = dockerfileContents.indexOf(copyLine);
     if (copyIndex === -1) {
       failures.push(`${dockerfilePath}: missing ${copyLine}`);
@@ -135,6 +144,13 @@ function verifyGeneratedContext(failures, repoRoot, serviceName, outputRoot) {
   );
   comparePathLists(failures, `${serviceName} Docker context source packages`, actualSourceDirs, expectedSourceDirs);
 
+  const rootPackageJson = JSON.parse(readRepoFile(repoRoot, 'package.json'));
+  for (const patchRelativePath of Object.values(rootPackageJson.patchedDependencies ?? {}).map(String)) {
+    if (!existsSync(join(result.outputDir, 'manifests', patchRelativePath))) {
+      failures.push(`${serviceName} Docker context: missing manifests/${patchRelativePath}`);
+    }
+  }
+
   if (!existsSync(join(result.outputDir, 'Dockerfile'))) {
     failures.push(`${serviceName} Docker context: missing Dockerfile`);
   }
@@ -143,7 +159,9 @@ function verifyGeneratedContext(failures, repoRoot, serviceName, outputRoot) {
 function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
   const failures = [];
 
-  for (const dockerfilePath of ['Dockerfile.backend', 'Dockerfile.web']) {
+  for (const dockerfilePath of ['Dockerfile.backend', 'Dockerfile.web', 'Dockerfile.sync']) {
+    // Dockerfile.sync (the combined sync image) is optional; backend/web are not.
+    if (dockerfilePath === 'Dockerfile.sync' && !existsSync(join(repoRoot, dockerfilePath))) continue;
     requireDockerContextFile(failures, repoRoot, dockerfilePath);
   }
 
@@ -151,6 +169,9 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
   try {
     verifyGeneratedContext(failures, repoRoot, 'backend', outputRoot);
     verifyGeneratedContext(failures, repoRoot, 'web', outputRoot);
+    if (existsSync(join(repoRoot, 'Dockerfile.sync'))) {
+      verifyGeneratedContext(failures, repoRoot, 'sync', outputRoot);
+    }
   } finally {
     rmSync(outputRoot, { recursive: true, force: true });
   }
@@ -336,6 +357,12 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     failures,
     repoRoot,
     'Dockerfile.web.dockerignore',
+    'Generated Docker contexts replace Dockerfile-specific ignore files.',
+  );
+  rejectExistingFile(
+    failures,
+    repoRoot,
+    'Dockerfile.sync.dockerignore',
     'Generated Docker contexts replace Dockerfile-specific ignore files.',
   );
 

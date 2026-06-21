@@ -7,8 +7,19 @@ export { pushKilterUserData, type PushBackArgs } from './push-back';
 // catalog by UUID then hold fingerprint, and reconciled into board_climbs /
 // board_climb_stats. Reference tables come over PowerSync (reference-pull).
 export { syncKilterCatalog, type SyncKilterCatalogArgs, type KilterCatalogSummary } from './catalog-sync';
+export {
+  repairKilterCatalogStats,
+  type KilterStatsRepairArgs,
+  type KilterStatsRepairSummary,
+  type KilterStatsRepairTopRow,
+} from './stats-repair';
 export { pullKilterReference, type KilterReferencePull } from './reference-pull';
 export { buildLayoutResolver, type LayoutResolver } from './layout-resolver';
+export {
+  buildKilterLocationRecords,
+  syncKilterLocations,
+  type BuildKilterLocationRecordsResult,
+} from './locations-sync';
 export { gripsClimbConcatToFrames, framesToHolds, fingerprintFrames } from './catalog-parse';
 export { reconcileDeletions, type DeletionReport } from './deletions';
 export { createSetterSyncNotifications, type NewClimbInfo } from './notifications';

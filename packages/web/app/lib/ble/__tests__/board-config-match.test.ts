@@ -126,6 +126,7 @@ describe('configFromResolvedEntry', () => {
         layoutId: 7,
         sizeId: 14,
         setIds: '2,5',
+        apiLevel: 3,
         updatedAt: '2026-04-01T00:00:00.000Z',
         boardUuid: null,
         boardSlug: 'shared-tension',

@@ -1,0 +1,31 @@
+Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone, plus de temps sur le mur.
+
+ALLUME LES PRISES
+Cherche n'importe quelle voie et Boardsesh allume les prises sur le mur en Bluetooth, sur Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper et So iLL. Contrôle complet des LED sur les sept, pas seulement la consultation.
+
+UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
+Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+
+L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
+Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
+Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom de la voie, qui l'a allumée, qui l'a ouverte, la cotation et l'inclinaison, et les sends récents. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.
+
+TOUJOURS CONNECTÉ
+Boardsesh garde le lien avec ta board en arrière-plan, pour que les prises restent allumées pendant tes essais même quand l'écran s'éteint ou que tu changes d'appli. Une notification persistante met Précédent et Suivant sur ton écran verrouillé, pour que tu avances dans la file sans rouvrir l'appli. Pas besoin de te reconnecter entre les voies.
+
+LES SÉANCES AVEC TA CREW
+Lance une séance et toi et ta crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer la prochaine voie au mur. À la fin, tu reçois un récap et un suivi : sends et essais, éventail de cotations, ton plus gros send, et ta progression dans le temps.
+
+MONTE UNE SÉANCE D'ENTRAÎNEMENT
+Choisis Volume, Pyramide, Échelle ou Cotation ciblée, fixe une cotation cible et un échauffement, prévisualise les voies, puis envoie-les au mur une par une.
+
+SUIS TON ESCALADE
+Note tes sends, tes flashs et tes essais, et regarde tes sends et tes cotations grimper dans l'onglet Progression. Récupère tes anciennes voies Kilter et Tension en important ton carnet depuis Aurora Climbing.
+
+TROUVE PLUS À GRIMPER
+Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
+
+GRATUIT, SANS PUB, SANS ABONNEMENT
+Open source sur GitHub.
+
+Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

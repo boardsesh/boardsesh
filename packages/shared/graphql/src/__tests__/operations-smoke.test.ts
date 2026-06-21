@@ -16,6 +16,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'boards', load: () => import('../operations/boards') },
   { name: 'climb-search', load: () => import('../operations/climb-search') },
   { name: 'climb-stats-history', load: () => import('../operations/climb-stats-history') },
+  { name: 'climb-stats-for-angles', load: () => import('../operations/climb-stats-for-angles') },
   { name: 'comments-votes', load: () => import('../operations/comments-votes') },
   { name: 'create-session', load: () => import('../operations/create-session') },
   { name: 'favorites', load: () => import('../operations/favorites') },
@@ -56,5 +57,13 @@ describe('beta-links operations export the expected names', () => {
     expect(mod).toHaveProperty('GET_RECENT_BETA_LINKS');
     expect(mod).toHaveProperty('GET_USER_BETA_LINKS');
     expect(mod).toHaveProperty('ATTACH_BETA_LINK');
+  });
+});
+
+describe('activity-feed operations export the expected names', () => {
+  it('exposes GET_ACTIVITY_FEED and GET_SESSION_GROUPED_FEED', async () => {
+    const mod = await import('../operations/activity-feed');
+    expect(mod).toHaveProperty('GET_ACTIVITY_FEED');
+    expect(mod).toHaveProperty('GET_SESSION_GROUPED_FEED');
   });
 });

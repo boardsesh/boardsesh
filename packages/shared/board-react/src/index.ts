@@ -15,6 +15,7 @@ export {
   fetchLogbookQueryKey,
   fetchLogbookQueryKeyPrefix,
   logbookQueryKey,
+  logbookClimbAngleKey,
 } from './logbook-keys';
 export type { LogbookEntry, LogbookSourceTick, TickStatus } from './logbook-keys';
 

@@ -54,7 +54,9 @@ export default function VPointsChart({ data }: VPointsChartProps) {
           {
             data: weekLabels,
             scaleType: 'band' as const,
-            tickLabelStyle: { fontSize: 10 },
+            label: t('stats.weekAxisLabel'),
+            labelStyle: { fontSize: 11 },
+            tickLabelStyle: { fontSize: 11 },
             tickInterval: (_value: string, index: number) => index % labelInterval === 0,
           },
         ]}
@@ -70,7 +72,7 @@ export default function VPointsChart({ data }: VPointsChartProps) {
           },
         ]}
         height={160}
-        margin={{ top: 5, bottom: 30, left: 30, right: 5 }}
+        margin={{ top: 5, bottom: 48, left: 30, right: 5 }}
         hideLegend
         sx={{ width: '100%' }}
       />

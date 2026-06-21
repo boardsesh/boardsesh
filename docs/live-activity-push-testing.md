@@ -67,7 +67,29 @@ Device-to-server (widget buttons):
   Backend publishes CurrentClimbChanged
        |
   APNs push sent to all session tokens (other devices)
+
+  User taps the lightbulb to re-assert the current climb
+       |
+  iOS performs TakeControlIntent in the MAIN APP process
+       |
+  HTTP POST /api/widget/take-control
+       - authenticated with the registered Live Activity bearer token
+       - rejected unless the token row has a bound authenticated userId
+       - re-asserts (re-broadcasts CurrentClimbChanged for) the current climb
+       |
+  On success (200), the widget shows the lightbulb on.
 ```
+
+**Per-token board connection:** the server-to-device push stamps each token's
+`boardConnection` ("connectedByMe" | "heldByPeer" | "disconnected") so the
+lightbulb + Previous/Next reflect who holds the board. The send path resolves the
+session's holder once (`session:{id}:board` → `resolveBoardHolder`) and groups
+tokens by derived state, so the holder's device gets `connectedByMe` and peers get
+`heldByPeer` (with the holder's name). A board hand-off kicks an extra debounced
+push from `reportBoardClimb` (it isn't a queue event). When the holder can't be
+resolved, the fields are omitted and the device keeps its own App-Group state. See
+`packages/backend/src/services/apns/board-connection.ts` and the ownership section
+in `docs/live-activity-board-control.md`.
 
 Latency on the BLE side from a suspended-app cold-launch is ~1.5–2.5 s: background-launch (~0.5–1 s) + CoreBluetooth state restoration (~0.5–1 s) + UART chunk flush (~0.2–0.5 s). Subsequent taps inside the same wake window are faster because the peripheral stays connected.
 
@@ -79,7 +101,7 @@ Cross-device limitation: when _another_ user navigates and your phone is suspend
 - Apple Developer account (paid, $99/year) with the Boardsesh app registered
 - iPhone running iOS 17+ connected via USB or on the same network
 - Tailscale set up on both the Mac and iPhone
-- Local dev environment running (`bun run db:up`, `bun run dev`, `bun run backend:dev`)
+- Local dev environment running: `vp run dev` (starts the DB, backend, and web together; run `vp run db:up` first if you only need the database)
 
 ## Apple Developer Setup
 
@@ -126,7 +148,7 @@ APNS_BUNDLE_ID=com.boardsesh.app    # Must match your iOS app's bundle ID
 APNS_PRODUCTION=true                 # true = production APNs (matches the app's aps-environment=production entitlement)
 
 # Optional server-side product analytics for Live Activity usage
-POSTHOG_PROJECT_KEY=phc_...          # Backend PostHog project key
+POSTHOG_PROJECT_KEY=phc_...          # Backend PostHog project key (preferred; falls back to NEXT_PUBLIC_POSTHOG_KEY)
 POSTHOG_HOST=https://us.i.posthog.com
 POSTHOG_ENVIRONMENT=production       # Defaults to SENTRY_ENVIRONMENT, then NODE_ENV, then development
 ```
@@ -139,7 +161,7 @@ When the backend starts, you should see:
 
 If you see `[APNs] Missing one or more required env vars...`, double-check the values.
 
-If `POSTHOG_PROJECT_KEY` is unset, Live Activity product analytics are skipped and APNs delivery still works.
+If both `POSTHOG_PROJECT_KEY` and `NEXT_PUBLIC_POSTHOG_KEY` are unset, Live Activity product analytics are skipped and APNs delivery still works.
 
 ## iOS Build Configuration
 
@@ -201,6 +223,18 @@ Source locations:
 - Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`
 - Widget target build settings that @bacons/apple-targets does not expose directly, including `WIDGET_EXTENSION`: `packages/mobile/plugins/with-boardsesh-widget-build-settings.js`
 
+#### Swift unit tests and CI
+
+The RN app's `packages/mobile/ios/` directory is generated and gitignored, so tracked Swift
+unit tests live in `packages/mobile/ios-tests/`. The CI workflow runs Expo prebuild, then
+`scripts/prepare-rn-ios-tests.mjs` creates a generated `BoardseshTests` XCTest target and
+stages the Live Activity Swift sources into that target before invoking `xcodebuild`.
+
+Swift test coverage runs in two workflows:
+
+- `.github/workflows/ios-rn-ci.yml` builds and tests the React Native / Expo app and widget helpers.
+- `.github/workflows/ios-ci.yml` builds and tests the legacy Capacitor app Swift target.
+
 #### 1. Generate the native project
 
 ```bash
@@ -209,6 +243,10 @@ Source locations:
 # the widget target's expo-target.config.js changes.
 cd packages/mobile && bunx expo prebuild --platform ios --clean
 ```
+
+For normal local simulator/device builds from `packages/mobile`, use `vp run mobile:ios`
+instead of raw `expo run:ios`. It keeps `packages/mobile/ios/build` pointed at the
+shared Boardsesh Xcode cache so separate git worktrees do not each rebuild from cold.
 
 #### 2. Build to a device
 
@@ -255,17 +293,11 @@ Filter by `subsystem:com.boardsesh.app`. Useful categories:
 
 ## Running the Full Stack
 
-Start all services from the monorepo root:
+Start all services from the monorepo root with a single command — `vp run dev`
+brings up the database, backend, and web dev server together:
 
 ```bash
-# Terminal 1: Database
-bun run db:up
-
-# Terminal 2: Web dev server
-bun run dev
-
-# Terminal 3: Backend
-bun run backend:dev
+vp run dev
 ```
 
 Verify the backend is reachable from your iPhone:
@@ -295,7 +327,7 @@ Check the database for the registered token:
 
 ```bash
 # From the repo root
-bun run db:studio
+vp run db:studio
 ```
 
 Then look at the `activity_push_tokens` table — you should see a row with your session ID and a hex token.
@@ -329,6 +361,16 @@ Backend logs should show:
 Lock your iPhone. The Live Activity widget should update within a few seconds showing the new current climb.
 
 ## Testing Widget Navigation
+
+### Test Lightbulb Re-Assert
+
+1. Start a party session with two signed-in participants and register Live Activities on both devices
+2. Have device A's climb relayed to the board so its lightbulb is lit
+3. Lock device B
+4. Tap the lightbulb on device B
+5. Backend logs should show the `/api/widget/take-control` request returning 200
+6. Device B re-asserts (re-broadcasts) the current climb; its lightbulb shows on after the request succeeds
+7. Navigation stays enabled on both devices — sessions are always-live, any member may navigate
 
 ### Test with App in Foreground
 
@@ -379,6 +421,29 @@ In the backend logs, look for:
 ```
 
 If you see `0 sent, N failed`, check the [Common Issues](#common-issues) section.
+
+### Board-photo thumbnail compositing
+
+For the 2.0 release the thumbnail is the **server-composited** board image, matching the
+legacy Capacitor app (which renders correctly). `ThumbnailFetcher` fetches
+`/api/internal/board-render?...&thumbnail=1&include_background=1` — the server (`sharp`)
+draws the board photo behind this climb's holds overlay and returns a finished image,
+which `ThumbnailFetcher` writes straight to the App Group `thumbnails/` dir for the widget
+to display. No on-device webp decode or compositing.
+
+This deliberately reverses the earlier "no-network-board-art" rule. The on-device
+bundled-art path (`resolveBoardBackgroundPaths` staging + `compositeWithBoardBackground`)
+never rendered the board reliably in production, so it's deferred. Re-adding offline board
+art (and the `server-rendered-background` guard rule in `scripts/mobile-board-art-network-check.ts`)
+is tracked in issue #2982.
+
+If the Live Activity shows only the climb's holds and no board behind them, the server
+fetch failed or returned the overlay only. Check:
+
+- `include_background=1` is present in the `boardRenderUrl` request and the server returns a
+  composited image (not a 4xx).
+- The cached thumbnail isn't a stale pre-2.0 image — `cacheVersion` (`ThumbnailFetcher`)
+  bumps to purge old overlay-only caches on update.
 
 ## Debugging
 
@@ -478,8 +543,9 @@ The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn`
 ### Widget buttons don't send HTTP request
 
 - Check that `bs_widget_navigate_url` (constant: `SharedConstants.widgetNavigateUrlKey`) is stored in SharedDefaults. `LiveActivityPlugin.startSession()` derives it from `graphqlUrl` (e.g. `https://ws.boardsesh.com/api/widget/navigate`) and writes it — verify in the Xcode console during session start. The widget reads this exact URL via `WidgetNetworking.sendNavigation`; if the key is missing the call silently no-ops. Earlier builds derived the URL from `bs_server_url` (the web origin), which is wrong because `/api/widget/navigate` is a backend route, not a Next.js route — if you're seeing the old key in SharedDefaults, the user is on a stale build.
+- Check that `bs_widget_take_control_url` (constant: `SharedConstants.widgetTakeControlUrlKey`) is stored in SharedDefaults when debugging lightbulb take-control. It is derived from the same `graphqlUrl` as the navigation endpoint.
 - The widget extension must have the App Group entitlement to read SharedDefaults.
-- Check backend logs for incoming requests to `/api/widget/navigate`.
+- Check backend logs for incoming requests to `/api/widget/navigate` or `/api/widget/take-control`.
 
 ### Live Activity goes stale after 3 minutes
 

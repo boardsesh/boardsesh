@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { favoritesStore } from '@boardsesh/climb-actions';
+
+// The provider imports `../lib/analytics`. Replace that module with a spy so we
+// can assert the instrumentation fires (the `posthog-react-native` native dep is
+// separately stubbed via the vite.config alias). `vi.hoisted` is required: bare
+// `vi.mock` factories are hoisted above top-level `const`s, so the spy must be
+// created inside a hoisted block to be in scope when the factory runs.
+const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track: trackMock }));
+
 import { FavoritesProvider, useFavoritesContext } from '../favorites-provider';
 
 describe('FavoritesProvider', () => {
@@ -10,6 +19,7 @@ describe('FavoritesProvider', () => {
     // Reset the shared store between tests so subscriber state doesn't leak.
     favoritesStore.setFavorites(new Set());
     favoritesStore.setMeta(false, false);
+    trackMock.mockClear();
   });
 
   it('syncs the `favorites` prop into the shared favoritesStore', () => {
@@ -63,7 +73,7 @@ describe('FavoritesProvider', () => {
     expect(favoritesStore.getIsAuthenticated()).toBe(true);
   });
 
-  it('toggleFavorite from context calls the prop function', async () => {
+  it('toggleFavorite from context calls the prop function and tracks `added` once', async () => {
     const toggleFavorite = vi.fn(async (_uuid: string) => true);
     const wrapper = ({ children }: { children: ReactNode }) => (
       <FavoritesProvider toggleFavorite={toggleFavorite}>{children}</FavoritesProvider>
@@ -71,6 +81,27 @@ describe('FavoritesProvider', () => {
     const { result } = renderHook(() => useFavoritesContext(), { wrapper });
     await expect(result.current.toggleFavorite('uuid-x')).resolves.toBe(true);
     expect(toggleFavorite).toHaveBeenCalledWith('uuid-x');
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith('Favorite Toggle', {
+      action: 'added',
+      climbUuid: 'uuid-x',
+      source: 'mobile',
+    });
+  });
+
+  it('toggleFavorite tracks `removed` when the toggle resolves to false', async () => {
+    const toggleFavorite = vi.fn(async (_uuid: string) => false);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FavoritesProvider toggleFavorite={toggleFavorite}>{children}</FavoritesProvider>
+    );
+    const { result } = renderHook(() => useFavoritesContext(), { wrapper });
+    await expect(result.current.toggleFavorite('uuid-y')).resolves.toBe(false);
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith('Favorite Toggle', {
+      action: 'removed',
+      climbUuid: 'uuid-y',
+      source: 'mobile',
+    });
   });
 
   it('default toggleFavorite resolves to `false` when not wired', async () => {

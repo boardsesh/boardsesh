@@ -3,7 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
-const { mockDb, eqSpy, notInArraySpy } = vi.hoisted(() => {
+const { mockDb, eqSpy, notInArraySpy, resolveTargetMock, selectRefsMock, countRefsMock } = vi.hoisted(() => {
   const mockDb = {
     execute: vi.fn(),
     select: vi.fn(),
@@ -15,10 +15,24 @@ const { mockDb, eqSpy, notInArraySpy } = vi.hoisted(() => {
     mockDb,
     eqSpy: vi.fn(),
     notInArraySpy: vi.fn(),
+    resolveTargetMock: vi.fn(),
+    selectRefsMock: vi.fn(),
+    countRefsMock: vi.fn(),
   };
 });
 
 vi.mock('../db/client', () => ({ db: mockDb }));
+
+// Recommendation helpers are exercised by their own DB-backed paths; here we mock
+// them so the logbook-playlist + counts tests don't need to stub the catalog
+// queries, and so the recommendation-specific tests can drive return values.
+vi.mock('../graphql/resolvers/playlists/helpers/recommendation-board-target', () => ({
+  resolveRecommendationBoardTarget: resolveTargetMock,
+}));
+vi.mock('../graphql/resolvers/playlists/helpers/recommendation-refs', () => ({
+  selectRecommendationClimbRefs: selectRefsMock,
+  countRecommendationClimbRefs: countRefsMock,
+}));
 
 vi.mock('drizzle-orm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('drizzle-orm')>();
@@ -367,6 +381,82 @@ describe('smartPlaylist resolver', () => {
     );
     expect(result.meta.userId).toBe('user-123');
   });
+
+  it('RECOMMENDED_* returns an empty result for a non-owner without any user lookup', async () => {
+    const ctx = makeCtx({ userId: 'someone-else' });
+
+    const result = await playlistQueries.smartPlaylist(
+      null,
+      { input: { type: 'RECOMMENDED_CROWD_FAVORITES', userId: 'user-123' } },
+      ctx,
+    );
+
+    expect(result.climbs).toEqual([]);
+    expect(result.totalCount).toBe(0);
+    expect(result.hasMore).toBe(false);
+    // No user lookup (no existence probing) and no board resolution for non-owners.
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(resolveTargetMock).not.toHaveBeenCalled();
+  });
+
+  it('RECOMMENDED_* returns an empty result (not a throw) when no board resolves', async () => {
+    const ctx = makeCtx();
+    resolveTargetMock.mockResolvedValueOnce(null);
+
+    const result = await playlistQueries.smartPlaylist(
+      null,
+      { input: { type: 'RECOMMENDED_AT_LEVEL', userId: 'user-123' } },
+      ctx,
+    );
+
+    expect(result.totalCount).toBe(0);
+    expect(result.climbs).toEqual([]);
+  });
+
+  it('RECOMMENDED_* returns recommendations for the owner, hydrated at the board angle', async () => {
+    const ctx = makeCtx();
+    resolveTargetMock.mockResolvedValueOnce({
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 25,
+      angle: 45,
+      setIds: null,
+    });
+    selectRefsMock.mockResolvedValueOnce([{ climbUuid: 'c1', boardType: 'kilter' }]);
+    countRefsMock.mockResolvedValueOnce(3);
+    // fetchUserMeta, then hydrate.
+    mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
+    mockDb.select.mockReturnValueOnce(
+      makeChain([
+        {
+          climbUuid: 'c1',
+          layoutId: 1,
+          boardType: 'kilter',
+          setter_username: 'u',
+          name: 'n',
+          description: '',
+          frames: '',
+          statsAngle: 45,
+          ascensionist_count: 5,
+          difficulty_id: 20,
+          quality_average: 5,
+          difficulty_error: 0,
+          benchmark_difficulty: null,
+        },
+      ]).chain,
+    );
+
+    const result = await playlistQueries.smartPlaylist(
+      null,
+      { input: { type: 'RECOMMENDED_CROWD_FAVORITES', userId: 'user-123' } },
+      ctx,
+    );
+
+    expect(result.totalCount).toBe(3);
+    expect(result.climbs).toHaveLength(1);
+    expect(result.climbs[0]).toMatchObject({ uuid: 'c1', angle: 45 });
+    expect(selectRefsMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('mySmartPlaylistCounts resolver', () => {
@@ -473,5 +563,29 @@ describe('mySmartPlaylistCounts resolver', () => {
     expect(rendered.toUpperCase()).toContain('NOT EXISTS');
     expect(rendered).toMatch(/sent\.climb_uuid\s*=\s*base\.climb_uuid/i);
     expect(rendered).toMatch(/sent\.board_type\s*=\s*base\.board_type/i);
+  });
+
+  it('appends RECOMMENDED_* counts when a board resolves', async () => {
+    const ctx = makeCtx();
+    mockDb.execute.mockResolvedValueOnce([{ type: 'FIVE_STARS', count: 1 }]);
+    resolveTargetMock.mockResolvedValueOnce({ boardType: 'kilter', layoutId: 8, sizeId: 25, angle: 40, setIds: null });
+    countRefsMock.mockResolvedValue(7);
+
+    const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
+
+    const recCounts = result.filter((entry) => entry.type.startsWith('RECOMMENDED_'));
+    expect(recCounts).toHaveLength(4);
+    expect(recCounts.every((entry) => entry.count === 7)).toBe(true);
+    expect(result).toContainEqual({ type: 'FIVE_STARS', count: 1 });
+  });
+
+  it('omits RECOMMENDED_* counts when no board resolves', async () => {
+    const ctx = makeCtx();
+    mockDb.execute.mockResolvedValueOnce([{ type: 'FIVE_STARS', count: 1 }]);
+    resolveTargetMock.mockResolvedValueOnce(null);
+
+    const result = await playlistQueries.mySmartPlaylistCounts(null, undefined, ctx);
+    expect(result.some((entry) => entry.type.startsWith('RECOMMENDED_'))).toBe(false);
+    expect(result).toHaveLength(4);
   });
 });

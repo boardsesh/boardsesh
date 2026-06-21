@@ -11,28 +11,49 @@ import { handleHealthCheck } from './handlers/health';
 import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleStaticAvatar, handleStaticBetaThumbnail } from './handlers/static';
+import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
+import { handleAuroraCredentials, handleAuroraCredentialsUnsynced } from './handlers/aurora-credentials';
+import { handleAuroraImport } from './handlers/aurora-import';
+import {
+  handleKilterCredentialsCallback,
+  handleKilterCredentialsFinalize,
+  handleKilterCredentialsHandoff,
+  handleKilterCredentialsStart,
+} from './handlers/kilter-credentials-oauth';
 import { handleWidgetNavigate } from './handlers/widget-navigate';
+import { handleWidgetTakeControl } from './handlers/widget-take-control';
 import {
   handleNativeAuthCredentials,
   handleNativeAuthExchange,
+  handleNativeAuthOAuth,
   handleNativeAuthRefresh,
+  handleNativeAuthRegister,
   handleNativeAuthRevoke,
   startRefreshTokenCleanup,
   stopRefreshTokenCleanup,
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
+import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
 import { warmPopularConfigsCache } from './graphql/resolvers/social/boards';
 import { warmRecentBetaLinksCache } from './graphql/resolvers/beta-videos/queries';
-import { initializeApns, shutdownApns, sendLiveActivityUpdate, isApnsConfigured } from './services/apns';
+import {
+  initializeApns,
+  shutdownApns,
+  sendLiveActivityUpdate,
+  setSessionHolderResolver,
+  isApnsConfigured,
+} from './services/apns';
 import { startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat';
 import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './services/apns/cleanup';
 import { buildContentStateFromQueueState } from './services/apns/content-state';
+import { resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
 import { logger, setInstanceIdProvider } from './utils/logger';
+import { isClientAbortError } from './utils/http-errors';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -99,6 +120,22 @@ export async function startServer(): Promise<ServerResources> {
 
   // Initialize APNs for iOS Live Activity push notifications
   initializeApns();
+
+  // Teach the APNs send path how to resolve a session's board holder so every
+  // pushed Live Activity reflects WHO holds the board (connectedByMe on the
+  // holder's device, heldByPeer on everyone else's). One lookup per send, keyed
+  // by the session→board mapping `reportBoardClimb` persists. Returns null when
+  // the board/holder can't be resolved (no mapping, no Redis, anonymous holder),
+  // in which case boardConnection is omitted and the device keeps its own state.
+  setSessionHolderResolver(async (sessionId: string) => {
+    const boardId = await pubsub.getSessionBoard(sessionId);
+    if (boardId === null) return null;
+    const holder = await resolveBoardHolder(Number(boardId));
+    // No holder, or an anonymous (`conn:`) holder (null userId): we can't tell
+    // whether it's this device or a peer, so omit boardConnection.
+    if (!holder || holder.userId == null) return null;
+    return { holderUserId: holder.userId, holderDisplayName: holder.displayName ?? null };
+  });
 
   // Start periodic cleanup of expired/revoked mobile refresh tokens.
   startRefreshTokenCleanup();
@@ -298,11 +335,52 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
-      // Static avatar files
+      if (
+        pathname === '/api/aurora-credentials' &&
+        (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE' || req.method === 'OPTIONS')
+      ) {
+        await handleAuroraCredentials(req, res);
+        return;
+      }
+
+      if (pathname === '/api/aurora-credentials/unsynced' && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleAuroraCredentialsUnsynced(req, res);
+        return;
+      }
+
+      if (pathname === '/api/aurora-import' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleAuroraImport(req, res);
+        return;
+      }
+
+      if (pathname === '/api/board-credentials/kilter/handoff' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleKilterCredentialsHandoff(req, res);
+        return;
+      }
+
+      if (
+        pathname === '/api/board-credentials/kilter/finalize' &&
+        (req.method === 'POST' || req.method === 'OPTIONS')
+      ) {
+        await handleKilterCredentialsFinalize(req, res);
+        return;
+      }
+
+      if (pathname === '/board-credentials/kilter/start' && req.method === 'GET') {
+        await handleKilterCredentialsStart(req, res, url);
+        return;
+      }
+
+      if (pathname === '/board-credentials/kilter/callback' && req.method === 'GET') {
+        await handleKilterCredentialsCallback(req, res, url);
+        return;
+      }
+
+      // Static avatar files (optional ?size= for a resized variant)
       if (pathname.startsWith('/static/avatars/')) {
         const fileName = pathname.slice('/static/avatars/'.length);
         if (fileName) {
-          await handleStaticAvatar(req, res, fileName);
+          await handleStaticAvatar(req, res, fileName, parseSizeParam(url.searchParams.get('size')));
           return;
         }
       }
@@ -315,7 +393,7 @@ export async function startServer(): Promise<ServerResources> {
           const platform = remainder.slice(0, slashIndex);
           const fileName = remainder.slice(slashIndex + 1);
           if (fileName) {
-            await handleStaticBetaThumbnail(req, res, platform, fileName);
+            await handleStaticBetaThumbnail(req, res, platform, fileName, parseSizeParam(url.searchParams.get('size')));
             return;
           }
         }
@@ -327,6 +405,10 @@ export async function startServer(): Promise<ServerResources> {
       // Widget queue navigation endpoint (called by iOS lock-screen widget)
       if (pathname === '/api/widget/navigate' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleWidgetNavigate(req, res);
+        return;
+      }
+      if (pathname === '/api/widget/take-control' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleWidgetTakeControl(req, res);
         return;
       }
 
@@ -347,6 +429,16 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      if (pathname === '/auth/native/register' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleNativeAuthRegister(req, res);
+        return;
+      }
+
+      if (pathname === '/auth/native/oauth' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleNativeAuthOAuth(req, res);
+        return;
+      }
+
       if (pathname === '/auth/native/refresh' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleNativeAuthRefresh(req, res);
         return;
@@ -355,6 +447,22 @@ export async function startServer(): Promise<ServerResources> {
       if (pathname === '/auth/native/revoke' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleNativeAuthRevoke(req, res);
         return;
+      }
+
+      // External-platform integration OAuth (browser navigations from the
+      // mobile in-app browser). Path: /integrations/<provider>/{start,callback}.
+      if (pathname.startsWith('/integrations/') && req.method === 'GET') {
+        const segments = pathname.slice('/integrations/'.length).split('/');
+        const provider = segments[0];
+        const action = segments[1];
+        if (provider && action === 'start') {
+          await handleIntegrationOAuthStart(req, res, provider, url);
+          return;
+        }
+        if (provider && action === 'callback') {
+          await handleIntegrationOAuthCallback(req, res, provider, url);
+          return;
+        }
       }
 
       // GraphQL endpoint - delegate to Yoga
@@ -371,6 +479,16 @@ export async function startServer(): Promise<ServerResources> {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (error) {
+      if (
+        isClientAbortError(error, {
+          requestDestroyed: req.destroyed,
+          responseDestroyed: res.destroyed,
+          socketDestroyed: res.socket?.destroyed,
+        })
+      ) {
+        logger.info('Request aborted by client', { method: req.method, url: req.url });
+        return;
+      }
       logger.error('Request handler error:', error);
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -414,11 +532,19 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  OCR test data: ${httpScheme}://0.0.0.0:${PORT}/api/ocr-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://0.0.0.0:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
+    logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);
+    logger.info(`  Aurora import: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-import`);
+    logger.info(`  Kilter credential OAuth: ${httpScheme}://0.0.0.0:${PORT}/board-credentials/kilter/start`);
     logger.info(`  Widget navigate: ${httpScheme}://0.0.0.0:${PORT}/api/widget/navigate`);
+    logger.info(`  Widget take-control: ${httpScheme}://0.0.0.0:${PORT}/api/widget/take-control`);
     logger.info(`  Native auth exchange: ${httpScheme}://0.0.0.0:${PORT}/auth/native/exchange`);
     logger.info(`  Native auth credentials: ${httpScheme}://0.0.0.0:${PORT}/auth/native/credentials`);
+    logger.info(`  Native auth register: ${httpScheme}://0.0.0.0:${PORT}/auth/native/register`);
+    logger.info(`  Native auth oauth: ${httpScheme}://0.0.0.0:${PORT}/auth/native/oauth`);
     logger.info(`  Native auth refresh: ${httpScheme}://0.0.0.0:${PORT}/auth/native/refresh`);
     logger.info(`  Native auth revoke: ${httpScheme}://0.0.0.0:${PORT}/auth/native/revoke`);
+    logger.info(`  Integration OAuth start: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/start`);
+    logger.info(`  Integration OAuth callback: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/callback`);
 
     // Warm up popular board configs cache in the background.
     // Uses a Redis lock so only one node across the cluster runs the query.

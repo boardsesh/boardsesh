@@ -1,6 +1,6 @@
 {
-  "sends_one": "{{count}} encadene",
-  "sends_other": "{{count}} encadenes",
+  "sends_one": "{{formattedCount}} encadene",
+  "sends_other": "{{formattedCount}} encadenes",
   "metadata": {
     "list": {
       "title": "Bloques de {{boardName}} a {{angle}}°",
@@ -11,7 +11,7 @@
     "view": {
       "title": "{{climbName}} - {{grade}}",
       "description": "{{climbName}} - {{grade}} de {{setter}}. Calidad: {{quality}}/5. Encadenes: {{ascents}}",
-      "imageAlt": "{{climbName}} - {{grade}} en tabla {{boardName}}",
+      "imageAlt": "{{climbName}} - {{grade}} en plafón {{boardName}}",
       "fallbackTitle": "Bloque",
       "fallbackDescription": "Mira los detalles del bloque y vídeos de beta",
       "seoHeading": "{{climbName}} — {{grade}}",
@@ -21,7 +21,7 @@
     },
     "create": {
       "title": "Crear un bloque",
-      "description": "Apertura un nuevo bloque en tu tabla de escalada"
+      "description": "Apertura un nuevo bloque en tu plafón"
     },
     "import": {
       "title": "Importar bloques",
@@ -33,7 +33,7 @@
     },
     "logbook": {
       "title": "Historial",
-      "description": "Tu historial de escalada para esta tabla"
+      "description": "Tu historial de escalada para este plafón"
     }
   },
   "list": {
@@ -43,7 +43,7 @@
       "grid": "Vista de cuadrícula"
     },
     "biggerBoard": {
-      "title": "No cabe en tu tabla de escalada",
+      "title": "No cabe en tu plafón",
       "description": "Este se sale del borde de tu pared. Necesitas un tamaño mayor para encadenarlo."
     },
     "sort": {
@@ -76,13 +76,13 @@
   "search": {
     "categories": {
       "climbs": "Bloques",
-      "boards": "Tablas",
+      "boards": "Plafones",
       "gyms": "Rocódromos",
       "users": "Escaladores",
       "playlists": "Listas"
     },
     "placeholders": {
-      "boards": "Busca tablas...",
+      "boards": "Busca plafones...",
       "gyms": "Busca rocódromos...",
       "users": "Busca escaladores...",
       "playlists": "Busca listas...",
@@ -102,7 +102,7 @@
       "minRating": "Valoración mín.",
       "any": "Cualquiera",
       "tallClimbsOnly": "Solo bloques altos",
-      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en tableros 8x12 y 10x12)",
+      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en plafones 8x12 y 10x12)",
       "wideClimbsOnly": "Solo bloques anchos",
       "wideClimbsTooltip": "Muestra solo bloques que usan las presas laterales extra del 10x10",
       "betaVideosOnly": "Solo con vídeos de beta",
@@ -198,14 +198,14 @@
       "anyHold": "Al menos 1 presa"
     },
     "holdsAndZone": {
-      "description": "Toca presas para filtrar, o dibuja una zona para centrar los resultados en una parte de la tabla."
+      "description": "Toca presas para filtrar, o dibuja una zona para centrar los resultados en una parte del plafón."
     },
     "sortToggle": "Ordenar"
   },
   "create": {
     "auth": {
       "signInTitle": "Inicia sesión para guardar tu bloque",
-      "signInDescription": "Crea una cuenta o inicia sesión para guardar tu bloque en la tabla.",
+      "signInDescription": "Crea una cuenta o inicia sesión para guardar tu bloque en el plafón.",
       "signInAria": "Inicia sesión para guardar",
       "logInTitle": "Inicia sesión para guardar tu bloque",
       "logInAria": "Inicia sesión para guardar",
@@ -258,7 +258,7 @@
     "tick": {
       "drawer": {
         "signInRequired": "Inicia sesión",
-        "selectBoard": "Selecciona una tabla de escalada",
+        "selectBoard": "Selecciona un plafón",
         "logAscent": "Registrar encadene",
         "signInToRecord": "Inicia sesión para registrar tu progreso",
         "createAccountBlurb": "Crea una cuenta de Boardsesh para registrar tus bloques y seguir tu progreso.",
@@ -269,7 +269,7 @@
         "authModalTitle": "Inicia sesión para registrar tu progreso",
         "authModalDescription": "Crea una cuenta para registrar tus bloques y seguir tu progreso.",
         "mirroredTooltip": "Pulsa la etiqueta para indicar si completaste este bloque en el lado espejo.",
-        "whichBoard": "¿En qué tabla escalaste?"
+        "whichBoard": "¿En qué plafón escalaste?"
       }
     },
     "navigation": {
@@ -306,9 +306,9 @@
       }
     },
     "sendToBoard": {
-      "label": "Enviar al board",
+      "label": "Enviar al plafón",
       "active": "En el muro",
-      "tooltip": "Enviar al board",
+      "tooltip": "Enviar al plafón",
       "activeTooltip": "Ahora en el muro"
     }
   },
@@ -462,7 +462,7 @@
     "drawerTitle": "Clasificación de presas",
     "classifyHoldTitle": "Clasificar presa",
     "loadingHolds": "Cargando presas...",
-    "emptyState": "No se encontraron presas para esta configuración de tabla.",
+    "emptyState": "No se encontraron presas para esta configuración de plafón.",
     "progress": "Presa {{current}} de {{total}} ({{classified}} clasificadas)",
     "complete": {
       "title": "¡Clasificación completa!",
@@ -531,17 +531,18 @@
     "emptyIdentical": "Ahora mismo no se encontraron bloques idénticos.",
     "untitledClimb": "Bloque sin título",
     "openActions": "Más acciones",
-    "actionsUnavailable": "No se pueden abrir acciones para este bloque — configuración de la tabla no disponible."
+    "actionsUnavailable": "No se pueden abrir acciones para este bloque — configuración del plafón no disponible."
   },
   "mobile": {
     "emptyState": {
       "noBoard": {
-        "title": "Tabla no seleccionada",
-        "subtitle": "Agrega una tabla primero para explorar bloques"
+        "title": "Sigue tu muro",
+        "subtitle": "Elige el plafón donde escalas para explorar sus bloques y ver lo que está encendido ahora mismo.",
+        "cta": "Buscar mi plafón"
       },
       "noClimbs": {
         "title": "No se encontraron bloques",
-        "subtitle": "Intenta ajustar la configuración de tu tabla"
+        "subtitle": "Intenta ajustar la configuración de tu plafón"
       },
       "noMatches": {
         "title": "Sin resultados",
@@ -549,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Bloque no encontrado",
-      "addToQueue": "Agregar a la cola",
-      "logAscent": "Registrar encadene",
-      "sent_one": "Encadenado {{count}} vez",
-      "sent_other": "Encadenado {{count}} veces",
-      "sentWithAttempts_one": "Encadenado {{count}} vez en {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Encadenado {{count}} veces en {{attempts}} {{attemptWord}}",
-      "attempt_one": "intento",
-      "attempt_other": "intentos",
-      "send_one": "encadene",
-      "send_other": "encadenes"
+      "notFound": "Bloque no encontrado"
     },
     "logAscent": {
       "attempt": "Intento",
@@ -630,14 +621,16 @@
       "setters": "Equipadores",
       "none": "Ninguno",
       "tall": "Solo vías altas",
+      "tallClimbs": "Vías altas",
       "tallDescription": "Alcanzar el techo",
       "wide": "Solo vías anchas",
+      "wideClimbs": "Vías anchas",
       "wideDescription": "Usan la extensión 10x10",
       "betaVideos": "Solo con vídeos de beta",
+      "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Solo vías con un vídeo de beta",
       "searchSetters": "Buscar equipadores",
       "noSetters": "Sin equipadores",
-      "cancel": "Cancelar",
       "done": "Listo",
       "clearAll": "Borrar todo"
     },
@@ -646,33 +639,152 @@
       "clearRecent": "Borrar",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
-      "gradeMax": "Hasta {{grade}}",
-      "ascents": "{{count}}+ ascensos",
-      "rating": "{{count}}+ estrellas",
+      "gradeMax": "≤{{grade}}",
+      "ascents": "{{count}}+ 🧗",
+      "rating": "{{count}}+ ⭐",
       "more": "+{{count}} más",
+      "setterName": "Por {{setter}}",
       "settersCount_one": "{{count}} equipador",
       "settersCount_other": "{{count}} equipadores",
       "climbsCount_one": "{{count}} vía",
       "climbsCount_other": "{{count}} vías",
-      "grade": "Grado",
-      "anyGrade": "Cualquier grado",
       "gradeClear": "Cualquiera",
-      "gradeHint": "Toca un grado · toca otro para un rango",
       "filters": "Filtros",
-      "removeFilter": "Quitar filtro {{name}}"
+      "filterCountAria": "Filtros, {{count}} activos",
+      "filterHint": "Abre todos los filtros de bloques",
+      "gradeAction": "Ajustar el rango de grado",
+      "gradeOpenHint": "Abre el selector de grado",
+      "gradeCloseHint": "Cierra el selector de grado",
+      "boardSwitcherHint": "Abre el selector de plafón",
+      "allClimbs": "Todas las vías"
+    },
+    "gradeRail": {
+      "setFilterAria": "Filtrar por grado {{grade}}",
+      "selectedFilterAria": "Filtro de grado {{grade}} seleccionado",
+      "rangeFilterAria": "{{grade}} está en el rango de grados seleccionado",
+      "anyGradeAria": "Cualquier grado seleccionado",
+      "clearFilterAria": "Borrar filtro de grado",
+      "closeAria": "Cerrar selector de grado",
+      "rangeHint": "Toca otro grado para crear un rango",
+      "setLogGradeAria": "Guardar grado {{grade}} en el registro",
+      "selectedLogGradeAria": "Grado {{grade}} seleccionado para el registro",
+      "consensusGradeAria": "{{grade}}, grado de consenso"
     },
     "climbRow": {
       "addToQueue": "Añadir a la cola",
       "toggleFavorite": "Alternar favorito",
       "share": "Compartir bloque",
-      "projectFallback": "Proyecto"
+      "projectFallback": "Proyecto",
+      "ascentStatus": {
+        "flash": "Flasheado",
+        "send": "Encadenado",
+        "attempt": "Intentado"
+      },
+      "noMatch": "Sin igualar",
+      "benchmark": "Benchmark"
     },
     "climbActions": {
+      "preview": "Vista previa",
       "copyLink": "Copiar enlace",
-      "report": "Reportar",
       "linkCopied": "Enlace copiado",
       "tick": "Registrar un envío",
-      "openInApp": "Abrir en la app Aurora"
+      "addBetaVideo": "Añadir vídeo de beta",
+      "openInApp": "Abrir en la app Aurora",
+      "fork": "Remix this climb",
+      "edit": "Editar vía",
+      "editEntry": "Editar registro"
+    },
+    "create": {
+      "brush": {
+        "start": "Inicio",
+        "hand": "Mano",
+        "finish": "Final",
+        "foot": "Pie",
+        "erase": "Borrar"
+      },
+      "counts": {
+        "start": "Inicio: {{count}}/2",
+        "finish": "Final: {{count}}/2"
+      },
+      "actions": {
+        "clear": "Borrar presas",
+        "setActive": "Fijar como vía activa",
+        "undo": "Deshacer",
+        "redo": "Rehacer"
+      },
+      "holdRole": {
+        "title": "Asignar rol de presa",
+        "clear": "Borrar"
+      },
+      "settings": {
+        "draftLabel": "Guardar como borrador",
+        "draftDescription": "Los borradores quedan privados hasta que los publiques.",
+        "showAllHoldsLabel": "Mostrar todas las presas",
+        "showAllHoldsDescription": "Resalta todas las presas pulsables del panel.",
+        "noMatchLabel": "Sin igualar",
+        "noMatchDescription": "No se pueden igualar las manos en la misma presa"
+      },
+      "drafts": {
+        "holds_one": "{{count}} presa",
+        "holds_other": "{{count}} presas",
+        "sectionTitle": "Borradores abiertos"
+      },
+      "unavailable": {
+        "title": "Aún no se puede crear aquí",
+        "subtitle": "Esta configuración de panel no admite la creación de vías."
+      },
+      "fab": {
+        "ariaLabel": "Crear una vía"
+      },
+      "header": {
+        "newClimb": "Nueva vía"
+      },
+      "save": {
+        "idle": "Guardar",
+        "login": "Inicia sesión para guardar",
+        "saving": "Guardando…",
+        "done": "Guardado",
+        "draftToast": "Borrador guardado",
+        "publishedToast": "Vía publicada"
+      }
+    },
+    "holdFilter": {
+      "title": "Tipos de presa",
+      "include": "Incluir",
+      "exclude": "Excluir",
+      "applyModeLabel": "Incluir o excluir",
+      "includedSuffix": "incluida",
+      "excludedSuffix": "excluida",
+      "hint": "Toca las presas del muro para filtrar por el tipo que deben ser.",
+      "summaryCount_one": "{{count}} presa",
+      "summaryCount_other": "{{count}} presas",
+      "type": {
+        "starting": "Inicio",
+        "hand": "Mano",
+        "finish": "Final",
+        "foot": "Pie",
+        "any": "Cualquiera"
+      }
+    },
+    "zoneFilter": {
+      "title": "Zona del muro",
+      "summaryActive": "Activada",
+      "enable": "Añadir una zona",
+      "clearZone": "Borrar zona",
+      "allHolds": "Todas las presas",
+      "anyHold": "Alguna presa",
+      "modeLabel": "Qué presas deben caber en la zona",
+      "hint": "Añade una zona para encontrar bloques que se queden en una parte del muro.",
+      "activeHint": "Arrastra la caja y sus esquinas para fijar la zona. Todas las presas deben caber dentro; cambia a Alguna presa para conservar los bloques que la alcancen.",
+      "regionLabel": "Zona del muro",
+      "regionHint": "Desliza hacia arriba o abajo para mover la zona por el muro.",
+      "corner": {
+        "topLeft": "Esquina superior izquierda",
+        "topRight": "Esquina superior derecha",
+        "bottomLeft": "Esquina inferior izquierda",
+        "bottomRight": "Esquina inferior derecha",
+        "hint": "Desliza hacia arriba o abajo para agrandar o reducir la zona desde esta esquina."
+      }
     }
   }
 }

@@ -14,6 +14,7 @@ const {
   mockShowMessage,
   mockParseSerialNumber,
   mockFetch,
+  mockGraphqlRequest,
   mockTrack,
 } = vi.hoisted(() => {
   const mockAdapter = {
@@ -66,9 +67,20 @@ const {
     mockShowMessage: vi.fn(),
     mockParseSerialNumber: vi.fn<(name: string) => string | undefined>(() => undefined),
     mockFetch: vi.fn<typeof fetch>(() => Promise.resolve(new Response(null, { status: 204 }))),
+    mockGraphqlRequest: vi.fn<(document: unknown, variables?: unknown) => Promise<unknown>>(() =>
+      Promise.resolve({ recordBoardSerial: null }),
+    ),
     mockTrack: vi.fn(),
   };
 });
+
+vi.mock('@/app/lib/graphql/client', () => ({
+  createGraphQLHttpClient: vi.fn(() => ({ request: mockGraphqlRequest })),
+}));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null }),
+}));
 
 vi.mock('@/app/lib/ble/adapter-factory', () => ({
   createBluetoothAdapter: mockCreateBluetoothAdapter,
@@ -143,6 +155,7 @@ describe('useBoardBluetooth', () => {
     mockParseSerialNumber.mockReturnValue(undefined);
     mockFetch.mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', mockFetch);
+    mockGraphqlRequest.mockResolvedValue({ recordBoardSerial: null });
     mockCreateBluetoothAdapter.mockResolvedValue(mockAdapter);
     mockAdapter.isAvailable.mockResolvedValue(true);
     mockAdapter.requestAndConnect.mockResolvedValue({
@@ -384,6 +397,7 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(sendResult).toBe(false);
+    expect(result.current.lastSendFailureReasonRef.current).toBe('missing_led_placements');
     expect(mockShowMessage).toHaveBeenCalledWith(
       'Could not send to board — LED data missing for this board configuration.',
       'error',
@@ -391,9 +405,54 @@ describe('useBoardBluetooth', () => {
     expect(mockAdapter.write).not.toHaveBeenCalledWith(new Uint8Array([1, 2, 3]), undefined);
   });
 
+  it('records incompatible_climb when every Aurora placement is skipped', async () => {
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Empty packet + skipped placements => the climb is for a different board.
+    mockGetAuroraBluetoothPacket.mockReturnValueOnce({
+      packet: new Uint8Array([]),
+      skippedPositionCount: 3,
+      skippedRoleCount: 0,
+      totalPlacements: 3,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p4131r42');
+    });
+
+    expect(sendResult).toBe(false);
+    expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
+    expect(mockShowMessage).toHaveBeenCalledWith('This climb is for a different board configuration.', 'error');
+    warnSpy.mockRestore();
+  });
+
+  it('records missing_mirror_data when a mirrored send has no holdsData', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // mockBoardDetails advertises supportsMirroring but carries no holdsData,
+    // so a mirrored send can't build the mirror and bails before the write.
+    const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    let sendResult: boolean | undefined;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p4131r42', true);
+    });
+
+    expect(sendResult).toBe(false);
+    expect(result.current.lastSendFailureReasonRef.current).toBe('missing_mirror_data');
+    errorSpy.mockRestore();
+  });
+
   // Traditional `[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/...` routes
   // don't carry a boardUuid — the recorded serial mapping should reflect that
-  // (the API row gets a NULL board_uuid). The /b/{slug}/... case sends a UUID.
+  // (the recording row gets a NULL board_uuid). The /b/{slug}/... case sends a UUID.
   it('records traditional-route serial with no boardUuid when prop is omitted', async () => {
     mockParseSerialNumber.mockReturnValueOnce('AB1234');
     const traditionalRouteDetails = {
@@ -407,11 +466,14 @@ describe('useBoardBluetooth', () => {
       await result.current.connect();
     });
 
-    const recordCall = mockFetch.mock.calls.find(([url]) => url === '/api/internal/board-serials');
+    const recordCall = mockGraphqlRequest.mock.calls.find(
+      ([, variables]) => !!(variables as { input?: unknown })?.input,
+    );
     expect(recordCall).toBeDefined();
-    const body = JSON.parse((recordCall![1] as RequestInit).body as string);
-    expect(body.serialNumber).toBe('AB1234');
-    expect(body.boardUuid).toBeUndefined();
+    const { input } = recordCall![1] as { input: Record<string, unknown> };
+    expect(input.serialNumber).toBe('AB1234');
+    expect(input.apiLevel).toBe(3);
+    expect(input.boardUuid).toBeUndefined();
   });
 
   it('records saved-board serial with boardUuid when prop is provided', async () => {
@@ -429,10 +491,12 @@ describe('useBoardBluetooth', () => {
       await result.current.connect();
     });
 
-    const recordCall = mockFetch.mock.calls.find(([url]) => url === '/api/internal/board-serials');
+    const recordCall = mockGraphqlRequest.mock.calls.find(
+      ([, variables]) => !!(variables as { input?: unknown })?.input,
+    );
     expect(recordCall).toBeDefined();
-    const body = JSON.parse((recordCall![1] as RequestInit).body as string);
-    expect(body.boardUuid).toBe('board-uuid-xyz');
+    const { input } = recordCall![1] as { input: Record<string, unknown> };
+    expect(input.boardUuid).toBe('board-uuid-xyz');
   });
 
   describe('connect failure messaging', () => {
@@ -636,6 +700,13 @@ describe('useBoardBluetooth', () => {
 
       expect(sendResult).toBe(false);
       expect(result.current.isConnected).toBe(false);
+      // The real cause is recorded for the AutoSender to label, and the
+      // tug-of-war is tracked (mirrors mobile) instead of staying silent.
+      expect(result.current.lastSendFailureReasonRef.current).toBe('disconnected');
+      expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Stolen', {
+        boardLayout: 'Original',
+        boardId: undefined,
+      });
       errorSpy.mockRestore();
     });
 
@@ -659,6 +730,11 @@ describe('useBoardBluetooth', () => {
 
       expect(sendResult).toBe(false);
       expect(result.current.isConnected).toBe(false);
+      expect(result.current.lastSendFailureReasonRef.current).toBe('disconnected');
+      expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Stolen', {
+        boardLayout: 'Original',
+        boardId: undefined,
+      });
       errorSpy.mockRestore();
     });
 
@@ -679,6 +755,9 @@ describe('useBoardBluetooth', () => {
 
       expect(sendResult).toBe(false);
       expect(result.current.isConnected).toBe(true);
+      // A live-link write failure is `write_failed`, NOT a stolen-board signal.
+      expect(result.current.lastSendFailureReasonRef.current).toBe('write_failed');
+      expect(mockTrack).not.toHaveBeenCalledWith('Bluetooth Connection Stolen', expect.anything());
       errorSpy.mockRestore();
     });
   });
@@ -855,6 +934,96 @@ describe('useBoardBluetooth', () => {
 
       const call = findDisconnectCall();
       expect(call).toBeUndefined();
+    });
+  });
+
+  describe('re-entrant connect guard', () => {
+    it('ignores a second connect() while the first is still in flight (picker open)', async () => {
+      // Hold the first attempt at the scan/picker stage: requestAndConnect never
+      // resolves until we say so, mirroring a user still choosing a board.
+      let resolveConnect: (value: { deviceId: string; deviceName: string }) => void;
+      const pending = new Promise<{ deviceId: string; deviceName: string }>((resolve) => {
+        resolveConnect = resolve;
+      });
+      mockAdapter.requestAndConnect.mockReturnValue(pending);
+
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+
+      let firstPromise!: Promise<boolean>;
+      act(() => {
+        firstPromise = result.current.connect();
+      });
+
+      // A second tap — or the 2-second wall-confirm fallback firing while the
+      // picker is open — must NOT start a second native scan ("Already scanning.
+      // Stopping now." on iOS). It returns false and creates no extra adapter.
+      let secondResult: boolean | undefined;
+      await act(async () => {
+        secondResult = await result.current.connect();
+      });
+
+      expect(secondResult).toBe(false);
+      expect(mockCreateBluetoothAdapter).toHaveBeenCalledTimes(1);
+      expect(mockAdapter.requestAndConnect).toHaveBeenCalledTimes(1);
+
+      // Let the first attempt finish.
+      await act(async () => {
+        resolveConnect!({ deviceId: 'test', deviceName: 'Board' });
+        await firstPromise;
+      });
+      expect(result.current.isConnected).toBe(true);
+
+      // Guard released: a later deliberate connect runs normally.
+      mockAdapter.requestAndConnect.mockResolvedValue({ deviceId: 'test-2', deviceName: 'Board 2' });
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(mockCreateBluetoothAdapter).toHaveBeenCalledTimes(2);
+    });
+
+    it('releases the guard after the user cancels the picker so a re-tap connects', async () => {
+      // The most common real re-entry: the user dismisses the picker, then taps
+      // the lightbulb again. The cancel rejects requestAndConnect → connect()'s
+      // finally clears the guard, so the re-tap is not swallowed.
+      mockAdapter.requestAndConnect.mockRejectedValueOnce(new Error('Device selection cancelled'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(result.current.isConnected).toBe(false);
+      // Cancelling stays silent (not a failure toast).
+      expect(mockShowMessage).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(result.current.isConnected).toBe(true);
+      expect(mockCreateBluetoothAdapter).toHaveBeenCalledTimes(2);
+      errorSpy.mockRestore();
+    });
+
+    it('releases the guard after a failed attempt so the next connect can run', async () => {
+      mockAdapter.requestAndConnect.mockRejectedValueOnce(new Error('GATT connect failed'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(result.current.isConnected).toBe(false);
+
+      // The failed attempt cleared the in-flight guard in `finally`, so a retry
+      // is not swallowed.
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(result.current.isConnected).toBe(true);
+      expect(mockCreateBluetoothAdapter).toHaveBeenCalledTimes(2);
+      errorSpy.mockRestore();
     });
   });
 });

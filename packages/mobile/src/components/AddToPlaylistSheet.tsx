@@ -1,21 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
-import BottomSheet from '@gorhom/bottom-sheet';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, View, StyleSheet } from 'react-native';
+import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useTranslation } from 'react-i18next';
-import type { Climb } from '@boardsesh/shared-schema';
-import { Sheet } from './Sheet';
+import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { ModalSheet } from './ModalSheet';
+import { ClimbPreviewCard } from './ClimbPreviewCard';
 import { ListRow } from './ListRow';
 import { Icon } from './Icon';
 import { Text } from './Text';
+import { PlaylistFormSheet, type PlaylistFormValues } from './playlist';
 import { useToast } from '../providers/toast-provider';
 import { usePlaylistsContext, type Playlist } from '../providers/playlists-provider';
-import { brandColors } from '../theme/colors';
+import { useTheme } from '../providers/theme-provider';
+import { sortPlaylistsByName } from '../lib/sort-filter-playlists';
 import { iosSystemColors } from '../theme/ios-colors';
-import { spacing } from '../theme/tokens';
+import { borderRadius, spacing } from '../theme/tokens';
 
 type AddToPlaylistSheetProps = {
   visible: boolean;
   climb: Climb | null;
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
   angle: number;
   onClose: () => void;
 };
@@ -27,17 +34,36 @@ function validHexColor(color: string | undefined): string | null {
   return color && HEX_COLOR.test(color) ? color : null;
 }
 
-function AddToPlaylistSheet({ visible, climb, angle, onClose }: AddToPlaylistSheetProps) {
+function AddToPlaylistSheet({
+  visible,
+  climb,
+  boardName,
+  layoutId,
+  sizeId,
+  setIds,
+  angle,
+  onClose,
+}: AddToPlaylistSheetProps) {
   const { t } = useTranslation('climbs');
+  const { brandColors, systemColors } = useTheme();
   const { showToast } = useToast();
-  const { playlists, addToPlaylist, isLoading, isAuthenticated } = usePlaylistsContext();
-  const sheetRef = useRef<BottomSheet>(null);
+  const { playlists, addToPlaylist, createPlaylist, isLoading, isAuthenticated } = usePlaylistsContext();
+  const [createVisible, setCreateVisible] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const sheetRef = useRef<BottomSheetModal>(null);
+  // Track presented state so we never dismiss() a not-presented modal (gorhom
+  // then no-ops the next present()). Mirrors LogAscentSheet.
+  const isPresentedRef = useRef(false);
+  const createRequestIdRef = useRef(0);
+  const sortedPlaylists = useMemo(() => sortPlaylistsByName(playlists), [playlists]);
 
   useEffect(() => {
-    if (visible && climb) {
-      sheetRef.current?.snapToIndex(0);
-    } else {
-      sheetRef.current?.close();
+    if (visible && climb && !isPresentedRef.current) {
+      sheetRef.current?.present();
+      isPresentedRef.current = true;
+    } else if ((!visible || !climb) && isPresentedRef.current) {
+      sheetRef.current?.dismiss();
+      isPresentedRef.current = false;
     }
   }, [visible, climb]);
 
@@ -45,14 +71,19 @@ function AddToPlaylistSheet({ visible, climb, angle, onClose }: AddToPlaylistShe
     async (playlist: Playlist) => {
       if (!climb) return;
       try {
-        await addToPlaylist(playlist.id, climb.uuid, angle);
+        // The backend addClimbToPlaylist resolver matches playlists.uuid, so
+        // the playlist *uuid* (not the bigserial id) must go on the wire — the
+        // id round-trips a "Playlist not found" error. It also keys the
+        // post-add cache invalidation onto the detail screen's ['playlist', uuid]
+        // / ['playlistClimbs', uuid] entries.
+        await addToPlaylist(playlist.uuid, climb.uuid, angle);
         showToast(t('actions.playlist.toast.added'), 'success');
       } catch (error) {
         // The toast is intentionally generic, but a swallowed error makes
         // "failed to add" impossible to diagnose. Log the real reason in dev.
         if (__DEV__) {
           console.warn('[playlist] add to playlist failed', {
-            playlistId: playlist.id,
+            playlistUuid: playlist.uuid,
             climbUuid: climb.uuid,
             angle,
             error,
@@ -66,55 +97,149 @@ function AddToPlaylistSheet({ visible, climb, angle, onClose }: AddToPlaylistShe
     [climb, angle, addToPlaylist, showToast, t, onClose],
   );
 
-  const handleClose = useCallback(() => {
+  const handleCreatePlaylist = useCallback(
+    async (values: PlaylistFormValues) => {
+      if (!climb) return;
+      const createRequestId = createRequestIdRef.current + 1;
+      createRequestIdRef.current = createRequestId;
+      const isCurrentCreateRequest = () => createRequestIdRef.current === createRequestId && isPresentedRef.current;
+      setCreating(true);
+      try {
+        const created = await createPlaylist(values.name, values.description, values.color, values.icon, {
+          boardType: boardName,
+          layoutId,
+        });
+        if (!isCurrentCreateRequest()) return;
+        setCreateVisible(false);
+        try {
+          await addToPlaylist(created.uuid, climb.uuid, angle);
+          if (!isCurrentCreateRequest()) return;
+          showToast(t('actions.playlist.toast.createdNamed', { name: created.name }), 'success');
+          onClose();
+        } catch (error) {
+          if (!isCurrentCreateRequest()) return;
+          if (__DEV__) {
+            console.warn('[playlist] created playlist but failed to add climb', {
+              playlistUuid: created.uuid,
+              climbUuid: climb.uuid,
+              angle,
+              error,
+            });
+          }
+          showToast(t('actions.playlist.toast.addFailed'), 'error');
+        }
+      } catch (error) {
+        if (!isCurrentCreateRequest()) return;
+        if (__DEV__) {
+          console.warn('[playlist] create playlist from add sheet failed', {
+            climbUuid: climb.uuid,
+            boardName,
+            layoutId,
+            error,
+          });
+        }
+        showToast(t('actions.playlist.toast.createFailed'), 'error');
+      } finally {
+        if (createRequestIdRef.current === createRequestId) setCreating(false);
+      }
+    },
+    [climb, createPlaylist, boardName, layoutId, addToPlaylist, angle, showToast, t, onClose],
+  );
+
+  const handleDismiss = useCallback(() => {
+    isPresentedRef.current = false;
+    createRequestIdRef.current += 1;
+    setCreateVisible(false);
+    setCreating(false);
     onClose();
   }, [onClose]);
+
+  const handleShowCreate = useCallback(() => {
+    setCreateVisible(true);
+  }, []);
+
+  const handleCloseCreate = useCallback(() => {
+    createRequestIdRef.current += 1;
+    setCreateVisible(false);
+    setCreating(false);
+  }, []);
 
   const snapPoints = useMemo(() => ['50%', '90%'], []);
 
   return (
-    <Sheet ref={sheetRef} snapPoints={snapPoints} onClose={handleClose} enablePanDownToClose scrollable>
-      <View style={styles.header}>
-        <Icon name="playlist" size={20} color={iosSystemColors.systemBlue} />
-        <Text variant="headline" style={styles.headerTitle}>
-          {t('actions.playlist.popover.title')}
-        </Text>
-      </View>
+    <>
+      <ModalSheet ref={sheetRef} snapPoints={snapPoints} onDismiss={handleDismiss} enablePanDownToClose scrollable>
+        {climb && (
+          <ClimbPreviewCard
+            climb={climb}
+            boardName={boardName}
+            layoutId={layoutId}
+            sizeId={sizeId}
+            setIds={setIds}
+            angle={angle}
+          />
+        )}
+        <View style={styles.header}>
+          <Icon name="playlist" size={20} color={systemColors.accent} />
+          <Text variant="headline" style={styles.headerTitle}>
+            {t('actions.playlist.popover.title')}
+          </Text>
+          {climb && isAuthenticated ? (
+            <Pressable
+              onPress={handleShowCreate}
+              accessibilityRole="button"
+              accessibilityLabel={t('actions.playlist.popover.createNew')}
+              hitSlop={8}
+              style={[styles.createButton, { backgroundColor: systemColors.fill }]}
+            >
+              <Icon name="plus" size={18} color={brandColors.primary} />
+            </Pressable>
+          ) : null}
+        </View>
 
-      {!climb ? null : !isAuthenticated ? (
-        <View style={styles.message}>
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
-            {t('actions.playlist.popover.signInBlurb')}
-          </Text>
-        </View>
-      ) : isLoading ? (
-        <View style={styles.message}>
-          <ActivityIndicator />
-        </View>
-      ) : playlists.length === 0 ? (
-        <View style={styles.message}>
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
-            {t('actions.playlist.popover.empty')}
-          </Text>
-        </View>
-      ) : (
-        playlists.map((playlist, index) => {
-          const accent = validHexColor(playlist.color);
-          return (
-            <ListRow
-              key={playlist.id}
-              title={playlist.name}
-              subtitle={t('multiboardList.count', { count: playlist.climbCount })}
-              leading={<Icon name="playlist" size={22} color={accent ?? brandColors.primary} />}
-              onPress={() => {
-                void handleAddToPlaylist(playlist);
-              }}
-              showSeparator={index < playlists.length - 1}
-            />
-          );
-        })
-      )}
-    </Sheet>
+        {!climb ? null : !isAuthenticated ? (
+          <View style={styles.message}>
+            <Text variant="subheadline" color={iosSystemColors.systemGray}>
+              {t('actions.playlist.popover.signInBlurb')}
+            </Text>
+          </View>
+        ) : isLoading ? (
+          <View style={styles.message}>
+            <ActivityIndicator />
+          </View>
+        ) : sortedPlaylists.length === 0 ? (
+          <View style={styles.message}>
+            <Text variant="subheadline" color={iosSystemColors.systemGray}>
+              {t('actions.playlist.popover.empty')}
+            </Text>
+          </View>
+        ) : (
+          sortedPlaylists.map((playlist, index) => {
+            const accent = validHexColor(playlist.color);
+            return (
+              <ListRow
+                key={playlist.id}
+                title={playlist.name}
+                subtitle={t('multiboardList.count', { count: playlist.climbCount })}
+                leading={<Icon name="playlist" size={22} color={accent ?? brandColors.primary} />}
+                onPress={() => {
+                  void handleAddToPlaylist(playlist);
+                }}
+                showSeparator={index < sortedPlaylists.length - 1}
+              />
+            );
+          })
+        )}
+      </ModalSheet>
+
+      <PlaylistFormSheet
+        mode="create"
+        visible={createVisible}
+        submitting={creating}
+        onSubmit={handleCreatePlaylist}
+        onClose={handleCloseCreate}
+      />
+    </>
   );
 }
 
@@ -130,7 +255,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[3],
   },
   headerTitle: {
-    flexShrink: 1,
+    flex: 1,
+  },
+  createButton: {
+    width: spacing[8],
+    height: spacing[8],
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   message: {
     alignItems: 'center',

@@ -1,32 +1,19 @@
 import Foundation
 
+enum WidgetNavigationResult: Equatable {
+    case success
+    case serverRejected
+    case retryableFailure
+}
+
 enum WidgetNetworking {
-    /// Sends a queue navigation request to the backend.
-    /// Returns `true` if the request succeeded (HTTP 200), `false` otherwise.
-    @discardableResult
-    static func sendNavigation(action: String, currentIndex: Int) async -> Bool {
-        // `widgetNavigateUrlKey` is written by `LiveActivityPlugin.startSession`.
-        // If the user upgrades the app mid-session without re-running
-        // `startSession` (e.g. they had a Live Activity running, installed the
-        // new build, didn't relaunch the main app), the key won't be in
-        // UserDefaults and the widget will silently no-op. Acceptable: the
-        // pre-fix build already had broken widget navigation, and the user
-        // gets recovery as soon as they open the main app and start a new
-        // session. The optimistic UI update in the widget intent still fires.
+    private static func postWidgetRequest(urlKey: String, body: [String: Any], requestName: String) async -> WidgetNavigationResult {
         guard let defaults = SharedConstants.sharedDefaults,
-              let widgetNavigateUrl = defaults.string(forKey: SharedConstants.widgetNavigateUrlKey),
-              let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey)
-        else { return false }
+              let widgetUrl = defaults.string(forKey: urlKey)
+        else { return .retryableFailure }
 
-        guard let url = URL(string: widgetNavigateUrl) else { return false }
-
-        let body: [String: Any] = [
-            "sessionId": sessionId,
-            "action": action,
-            "currentIndex": currentIndex
-        ]
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return false }
+        guard let url = URL(string: widgetUrl) else { return .retryableFailure }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return .retryableFailure }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -35,23 +22,22 @@ enum WidgetNetworking {
         request.httpBody = jsonData
 
         // Attach the APNs Live Activity push token as a Bearer header. The
-        // backend looks up `(token, sessionId)` in `activity_push_tokens` to
-        // authenticate the request. Token is in the shared keychain (App
-        // Group access-group); if it isn't there yet (early in lifecycle),
-        // the request goes out without auth and the backend rejects with
-        // 401 — the widget then quietly does nothing until the next
-        // refresh.
+        // backend looks up the token in `activity_push_tokens` to authenticate
+        // widget requests. If it isn't there yet, fail closed instead of
+        // falling through to a non-authoritative mutation path.
         if let pushToken = SharedKeychain.get(SharedKeychain.livePushTokenKey),
            !pushToken.isEmpty
         {
             request.setValue("Bearer \(pushToken)", forHTTPHeaderField: "Authorization")
+        } else {
+            return .serverRejected
         }
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             if statusCode == 200 {
-                return true
+                return .success
             }
             if statusCode == 410 {
                 // The push token was rebound to a different session (the main
@@ -59,11 +45,8 @@ enum WidgetNetworking {
                 // Darwin notification so the main app re-registers; do NOT
                 // clear the keychain entry. The Bearer is still the right
                 // APNs token — the backend just needs to update its
-                // (token, sessionId) mapping. Wiping the keychain here would
-                // turn subsequent widget calls into 401s (no Bearer), which
-                // do NOT trigger the Darwin notification, so the widget
-                // would silently fail until the foreground observer runs.
-                print("[Widget] Navigation request received 410; signaling re-registration")
+                // (token, sessionId) mapping.
+                print("[Widget] \(requestName) received 410; signaling re-registration")
                 let name = CFNotificationName(SharedConstants.pushRegistrationStaleNotification as CFString)
                 CFNotificationCenterPostNotification(
                     CFNotificationCenterGetDarwinNotifyCenter(),
@@ -72,13 +55,60 @@ enum WidgetNetworking {
                     nil,
                     true
                 )
-                return false
+                return .serverRejected
             }
-            print("[Widget] Navigation request failed with status \(statusCode)")
-            return false
+            if (400...499).contains(statusCode) {
+                print("[Widget] \(requestName) rejected with status \(statusCode)")
+                return .serverRejected
+            }
+            print("[Widget] \(requestName) failed with status \(statusCode)")
+            return .retryableFailure
         } catch {
-            print("[Widget] Navigation request failed: \(error.localizedDescription)")
-            return false
+            print("[Widget] \(requestName) failed: \(error.localizedDescription)")
+            return .retryableFailure
         }
+    }
+
+    /// Sends a queue navigation request to the backend.
+    /// Returns whether the request succeeded, was explicitly rejected by the
+    /// server, or failed before the server could make an authoritative decision.
+    @discardableResult
+    static func sendNavigation(action: String, currentIndex: Int) async -> WidgetNavigationResult {
+        // `widgetNavigateUrlKey` is written by `LiveActivityPlugin.startSession`.
+        // If the user upgrades the app mid-session without re-running
+        // `startSession` (e.g. they had a Live Activity running, installed the
+        // new build, didn't relaunch the main app), the key won't be in
+        // UserDefaults and the widget falls back to the local mutation path.
+        // Acceptable: the user gets recovery as soon as they open the main app
+        // and start a new session.
+        guard let defaults = SharedConstants.sharedDefaults,
+              let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey)
+        else { return .retryableFailure }
+
+        let body: [String: Any] = [
+            "sessionId": sessionId,
+            "action": action,
+            "currentIndex": currentIndex
+        ]
+
+        return await postWidgetRequest(
+            urlKey: SharedConstants.widgetNavigateUrlKey,
+            body: body,
+            requestName: "Navigation request"
+        )
+    }
+
+    /// Sends a wall-control claim request to the backend.
+    @discardableResult
+    static func sendTakeControl() async -> WidgetNavigationResult {
+        guard let defaults = SharedConstants.sharedDefaults,
+              let sessionId = defaults.string(forKey: SharedConstants.sessionIdKey)
+        else { return .retryableFailure }
+
+        return await postWidgetRequest(
+            urlKey: SharedConstants.widgetTakeControlUrlKey,
+            body: ["sessionId": sessionId],
+            requestName: "Take-control request"
+        )
     }
 }

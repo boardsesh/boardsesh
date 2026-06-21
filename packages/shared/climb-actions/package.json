@@ -14,7 +14,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@boardsesh/board-config": "*"
+  },
   "devDependencies": {
     "typescript": "^5.9.3"
   }

@@ -29,6 +29,26 @@ vi.mock('@/app/lib/grade-colors', () => ({
     V10: '#A11B4A',
     V11: '#9C27B0',
   },
+  getGradeColor: (grade: string | null | undefined) => {
+    if (!grade) return undefined;
+    const colors: Record<string, string> = {
+      V0: '#FFEB3B',
+      V1: '#FFC107',
+      V2: '#FF9800',
+      V3: '#FF7043',
+      V4: '#FF5722',
+      V5: '#F44336',
+      V6: '#E53935',
+      V7: '#D32F2F',
+      V8: '#C62828',
+      V9: '#B71C1C',
+      V10: '#A11B4A',
+      V11: '#9C27B0',
+    };
+    const vGradeMatch = grade.match(/V\d+/i);
+    if (vGradeMatch) return colors[vGradeMatch[0].toUpperCase()];
+    return undefined;
+  },
   getGradeColorWithOpacity: (hex: string, opacity: number) => `rgba(0,0,0,${opacity})`,
 }));
 

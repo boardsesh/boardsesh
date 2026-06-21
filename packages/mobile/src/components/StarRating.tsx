@@ -13,15 +13,25 @@ type StarRatingProps = {
   maxStars?: number;
   /** Value returned when the user taps the currently-selected star. Defaults to 0. */
   clearValue?: number | undefined;
+  getAccessibilityLabel?: (rating: number, selected: boolean) => string;
+  accessibilityHint?: string;
 };
 
-export function StarRating({ value, onChange, maxStars = 5, clearValue = 0 }: StarRatingProps) {
+export function StarRating({
+  value,
+  onChange,
+  maxStars = 5,
+  clearValue = 0,
+  getAccessibilityLabel,
+  accessibilityHint,
+}: StarRatingProps) {
   const stars = Array.from({ length: maxStars }, (_, index) => index + 1);
 
   return (
     <View style={styles.starRow}>
       {stars.map((starIndex) => {
         const filled = value != null && starIndex <= value;
+        const selected = starIndex === value;
         return (
           <Pressable
             key={starIndex}
@@ -30,7 +40,9 @@ export function StarRating({ value, onChange, maxStars = 5, clearValue = 0 }: St
               onChange(starIndex === value ? clearValue : starIndex);
             }}
             accessibilityRole="button"
-            accessibilityLabel={`${starIndex} stars`}
+            accessibilityLabel={getAccessibilityLabel?.(starIndex, selected) ?? `${starIndex} stars`}
+            accessibilityHint={accessibilityHint}
+            accessibilityState={{ selected }}
             hitSlop={4}
           >
             <Icon

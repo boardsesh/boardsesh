@@ -26,8 +26,22 @@ const DEFAULT_PNG_OPTIONS: sharp.PngOptions = {
   adaptiveFiltering: true,
 };
 
+const THUMBNAIL_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 85,
+  chromaSubsampling: '4:4:4',
+  progressive: false,
+  optimiseScans: false,
+};
+
+const DEFAULT_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 90,
+  chromaSubsampling: '4:4:4',
+  mozjpeg: true,
+};
+
 const OG_BOARD_PADDING_X = 48;
 const OG_BOARD_PADDING_Y = 48;
+const MAX_FRAMES_LENGTH = 16_384;
 
 // Lazily initialized WASM module with promise lock to prevent thundering herd
 let renderOverlay: ((configJson: string) => Uint8Array) | null = null;
@@ -169,6 +183,64 @@ function createOgBackgroundBuffer(boardWidth: number, boardHeight: number): Buff
   );
 }
 
+type OutputFormat = 'webp' | 'png' | 'jpeg';
+
+function normalizeOutputFormat(format: string): OutputFormat | null {
+  if (format === 'jpg') return 'jpeg';
+  if (format === 'webp' || format === 'png' || format === 'jpeg') return format;
+  return null;
+}
+
+function isValidFrameSegment(segment: string): boolean {
+  if (segment.length === 0) return false;
+  let cursor = 0;
+
+  if (segment[cursor] === '"') {
+    cursor++;
+  }
+
+  if (cursor >= segment.length) return false;
+
+  while (cursor < segment.length) {
+    const current = segment[cursor];
+    if (current === 'x') {
+      cursor++;
+      const start = cursor;
+      while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+        cursor++;
+      }
+      if (cursor === start) return false;
+      continue;
+    }
+
+    if (current !== 'p') return false;
+    cursor++;
+    const placementStart = cursor;
+    while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+      cursor++;
+    }
+    if (cursor === placementStart || segment[cursor] !== 'r') return false;
+
+    cursor++;
+    const roleStart = cursor;
+    while (cursor < segment.length && segment[cursor] >= '0' && segment[cursor] <= '9') {
+      cursor++;
+    }
+    if (cursor === roleStart) return false;
+  }
+
+  return true;
+}
+
+function isValidFramesString(frames: string): boolean {
+  if (frames.length === 0) return true;
+  return frames.split(',').every(isValidFrameSegment);
+}
+
+function getJpegOptions(thumbnail: boolean): sharp.JpegOptions {
+  return thumbnail ? THUMBNAIL_JPEG_OPTIONS : DEFAULT_JPEG_OPTIONS;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -181,7 +253,7 @@ export async function GET(request: NextRequest) {
     const thumbnail = searchParams.get('thumbnail') === '1';
     const includeBackground = searchParams.get('include_background') === '1';
     const isOgVariant = searchParams.get('variant') === 'og';
-    const format = searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp');
+    const format = normalizeOutputFormat(searchParams.get('format') ?? (isOgVariant ? 'png' : 'webp'));
     // Mirroring is handled client-side via CSS scaleX(-1) to maximize cache hit rate
 
     if (!boardName || !layoutId || !sizeId || !setIds || frames === null) {
@@ -192,8 +264,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid board_name' }, { status: 400 });
     }
 
-    if (format !== 'webp' && format !== 'png') {
+    if (format === null) {
       return NextResponse.json({ error: 'Invalid format' }, { status: 400 });
+    }
+
+    if (frames.length > MAX_FRAMES_LENGTH) {
+      return NextResponse.json({ error: 'Frames string is too large' }, { status: 400 });
+    }
+
+    if (!isValidFramesString(frames)) {
+      return NextResponse.json({ error: 'Invalid frames' }, { status: 400 });
+    }
+
+    // Optional dim scrim over the board photo (0–1 opacity), applied only with
+    // include_background. Darkens the board behind the holds so the lit climb
+    // reads clearly at thumbnail size — the server equivalent of the mobile climb
+    // list's LayeredClimbImage `dim` (rgba(0,0,0,0.18)). The Live Activity widget
+    // opts in via dim_background=0.18.
+    const dimBackgroundRaw = searchParams.get('dim_background');
+    const dimBackground = dimBackgroundRaw !== null ? Number(dimBackgroundRaw) : 0;
+    if (dimBackgroundRaw !== null && (Number.isNaN(dimBackground) || dimBackground < 0 || dimBackground > 1)) {
+      return NextResponse.json({ error: 'dim_background must be a number between 0 and 1' }, { status: 400 });
     }
 
     const parsedSetIds = setIds
@@ -294,10 +385,22 @@ export async function GET(request: NextRequest) {
         const [firstBg, ...restBgs] = resizedBuffers;
 
         if (firstBg) {
-          // Composite: first background as base → remaining backgrounds → WASM overlay on top
+          // Composite: first background as base → remaining backgrounds →
+          // optional dim scrim → WASM overlay on top. The dim scrim (a black
+          // layer at dim_background opacity) darkens the board photo behind the
+          // holds; mirrors LayeredClimbImage's background→dim→holds stack.
           const composeT0 = performance.now();
+          const dimLayer =
+            dimBackground > 0
+              ? await sharp({
+                  create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: dimBackground } },
+                })
+                  .png()
+                  .toBuffer()
+              : null;
           const compositedImage = sharp(firstBg).composite([
             ...restBgs.map((buf) => ({ input: buf, blend: 'over' as const })),
+            ...(dimLayer ? [{ input: dimLayer, blend: 'over' as const }] : []),
             {
               input: overlayBuffer,
               raw: { width, height, channels: 4 as const },
@@ -309,6 +412,9 @@ export async function GET(request: NextRequest) {
               .webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : DEFAULT_WEBP_OPTIONS)
               .toBuffer();
             outputContentType = 'image/webp';
+          } else if (!isOgVariant && format === 'jpeg') {
+            outputBuffer = await compositedImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+            outputContentType = 'image/jpeg';
           } else {
             imageBuffer = await compositedImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
           }
@@ -321,6 +427,9 @@ export async function GET(request: NextRequest) {
           if (!isOgVariant && format === 'webp') {
             outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
             outputContentType = 'image/webp';
+          } else if (!isOgVariant && format === 'jpeg') {
+            outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+            outputContentType = 'image/jpeg';
           } else {
             imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
           }
@@ -333,6 +442,9 @@ export async function GET(request: NextRequest) {
         if (!isOgVariant && format === 'webp') {
           outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
           outputContentType = 'image/webp';
+        } else if (!isOgVariant && format === 'jpeg') {
+          outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+          outputContentType = 'image/jpeg';
         } else {
           imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
         }
@@ -345,6 +457,9 @@ export async function GET(request: NextRequest) {
       if (!isOgVariant && format === 'webp') {
         outputBuffer = await overlayImage.webp(thumbnail ? THUMBNAIL_WEBP_OPTIONS : { lossless: true }).toBuffer();
         outputContentType = 'image/webp';
+      } else if (!isOgVariant && format === 'jpeg') {
+        outputBuffer = await overlayImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+        outputContentType = 'image/jpeg';
       } else {
         imageBuffer = await overlayImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
       }
@@ -354,18 +469,21 @@ export async function GET(request: NextRequest) {
     const encodeT0 = performance.now();
 
     if (outputBuffer === null && isOgVariant && imageBuffer) {
-      outputBuffer = await sharp(createOgBackgroundBuffer(width, height))
-        .composite([
-          {
-            input: imageBuffer,
-            left: Math.round((OG_IMAGE_WIDTH - width) / 2),
-            top: Math.round((OG_IMAGE_HEIGHT - height) / 2),
-            blend: 'over',
-          },
-        ])
-        .png(DEFAULT_PNG_OPTIONS)
-        .toBuffer();
-      outputContentType = 'image/png';
+      const ogImage = sharp(createOgBackgroundBuffer(width, height)).composite([
+        {
+          input: imageBuffer,
+          left: Math.round((OG_IMAGE_WIDTH - width) / 2),
+          top: Math.round((OG_IMAGE_HEIGHT - height) / 2),
+          blend: 'over',
+        },
+      ]);
+      if (format === 'jpeg') {
+        outputBuffer = await ogImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
+        outputContentType = 'image/jpeg';
+      } else {
+        outputBuffer = await ogImage.png(DEFAULT_PNG_OPTIONS).toBuffer();
+        outputContentType = 'image/png';
+      }
     } else if (outputBuffer === null && imageBuffer && format === 'webp') {
       const getWebpOptions = () => {
         if (thumbnail) return THUMBNAIL_WEBP_OPTIONS;
@@ -374,6 +492,9 @@ export async function GET(request: NextRequest) {
       };
       outputBuffer = await sharp(imageBuffer).webp(getWebpOptions()).toBuffer();
       outputContentType = 'image/webp';
+    } else if (outputBuffer === null && imageBuffer && format === 'jpeg') {
+      outputBuffer = await sharp(imageBuffer).jpeg(getJpegOptions(thumbnail)).toBuffer();
+      outputContentType = 'image/jpeg';
     } else if (outputBuffer === null && imageBuffer) {
       outputBuffer = imageBuffer;
       outputContentType = 'image/png';

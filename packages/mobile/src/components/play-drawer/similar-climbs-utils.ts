@@ -1,8 +1,5 @@
 import type { Climb, SimilarClimb } from '@boardsesh/shared-schema';
-import { formatQuality } from '../../lib/format-climb-stats';
-
-/** Minimal translate signature so this pure util stays out of React. */
-type TranslateCount = (key: string, options: { count: number }) => string;
+import { formatQuality, formatSends, type TranslateSends } from '../../lib/format-climb-stats';
 
 // Build a Climb stub from a SimilarClimb for queue activation (mirrors web's buildClimbStub).
 export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb {
@@ -25,14 +22,16 @@ export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb 
 }
 
 // Compose the "setter · ★quality · N sends" byline, skipping null/zero fields.
-export function formatByline(similar: SimilarClimb, t: TranslateCount): string {
+// Reuses the standardized formatQuality/formatSends helpers; `t` resolves the
+// `sends` key in the `climbs` namespace (compacts counts: "1.5k sends").
+export function formatByline(similar: SimilarClimb, t: TranslateSends): string {
   const parts: string[] = [];
   if (similar.setterUsername) parts.push(similar.setterUsername);
   if (similar.qualityAverage != null && similar.qualityAverage > 0) {
     parts.push(`${formatQuality(String(similar.qualityAverage))}★`);
   }
   if (similar.ascensionistCount != null && similar.ascensionistCount > 0) {
-    parts.push(t('mobile.similarClimbs.sends', { count: similar.ascensionistCount }));
+    parts.push(formatSends(similar.ascensionistCount, t));
   }
   return parts.join(' · ');
 }

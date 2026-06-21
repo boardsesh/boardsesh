@@ -43,9 +43,28 @@ enum ClimbNavigationIntent {
         logger.notice("\(label).perform() running bundle=\(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public) process=\(ProcessInfo.processInfo.processName, privacy: .public) direction=\(direction.rawValue, privacy: .public)")
 
         guard let defaults = SharedConstants.sharedDefaults else { return }
+        // No navigationAllowed gate: the widget only shows Prev/Next when this
+        // device holds the board (connectedByMe — see SessionFooter), so reaching
+        // here means we may drive. Gating visibility rather than the intent fixes
+        // Prev/Next no-op'ing when the persisted navigationAllowed flag drifted
+        // from the shown state. `wallControl` is still read below to decide whether
+        // the party-session server POST runs.
+        let wallControl = SharedWidgetWallControlState.load(from: defaults)
 
         let (items, currentIndex) = SharedQueueState.load(from: defaults)
         guard let newIndex = direction.newIndex(from: currentIndex, count: items.count) else {
+            return
+        }
+
+        let navigationResult: WidgetNavigationResult
+        if wallControl.requiresServerAuthorization {
+            navigationResult = await WidgetNetworking.sendNavigation(action: direction.rawValue, currentIndex: newIndex)
+        } else {
+            navigationResult = .success
+        }
+
+        guard navigationResult != .serverRejected else {
+            logger.notice("\(label).perform() rejected by server; skipping local widget, BLE, and JS fallback updates")
             return
         }
 
@@ -60,7 +79,11 @@ enum ClimbNavigationIntent {
             totalClimbs: items.count,
             hasNext: newIndex < items.count - 1,
             hasPrevious: newIndex > 0,
-            climbUuid: newItem.climbUuid
+            climbUuid: newItem.climbUuid,
+            // Prev/Next are only shown when this device drives the wall, so the
+            // optimistic frame keeps the bulb lit + controls shown.
+            boardConnection: "connectedByMe",
+            holderDisplayName: nil
         )
 
         for activity in Activity<ClimbSessionAttributes>.activities {
@@ -69,14 +92,19 @@ enum ClimbNavigationIntent {
             await activity.update(content)
         }
 
-        // BLE write (main app process only) and HTTP POST to the backend run
-        // concurrently so a slow CoreBluetooth state restoration doesn't
-        // delay backend propagation to other party clients.
+        // Direct BLE writes happen only after the server accepts party-session
+        // navigation, or for local-only sessions. Retryable HTTP failures use
+        // the Darwin/WebSocket fallback, whose mutation path owns repainting.
         #if !WIDGET_EXTENSION
-        async let bleWrite: Void = LiveActivityBleBridge.writeBoardForIntent(items: items, currentIndex: newIndex)
+        let bleWriteTask: Task<Void, Never>?
+        if navigationResult == .success {
+            bleWriteTask = Task {
+                await LiveActivityBleBridge.writeBoardForIntent(items: items, currentIndex: newIndex)
+            }
+        } else {
+            bleWriteTask = nil
+        }
         #endif
-
-        let httpSuccess = await WidgetNetworking.sendNavigation(action: direction.rawValue, currentIndex: newIndex)
 
         // Always tell the JS side that navigation happened so its reducer can
         // run the optimistic `dispatchWidgetNavigation` path on board routes.
@@ -85,14 +113,17 @@ enum ClimbNavigationIntent {
         // (in the main app) sends a WebSocket mutation fallback with a fresh
         // UUID before notifying JS.
         defaults.set(direction.rawValue, forKey: SharedConstants.widgetNavigateActionKey)
-        if httpSuccess {
+        if navigationResult == .success && wallControl.requiresServerAuthorization {
             defaults.set(httpSuccessCorrelationId, forKey: SharedConstants.widgetNavigateCorrelationIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
-        } else {
+        } else if navigationResult == .retryableFailure {
             // Mutation-fallback path: handler generates its own UUID, writes
             // it back to widgetNavigateCorrelationIdKey, then notifies JS.
             defaults.set(direction.rawValue, forKey: SharedConstants.pendingActionKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateCorrelationIdKey)
+        } else {
+            defaults.set(UUID().uuidString, forKey: SharedConstants.widgetNavigateCorrelationIdKey)
+            defaults.removeObject(forKey: SharedConstants.pendingActionKey)
         }
 
         // Wait for the native BLE write to drain before waking JS via the
@@ -104,7 +135,9 @@ enum ClimbNavigationIntent {
         // by the time AutoSender's write enqueues, so the same-content
         // re-send is a fast no-op against the wall's last-frame buffer.
         #if !WIDGET_EXTENSION
-        await bleWrite
+        if let bleWriteTask {
+            await bleWriteTask.value
+        }
         #endif
 
         postQueueNavigateDarwinNotification()

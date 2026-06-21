@@ -1,20 +1,21 @@
 // FeatureFlagsProvider — mirrors `packages/web/app/components/providers/feature-flags-provider.tsx`.
-// Web sources flags from the Vercel Flags SDK; mobile has no equivalent today,
-// so the provider accepts an optional `flags` prop (used by tests) and falls
-// back to an empty bag. When real flags arrive we can either fetch them at
-// boot or move the type into a shared package and converge with web.
+// Mobile reads live PostHog flags when the SDK is available, accepts an
+// optional `flags` prop as a local/dev/emergency override, and falls back to an
+// empty bag.
 //
-// Typed as `Record<string, boolean>` (vs web's `Record<string, never>` which
-// makes `useFeatureFlag` resolve to `never` and is therefore unusable). Mobile
-// uses this as an actually-usable placeholder: consumers can call
+// Typed as `Record<string, boolean | undefined>` (vs web's old
+// `Record<string, never>` which made `useFeatureFlag` resolve to `never` and
+// was therefore unusable). Consumers can call
 // `useFeatureFlag('foo')` and get a `boolean` back; the live value is
-// undefined until a flag source is wired up.
+// undefined when PostHog has no value.
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 
-export type FeatureFlags = Record<string, boolean>;
+export type FeatureFlags = Record<string, boolean | undefined>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
+const FEATURE_FLAG_KEYS = ['strava-integration'] as const;
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
@@ -25,7 +26,32 @@ export function FeatureFlagsProvider({
   flags?: FeatureFlags;
   children: ReactNode;
 }) {
-  return <FeatureFlagsContext.Provider value={flags}>{children}</FeatureFlagsContext.Provider>;
+  const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshFlags = () => {
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      if (!mounted) return;
+      setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
+    };
+
+    refreshFlags();
+    const unsubscribe = subscribePosthogFeatureFlags(refreshFlags);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const value = useMemo<FeatureFlags>(() => {
+    if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS) {
+      return DEFAULT_FEATURE_FLAGS;
+    }
+    return { ...posthogFlags, ...flags };
+  }, [posthogFlags, flags]);
+
+  return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
 }
 
 export function useFeatureFlags(): FeatureFlags {
@@ -34,4 +60,11 @@ export function useFeatureFlags(): FeatureFlags {
 
 export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
   return useFeatureFlags()[key];
+}
+
+function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {
+  const leftKeys = Object.keys(leftFlags);
+  const rightKeys = Object.keys(rightFlags);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => leftFlags[key] === rightFlags[key]);
 }

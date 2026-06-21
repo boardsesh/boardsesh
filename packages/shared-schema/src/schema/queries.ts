@@ -33,6 +33,21 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     sessionSummary(sessionId: ID!): SessionSummary
 
+    """
+    Get viewer-specific session data for an Apple Health workout export.
+    Requires authentication and returns only the requesting user's ticks.
+    """
+    sessionHealthExport(sessionId: ID!): SessionHealthExport
+
+    """
+    Lightweight, presence-independent lifecycle check for a session.
+    Reads the durable session row (not live Redis presence), so it tells an
+    ended session apart from one that is merely empty. Returns null when the
+    session does not exist. Clients use this on cold start to decide whether
+    to restore or drop a persisted session id.
+    """
+    sessionStatus(sessionId: ID!): SessionStatus
+
     # ============================================
     # Board Configuration Queries
     # ============================================
@@ -92,6 +107,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     Returns snapshots captured during shared sync for trend analysis.
     """
     climbStatsHistory(boardName: String!, climbUuid: ID!): [ClimbStatsHistoryEntry!]!
+
+    """
+    Get current per-angle statistics for a climb from the live stats table.
+    Returns one entry for each angle the climb has been logged at.
+    """
+    climbStatsForAngles(boardName: String!, climbUuid: ID!): [ClimbStatsForAngle!]!
 
     # ============================================
     # User Management Queries (require auth)
@@ -169,6 +190,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     Includes enriched climb data for display.
     """
     userAscentsFeed(userId: ID!, input: AscentFeedInput): AscentFeedResult!
+
+    """
+    Suggest the user's logged ascents that a shared reel caption is about, by
+    matching the caption against their whole logbook's climb names. Returns full
+    ascent rows (with board art) for the matched climbs, strongest match first.
+    Powers the mobile share-beta picker.
+    """
+    userAscentCaptionMatches(userId: ID!, caption: String!): [AscentFeedItem!]!
 
     """
     Get public ascent feed grouped by climb and day.
@@ -361,12 +390,12 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     """
     Get session-grouped activity feed (public, no auth required).
-    Groups ticks into sessions (party mode or inferred by 4-hour gap).
+    Groups ticks by explicitly-created sessions.
     """
     sessionGroupedFeed(input: ActivityFeedInput): SessionFeedResult!
 
     """
-    Get full detail for a single session (party mode or inferred).
+    Get full detail for a single explicitly-created session.
     """
     sessionDetail(sessionId: ID!): SessionDetail
 
@@ -374,6 +403,39 @@ export const queriesTypeDefs = /* GraphQL */ `
     Get a feed of newly created climbs for a board type and layout.
     """
     newClimbFeed(input: NewClimbFeedInput!): NewClimbFeedResult!
+
+    """
+    Backfill the recent "now on the wall" history for a board (last ~50, 24h
+    window) from the Redis FIFO. Used by late joiners before the live
+    \`boardNowPlaying\` subscription takes over.
+    """
+    boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+
+    """
+    Durable history of what was pushed to a board (survives past the 24h Redis
+    window), newest-first by \`seq\`. For keyset paging pass the \`seq\` of the
+    last item from the previous page as \`before\` (not \`sentAt\`) — \`seq\` is
+    unique and monotonic per board, so paging never repeats or skips even when
+    several sends share a \`sentAt\` second. A non-integer \`before\` is rejected
+    with BAD_USER_INPUT. \`limit\` is capped at 100. This is the lasting "what
+    was on the wall" record; \`boardRecentClimbs\` is the hot 24h cache.
+    """
+    boardHistory(boardId: Int!, limit: Int, before: String): [BoardPresenceClimb!]!
+
+    """
+    Lightweight stats for a board's wall feed — durable counts derived from
+    \`boardsesh_ticks\` stamped with this board_id, plus the live window.
+    """
+    boardPresenceStats(boardId: Int!): BoardPresenceStats!
+
+    """
+    The board's current connection holder — who's connected and writing right now
+    (the most recent confirmed sender), or null when the board is free. For
+    late-joiner initial state before the \`boardNowPlaying\` /
+    \`BoardConnectionChanged\` stream warms up. Anonymous holders carry null
+    user/name/avatar (clients render a "?").
+    """
+    boardConnection(boardId: Int!): BoardConnectionHolder
 
     """
     Get the current user's new climb subscriptions.
@@ -578,8 +640,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     most-recent-first. Matches both videos this user added directly and
     videos posted under the Instagram handle linked from their profile.
     Returns only rows whose thumbnails are cached in our S3.
+    Paginate with offset (the page size is limit); the caller infers
+    "has more" from a full page coming back.
     """
-    userBetaLinks(userId: String!, limit: Int = 50): [RecentBetaLink!]!
+    userBetaLinks(userId: String!, limit: Int = 50, offset: Int = 0): [RecentBetaLink!]!
 
     """
     Resolve scraped Instagram posts against Boardsesh: which beta videos are
@@ -587,5 +651,20 @@ export const queriesTypeDefs = /* GraphQL */ `
     attaches the missing ones via the attachBetaLink mutation.
     """
     instagramBetaScan(input: InstagramBetaScanInput!): InstagramBetaScanResult!
+
+    """
+    Live preview metadata for a shared Instagram/TikTok URL, before it's
+    attached. Powers the mobile share flow: shows the post thumbnail/caption and
+    lets the client auto-match the climb from the caption. Best-effort — returns
+    null fields rather than throwing when the post is unavailable.
+    """
+    betaLinkPreview(link: String!): BetaLinkPreview!
+
+    """
+    Connection state of every supported external platform integration for the
+    current user, including never-connected providers (connected: false).
+    Requires authentication.
+    """
+    integrations: [IntegrationStatus!]!
   }
 `;

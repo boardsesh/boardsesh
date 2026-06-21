@@ -75,7 +75,7 @@ vi.mock('@/app/hooks/use-grade-format', () => ({
 function makeSession(overrides: Partial<SessionFeedItem> = {}): SessionFeedItem {
   return {
     sessionId: 'session-1',
-    sessionType: 'inferred',
+    sessionType: 'party',
     sessionName: null,
     ownerUserId: 'user-1',
     participants: [
@@ -95,6 +95,10 @@ function makeSession(overrides: Partial<SessionFeedItem> = {}): SessionFeedItem 
     gradeDistribution: [{ grade: 'V5', flash: 2, send: 3, attempt: 3 }],
     boardTypes: ['kilter'],
     hardestGrade: 'V5',
+    hardestSend: null,
+    featuredBeta: null,
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     firstTickAt: '2024-01-15T10:00:00.000Z',
     lastTickAt: '2024-01-15T12:00:00.000Z',
     durationMinutes: 120,
@@ -118,7 +122,7 @@ describe('SessionFeedCard', () => {
     expect(screen.getByText('3 attempts')).toBeTruthy();
   });
 
-  it('shows single user header for inferred sessions', () => {
+  it('shows single user header for explicit sessions', () => {
     render(<SessionFeedCard session={makeSession()} />);
 
     // Should not show AvatarGroup (no multiple avatars)

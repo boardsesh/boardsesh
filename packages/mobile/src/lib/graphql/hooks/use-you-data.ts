@@ -4,12 +4,17 @@ import {
   GET_USER_PROFILE_STATS,
   GET_USER_CLIMB_PERCENTILE,
   GET_USER_ASCENTS_FEED,
+  GET_USER_ASCENT_CAPTION_MATCHES,
+  GET_ACTIVITY_FEED,
   GET_SESSION_GROUPED_FEED,
   type GetUserTicksQueryResponse,
   type GetUserProfileStatsQueryResponse,
   type GetUserClimbPercentileQueryResponse,
   type GetUserAscentsFeedQueryResponse,
   type GetUserAscentsFeedQueryVariables,
+  type GetUserAscentCaptionMatchesQueryResponse,
+  type GetUserAscentCaptionMatchesQueryVariables,
+  type GetActivityFeedQueryResponse,
   type GetSessionGroupedFeedQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { BOARD_TYPES, type LogbookEntry } from '@boardsesh/profile-stats';
@@ -106,6 +111,29 @@ export function useUserAscentsFeed(userId: string | undefined, input?: GetUserAs
   });
 }
 
+/**
+ * Whole-logbook caption matches for the share-beta picker. The backend matches
+ * the shared reel's caption against the user's entire logbook of sends/flashes
+ * and returns full ascent rows (with board art) for the matched climbs — so a
+ * climb older than the recent feed page still gets suggested. Disabled until a
+ * non-empty caption is available.
+ */
+export function useAscentCaptionMatches(userId: string | undefined, caption: string | null | undefined) {
+  const trimmedCaption = caption?.trim() ?? '';
+  return useQuery({
+    queryKey: ['ascentCaptionMatches', userId, trimmedCaption],
+    queryFn: async () => {
+      const response = await getHttpClient().request<
+        GetUserAscentCaptionMatchesQueryResponse,
+        GetUserAscentCaptionMatchesQueryVariables
+      >(GET_USER_ASCENT_CAPTION_MATCHES, { userId: userId!, caption: trimmedCaption });
+      return response.userAscentCaptionMatches;
+    },
+    enabled: !!userId && trimmedCaption.length > 0,
+    staleTime: PROFILE_STALE_TIME_MS,
+  });
+}
+
 /** Session-grouped activity feed for the Sessions tab (cursor-paginated). */
 export function useSessionGroupedFeed(input?: ActivityFeedInput, enabled = true) {
   return useInfiniteQuery({
@@ -117,6 +145,21 @@ export function useSessionGroupedFeed(input?: ActivityFeedInput, enabled = true)
       }),
     getNextPageParam: (lastPage) =>
       lastPage.sessionGroupedFeed.hasMore ? (lastPage.sessionGroupedFeed.cursor ?? undefined) : undefined,
+    enabled,
+  });
+}
+
+/** Itemized home activity feed for people and setters the viewer follows. */
+export function useActivityFeed(input?: ActivityFeedInput, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: ['activityFeed', input],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      getHttpClient().request<GetActivityFeedQueryResponse>(GET_ACTIVITY_FEED, {
+        input: { limit: FEED_PAGE_SIZE, ...input, cursor: pageParam },
+      }),
+    getNextPageParam: (lastPage) =>
+      lastPage.activityFeed.hasMore ? (lastPage.activityFeed.cursor ?? undefined) : undefined,
     enabled,
   });
 }

@@ -3,7 +3,6 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { hapticLight } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { brandColors } from '../../theme/colors';
 import { useTheme } from '../../providers/theme-provider';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -29,7 +28,7 @@ type BoardModeCardProps = {
  * idle is tappable, loading shows a spinner, denied/unavailable dim and disable.
  */
 export function BoardModeCard({ icon, label, sublabel, state = 'idle', onPress }: BoardModeCardProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 

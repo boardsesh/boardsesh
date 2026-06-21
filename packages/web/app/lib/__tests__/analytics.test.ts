@@ -98,6 +98,47 @@ describe('analytics wrapper', () => {
     consoleError.mockRestore();
   });
 
+  it('derives the production backend proxy host when no explicit PostHog host is configured', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.PostHog).toHaveBeenCalledWith(
+      'ph_test_key',
+      expect.objectContaining({
+        host: 'https://ws.boardsesh.com/api/posthog',
+      }),
+    );
+    expect(mocks.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct PostHog ingestion when the proxy URL cannot be derived', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+    setWindowLocation('https://app.boardsesh.com/b/kilter');
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.PostHog).toHaveBeenCalledWith(
+      'ph_test_key',
+      expect.objectContaining({
+        host: 'https://us.i.posthog.com',
+      }),
+    );
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', undefined);
+    expect(consoleWarn).toHaveBeenCalledWith(expect.stringContaining('PostHog proxy URL could not be derived'));
+    expect(mocks.captureMessage).toHaveBeenCalledWith(
+      expect.stringContaining('PostHog proxy URL could not be derived'),
+      'warning',
+    );
+
+    consoleWarn.mockRestore();
+  });
+
   it('does not warn about a missing key outside production hosts', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
     setWindowLocation('https://boardsesh-preview.vercel.app/b/kilter');

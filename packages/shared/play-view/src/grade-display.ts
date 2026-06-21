@@ -22,9 +22,13 @@ const V_GRADES_WITH_MULTIPLE_FONT_GRADES: Set<string> = (() => {
   return result;
 })();
 
+const GRADE_BY_DIFFICULTY_ID = new Map<number, (typeof BOULDER_GRADES)[number]>(
+  BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]),
+);
+
 function extractVGrade(difficulty: string | null | undefined): string | null {
   if (!difficulty) return null;
-  const vGradeMatch = difficulty.match(/V\d+/i);
+  const vGradeMatch = difficulty.match(/V\d+\+?/i);
   return vGradeMatch ? vGradeMatch[0].toUpperCase() : null;
 }
 
@@ -65,15 +69,38 @@ export function formatFontGrade(difficulty: string | null | undefined): string |
   return extractFontGrade(difficulty);
 }
 
-export type GradeDisplayFormat = 'v-grade' | 'font';
+export type GradeDisplayFormat = 'v-grade' | 'font' | 'both';
 export const DEFAULT_GRADE_DISPLAY_FORMAT: GradeDisplayFormat = 'v-grade';
 
 /**
  * Format a difficulty string according to the user's preference.
- * `'v-grade'` → V-style label (`"V5"`, `"V5+"`). `'font'` → Font label (`"6A"`).
+ * `'v-grade'` → V-style label (`"V5"`, `"V5+"`). `'font'` → Font label
+ * (`"6A"`). `'both'` → V then Font (`"V5+ / 6C+"`).
  */
 export function formatGrade(difficulty: string | null | undefined, format: GradeDisplayFormat): string | null {
-  return format === 'font' ? formatFontGrade(difficulty) : formatVGrade(difficulty);
+  if (format === 'font') return formatFontGrade(difficulty);
+  if (format === 'both') {
+    const vGrade = formatVGrade(difficulty);
+    const fontGrade = formatFontGrade(difficulty);
+    if (vGrade && fontGrade) return `${vGrade} / ${fontGrade}`;
+    return vGrade ?? fontGrade;
+  }
+  return formatVGrade(difficulty);
+}
+
+/**
+ * Format a numeric Aurora difficulty id according to the user's preference.
+ * This keeps mobile feed/logbook rows from depending on whatever preformatted
+ * grade label the backend sent alongside the id.
+ */
+export function formatGradeByDifficultyId(
+  difficultyId: number | null | undefined,
+  format: GradeDisplayFormat,
+): string | null {
+  if (difficultyId == null) return null;
+  const grade = GRADE_BY_DIFFICULTY_ID.get(difficultyId);
+  if (!grade) return null;
+  return formatGrade(grade.difficulty_name, format);
 }
 
 /**

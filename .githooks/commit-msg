@@ -1,0 +1,22 @@
+#!/bin/sh
+# Best-effort local Conventional Commit check. CI's commit-lint job is the
+# authoritative gate (local hooks are unreliable across this repo's worktrees).
+#
+# Installed alongside vp's generated pre-commit by scripts/setup-dev.sh — it does
+# not flip core.hooksPath. $1 is the path to the commit message file git wrote.
+
+# Run from the repo root so relative script + node_modules paths resolve.
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root" || exit 0
+
+# Prefer the repo-local tsx; fall back to a tsx on PATH.
+if [ -x "node_modules/.bin/tsx" ]; then
+  tsx_bin="node_modules/.bin/tsx"
+elif command -v tsx >/dev/null 2>&1; then
+  tsx_bin="tsx"
+else
+  echo "commit-msg hook: tsx not found, skipping check (CI will enforce it)." >&2
+  exit 0
+fi
+
+exec "$tsx_bin" scripts/check-commit-message.ts "$1"

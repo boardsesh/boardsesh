@@ -17,6 +17,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     setterUsername: String
     "Board type"
     boardType: String!
+    "Specific board entity id, when this ascent is safe to associate with a named board"
+    boardId: Int
+    "Specific board display name, when this ascent is safe to associate with a named board"
+    boardDisplayName: String
     "Layout ID"
     layoutId: Int
     "Board angle"
@@ -333,6 +337,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     attemptCount: Int
     "User comment on the ascent"
     comment: String
+    "Number of comments on the social entity"
+    commentCount: Int
     "When this feed item was created (ISO 8601)"
     createdAt: String!
     "JSON-encoded metadata for type-specific data (e.g., session summary stats)"
@@ -363,6 +369,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardUuid: String
     "Filter sessions where this user is a participant"
     userId: String
+    "Restrict results to users followed by the authenticated viewer"
+    followingOnly: Boolean
+    "Include one daily hardest-send card for followed/user-filtered days without explicit sessions"
+    includeDailyHighlights: Boolean
   }
 
   """
@@ -404,6 +414,39 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   }
 
   """
+  A highlighted tick used by session feed cards.
+  """
+  type SessionFeedTickHighlight {
+    uuid: ID!
+    userId: String!
+    climbUuid: String!
+    climbName: String
+    boardType: String!
+    layoutId: Int
+    angle: Int!
+    status: String!
+    attemptCount: Int!
+    difficulty: Int
+    difficultyName: String
+    quality: Int
+    isMirror: Boolean!
+    isBenchmark: Boolean!
+    isNoMatch: Boolean!
+    comment: String
+    frames: String
+    setterUsername: String
+    climbedAt: String!
+  }
+
+  """
+  A beta video paired with the tick it represents in a session feed card.
+  """
+  type SessionFeedBetaHighlight {
+    tick: SessionFeedTickHighlight!
+    betaLink: BetaLink!
+  }
+
+  """
   A session feed card representing a group of ticks from a climbing session.
   """
   type SessionFeedItem {
@@ -419,6 +462,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     gradeDistribution: [SessionGradeDistributionItem!]!
     boardTypes: [String!]!
     hardestGrade: String
+    hardestSend: SessionFeedTickHighlight
+    featuredBeta: SessionFeedBetaHighlight
+    socialEntityType: SocialEntityType!
+    socialEntityId: String!
     firstTickAt: String!
     lastTickAt: String!
     durationMinutes: Int
@@ -464,6 +511,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     upvotes: Int!
     "Total attempts (sum of attemptCount) since last successful ascent by this user on this climb"
     totalAttempts: Int
+    "Stored beta videos attached to this climb, batched with the session detail (no live enrichment). Populated by the session-detail query; absent on other selections that reuse this type (e.g. the live SessionStatsUpdated subscription)."
+    betaLinks: [BetaLink!]
   }
 
   """

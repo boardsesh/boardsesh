@@ -156,6 +156,26 @@ describe('queueClimbStatsRecompute', () => {
     expect(recomputeClimbStatsMock).toHaveBeenCalledWith('kilter', 'CLIMB-1', 40);
   });
 
+  it('logs [debouncedClimbStats] queued ... at queue time', async () => {
+    const loggerSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+
+    queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
+
+    expect(loggerSpy).toHaveBeenCalledWith(`[debouncedClimbStats] queued ${KEY}`);
+    loggerSpy.mockRestore();
+  });
+
+  it('logs [debouncedClimbStats] firing ... when the timer fires', async () => {
+    const loggerSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+    redisGetMock.mockImplementation(async () => redisSetMock.mock.calls[0]?.[1] ?? null);
+
+    queueClimbStatsRecompute('kilter', 'CLIMB-1', 40);
+    await vi.advanceTimersByTimeAsync(2100);
+
+    expect(loggerSpy).toHaveBeenCalledWith(`[debouncedClimbStats] firing ${KEY}`);
+    loggerSpy.mockRestore();
+  });
+
   it('logs an error when the recompute throws', async () => {
     const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
     recomputeClimbStatsMock.mockRejectedValue(new Error('DB write failed'));

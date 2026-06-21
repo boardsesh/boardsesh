@@ -1,5 +1,11 @@
 import { eq, ne, and, or, desc, inArray, isNull, sql, count, ilike, gte, lte } from 'drizzle-orm';
-import { type ConnectionContext, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import {
+  type ConnectionContext,
+  type BoardName,
+  SUPPORTED_BOARDS,
+  matchClimbsToCaption,
+  extractQuotedClimbNames,
+} from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
@@ -12,6 +18,35 @@ import {
 } from '../shared/sql-expressions';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
 import { escapeLikePattern } from '../../../utils/like-pattern';
+
+// Shape of a row produced by the userAscentsFeed item mapper. Declared so
+// userAscentCaptionMatches (which reuses that builder) returns a typed ascent
+// row instead of unknown[]. Mirrors the GraphQL AscentFeedItem fields.
+type AscentFeedRow = {
+  uuid: string;
+  climbUuid: string;
+  climbName: string;
+  setterUsername: string | null;
+  boardType: string;
+  boardId: number | null;
+  boardDisplayName: string | null;
+  layoutId: number | null;
+  angle: number;
+  isMirror: boolean;
+  status: string;
+  attemptCount: number;
+  quality: number | null;
+  difficulty: number | null;
+  difficultyName: string | null;
+  consensusDifficulty: number | null;
+  consensusDifficultyName: string | null;
+  qualityAverage: number | null;
+  isBenchmark: boolean;
+  isNoMatch: boolean;
+  comment: string;
+  climbedAt: string;
+  frames: string | null;
+};
 
 export const tickQueries = {
   /**
@@ -242,8 +277,9 @@ export const tickQueries = {
         toDate?: string;
       };
     },
+    ctx?: ConnectionContext,
   ): Promise<{
-    items: unknown[];
+    items: AscentFeedRow[];
     totalCount: number;
     hasMore: boolean;
   }> => {
@@ -326,6 +362,9 @@ export const tickQueries = {
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
+        boardName: dbSchema.userBoards.name,
+        boardIsPublic: dbSchema.userBoards.isPublic,
+        boardIsUnlisted: dbSchema.userBoards.isUnlisted,
         difficultyName: dbSchema.boardDifficultyGrades.boulderName,
         consensusDifficulty: consensusDifficultyExpr,
         consensusDifficultyName: consensusDifficultyNameExpr,
@@ -333,6 +372,7 @@ export const tickQueries = {
         qualityAverage: dbSchema.boardClimbStats.qualityAverage,
       })
       .from(dbSchema.boardseshTicks)
+      .leftJoin(dbSchema.userBoards, eq(dbSchema.boardseshTicks.boardId, dbSchema.userBoards.id))
       // Resolve dedup-merged climbs to their canonical UUID before joining
       // board_climbs / board_climb_stats. See the `ticks` resolver for rationale.
       .leftJoin(
@@ -481,35 +521,46 @@ export const tickQueries = {
         setterUsername,
         layoutId,
         frames,
+        boardName,
+        boardIsPublic,
+        boardIsUnlisted,
         difficultyName,
         consensusDifficulty,
         consensusDifficultyName,
         resolvedIsBenchmark,
         qualityAverage,
-      }) => ({
-        uuid: tick.uuid,
-        climbUuid: tick.climbUuid,
-        climbName: climbName || 'Unknown Climb',
-        setterUsername,
-        boardType: tick.boardType,
-        layoutId,
-        angle: tick.angle,
-        isMirror: tick.isMirror,
-        status: tick.status,
-        attemptCount: tick.attemptCount,
-        quality: tick.quality,
-        difficulty: tick.difficulty,
-        difficultyName,
-        consensusDifficulty:
-          consensusDifficulty !== null && consensusDifficulty !== undefined ? Number(consensusDifficulty) : null,
-        consensusDifficultyName,
-        isBenchmark: Boolean(resolvedIsBenchmark),
-        isNoMatch: isNoMatchClimb(climbDescription),
-        qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
-        comment: tick.comment || '',
-        climbedAt: tick.climbedAt,
-        frames,
-      }),
+      }) => {
+        const canShowBoard =
+          tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));
+        return {
+          uuid: tick.uuid,
+          climbUuid: tick.climbUuid,
+          climbName: climbName || 'Unknown Climb',
+          setterUsername,
+          boardType: tick.boardType,
+          boardId: canShowBoard ? tick.boardId : null,
+          boardDisplayName: canShowBoard ? boardName : null,
+          layoutId,
+          angle: tick.angle,
+          // is_mirror is nullable (default false, no NOT NULL); GraphQL exposes it
+          // as Boolean!, so coerce a null to false here.
+          isMirror: tick.isMirror ?? false,
+          status: tick.status,
+          attemptCount: tick.attemptCount,
+          quality: tick.quality,
+          difficulty: tick.difficulty,
+          difficultyName,
+          consensusDifficulty:
+            consensusDifficulty !== null && consensusDifficulty !== undefined ? Number(consensusDifficulty) : null,
+          consensusDifficultyName,
+          isBenchmark: Boolean(resolvedIsBenchmark),
+          isNoMatch: isNoMatchClimb(climbDescription),
+          qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
+          comment: tick.comment || '',
+          climbedAt: tick.climbedAt,
+          frames,
+        };
+      },
     );
 
     return {
@@ -517,6 +568,61 @@ export const tickQueries = {
       totalCount,
       hasMore: offset + items.length < totalCount,
     };
+  },
+
+  /**
+   * Suggest which of a climber's logged ascents a shared reel is about, by
+   * pulling the climb name out of the caption's quotes and looking it up in their
+   * logbook (the mobile share-beta picker). Public, like userAscentsFeed.
+   *
+   * Boardsesh's share caption embeds the climb name in double quotes
+   * (`"Purple Nurple" @ 40° on the …`), so we extract the quoted name(s) and fetch
+   * the matching send/flash ascents — with board art — by the indexed, per-user
+   * climbName filter (no whole-logbook scan), then keep exact name matches. A
+   * caption with no quoted climb name (e.g. a non-Boardsesh reel, or a MoonBoard
+   * caption, which isn't quoted) yields no suggestions; the climber searches.
+   */
+  userAscentCaptionMatches: async (
+    _: unknown,
+    { userId, caption }: { userId: string; caption: string },
+    ctx?: ConnectionContext,
+  ): Promise<AscentFeedRow[]> => {
+    // Public resolver that fans out to DB queries — rate-limit it like the other
+    // public reads (ctx is always present for a real request; tests pass none).
+    if (ctx) await applyRateLimit(ctx, 10, 'userAscentCaptionMatches');
+
+    // Cap the caption before any scanning so a multi-MB payload can't make
+    // matchAll/extract walk the whole string. 2 KB is ample for a real reel.
+    const MAX_CAPTION_LENGTH = 2048;
+    const MAX_NAME_LOOKUPS = 4;
+    const MAX_SUGGESTIONS = 8;
+
+    const safeCaption = caption.slice(0, MAX_CAPTION_LENGTH);
+    const quotedNames = extractQuotedClimbNames(safeCaption);
+    if (quotedNames.length === 0) return [];
+
+    // statusMode 'send' = flash + send (beta attaches to ascents, not attempts,
+    // so a flash-only climb is still included). The climbName filter is an
+    // indexed, per-user ILIKE that returns a handful of rows — not the whole
+    // logbook — and resolves aliased/deduped climbs to their canonical name.
+    // Lookups run in parallel (captions occasionally quote more than one climb).
+    const feeds = await Promise.all(
+      quotedNames
+        .slice(0, MAX_NAME_LOOKUPS)
+        .map((quotedName) =>
+          tickQueries.userAscentsFeed(
+            _,
+            { userId, input: { climbName: quotedName, statusMode: 'send', limit: 50 } },
+            ctx,
+          ),
+        ),
+    );
+    const gathered = feeds.flatMap((feed) => feed.items);
+
+    // Exact-match the quoted name(s) against the fetched rows — drops ILIKE
+    // substring over-matches and comment-only hits — then de-dupe by climb
+    // (keeping the most recent send, since the feed is recency-sorted) and rank.
+    return matchClimbsToCaption(safeCaption, gathered).slice(0, MAX_SUGGESTIONS);
   },
 
   /**

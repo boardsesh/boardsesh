@@ -10,8 +10,8 @@ import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { buildClimbStub, formatByline, rankBySizeCompatibility } from './similar-climbs-utils';
 import { useSimilarClimbs } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { brandColors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 type SimilarClimbsSectionProps = {
@@ -37,6 +37,8 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
   onClimbPress,
 }: SimilarClimbsSectionProps) {
   const { t } = useTranslation('session');
+  const { t: tClimbs } = useTranslation('climbs');
+  const { brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { data: climbs, isLoading, isError, refetch } = useSimilarClimbs(boardName, climbUuid, layoutId, angle);
 
@@ -98,7 +100,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
       {ranked.map(({ climb: similar, compatible }) => {
         const gradeColor = getGradeColor(similar.difficultyName) ?? DEFAULT_GRADE_COLOR;
         const formattedGrade = formatGrade(similar.difficultyName) ?? similar.difficultyName ?? '';
-        const byline = formatByline(similar, t);
+        const byline = formatByline(similar, tClimbs);
         return (
           <Pressable
             key={similar.uuid}

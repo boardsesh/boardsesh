@@ -1,0 +1,207 @@
+diff --git a/node_modules/react-native-screens/.bun-tag-4d17c8a3a14d1b96 b/.bun-tag-4d17c8a3a14d1b96
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
+index 04d40b38bad73bedd79c6aa8b85125dc79093db7..ea25d1b0b36fcc6afeed44b5d603b8cbd15be6c0 100644
+--- a/ios/helpers/scroll-view/RNSScrollViewFinder.h
++++ b/ios/helpers/scroll-view/RNSScrollViewFinder.h
+@@ -25,4 +25,15 @@
+  */
+ + (nullable UIScrollView *)findContentScrollViewWithDelegatingToProvider:(nullable UIView *)view;
+ 
++/**
++ * Searches for the content UIScrollView inside an RNScreens-managed subtree.
++ * The traversal delegates to `RNSContentScrollViewProviding` before falling back
++ * to a bounded depth-first UIScrollView walk. It only returns blind UIScrollView
++ * matches after entering an `RNSScreenView` / content-scroll-provider subtree,
++ * so unrelated UIViewController trees are left untouched.
++ *
++ * When `view == nil`, it should also return `nil`.
++ */
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view;
++
+ @end
+diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.mm b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+index 2434c612951a40bd1ecfcc476acebb9a9a6b500e..6d23e2e466cc602560aa101b91bb7c7657d196cb 100644
+--- a/ios/helpers/scroll-view/RNSScrollViewFinder.mm
++++ b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
+@@ -1,4 +1,6 @@
+ #import "RNSScrollViewFinder.h"
++#import <objc/message.h>
++#import <objc/runtime.h>
+ 
+ @implementation RNSScrollViewFinder
+ 
+@@ -41,4 +43,119 @@
+   return nil;
+ }
+ 
++// Bound the fallback DFS so unusual hierarchies cannot turn UIKit's scroll-view
++// query into an unbounded traversal. Normal RNScreens + tab/FlashList nesting is
++// shallow; 24 leaves room for extra wrapper views while still failing closed.
++static const NSInteger RNSManagedContentScrollViewSearchMaxDepth = 24;
++
++static BOOL RNSViewIsManagedContentRoot(UIView *view)
++{
++  Class screenViewClass = NSClassFromString(@"RNSScreenView");
++  return (screenViewClass != Nil && [view isKindOfClass:screenViewClass]) ||
++      [view respondsToSelector:@selector(findContentScrollView)];
++}
++
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view
++{
++  return [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:view
++                                                         remainingDepth:RNSManagedContentScrollViewSearchMaxDepth
++                                                    insideManagedSubtree:NO];
++}
++
+++ (nullable UIScrollView *)findContentScrollViewInManagedSubtreeFrom:(nullable UIView *)view
++                                                     remainingDepth:(NSInteger)remainingDepth
++                                                insideManagedSubtree:(BOOL)insideManagedSubtree
++{
++  if (view == nil || remainingDepth < 0) {
++    return nil;
++  }
++
++  BOOL isManagedSubtree = insideManagedSubtree || RNSViewIsManagedContentRoot(view);
++
++  if (isManagedSubtree && [view respondsToSelector:@selector(findContentScrollView)]) {
++    UIScrollView *provided =
++        [static_cast<id<RNSContentScrollViewProviding>>(view) findContentScrollView];
++    if (provided != nil) {
++      return provided;
++    }
++  }
++
++  if (isManagedSubtree && [view isKindOfClass:UIScrollView.class]) {
++    return static_cast<UIScrollView *>(view);
++  }
++
++  // Visit children in order, fully descending each managed branch first. The
++  // climbs list (FlashList) nests its UIScrollView below non-scroll containers,
++  // so UIKit's first-child heuristic misses it.
++  for (UIView *subview in view.subviews) {
++    UIScrollView *found = [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:subview
++                                                                        remainingDepth:remainingDepth - 1
++                                                                   insideManagedSubtree:isManagedSubtree];
++    if (found != nil) {
++      return found;
++    }
++  }
++  return nil;
++}
++
++@end
++
++#pragma mark - contentScrollView fallback for iOS 26 tab-bar minimize
++
++// iOS 26's UITabBarController.minimizeBehavior tracks the scroll view that the
++// selected tab's view controller vends via -contentScrollViewForEdge:. UIKit
++// resolves that for plain RN ScrollView/FlatList, but misses FlashList's nested
++// UIScrollView, so the climbs tab never minimizes. Swizzle the getter to fall
++// back to a bounded RNScreens-managed search when UIKit returns nil — leaving
++// every case UIKit already handles untouched.
++static UIScrollView *RNSContentScrollViewForEdgeFallback(
++    UIViewController *self,
++    SEL _cmd,
++    NSDirectionalRectEdge edge) API_AVAILABLE(ios(26.0))
++{
++  SEL originalSelectorAfterSwizzle = NSSelectorFromString(@"rnscreens_contentScrollViewForEdge:");
++  using ContentScrollViewForEdgeMsgSend = UIScrollView *(*)(id, SEL, NSDirectionalRectEdge);
++  UIScrollView *resolved =
++      reinterpret_cast<ContentScrollViewForEdgeMsgSend>(objc_msgSend)(self, originalSelectorAfterSwizzle, edge);
++  if (resolved != nil) {
++    return resolved;
++  }
++  return [RNSScrollViewFinder findContentScrollViewInManagedSubtreeFrom:self.viewIfLoaded];
++}
++
++@interface UIViewController (RNSContentScrollViewFallback)
++@end
++
++@implementation UIViewController (RNSContentScrollViewFallback)
++
+++ (void)load
++{
++  if (@available(iOS 26.0, *)) {
++    // Use a process-wide selector-keyed marker, not a per-image dispatch_once.
++    // If two react-native-screens copies are linked, the second +load must not
++    // exchange the IMPs back.
++    SEL installedKey = NSSelectorFromString(@"rnscreens_contentScrollViewFallbackInstalled");
++    // +load is serialized by the Objective-C runtime; avoid taking another lock.
++    // The associated marker still prevents duplicate linked copies from re-swizzling.
++    if ([objc_getAssociatedObject(UIViewController.class, installedKey) boolValue]) {
++      return;
++    }
++    SEL originalSelector = @selector(contentScrollViewForEdge:);
++    SEL fallbackSelector = NSSelectorFromString(@"rnscreens_contentScrollViewForEdge:");
++    Method originalMethod = class_getInstanceMethod(UIViewController.class, originalSelector);
++    if (originalMethod != NULL &&
++        class_addMethod(
++            UIViewController.class,
++            fallbackSelector,
++            reinterpret_cast<IMP>(RNSContentScrollViewForEdgeFallback),
++            method_getTypeEncoding(originalMethod))) {
++      Method fallbackMethod = class_getInstanceMethod(UIViewController.class, fallbackSelector);
++      if (fallbackMethod != NULL) {
++        method_exchangeImplementations(originalMethod, fallbackMethod);
++        objc_setAssociatedObject(UIViewController.class, installedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++      }
++    }
++  }
++}
++
+ @end
+diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
+index b92035cde75611c1e31998d9592cf019ef80544c..3b6595f5ae4fd64523cc64eec1bfe3609fa8435d 100644
+--- a/ios/tabs/host/RNSTabsHostComponentView.mm
++++ b/ios/tabs/host/RNSTabsHostComponentView.mm
+@@ -216,11 +216,48 @@ namespace react = facebook::react;
+       } else {
+         [_controller setBottomAccessory:nil animated:YES];
+       }
++      // rnscreens_bottomAccessoryDynamicAttachFix
++      [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
+     }
+ #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(26_0) && !TARGET_OS_TV && !TARGET_OS_VISION
+   }
+ }
+ 
++// rnscreens_bottomAccessoryDynamicAttachFix
++// iOS 26's UITabBarController.setBottomAccessory lays the accessory in for free
++// when it's set during the controller's initial setup, but NOT when it's set
++// after the tab bar has already appeared — UIKit attaches it to the controller
++// yet doesn't lay it in until the tab bar is otherwise invalidated. In the
++// Boardsesh app this surfaces solo: the bottom accessory is mounted only once a
++// current climb exists, so the very first climb set (while the user is already
++// on a tab) attaches an accessory that never renders until something else
++// (a tab-item badge, a tab change) re-lays-out the bar. Force the layout pass
++// ourselves whenever we touch the accessory after the host is on screen. A
++// deferred re-assert covers the accessory content being sized asynchronously by
++// the shadow-state proxy (the first synchronous pass can lay in a zero-size
++// accessory before its frame KVO lands).
++- (void)rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance
++{
++  if (self.window == nil) {
++    // Initial mount (accessory present from the start) lays in for free — only
++    // the post-appearance attach needs the nudge.
++    return;
++  }
++  UIView *controllerView = _controller.view;
++  [controllerView setNeedsLayout];
++  [controllerView layoutIfNeeded];
++  __weak __typeof__(self) weakSelf = self;
++  dispatch_async(dispatch_get_main_queue(), ^{
++    __typeof__(self) strongSelf = weakSelf;
++    if (strongSelf == nil) {
++      return;
++    }
++    UIView *deferredControllerView = strongSelf->_controller.view;
++    [deferredControllerView setNeedsLayout];
++    [deferredControllerView layoutIfNeeded];
++  });
++}
++
+ - (void)markChildUpdated
+ {
+   [self updateContainer];

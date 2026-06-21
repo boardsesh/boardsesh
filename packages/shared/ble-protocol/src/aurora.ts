@@ -18,6 +18,10 @@ export type LedPlacements = Record<number, number>;
  */
 export type LedColorOverrides = Partial<Record<HoldState, string>>;
 
+// The colour encoders parseInt fixed 2-char slices, so only exactly six hex
+// digits (after an optional leading '#') produce valid bytes.
+const SIX_DIGIT_HEX_PATTERN = /^[0-9a-fA-F]{6}$/;
+
 // --- API v3 command bytes (3 bytes per LED, 16-bit positions) ---
 const V3_PACKET_MIDDLE = 81; // 'Q'
 const V3_PACKET_FIRST = 82; // 'R'
@@ -236,7 +240,13 @@ export const getAuroraBluetoothPacket = (
     }
 
     const overrideForState = colorOverrides?.[state.name];
-    const colorSource = overrideForState ?? state.color;
+    // Overrides arrive from app config; anything but 6-digit hex (shorthand
+    // "#fff", a named color) would parseInt to NaN bytes in the colour
+    // encoders and stream garbage to the wall. Fall back to the canonical
+    // state colour instead of honouring a malformed override.
+    const sanitizedOverride =
+      overrideForState && SIX_DIGIT_HEX_PATTERN.test(overrideForState.replace('#', '')) ? overrideForState : undefined;
+    const colorSource = sanitizedOverride ?? state.color;
     const color = colorSource.replace('#', '');
     ledEntries.push({ position: ledPosition, color });
   });

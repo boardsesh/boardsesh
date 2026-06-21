@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
+import { generateSessionHealthExport, generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
 
 // Shared mock state, declared with vi.hoisted to ensure availability before mock setup
 const mockState = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const mockState = vi.hoisted(() => ({
   gradeDistRows: [] as Record<string, unknown>[],
   hardestRows: [] as Record<string, unknown>[],
   participantRows: [] as Record<string, unknown>[],
+  getSessionHealthExport: vi.fn(),
 }));
 
 // Chainable mock builder, also hoisted for use in mock factory
@@ -17,6 +18,7 @@ const { createChainableMock } = vi.hoisted(() => ({
     for (const method of ['select', 'from', 'where', 'leftJoin', 'groupBy', 'orderBy', 'limit']) {
       chain[method] = (..._args: unknown[]) => chain;
     }
+    // oxlint-disable-next-line unicorn/no-thenable -- Drizzle query builders are thenable, so this mock mirrors that contract.
     chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(resolveData).then(resolve, reject);
     return chain;
@@ -53,6 +55,10 @@ vi.mock('@boardsesh/db/schema', () => ({
   boardClimbAliases: {},
 }));
 
+vi.mock('@boardsesh/db/queries', () => ({
+  getSessionHealthExport: mockState.getSessionHealthExport,
+}));
+
 // Mock drizzle-orm functions to prevent errors from passing mock schema objects
 vi.mock('drizzle-orm', () => ({
   eq: (..._args: unknown[]) => ({}),
@@ -71,6 +77,7 @@ describe('generateSessionSummary', () => {
     mockState.gradeDistRows = [];
     mockState.hardestRows = [];
     mockState.participantRows = [];
+    mockState.getSessionHealthExport.mockReset();
   });
 
   it('returns null when session is not found', async () => {
@@ -86,8 +93,8 @@ describe('generateSessionSummary', () => {
 
     mockState.sessionRows = [{ id: 'session-1', startedAt, endedAt, goal: 'Send V5' }];
     mockState.gradeDistRows = [
-      { grade: 'V5', difficulty: 18, count: 3 },
-      { grade: 'V4', difficulty: 16, count: 5 },
+      { grade: 'V5', difficulty: 18, flash: 1, send: 2, attempt: 0 },
+      { grade: 'V4', difficulty: 16, flash: 0, send: 5, attempt: 2 },
     ];
     mockState.hardestRows = [
       {
@@ -96,15 +103,19 @@ describe('generateSessionSummary', () => {
         difficulty: 18,
         grade: 'V5',
         climbName: 'The Crusher',
+        frames: 'p1145r15p1146r12',
+        layoutId: 1,
+        isMirror: false,
       },
     ];
     mockState.participantRows = [
-      { userId: 'user-1', displayName: 'Alice', avatarUrl: null, sends: 4, attempts: 8 },
+      { userId: 'user-1', displayName: 'Alice', avatarUrl: null, sends: 4, flashes: 1, attempts: 8 },
       {
         userId: 'user-2',
         displayName: 'Bob',
         avatarUrl: 'https://example.com/bob.jpg',
         sends: 2,
+        flashes: 0,
         attempts: 5,
       },
     ];
@@ -114,6 +125,7 @@ describe('generateSessionSummary', () => {
     expect(result).not.toBeNull();
     expect(result!.sessionId).toBe('session-1');
     expect(result!.totalSends).toBe(6);
+    expect(result!.totalFlashes).toBe(1);
     expect(result!.totalAttempts).toBe(13);
     expect(result!.durationMinutes).toBe(90);
     expect(result!.goal).toBe('Send V5');
@@ -121,14 +133,18 @@ describe('generateSessionSummary', () => {
     expect(result!.endedAt).toBe('2024-01-15T11:30:00.000Z');
 
     expect(result!.gradeDistribution).toEqual([
-      { grade: 'V5', count: 3 },
-      { grade: 'V4', count: 5 },
+      { grade: 'V5', count: 3, flash: 1, send: 2, attempt: 0 },
+      { grade: 'V4', count: 5, flash: 0, send: 5, attempt: 2 },
     ]);
 
     expect(result!.hardestClimb).toEqual({
       climbUuid: 'climb-abc',
       climbName: 'The Crusher',
       grade: 'V5',
+      frames: 'p1145r15p1146r12',
+      layoutId: 1,
+      boardType: 'kilter',
+      isMirror: false,
     });
 
     expect(result!.participants).toHaveLength(2);
@@ -137,6 +153,7 @@ describe('generateSessionSummary', () => {
       displayName: 'Alice',
       avatarUrl: null,
       sends: 4,
+      flashes: 1,
       attempts: 8,
     });
     expect(result!.participants[1]).toEqual({
@@ -144,6 +161,7 @@ describe('generateSessionSummary', () => {
       displayName: 'Bob',
       avatarUrl: 'https://example.com/bob.jpg',
       sends: 2,
+      flashes: 0,
       attempts: 5,
     });
   });
@@ -151,9 +169,9 @@ describe('generateSessionSummary', () => {
   it('filters out null grades in grade distribution', async () => {
     mockState.sessionRows = [{ id: 'session-1', startedAt: new Date(), endedAt: new Date(), goal: null }];
     mockState.gradeDistRows = [
-      { grade: 'V3', difficulty: 14, count: 2 },
-      { grade: null, difficulty: null, count: 1 },
-      { grade: 'V5', difficulty: 18, count: 3 },
+      { grade: 'V3', difficulty: 14, flash: 0, send: 2, attempt: 0 },
+      { grade: null, difficulty: null, flash: 0, send: 1, attempt: 0 },
+      { grade: 'V5', difficulty: 18, flash: 1, send: 2, attempt: 0 },
     ];
     mockState.hardestRows = [];
     mockState.participantRows = [];
@@ -161,8 +179,8 @@ describe('generateSessionSummary', () => {
     const result = await generateSessionSummary('session-1');
 
     expect(result!.gradeDistribution).toEqual([
-      { grade: 'V3', count: 2 },
-      { grade: 'V5', count: 3 },
+      { grade: 'V3', count: 2, flash: 0, send: 2, attempt: 0 },
+      { grade: 'V5', count: 3, flash: 1, send: 2, attempt: 0 },
     ]);
   });
 
@@ -320,15 +338,124 @@ describe('generateSessionSummary', () => {
     mockState.gradeDistRows = [];
     mockState.hardestRows = [];
     mockState.participantRows = [
-      { userId: 'user-1', displayName: 'A', avatarUrl: null, sends: 10, attempts: 15 },
-      { userId: 'user-2', displayName: 'B', avatarUrl: null, sends: 5, attempts: 20 },
-      { userId: 'user-3', displayName: 'C', avatarUrl: null, sends: 0, attempts: 3 },
+      { userId: 'user-1', displayName: 'A', avatarUrl: null, sends: 10, flashes: 3, attempts: 15 },
+      { userId: 'user-2', displayName: 'B', avatarUrl: null, sends: 5, flashes: 1, attempts: 20 },
+      { userId: 'user-3', displayName: 'C', avatarUrl: null, sends: 0, flashes: 0, attempts: 3 },
     ];
 
     const result = await generateSessionSummary('session-1');
 
     expect(result!.totalSends).toBe(15);
+    expect(result!.totalFlashes).toBe(4);
     expect(result!.totalAttempts).toBe(38);
     expect(result!.participants).toHaveLength(3);
+  });
+});
+
+describe('generateSessionHealthExport', () => {
+  beforeEach(() => {
+    mockState.getSessionHealthExport.mockReset();
+  });
+
+  it('returns null when the export read model is missing', async () => {
+    mockState.getSessionHealthExport.mockResolvedValueOnce(null);
+
+    await expect(generateSessionHealthExport('missing-session', 'user-1')).resolves.toBeNull();
+  });
+
+  it('returns null for a viewer who neither created nor ticked in the session', async () => {
+    mockState.getSessionHealthExport.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      createdByUserId: 'owner-user',
+      startedAt: '2026-06-01T10:00:00.000Z',
+      endedAt: '2026-06-01T11:00:00.000Z',
+      durationMinutes: 60,
+      boardType: 'kilter',
+      totalSends: 0,
+      totalAttempts: 0,
+      hardestClimb: null,
+      laps: [],
+      healthKitWorkoutId: null,
+    });
+
+    await expect(generateSessionHealthExport('session-1', 'other-user')).resolves.toBeNull();
+  });
+
+  it('allows the session creator before they have ticks', async () => {
+    mockState.getSessionHealthExport.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      createdByUserId: 'creator-user',
+      startedAt: '2026-06-01T10:00:00.000Z',
+      endedAt: '2026-06-01T11:00:00.000Z',
+      durationMinutes: 60,
+      boardType: 'kilter',
+      totalSends: 0,
+      totalAttempts: 0,
+      hardestClimb: null,
+      laps: [],
+      healthKitWorkoutId: null,
+    });
+
+    await expect(generateSessionHealthExport('session-1', 'creator-user')).resolves.toMatchObject({
+      sessionId: 'session-1',
+      boardType: 'kilter',
+      totalSends: 0,
+      totalAttempts: 0,
+      laps: [],
+      healthKitWorkoutId: null,
+    });
+  });
+
+  it('returns only the viewer-owned export record', async () => {
+    mockState.getSessionHealthExport.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      createdByUserId: 'owner-user',
+      startedAt: '2026-06-01T10:00:00.000Z',
+      endedAt: '2026-06-01T11:00:00.000Z',
+      durationMinutes: 60,
+      boardType: 'kilter',
+      totalSends: 1,
+      totalAttempts: 3,
+      hardestClimb: { climbUuid: 'climb-1', climbName: 'Test Climb', grade: 'V5' },
+      laps: [
+        {
+          tickUuid: 'tick-1',
+          climbUuid: 'climb-1',
+          climbName: 'Test Climb',
+          grade: 'V5',
+          status: 'send',
+          attemptCount: 3,
+          boardType: 'kilter',
+          angle: 40,
+          climbedAt: '2026-06-01T10:20:00.000Z',
+        },
+      ],
+      healthKitWorkoutId: 'healthkit-workout-1',
+    });
+
+    await expect(generateSessionHealthExport('session-1', 'participant-user')).resolves.toEqual({
+      sessionId: 'session-1',
+      startedAt: '2026-06-01T10:00:00.000Z',
+      endedAt: '2026-06-01T11:00:00.000Z',
+      durationMinutes: 60,
+      boardType: 'kilter',
+      totalSends: 1,
+      totalAttempts: 3,
+      hardestClimb: { climbUuid: 'climb-1', climbName: 'Test Climb', grade: 'V5' },
+      laps: [
+        {
+          tickUuid: 'tick-1',
+          climbUuid: 'climb-1',
+          climbName: 'Test Climb',
+          grade: 'V5',
+          status: 'send',
+          attemptCount: 3,
+          boardType: 'kilter',
+          angle: 40,
+          climbedAt: '2026-06-01T10:20:00.000Z',
+        },
+      ],
+      healthKitWorkoutId: 'healthkit-workout-1',
+    });
   });
 });

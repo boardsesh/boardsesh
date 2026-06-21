@@ -239,7 +239,7 @@ export const socialCommentQueries = {
       ? sql`
         LEFT JOIN boardsesh_ticks bt_filter
           ON c."entity_type" = 'session'
-          AND (bt_filter.session_id = c."entity_id" OR bt_filter.inferred_session_id = c."entity_id")
+          AND bt_filter.session_id = c."entity_id"
         LEFT JOIN board_climbs bc_filter
           ON c."entity_type" = 'climb'
           AND bc_filter.uuid = c."entity_id"
@@ -328,13 +328,13 @@ export const socialCommentQueries = {
 export const socialCommentMutations = {
   addComment: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10, 'comment');
+    await applyRateLimit(ctx, 10, 'addComment');
 
     const validated = validateInput(AddCommentInputSchema, input, 'input');
     const { entityType, entityId, parentCommentUuid, body } = validated;
     const userId = ctx.userId!;
 
-    await validateEntityExists(entityType, entityId);
+    await validateEntityExists(entityType, entityId, userId);
 
     let parentCommentId: number | null = null;
     if (parentCommentUuid) {
@@ -432,7 +432,7 @@ export const socialCommentMutations = {
 
   updateComment: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10, 'comment');
+    await applyRateLimit(ctx, 10, 'updateComment');
 
     const validated = validateInput(UpdateCommentInputSchema, input, 'input');
     const { commentUuid, body } = validated;

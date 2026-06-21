@@ -173,6 +173,7 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
         page: 1,
         pageSize: 50,
         onlyTallClimbs: options?.onlyTallClimbs || false,
+        onlyWideClimbs: options?.onlyWideClimbs || false,
       };
 
       if (options && isAuthenticated) {
@@ -215,6 +216,7 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
       minRating: options.minRating,
       climbBias: options.climbBias,
       onlyTallClimbs: !!options.onlyTallClimbs,
+      onlyWideClimbs: !!options.onlyWideClimbs,
     };
     switch (options.type) {
       case 'volume':

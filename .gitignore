@@ -24,6 +24,11 @@ dist
 # misc
 .DS_Store
 *.pem
+# Self-hosted OTA code signing: the public certificate is committed so the app
+# can verify update signatures; the private/public signing keys stay server-only.
+!packages/mobile/certs/certificate.pem
+packages/mobile/certs/private-key.pem
+packages/mobile/certs/public-key.pem
 /tmp/
 
 # debug
@@ -96,9 +101,32 @@ packages/mobile/.env
 packages/mobile/.expo/
 packages/mobile/ios/
 packages/mobile/android/
+# Native-module gradle/cmake build cache from `expo run:android` (the module's
+# android/ source is tracked, but these generated dirs must not be).
+packages/mobile/modules/**/android/.cxx/
+packages/mobile/modules/**/android/build/
 packages/mobile/dist/
 packages/mobile/.bundle-check-output/
+# Prebuilt simulator dev-client .app for the screenshots pipeline (CI-cached).
+packages/mobile/.app-cache/
 .claude/worktrees/
 
 # Local analysis workspace (out-of-tree artifacts, not source)
 .local-work/
+
+# Apple App Store screenshots are captured fresh by the Maestro pipeline
+# (vp run mobile:screenshots) and uploaded on demand — not committed.
+/app-stores/apple/screenshots/
+# Google Play screenshots ARE committed: app-stores/google/screenshots/pixel-2/
+# is the source of truth the Mobile Store Metadata workflow uploads, refreshed by
+# mobile-screenshots-android.yml's commit-back. (Apple stays ephemeral because
+# deliver routes its many device sizes by pixel dimensions at upload time.)
+
+# fastlane — never commit credentials or generated run artifacts.
+*.p8
+AuthKey_*.p8
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+.vscode/settings.json

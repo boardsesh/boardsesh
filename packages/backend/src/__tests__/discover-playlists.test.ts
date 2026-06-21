@@ -107,6 +107,7 @@ function createMockChain(resolveValue: unknown = []) {
     'set',
   ];
 
+  // oxlint-disable-next-line unicorn/no-thenable -- Drizzle query builders are awaitable; this mock mirrors that API.
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
 
   for (const method of methods) {
@@ -137,6 +138,7 @@ function makePlaylistRow(overrides: Record<string, unknown> = {}) {
     creatorId: 'creator-1',
     creatorName: 'TestUser',
     climbCount: 5,
+    generatedRecommendation: null,
     ...overrides,
   };
 }
@@ -167,7 +169,11 @@ describe('discoverPlaylists resolver', () => {
 
     expect(result.totalCount).toBe(2);
     expect(result.playlists).toHaveLength(2);
-    expect(result.playlists[0]).toMatchObject({ uuid: 'pl-1', boardType: 'kilter' });
+    expect(result.playlists[0]).toMatchObject({
+      uuid: 'pl-1',
+      boardType: 'kilter',
+      isGeneratedRecommendation: false,
+    });
     expect(result.playlists[1]).toMatchObject({ uuid: 'pl-2', boardType: 'tension' });
 
     // Verify both queries used where() (at minimum isPublic filter + owner role)
@@ -286,6 +292,71 @@ describe('discoverPlaylists resolver', () => {
 
     expect(result.playlists).toHaveLength(1);
     expect(result.playlists[0]).toMatchObject({ name: 'Hard Boulders' });
+  });
+
+  it('should expose generated recommendation rows for the requested cohort', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain, calls: countCalls } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([
+      makePlaylistRow({ uuid: 'generated-1', generatedRecommendation: 'kilter:8:25:40:fresh' }),
+    ]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    const result = await playlistQueries.discoverPlaylists(
+      null,
+      { input: { boardType: 'kilter', layoutId: 8, sizeId: 25, angle: 40, generatedRecommendation: true } },
+      ctx,
+    );
+
+    expect(result.totalCount).toBe(1);
+    expect(result.playlists).toHaveLength(1);
+    expect(result.playlists[0]).toMatchObject({
+      uuid: 'generated-1',
+      isGeneratedRecommendation: true,
+    });
+    expect(countCalls.where.length).toBe(1);
+    expect(resultsCalls.where.length).toBe(1);
+  });
+
+  it('should expose community rows when generated recommendations are excluded', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain, calls: countCalls } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+
+    const { chain: resultsChain, calls: resultsCalls } = createMockChain([
+      makePlaylistRow({ uuid: 'community-1', generatedRecommendation: null }),
+    ]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    const result = await playlistQueries.discoverPlaylists(null, { input: { generatedRecommendation: false } }, ctx);
+
+    expect(result.totalCount).toBe(1);
+    expect(result.playlists).toHaveLength(1);
+    expect(result.playlists[0]).toMatchObject({
+      uuid: 'community-1',
+      isGeneratedRecommendation: false,
+    });
+    expect(countCalls.where.length).toBe(1);
+    expect(resultsCalls.where.length).toBe(1);
+  });
+
+  it('should treat a null generated recommendation filter as omitted', async () => {
+    const ctx = makeCtx();
+
+    const { chain: countChain } = createMockChain([{ count: 1 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
+
+    const { chain: resultsChain } = createMockChain([makePlaylistRow({ uuid: 'pl-null-filter' })]);
+    mockDb.select.mockReturnValueOnce(resultsChain);
+
+    const result = await playlistQueries.discoverPlaylists(null, { input: { generatedRecommendation: null } }, ctx);
+
+    expect(result.playlists).toHaveLength(1);
+    expect(result.playlists[0]).toMatchObject({ uuid: 'pl-null-filter' });
   });
 
   it('should not require authentication', async () => {

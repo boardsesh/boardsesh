@@ -1,0 +1,3 @@
+DROP INDEX "user_boards_unique_serial";--> statement-breakpoint
+CREATE UNIQUE INDEX "user_boards_unique_owner_serial" ON "user_boards" USING btree ("owner_id","serial_number") WHERE "user_boards"."serial_number" IS NOT NULL AND "user_boards"."serial_number" <> '' AND "user_boards"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "user_boards_serial_idx" ON "user_boards" USING btree ("serial_number") WHERE "user_boards"."serial_number" IS NOT NULL AND "user_boards"."serial_number" <> '' AND "user_boards"."deleted_at" IS NULL;

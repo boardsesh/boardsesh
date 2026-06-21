@@ -21,6 +21,14 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: 'test-token', isLoading: false, isAuthenticated: true, error: null }),
+}));
+
+vi.mock('@/app/lib/backend-url', () => ({
+  getBackendHttpUrl: () => 'https://backend.test',
+}));
+
 // Mock streamImport
 const mockStreamImport = vi.fn();
 vi.mock('@/app/lib/data-sync/aurora/json-import-stream', () => ({
@@ -43,7 +51,7 @@ beforeEach(() => {
 function mockCredentialsResponse(credentials: unknown[] = []) {
   return {
     ok: true,
-    json: () => Promise.resolve({ credentials }),
+    json: () => Promise.resolve({ credentials, kilterSyncAllowed: false }),
   };
 }
 
@@ -74,6 +82,19 @@ describe('BoardImportPrompt', () => {
 
       expect(screen.getByText('Link')).toBeTruthy();
       expect(screen.getByText('Import')).toBeTruthy();
+    });
+
+    it('renders a load error instead of a disconnected card when credentials fail to load', async () => {
+      mockFetch.mockRejectedValue(new Error('network down'));
+
+      render(<BoardImportPrompt boardType="tension" />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Couldn't load your board accounts.")).toBeTruthy();
+      });
+
+      expect(screen.queryByText('Link')).toBeNull();
+      expect(screen.queryByText('Import')).toBeNull();
     });
 
     it('renders card with Unlink button when credential exists', async () => {
@@ -144,7 +165,7 @@ describe('BoardImportPrompt', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          '/api/internal/aurora-credentials',
+          'https://backend.test/api/aurora-credentials',
           expect.objectContaining({
             method: 'POST',
             body: JSON.stringify({ boardType: 'tension', username: 'myuser', password: 'mypass' }),
@@ -210,7 +231,7 @@ describe('BoardImportPrompt', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          '/api/internal/aurora-credentials',
+          'https://backend.test/api/aurora-credentials',
           expect.objectContaining({
             method: 'DELETE',
             body: JSON.stringify({ boardType: 'tension' }),
@@ -412,7 +433,10 @@ describe('BoardImportPrompt', () => {
       fireEvent.click(screen.getAllByText('Import').find((el) => el.closest('[role="dialog"]'))!);
 
       await waitFor(() => {
-        expect(mockStreamImport).toHaveBeenCalledWith('kilter', expect.anything(), expect.any(Function));
+        expect(mockStreamImport).toHaveBeenCalledWith('kilter', expect.anything(), expect.any(Function), {
+          backendUrl: 'https://backend.test',
+          authToken: 'test-token',
+        });
       });
 
       await waitFor(() => {

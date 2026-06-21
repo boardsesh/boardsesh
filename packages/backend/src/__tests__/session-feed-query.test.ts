@@ -71,11 +71,17 @@ describe('sessionGroupedFeed user filtering', () => {
           vote_up: 5,
           vote_down: 1,
           comment_count: 2,
+          daily_user_id: null,
+          daily_date: null,
+          daily_display_name: null,
+          daily_avatar_url: null,
+          daily_board_types: null,
+          highlight_tick_uuid: null,
         },
       ])
       .mockResolvedValueOnce([
         {
-          effective_session_id: 'party-1',
+          session_id: 'party-1',
           userId: 'user-1',
           displayName: 'Alex',
           avatarUrl: null,
@@ -84,7 +90,7 @@ describe('sessionGroupedFeed user filtering', () => {
           attempts: 2,
         },
         {
-          effective_session_id: 'party-1',
+          session_id: 'party-1',
           userId: 'user-2',
           displayName: 'Sam',
           avatarUrl: null,
@@ -95,7 +101,7 @@ describe('sessionGroupedFeed user filtering', () => {
       ])
       .mockResolvedValueOnce([
         {
-          effective_session_id: 'party-1',
+          session_id: 'party-1',
           diff_num: 10,
           flash: 2,
           send: 3,
@@ -104,10 +110,12 @@ describe('sessionGroupedFeed user filtering', () => {
       ])
       .mockResolvedValueOnce([
         {
-          effective_session_id: 'party-1',
+          session_id: 'party-1',
           board_types: ['kilter'],
         },
-      ]);
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
 
     sessionFeedTestState.selectWhereMock.mockResolvedValue([
       {
@@ -129,16 +137,21 @@ describe('sessionGroupedFeed user filtering', () => {
 
     const mainQueryText = sqlToText(sessionFeedTestState.executeMock.mock.calls[0][0]);
 
-    expect(mainQueryText).toContain('eligible_party_sessions');
-    expect(mainQueryText).toContain('INNER JOIN eligible_party_sessions eps ON eps.session_id = t.session_id');
+    expect(mainQueryText).toContain('eligible_sessions');
+    expect(mainQueryText).toContain('INNER JOIN eligible_sessions es ON es.session_id = t.session_id');
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]).toMatchObject({
       sessionId: 'party-1',
+      sessionType: 'party',
       totalSends: 5,
       totalFlashes: 2,
       totalAttempts: 6,
       hardestGrade: '4a/V0',
+      hardestSend: null,
+      featuredBeta: null,
+      socialEntityType: 'session',
+      socialEntityId: 'party-1',
       participants: [
         expect.objectContaining({ userId: 'user-1', sends: 3 }),
         expect.objectContaining({ userId: 'user-2', sends: 2 }),

@@ -4,7 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // up the native binary. We control what it returns per test by reassigning
 // the variable the mock factory closes over before each import.
 type NativeMock = {
-  renderHoldsOverlay?: ((configJson: string, cacheKey: string) => Promise<string>) | unknown;
+  renderHoldsOverlayWithMarkers?: unknown;
+  renderHoldsOverlay?: unknown;
   renderComposite?: (configJson: string, backgroundPaths: string[], cacheKey: string) => Promise<string>;
 } | null;
 
@@ -38,6 +39,28 @@ describe('renderHoldsOverlay shim', () => {
 
     expect(result).toBe('file:///out/new.png');
     expect(renderHolds).toHaveBeenCalledWith('{"json":true}', 'cache-key-1');
+    expect(renderComposite).not.toHaveBeenCalled();
+  });
+
+  it('uses the marker-aware path for marker override configs', async () => {
+    const renderMarkers = vi.fn().mockResolvedValue('file:///out/markers.png');
+    const renderHolds = vi.fn().mockResolvedValue('file:///out/new.png');
+    const renderComposite = vi.fn().mockResolvedValue('file:///out/old.png');
+    nativeMock = { renderHoldsOverlayWithMarkers: renderMarkers, renderHoldsOverlay: renderHolds, renderComposite };
+
+    const { renderHoldsOverlay } = await loadShim();
+    const configJson = JSON.stringify({
+      stroke_width_multiplier: 1.5,
+      shape_size_multiplier: 1,
+      hold_state_map: {
+        12: { color: '#ff0000' },
+      },
+    });
+    const result = await renderHoldsOverlay(configJson, 'cache-key-marker');
+
+    expect(result).toBe('file:///out/markers.png');
+    expect(renderMarkers).toHaveBeenCalledWith(configJson, 'cache-key-marker');
+    expect(renderHolds).not.toHaveBeenCalled();
     expect(renderComposite).not.toHaveBeenCalled();
   });
 
@@ -94,6 +117,46 @@ describe('renderHoldsOverlay shim', () => {
 
     expect(result).toBe('file:///out/old.png');
     expect(renderComposite).toHaveBeenCalledWith('{"json":true}', [], 'cache-key-5');
+  });
+
+  it('does not fall back to renderComposite for marker override configs old binaries cannot honor', async () => {
+    const renderComposite = vi.fn().mockResolvedValue('file:///out/old.png');
+    nativeMock = { renderComposite };
+
+    const { renderHoldsOverlay } = await loadShim();
+    await expect(
+      renderHoldsOverlay(
+        JSON.stringify({
+          stroke_width_multiplier: 1.5,
+          shape_size_multiplier: 1.8,
+          hold_state_map: {
+            12: { color: '#ff0000', shape: 'triangle-up' },
+          },
+        }),
+        'cache-key-custom-marker',
+      ),
+    ).rejects.toThrow(/rebuilt BoardRenderer native binary/);
+    expect(renderComposite).not.toHaveBeenCalled();
+  });
+
+  it('does not use overlay-only binaries for marker override configs', async () => {
+    const renderHolds = vi.fn().mockResolvedValue('file:///out/default-markers.png');
+    nativeMock = { renderHoldsOverlay: renderHolds };
+
+    const { renderHoldsOverlay } = await loadShim();
+    await expect(
+      renderHoldsOverlay(
+        JSON.stringify({
+          stroke_width_multiplier: 1,
+          shape_size_multiplier: 1,
+          hold_state_map: {
+            12: { color: '#ff0000', shape: 'diamond' },
+          },
+        }),
+        'cache-key-custom-marker',
+      ),
+    ).rejects.toThrow(/rebuilt BoardRenderer native binary/);
+    expect(renderHolds).not.toHaveBeenCalled();
   });
 
   it('throws when the native module is not linked at all', async () => {

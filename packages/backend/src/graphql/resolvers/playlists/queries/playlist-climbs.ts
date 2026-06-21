@@ -16,6 +16,10 @@ export type PlaylistClimbsInput = {
   sizeId?: number;
   setIds?: string;
   angle?: number;
+  // All-boards mode only: render on-active-board climbs at the user's selected
+  // angle instead of the added-at / most-ascents fallback.
+  activeBoardName?: string;
+  activeAngle?: number;
   page?: number;
   pageSize?: number;
 };
@@ -68,6 +72,8 @@ async function fetchSpecificBoardClimbs(
       name: tables.climbs.name,
       description: tables.climbs.description,
       frames: tables.climbs.frames,
+      frames_count: tables.climbs.framesCount,
+      frames_pace: tables.climbs.framesPace,
       ascensionist_count: tables.climbStats.ascensionistCount,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
       quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -98,11 +104,13 @@ async function fetchSpecificBoardClimbs(
     name: result.name || '',
     description: result.description || '',
     frames: result.frames || '',
+    framesCount: result.frames_count ?? null,
+    framesPace: result.frames_pace ?? null,
     angle: inputAngle,
     ascensionist_count: Number(result.ascensionist_count || 0),
     difficulty: getGradeLabel(result.difficulty_id),
     quality_average: result.quality_average?.toString() || '0',
-    stars: getClimbStars(boardName, result.quality_average),
+    stars: getClimbStars(result.quality_average),
     difficulty_error: result.difficulty_error?.toString() || '0',
     benchmark_difficulty:
       result.benchmark_difficulty && result.benchmark_difficulty > 0 ? result.benchmark_difficulty.toString() : null,
@@ -122,6 +130,7 @@ async function fetchSpecificBoardClimbs(
  */
 async function fetchAllBoardsClimbs(
   playlistId: bigint,
+  input: PlaylistClimbsInput,
   page: number,
   pageSize: number,
 ): Promise<{ climbs: Climb[]; hasMore: boolean }> {
@@ -142,9 +151,15 @@ async function fetchAllBoardsClimbs(
 
   const { items, hasMore } = paginateResults(refRows, pageSize);
 
+  // Climbs on the active board render their grade at the user's selected angle;
+  // every other climb keeps its added-at angle (most-ascents when null). The
+  // hydrator drops back to most-ascents if a climb has no stats at the override
+  // angle, so the selected angle never blanks a grade.
+  const { activeBoardName, activeAngle } = input;
   const angleOverrides = new Map<string, number | null>();
   for (const row of items) {
-    angleOverrides.set(`${row.boardType}:${row.climbUuid}`, row.playlistAngle ?? null);
+    const useActiveAngle = activeBoardName != null && activeAngle != null && row.boardType === activeBoardName;
+    angleOverrides.set(`${row.boardType}:${row.climbUuid}`, useActiveAngle ? activeAngle : (row.playlistAngle ?? null));
   }
 
   const climbs = await hydrateClimbsByRefs(
@@ -184,7 +199,7 @@ export const playlistClimbs = async (
     const { climbs, hasMore } = await fetchSpecificBoardClimbs(playlistId, input, page, pageSize);
     return { climbs, totalCount, hasMore };
   } else {
-    const { climbs, hasMore } = await fetchAllBoardsClimbs(playlistId, page, pageSize);
+    const { climbs, hasMore } = await fetchAllBoardsClimbs(playlistId, input, page, pageSize);
     return { climbs, totalCount, hasMore };
   }
 };

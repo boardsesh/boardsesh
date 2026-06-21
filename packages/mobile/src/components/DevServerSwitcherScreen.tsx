@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Constants from 'expo-constants';
-import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Text } from './Text';
 import { SectionHeader } from './SectionHeader';
@@ -24,15 +23,11 @@ import { InfoRow } from './InfoRow';
 import { Button } from './Button';
 import { Sheet } from './Sheet';
 import { useTheme } from '../providers/theme-provider';
+import { useConfirm } from '../providers/dialog-provider';
 import { hapticLight, hapticError } from '../lib/haptics';
 import { discoverBundlers, type DiscoveredBundler } from '../lib/metro-discovery';
 import { addSavedMetroTarget, getSavedMetroTargets, removeSavedMetroTarget } from '../lib/metro-target-store';
-
-type ExpoDevLauncherModule = {
-  loadApp(url: string): Promise<boolean>;
-};
-
-const ExpoDevLauncher = requireOptionalNativeModule<ExpoDevLauncherModule>('ExpoDevLauncher');
+import { expoDevLauncher, isDevLauncherAvailable } from '../lib/dev-launcher';
 
 function getTailscaleHosts(): string[] {
   const hosts = Constants.expoConfig?.extra?.tailscaleHosts;
@@ -59,6 +54,7 @@ function formatStartedAt(value: string | null | undefined): string {
 
 export function DevServerSwitcherScreen() {
   const { systemColors, spacing, borderRadius } = useTheme();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const infoSheetRef = useRef<BottomSheet>(null);
   const [switchingUrl, setSwitchingUrl] = useState<string | null>(null);
@@ -87,11 +83,11 @@ export function DevServerSwitcherScreen() {
 
   const switchMutation = useMutation({
     mutationFn: async (bundler: DiscoveredBundler) => {
-      if (!ExpoDevLauncher) {
+      if (!expoDevLauncher) {
         throw new Error('Dev launcher unavailable — install expo-dev-client and rebuild');
       }
       setSwitchingUrl(bundler.url);
-      await ExpoDevLauncher.loadApp(bundler.url);
+      await expoDevLauncher.loadApp(bundler.url);
     },
     onError: (mutationError: unknown) => {
       hapticError();
@@ -147,17 +143,22 @@ export function DevServerSwitcherScreen() {
   }, [queryClient]);
 
   const handleSwitchBundler = useCallback(
-    (bundler: DiscoveredBundler) => {
+    async (bundler: DiscoveredBundler) => {
       hapticLight();
-      // i18n-ignore-next-line
-      Alert.alert('Switch Metro Server', `Load JS bundle from ${bundler.host}:${bundler.port}? The app will reload.`, [
+      const confirmed = await confirm({
+        // i18n-ignore-next-line — preview-only dev screen
+        title: 'Switch Metro Server',
         // i18n-ignore-next-line
-        { text: 'Cancel', style: 'cancel' },
+        message: `Load JS bundle from ${bundler.host}:${bundler.port}? The app will reload.`,
         // i18n-ignore-next-line
-        { text: 'Switch', onPress: () => switchMutation.mutate(bundler) },
-      ]);
+        confirmLabel: 'Switch',
+        // i18n-ignore-next-line
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return;
+      switchMutation.mutate(bundler);
     },
-    [switchMutation],
+    [confirm, switchMutation],
   );
 
   const handleShowInfo = useCallback((bundler: DiscoveredBundler) => {
@@ -186,21 +187,22 @@ export function DevServerSwitcherScreen() {
   }, []);
 
   const handleRemoveTarget = useCallback(
-    (target: string) => {
+    async (target: string) => {
       hapticLight();
-      // i18n-ignore-next-line
-      Alert.alert('Remove Metro Server', target, [
+      const confirmed = await confirm({
+        // i18n-ignore-next-line — preview-only dev screen
+        title: 'Remove Metro Server',
+        message: target,
         // i18n-ignore-next-line
-        { text: 'Cancel', style: 'cancel' },
-        {
-          // i18n-ignore-next-line
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeTargetMutation.mutate(target),
-        },
-      ]);
+        confirmLabel: 'Remove',
+        // i18n-ignore-next-line
+        cancelLabel: 'Cancel',
+        destructive: true,
+      });
+      if (!confirmed) return;
+      removeTargetMutation.mutate(target);
     },
-    [removeTargetMutation],
+    [confirm, removeTargetMutation],
   );
 
   const isSwitching = switchingUrl !== null;
@@ -239,7 +241,7 @@ export function DevServerSwitcherScreen() {
           {/* i18n-ignore-next-line */}
           <InfoRow label="Saved targets" value={String(savedTargets.length)} />
           {/* i18n-ignore-next-line */}
-          <InfoRow label="Dev launcher" value={ExpoDevLauncher ? 'available' : 'missing'} />
+          <InfoRow label="Dev launcher" value={isDevLauncherAvailable() ? 'available' : 'missing'} />
           <InfoRow
             // i18n-ignore-next-line
             label="Bundlers live"
@@ -470,7 +472,7 @@ export function DevServerSwitcherScreen() {
               icon="chevron.right"
               onPress={() => {
                 infoSheetRef.current?.close();
-                handleSwitchBundler(selectedBundler);
+                void handleSwitchBundler(selectedBundler);
               }}
               loading={switchingUrl === selectedBundler.url}
               disabled={isSwitching && switchingUrl !== selectedBundler.url}

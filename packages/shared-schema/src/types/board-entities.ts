@@ -88,10 +88,14 @@ export type UpdateBoardInput = {
   boardUuid: string;
   name?: string;
   slug?: string;
-  description?: string;
-  locationName?: string;
-  latitude?: number;
-  longitude?: number;
+  // Nullable clearable fields: `undefined` leaves the value unchanged, `null`
+  // clears it server-side (the resolver applies any value that isn't undefined,
+  // and the Zod schema accepts null). The edit form sends null for an emptied
+  // field that previously had a value.
+  description?: string | null;
+  locationName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   isPublic?: boolean;
   isUnlisted?: boolean;
   hideLocation?: boolean;
@@ -101,7 +105,7 @@ export type UpdateBoardInput = {
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
-  serialNumber?: string;
+  serialNumber?: string | null;
 };
 
 export type BoardLeaderboardInput = {

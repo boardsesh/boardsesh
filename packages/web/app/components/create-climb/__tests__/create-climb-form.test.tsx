@@ -4,7 +4,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CreateClimbForm from '../create-climb-form';
 import { useBoardProvider } from '../../board-provider/board-provider-context';
-import { useCreateClimb } from '../use-create-climb';
+import { useCreateClimb } from '@boardsesh/create-climb-react';
 import { useMoonBoardCreateClimb } from '../use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../../board-bluetooth-control/bluetooth-context';
 import type { BoardDetails, Climb } from '@/app/lib/types';
@@ -69,7 +69,7 @@ vi.mock('../../board-bluetooth-control/bluetooth-context', () => ({
   useOptionalBluetoothContext: vi.fn(() => ({ isConnected: false, sendFramesToBoard: mockSendFramesToBoard })),
 }));
 
-vi.mock('../use-create-climb', () => ({
+vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: vi.fn(() => ({
     litUpHoldsMap: mockAuroraCreateState.litUpHoldsMap,
     setHoldState: mockSetAuroraHoldState,
@@ -818,6 +818,10 @@ describe('CreateClimbForm — Aurora rendering', () => {
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
       loadHolds: mockLoadAuroraHolds,
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
     });
 
     renderAuroraComponent();
@@ -857,6 +861,10 @@ describe('CreateClimbForm — Aurora rendering', () => {
       resetHolds: mockResetAuroraHolds,
       generateFramesString: mockGenerateAuroraFramesString,
       loadHolds: mockLoadAuroraHolds,
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
     });
 
     renderAuroraComponent();
@@ -952,10 +960,10 @@ describe('CreateClimbForm — forkName prop', () => {
     mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [] });
   });
 
-  it('initialises the climb name input with "<forkName> fork" when forkName provided', () => {
+  it('initialises the climb name input with "<forkName> remix" when forkName provided', () => {
     renderMoonboard({ forkName: 'Original Climb' });
     fireEvent.click(screen.getByRole('button', { name: /settings/i }));
-    expect(screen.getByDisplayValue('Original Climb fork')).toBeTruthy();
+    expect(screen.getByDisplayValue('Original Climb remix')).toBeTruthy();
   });
 
   it('initialises the climb name input as empty when forkName is absent', () => {

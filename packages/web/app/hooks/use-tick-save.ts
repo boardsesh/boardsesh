@@ -8,6 +8,7 @@ import { useBoardProvider } from '../components/board-provider/board-provider-co
 import type { LogbookEntry, TickStatus } from '@boardsesh/board-react';
 import { useConfetti } from './use-confetti';
 import { saveTickDraft, clearTickDraft } from '@/app/lib/tick-draft-db';
+import { useBoardPresenceControls } from '../components/board-presence/board-presence-context';
 
 /** Snapshot of the tick target taken when the bar is first opened with a valid climb. */
 export type TickTarget = {
@@ -73,6 +74,7 @@ export function useTickSave(options: UseTickSaveOptions): {
     onError,
   } = options;
   const { saveTick } = useBoardProvider();
+  const { boardId: presenceBoardId } = useBoardPresenceControls();
   const fireConfetti = useConfetti();
   const saving = useRef(false);
   const flashDelayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,6 +155,7 @@ export function useTickSave(options: UseTickSaveOptions): {
         layoutId: targetBoard.layout_id,
         sizeId: targetBoard.size_id,
         setIds: Array.isArray(targetBoard.set_ids) ? targetBoard.set_ids.join(',') : String(targetBoard.set_ids),
+        ...(presenceBoardId !== null ? { boardId: presenceBoardId } : {}),
       })
         .then(() => {
           track('Quick Tick Saved', {
@@ -186,6 +189,7 @@ export function useTickSave(options: UseTickSaveOptions): {
       attemptCount,
       fireConfetti,
       onError,
+      presenceBoardId,
     ],
   );
 

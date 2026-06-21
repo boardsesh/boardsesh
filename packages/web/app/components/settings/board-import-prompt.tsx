@@ -18,7 +18,14 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import type { AuroraCredentialStatus } from '@/app/api/internal/aurora-credentials/route';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import {
+  deleteAuroraCredential,
+  getAuroraCredentials,
+  resolveAuroraBackendTransport,
+  saveAuroraCredential,
+  type AuroraCredentialStatus,
+} from '@/app/lib/aurora-credentials/client';
 import type { ImportResult } from '@/app/lib/data-sync/aurora/json-import';
 import { streamImport } from '@/app/lib/data-sync/aurora/json-import-stream';
 import {
@@ -43,11 +50,13 @@ type BoardImportPromptProps = {
 export default function BoardImportPrompt({ boardType, onImportComplete }: BoardImportPromptProps) {
   const { t } = useTranslation('settings');
   const { showMessage } = useSnackbar();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
 
   // Credential state
   const [credential, setCredential] = useState<AuroraCredentialStatus | null>(null);
   const [loadingCredential, setLoadingCredential] = useState(true);
+  const [credentialLoadError, setCredentialLoadError] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -63,24 +72,32 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
   const [importError, setImportError] = useState<string | null>(null);
 
   const fetchCredential = async () => {
+    setCredentialLoadError(false);
+    const transport = resolveAuroraBackendTransport(authToken);
+    if (!transport) {
+      setCredentialLoadError(true);
+      setLoadingCredential(false);
+      return;
+    }
+
     try {
-      const response = await fetch('/api/internal/aurora-credentials');
-      if (response.ok) {
-        const data = await response.json();
-        const cred = (data.credentials as AuroraCredentialStatus[]).find((c) => c.boardType === boardType);
-        setCredential(cred ?? null);
-      }
+      const data = await getAuroraCredentials(transport);
+      const cred = data.credentials.find((c) => c.boardType === boardType);
+      setCredential(cred ?? null);
     } catch (error) {
       console.error('Failed to fetch credentials:', error);
+      setCredentialLoadError(true);
     } finally {
       setLoadingCredential(false);
     }
   };
 
   useEffect(() => {
+    if (authTokenLoading) return;
+    setLoadingCredential(true);
     void fetchCredential();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardType]);
+  }, [authToken, authTokenLoading, boardType]);
 
   // --- Link Account handlers ---
 
@@ -97,20 +114,14 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
   const handleSaveCredentials = async (values: { username: string; password: string }) => {
     setIsSaving(true);
     try {
-      const response = await fetch('/api/internal/aurora-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardType,
-          username: values.username,
-          password: values.password,
-        }),
-      });
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.linkDialog.linkError'));
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to save credentials');
-      }
+      await saveAuroraCredential(transport, {
+        boardType,
+        username: values.username,
+        password: values.password,
+      });
 
       showMessage(t('aurora.linkDialog.linkSuccess', { boardName }), 'success');
       setIsModalOpen(false);
@@ -126,18 +137,16 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
   const handleRemove = async () => {
     setIsRemoving(true);
     try {
-      const response = await fetch('/api/internal/aurora-credentials', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boardType }),
-      });
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.unlinkError'));
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to remove credentials');
+      const result = await deleteAuroraCredential(transport, boardType);
+
+      if (!result.success && result.reason === 'revocation_failed') {
+        showMessage(t('aurora.unlinkPartial'), 'warning');
+      } else {
+        showMessage(t('auroraImport.unlinkSuccessToast'), 'success');
       }
-
-      showMessage(t('auroraImport.unlinkSuccessToast'), 'success');
       await fetchCredential();
     } catch (error) {
       showMessage(error instanceof Error ? error.message : t('aurora.unlinkError'), 'error');
@@ -204,40 +213,51 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
     setImportPreview(null);
 
     try {
-      await streamImport(boardType, importRawData, (event) => {
-        switch (event.type) {
-          case 'progress':
-            setImportProgress({
-              step: event.step,
-              message: 'message' in event ? event.message : undefined,
-              current: 'current' in event ? event.current : undefined,
-              total: 'total' in event ? event.total : undefined,
-            });
-            break;
-          case 'complete':
-            setImportResult(event.results);
-            setImportPhase('complete');
-            onImportComplete?.();
-            {
-              const totalImported =
-                event.results.climbs.imported +
-                event.results.ascents.imported +
-                event.results.attempts.imported +
-                event.results.circuits.imported;
-              if (event.results.partialError) {
-                showMessage(t('aurora.import.partialWarning'), 'warning');
-              } else {
-                showMessage(t('aurora.import.successCount', { count: totalImported }), 'success');
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.import.failed'));
+
+      await streamImport(
+        boardType,
+        importRawData,
+        (event) => {
+          switch (event.type) {
+            case 'progress':
+              setImportProgress({
+                step: event.step,
+                message: 'message' in event ? event.message : undefined,
+                current: 'current' in event ? event.current : undefined,
+                total: 'total' in event ? event.total : undefined,
+              });
+              break;
+            case 'complete':
+              setImportResult(event.results);
+              setImportPhase('complete');
+              onImportComplete?.();
+              {
+                const totalImported =
+                  event.results.climbs.imported +
+                  event.results.ascents.imported +
+                  event.results.attempts.imported +
+                  event.results.circuits.imported;
+                if (event.results.partialError) {
+                  showMessage(t('aurora.import.partialWarning'), 'warning');
+                } else {
+                  showMessage(t('aurora.import.successCount', { count: totalImported }), 'success');
+                }
               }
-            }
-            break;
-          case 'error':
-            setImportError(event.error);
-            setImportPhase('error');
-            showMessage(event.error, 'error');
-            break;
-        }
-      });
+              break;
+            case 'error':
+              setImportError(event.error);
+              setImportPhase('error');
+              showMessage(event.error, 'error');
+              break;
+          }
+        },
+        {
+          backendUrl: transport.backendUrl,
+          authToken: transport.authToken,
+        },
+      );
     } catch (error) {
       // streamImport now captures chunk failures itself; reaching here means
       // a setup-level failure (no body, network unreachable, etc.) — worth
@@ -280,6 +300,28 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
   };
 
   if (loadingCredential) return null;
+
+  if (credentialLoadError) {
+    return (
+      <MuiAlert
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => {
+              setLoadingCredential(true);
+              void fetchCredential();
+            }}
+          >
+            {t('aurora.loadRetry')}
+          </Button>
+        }
+      >
+        {t('aurora.mobile.loadFailed')}
+      </MuiAlert>
+    );
+  }
 
   return (
     <>

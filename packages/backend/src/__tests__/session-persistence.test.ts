@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager } from '../services/room-manager';
 import { db } from '../db/client';
@@ -438,7 +439,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       expect(result.queue[0]?.uuid).toBe(climb.uuid);
     });
 
-    it('should not restore ended sessions from Postgres', async () => {
+    it('refuses to join an ended session instead of resurrecting it', async () => {
       const sessionId = uuidv4();
       const boardPath = '/kilter/1/2/3/40';
 
@@ -446,15 +447,24 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       await roomManager.endSession(sessionId);
 
-      // Clear in-memory state
+      // Clear in-memory state (simulate a fresh instance / Redis expiry)
       roomManager.reset();
       await roomManager.initialize(mockRedis);
 
-      // Try to rejoin ended session - should create a new session instead of restoring
-      const result = await registerAndJoinSession('client-2', sessionId, boardPath, 'User2');
+      // Register, then assert the join itself is rejected (do NOT use
+      // registerAndJoinSession — we need to assert on the join call).
+      await roomManager.registerClient('client-2', 'User2');
+      const error = await roomManager.joinSession('client-2', sessionId, boardPath, 'User2').catch((err) => err);
+      expect(error).toBeInstanceOf(GraphQLError);
+      expect((error as GraphQLError).extensions?.code).toBe('SESSION_ENDED');
 
-      // Session should be created fresh (empty queue)
-      expect(result.queue).toHaveLength(0);
+      // No zombie room: the durable row is still ended, and the rejected joiner
+      // never became a live participant.
+      const [row] = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+      expect(row?.status).toBe('ended');
+      expect(row?.endedAt).not.toBeNull();
+      const users = await roomManager.getSessionUsers(sessionId);
+      expect(users.some((user) => user.id === 'client-2')).toBe(false);
     });
   });
 

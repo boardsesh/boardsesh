@@ -22,9 +22,9 @@ function makeSimilar(overrides: Partial<SimilarClimb> = {}): SimilarClimb {
   };
 }
 
-// Fake i18n: pluralizes the sends key, echoes anything else.
-const t = (key: string, options: { count: number }) =>
-  key === 'mobile.similarClimbs.sends' ? `${options.count} send${options.count === 1 ? '' : 's'}` : key;
+// Fake i18n mirroring the climbs `sends` plural key (display via formattedCount).
+const t = (key: string, options: { count: number; formattedCount: string }) =>
+  key === 'sends' ? `${options.formattedCount} send${options.count === 1 ? '' : 's'}` : key;
 
 describe('formatByline', () => {
   it('joins setter, quality, and sends', () => {

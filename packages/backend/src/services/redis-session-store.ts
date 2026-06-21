@@ -253,7 +253,6 @@ export class RedisSessionStore {
     const multi = this.redis.multi();
     multi.del(`boardsesh:session:${sessionId}`);
     multi.del(`boardsesh:session:${sessionId}:users`);
-    multi.del(KEYS.sessionDriver(sessionId));
     multi.del(KEYS.sessionBoardSerial(sessionId));
     multi.srem('boardsesh:session:active', sessionId);
     multi.zrem('boardsesh:session:recent', sessionId);

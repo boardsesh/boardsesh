@@ -9,12 +9,18 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./readable-url-utils": {
+      "types": "./src/readable-url-utils.ts",
+      "import": "./src/readable-url-utils.ts",
+      "default": "./src/readable-url-utils.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
     "@boardsesh/queue": "*",
     "@boardsesh/shared-schema": "*"

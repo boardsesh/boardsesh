@@ -1,9 +1,10 @@
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { eq, and, inArray, sql, count, desc, isNotNull } from 'drizzle-orm';
-import type { SessionSummary } from '@boardsesh/shared-schema';
+import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
+import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { getSessionHealthExport } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 
 /**
@@ -24,12 +25,20 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
   // Note: These queries use GROUP BY with aggregation, COUNT FILTER, and COALESCE
   // which cannot be expressed with Drizzle's query builder per CLAUDE.md guidelines.
   const [gradeDistRows, hardestRows, participantRows] = await Promise.all([
-    // Grade distribution: count sends grouped by grade
+    // Grade distribution: per-grade {flash, send, attempt} breakdown, the shape
+    // the session-detail chart consumes (see buildSessionGradeBars). Grouped over
+    // flash/send ticks only — attempt-status ticks carry a null difficulty
+    // (ascents.ts), so they can't be attributed to a grade here. `attempt` is the
+    // implicit failed attempts on sends (attemptCount - 1), matching the
+    // send-contribution in session-feed-utils' buildGradeDistributionFromTicks.
+    // Every emitted row therefore has flash + send >= 1 (no "×0" grade rows).
     db
       .select({
         grade: dbSchema.boardDifficultyGrades.boulderName,
         difficulty: dbSchema.boardDifficultyGrades.difficulty,
-        count: count(),
+        flash: sql<number>`COUNT(*) FILTER (WHERE ${dbSchema.boardseshTicks.status} = 'flash')::int`,
+        send: sql<number>`COUNT(*) FILTER (WHERE ${dbSchema.boardseshTicks.status} = 'send')::int`,
+        attempt: sql<number>`COALESCE(SUM(${dbSchema.boardseshTicks.attemptCount} - 1) FILTER (WHERE ${dbSchema.boardseshTicks.status} = 'send'), 0)::int`,
       })
       .from(dbSchema.boardseshTicks)
       .leftJoin(
@@ -57,6 +66,11 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
         difficulty: dbSchema.boardseshTicks.difficulty,
         grade: dbSchema.boardDifficultyGrades.boulderName,
         climbName: dbSchema.boardClimbs.name,
+        // Frames + layoutId let the client render a board thumbnail of the
+        // hardest send (sizeId/setIds are resolved client-side from layoutId).
+        frames: dbSchema.boardClimbs.frames,
+        layoutId: dbSchema.boardClimbs.layoutId,
+        isMirror: dbSchema.boardseshTicks.isMirror,
       })
       .from(dbSchema.boardseshTicks)
       .leftJoin(
@@ -103,6 +117,7 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
              COALESCE(up.display_name, u.name) AS "displayName",
              up.avatar_url AS "avatarUrl",
              COUNT(*) FILTER (WHERE t.status IN ('flash', 'send'))::int AS sends,
+             COUNT(*) FILTER (WHERE t.status = 'flash')::int AS flashes,
              COUNT(*)::int AS attempts
       FROM boardsesh_ticks t
       LEFT JOIN users u ON u.id = t.user_id
@@ -118,15 +133,19 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
     displayName: string | null;
     avatarUrl: string | null;
     sends: number;
+    flashes: number;
     attempts: number;
   }>(participantRows);
 
-  // Build grade distribution (filter out null grades using type guard)
+  // Build grade distribution (filter out null grades using type guard). Matches
+  // the {grade, flash, send, attempt} shape used across session views.
   const gradeDistribution = gradeDistRows
     .filter((r): r is typeof r & { grade: string } => r.grade != null)
-    .map((r) => ({ grade: r.grade, count: r.count }));
+    // `count` (flash + send) is the deprecated back-compat field; new clients read flash/send.
+    .map((r) => ({ grade: r.grade, count: r.flash + r.send, flash: r.flash, send: r.send, attempt: r.attempt }));
 
-  // Build hardest climb (climb name already JOINed — no separate query needed)
+  // Build hardest climb (climb name already JOINed — no separate query needed).
+  // frames/layoutId/boardType/isMirror let the client draw a board thumbnail.
   let hardestClimb = null;
   if (hardestRows.length > 0) {
     const h = hardestRows[0];
@@ -134,6 +153,10 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
       climbUuid: h.climbUuid,
       climbName: h.climbName || 'Unknown climb',
       grade: h.grade || `V${h.difficulty}`,
+      frames: h.frames ?? null,
+      layoutId: h.layoutId ?? null,
+      boardType: h.boardType,
+      isMirror: h.isMirror ?? false,
     };
   }
 
@@ -143,11 +166,13 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
     displayName: r.displayName,
     avatarUrl: r.avatarUrl,
     sends: r.sends,
+    flashes: r.flashes,
     attempts: r.attempts,
   }));
 
   // Calculate totals
   const totalSends = participants.reduce((sum, p) => sum + p.sends, 0);
+  const totalFlashes = participants.reduce((sum, p) => sum + p.flashes, 0);
   const totalAttempts = participants.reduce((sum, p) => sum + p.attempts, 0);
 
   // Calculate duration. A null startedAt is unusual — sessions get one on
@@ -165,6 +190,7 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
   return {
     sessionId,
     totalSends,
+    totalFlashes,
     totalAttempts,
     gradeDistribution,
     hardestClimb,
@@ -173,5 +199,32 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
     endedAt: session.endedAt?.toISOString() || null,
     durationMinutes,
     goal: session.goal || null,
+  };
+}
+
+/**
+ * Generate a viewer-specific Apple Health export payload. Unlike
+ * generateSessionSummary, this intentionally filters to the authenticated
+ * viewer so a personal Health workout never includes another climber's stats.
+ */
+export async function generateSessionHealthExport(
+  sessionId: string,
+  viewerUserId: string,
+): Promise<SessionHealthExport | null> {
+  const exportRecord = await getSessionHealthExport(db, { sessionId, viewerUserId });
+  if (!exportRecord) return null;
+  if (exportRecord.createdByUserId !== viewerUserId && exportRecord.laps.length === 0) return null;
+
+  return {
+    sessionId: exportRecord.sessionId,
+    startedAt: exportRecord.startedAt,
+    endedAt: exportRecord.endedAt,
+    durationMinutes: exportRecord.durationMinutes,
+    boardType: exportRecord.boardType,
+    totalSends: exportRecord.totalSends,
+    totalAttempts: exportRecord.totalAttempts,
+    hardestClimb: exportRecord.hardestClimb,
+    laps: exportRecord.laps,
+    healthKitWorkoutId: exportRecord.healthKitWorkoutId,
   };
 }

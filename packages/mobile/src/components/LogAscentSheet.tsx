@@ -7,7 +7,7 @@
 // a portal above the play drawer's own modal. `FullWindowOverlay` on iOS
 // lifts the sheet above the tab bar — same pattern as DevicePickerSheet.
 import { useCallback, useEffect, useMemo, useRef, type PropsWithChildren } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -20,6 +20,7 @@ import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { Icon } from './Icon';
+import { GlassSheetBackground } from './GlassSheetBackground';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 
 type LogAscentSheetProps = {
@@ -98,12 +99,6 @@ export function LogAscentSheet({
     [],
   );
 
-  const backgroundStyle: ViewStyle = {
-    backgroundColor: systemColors.secondaryBackground as string,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  };
-
   return (
     <BottomSheetModal
       ref={sheetRef}
@@ -116,7 +111,7 @@ export function LogAscentSheet({
       onDismiss={handleSheetDismiss}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.indicator}
-      backgroundStyle={backgroundStyle}
+      backgroundComponent={GlassSheetBackground}
       keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
@@ -130,7 +125,7 @@ export function LogAscentSheet({
             hitSlop={8}
             style={({ pressed }) => [
               styles.closeButton,
-              { backgroundColor: systemColors.fill as string },
+              { backgroundColor: systemColors.fill },
               pressed && styles.closeButtonPressed,
             ]}
           >

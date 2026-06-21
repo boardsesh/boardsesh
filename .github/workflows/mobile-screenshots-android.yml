@@ -1,0 +1,399 @@
+name: Mobile Screenshots (Android)
+
+# Captures native Play Store / onboarding screenshots from the RN app via Maestro
+# (scripts/mobile-screenshots.ts), uploads them as a build artifact, and posts the
+# set to the Discord deploy channel as a daily preview. Manual + nightly only —
+# never gates PRs.
+#
+# Split out from the old combined mobile-screenshots.yml so iOS and Android run
+# independently: an Android-only change reruns here in ~15-20 min without waiting
+# on the macOS iOS fan-out. The iOS half lives in mobile-screenshots-ios.yml.
+#
+# The Android screenshot app is a standalone x86_64 release APK built by Gradle
+# with the EXPO_PUBLIC_SCREENSHOT_* values baked into its JS bundle. It's
+# installed on a freshly booted emulator and driven by Maestro. Everything runs
+# against PROD signed in as the test user (the canonical store recipe), so
+# there's no local backend.
+#
+# Getting screenshots to the store: this workflow does NOT upload to Google Play.
+# On a manual dispatch with `commit_to_main = true` it commits the captured set
+# back to main (app-stores/google/screenshots/pixel-2/) using the OTA push app
+# token; that commit re-triggers mobile-store-metadata.yml, the single uploader
+# (text + icon + screenshots together). The nightly cron only captures + uploads
+# the artifact — it never commits, because the capture isn't byte-deterministic
+# (e.g. relative timestamps), so auto-committing would churn the live listing
+# daily. Refresh the store by dispatching with commit_to_main once the captured
+# artifact looks right.
+
+on:
+  workflow_dispatch:
+    inputs:
+      flow:
+        description: 'Maestro flow to run'
+        type: choice
+        default: app-store
+        options:
+          - app-store
+          - onboarding
+      android_device:
+        description: 'Android emulator device label used for screenshot output'
+        type: string
+        default: 'Pixel 2'
+      commit_to_main:
+        description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Never runs on the nightly cron. Requires the app-store flow.'
+        type: boolean
+        default: false
+  schedule:
+    # 06:00 UTC nightly — regenerate the artifact off the latest main.
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: mobile-screenshots-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    env:
+      # Commit the captured set back to main only on an opt-in manual dispatch.
+      # The commit (path app-stores/google/screenshots/**) re-triggers
+      # mobile-store-metadata.yml, which uploads to Google Play. The nightly cron
+      # leaves this false (capture-only) so non-deterministic captures don't churn
+      # the live listing daily.
+      COMMIT_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_to_main }}
+      EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+      EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+      EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      EXPO_PUBLIC_SCREENSHOT_MODE: '1'
+      EXPO_PUBLIC_SCREENSHOT_THEME: dark
+      EXPO_PUBLIC_SCREENSHOT_WORKOUT: volume
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
+      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
+
+    steps:
+      # Committing screenshots to main feeds them straight to the live Play
+      # listing (via mobile-store-metadata.yml), and the dimension gate that
+      # guards them only runs for the app-store flow, so refuse an onboarding
+      # commit up front instead of pushing the wrong screens to the store.
+      - name: Validate commit inputs
+        if: ${{ env.COMMIT_RUN == 'true' && inputs.flow == 'onboarding' }}
+        run: |
+          echo "::error::commit_to_main requires the app-store flow. The onboarding flow is capture-only."
+          exit 1
+
+      # Mint the GitHub App token FIRST so checkout persists ITS credentials for
+      # the screenshot push-back. The default GITHUB_TOKEN (github-actions[bot])
+      # isn't in main's PR-bypass list and is rejected; the app is. Skips cleanly
+      # when the app isn't configured — the artifact still uploads for a manual
+      # commit.
+      - name: Mint push token
+        id: push_token
+        if: vars.OTA_PUSH_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so the screenshot push-back can reset onto the latest main.
+          fetch-depth: 0
+          # Persist the app token (when configured) so the push-back authenticates
+          # as the app and bypasses main's PR rule. Falls back to the default
+          # token (read-only checkout) when the app isn't set up.
+          token: ${{ steps.push_token.outputs.token || github.token }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install Node.js dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses and install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      # ~/.gradle/caches holds the cross-run Gradle build cache (--build-cache
+      # below), which caches the expensive native/CMake/Kotlin compile by content
+      # hash — the dominant cost. The release APK bakes the JS bundle in, so it's
+      # never cached as a whole; only inputs-unchanged tasks are reused, and the
+      # JS-bundle task always re-runs when the JS changes (so screenshots can't go
+      # stale). The key busts on native-config inputs (app.config.ts, plugins,
+      # patches) so a stale build cache can't mask a native change.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-rn-screenshots-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'patches/**', 'bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-rn-screenshots-
+
+      - name: Write .env for screenshot bundle
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SCREENSHOT_MODE=$EXPO_PUBLIC_SCREENSHOT_MODE
+          EXPO_PUBLIC_SCREENSHOT_THEME=$EXPO_PUBLIC_SCREENSHOT_THEME
+          EXPO_PUBLIC_SCREENSHOT_WORKOUT=$EXPO_PUBLIC_SCREENSHOT_WORKOUT
+          EXPO_PUBLIC_SCREENSHOT_USER_EMAIL=$SCREENSHOT_USER_EMAIL
+          EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD=$SCREENSHOT_USER_PASSWORD
+          EOF
+
+      - name: Expo prebuild (generate android/)
+        working-directory: packages/mobile
+        env:
+          TAILSCALE_HOSTS: ''
+        run: bunx expo prebuild --platform android --clean --no-install
+
+      - name: Build x86_64 screenshot APK
+        working-directory: packages/mobile/android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+        # --build-cache reuses inputs-unchanged task outputs from ~/.gradle/caches
+        # (the native compile is the big win); --no-daemon stays as deliberate
+        # OOM insurance on the ephemeral runner.
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -PboardseshAbiFilters=x86_64 --build-cache --no-daemon --console=plain --stacktrace
+
+      - name: Normalize screenshot APK path
+        run: |
+          set -euo pipefail
+          release_dir=packages/mobile/android/app/build/outputs/apk/release
+          mapfile -t apks < <(find "$release_dir" -maxdepth 1 -type f -name '*.apk' | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one screenshot APK, found ${#apks[@]}."
+            printf '%s\n' "${apks[@]}"
+            exit 1
+          fi
+          cp -f "${apks[0]}" /tmp/boardsesh-screenshot.apk
+
+      # The release APK is now in /tmp, so the Gradle build tree is dead weight.
+      # Reclaim it plus the big preinstalled toolchains we never use, so the
+      # emulator system-image install has room — a full (cache-miss) build left
+      # the runner too full and `sdkmanager` failed with "No space left on
+      # device", aborting capture before it started. Leave ~/.gradle/caches so the
+      # post-step can still save the build cache. Best-effort.
+      - name: Free disk space for the emulator
+        run: |
+          set -eu
+          echo "Disk before cleanup:"; df -h /
+          rm -rf packages/mobile/android/app/build packages/mobile/android/build 2>/dev/null || true
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android/sdk/ndk \
+            /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/powershell \
+            /usr/local/share/chromium 2>/dev/null || true
+          sudo docker image prune --all --force 2>/dev/null || true
+          echo "Disk after cleanup:"; df -h /
+
+      - name: Install Maestro
+        env:
+          MAESTRO_VERSION: 2.6.1
+          MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
+        run: |
+          set -euo pipefail
+          url="https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          curl -fsSL "$url" -o maestro.zip
+          echo "${MAESTRO_SHA256}  maestro.zip" | shasum -a 256 -c -
+          unzip -q maestro.zip -d "$HOME/.maestro-dist"
+          echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+
+      # The x86_64 emulator needs KVM hardware acceleration. Without granting the
+      # runner user access to /dev/kvm it falls back to software (TCG) and is so
+      # slow that adb `settings` calls take 15-35s and the emulator crashes or
+      # times out during boot/setup before our script runs — the cause of the
+      # long-standing Android capture failures (boot timeout / "Broken pipe" /
+      # adb exit 224). This udev rule is the standard android-emulator-runner setup.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Capture Android screenshots
+        uses: reactivecircus/android-emulator-runner@v2
+        # android-emulator-runner splits `script:` by newline and runs each line
+        # as its own `sh -c`, so inline for-loops / multi-line commands break
+        # ("Syntax error: ... expecting \"done\""). The capture logic lives in a
+        # committed script invoked on one line; inputs come through env below.
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
+        env:
+          SCREENSHOT_FLOW: ${{ inputs.flow || 'app-store' }}
+          SCREENSHOT_ANDROID_DEVICE: ${{ inputs.android_device || 'Pixel 2' }}
+          SCREENSHOT_APK_PATH: /tmp/boardsesh-screenshot.apk
+
+      # Hard backstop against a blank capture (the play-drawer modal occasionally
+      # didn't composite into adb screencap — a blank board-view hero even reached
+      # the store once). A blank frame is just the status bar and compresses to
+      # ~16KB; every real screen here is >140KB. Fail the run if any shot is
+      # suspiciously small, so the commit-back below (gated on success()) can't
+      # push a blank. Bump min_bytes if a legitimately sparse screen is ever added.
+      - name: Assert screenshots are not blank
+        if: ${{ inputs.flow != 'onboarding' }}
+        run: |
+          set -euo pipefail
+          shots_dir=app-stores/google/screenshots
+          min_bytes=61440
+          fail=0
+          while IFS= read -r -d '' shot; do
+            size=$(stat -c%s "$shot")
+            if [ "$size" -lt "$min_bytes" ]; then
+              echo "::error::Blank/near-empty screenshot: $shot is ${size} bytes (< ${min_bytes}); likely a failed modal capture."
+              fail=1
+            else
+              echo "ok: $shot (${size} bytes)"
+            fi
+          done < <(find "$shots_dir" -type f -name '*.png' -print0)
+          [ "$fail" -eq 0 ] || exit 1
+
+      - name: Assert screenshot dimensions
+        # The onboarding flow captures different screens than the Play Store set, so
+        # the dimension gate doesn't apply to it.
+        if: ${{ inputs.flow != 'onboarding' }}
+        run: vp run check:screenshot-dimensions -- --platform android
+
+      # Post the captured set to the Discord deploy channel — the nightly run is a
+      # daily visual preview of the live store screenshots (and a manual app-store
+      # dispatch shows what it captured before commit_to_main). Reuses the
+      # DISCORD_DEPLOY_WEBHOOK that the build/deploy jobs already post to. Discord
+      # caps a webhook message at 10 files / 8MB; the 8-shot set is ~3.6MB, so it
+      # fits one multipart POST. success() so we only ever post a validated capture
+      # (the blank + dimension gates above passed) — never a blank/partial set; the
+      # later commit step runs after this, so its outcome can't suppress the
+      # preview. Best-effort, so a webhook hiccup never fails the run.
+      - name: Post screenshots to Discord
+        if: ${{ success() && inputs.flow != 'onboarding' }}
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping Discord post"
+            exit 0
+          fi
+          shots_dir="app-stores/google/screenshots/pixel-2"
+          # head -n 10: Discord rejects a webhook message with >10 attachments. The
+          # store set is <= 8, so this is just a guard against a future screen push
+          # silently breaking the post.
+          mapfile -t shots < <(find "$shots_dir" -maxdepth 1 -name '*.png' | sort | head -n 10)
+          if [ "${#shots[@]}" -eq 0 ]; then
+            echo "No screenshots captured — skipping Discord post"
+            exit 0
+          fi
+          file_args=()
+          index=0
+          for shot in "${shots[@]}"; do
+            file_args+=(-F "files[${index}]=@${shot}")
+            index=$((index + 1))
+          done
+          content=$(printf '📸 **Play Store screenshots** (%d shots) on `%s`\n<%s>' \
+            "${#shots[@]}" "$GITHUB_REF_NAME" "$RUN_URL")
+          payload=$(jq -nc --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}')
+          curl -sS --fail-with-body -X POST "$DISCORD_DEPLOY_WEBHOOK" \
+            -F "payload_json=${payload}" \
+            "${file_args[@]}" \
+            || echo "::warning::Failed to post screenshots to Discord (see status above)"
+
+      # Commit the freshly captured screenshots back to main. The commit touches
+      # app-stores/google/screenshots/**, which re-triggers mobile-store-metadata.yml
+      # — that workflow is the single uploader to Google Play (text + icon +
+      # screenshots together). Idempotent: a captured set byte-identical to main is
+      # a no-op. No [skip ci], on purpose — the metadata workflow MUST see this push
+      # (an app-token push does trigger workflows).
+      - name: Commit screenshots to main
+        if: ${{ success() && env.COMMIT_RUN == 'true' && inputs.flow != 'onboarding' && vars.OTA_PUSH_APP_ID != '' }}
+        run: |
+          set -euo pipefail
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          shots_dir="app-stores/google/screenshots/pixel-2"
+          # Stash the captured shots outside the work tree so the reset-to-main
+          # below (it discards working-tree changes) can't wipe them.
+          staged="$RUNNER_TEMP/play-screenshots"
+          rm -rf "$staged" && mkdir -p "$staged"
+          cp "$shots_dir"/*.png "$staged"/
+          for attempt in 1 2 3; do
+            git fetch origin main
+            # Land ONLY the screenshots on top of the latest main: hard-reset to
+            # main, then re-apply the captured set.
+            git reset --hard origin/main
+            rm -rf "$shots_dir" && mkdir -p "$shots_dir"
+            cp "$staged"/*.png "$shots_dir"/
+            git add "$shots_dir"
+            if git diff --cached --quiet; then
+              echo "Captured screenshots match main — nothing to commit."
+              exit 0
+            fi
+            git commit -m "chore(store): refresh Play Store screenshots"
+            if git push origin HEAD:main; then
+              echo "Pushed refreshed screenshots to main; mobile-store-metadata.yml will upload them."
+              exit 0
+            fi
+            echo "Push rejected (main advanced); retry ${attempt}/3…"
+          done
+          echo "::error::Could not push screenshots to main after 3 attempts."
+          exit 1
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots-android
+          path: app-stores/google/screenshots/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Device logcat + Maestro view hierarchy from the capture (collected inside
+      # ci-android-screenshot-capture.sh while the emulator is still alive — a
+      # post-step `adb logcat` would be too late, the runner kills the emulator
+      # when the capture step ends). Lets a screen that rendered empty (network
+      # error vs slow load) be debugged without a rerun.
+      - name: Upload Android capture debug
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-capture-debug
+          path: android-capture-debug/**
+          if-no-files-found: warn
+          retention-days: 14

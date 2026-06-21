@@ -4,33 +4,33 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-interface WidgetTargetConfig {
+type WidgetTargetConfig = {
   deploymentTarget: string;
   xcodeProjectSettings?: unknown;
-}
+};
 
-interface CapturingTarget {
+type CapturingTarget = {
   isa: 'PBXNativeTarget';
   props: {
     name: string;
     productName: string;
   };
   setBuildSetting(settingName: string, settingValue: string): void;
-}
+};
 
-interface CapturingProject {
+type CapturingProject = {
   rootObject: {
     props: {
       targets: CapturingTarget[];
     };
   };
-}
+};
 
-interface WidgetBuildSettingsPlugin {
+type WidgetBuildSettingsPlugin = {
   configureBoardseshWidgetTarget(project: CapturingProject): void;
   WIDGET_DEPLOYMENT_TARGET: string;
   WIDGET_SWIFT_FLAGS: string;
-}
+};
 
 const widgetTargetConfig = require('../../../../targets/BoardseshWidgets/expo-target.config.js') as WidgetTargetConfig;
 const widgetBuildSettingsPlugin =

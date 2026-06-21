@@ -349,6 +349,48 @@ describe('DELTA_UPDATE_CURRENT_CLIMB', () => {
 
     expect(result.currentClimbQueueItem).toBeNull();
   });
+
+  // Widget Next/Prev: the bridge calls dispatchWidgetNavigation(item, correlationId),
+  // which dispatches exactly this action — absolute item, shouldAddToQueue:false, and
+  // the native correlationId — WITHOUT a fresh JS mutation (native already sent it).
+  // This guards the double-advance fix: the action registers the correlationId so the
+  // racing CurrentClimbChanged broadcast echoes back as own-echo and is suppressed,
+  // instead of moving the current climb a second time.
+  it('widget navigation sets current by absolute item, no queue growth, and registers the correlationId', () => {
+    const first = makeClimbQueueItem({ uuid: 'q1' });
+    const second = makeClimbQueueItem({ uuid: 'q2' });
+    const state = makeState({ queue: [first, second], currentClimbQueueItem: first });
+
+    const afterNav = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: second, shouldAddToQueue: false, correlationId: 'widget-navigate' },
+    });
+
+    expect(afterNav.currentClimbQueueItem?.uuid).toBe('q2');
+    expect(afterNav.queue).toHaveLength(2); // shouldAddToQueue:false → the already-queued item isn't re-added
+    expect(afterNav.pendingCurrentClimbUpdates).toContain('widget-navigate');
+  });
+
+  it('suppresses the widget-navigate server echo so it cannot double-advance', () => {
+    const first = makeClimbQueueItem({ uuid: 'q1' });
+    const second = makeClimbQueueItem({ uuid: 'q2' });
+    const afterNav = makeState({
+      queue: [first, second],
+      currentClimbQueueItem: second,
+      pendingCurrentClimbUpdates: ['widget-navigate'],
+    });
+
+    // The backend broadcasts CurrentClimbChanged with the same correlationId after the
+    // widget's HTTP navigate. It must be treated as our own echo: current climb unchanged
+    // and the correlationId consumed.
+    const afterEcho = queueReducer(afterNav, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: second, isServerEvent: true, serverCorrelationId: 'widget-navigate' },
+    });
+
+    expect(afterEcho.currentClimbQueueItem?.uuid).toBe('q2');
+    expect(afterEcho.pendingCurrentClimbUpdates).not.toContain('widget-navigate');
+  });
 });
 
 // ── Queue navigation helpers ────────────────────────────────────────────

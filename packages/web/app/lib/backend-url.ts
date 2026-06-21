@@ -10,7 +10,7 @@
  * the current hostname, so every access path reaches the right backend.
  *
  * Resolution order (client-side):
- * 1. Host-derived URL for preview domains ({N}.preview.boardsesh.com)
+ * 1. Host-derived URL for production and preview domains
  * 2. NEXT_PUBLIC_WS_URL build-time fallback
  */
 
@@ -18,6 +18,7 @@
  * Derive the WS backend URL from the current page hostname.
  *
  * Maps preview frontend hostnames to their corresponding backend:
+ *   boardsesh.com → wss://ws.boardsesh.com/graphql
  *   42.preview.boardsesh.com → wss://42.ws.preview.boardsesh.com/graphql
  *
  * Returns null when the hostname doesn't match a known pattern (callers
@@ -27,6 +28,10 @@
  */
 export function deriveWsUrlFromHost(hostname: string, secure: boolean): string | null {
   const protocol = secure ? 'wss' : 'ws';
+
+  if (hostname === 'boardsesh.com' || hostname === 'www.boardsesh.com') {
+    return `${protocol}://ws.boardsesh.com/graphql`;
+  }
 
   // Match {N}.preview.boardsesh.com → {N}.ws.preview.boardsesh.com
   const previewMatch = hostname.match(/^(\d+)\.preview\.boardsesh\.com$/);

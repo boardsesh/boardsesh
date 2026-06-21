@@ -1,5 +1,6 @@
 import type { SessionUser } from '@boardsesh/shared-schema';
 import type { SessionUser as GeneratedSessionUser } from '@boardsesh/shared-schema/generated';
+import { upsertRuntimeSessionUser } from '@boardsesh/queue-runtime';
 
 // Re-export pure queue utilities from the shared package — the web app used to
 // have its own copies; now it delegates to the single implementation.
@@ -24,15 +25,5 @@ export function coerceSessionUser(user: GeneratedSessionUser): SessionUser {
 }
 
 export function upsertSessionUser(users: SessionUser[], user: SessionUser): SessionUser[] {
-  const existingIndex = users.findIndex((existingUser) => existingUser.id === user.id);
-  if (existingIndex === -1) {
-    return [...users, user];
-  }
-
-  const nextUsers = [...users];
-  nextUsers[existingIndex] = {
-    ...nextUsers[existingIndex],
-    ...user,
-  };
-  return nextUsers;
+  return upsertRuntimeSessionUser(users, user);
 }

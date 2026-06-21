@@ -19,6 +19,7 @@ public class LiveActivityModule: Module {
     private var observingDarwinNotification = false
     private var observingPushRegistrationStale = false
     private var observingForegroundNotification = false
+    private var observingBleReconnect = false
 
     /// Serial queue protecting push token state accessed from both the JS-call
     /// thread and the LiveActivityManager push token callback.
@@ -51,6 +52,7 @@ public class LiveActivityModule: Module {
     private let bufferQueue = DispatchQueue(label: "com.boardsesh.LiveActivityModule.buffer")
     private var pendingEvents: [PendingEvent] = []
     private var hasListener = false
+    private var isDraining = false
 
     public func definition() -> ModuleDefinition {
         Name("LiveActivity")
@@ -61,17 +63,14 @@ public class LiveActivityModule: Module {
             self.stopDarwinObservation()
             self.stopPushRegistrationStaleObservation()
             self.stopForegroundObservation()
+            self.stopBleReconnectObservation()
         }
 
         OnStartObserving {
             self.bufferQueue.sync {
                 self.hasListener = true
-                let buffered = self.pendingEvents
-                self.pendingEvents = []
-                for event in buffered {
-                    self.sendEvent(event.name, event.body)
-                }
             }
+            self.drainPendingEvents()
         }
 
         OnStopObserving {
@@ -108,14 +107,33 @@ public class LiveActivityModule: Module {
 
     private func emitOrBuffer(name: String, body: [String: Any]) {
         bufferQueue.sync {
-            if hasListener {
-                sendEvent(name, body)
-            } else {
-                pendingEvents.append(PendingEvent(name: name, body: body))
-                if pendingEvents.count > 32 {
-                    pendingEvents.removeFirst(pendingEvents.count - 32)
-                }
+            pendingEvents.append(PendingEvent(name: name, body: body))
+            if pendingEvents.count > 32 {
+                pendingEvents.removeFirst(pendingEvents.count - 32)
             }
+        }
+        drainPendingEvents()
+    }
+
+    /// Sends buffered events FIFO while a listener is attached. `sendEvent`
+    /// runs OUTSIDE `bufferQueue` so a synchronously re-entrant emission can
+    /// never deadlock the serial queue; `isDraining` keeps the drain
+    /// single-flight so concurrent callers can't interleave events out of
+    /// order.
+    private func drainPendingEvents() {
+        while true {
+            let next: PendingEvent? = bufferQueue.sync {
+                guard hasListener, !isDraining, !pendingEvents.isEmpty else { return nil }
+                isDraining = true
+                return pendingEvents.removeFirst()
+            }
+            guard let next else { return }
+            sendEvent(next.name, next.body)
+            let hasMore: Bool = bufferQueue.sync {
+                isDraining = false
+                return hasListener && !pendingEvents.isEmpty
+            }
+            if !hasMore { return }
         }
     }
 
@@ -205,6 +223,52 @@ public class LiveActivityModule: Module {
             registerPushTokenWithBackend(token: token, sessionId: sessionId, serverUrl: serverUrl, graphqlUrl: graphqlUrl)
         } else {
             logger.warning("Push registration stale notification received but no current session/token to re-register")
+        }
+    }
+
+    // MARK: - BLE reconnect (widget lightbulb fallback)
+
+    /// Observe the Darwin notification ReconnectBoardIntent posts when iOS runs it
+    /// in the widget extension (which can't link BoardBleManager). We reconnect on
+    /// the main app's behalf. In the normal path the intent runs in this process
+    /// and calls BoardBleManager directly, so this observer never fires.
+    private func startBleReconnectObservation() {
+        guard !observingBleReconnect else { return }
+        observingBleReconnect = true
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let name = CFNotificationName(SharedConstants.bleReconnectNotification as CFString)
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+
+        CFNotificationCenterAddObserver(
+            center,
+            observer,
+            { (_, observer, _, _, _) in
+                guard let observer = observer else { return }
+                let module = Unmanaged<LiveActivityModule>.fromOpaque(observer).takeUnretainedValue()
+                module.handleBleReconnectFromWidget()
+            },
+            name.rawValue,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func stopBleReconnectObservation() {
+        guard observingBleReconnect else { return }
+        observingBleReconnect = false
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        let name = CFNotificationName(SharedConstants.bleReconnectNotification as CFString)
+        CFNotificationCenterRemoveObserver(center, observer, name, nil)
+    }
+
+    private func handleBleReconnectFromWidget() {
+        guard #available(iOS 17.0, *) else { return }
+
+        Task { @MainActor in
+            _ = await LiveActivityBleBridge.reconnectForIntent()
         }
     }
 
@@ -490,6 +554,7 @@ public class LiveActivityModule: Module {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
+        request.timeoutInterval = 15
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             if let error = error {
@@ -538,6 +603,11 @@ public class LiveActivityModule: Module {
         let authToken = options.authToken
         let wsUrl = options.wsUrl
         let graphqlUrl = options.graphqlUrl
+        let widgetNavigationAllowed = options.widgetNavigationAllowed
+        let isPartySession = options.isPartySession
+        let boardConnection = options.boardConnection
+        let holderDisplayName = options.holderDisplayName
+        let boardBackgroundPaths = options.boardBackgroundPaths
 
         // Store session details for push token registration.
         tokenQueue.sync {
@@ -555,6 +625,13 @@ public class LiveActivityModule: Module {
             components.fragment = nil
             return components.url?.absoluteString
         }()
+        let widgetTakeControlUrl: String? = {
+            guard let graphqlUrl, var components = URLComponents(string: graphqlUrl) else { return nil }
+            components.path = "/api/widget/take-control"
+            components.query = nil
+            components.fragment = nil
+            return components.url?.absoluteString
+        }()
 
         if let defaults = SharedConstants.sharedDefaults {
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
@@ -562,10 +639,33 @@ public class LiveActivityModule: Module {
             if let widgetNavigateUrl {
                 defaults.set(widgetNavigateUrl, forKey: SharedConstants.widgetNavigateUrlKey)
             }
+            if let widgetTakeControlUrl {
+                defaults.set(widgetTakeControlUrl, forKey: SharedConstants.widgetTakeControlUrlKey)
+            }
             defaults.set(boardName, forKey: SharedConstants.boardNameKey)
             defaults.set(layoutId, forKey: SharedConstants.layoutIdKey)
             defaults.set(sizeId, forKey: SharedConstants.sizeIdKey)
             defaults.set(setIds, forKey: SharedConstants.setIdsKey)
+            // Bundled board-background file paths for ThumbnailFetcher to
+            // composite behind the holds overlay. Staged here (before the first
+            // thumbnail pre-fetch) so the initial composite already has the
+            // board photo. Removed when empty so a board with no resolved
+            // background falls back to overlay-only instead of a stale path.
+            if boardBackgroundPaths.isEmpty {
+                defaults.removeObject(forKey: SharedConstants.boardBackgroundPathsKey)
+            } else {
+                defaults.set(boardBackgroundPaths, forKey: SharedConstants.boardBackgroundPathsKey)
+            }
+            SharedWidgetWallControlState.save(
+                navigationAllowed: widgetNavigationAllowed,
+                isPartySession: isPartySession,
+                to: defaults
+            )
+            SharedWidgetWallControlState.saveBoardConnection(
+                boardConnection,
+                holderDisplayName: holderDisplayName,
+                to: defaults
+            )
         }
         if let authToken = authToken {
             if authToken.isEmpty {
@@ -603,6 +703,7 @@ public class LiveActivityModule: Module {
         startDarwinObservation()
         startPushRegistrationStaleObservation()
         startForegroundObservation()
+        startBleReconnectObservation()
 
         let initialState = ClimbSessionAttributes.ContentState(
             climbName: "Loading...",
@@ -612,7 +713,9 @@ public class LiveActivityModule: Module {
             totalClimbs: 0,
             hasNext: false,
             hasPrevious: false,
-            climbUuid: ""
+            climbUuid: "",
+            boardConnection: boardConnection,
+            holderDisplayName: holderDisplayName
         )
 
         let pushTokenHandler: @Sendable (String) -> Void = { [weak self] token in
@@ -656,6 +759,7 @@ public class LiveActivityModule: Module {
         stopDarwinObservation()
         stopPushRegistrationStaleObservation()
         stopForegroundObservation()
+        stopBleReconnectObservation()
 
         let (token, sessionId, graphqlUrl) = tokenQueue.sync {
             (_currentPushToken, _currentSessionId, _currentGraphqlUrl)
@@ -682,8 +786,11 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.sessionIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateUrlKey)
+            defaults.removeObject(forKey: SharedConstants.widgetTakeControlUrlKey)
             defaults.removeObject(forKey: SharedConstants.authTokenKey)
             defaults.removeObject(forKey: SharedConstants.livePushTokenKey)
+            defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
+            defaults.removeObject(forKey: SharedConstants.partySessionKey)
         }
         SharedKeychain.remove(SharedKeychain.authTokenKey)
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
@@ -705,7 +812,15 @@ public class LiveActivityModule: Module {
     private func updateActivity(options: UpdateActivityOptions) {
         guard #available(iOS 17.0, *) else { return }
 
+        var wallControlChanged = false
         if let defaults = SharedConstants.sharedDefaults {
+            let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
+            let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
+            wallControlChanged =
+                previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
+                previousWallControl.requiresServerAuthorization != options.isPartySession ||
+                previousBoardConnection != options.boardConnection
+
             var queueItems: [SharedQueueItem] = []
             for item in options.queue {
                 queueItems.append(SharedQueueItem(
@@ -720,6 +835,16 @@ public class LiveActivityModule: Module {
                 ))
             }
             SharedQueueState.save(items: queueItems, currentIndex: options.currentIndex, to: defaults)
+            SharedWidgetWallControlState.save(
+                navigationAllowed: options.widgetNavigationAllowed,
+                isPartySession: options.isPartySession,
+                to: defaults
+            )
+            SharedWidgetWallControlState.saveBoardConnection(
+                options.boardConnection,
+                holderDisplayName: options.holderDisplayName,
+                to: defaults
+            )
         }
 
         let state = ClimbSessionAttributes.ContentState(
@@ -730,13 +855,15 @@ public class LiveActivityModule: Module {
             totalClimbs: options.totalClimbs,
             hasNext: options.hasNext,
             hasPrevious: options.hasPrevious,
-            climbUuid: options.climbUuid
+            climbUuid: options.climbUuid,
+            boardConnection: options.boardConnection,
+            holderDisplayName: options.holderDisplayName
         )
 
         let activityManager = LiveActivityManager.shared
         Task {
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)
@@ -749,8 +876,26 @@ public class LiveActivityModule: Module {
     private func updateActivityClimb(options: UpdateActivityClimbOptions) {
         guard #available(iOS 17.0, *) else { return }
 
+        var wallControlChanged = false
         if let defaults = SharedConstants.sharedDefaults {
+            let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
+            let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
+            wallControlChanged =
+                previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
+                previousWallControl.requiresServerAuthorization != options.isPartySession ||
+                previousBoardConnection != options.boardConnection
+
             SharedQueueState.saveCurrentIndex(options.currentIndex, to: defaults)
+            SharedWidgetWallControlState.save(
+                navigationAllowed: options.widgetNavigationAllowed,
+                isPartySession: options.isPartySession,
+                to: defaults
+            )
+            SharedWidgetWallControlState.saveBoardConnection(
+                options.boardConnection,
+                holderDisplayName: options.holderDisplayName,
+                to: defaults
+            )
         }
 
         let state = ClimbSessionAttributes.ContentState(
@@ -761,13 +906,15 @@ public class LiveActivityModule: Module {
             totalClimbs: options.totalClimbs,
             hasNext: options.hasNext,
             hasPrevious: options.hasPrevious,
-            climbUuid: options.climbUuid
+            climbUuid: options.climbUuid,
+            boardConnection: options.boardConnection,
+            holderDisplayName: options.holderDisplayName
         )
 
         let activityManager = LiveActivityManager.shared
         Task {
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)
@@ -788,6 +935,18 @@ struct StartSessionOptions: Record {
     @Field var authToken: String?
     @Field var wsUrl: String?
     @Field var graphqlUrl: String?
+    @Field var widgetNavigationAllowed: Bool = true
+    @Field var isPartySession: Bool = false
+    /// Board-connection state from THIS device's POV: "connectedByMe" |
+    /// "heldByPeer" | "disconnected". Defaults to connectedByMe so a build that
+    /// predates the JS side sending it behaves as before.
+    @Field var boardConnection: String = "connectedByMe"
+    /// Display name of the peer holding the board (heldByPeer only).
+    @Field var holderDisplayName: String?
+    /// Bundled board-background webp file paths (JS-resolved via expo-asset).
+    /// Empty when none resolved. iOS-only; the Android SessionPresence Record
+    /// ignores the extra key.
+    @Field var boardBackgroundPaths: [String] = []
 }
 
 struct UpdateActivityQueueItem: Record {
@@ -811,6 +970,10 @@ struct UpdateActivityOptions: Record {
     @Field var hasPrevious: Bool = false
     @Field var climbUuid: String = ""
     @Field var queue: [UpdateActivityQueueItem] = []
+    @Field var widgetNavigationAllowed: Bool = true
+    @Field var isPartySession: Bool = false
+    @Field var boardConnection: String = "connectedByMe"
+    @Field var holderDisplayName: String?
 }
 
 struct UpdateActivityClimbOptions: Record {
@@ -822,4 +985,8 @@ struct UpdateActivityClimbOptions: Record {
     @Field var hasNext: Bool = false
     @Field var hasPrevious: Bool = false
     @Field var climbUuid: String = ""
+    @Field var widgetNavigationAllowed: Bool = true
+    @Field var isPartySession: Bool = false
+    @Field var boardConnection: String = "connectedByMe"
+    @Field var holderDisplayName: String?
 }

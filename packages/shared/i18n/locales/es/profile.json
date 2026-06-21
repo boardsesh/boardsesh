@@ -51,15 +51,25 @@
     "problems": "bloques",
     "send": "encadene",
     "flash": "flash",
+    "calendar": "Calendario",
+    "calendarAria": "Calendario de escalada: {{days}} días activos, {{count}} bloques",
+    "calendarLess": "Menos",
+    "calendarMore": "Más",
+    "boards": "Plafones",
+    "layoutShareAria": "Reparto por plafón de {{count}} bloques",
+    "layoutLegendAria": "{{name}}: {{percentage}}% ({{count}} bloques)",
     "percentile": "Percentil",
     "topPercent": "Top {{value}}%",
     "moreSentThan": "Más bloques encadenados que el {{value}}% de los escaladores",
+    "summary": "Resumen",
     "activity": "Actividad",
     "gradeDistribution": "Distribución por grados",
     "flashVsRedpoint": "Flash vs Trabajado",
     "vPoints": "V-Points",
     "vPointsTotal": "{{value}} en total",
-    "gradeDistributionAria": "Distribución por grados en todas las tablas de escalada",
+    "weekAxisLabel": "Semana",
+    "chartTooltipTotal": "Total",
+    "gradeDistributionAria": "Distribución por grados en todos los plafones",
     "weeklyAttemptsAria": "Intentos semanales por dificultad",
     "flashRedpointAria": "Flash vs trabajado por grado",
     "layoutTooltip": "{{name}}: {{count}} bloques ({{percentage}}%)"
@@ -73,7 +83,7 @@
     "pageTitle": "Estadísticas",
     "drawer": {
       "title": "Filtros",
-      "board": "Board",
+      "board": "Plafón",
       "timeRange": "Rango de tiempo",
       "from": "Desde",
       "to": "Hasta"
@@ -141,7 +151,7 @@
         "attempt": "Intento"
       },
       "snackbar": {
-        "boardsLinkMissing": "No se encontró la tabla enlazada — mostrando todas tus entradas.",
+        "boardsLinkMissing": "No se encontró el plafón enlazado — mostrando todas tus entradas.",
         "deleteFailed": "No se pudo eliminar la marca",
         "tickDeleted": "Marca eliminada",
         "undo": "Deshacer"

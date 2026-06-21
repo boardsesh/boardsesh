@@ -9,6 +9,25 @@ pub enum HoldRenderStyle {
     AboveMarker,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum HoldMarkerShape {
+    #[default]
+    Circle,
+    TriangleUp,
+    TriangleDown,
+    Square,
+    Diamond,
+}
+
+fn default_stroke_width_multiplier() -> f32 {
+    1.0
+}
+
+fn default_shape_size_multiplier() -> f32 {
+    1.0
+}
+
 #[derive(Deserialize)]
 pub struct RenderConfig {
     pub board_width: f32,
@@ -21,6 +40,10 @@ pub struct RenderConfig {
     #[serde(default)]
     pub mirrored: bool,
     pub thumbnail: bool,
+    #[serde(default = "default_stroke_width_multiplier")]
+    pub stroke_width_multiplier: f32,
+    #[serde(default = "default_shape_size_multiplier")]
+    pub shape_size_multiplier: f32,
     pub holds: Vec<HoldData>,
     pub hold_state_map: HashMap<u32, HoldStateInfo>,
 }
@@ -40,12 +63,15 @@ pub struct HoldStateInfo {
     pub color: String,
     #[serde(default, alias = "renderStyle")]
     pub render_style: HoldRenderStyle,
+    #[serde(default)]
+    pub shape: HoldMarkerShape,
 }
 
 pub struct ParsedHold {
     pub hold_id: u32,
     pub color: Color,
     pub render_style: HoldRenderStyle,
+    pub shape: HoldMarkerShape,
 }
 
 #[derive(Clone, Copy)]

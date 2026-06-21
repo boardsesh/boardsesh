@@ -19,10 +19,24 @@
     },
     "sections": {
       "jumpBackIn": "Reprendre",
+      "pinned": "Épinglées",
       "smart": "Vos sélections",
-      "discover": "Découvrir"
+      "discover": "Découvrir",
+      "forYou": "Pour vous",
+      "community": "Playlists de la communauté"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "allPlaylists": {
+      "title": "Mes listes",
+      "seeAll": "Tout voir",
+      "searchPlaceholder": "Filtrer par titre",
+      "clearSearch": "Effacer la recherche",
+      "loadMoreError": "Impossible de charger toutes vos listes.",
+      "noResults": "Aucune liste ne correspond à « {{query}} »"
     },
     "pin": {
+      "pin": "Épingler",
+      "unpin": "Désépingler",
       "pinAriaLabel": "Épingler la playlist",
       "unpinAriaLabel": "Désépingler la playlist",
       "pinFailed": "Échec de l'épinglage de la playlist",
@@ -43,7 +57,27 @@
       },
       "likedClimbs": {
         "title": "Voies aimées",
-        "description": "Toutes les voies que vous avez aimées."
+        "description": "Toutes les voies que vous avez aimées.",
+        "empty": {
+          "title": "Aucune voie aimée",
+          "supporting": "Touchez le cœur d'une voie pour la garder ici."
+        }
+      },
+      "crowdFavorites": {
+        "title": "Favoris de la communauté",
+        "description": "Les classiques les plus enchaînés pour votre panneau que vous n'avez pas encore faits."
+      },
+      "hiddenGems": {
+        "title": "Pépites cachées",
+        "description": "Des voies très bien notées pour votre panneau, encore méconnues."
+      },
+      "atYourLevel": {
+        "title": "À votre niveau",
+        "description": "Des voies autour de votre niveau, adaptées à votre panneau."
+      },
+      "fresh": {
+        "title": "Nouveautés",
+        "description": "De nouvelles voies pour votre panneau, signées par des ouvreurs à suivre."
       },
       "notFound": {
         "title": "Playlist intelligente introuvable",
@@ -69,8 +103,18 @@
   "detail": {
     "share": "Partager la playlist",
     "actions": "Actions de la playlist",
+    "activateAll": "Mettre toutes les voies en file",
+    "boardMismatch": {
+      "title": "Passez à {{board}} pour grimper cette playlist",
+      "subtitle": "Ce sont des voies {{board}}. Changez de planche pour les mettre en file.",
+      "cta": "Changer de planche"
+    },
+    "unrenderableClimb": {
+      "subtitle": "Les données de planche manquent pour cette voie."
+    },
     "menu": {
       "generate": "Générer",
+      "editClimbs": "Modifier les blocs",
       "edit": "Modifier",
       "delete": "Supprimer"
     },
@@ -105,6 +149,20 @@
       "tryAgain": "Réessayer"
     }
   },
+  "editClimbs": {
+    "done": "Terminé",
+    "editDetailsAria": "Modifier les détails de la playlist",
+    "removeAria": "Retirer {{name}}",
+    "dragHandleAria": "Faites glisser pour réorganiser {{name}}",
+    "removeConfirm": {
+      "title": "Retirer le bloc ?",
+      "message": "Retirer « {{name}} » de cette playlist ?",
+      "confirm": "Retirer",
+      "cancel": "Annuler"
+    },
+    "removeFailed": "Impossible de retirer le bloc",
+    "reorderFailed": "Impossible d'enregistrer le nouvel ordre"
+  },
   "edit": {
     "title": "Modifier la playlist",
     "fields": {
@@ -114,6 +172,7 @@
       "descriptionPlaceholder": "Description facultative pour votre playlist...",
       "color": "Couleur",
       "icon": "Icône",
+      "iconHint": "Saisissez n'importe quel emoji, ou choisissez-en un ci-dessous",
       "removeIcon": "Retirer",
       "visibility": "Visibilité",
       "publicHint": "Les playlists publiques sont visibles par toute personne ayant le lien",
@@ -173,6 +232,8 @@
       "climbBias": "Préférence de blocs",
       "tallClimbsLabel": "Blocs hauts uniquement",
       "tallClimbsTooltip": "Affiche uniquement les blocs qui utilisent les prises des 8 rangées du bas (uniquement sur les boards 8x12 et 10x12)",
+      "wideClimbsLabel": "Blocs larges uniquement",
+      "wideClimbsTooltip": "Affiche uniquement les blocs qui utilisent les colonnes latérales supplémentaires 10x10",
       "mainSetClimbs": "Blocs de la série principale",
       "mainSetVariability": "Variabilité de la série principale",
       "numberOfSteps": "Nombre de paliers",

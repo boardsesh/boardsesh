@@ -18,7 +18,7 @@ import { users } from '../auth/users';
 // Enums
 // ============================================
 
-export const communityRoleTypeEnum = pgEnum('community_role_type', ['admin', 'community_leader']);
+export const communityRoleTypeEnum = pgEnum('community_role_type', ['admin', 'community_leader', 'tester']);
 
 export const proposalTypeEnum = pgEnum('proposal_type', ['grade', 'classic', 'benchmark']);
 

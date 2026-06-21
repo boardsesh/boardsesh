@@ -14,6 +14,11 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
  */
 export type SubscriptionClimb = {
   uuid: string;
+  // Board the climb belongs to — round-tripped so a peer on a different board can
+  // skip a "spill" climb instead of dark-firing its wall. Nullish from older
+  // peers / pre-metadata items (then the spill guard treats it as sendable).
+  boardType?: string | null;
+  layoutId?: number | null;
   name: string;
   frames: string;
   setter_username: string;
@@ -24,6 +29,13 @@ export type SubscriptionClimb = {
   stars: number;
   difficulty_error: string;
   benchmark_difficulty: string | null;
+  // mirrored survives a reconnect FullSync so a peer-set mirror flag isn't
+  // dropped (the Bluetooth auto-sender repaints unmirrored otherwise).
+  // framesCount/framesPace drive multi-frame playback at the setter's pace.
+  mirrored?: boolean | null;
+  is_no_match?: boolean | null;
+  framesCount?: number | null;
+  framesPace?: number | null;
 };
 
 export type SubscriptionQueueItem = {
@@ -42,6 +54,8 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
     uuid: subscriptionItem.uuid,
     climb: {
       uuid: subscriptionItem.climb.uuid,
+      boardType: subscriptionItem.climb.boardType ?? undefined,
+      layoutId: subscriptionItem.climb.layoutId,
       name: subscriptionItem.climb.name,
       frames: subscriptionItem.climb.frames,
       setter_username: subscriptionItem.climb.setter_username,
@@ -52,6 +66,10 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       stars: subscriptionItem.climb.stars,
       difficulty_error: subscriptionItem.climb.difficulty_error,
       benchmark_difficulty: subscriptionItem.climb.benchmark_difficulty,
+      mirrored: subscriptionItem.climb.mirrored,
+      is_no_match: subscriptionItem.climb.is_no_match,
+      framesCount: subscriptionItem.climb.framesCount,
+      framesPace: subscriptionItem.climb.framesPace,
     },
   };
 }

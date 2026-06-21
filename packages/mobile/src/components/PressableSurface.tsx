@@ -2,9 +2,12 @@ import { type ReactNode } from 'react';
 import {
   Pressable,
   Platform,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
   type AccessibilityRole,
   type AccessibilityState,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -28,6 +31,7 @@ type PressableSurfaceProps = {
   onPressIn?: (event: GestureResponderEvent) => void;
   onPressOut?: (event: GestureResponderEvent) => void;
   onLongPress?: (event: GestureResponderEvent) => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
   disabled?: boolean;
   /** iOS feedback style (default 'scale'). Android uses a ripple either way. */
   feedback?: PressFeedback;
@@ -42,7 +46,13 @@ type PressableSurfaceProps = {
   hitSlop?: number;
   accessibilityRole?: AccessibilityRole;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   accessibilityState?: AccessibilityState;
+  /** Custom assistive-tech actions (e.g. a long-press equivalent VoiceOver / Switch Control can reach). */
+  accessibilityActions?: ReadonlyArray<AccessibilityActionInfo>;
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
+  /** Native test identifier (used by Maestro screenshot flows). */
+  testID?: string;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -60,6 +70,7 @@ export function PressableSurface({
   onPressIn,
   onPressOut,
   onLongPress,
+  onLayout,
   disabled = false,
   feedback = 'scale',
   scaleTo = 0.96,
@@ -69,7 +80,11 @@ export function PressableSurface({
   hitSlop,
   accessibilityRole = 'button',
   accessibilityLabel,
+  accessibilityHint,
   accessibilityState,
+  accessibilityActions,
+  onAccessibilityAction,
+  testID,
   style,
 }: PressableSurfaceProps) {
   // `pressed` is 0 at rest, 1 while held. Resolved into a scale or opacity in
@@ -111,12 +126,21 @@ export function PressableSurface({
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         onLongPress={onLongPress}
+        onLayout={onLayout}
         disabled={disabled}
+        // Static brand tint by design: this is a core primitive and the default
+        // ripple is an Android-only, rarely-hit fallback (most callers pass an
+        // explicit rippleColor). Kept off the theme to avoid coupling every
+        // pressable to ThemeProvider for a colour the eye barely registers.
         android_ripple={androidRipple(rippleColor ?? brandColors.tint, rippleBorderless)}
         hitSlop={hitSlop}
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
         accessibilityState={accessibilityState}
+        accessibilityActions={accessibilityActions}
+        onAccessibilityAction={onAccessibilityAction}
+        testID={testID}
         style={style}
       >
         {children}
@@ -130,11 +154,16 @@ export function PressableSurface({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onLongPress={onLongPress}
+      onLayout={onLayout}
       disabled={disabled}
       hitSlop={hitSlop}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityState={accessibilityState}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
+      testID={testID}
       style={[animatedStyle, style]}
     >
       {children}

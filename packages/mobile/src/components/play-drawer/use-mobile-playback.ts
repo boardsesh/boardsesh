@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useClimbFrames, usePlaybackEngine, type ExternalPlaybackState } from '@boardsesh/playback-react';
-import { useQueue } from '../../providers/queue-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 
 type UseMobilePlaybackInput = {
@@ -52,7 +52,7 @@ export function useMobilePlayback({
   isOpen,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
-  const { subscribeToQueueEvents, publishPlaybackState } = useQueue();
+  const { subscribeToQueueEvents, publishPlaybackState } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   // Stable per-hook id so the engine can suppress echoes of its own broadcasts.
   const playbackClientId = useId();
@@ -110,11 +110,12 @@ export function useMobilePlayback({
   });
 
   // --- Latest-wins BLE frame writer ---
-  // Mobile's sendFramesToBoard has NO internal write mutex (web's does), so this
-  // drain is the ONLY guard against overlapping GATT writes. A second write
-  // issued before the first resolves throws "GATT operation already in progress"
-  // on Android, so this stays a faithful port of web's use-drawer-playback drain:
-  // collapse bursts to the newest frame, never overlap a write.
+  // sendFramesToBoard serialises writes across all callers (its writeChainRef
+  // mutex, mirroring web's), so overlapping calls can no longer interleave at
+  // the GATT boundary. This drain still matters for a different reason: it
+  // collapses animation-frame bursts to the newest frame instead of queueing
+  // every intermediate frame behind the mutex, which would let the wall lag
+  // arbitrarily far behind the on-screen playback.
   const isWritingFrameRef = useRef(false);
   const pendingFrameRef = useRef<string | null>(null);
   const lastSentFrameRef = useRef<string | null>(null);

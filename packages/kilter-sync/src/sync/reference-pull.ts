@@ -44,16 +44,58 @@ export type KilterRefDifficultyGrade = {
   isListed: boolean;
 };
 
+export type KilterRefGym = {
+  id: string;
+  gymUuid: string;
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  countryCode: string | null;
+  postalCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  instagramUsername: string | null;
+  gymLogo: string | null;
+  bannerLogo: string | null;
+  isListed: boolean | null;
+};
+
+export type KilterRefWall = {
+  id: string;
+  wallUuid: string;
+  gymUuid: string | null;
+  name: string | null;
+  productName: string | null;
+  productLayoutUuid: string | null;
+  isAdjustable: boolean | null;
+  minAngle: number | null;
+  maxAngle: number | null;
+  angleIncrements: number | null;
+  angle: number | null;
+  serialNumber: string | null;
+  accumulatedHoldSetValue: number | null;
+  isListed: boolean | null;
+  createdAt: string | null;
+};
+
 export type KilterReferencePull = {
   products: KilterRefProduct[];
   productLayouts: KilterRefProductLayout[];
   holds: KilterRefHold[];
   difficultyGrades: KilterRefDifficultyGrade[];
+  gyms: KilterRefGym[];
+  walls: KilterRefWall[];
 };
 
 // PowerSync raw-table columns are scalars (TEXT / INTEGER / REAL), never
 // objects — coerce defensively without tripping no-base-to-string.
 const num = (value: unknown): number => Number(value);
+const nullableNum = (value: unknown): number | null => {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
 const str = (value: unknown): string => {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -61,6 +103,7 @@ const str = (value: unknown): string => {
 };
 const nullableStr = (value: unknown): string | null => (value == null ? null : str(value));
 const bool = (value: unknown): boolean => value === 1 || value === true || value === '1';
+const nullableBool = (value: unknown): boolean | null => (value == null ? null : bool(value));
 
 export async function pullKilterReference(args: {
   accessToken: string;
@@ -70,6 +113,8 @@ export async function pullKilterReference(args: {
   const productLayouts: KilterRefProductLayout[] = [];
   const holds: KilterRefHold[] = [];
   const difficultyGrades: KilterRefDifficultyGrade[] = [];
+  const gyms: KilterRefGym[] = [];
+  const walls: KilterRefWall[] = [];
 
   await streamKilterPowerSync({
     accessToken: args.accessToken,
@@ -103,9 +148,46 @@ export async function pullKilterReference(args: {
             isListed: bool(data.is_listed),
           });
           break;
+        case 'gyms':
+          gyms.push({
+            id: str(data.id ?? op.object_id),
+            gymUuid: str(data.gym_uuid),
+            name: nullableStr(data.name),
+            address: nullableStr(data.address),
+            city: nullableStr(data.city),
+            country: nullableStr(data.country),
+            countryCode: nullableStr(data.countryCode ?? data.country_code),
+            postalCode: nullableStr(data.postal_code),
+            latitude: nullableNum(data.latitude),
+            longitude: nullableNum(data.longitude),
+            instagramUsername: nullableStr(data.instagramUsername ?? data.instagram_username),
+            gymLogo: nullableStr(data.gymLogo ?? data.gym_logo),
+            bannerLogo: nullableStr(data.bannerLogo ?? data.banner_logo),
+            isListed: nullableBool(data.isListed ?? data.is_listed),
+          });
+          break;
+        case 'walls':
+          walls.push({
+            id: str(data.id ?? op.object_id),
+            wallUuid: str(data.wall_uuid),
+            gymUuid: nullableStr(data.gym_uuid),
+            name: nullableStr(data.name),
+            productName: nullableStr(data.product_name),
+            productLayoutUuid: nullableStr(data.product_layout_uuid),
+            isAdjustable: nullableBool(data.is_adjustable),
+            minAngle: nullableNum(data.min_angle),
+            maxAngle: nullableNum(data.max_angle),
+            angleIncrements: nullableNum(data.angle_increments),
+            angle: nullableNum(data.angle),
+            serialNumber: nullableStr(data.serial_number),
+            accumulatedHoldSetValue: nullableNum(data.accumulated_hold_set_value),
+            isListed: nullableBool(data.is_listed),
+            createdAt: nullableStr(data.created_at),
+          });
+          break;
         default:
-          // gyms / walls / hold_sets / placement_types / videos / grade_systems
-          // stream too but aren't needed for catalog ingest — ignore.
+          // hold_sets / placement_types / videos / grade_systems stream too but
+          // aren't needed for catalog ingest — ignore.
           break;
       }
     },
@@ -121,7 +203,7 @@ export async function pullKilterReference(args: {
   }
 
   args.log?.(
-    `[kilter-catalog] reference pulled: ${products.length} products, ${productLayouts.length} layouts, ${holds.length} holds, ${difficultyGrades.length} grades`,
+    `[kilter-catalog] reference pulled: ${products.length} products, ${productLayouts.length} layouts, ${holds.length} holds, ${difficultyGrades.length} grades, ${gyms.length} gyms, ${walls.length} walls`,
   );
-  return { products, productLayouts, holds, difficultyGrades };
+  return { products, productLayouts, holds, difficultyGrades, gyms, walls };
 }

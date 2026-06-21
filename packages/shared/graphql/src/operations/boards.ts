@@ -164,6 +164,7 @@ export const GET_MY_BOARD_SERIAL_CONFIGS = gql`
       layoutId
       sizeId
       setIds
+      apiLevel
       updatedAt
       boardUuid
       boardSlug
@@ -206,6 +207,22 @@ export const FOLLOW_BOARD = gql`
 export const UNFOLLOW_BOARD = gql`
   mutation UnfollowBoard($input: FollowBoardInput!) {
     unfollowBoard(input: $input)
+  }
+`;
+
+export const RECORD_BOARD_SERIAL = gql`
+  mutation RecordBoardSerial($input: RecordBoardSerialInput!) {
+    recordBoardSerial(input: $input) {
+      serialNumber
+      boardName
+      layoutId
+      sizeId
+      setIds
+      apiLevel
+      updatedAt
+      boardUuid
+      boardSlug
+    }
   }
 `;
 
@@ -319,6 +336,7 @@ export type BoardSerialConfig = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  apiLevel: number | null;
   updatedAt: string;
   boardUuid: string | null;
   boardSlug: string | null;
@@ -330,4 +348,22 @@ export type GetMyBoardSerialConfigsQueryVariables = {
 
 export type GetMyBoardSerialConfigsQueryResponse = {
   myBoardSerialConfigs: BoardSerialConfig[];
+};
+
+export type RecordBoardSerialInput = {
+  serialNumber: string;
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  apiLevel?: number | null;
+  boardUuid?: string | null;
+};
+
+export type RecordBoardSerialMutationVariables = {
+  input: RecordBoardSerialInput;
+};
+
+export type RecordBoardSerialMutationResponse = {
+  recordBoardSerial: BoardSerialConfig | null;
 };

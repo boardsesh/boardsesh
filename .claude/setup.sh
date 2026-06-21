@@ -7,6 +7,16 @@ vp install
 echo "==> Installing git hooks..."
 vp config
 
+# Install the Conventional Commit message hook alongside vp's pre-commit, without
+# flipping core.hooksPath. Best-effort; CI's commit-lint job is the real gate.
+HOOKS_DIR=$(git rev-parse --git-path hooks 2>/dev/null || true)
+if [ -n "${HOOKS_DIR}" ] && [ -f .githooks/commit-msg ]; then
+  mkdir -p "${HOOKS_DIR}"
+  cp .githooks/commit-msg "${HOOKS_DIR}/commit-msg"
+  chmod +x "${HOOKS_DIR}/commit-msg"
+  echo "  commit-msg hook installed (best-effort; CI's commit-lint job is authoritative)"
+fi
+
 echo "==> Ensuring gh CLI is installed..."
 if ! command -v gh &>/dev/null; then
   GH_VERSION=$(curl -sI https://github.com/cli/cli/releases/latest | grep -i '^location:' | sed 's|.*/tag/v||;s/\r//')

@@ -728,7 +728,7 @@ async function saveTick(db: SQLiteDatabase, tickData: TickInput) {
 | --------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `react-native-mmkv`   | KV preferences: active board, theme, onboarding, enabled boards list                                          |
 | TanStack Query        | Data fetching + cache for both local SQLite and network-only data                                             |
-| GraphQL subscriptions | Real-time party mode: queue sync, session events, driver control                                              |
+| GraphQL subscriptions | Real-time party mode: queue sync, session events, wall confirm/disconnect                                     |
 | `expo-secure-store`   | Auth tokens in iOS Keychain / Android Keystore                                                                |
 | Backend GraphQL API   | Mostly unchanged. New sync pull queries + sync_deletions + idempotent mutations + addFavorite/removeFavorite. |
 | Aurora sync daemon    | Unchanged. Picks up ticks without `aurora_id` and pushes to Aurora API.                                       |

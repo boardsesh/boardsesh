@@ -5,3 +5,5 @@ export * from './filter-summary';
 export * from './filter-state';
 export * from './board-filter-state';
 export * from './active-filter-count';
+export * from './climb-zone-math';
+export * from './hold-filter-options';

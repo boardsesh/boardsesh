@@ -1,5 +1,6 @@
 import React from 'react';
-import { Circle, G, Polygon } from 'react-native-svg';
+import { G, Polygon } from 'react-native-svg';
+import { HoldMarkerShapeElement } from './HoldMarkerShape';
 import type { BoardHold } from './types';
 
 type BoardHoldOverlayProps = {
@@ -11,16 +12,16 @@ const STROKE_OPACITY = 0.9;
 const STROKE_WIDTH_RATIO = 0.15; // Stroke width as fraction of hold radius
 
 /**
- * Renders SVG circles (or above-markers) for each active hold in a climb.
+ * Renders SVG markers (or above-markers) for each active hold in a climb.
  *
- * Each hold gets a semi-transparent filled circle with a slightly more opaque
+ * Each hold gets a semi-transparent filled shape with a slightly more opaque
  * stroke border, matching the hold's role color from HOLD_STATE_MAP.
  */
 const BoardHoldOverlay = React.memo(function BoardHoldOverlay({ holds }: BoardHoldOverlayProps) {
   return (
     <G>
       {holds.map((hold) => {
-        const strokeWidth = Math.max(1, hold.radius * STROKE_WIDTH_RATIO);
+        const strokeWidth = Math.max(1, hold.radius * STROKE_WIDTH_RATIO * hold.brushThickness);
 
         if (hold.renderStyle === 'above-marker') {
           // Render an inverted triangle marker above the hold position
@@ -46,14 +47,14 @@ const BoardHoldOverlay = React.memo(function BoardHoldOverlay({ holds }: BoardHo
         }
 
         return (
-          <Circle
+          <HoldMarkerShapeElement
             key={hold.id}
+            shape={hold.shape}
             cx={hold.cx}
             cy={hold.cy}
-            r={hold.radius}
-            fill={hold.color}
+            radius={hold.radius * hold.shapeSize}
+            color={hold.color}
             fillOpacity={FILL_OPACITY}
-            stroke={hold.color}
             strokeOpacity={STROKE_OPACITY}
             strokeWidth={strokeWidth}
           />

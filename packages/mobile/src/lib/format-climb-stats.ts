@@ -14,9 +14,14 @@ export function formatCount(count: number): string {
   return `${Math.round(thousands)}k`;
 }
 
-/** Format send count with singular/plural label: "1 send", "5 sends", "1.2k sends" */
-export function formatSends(count: number): string {
-  return `${formatCount(count)} send${count === 1 ? '' : 's'}`;
+/** Minimal translate signature so this pure util stays out of React.
+ *  Resolves the `sends` plural key in the `climbs` namespace. */
+export type TranslateSends = (key: string, options: { count: number; formattedCount: string }) => string;
+
+/** Localized send count with compact number: t('sends') → "1.5k sends" / "1 send".
+ *  Passes the true `count` for plural selection and `formattedCount` for display. */
+export function formatSends(count: number, t: TranslateSends): string {
+  return t('sends', { count, formattedCount: formatCount(count) });
 }
 
 /** Round quality_average to 1 decimal place */

@@ -145,6 +145,8 @@ export const GET_USER_ASCENTS_FEED = gql`
         climbName
         setterUsername
         boardType
+        boardId
+        boardDisplayName
         layoutId
         angle
         isMirror
@@ -175,6 +177,8 @@ export type AscentFeedItem = {
   climbName: string;
   setterUsername: string | null;
   boardType: string;
+  boardId: number | null;
+  boardDisplayName: string | null;
   layoutId: number | null;
   angle: number;
   isMirror: boolean;
@@ -236,6 +240,48 @@ export type GetUserAscentsFeedQueryResponse = {
     totalCount: number;
     hasMore: boolean;
   };
+};
+
+// Caption → ascent matches for the share-beta picker. Returns full ascent rows
+// (same shape/board art as the feed) for the climbs whose names appear in the
+// shared reel's caption, matched across the user's whole logbook.
+export const GET_USER_ASCENT_CAPTION_MATCHES = gql`
+  query GetUserAscentCaptionMatches($userId: ID!, $caption: String!) {
+    userAscentCaptionMatches(userId: $userId, caption: $caption) {
+      uuid
+      climbUuid
+      climbName
+      setterUsername
+      boardType
+      boardId
+      boardDisplayName
+      layoutId
+      angle
+      isMirror
+      status
+      attemptCount
+      quality
+      difficulty
+      difficultyName
+      consensusDifficulty
+      consensusDifficultyName
+      qualityAverage
+      isBenchmark
+      isNoMatch
+      comment
+      climbedAt
+      frames
+    }
+  }
+`;
+
+export type GetUserAscentCaptionMatchesQueryVariables = {
+  userId: string;
+  caption: string;
+};
+
+export type GetUserAscentCaptionMatchesQueryResponse = {
+  userAscentCaptionMatches: AscentFeedItem[];
 };
 
 // ============================================
@@ -422,6 +468,7 @@ export const UPDATE_TICK = gql`
       difficulty
       isBenchmark
       comment
+      climbedAt
       updatedAt
     }
   }
@@ -438,6 +485,7 @@ export type UpdateTickInput = {
   difficulty?: number | null;
   isBenchmark?: boolean;
   comment?: string;
+  climbedAt?: string;
 };
 
 export type UpdateTickVariables = {
@@ -454,6 +502,7 @@ export type UpdateTickResponse = {
     difficulty: number | null;
     isBenchmark: boolean;
     comment: string;
+    climbedAt: string;
     updatedAt: string;
   };
 };

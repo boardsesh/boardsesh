@@ -45,6 +45,14 @@ import type { CommunityRoleAssignment, CommunityRoleType } from '@boardsesh/shar
 
 type UserResult = SearchUsersQueryResponse['searchUsers']['results'][number]['user'];
 
+// Chip accent per role: admins read as the destructive/error colour, testers as
+// the cool info slate, community leaders as brand primary.
+function roleChipColor(role: CommunityRoleType): string {
+  if (role === 'admin') return themeTokens.colors.error;
+  if (role === 'tester') return themeTokens.colors.info;
+  return themeTokens.colors.primary;
+}
+
 export default function RoleManagement() {
   const { t } = useTranslation('admin');
   const { token } = useWsAuthToken();
@@ -119,6 +127,7 @@ export default function RoleManagement() {
       setSearchQuery('');
       setSearchResults([]);
       setGrantBoardType('');
+      setGrantRole('community_leader');
       setSnackbar(t('roles.snackbar.granted'));
       void fetchRoles();
     } catch {
@@ -152,6 +161,8 @@ export default function RoleManagement() {
     setSelectedUser(null);
     setSearchQuery('');
     setSearchResults([]);
+    setGrantBoardType('');
+    setGrantRole('community_leader');
   }, []);
 
   const fallbackInitial = t('roles.labels.fallbackUserInitial');
@@ -202,12 +213,17 @@ export default function RoleManagement() {
                 </TableCell>
                 <TableCell>
                   <Chip
-                    label={role.role === 'admin' ? t('roles.labels.admin') : t('roles.labels.leader')}
+                    label={
+                      role.role === 'admin'
+                        ? t('roles.labels.admin')
+                        : role.role === 'tester'
+                          ? t('roles.labels.tester')
+                          : t('roles.labels.leader')
+                    }
                     size="small"
                     sx={{
-                      bgcolor:
-                        role.role === 'admin' ? `${themeTokens.colors.error}14` : `${themeTokens.colors.primary}14`,
-                      color: role.role === 'admin' ? themeTokens.colors.error : themeTokens.colors.primary,
+                      bgcolor: `${roleChipColor(role.role)}14`,
+                      color: roleChipColor(role.role),
                       fontWeight: 600,
                       fontSize: 11,
                     }}
@@ -315,13 +331,20 @@ export default function RoleManagement() {
               <Select
                 value={grantRole}
                 label={t('roles.dialog.roleLabel')}
-                onChange={(e) => setGrantRole(e.target.value as CommunityRoleType)}
+                onChange={(e) => {
+                  const nextRole = e.target.value as CommunityRoleType;
+                  setGrantRole(nextRole);
+                  // Tester is a global-only capability; clear any board scope so the
+                  // grant lands as a global role.
+                  if (nextRole === 'tester') setGrantBoardType('');
+                }}
               >
                 <MenuItem value="community_leader">{t('roles.dialog.roleOptions.communityLeader')}</MenuItem>
                 <MenuItem value="admin">{t('roles.dialog.roleOptions.admin')}</MenuItem>
+                <MenuItem value="tester">{t('roles.dialog.roleOptions.tester')}</MenuItem>
               </Select>
             </FormControl>
-            <FormControl size="small" fullWidth>
+            <FormControl size="small" fullWidth disabled={grantRole === 'tester'}>
               <InputLabel>{t('roles.dialog.boardTypeLabel')}</InputLabel>
               <Select
                 value={grantBoardType}

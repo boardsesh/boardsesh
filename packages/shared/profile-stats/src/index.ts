@@ -12,6 +12,7 @@ export {
   buildAggregatedFlashRedpointBars,
   buildVPointsTimeline,
   buildStatisticsSummary,
+  buildActivityHeatmap,
 } from './chart-builders';
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {

@@ -1,0 +1,12 @@
+Boardsesh 2.0, c'est une version native entièrement repensée. Toute l'appli a été réécrite : ça file là où ça ramait avant. Les listes défilent sans accroc, la recherche est instantanée.
+
+La même appli, juste plus rapide :
+- Cherche une voie et allume les prises en Bluetooth sur Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper et So iLL.
+- Arrive devant n'importe quel mur et vois ce qu'il y a dessus tout de suite : la voie allumée, qui l'a allumée, la cotation, l'inclinaison et l'ouvreur, en direct au fil des grimpeurs.
+- Grimpe avec ta crew dans une session live : une seule file partagée que tout le monde peut alimenter, réorganiser et piloter.
+- Pilote la session depuis ton écran verrouillé et la Dynamic Island sous iOS 17+ avec les Live Activities.
+- Monte un entraînement Volume, Pyramide, Échelle ou Cotation ciblée et envoie les voies au mur une par une.
+- Suis tes sends, tes flashs et tes essais, et regarde tes cotations se tracer dans l'onglet Progression.
+- Enregistre tes sessions dans Apple Health et importe ton ancien carnet Kilter et Tension depuis Aurora Climbing.
+
+Gratuit, sans pub, open source.

@@ -41,7 +41,7 @@ describe('backend PostHog analytics helper', () => {
     vi.restoreAllMocks();
   });
 
-  it('does not initialize or capture without POSTHOG_PROJECT_KEY', async () => {
+  it('does not initialize or capture without a PostHog project key', async () => {
     const { captureBackendEvent } = await loadPosthogModule();
 
     const captured = captureBackendEvent('Live Activity Started', {
@@ -53,7 +53,7 @@ describe('backend PostHog analytics helper', () => {
     expect(posthogMocks.PostHog).not.toHaveBeenCalled();
     expect(posthogMocks.capture).not.toHaveBeenCalled();
     expect(loggerMock.warn).toHaveBeenCalledWith(
-      '[PostHog] POSTHOG_PROJECT_KEY is not set; backend analytics disabled',
+      '[PostHog] POSTHOG_PROJECT_KEY/NEXT_PUBLIC_POSTHOG_KEY is not set; backend analytics disabled',
     );
   });
 
@@ -107,6 +107,23 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
     expect(captureBackendEvent('Live Activity Started', { distinctId: 'user-1' })).toBe(true);
     expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
+  });
+
+  it('can use NEXT_PUBLIC_POSTHOG_KEY when the backend-specific key is missing', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph_public_project');
+    const { captureBackendEvent } = await loadPosthogModule();
+
+    expect(captureBackendEvent('Live Activity Started', { distinctId: 'user-1' })).toBe(true);
+
+    expect(posthogMocks.PostHog).toHaveBeenCalledWith(
+      'ph_public_project',
+      expect.objectContaining({
+        host: 'https://us.i.posthog.com',
+      }),
+    );
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      '[PostHog] Using NEXT_PUBLIC_POSTHOG_KEY for backend analytics; prefer POSTHOG_PROJECT_KEY',
+    );
   });
 
   it('can disable PostHog person profiles for aggregate events', async () => {

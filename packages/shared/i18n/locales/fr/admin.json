@@ -59,6 +59,7 @@
     "labels": {
       "admin": "Admin",
       "leader": "Référent",
+      "tester": "Testeur",
       "global": "Global",
       "fallbackUserInitial": "U",
       "fallbackEmpty": "-"
@@ -81,7 +82,8 @@
       },
       "roleOptions": {
         "communityLeader": "Référent communauté",
-        "admin": "Admin"
+        "admin": "Admin",
+        "tester": "Testeur"
       },
       "cancel": "Annuler",
       "submit": "Attribuer"

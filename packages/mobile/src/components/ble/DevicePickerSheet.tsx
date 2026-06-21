@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type PropsWithChildren } from 'react';
-import { View, ActivityIndicator, Platform, StyleSheet, type ViewStyle } from 'react-native';
+import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -10,11 +10,14 @@ import {
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol';
+import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import type { DiscoveredDevice } from '../../lib/ble/types';
+import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
+import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
+import { GlassSheetBackground } from '../GlassSheetBackground';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -24,6 +27,8 @@ type DevicePickerSheetProps = {
   onSelect: (deviceId: string) => void;
   onDismiss: () => void;
   isScanning: boolean;
+  resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
+  currentBoardConfig?: BleBoardConfig;
 };
 
 function DevicePickerModalContainer({ children }: PropsWithChildren) {
@@ -32,7 +37,14 @@ function DevicePickerModalContainer({ children }: PropsWithChildren) {
 
 const modalContainerComponent = Platform.OS === 'ios' ? DevicePickerModalContainer : undefined;
 
-export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: DevicePickerSheetProps) {
+export function DevicePickerSheet({
+  devices,
+  onSelect,
+  onDismiss,
+  isScanning,
+  resolvedBoards,
+  currentBoardConfig,
+}: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -46,6 +58,13 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
 
+  // Pre-compute once per devices update; name is stable for a given device
+  // throughout a scan session so parsing per renderItem invocation is wasteful.
+  const deviceSerials = useMemo(
+    () => new Map(devices.map((device) => [device.deviceId, parseSerialNumber(device.name)])),
+    [devices],
+  );
+
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
@@ -54,24 +73,29 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
   );
 
   const renderDeviceItem = useCallback(
-    ({ item }: { item: DiscoveredDevice }) => {
-      const boardType = parseBoardTypeFromDeviceName(item.name);
-      const boardLabel = boardType ? boardType.charAt(0).toUpperCase() + boardType.slice(1) : undefined;
-
-      return <DeviceCard device={item} onSelect={onSelect} boardType={boardLabel} />;
+    ({ item: discoveredDevice }: { item: DiscoveredDevice }) => {
+      // Look the row's entry up here so each DeviceCard receives only its own
+      // resolution result: rows whose entry is unchanged (most of them when a
+      // new serial resolves) keep referentially identical props and their
+      // React.memo skips the re-render. renderItem itself legitimately changes
+      // identity with the map — that's what propagates new resolutions.
+      const serialNumber = deviceSerials.get(discoveredDevice.deviceId);
+      const resolvedEntry = serialNumber ? resolvedBoards.get(serialNumber) : undefined;
+      return (
+        <DeviceCard
+          device={discoveredDevice}
+          onSelect={onSelect}
+          resolvedEntry={resolvedEntry}
+          currentBoardConfig={currentBoardConfig}
+        />
+      );
     },
-    [onSelect],
+    [currentBoardConfig, deviceSerials, onSelect, resolvedBoards],
   );
 
   const keyExtractor = useCallback((item: DiscoveredDevice) => item.deviceId, []);
 
   const { systemColors } = theme;
-
-  const backgroundStyle: ViewStyle = {
-    backgroundColor: systemColors.secondaryBackground as string,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  };
 
   const showScanningState = isScanning && devices.length === 0;
   const showEmptyState = !isScanning && devices.length === 0;
@@ -88,7 +112,7 @@ export function DevicePickerSheet({ devices, onSelect, onDismiss, isScanning }: 
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
       handleIndicatorStyle={styles.indicator}
-      backgroundStyle={backgroundStyle}
+      backgroundComponent={GlassSheetBackground}
     >
       <BottomSheetView style={styles.header}>
         <Text variant="title3" color={systemColors.label}>

@@ -14,10 +14,11 @@
 //   - Web (no `ensureReady`): the session is already joined. Core mutations
 //     THROW 'Not connected to session' when disconnected — preserving web's
 //     exact behavior.
-//   - Mobile (`ensureReady` provided): the seam resolves/lazily-creates and
-//     joins the session before mutating; returning null makes the action a
-//     silent no-op.
-// Party / best-effort actions (takeControl, releaseControl, confirmClimbOnWall,
+//   - Mobile (`ensureReady` provided): the seam resolves and joins the session
+//     before mutating; returning null makes the action a silent no-op (mobile
+//     keeps the solo queue purely local — sessions are created only by the
+//     explicit Start button / an explicit join, never lazily here).
+// Party / best-effort actions (confirmClimbOnWall, reportWallDisconnect,
 // setSessionBoardSerial, setSessionBoardPath) no-op on BOTH platforms when
 // there is no active session.
 
@@ -28,14 +29,14 @@ import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
+  REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   MIRROR_CURRENT_CLIMB,
   PUBLISH_PLAYBACK_STATE,
   SET_QUEUE,
   REPLACE_QUEUE_ITEM,
-  TAKE_CONTROL,
-  RELEASE_CONTROL,
   CONFIRM_CLIMB_ON_WALL,
+  REPORT_WALL_DISCONNECT,
   SET_SESSION_BOARD_SERIAL,
   SET_SESSION_BOARD_PATH,
 } from '@boardsesh/graphql/operations/queue-session';
@@ -64,11 +65,12 @@ export type QueueMutationsDeps<TItem> = {
   /** Platform mapper: item -> wire input (web: toClimbQueueItemInput; mobile: thin {uuid,climb}). */
   toQueueItemInput: (item: TItem) => ClimbQueueItemInput;
   /**
-   * Optional session-resolution seam. When provided (mobile), it resolves /
-   * lazily-creates and joins the session before mutating, returning the
-   * resolved id (or null to no-op). When ABSENT (web), core actions throw on a
+   * Optional session-resolution seam. When provided (mobile), it resolves and
+   * joins the session before mutating, returning the resolved id (or null to
+   * no-op — mobile returns null for a null `capturedSessionId`, keeping the
+   * solo queue local). When ABSENT (web), core actions throw on a
    * missing/flipped session. `capturedSessionId` is the id snapshotted at the
-   * call's enqueue time; null means "no session yet — create one if allowed".
+   * call's enqueue time; null means no session existed then.
    */
   ensureReady?: (capturedSessionId: string | null) => Promise<string | null>;
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
@@ -78,6 +80,14 @@ export type QueueMutationsDeps<TItem> = {
 export type QueueMutationsActions<TItem> = {
   addQueueItem: (item: TItem, position?: number) => Promise<void>;
   removeQueueItem: (uuid: string) => Promise<void>;
+  /**
+   * Move a queued item from `oldIndex` to `newIndex` (positions in the full
+   * queue array). Requires an existing session — never lazily creates one.
+   * The server broadcasts a `QueueReordered` delta; callers optimistically
+   * apply `DELTA_REORDER_QUEUE_ITEM` locally, whose uuid-at-oldIndex check
+   * makes the echoed event a safe no-op.
+   */
+  reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
   setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
   mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
   /**
@@ -88,24 +98,18 @@ export type QueueMutationsActions<TItem> = {
   setQueue: (queue: TItem[], currentClimbQueueItem?: TItem | null) => Promise<void>;
   replaceQueueItem: (uuid: string, item: TItem) => Promise<void>;
   /**
-   * Claim wall-control authority in the current party session, optionally
-   * broadcasting a climb. Yank-on-press server-side. In solo (no active
-   * session) it's a backend no-op that still resolves, so callers can use
-   * `takeControl(climb)` as a drop-in for `setCurrentClimb(climb)`.
-   */
-  takeControl: (climb?: TItem | null) => Promise<void>;
-  /**
-   * Release wall-control authority. Idempotent — no-op when the local user
-   * isn't the driver. Backend no-op in solo.
-   */
-  releaseControl: () => Promise<void>;
-  /**
    * Tell the backend this client just relayed `climbUuid` to the wall over BLE
    * so it can broadcast `WallConfirmedClimb` to the other party members.
    * Best-effort: transport errors are swallowed (the BLE send already
    * succeeded). No-op in solo.
    */
   confirmClimbOnWall: (climbUuid: string) => Promise<void>;
+  /**
+   * Tell the backend this client's BLE link to the wall dropped, so it can
+   * broadcast `WallDisconnected` and every party member turns the lightbulb
+   * off. The current climb is preserved. Best-effort; no-op in solo.
+   */
+  reportWallDisconnect: () => Promise<void>;
   /**
    * Record the BLE serial this client paired to as the session's
    * `lastConnectedBoardSerial` so other members can auto-connect to the same
@@ -127,8 +131,9 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
   // Core mutating actions. Web (no ensureReady) THROWS when disconnected;
   // mobile (ensureReady) silently no-ops by returning null. `allowCreate`
-  // controls whether mobile may lazily create a session (add / setCurrent) vs
-  // requires an existing one (remove / mirror / setQueue / replace).
+  // historically let mobile lazily create a session on add / setCurrent;
+  // mobile's seam no longer creates (solo stays local), so today the flag only
+  // controls whether ensureReady is consulted at all on a null captured id.
   async function resolveCore({ allowCreate }: { allowCreate: boolean }): Promise<Ready | null> {
     const client = getClient();
     const captured = getSessionId();
@@ -171,10 +176,11 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         throw new Error(NOT_CONNECTED);
       }
       if (ensureReady) {
-        // Mobile: a null captured id means "no session yet" — ensureReady
-        // creates one. A concrete captured id that no longer matches the live
-        // session means it flipped mid-flight; drop rather than apply a stale
-        // setCurrent to the new session.
+        // Mobile: a null captured id means "no session" — the seam returns
+        // null and the send is dropped (solo stays local). A concrete captured
+        // id that no longer matches the live session means it flipped
+        // mid-flight; drop rather than apply a stale setCurrent to the new
+        // session.
         const sessionId = await ensureReady(capturedSessionId);
         if (!sessionId) return;
         if (capturedSessionId !== null && getSessionId() !== capturedSessionId) return;
@@ -225,6 +231,12 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
       await execute(ready.client, { query: REMOVE_QUEUE_ITEM, variables: { uuid } });
+    },
+
+    reorderQueueItem: async (uuid, oldIndex, newIndex) => {
+      const ready = await resolveCore({ allowCreate: false });
+      if (!ready) return;
+      await execute(ready.client, { query: REORDER_QUEUE_ITEM, variables: { uuid, oldIndex, newIndex } });
     },
 
     setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {
@@ -278,21 +290,6 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       });
     },
 
-    takeControl: async (climb) => {
-      const ready = await resolveCurrent();
-      if (!ready) return;
-      await execute(ready.client, {
-        query: TAKE_CONTROL,
-        variables: { climb: climb ? toQueueItemInput(climb) : null },
-      });
-    },
-
-    releaseControl: async () => {
-      const ready = await resolveCurrent();
-      if (!ready) return;
-      await execute(ready.client, { query: RELEASE_CONTROL, variables: {} });
-    },
-
     confirmClimbOnWall: async (climbUuid) => {
       const ready = await resolveCurrent();
       if (!ready) return;
@@ -300,6 +297,16 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         await execute(ready.client, { query: CONFIRM_CLIMB_ON_WALL, variables: { climbUuid } });
       } catch (error) {
         onBestEffortError?.('confirmClimbOnWall', error);
+      }
+    },
+
+    reportWallDisconnect: async () => {
+      const ready = await resolveCurrent();
+      if (!ready) return;
+      try {
+        await execute(ready.client, { query: REPORT_WALL_DISCONNECT, variables: {} });
+      } catch (error) {
+        onBestEffortError?.('reportWallDisconnect', error);
       }
     },
 

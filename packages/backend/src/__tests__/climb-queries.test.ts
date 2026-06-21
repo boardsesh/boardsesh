@@ -35,6 +35,14 @@ describe('Climb Query Functions', () => {
       expect(typeof result.hasMore).toBe('boolean');
       expect(result.totalCount).toBeDefined();
       expect(typeof result.totalCount).toBe('number');
+
+      // Each result carries the searched board + layout so a queued climb can be
+      // checked against a connected board (BLE spill guard). The search is scoped
+      // to testParams (kilter / layout 1) by its WHERE clause.
+      if (result.climbs.length > 0) {
+        expect(result.climbs[0].boardType).toBe('kilter');
+        expect(result.climbs[0].layoutId).toBe(1);
+      }
     });
 
     it('should enforce MAX_PAGE_SIZE limit', async () => {
@@ -443,6 +451,160 @@ describe('Climb Query Functions', () => {
       const result = await searchClimbs(testParams, searchParams);
 
       expect(result).toBeDefined();
+    });
+  });
+
+  // Regression coverage for the search-climbs hardening PR. Each test seeds its own
+  // climbs (and stats/holds where needed) and asserts on membership filtered to the
+  // shared prefix, so it tolerates whatever else lives in the test DB.
+  describe('search-climbs hardening', () => {
+    const PREFIX = 'search-hardening-';
+    const id = (suffix: string) => PREFIX + suffix;
+    // Boulders default to true, so frames_count NULL/1 climbs match without extra params.
+    const kilter1 = (overrides: Partial<ParsedBoardRouteParameters> = {}): ParsedBoardRouteParameters => ({
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+      ...overrides,
+    });
+
+    beforeAll(async () => {
+      // board_climbs: hold A/B (anchored-LIKE), rating HI/LO, popular PN/PO (isolated
+      // on size/set 99), drafts predicate N, driver-types T, projects-only PROJ.
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('hold-a')}, 'kilter', 1, 'sh', 'Hold A', 'p30r12p1200r13', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('hold-b')}, 'kilter', 1, 'sh', 'Hold B', 'p130r12p1200r13', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('rating-hi')}, 'kilter', 1, 'sh', 'Rating Hi', 'p500r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('rating-lo')}, 'kilter', 1, 'sh', 'Rating Lo', 'p501r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('pop-null')}, 'kilter', 1, 'sh', 'Pop Null', 'p99r12', NULL, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[99], ARRAY[99]),
+          (${id('pop-one')}, 'kilter', 1, 'sh', 'Pop One', 'p99r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[99], ARRAY[99]),
+          (${id('draft-pred')}, 'kilter', 1, 'sh', 'Draft Pred', 'p502r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('types')}, 'kilter', 1, 'sh', 'Types', 'p503r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('proj')}, 'kilter', 1, 'sh', 'Proj', 'p504r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7])
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('rating-hi')}, 40, 20.0, 10, 20.0, 4.5),
+          ('kilter', ${id('rating-lo')}, 40, 20.0, 10, 20.0, 1.5),
+          ('kilter', ${id('pop-null')}, 40, 20.0, 9999, 20.0, 4.0),
+          ('kilter', ${id('pop-one')}, 40, 20.0, 1, 20.0, 4.0),
+          ('kilter', ${id('types')}, 40, 20.0, 42, 20.5, 4.5)
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES
+          ('kilter', ${id('hold-a')}, 30, 0, 'HAND'),
+          ('kilter', ${id('hold-a')}, 1200, 0, 'FINISH'),
+          ('kilter', ${id('hold-b')}, 130, 0, 'HAND'),
+          ('kilter', ${id('hold-b')}, 1200, 0, 'FINISH')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_holds WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    describe('anchored hold LIKE (F1)', () => {
+      it('ANY include matches the exact hold, not a longer placement id', async () => {
+        const result = await searchClimbs(kilter1(), {
+          page: 0,
+          pageSize: 100,
+          sortBy: 'creation',
+          holdsFilter: { hold_30: { ANY: 'include' } },
+        });
+        const uuids = result.climbs.map((c) => c.uuid);
+        // hold 30 must match p30r… (A) but NOT p130r… (B).
+        expect(uuids).toContain(id('hold-a'));
+        expect(uuids).not.toContain(id('hold-b'));
+      });
+
+      it('ANY exclude drops the exact hold, not a longer placement id', async () => {
+        const result = await searchClimbs(kilter1(), {
+          page: 0,
+          pageSize: 100,
+          sortBy: 'creation',
+          holdsFilter: { hold_30: { ANY: 'exclude' } },
+        });
+        const uuids = result.climbs.map((c) => c.uuid);
+        // Excluding hold 30 must keep B (uses 130, not 30) and drop A.
+        expect(uuids).toContain(id('hold-b'));
+        expect(uuids).not.toContain(id('hold-a'));
+      });
+    });
+
+    describe('minRating on the 1-5 scale (F2)', () => {
+      it('minRating=4 keeps a 4.5-quality climb and drops a 1.5-quality climb', async () => {
+        const result = await searchClimbs(kilter1(), { page: 0, pageSize: 100, minRating: 4 });
+        const uuids = result.climbs.map((c) => c.uuid);
+        expect(uuids).toContain(id('rating-hi'));
+        expect(uuids).not.toContain(id('rating-lo'));
+      });
+    });
+
+    describe('popular sort counts NULL frames_count (F4)', () => {
+      it('ranks a NULL-frames_count climb by its ascents instead of pushing it last', async () => {
+        const result = await searchClimbs(kilter1({ size_id: 99, set_ids: [99] }), {
+          page: 0,
+          pageSize: 100,
+          sortBy: 'popular',
+          sortOrder: 'desc',
+        });
+        const uuids = result.climbs.map((c) => c.uuid);
+        const nullIdx = uuids.indexOf(id('pop-null'));
+        const oneIdx = uuids.indexOf(id('pop-one'));
+        expect(nullIdx).toBeGreaterThanOrEqual(0);
+        expect(oneIdx).toBeGreaterThanOrEqual(0);
+        // pop-null has far more ascents, so with NULL counted it sorts first.
+        expect(nullIdx).toBeLessThan(oneIdx);
+      });
+    });
+
+    describe('unified drafts predicate (F7)', () => {
+      it('applies the size filter when onlyDrafts is set without a userId', async () => {
+        // No userId → not a real drafts query → behaves like a normal listed search,
+        // so the size filter must reject a climb that does not fit the requested size.
+        const noFit = await searchClimbs(kilter1({ size_id: 999 }), { page: 0, pageSize: 100, onlyDrafts: true });
+        expect(noFit.climbs.map((c) => c.uuid)).not.toContain(id('draft-pred'));
+
+        const fits = await searchClimbs(kilter1(), { page: 0, pageSize: 100, onlyDrafts: true });
+        expect(fits.climbs.map((c) => c.uuid)).toContain(id('draft-pred'));
+      });
+    });
+
+    describe('driver type fidelity (F9)', () => {
+      it('maps numeric/bigint columns to the expected runtime shapes', async () => {
+        const result = await searchClimbs(kilter1(), { page: 0, pageSize: 100, sortBy: 'ascents', sortOrder: 'desc' });
+        const row = result.climbs.find((c) => c.uuid === id('types'));
+        expect(row).toBeDefined();
+        // ascensionist_count: bigint → coerced to a JS number.
+        expect(row!.ascensionist_count).toBe(42);
+        // quality_average: ROUND(::numeric,2) → preserved as the driver's "4.50" string.
+        expect(row!.quality_average).toBe('4.50');
+        // difficulty_id 20 → grade label; difficulty_error ROUND(20.5-20.0,2) → "0.50".
+        expect(row!.difficulty).toBe('6c/V5');
+        expect(row!.difficulty_error).toBe('0.50');
+        expect(typeof row!.stars).toBe('number');
+      });
+    });
+
+    describe('countClimbs projectsOnly keeps stats-less climbs (F3)', () => {
+      it('counts a climb with no board_climb_stats row under projectsOnly', async () => {
+        const count = await countClimbs(kilter1(), { page: 0, pageSize: 100, projectsOnly: true });
+        // PROJ has no stats row; projectsOnly must still count it (join retained).
+        expect(count).toBeGreaterThanOrEqual(1);
+      });
     });
   });
 });

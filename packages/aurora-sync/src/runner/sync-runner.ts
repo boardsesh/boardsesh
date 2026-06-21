@@ -5,9 +5,16 @@ import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
 import { syncUserData } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
+import {
+  AURORA_LOCATION_BOARDS,
+  syncAllAuroraBoardLocations,
+  syncAuroraBoardLocations,
+  type AuroraLocationBoardName,
+} from '../sync/locations-sync';
 import { AuroraClimbingClient } from '../api/aurora-client';
-import { isTransientAuroraError } from '../api/errors';
+import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
+import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
 import { resolveDaemonOptions, runDaemonLoop } from './daemon';
 import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions } from './types';
@@ -23,6 +30,12 @@ type RunnerDb = ReturnType<typeof drizzle>;
 // 1 hour matches the smallest unit of meaningful change for board-wide data
 // (climbs, climb_stats); tune via SyncRunnerConfig.sharedSyncCooldownMs.
 const DEFAULT_SHARED_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
+const MAX_CREDENTIAL_FAILURES = 2;
+
+type CredentialFailureUpdate = {
+  credentialFailureCount?: number;
+  lastCredentialFailureAt?: Date | null;
+};
 
 export class SyncRunner {
   private config: SyncRunnerConfig;
@@ -273,8 +286,13 @@ export class SyncRunner {
       }
 
       const errorMessage = `Login failed: ${this.formatErrorMessage(loginError)}`;
-      await this.updateCredentialStatus(cred.userId, cred.boardType, 'error', errorMessage);
-      throw new Error(errorMessage);
+      if (this.isInvalidCredentialError(loginError)) {
+        const storedErrorMessage = await this.recordInvalidCredentialFailure(cred, errorMessage);
+        throw new Error(storedErrorMessage);
+      } else {
+        await this.updateCredentialStatus(cred.userId, cred.boardType, 'error', errorMessage);
+        throw new Error(errorMessage);
+      }
     }
 
     await this.updateStoredToken(cred.userId, cred.boardType, token);
@@ -282,7 +300,10 @@ export class SyncRunner {
     const { client } = this.getClient();
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
     await syncUserData(client, boardType, token, cred.auroraUserId, cred.userId, undefined, this.log.bind(this));
-    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', null, new Date());
+    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', null, new Date(), {
+      credentialFailureCount: 0,
+      lastCredentialFailureAt: null,
+    });
 
     // Piggyback shared sync onto user sync — the user's fresh token
     // authenticates the shared `/sync` request the same way the old Vercel
@@ -315,10 +336,13 @@ export class SyncRunner {
     // either way — a permanent failure shouldn't loop on every cycle.
     this.lastSharedSyncAt.set(boardType, now);
 
-    const { client } = this.getClient();
+    const { client, db } = this.getClient();
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
       await syncSharedData(client, boardType, token, this.log.bind(this));
+      if (this.isLocationBoard(boardType)) {
+        await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
+      }
       this.lastSharedSyncAt.set(boardType, Date.now());
     } catch (sharedError) {
       this.lastSharedSyncAt.set(boardType, Date.now());
@@ -331,12 +355,27 @@ export class SyncRunner {
     }
   }
 
+  async syncLocations(
+    board: AuroraLocationBoardName | 'all',
+  ): Promise<LocationSyncSummary | Record<AuroraLocationBoardName, LocationSyncSummary>> {
+    const { db } = this.getClient();
+    if (board === 'all') {
+      return syncAllAuroraBoardLocations({ db, log: this.log.bind(this) });
+    }
+    return syncAuroraBoardLocations({ db, board, log: this.log.bind(this) });
+  }
+
+  private isLocationBoard(boardType: AuroraBoardName): boardType is AuroraLocationBoardName {
+    return AURORA_LOCATION_BOARDS.includes(boardType as AuroraLocationBoardName);
+  }
+
   private async updateCredentialStatus(
     userId: string,
     boardType: string,
     status: string,
     error: string | null,
     lastSyncAt?: Date,
+    credentialFailureUpdate: CredentialFailureUpdate = {},
   ): Promise<void> {
     const { db } = this.getClient();
     const updateData: Record<string, unknown> = {
@@ -349,10 +388,44 @@ export class SyncRunner {
       updateData.lastSyncAt = lastSyncAt;
     }
 
+    if (credentialFailureUpdate.credentialFailureCount !== undefined) {
+      updateData.credentialFailureCount = credentialFailureUpdate.credentialFailureCount;
+    }
+
+    if (credentialFailureUpdate.lastCredentialFailureAt !== undefined) {
+      updateData.lastCredentialFailureAt = credentialFailureUpdate.lastCredentialFailureAt;
+    }
+
     await db
       .update(auroraCredentials)
       .set(updateData)
       .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));
+  }
+
+  private isInvalidCredentialError(error: unknown): boolean {
+    return isAuroraRequestError(error) && error.code === 'invalid_credentials';
+  }
+
+  private async recordInvalidCredentialFailure(cred: CredentialRecord, errorMessage: string): Promise<string> {
+    const credentialFailureCount = (cred.credentialFailureCount ?? 0) + 1;
+    const expired = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
+    const storedErrorMessage = expired
+      ? `${errorMessage} (expired after ${MAX_CREDENTIAL_FAILURES} failed credential attempts; reconnect to resume sync)`
+      : errorMessage;
+
+    await this.updateCredentialStatus(
+      cred.userId,
+      cred.boardType,
+      expired ? 'expired' : 'error',
+      storedErrorMessage,
+      undefined,
+      {
+        credentialFailureCount,
+        lastCredentialFailureAt: new Date(),
+      },
+    );
+
+    return storedErrorMessage;
   }
 
   private async updateStoredToken(userId: string, boardType: string, token: string): Promise<void> {
@@ -362,6 +435,8 @@ export class SyncRunner {
       .update(auroraCredentials)
       .set({
         auroraToken: encryptedToken,
+        credentialFailureCount: 0,
+        lastCredentialFailureAt: null,
         updatedAt: new Date(),
       })
       .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, boardType)));

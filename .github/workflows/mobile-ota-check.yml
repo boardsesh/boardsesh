@@ -1,0 +1,166 @@
+name: Mobile OTA Compatibility (PR Signal)
+
+# A fast, reliable PR signal: does this mobile change ride over-the-air on
+# existing app binaries, or does it force a new TestFlight/Play build? It resolves
+# the Expo runtimeVersion `fingerprint` for iOS + Android on the branch AND on
+# origin/main (in one job, under identical env), then compares per platform —
+# equal = JS-only (ships OTA), different = native change (needs a new binary).
+# Informational only: a native change is legitimate, so the check stays neutral
+# and never blocks merge. Verdict lands as a sticky PR comment + a neutral
+# "OTA compatibility" check-run. See docs/mobile-ota-updates.md.
+#
+# Push-on-branch (not pull_request) so it has the token to comment + post a check
+# and — unlike a workflow_dispatch-only file — runs on its own feature branch
+# immediately, self-testing on its own PR.
+
+on:
+  push:
+    branches-ignore: [main]
+    # Mirror the native build / OTA-publish triggers (ios-testflight-rn.yml /
+    # android-apk-rn.yml / mobile-ota-production.yml) so the signal reacts to
+    # exactly what moves the fingerprint. packages/shared/** already covers
+    # queue / board-config / ble-protocol.
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - '.github/workflows/mobile-ota-check.yml'
+      # The check's own logic — so changes to it re-run and self-validate.
+      - 'scripts/mobile-ota-compat-check.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write # sticky comment
+  checks: write # neutral check-run
+
+concurrency:
+  group: mobile-ota-check-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
+# Byte-identical to ios-testflight-rn.yml / android-apk-rn.yml /
+# mobile-ota-production.yml — scripts/mobile-ci-env-parity.test.ts fails the build
+# if these drift. The fingerprint hashes the resolved Expo config + the written
+# .env, so the verdict is only meaningful if this check resolves under the same
+# env the native builds bake in. GOOGLE_MAPS_API_KEY is deliberately NOT set here:
+# it's a Production-environment secret unavailable on feature-branch pushes, and
+# the diff-vs-main verdict doesn't need it (a missing key shifts BOTH sides of the
+# comparison equally). The parity test guards that omission too.
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+
+jobs:
+  ota-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Need origin/main reachable for the baseline worktree, and the tags for
+          # the secondary "already on a released build" lookup.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (PR tree)
+        run: bun install --frozen-lockfile
+
+      # Materialize origin/main as a sibling worktree with its OWN node_modules so
+      # the baseline resolves against main's exact dependency tree. The verdict is
+      # the PR-vs-main fingerprint diff; resolving both here, same job + same env,
+      # is what makes that diff robust to env imperfections.
+      - name: Materialize origin/main baseline
+        run: |
+          git fetch origin main --depth=1
+          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+
+      - name: Install dependencies (main baseline)
+        working-directory: ${{ runner.temp }}/main-baseline
+        run: bun install --frozen-lockfile
+
+      - name: Resolve fingerprints and compare vs main
+        id: ota
+        run: |
+          vp run check:mobile-ota-compat -- \
+            --write-env \
+            --check-shipped-tags \
+            --base-dir "$RUNNER_TEMP/main-baseline"
+
+      - name: Comment OTA compatibility on the PR
+        if: github.event_name == 'push' && steps.ota.outputs.comment_b64 != ''
+        uses: actions/github-script@v7
+        env:
+          COMMENT_B64: ${{ steps.ota.outputs.comment_b64 }}
+        with:
+          script: |
+            const body = Buffer.from(process.env.COMMENT_B64, 'base64').toString('utf8');
+            const marker = '<!-- mobile-ota-check -->';
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${context.payload.ref.replace('refs/heads/', '')}`,
+              state: 'open',
+            });
+            if (prs.length === 0) return;
+
+            const pr = prs[0];
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+            });
+
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body,
+              });
+            }
+
+      - name: Publish neutral check-run
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          # Falls back to "unknown" if an earlier step failed before the script
+          # produced an output (e.g. install died), so the check always posts.
+          CHECK_TITLE: ${{ steps.ota.outputs.check_title || 'OTA compatibility unknown (no baseline)' }}
+        with:
+          script: |
+            const title = process.env.CHECK_TITLE;
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'OTA compatibility',
+              head_sha: context.sha,
+              status: 'completed',
+              // Always neutral — informational, never a merge gate.
+              conclusion: 'neutral',
+              output: { title, summary: title },
+            });

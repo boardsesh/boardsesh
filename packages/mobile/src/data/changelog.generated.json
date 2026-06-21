@@ -1,0 +1,224 @@
+{
+  "generatedAt": "2026-06-21T11:51:15.865Z",
+  "entries": [
+    {
+      "prNumber": 3131,
+      "category": "new",
+      "title": "Stuck at sign-in? Report a bug or jump into Discord without logging in first.",
+      "mergedAt": "2026-06-21T11:50:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3131"
+    },
+    {
+      "prNumber": 3115,
+      "category": "new",
+      "title": "You can now see at a glance when you're driving the board: the bar lights up when you have control, shows who's driving when a crewmate has it, and lets you connect or open board controls right from the bar — no digging into the climb view.",
+      "mergedAt": "2026-06-21T06:03:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3115"
+    },
+    {
+      "prNumber": 3116,
+      "category": "fixed",
+      "title": "Tester-only dev tooling + backend security/integrity hardening; nothing climber-facing.",
+      "mergedAt": "2026-06-21T01:04:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3116"
+    },
+    {
+      "prNumber": 3118,
+      "category": "fixed",
+      "title": "Find a gym on a full-screen map you can drag to resize, pan to explore new areas, and search by city — board picking right from the map.",
+      "mergedAt": "2026-06-20T23:25:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3118"
+    },
+    {
+      "prNumber": 3111,
+      "category": "fixed",
+      "title": "The wall history keeps up with your crew now — sends from friends show up right away, even after your phone's been in your pocket or your signal dropped for a moment. Pull down on the history list any time to refresh it.",
+      "mergedAt": "2026-06-20T21:51:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3111"
+    },
+    {
+      "prNumber": 3068,
+      "category": "new",
+      "title": "Beta testers can now switch OTA update channels right in the app to preview a specific build.",
+      "mergedAt": "2026-06-20T13:48:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3068"
+    },
+    {
+      "prNumber": 3108,
+      "category": "fixed",
+      "title": "Fixed an Android freeze where the app could stop responding after a couple of minutes — the climb list wouldn't scroll and both bars went dead until you reopened the app. It stays live now.",
+      "mergedAt": "2026-06-20T13:12:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3108"
+    },
+    {
+      "prNumber": 3104,
+      "category": "fixed",
+      "title": "Fixed an Android freeze where the top and bottom bars stopped responding right after you picked a climb.",
+      "mergedAt": "2026-06-20T12:16:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3104"
+    },
+    {
+      "prNumber": 3101,
+      "category": "new",
+      "title": "See when a new app version landed — What's New now flags store updates, so you can tell what arrived over the air from what needs an app update.",
+      "mergedAt": "2026-06-20T11:43:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3101",
+      "body": "Tap \"Check for updates\" in What's New to grab the latest fixes on the spot."
+    },
+    {
+      "prNumber": 3076,
+      "category": "new",
+      "title": "See a climber's recent beta videos right on their profile — swipe through the shelf or tap See all for the full grid.",
+      "mergedAt": "2026-06-20T11:20:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3076"
+    },
+    {
+      "prNumber": 3099,
+      "category": "improved",
+      "title": "Boards open without a hitch on Android — selecting a board no longer briefly freezes the app.",
+      "mergedAt": "2026-06-20T11:20:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3099"
+    },
+    {
+      "prNumber": 3092,
+      "category": "fixed",
+      "title": "Sign in with Apple now falls back to a browser sign-in on iPhone when the native prompt can't complete, so you're not locked out.",
+      "mergedAt": "2026-06-20T07:51:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3092"
+    },
+    {
+      "prNumber": 3097,
+      "category": "fixed",
+      "title": "Pick a board and keep climbing — fixed an Android freeze that hit right after switching boards.",
+      "mergedAt": "2026-06-20T07:37:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3097"
+    },
+    {
+      "prNumber": 3090,
+      "category": "fixed",
+      "title": "Playlist grades now match the wall angle you've dialed in, instead of a climb's most-popular angle",
+      "mergedAt": "2026-06-20T05:40:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3090"
+    },
+    {
+      "prNumber": 3073,
+      "category": "new",
+      "title": "Drive your board from the Android session notification",
+      "mergedAt": "2026-06-20T05:38:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3073",
+      "body": "The session notification now shows your current climb with its grade, angle, and your spot in the queue, and draws the board art right on your phone. Previous and Next move the board through your queue without opening the app, and the lightbulb shows when you're connected. When a crewmate takes the board, the card steps back to show what's on the wall."
+    },
+    {
+      "prNumber": 3077,
+      "category": "new",
+      "title": "The lock-screen Live Activity got a cleaner look and now knows who's on the board.",
+      "mergedAt": "2026-06-20T02:43:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3077",
+      "body": "When you're connected, the bulb glows and Prev/Next move the wall through your\nqueue; when a crewmate takes over, it shows what they're climbing instead. The\ngrade shows in its real grade colour up in the corner, and the board thumbnail is\neasier to read at a glance."
+    },
+    {
+      "prNumber": 3069,
+      "category": "fixed",
+      "title": "The board view now renders natively on the newest Android phones that use 16 KB memory pages (Android 15 and later, 64-bit devices).",
+      "mergedAt": "2026-06-19T22:43:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3069"
+    },
+    {
+      "prNumber": 3066,
+      "category": "new",
+      "title": "See what's new right in the app — a What's New page now lives under Settings, with a \"New\" dot when there's an update you haven't read yet.",
+      "mergedAt": "2026-06-19T22:04:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3066"
+    }
+  ],
+  "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-06-21T11:03:57+10:00",
+      "sha": "98c38a97b2caeaee7e83ef729ae5b0286d098bfc",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "cfbdf9874d53442d0afb9e06f9cf6405a8b5f387"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-20T15:40:50+10:00",
+      "sha": "b9050dc89ea5b5b629ab71c6760e08b214f7edc6",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "3982ea77e49f5971c9de673fc1f03a54b3dc44c2"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-20T15:37:59+10:00",
+      "sha": "686bd6ed1be8c3d0ea2558976e9315866722f8bb",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "9ea455192fc20704baccb85cfd60caf866cd37bb"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-20T12:43:16+10:00",
+      "sha": "2a8c0a4900533bb631c9dff19c305c5376f4762a",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "8f7bf0dd9f4fd29e8d740e9f0edc9ddaecc4f84b"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-20T11:30:15+10:00",
+      "sha": "8fbe7fdc0e7e099704fe4ee16d8495bdf862e096",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "d73fb5d3b3c2c27697816c0e09d612c9092707cc"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-20T07:11:25+10:00",
+      "sha": "14692386fe1e5ccc629ad7931970bfda83f8dd75",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "2bdcf2ae9394c6c51c31f2d862ff756826e29195"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-19T22:26:38+10:00",
+      "sha": "7efb4121635c3662c6f2a8b46cb5abd1e4e02c04",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "cad4c427b64e35a914270fcb670d8271d8212a4f"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-06-19T19:26:12+10:00",
+      "sha": "a2590a60ede29dfb62cbf8d09cc33c581179908e",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "fa41de4f25b58ae917d339445afce27ae30ef09e"
+      }
+    }
+  ]
+}

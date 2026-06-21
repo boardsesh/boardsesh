@@ -66,6 +66,83 @@ public class BoardRendererModule: Module {
     }
   }
 
+  private func renderOverlay(configJson: String, cacheKey: String) throws -> String {
+    _ = self.pruneOnce
+    let outputUrl = self.cacheDir.appendingPathComponent("\(cacheKey).png")
+
+    if FileManager.default.fileExists(atPath: outputUrl.path) {
+      // Touch mtime so LRU treats hot files as recently used.
+      try? FileManager.default.setAttributes(
+        [.modificationDate: Date()], ofItemAtPath: outputUrl.path
+      )
+      return outputUrl.absoluteString
+    }
+
+    let jsonData = Array(configJson.utf8)
+    var outData: UnsafeMutablePointer<UInt8>? = nil
+    var outLen: UInt32 = 0
+    var outWidth: UInt32 = 0
+    var outHeight: UInt32 = 0
+
+    let result = jsonData.withUnsafeBufferPointer { buffer in
+      guard let baseAddress = buffer.baseAddress else { return Int32(-1) }
+      return board_renderer_render(
+        baseAddress,
+        UInt32(buffer.count),
+        &outData,
+        &outLen,
+        &outWidth,
+        &outHeight
+      )
+    }
+
+    guard result == 0, let pixelData = outData else {
+      throw NSError(
+        domain: "BoardRenderer", code: Int(result),
+        userInfo: [
+          NSLocalizedDescriptionKey: "Rust render failed with code \(result)"
+        ])
+    }
+
+    defer { board_renderer_free(pixelData, outLen) }
+
+    let width = Int(outWidth)
+    let height = Int(outHeight)
+
+    // Wrap the RGBA buffer Rust returned in a CGImage and PNG-encode it
+    // directly — no compositing step, no background draws. tiny-skia's
+    // Pixmap::data() returns premultiplied RGBA (verified in
+    // tiny_skia::Pixmap docs: "A container that owns premultiplied RGBA
+    // pixels"); CGImageAlphaInfo.premultipliedLast is the matching
+    // CoreGraphics format. Using straight alpha here would produce
+    // washed-out hold colors.
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+    guard let overlayContext = CGContext(
+      data: UnsafeMutableRawPointer(pixelData),
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: width * 4,
+      space: colorSpace,
+      bitmapInfo: bitmapInfo.rawValue
+    ), let overlayImage = overlayContext.makeImage() else {
+      throw NSError(
+        domain: "BoardRenderer", code: -3,
+        userInfo: [NSLocalizedDescriptionKey: "Failed to wrap RGBA buffer as CGImage"])
+    }
+
+    let uiImage = UIImage(cgImage: overlayImage)
+    guard let pngData = uiImage.pngData() else {
+      throw NSError(
+        domain: "BoardRenderer", code: -4,
+        userInfo: [NSLocalizedDescriptionKey: "PNG encoding failed"])
+    }
+
+    try pngData.write(to: outputUrl)
+    return outputUrl.absoluteString
+  }
+
   public func definition() -> ModuleDefinition {
     Name("BoardRenderer")
 
@@ -76,81 +153,15 @@ public class BoardRendererModule: Module {
     // keeping them in JS means the placeholder (backgrounds alone) is
     // visible while this async render is in flight.
     AsyncFunction("renderHoldsOverlay") {
-      (configJson: String, cacheKey: String) -> String in
-      _ = self.pruneOnce
-      let outputUrl = self.cacheDir.appendingPathComponent("\(cacheKey).png")
+      (configJson: String, cacheKey: String) throws -> String in
+      try self.renderOverlay(configJson: configJson, cacheKey: cacheKey)
+    }
 
-      if FileManager.default.fileExists(atPath: outputUrl.path) {
-        // Touch mtime so LRU treats hot files as recently used.
-        try? FileManager.default.setAttributes(
-          [.modificationDate: Date()], ofItemAtPath: outputUrl.path
-        )
-        return outputUrl.absoluteString
-      }
-
-      let jsonData = Array(configJson.utf8)
-      var outData: UnsafeMutablePointer<UInt8>? = nil
-      var outLen: UInt32 = 0
-      var outWidth: UInt32 = 0
-      var outHeight: UInt32 = 0
-
-      let result = jsonData.withUnsafeBufferPointer { buffer in
-        guard let baseAddress = buffer.baseAddress else { return Int32(-1) }
-        return board_renderer_render(
-          baseAddress,
-          UInt32(buffer.count),
-          &outData,
-          &outLen,
-          &outWidth,
-          &outHeight
-        )
-      }
-
-      guard result == 0, let pixelData = outData else {
-        throw NSError(
-          domain: "BoardRenderer", code: Int(result),
-          userInfo: [
-            NSLocalizedDescriptionKey: "Rust render failed with code \(result)"
-          ])
-      }
-
-      defer { board_renderer_free(pixelData, outLen) }
-
-      let width = Int(outWidth)
-      let height = Int(outHeight)
-
-      // Wrap the RGBA buffer Rust returned in a CGImage and PNG-encode it
-      // directly — no compositing step, no background draws. tiny-skia's
-      // Pixmap::data() returns premultiplied RGBA (verified in
-      // tiny_skia::Pixmap docs: "A container that owns premultiplied RGBA
-      // pixels"); CGImageAlphaInfo.premultipliedLast is the matching
-      // CoreGraphics format. Using straight alpha here would produce
-      // washed-out hold colors.
-      let colorSpace = CGColorSpaceCreateDeviceRGB()
-      let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-      guard let overlayContext = CGContext(
-        data: UnsafeMutableRawPointer(pixelData),
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bytesPerRow: width * 4,
-        space: colorSpace,
-        bitmapInfo: bitmapInfo.rawValue
-      ), let overlayImage = overlayContext.makeImage() else {
-        throw NSError(
-          domain: "BoardRenderer", code: -3,
-          userInfo: [NSLocalizedDescriptionKey: "Failed to wrap RGBA buffer as CGImage"])
-      }
-
-      let uiImage = UIImage(cgImage: overlayImage)
-      guard let pngData = uiImage.pngData() else {
-        throw NSError(
-          domain: "BoardRenderer", code: -4,
-          userInfo: [NSLocalizedDescriptionKey: "PNG encoding failed"])
-      }
-
-      try pngData.write(to: outputUrl)
-      return outputUrl.absoluteString
+    // Same renderer as renderHoldsOverlay, but the method's presence is a
+    // native capability signal for marker shape, brush, and size overrides.
+    AsyncFunction("renderHoldsOverlayWithMarkers") {
+      (configJson: String, cacheKey: String) throws -> String in
+      try self.renderOverlay(configJson: configJson, cacheKey: cacheKey)
     }
   }
 }

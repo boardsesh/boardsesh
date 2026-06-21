@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, type TextStyle } from 'react-native';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
   createInitialTickState,
@@ -16,13 +17,16 @@ import {
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { InlineStarPicker } from './InlineStarPicker';
-import { InlineGradePicker } from './InlineGradePicker';
 import { InlineTriesPicker } from './InlineTriesPicker';
+import { GradeSingleSelectRail } from '../grade';
 import { useTheme } from '../../providers/theme-provider';
 import { useGrades } from '../../lib/graphql/hooks';
-import { useOptionalBoardProvider, useSaveTick } from '@boardsesh/board-react';
+import { useOptionalBoardProvider, useSaveTick, logbookClimbAngleKey } from '@boardsesh/board-react';
 import { toBoardName } from '@boardsesh/board-config';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useToast } from '../../providers/toast-provider';
+import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -40,7 +44,7 @@ type QuickTickBarProps = {
   sessionId?: string | null;
   // The climb's consensus grade label (e.g. "V5", "7a+"). Resolved to a
   // numeric difficulty id at render time via the loaded grades list and
-  // forwarded to InlineGradePicker so the consensus chip is centered (and
+  // forwarded to GradeSingleSelectRail so the consensus chip is centered (and
   // visually outlined) without being preselected.
   consensusGradeName?: string;
   onDismiss: () => void;
@@ -63,24 +67,32 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const { t: tClimbs } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
+  const insets = useSafeAreaInsets();
   const saveTick = useSaveTick(toBoardName(boardName));
+  const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const { data: grades } = useGrades(boardName);
 
   // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
   // populated server-side, so we read the user's accumulated logbook
   // (denormalised via `BoardProvider` → `useLogbook`) directly. Same
-  // source `AscentStatusBadge` uses for its flash/send/attempt pill.
+  // logbook source the climb-row status glyph reads.
   //
   // Two failure modes the save-button label must guard against:
   // 1. `BoardProvider` not mounted → no logbook context at all → `Send`.
   // 2. Provider is mounted but this climb's ticks haven't been fetched
-  //    yet → `board.logbook.some(...)` returns false. We trigger
-  //    `getLogbook` on mount (idempotent thanks to useLogbook's fetched-
-  //    uuid dedupe) so the answer becomes authoritative on the next
-  //    render after the fetch resolves. In the brief window before then
-  //    the label may still read `Flash` for a climb that actually has
-  //    history — bounded to flows that bypass the climbs-index
-  //    pre-fetch (e.g. deep link to /climbs/[uuid]).
+  //    yet → the lookup returns nothing. We trigger `getLogbook` on mount
+  //    (idempotent thanks to useLogbook's fetched-uuid dedupe) so the
+  //    answer becomes authoritative on the next render after the fetch
+  //    resolves. In the brief window before then the label may still read
+  //    `Flash` for a climb that actually has history — bounded to flows
+  //    that bypass the climbs-index pre-fetch (e.g. deep link to
+  //    /climbs/[uuid]).
+  //
+  // Read the prebuilt `logbookByClimbAngle` index (an O(1) Map lookup the
+  // BoardProvider rebuilds once per logbook change) rather than scanning
+  // the raw `logbook` array — otherwise every logbook merge while this
+  // sheet is open (own tick saves, list paging, peer ticks in a session)
+  // re-runs an O(logbook) scan. Same index `useAscentStatus` reads.
   const board = useOptionalBoardProvider();
   useEffect(() => {
     if (!board) return;
@@ -88,7 +100,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   }, [board, climbUuid]);
   const hasPriorHistory = useMemo(() => {
     if (!board) return true;
-    return board.logbook.some((entry) => entry.climb_uuid === climbUuid && entry.angle === angle);
+    return (board.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
   }, [board, climbUuid, angle]);
 
   const [tickState, setTickState] = useState(createInitialTickState);
@@ -99,7 +111,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 
   // Resolve the consensus grade *name* (e.g. "V5") to a numeric difficulty
   // id by matching against the loaded grades list. The id is what
-  // InlineGradePicker compares against each chip's `difficultyId`.
+  // GradeSingleSelectRail compares against each chip's `difficultyId`.
   const consensusDifficultyId = useMemo(() => {
     if (!consensusGradeName || !grades) return undefined;
     return grades.find((grade) => grade.name === consensusGradeName)?.difficultyId;
@@ -131,6 +143,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const handleSaveWithStatus = useCallback(
     (status: TickStatus) => {
       if (saveTick.isPending) return;
+      track(SHARED_EVENTS.TickButtonClicked, { climbUuid, layoutId: layoutId ?? null });
       setLastError(null);
 
       const finalAttempts = clampAttempts(tickState.attemptCount, status);
@@ -151,9 +164,19 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
           ...(setIds ? { setIds } : {}),
+          ...(boardPresenceEnabled && boardPresenceBoardId != null ? { boardId: boardPresenceBoardId } : {}),
         },
         {
           onSuccess: () => {
+            track(SHARED_EVENTS.QuickTickSaved, {
+              climbUuid,
+              layoutId: layoutId ?? null,
+              status,
+              attemptCount: finalAttempts,
+              hasQuality: tickState.quality != null && tickState.quality > 0,
+              hasDifficulty: tickState.difficulty != null,
+              hasComment: comment.length > 0,
+            });
             hapticSuccess();
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
@@ -165,10 +188,9 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           },
           onError: (error: unknown) => {
             hapticError();
+            track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
             const message =
-              error instanceof Error && error.message
-                ? error.message
-                : tClimbs('mobile.logAscent.errorMessage');
+              error instanceof Error && error.message ? error.message : tClimbs('mobile.logAscent.errorMessage');
             setLastError(message);
           },
         },
@@ -184,6 +206,8 @@ export const QuickTickBar = React.memo(function QuickTickBar({
       layoutId,
       sizeId,
       setIds,
+      boardPresenceEnabled,
+      boardPresenceBoardId,
       tickState,
       comment,
       onDismiss,
@@ -198,18 +222,21 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const saveLabel = ascentType === 'flash' ? t('playView.tickBar.flashSaveLabel') : t('playView.tickBar.sendSaveLabel');
 
   return (
-    <View style={styles.container}>
+    // The save row sits at the very bottom of LogAscentSheet, so the bottom
+    // padding must clear the Android system nav bar / home indicator.
+    <View style={[styles.container, { paddingBottom: insets.bottom + spacing[3] }]}>
       <View style={styles.row}>
         <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.rowLabel}>
           {t('playView.tickBar.gradeLabel')}
         </Text>
         <View style={styles.rowPicker}>
           {grades && (
-            <InlineGradePicker
+            <GradeSingleSelectRail
               grades={grades}
               selectedDifficultyId={tickState.difficulty}
               consensusDifficultyId={consensusDifficultyId}
               onSelect={handleGradeSelect}
+              style={styles.gradeRailContent}
             />
           )}
         </View>
@@ -252,7 +279,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           value={comment}
           onChangeText={setComment}
           placeholder={t('playView.tickBar.commentPlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel as string}
+          placeholderTextColor={systemColors.tertiaryLabel}
           accessibilityLabel={t('playView.tickBar.commentAria')}
           multiline
           style={
@@ -260,7 +287,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
               flex: 1,
               fontSize: 14,
               lineHeight: 19,
-              color: systemColors.label as string,
+              color: systemColors.label,
               minHeight: 36,
               paddingVertical: spacing[1],
               textAlignVertical: 'top',
@@ -286,16 +313,12 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           accessibilityLabel={t('playView.tickBar.logAscentAria', { status: 'attempt' })}
           style={({ pressed }) => [
             styles.attemptButton,
-            { borderColor: systemColors.separator as string },
+            { borderColor: systemColors.separator },
             pressed && styles.buttonPressed,
             saveTick.isPending && styles.buttonDisabled,
           ]}
         >
-          <Text
-            variant="footnote"
-            color={systemColors.label}
-            style={styles.attemptLabel}
-          >
+          <Text variant="footnote" color={systemColors.label} style={styles.attemptLabel}>
             {tClimbs('mobile.logAscent.attempt')}
           </Text>
         </Pressable>
@@ -324,7 +347,6 @@ export const QuickTickBar = React.memo(function QuickTickBar({
 const styles = StyleSheet.create({
   container: {
     paddingTop: spacing[1],
-    paddingBottom: spacing[3],
   },
   row: {
     flexDirection: 'row',
@@ -338,6 +360,9 @@ const styles = StyleSheet.create({
   },
   rowPicker: {
     flex: 1,
+  },
+  gradeRailContent: {
+    paddingHorizontal: 0,
   },
   saveRow: {
     flexDirection: 'row',

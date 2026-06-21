@@ -7,17 +7,18 @@ This document describes the WebSocket implementation used for real-time party se
 1. [Architecture Overview](#architecture-overview)
 2. [Technology Stack](#technology-stack)
 3. [Connection Flow](#connection-flow)
-4. [Backend URL Resolution](#backend-url-resolution)
-5. [Session Management](#session-management)
-6. [Queue State Synchronization](#queue-state-synchronization)
-7. [Multi-Instance Support](#multi-instance-support)
-8. [Failure States and Recovery](#failure-states-and-recovery)
-9. [Client-Side Connection Supervisor](#client-side-connection-supervisor)
-10. [Data Persistence Strategy](#data-persistence-strategy)
-11. [iOS Live Activity Integration](#ios-live-activity-integration)
-12. [Live Activity Push Notifications (APNs)](#live-activity-push-notifications-apns)
-13. [Activity Push Token Lifecycle](#activity-push-token-lifecycle)
-14. [Widget Navigation REST Endpoint](#widget-navigation-rest-endpoint)
+4. [Board Presence Wall Feed](#board-presence-wall-feed)
+5. [Backend URL Resolution](#backend-url-resolution)
+6. [Session Management](#session-management)
+7. [Queue State Synchronization](#queue-state-synchronization)
+8. [Multi-Instance Support](#multi-instance-support)
+9. [Failure States and Recovery](#failure-states-and-recovery)
+10. [Client-Side Connection Supervisor](#client-side-connection-supervisor)
+11. [Data Persistence Strategy](#data-persistence-strategy)
+12. [iOS Live Activity Integration](#ios-live-activity-integration)
+13. [Live Activity Push Notifications (APNs)](#live-activity-push-notifications-apns)
+14. [Activity Push Token Lifecycle](#activity-push-token-lifecycle)
+15. [Widget REST Endpoints](#widget-rest-endpoints)
 
 ---
 
@@ -126,7 +127,7 @@ The web and mobile queue providers are thin wrappers around a small stack of sha
   - **`mapSubscriptionEnvelopeToAction`** — wire-envelope normaliser, called directly by the subscription hooks (web `graphql-queue/hooks/use-queue-event-subscription.ts`, mobile `queue-provider.tsx`). Each platform's subscription returns its own `ClimbQueueItem` shape (web: full `@boardsesh/shared-schema` type; mobile: slim `SubscriptionQueueItem`) and aliases (`addedItem`/`item`, `currentItem`/`item`, `mirroredUuid`/`uuid`); this helper takes an optional per-platform item lifter and emits a single `EventMappingResult`.
   - **`createSetCurrentClimbCoalescer`** — serialize-and-supersede. At most one `SET_CURRENT_CLIMB` in flight at a time; a newer call while one is pending overwrites the queued args. A superseded args that carried `shouldAddToQueue:true` still fires its `ADD_QUEUE_ITEM` (so the queue mutation reaches the server even when the setCurrent gets dropped). Prevents rapid swipes from stacking requests. Generic over the item type; consumed by `@boardsesh/queue-react` (below), not by the platform hooks directly.
   - **`createJoinSessionTracker`** — `(sessionId, epoch)`-keyed `JOIN_SESSION` promise cache. Callers bump the epoch from the socket's `closed` handler so a mutation racing between `closed` and `connected` doesn't await a stale-resolved promise from the dead connection and fire over the new socket before its own `JOIN_SESSION` lands. Mobile uses the tracker; web's `use-session-lifecycle.ts` has a parallel implementation that hasn't yet been migrated.
-- **`@boardsesh/queue-react`** — the renderer-agnostic React layer (the first `@boardsesh/*-react` package; see the shared-packages rule in CLAUDE.md). It holds `useQueueMutations`, a thin hook over the pure `createQueueMutations` factory that owns the coalescer and issues every queue-session mutation (`ADD_QUEUE_ITEM`, `SET_CURRENT_CLIMB`, `takeControl`, …). It lists `react` as a `peerDependency` and imports no DOM, `next`, MUI, React Native, or Expo — every platform input (GraphQL client, session id, item→wire mapper, error sink) is injected via a `QueueMutationsDeps` object. Web (`persistent-session/hooks/use-queue-mutations.ts`) and mobile (`queue-provider.tsx`) each wrap it: web injects a synchronous client + session and omits `ensureReady` (already-joined → throw on disconnect); mobile injects `getWsClient()` plus an `ensureReady` that lazily creates/joins the session (no-op on disconnect). New shared React for this layer belongs here, kept platform-neutral by injecting all I/O.
+- **`@boardsesh/queue-react`** — the renderer-agnostic React layer (the first `@boardsesh/*-react` package; see the shared-packages rule in CLAUDE.md). It holds `useQueueMutations`, a thin hook over the pure `createQueueMutations` factory that owns the coalescer and issues every queue-session mutation (`ADD_QUEUE_ITEM`, `SET_CURRENT_CLIMB`, …). It lists `react` as a `peerDependency` and imports no DOM, `next`, MUI, React Native, or Expo — every platform input (GraphQL client, session id, item→wire mapper, error sink) is injected via a `QueueMutationsDeps` object. Web (`persistent-session/hooks/use-queue-mutations.ts`) and mobile (`queue-provider.tsx`) each wrap it: web injects a synchronous client + session and omits `ensureReady` (already-joined → throw on disconnect); mobile injects `getWsClient()` plus an `ensureReady` that joins an existing session and returns null otherwise (no-op on disconnect). Neither platform creates sessions lazily — on mobile the solo queue is purely local (persisted via `queue-snapshot-store`) and a session exists only after the explicit Start button or an explicit join, which seeds the new session with the locally-built queue via `SET_QUEUE` before the `queueUpdates` subscription mounts. New shared React for this layer belongs here, kept platform-neutral by injecting all I/O.
 
 **Redis Connection Architecture:** The backend maintains 3 Redis connections:
 
@@ -192,22 +193,31 @@ sequenceDiagram
     RM-->>WS: {clientId, users, queueState, isLeader}
     WS-->>C: joinSession response
 
-    C->>WS: Subscribe queueUpdates
-    WS->>WS: Subscribe FIRST (eager)
-    WS->>R: Subscribe to Redis channel
-    WS->>RM: getQueueState()
-    WS->>C: FullSync event
-    WS->>C: Stream incremental events
+    alt Web client
+        C->>WS: Subscribe queueUpdates
+        WS->>WS: Subscribe FIRST (eager)
+        WS->>R: Subscribe to Redis channel
+        WS->>RM: getQueueState()
+        WS->>C: FullSync event
+        WS->>C: Stream incremental events
 
-    C->>WS: Subscribe sessionUpdates
-    WS->>C: Stream session events
+        C->>WS: Subscribe sessionUpdates
+        WS->>C: Stream session events
+    else Mobile client
+        Note over C: startJoinedSubscriptions waits for JOIN_SESSION
+        C->>WS: Subscribe queueUpdates
+        WS->>R: Subscribe to Redis channel
+        WS->>C: Stream queue events
+        C->>WS: Subscribe sessionUpdates
+        WS->>C: Stream session events
+    end
 ```
 
 ### Key Points
 
 1. **Origin Validation**: WebSocket upgrades are validated against the allowed-origins list (`BOARDSESH_URL` + `www.` variant, Vercel/homelab preview patterns, dev origins). Two additional paths are accepted: connections with **no** `Origin` header (native/direct clients), and genuine **same-origin** upgrades where the `Origin`'s hostname equals the request's `Host` header (`isSameOriginUpgrade` in `handlers/cors.ts`). The same-origin path is why the React Native **Android** app connects — RN derives `Origin` from the `wss://` URL (`https://ws.boardsesh.com`, the backend's own host, never on the website allow-list) — and why preview WS hosts (`{N}.ws.preview.boardsesh.com`) work without per-PR config. It's safe against cross-site WebSocket hijacking because a cross-site attacker's `Origin` is its own domain, and WS auth is token-based (`connectionParams`), not cookie-based. Rejected upgrades log `{ origin, host, userAgent, forwardedFor, remoteAddress }` for attribution.
 2. **Authentication**: Auth token passed in `connectionParams` — web supplies a static `authToken` string; mobile supplies an async `connectionParams` provider (re-reads the token from secure storage on every reconnect). Both paths and the `shouldRetry` predicate (mobile rejects 4401 auth-error close codes) are handled by the shared `createGraphQLClient` factory in `@boardsesh/graphql-client`.
-3. **Eager Subscription**: Queue subscription starts BEFORE fetching state to prevent race conditions
+3. **Joined Subscription Gate**: Mobile waits for `JOIN_SESSION` to resolve before opening queue/session subscriptions. On socket close it tears down subscription refs, bumps the join epoch, and requires the next connection to rejoin before `startJoinedSubscriptions` subscribes again. Web still uses the eager queue subscription flow documented in the sequence above.
 4. **Session Restoration**: Sessions can be restored from Redis (warm cache) or PostgreSQL (dormant durable state)
 5. **Stable Participant Identity (authenticated only)**: Authenticated clients bind `participantId` to their verified `userId`, so reconnects across socket drops update the same participant row (peers see `UserPresenceChanged`, not `UserLeft` + `UserJoined`). Anonymous clients bind `participantId` to their `connectionId` instead — a client-supplied participantId is intentionally rejected on the server (it would let any session member impersonate any other participant, since `SessionUser.id` is broadcast to peers). Each anonymous WebSocket drop therefore appears as a fresh participant.
 6. **Initial Queue Seeding**: When creating a new session, clients can provide `initialQueue` and `initialCurrentClimb` to seed the session with an existing local queue (e.g., when starting party mode with climbs already queued)
@@ -299,9 +309,25 @@ This ensures `BoardSessionBridge` only calls `activateSession()` when the actual
 
 ---
 
+## Board Presence Wall Feed
+
+Board presence powers the mobile "now on the wall" feed, board sheet history, and board sheet stats. It is independent of party-session join: the mobile app resolves a board id for the wall feed before subscribing to `boardNowPlaying` or fetching board-presence history/stats.
+
+Mobile resolves the feed board id in this order:
+
+1. `resolveBoardForUuid(boardUuid)` for the selected named board. This is the default board-sheet path and binds to the actual `user_boards` row, so stats/history are available before Bluetooth connects and stay aligned with board-scoped ticks.
+2. `resolveBoardForSerial(serial, boardType, layoutId, sizeId, setIds)` after a BLE connection when the controller exposes a serial. This keeps everyone at the same physical wall converged on the same board id.
+3. `resolveBoardForConfig(boardType, layoutId, sizeId, setIds)` only when no serial is available, giving serial-less boards a per-config fallback feed.
+
+Each resolver stamps short-lived proof-of-presence for the authenticated user before `reportBoardClimb` will accept a wall-feed report. On the mobile client, starting a newer UUID/config/serial resolve clears the previous board id and stale async results are ignored by a resolve-generation guard, so the sheet does not temporarily show another selected board's feed.
+
+Every board-presence event carries the board's shared `seq`. The client subscribes before its initial hot-feed backfill, then uses that backfill to establish the first sequence baseline. After that, any live event with `seq > lastObservedSeq + 1` is treated as a missed event: the client applies the live event immediately, then runs a coalesced hot-feed catch-up (`boardRecentClimbs`, `boardPresenceStats`, and `boardConnection`) for the active board. This intentionally uses the Redis-backed recent feed rather than durable `boardHistory`, because `boardHistory` is authenticated and dwell-gated while the board sheet must repair anonymous and short-dwell sends too.
+
+---
+
 ## Backend URL Resolution
 
-The WebSocket backend URL is resolved at runtime by `packages/web/app/lib/backend-url.ts` rather than relying solely on the build-time `NEXT_PUBLIC_WS_URL` environment variable. This is necessary because branch deploy previews serve a single build from multiple domains, and a hard-coded URL only works for one of them.
+The WebSocket backend URL is resolved at runtime by `packages/web/app/lib/backend-url.ts` rather than relying solely on the build-time `NEXT_PUBLIC_WS_URL` environment variable. This is necessary because production and branch deploy previews can serve a build whose baked fallback is missing or points at local development.
 
 ### Preview Domain Pattern
 
@@ -322,8 +348,8 @@ The runtime resolver maps the frontend hostname to the backend:
 
 `getBackendWsUrl()` checks these sources in order and returns the first match:
 
-1. **Host-derived URL** -- if the page hostname matches `{N}.preview.boardsesh.com`, the backend URL is derived automatically. No build-time config needed.
-2. **`NEXT_PUBLIC_WS_URL` build-time fallback** -- the standard env var baked into the Next.js client bundle at build time. Used for production (`boardsesh.com`) and any hostname that doesn't match a known pattern.
+1. **Host-derived URL** -- if the page hostname is `boardsesh.com` / `www.boardsesh.com` or matches `{N}.preview.boardsesh.com`, the backend URL is derived automatically. No build-time config needed.
+2. **`NEXT_PUBLIC_WS_URL` build-time fallback** -- the standard env var baked into the Next.js client bundle at build time. Used for any hostname that doesn't match a known pattern.
 
 On the server side (SSR), only the build-time env var is used.
 
@@ -476,6 +502,17 @@ Because the sweep mutates rows asynchronously to any connected clients, no `Sess
 
 The frontend displays the summary in a dialog when the session ends, and optionally as a feed item in the activity feed.
 
+### Cold-Start Status Check (`sessionStatus`)
+
+The mobile app persists the active session id (expo-secure-store) and tries to restore it on cold start. Before rejoining it must tell two states apart that look identical to the presence-gated `session` query: an **ended** session (drop the stored id) and a **dormant-but-active** one in the WARM or DORMANT lifecycle states above (restore it). `session` returns null for any empty roster, so it can't make that call — and blindly sending `JOIN_SESSION` against an ended id recreates the room as an empty zombie (#2683).
+
+The `sessionStatus(sessionId)` query exists solely for this disambiguation:
+
+- It is a plain SELECT of the durable `board_sessions` row on the read path — no Redis, no room-manager involvement, so it can never resurrect hot state. It returns the two-value `SessionStatus` enum directly (`active` | `ended`), or `null` for an unknown id.
+- The resolver owns the ended-ness reading: a row is `ended` when `status = 'ended'` **or** `endedAt` is set (insurance against a manually skewed row — both writers set the two together). Everything else reads as `active`, including the `'inactive'` value the legacy DB CHECK from backend migration `0005_session_status_tracking.sql` still permits but nothing has ever written (presence moved to Redis) — a dormant row is the restore-safe case this query exists to preserve.
+- It requires no auth by design: it exposes only existence + ended-state, and auth may not be restored yet at cold start. This is also why mobile can't reuse the web flow described above — the `GET_SESSION_SUMMARY` pre-flight requires an authenticated caller.
+- Client behaviour (`packages/mobile/src/providers/queue-provider.tsx`): anything but `active` (so `ended` or `null`) → clear the stored id; `active` → restore; fetch failure (offline cold start) → restore optimistically so the queue still comes back, since a dead session stays escapable via End Session.
+
 ### Multi-Board Sessions
 
 Sessions can be linked to multiple boards within the same gym via the `sessionBoards` junction table. This is validated at creation time:
@@ -533,23 +570,23 @@ sequenceDiagram
 -- Atomically sets new leader
 ```
 
-### Wall Driver (queue-control-bar pivot)
+### Always-live wall control (the lightbulb)
 
-Wall-control authority is a **separate concept from leader**. The "driver" is the participant currently authorized to drive the wall (broadcast the lit climb), introduced by the queue-control-bar pivot's lightbulb gesture. Decoupling it from `isLeader` keeps the legacy leader plumbing — auth on `endSession`, OG share-image headline, presentation state — untouched. See `docs/queue-control-bar-pivot.md` for the user-facing model.
+Group sessions are **always-live**. There is no driver role and no preview-only gating: any session participant who changes the current climb or navigates the queue immediately updates the shared queue for everyone, and whoever holds a BLE connection relays that climb to the board — exactly like solo. `setCurrentClimb` / `navigateToQueueItem` broadcast `CurrentClimbChanged` to every member with no authority check. (The driver-role **behavior** and the `boardsesh:session:{id}:driver` Redis key were removed. The GraphQL names — `Session.driverParticipantId`, the `DriverChanged` event, and the `takeControl` / `releaseControl` mutations — remain temporarily as `@deprecated`, inert rollout-compat shims so stale clients keep validating during the deploy window; they carry no driver semantics and are slated for removal a release later.)
 
-- **Storage:** `boardsesh:session:{id}:driver` holds the driver's stable `participantId` (or is absent / empty when the wall is unclaimed). Distinct from `boardsesh:session:{id}:leader`, which holds a connection id.
-- **Set / yank:** the `takeControl(climb?: ClimbQueueItemInput): Session!` mutation overwrites the driver atomically via Redis `SET ... GET` (single round-trip) — yank-on-press by design. Any session participant may call. The previous-driver value returned by the atomic swap drives the `DriverChanged` publish decision: the event fires only on transitions (no broadcast for a self-reclaim).
-- **Release:** the `releaseControl: Session!` mutation clears the driver only when the caller is the current driver (conditional `WATCH`+`MULTI` so a stale release from a non-driver is a no-op). Publishes `DriverChanged { driverParticipantId: null }` only when the clear actually happened.
-- **Disconnect cleanup:** when the driver-holding participant fully leaves the session — explicit `leaveSession` with `participantFullyLeft` _or_ grace-timer eviction (`onParticipantExpired` in `client-lifecycle.ts`) — the room manager runs `clearSessionDriverIf(sessionId, leavingParticipantId)` and publishes `DriverChanged { driverParticipantId: null }`. A non-driver leaving never touches the driver key.
-- **Cross-instance ordering:** disconnect publishes `UserLeft` synchronously and then fires the conditional driver-clear async (`void this.releaseDriverIfMatches(...)`). Within a single instance the order is preserved; across instances the two events flow through Redis pub/sub independently and their relative arrival order at a remote subscriber is not guaranteed. The spec tolerates this because presence and driver are independent state machines.
-- **No auto-election:** unlike leader, the driver role is _not_ re-elected on disconnect. The wall goes "no driver" until someone presses the lightbulb. Phase 4's `NO_BLE` advance-mutation handling deals with the "no driver + BLE up" case silently server-side; users don't see internal driver-absent UI.
+The "lightbulb" is no longer a driver claim. It is a **send / re-assert** affordance: pressing it re-sends the current climb to the board (connecting first if needed). Lit means our session's climb is confirmed on the wall; unlit means the relay dropped and we don't know that the board still shows our climb.
+
+- **`WallConfirmedClimb` turns the lightbulb on.** When any phone successfully delivers a climb to the board over BLE it calls `confirmClimbOnWall`, and the backend broadcasts `WallConfirmedClimb` to every member. See `docs/queue-control-bar-pivot.md` for the (now-superseded) original lightbulb model.
+- **`WallDisconnected` turns the lightbulb off.** When the device relaying the climb drops its BLE link, it calls `reportWallDisconnect(): Session!`, which publishes a session-scoped `WallDisconnected { disconnectedByParticipantId: ID }` event. As a crash backstop, if that device's WebSocket closes without a clean disconnect, the room manager publishes `WallDisconnected { disconnectedByParticipantId: null }` on its behalf. Every member turns its lightbulb off on receipt.
+- **The current climb is preserved.** `WallDisconnected` only flips the indicator — it never clears or changes the active climb. Pressing the lightbulb again re-asserts (re-sends) the current climb to the board.
+- **`isLeader` is unaffected.** Leader stays a separate concept for `endSession` auth, the OG share-image headline, and presentation state; `LeaderChanged` still fires. Board-presence (`reportBoardClimb` / `reportBoardDisconnect` / `BoardConnectionChanged` / `BoardClimbCleared`) is a separate service and is also unaffected.
 
 ### Session boardPath sync (angle sharing)
 
 The session's `boardPath` is the route string the host first joined / created on (`/{board}/{layout}/{size}/{sets}/{angle}/...`). Today the **angle** segment is the only piece that changes after creation — group-session feedback (tester quote: "the app seems to return to 40° as I navigate around") drove the move from "device-local angle" to "session-shared angle." The flow:
 
-- **Mutation:** `setSessionBoardPath(boardPath: String!): Session!` accepts a full path, validates via `BoardPathSchema`, persists via `roomManager.updateSessionBoardPathIfChanged` (read-then-write, non-atomic — see the JSDoc in `session-discovery.ts` for the accepted contract), and publishes `SessionBoardPathChanged` only when the stored value actually moved (idempotent on no-op writes). Any participant may call — angle is presentational and doesn't drive BLE hold positions, so the pivot's "only driver moves the wall" rule doesn't apply.
-- **Optimistic-UI shape:** returns `Session!` for symmetry with `takeControl` / `releaseControl` / `setSessionBoardSerial`. The client's angle selector pushes the URL locally for instant feedback (`router.push(newPath)`) and then fires the mutation; the round-trip is best-effort, errors are swallowed.
+- **Mutation:** `setSessionBoardPath(boardPath: String!): Session!` accepts a full path, validates via `BoardPathSchema`, persists via `roomManager.updateSessionBoardPathIfChanged` (read-then-write, non-atomic — see the JSDoc in `session-discovery.ts` for the accepted contract), and publishes `SessionBoardPathChanged` only when the stored value actually moved (idempotent on no-op writes). Any participant may call — and in the always-live model any participant may change the climb too.
+- **Optimistic-UI shape:** returns `Session!` for symmetry with `setSessionBoardSerial` and the other session mutations. The client's angle selector pushes the URL locally for instant feedback (`router.push(newPath)`) and then fires the mutation; the round-trip is best-effort, errors are swallowed.
 - **Event:** `SessionBoardPathChanged { boardPath, changedByParticipantId }` fans out via `pubsub.publishSessionEvent` to every session subscriber. The `changedByParticipantId` lets the originating client suppress the echo (the local `router.push` already landed) — remote clients call `router.replace(newPath)` to follow. The replace (not push) is intentional: a remote-driven sync shouldn't add to the back-stack.
 - **Client wiring:** `setSessionBoardPath` lives on `PersistentSessionApi` (`use-queue-mutations.ts`). The follow-up `router.replace` is wired in `BoardSessionBridge` — it subscribes to session events via `subscribeToSessionEvents`, filters on `__typename === 'SessionBoardPathChanged'`, and replaces the URL when the originator isn't the local participant. The existing pathname-watching effect in the bridge then re-activates `activeSession` with the new pathname, so `activeSession.boardPath` and downstream consumers (queue bridge angle, log paths) stay in sync.
 - **Race contract:** the read-then-write helper trades atomicity for simplicity. Two concurrent angle taps can both publish (the client treats duplicate `router.replace` to the same URL as a no-op), and the realistic write pressure is one tap at a time per device. If a future caller can't tolerate double-publish, tighten to a single-statement CTE per the `session-discovery.ts` JSDoc.
@@ -564,7 +601,7 @@ The session's `boardPath` is the route string the host first joined / created on
 | `UserPresenceChanged`     | A known participant reconnects or drops                                                                                                                                              | `user` with `connectionState` (`CONNECTED` or `RECONNECTING`)                                                                                                                               |
 | `UserLeft`                | A participant explicitly leaves or expires                                                                                                                                           | `userId`                                                                                                                                                                                    |
 | `LeaderChanged`           | Leader election selects a new leader after explicit leave, passive disconnect, or stale-member cleanup                                                                               | `leaderId` is the stable `SessionUser.id`; `leaderConnectionId` is present for current-client connection checks                                                                             |
-| `DriverChanged`           | Wall-control authority transfers via `takeControl` / `releaseControl`, or the holding participant disconnects                                                                        | `driverParticipantId` is the stable `SessionUser.id` of the new driver, or `null` when the wall has been released / unclaimed                                                               |
+| `WallDisconnected`        | The device relaying the climb to the board drops its BLE link (`reportWallDisconnect`), or its WebSocket closes without a clean disconnect (room-manager crash backstop)             | `disconnectedByParticipantId` is the stable `SessionUser.id` of the device that dropped, or `null` for the crash backstop. Members turn the lightbulb off; the current climb is preserved   |
 | `SessionBoardPathChanged` | Any participant changes the session's stored boardPath via the `setSessionBoardPath` mutation (today: angle changes through the angle selector — see "Session boardPath sync" below) | `boardPath` is the full route string (`/<board>/<layout>/<size>/<sets>/<angle>/...`); `changedByParticipantId` carries the originator so the sending client can echo-suppress its own event |
 | `SessionEnded`            | Session is ended explicitly                                                                                                                                                          | `reason`, `newPath`                                                                                                                                                                         |
 | `SessionStatsUpdated`     | A tick is saved for an active party session                                                                                                                                          | `totalSends`, `totalFlashes`, `totalAttempts`, `tickCount`, `participants`, `gradeDistribution`, `boardTypes`, `hardestGrade`, `durationMinutes`, `goal`, `ticks`                           |
@@ -757,6 +794,7 @@ sequenceDiagram
 - Session events: `boardsesh:session:{sessionId}`
 - Notification events: `boardsesh:notifications:{userId}` (per-user, authenticated)
 - Comment live updates: `boardsesh:comments:{entityType}:{entityId}` (per-entity, public)
+- Board presence: `boardsesh:board:{boardId}` (per physical or shared board feed, authenticated publish)
 
 ### Event Buffer for Delta Sync
 
@@ -811,9 +849,9 @@ sequenceDiagram
 - Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
 - Up to 10 retry attempts
 - On reconnection: re-join session with the same `participantId` and sync state
+- `graphql-ws` socket `closed`/`connected` events drive teardown and rejoin/resubscribe. Subscription `error`/`complete` handlers do not directly trigger reconnect; mobile clears subscription refs on socket close and reopens them only after the rejoin promise resolves.
 - Delta sync attempted if gap ≤ 100 events and the replay buffer has contiguous coverage
 - Falls back to full sync if the gap is too large, replay is incomplete, or the local hash disagrees despite no sequence gap
-- Queue and session subscription `error`/`complete` callbacks schedule a reconnect/resubscribe pass, so a completed subscription does not leave the client silently joined but deaf to future events
 - Client-side supervisor detects stale connections and triggers reconnect (see [Client-Side Connection Supervisor](#client-side-connection-supervisor))
 
 **Offline queue support:**
@@ -1216,7 +1254,24 @@ boardsesh:instance:{id}:heartbeat   # String - instance heartbeat timestamp (60s
 ```
 boardsesh:queue:{sessionId}         # Queue events (add, remove, reorder, etc.)
 boardsesh:session:{sessionId}       # Session events (join, leave, leader change)
+boardsesh:board:{boardId}           # Board-presence "now on the wall" events
 ```
+
+**Board Presence (PubSub):**
+
+These PubSub data keys are intentionally documented as implemented. Unlike the
+pub/sub channels above and the `DistributedStateManager` keys, they currently
+omit the `boardsesh:` namespace prefix.
+
+```
+board:{boardId}:history             # List - latest BoardPresenceClimb payloads, newest first
+board:{boardId}:seq                 # String/integer - per-board monotonic event sequence
+presence:board:{boardId}:user:{id}  # String - proof-of-presence stamp for report authorization
+```
+
+Board presence is a separate pub/sub domain from party sessions. `resolveBoardForSerial` maps a BLE serial to one active `user_boards.id`; `resolveBoardForConfig` maps serial-less hardware to one hidden system-owned board per normalized `(boardType, layoutId, sizeId, setIds)` config. `reportBoardClimb` requires a live proof-of-presence stamp for that board before it publishes a `BoardClimbSet` event.
+
+Redis-backed deployments keep the last 50 climbs for 24 hours so late subscribers can backfill before listening to `boardsesh:board:{boardId}`. Local-only deployments dispatch live board-presence events in process and keep proof-of-presence in memory with scheduled TTL cleanup; they do not provide board history backfill across process restarts.
 
 ### Graceful Shutdown
 
@@ -1507,24 +1562,27 @@ Requires user authentication and controller ownership.
 
 ### Timeouts and Limits
 
-| Setting                 | Value   | Purpose                                   |
-| ----------------------- | ------- | ----------------------------------------- |
-| Retry attempts          | 10      | WebSocket reconnection                    |
-| Max retry delay         | 30s     | Exponential backoff cap                   |
-| Keep-alive interval     | 10s     | Connection health check                   |
-| Mutation timeout        | 30s     | Prevent hanging mutations                 |
-| Redis TTL               | 4 hours | Session cache expiry                      |
-| Postgres debounce       | 30s     | Batch writes                              |
-| Event buffer size       | 100     | Delta sync limit                          |
-| Event buffer TTL        | 5 min   | Old events cleanup                        |
-| Hash verification       | 60s     | State drift detection                     |
-| Subscription queue      | 1000    | Max pending events                        |
-| Connection TTL          | 1 hour  | Distributed connection expiry             |
-| WebSocket ping interval | 30s     | Dead connection detection                 |
-| Instance heartbeat      | 30s     | Heartbeat update interval                 |
-| Instance heartbeat TTL  | 60s     | Dead instance detection                   |
-| Session members TTL     | 4 hours | Matches session TTL                       |
-| Session grace period    | 60s     | In-memory retention after last disconnect |
+| Setting                 | Value    | Purpose                                   |
+| ----------------------- | -------- | ----------------------------------------- |
+| Retry attempts          | 10       | WebSocket reconnection                    |
+| Max retry delay         | 30s      | Exponential backoff cap                   |
+| Keep-alive interval     | 10s      | Connection health check                   |
+| Mutation timeout        | 30s      | Prevent hanging mutations                 |
+| Redis TTL               | 4 hours  | Session cache expiry                      |
+| Postgres debounce       | 30s      | Batch writes                              |
+| Event buffer size       | 100      | Delta sync limit                          |
+| Event buffer TTL        | 5 min    | Old events cleanup                        |
+| Board history size      | 50       | Board-presence backfill limit             |
+| Board history TTL       | 24 hours | Board-presence history expiry             |
+| Board membership TTL    | 12 hours | Proof-of-presence report window           |
+| Hash verification       | 60s      | State drift detection                     |
+| Subscription queue      | 1000     | Max pending events                        |
+| Connection TTL          | 1 hour   | Distributed connection expiry             |
+| WebSocket ping interval | 30s      | Dead connection detection                 |
+| Instance heartbeat      | 30s      | Heartbeat update interval                 |
+| Instance heartbeat TTL  | 60s      | Dead instance detection                   |
+| Session members TTL     | 4 hours  | Matches session TTL                       |
+| Session grace period    | 60s      | In-memory retention after last disconnect |
 
 ---
 
@@ -1613,7 +1671,7 @@ The helper lives in `mobile/ios/App/App/SharedKeychain.swift`. The `keychain-acc
 
 ### Widget Button Flow
 
-Lock-screen widget taps (next/prev climb) do NOT go through the native WebSocket. They hit the backend directly via `/api/widget/navigate` (see [Widget Navigation REST Endpoint](#widget-navigation-rest-endpoint)) because the widget extension can't talk to `SessionWebSocketManager` (different process). The backend updates the queue, publishes a `CurrentClimbChanged` event, and the APNs hook fans the change back out to every device's Live Activity.
+Lock-screen widget taps (next/prev climb) do NOT go through the native WebSocket. They hit the backend directly via `/api/widget/navigate` (see [Widget REST Endpoints](#widget-rest-endpoints)) because the widget extension can't talk to `SessionWebSocketManager` (different process). The backend updates the queue, publishes a `CurrentClimbChanged` event, and the APNs hook fans the change back out to every device's Live Activity.
 
 ### Lifecycle
 
@@ -1654,7 +1712,7 @@ ActivityKit on every device that registered a token for this session
 
 ### Server-Side Analytics
 
-Live Activity actions that happen outside the web view are captured server-side through PostHog when `POSTHOG_PROJECT_KEY` is configured. `POSTHOG_HOST` defaults to `https://us.i.posthog.com`, and `POSTHOG_ENVIRONMENT` can override the event `environment` property. If `POSTHOG_ENVIRONMENT` is unset, the backend falls back to `SENTRY_ENVIRONMENT`, then `NODE_ENV`, then `development`. Server events are sent directly rather than through the browser `/api/posthog/*` proxy.
+Live Activity actions that happen outside the web view are captured server-side through PostHog when `POSTHOG_PROJECT_KEY` is configured. The backend can also fall back to `NEXT_PUBLIC_POSTHOG_KEY` for compatibility with the web build env, but `POSTHOG_PROJECT_KEY` is the preferred runtime variable. `POSTHOG_HOST` defaults to `https://us.i.posthog.com`, and `POSTHOG_ENVIRONMENT` can override the event `environment` property. If `POSTHOG_ENVIRONMENT` is unset, the backend falls back to `SENTRY_ENVIRONMENT`, then `NODE_ENV`, then `development`. Server events are sent directly rather than through the browser `/api/posthog/*` proxy.
 
 Event taxonomy:
 
@@ -1730,9 +1788,9 @@ The 8-tokens-per-session cap is enforced under a Postgres advisory lock (`pg_adv
 
 `unregisterActivityPushToken(sessionId, token)` is the symmetric mutation. The delete is scoped to `(token, sessionId)` so an attacker holding a leaked token cannot wipe another session's registrations. Same auth + participant + rate-limit checks apply.
 
-## Widget Navigation REST Endpoint
+## Widget REST Endpoints
 
-Lock-screen widget extensions cannot reach the JS webapp or its WebSocket. Instead, the Next / Previous buttons hit a dedicated REST endpoint:
+Lock-screen widget extensions cannot reach the JS webapp or its WebSocket. Two dedicated REST endpoints cover the write paths:
 
 ```
 POST /api/widget/navigate
@@ -1740,34 +1798,62 @@ POST /api/widget/navigate
   Content-Type: application/json
 
   { "sessionId": "<id>", "action": "next" | "previous", "currentIndex": <int ≥ 0> }
+
+POST /api/widget/take-control
+  Authorization: Bearer <APNs Live Activity push token>
+  Content-Type: application/json
+
+  { "sessionId": "<id>" }
 ```
 
-### Auth
+### Auth Contract: Always-Live Sessions
 
-The Bearer credential is the device's APNs Live Activity push token — the same value the widget pulled from `SharedKeychain.livePushTokenKey`. The handler looks up `(token, sessionId)` in `activity_push_tokens`; an unknown token returns 401, while a known token bound to a different session returns 410 so the widget can re-register. Treating the push token as the credential keeps the widget extension out of the user-auth path entirely (it never sees the user's Bearer token) and is safe because the token is already a per-session, per-device secret.
+Widget sessions are **always-live**: there is no driver role for these endpoints. Any authenticated session participant may navigate the queue or re-assert the current climb. This is a deliberate departure from the older driver-ownership model (where only the elected leader could make writes).
+
+**Threat model rationale:** The widget endpoints run outside the main app process; they cannot participate in the in-process leader-election protocol. A driver gate would either (a) require an extra per-request Redis round-trip to resolve current leadership, or (b) silently deny any widget tap while the session has no leader — both unacceptable for a lock-screen control. Since the Live Activity push token is already scoped to `(device, session)` and only issued to authenticated participants, possession of a valid token already proves the device joined and was authorised to be in the session.
+
+Two-layer auth on every request:
+
+1. **Token auth** (`widget-auth.ts`): Bearer token must be registered in `activity_push_tokens` with matching `sessionId`. Unknown token → 401. Token bound to a different session → 410 (widget re-registers). This layer identifies the device+session.
+2. **Membership check** (`widget-session-guard.ts`): Confirms the session is still active and the token owner is still a participant (`board_session_participants` row exists). Session ended → 410. Not a participant → 403. This prevents stale tokens from mutating an ended session's persisted queue.
+
+The `userId` on the `activity_push_tokens` row is used for analytics attribution only — the token proves participation, not identity. A `null` userId (token row pre-dating the `user_id` column) authorises navigation but emits an attribution-gap metric instead of a normal analytics event.
+
+`/api/widget/take-control` additionally requires a non-null `userId` on the token row (403 if `userId: null`), since re-asserting the board's LED state is a board-write action that should always be attributed.
+
+The push token as the credential keeps the widget extension out of the user-auth path entirely — it never sees the user's Bearer JWT. The token is already a per-session, per-device secret issued by Apple.
 
 ### Validation
+
+**navigate**
 
 - `sessionId`: non-empty string
 - `action`: `"next"` or `"previous"`
 - `currentIndex`: integer, `>= 0`
 - Request body capped at 4 KB
 
+**take-control**
+
+- `sessionId`: non-empty string
+- Request body capped at 2 KB
+
 Anything else returns 400.
 
 ### Rate Limiting
 
-Per-session token bucket — capacity 2, refill 1 per 1.5s. Burst clicks are smoothed; sustained tapping caps at ~40 req/min per session. Returns 429 when the bucket is empty. The session-scoped bucket means one device can't deny service for another.
+Both endpoints share a **per-session** token bucket (capacity 2, refill 1 per 1.5s) defined in `widget-rate-limit.ts`. Burst clicks are smoothed; sustained tapping caps at ~40 req/min per session. Returns 429 when the bucket is empty. The session-scoped bucket means one device can't deny service for another on the same session. Rate limiting is applied after auth so an unauthenticated caller cannot poison a real participant's bucket.
 
 ### Server-Authoritative Navigation
 
-The handler does NOT trust the `currentIndex` from the widget — it fetches the server's queue state via `roomManager.getQueueState(sessionId)`, computes the target index from `action` (wrapping at boundaries for `next`, clamped to 0 for `previous`), and calls `navigateToQueueItem` (shared with the `setCurrentClimb` GraphQL mutation). That function does optimistic-lock retry against the room manager and publishes the resulting `CurrentClimbChanged` via `pubsub.publishQueueEvent`, which fans out to JS subscribers and triggers the APNs push hook described above.
+The navigate handler does NOT trust the `currentIndex` from the widget — it fetches the server's queue state via `roomManager.getQueueState(sessionId)`, computes the target index from `action` (wrapping at boundaries for `next`, clamped to 0 for `previous`), and calls `navigateToQueueItem` (shared with the `setCurrentClimb` GraphQL mutation). That function does optimistic-lock retry against the room manager and publishes the resulting `CurrentClimbChanged` via `pubsub.publishQueueEvent`, which fans out to JS subscribers and triggers the APNs push hook described above.
 
 The `currentIndex` field in the request is validated for shape only; the handler reads server state for the actual position.
 
+The take-control handler re-publishes the session's current climb (re-asserting the board's LED state) by calling `setCurrentClimbAndPublish`. If no current climb exists in the queue the handler succeeds (200) as a no-op — there is nothing to assert.
+
 ### Why HTTP and Not a GraphQL Mutation
 
-A GraphQL mutation would require either the JS GraphQL client (not available in the widget process) or hand-rolled GraphQL-over-HTTP in Swift. The REST handler is simpler, cheaper, and lets us keep the widget extension free of GraphQL tooling. The downside — a second endpoint surface to keep in sync — is small for one operation.
+A GraphQL mutation would require either the JS GraphQL client (not available in the widget process) or hand-rolled GraphQL-over-HTTP in Swift. The REST handlers are simpler, cheaper, and let us keep the widget extension free of GraphQL tooling. The downside — a second endpoint surface to keep in sync — is small for two operations.
 
 ## Related Files
 
@@ -1782,6 +1868,10 @@ A GraphQL mutation would require either the JS GraphQL client (not available in 
 - `packages/backend/src/services/queue-navigation.ts` - Shared queue-navigation logic (used by `setCurrentClimb` and `/api/widget/navigate`)
 - `packages/backend/src/services/apns/index.ts` - APNs HTTP/2 send + 5s debounce + Live Activity content state assembly
 - `packages/backend/src/handlers/widget-navigate.ts` - REST handler for `POST /api/widget/navigate`
+- `packages/backend/src/handlers/widget-take-control.ts` - REST handler for `POST /api/widget/take-control`
+- `packages/backend/src/handlers/widget-auth.ts` - Bearer-token auth for both widget endpoints
+- `packages/backend/src/handlers/widget-session-guard.ts` - Membership + session-liveness gate (applied after token auth, before queue mutation)
+- `packages/backend/src/handlers/widget-rate-limit.ts` - Per-session token bucket shared by both widget endpoints (`checkWidgetRateLimit`, `ensureWidgetRateLimitPruner`)
 - `packages/backend/src/graphql/resolvers/queue/` - Queue mutations & subscriptions
 - `packages/backend/src/graphql/resolvers/sessions/` - Session mutations & subscriptions
 - `packages/backend/src/graphql/resolvers/sessions/push-tokens.ts` - `registerActivityPushToken` / `unregisterActivityPushToken` resolvers with the per-session cap + advisory-lock TOCTOU fix

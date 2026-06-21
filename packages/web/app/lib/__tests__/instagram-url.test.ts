@@ -12,6 +12,8 @@ function makeBetaLink(overrides: Partial<BetaLink>): BetaLink {
     thumbnail: null,
     is_listed: true,
     created_at: '2026-04-16T00:00:00.000Z',
+    tick_uuid: null,
+    board_id: null,
     ...overrides,
   };
 }

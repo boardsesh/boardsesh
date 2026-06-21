@@ -31,23 +31,17 @@ import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
 import { SUGGESTIONS_THRESHOLD } from '../board-page/constants';
 import { useSnackbar } from '../providers/snackbar-provider';
 import SessionSummaryDialog from '../session-summary/session-summary-dialog';
-import {
-  trackQueueOperation,
-  trackQueueOperationError,
-  resolveQueueOperationMode,
-  type QueueOperationMode,
-} from '@/app/lib/queue-metrics';
+import { trackQueueOperation, trackQueueOperationError, resolveQueueOperationMode } from '@/app/lib/queue-metrics';
 
 import { dispatchOpenPlayDrawer } from '../queue-control/play-drawer-event';
 import { useSessionIdManagement } from './hooks/use-session-id-management';
-import { deriveIsDriver } from './driver-state';
 import { useQueueRestoration } from './hooks/use-queue-restoration';
 import { useQueueEventSubscription } from './hooks/use-queue-event-subscription';
 import { usePendingUpdateCleanup } from './hooks/use-pending-update-cleanup';
 import { useMutationGuard } from './hooks/use-mutation-guard';
 import { useOfflineQueueBuffer } from './hooks/use-offline-queue-buffer';
 import { useOfflineReconciliation } from './hooks/use-offline-reconciliation';
-import { emitWallConfirm } from '../board-bluetooth-control/wall-confirm-bus';
+import { emitWallConfirm } from '@boardsesh/play-view';
 import { useQueueAddValidator } from '../board-lock/use-queue-add-validator';
 import { track } from '@/app/lib/analytics';
 import {
@@ -198,18 +192,19 @@ export const GraphQLQueueProvider = ({
   const clientId = isPersistentSessionActive ? persistentSession.clientId : null;
   const participantId = isPersistentSessionActive ? persistentSession.participantId : null;
   const isLeader = isPersistentSessionActive ? persistentSession.isLeader : false;
-  // Wall driver — distinct from leader. The current driver's participant id,
-  // or null when the wall is unclaimed (party only; solo has no driver
-  // concept so we report null and treat `isDriver` as true).
+  // Always-live model: there is no driver role. Any participant who changes the
+  // climb broadcasts to everyone (the backend has no driver gate), so the web
+  // behaves like solo for every member.
   //
-  // Prefer the optimistic local claim over the server-confirmed value during
-  // the brief window between firing `takeControl` and the `DriverChanged`
-  // broadcast landing. Cleared in the DriverChanged effect below, so the
-  // server stays authoritative — if we lost a take-control race, the
-  // optimistic value flips back to the real driver within one round trip.
-  const serverDriverParticipantId = isPersistentSessionActive ? persistentSession.driverParticipantId : null;
-  const driverParticipantId = state.optimisticDriverParticipantId ?? serverDriverParticipantId;
-  const isDriver = deriveIsDriver({ isPersistentSessionActive, participantId, driverParticipantId });
+  // `wallConfirmed` is the session-scoped "the wall is currently lit" signal
+  // that replaces the party lightbulb's old `isDriver` meaning. It turns ON
+  // when any member's BLE phone relays a climb (`WallConfirmedClimb`) and OFF
+  // when a member's BLE link drops (`WallDisconnected`). It never clears the
+  // current climb. Solo doesn't use it — the solo lightbulb reads
+  // `isBluetoothConnected` directly. The state lives in the root
+  // persistent-session provider (always mounted) so it survives leaving and
+  // remounting a board route; we just read it here.
+  const wallConfirmed = isPersistentSessionActive ? persistentSession.isSessionWallLit : false;
   // Pull the session's currently-known BLE board serial through so consumers
   // (the drawer's lightbulb fallback) don't have to reach into the
   // persistent-session context directly.
@@ -296,74 +291,14 @@ export const GraphQLQueueProvider = ({
   // climb to the wall. Republish on the local bus so the drawer's lightbulb
   // timer (subscribed locally) dismisses the same way it does in solo,
   // regardless of whether this client did the BLE write or saw a peer do it.
-  //
-  // DriverChanged also runs through here so the optimistic-driver claim from
-  // `takeControl` clears on the authoritative broadcast (no risk of a stuck
-  // lit lightbulb), and we resync the wall climb if we lost a take-control
-  // race (DriverChanged names someone else — their take-control's wall climb
-  // is the truth, our optimistic DELTA_UPDATE_CURRENT_CLIMB needs replacing).
+  // The `wallConfirmed` indicator itself is owned by the root persistent-session
+  // provider (see `isSessionWallLit`) so it survives route remounts; this relay
+  // only drives the local drawer-timer bus.
   useEffect(() => {
     if (!isPersistentSessionActive) return;
     const unsubscribe = persistentSession.subscribeToSessionEvents((event) => {
       if (event.__typename === 'WallConfirmedClimb') {
         emitWallConfirm(event.climbUuid);
-        return;
-      }
-      if (event.__typename === 'DriverChanged') {
-        const latest = latestRef.current;
-        // Authoritative server state has landed — clear any local optimistic
-        // claim regardless of who won. The next render reads
-        // `serverDriverParticipantId` instead.
-        latest.dispatch({ type: 'OPTIMISTIC_CLEAR_DRIVER' });
-        // If the new driver isn't us, we lost the race. Resync the wall
-        // climb from the server immediately rather than waiting up to 5s for
-        // `pendingCurrentClimbUpdates` cleanup to fire — the winner's climb
-        // is what's actually on the wall and we want the drawer/bar to flip
-        // to it without an obvious lag.
-        const localParticipantId = latest.persistentSession.participantId;
-        const newDriverId = event.driverParticipantId ?? null;
-        if (localParticipantId && newDriverId && newDriverId !== localParticipantId) {
-          latest.persistentSession.triggerResync();
-        }
-        // Hand-off toast: surface peer-driven driver changes so members know
-        // someone else just took or is now driving the wall. Spec recommends
-        // quiet info-level toast, no haptic, no sound. Suppressed when the
-        // local user IS the new driver — they pressed the lightbulb themselves
-        // and don't need to be told. Also suppressed when control was released
-        // without a successor (newDriverId === null) — nothing to attribute.
-        //
-        // i18n-keep session:driverToast.firstDriver
-        // i18n-keep session:driverToast.tookFromYou
-        // i18n-keep session:driverToast.tookFromOther
-        // i18n-keep session:driverToast.unknownDriver
-        // (The orphan-key checker can't resolve `latest.t(...)` to a
-        // useTranslation binding; the keys are statically used here.)
-        if (newDriverId && newDriverId !== localParticipantId) {
-          // The new driver can arrive before they show up in `latest.users`
-          // (distributed-state propagation reordering). Falling back to
-          // "Someone" keeps the toast firing — losing the wall to an
-          // unnamed peer is still better than the local user silently
-          // discovering it on their next interaction.
-          const newDriverName =
-            latest.users.find((user) => user.id === newDriverId)?.username ?? latest.t('driverToast.unknownDriver');
-          const previousDriverId = event.previousDriverParticipantId ?? null;
-          if (!previousDriverId) {
-            latest.showMessage(latest.t('driverToast.firstDriver', { newDriver: newDriverName }), 'info');
-          } else if (previousDriverId === localParticipantId) {
-            latest.showMessage(latest.t('driverToast.tookFromYou', { newDriver: newDriverName }), 'info');
-          } else {
-            const previousDriverName =
-              latest.users.find((user) => user.id === previousDriverId)?.username ??
-              latest.t('driverToast.unknownDriver');
-            latest.showMessage(
-              latest.t('driverToast.tookFromOther', {
-                newDriver: newDriverName,
-                previousDriver: previousDriverName,
-              }),
-              'info',
-            );
-          }
-        }
       }
     });
     return unsubscribe;
@@ -490,7 +425,6 @@ export const GraphQLQueueProvider = ({
     state,
     dispatch,
     isPersistentSessionActive,
-    isDriver,
     persistentSession,
     clientId,
     currentUserInfo,
@@ -511,16 +445,12 @@ export const GraphQLQueueProvider = ({
     validateQueueAdd,
     boardDetails,
     sessionId,
-    users,
-    showMessage,
-    t,
   });
   // Sync ref every render (synchronous — safe for refs)
   latestRef.current = {
     state,
     dispatch,
     isPersistentSessionActive,
-    isDriver,
     persistentSession,
     clientId,
     currentUserInfo,
@@ -541,9 +471,6 @@ export const GraphQLQueueProvider = ({
     validateQueueAdd,
     boardDetails,
     sessionId,
-    users,
-    showMessage,
-    t,
   };
 
   // --- Stable action callbacks (read from latestRef, never recreated) ---
@@ -639,7 +566,7 @@ export const GraphQLQueueProvider = ({
       });
       // Central funnel instrumentation — fires from every UI path that
       // activates a new climb (queue list tap, browse preview, playlist
-      // activation, SetActiveAction button, solo takeControl). Previously
+      // activation, SetActiveAction button, lightbulb re-assert). Previously
       // this event only fired from the SetActiveAction button, missing the
       // ~7 other entry points and dropping the "Session Started → Set
       // Active Climb" funnel conversion to ~6%.
@@ -686,148 +613,31 @@ export const GraphQLQueueProvider = ({
     [],
   );
 
-  // Browse-initiated drawer open. The fork between "send to wall" (solo or
-  // driver) and "preview only" (party non-driver) lives here so list rows,
-  // list covers, suggestion thumbnails, and logbook rows can share one call
-  // site. Mirrors the same driver-vs-preview gate used by the drawer's
-  // advanceTo (see play-view-drawer.tsx) and the pivot rules 4 + 5: the
-  // driver broadcasts on browse, non-drivers preview without yanking the wall.
+  // Browse-initiated drawer open. Always-live model: every participant
+  // broadcasts on browse exactly like solo — pre-mutate state (which the
+  // persistent session broadcasts when a party session is active) then open
+  // the drawer. Pass `playlistSuggestionSource: null` so activating a
+  // non-playlist climb clears any stale playlist source carried over from a
+  // prior activation.
   const previewClimbFromBrowse = useCallback(
     (climb: Climb) => {
-      const latest = latestRef.current;
-      if (latest.isPersistentSessionActive && !latest.isDriver) {
-        // Party non-driver: leave state.currentClimbQueueItem alone (it
-        // mirrors the wall); ship the climb to the bar's drawer-display
-        // state via the existing open-drawer event.
-        dispatchOpenPlayDrawer(climb);
-        return;
-      }
-      // Solo, or driver in party: pre-mutate state (broadcasts when party
-      // active) then open the drawer. Pass `playlistSuggestionSource: null`
-      // so activating a non-playlist climb clears any stale playlist source
-      // carried over from a prior activation.
       void setCurrentClimb(climb, { playlistSuggestionSource: null });
       dispatchOpenPlayDrawer();
     },
     [setCurrentClimb],
   );
 
-  // Wall-control claim. Drives the queue-control-bar pivot's lightbulb action.
-  //
-  // Solo (no party): degrades to `setCurrentClimb(climb)` — the backend
-  //   takeControl mutation is a no-op without a session, and the local-only
-  //   BLE send path is identical.
-  // Party + climb: calls the server takeControl mutation with the climb,
-  //   which yanks driver and broadcasts the climb in one round trip. The
-  //   local reducer is pre-mutated so the UI updates optimistically, mirroring
-  //   setCurrentClimb's pattern.
-  // Party + no climb: just claims driver (no wall change).
-  const takeControl = useCallback(
-    async (climb?: Climb | null): Promise<ClimbQueueItem | null> => {
-      const latest = latestRef.current;
-      if (latest.guardMutation()) return null;
-
-      // Solo: there's no party server-side driver concept. Fall through to the
-      // existing setCurrentClimb path so BLE still gets the climb. Clear the
-      // playlist suggestion source — taking wall-control on a climb that the
-      // caller didn't tag as a playlist activation isn't a playlist context.
-      if (!latest.isPersistentSessionActive) {
-        if (!climb) return null;
-        return setCurrentClimb(climb, { playlistSuggestionSource: null });
-      }
-
-      const startTime = performance.now();
-      const mode: QueueOperationMode = latest.isDisconnected ? 'party-offline' : 'party';
-
-      // Optimistic driver claim — the lightbulb (bar + drawer) flips to "I'm
-      // driving" before the round-trip. Cleared by the DriverChanged effect
-      // when the server's broadcast lands; if we lost the take-control race,
-      // that clear flips back to the actual driver and triggers a resync of
-      // the wall climb. Read `participantId` off latestRef so we don't capture
-      // a stale value (it shifts when join completes).
-      const localParticipantId = latest.persistentSession.participantId;
-      if (localParticipantId) {
-        latest.dispatch({ type: 'OPTIMISTIC_SET_DRIVER', payload: { participantId: localParticipantId } });
-      }
-
-      if (!climb) {
-        // Driver-only claim, no wall change.
-        try {
-          if (latest.hasConnected) {
-            await latest.persistentSession.takeControl(null);
-          }
-          trackQueueOperation('takeControl', performance.now() - startTime, mode);
-        } catch (error: unknown) {
-          console.error('Failed to take control:', error);
-          // Roll back the optimistic claim on transport failure — without this
-          // the lightbulb would stay "I'm driving" until the next DriverChanged
-          // (which the server won't send because the mutation didn't land).
-          latest.dispatch({ type: 'OPTIMISTIC_CLEAR_DRIVER' });
-          trackQueueOperationError('takeControl', mode);
-        }
-        return null;
-      }
-
-      if (!latest.validateQueueAdd(climb)) {
-        // Validation rejection rolls the optimistic claim back too — `validateQueueAdd`
-        // can refuse e.g. cross-board adds, in which case the mutation never fires.
-        latest.dispatch({ type: 'OPTIMISTIC_CLEAR_DRIVER' });
-        return null;
-      }
-
-      const newItem = createClimbQueueItem(climb, latest.clientId, latest.currentUserInfo);
-      const correlationId = nextCorrelationId();
-
-      // Optimistic local update so the bar/drawer reflect the new wall climb
-      // before the server round-trip completes. Matches `setCurrentClimb`'s
-      // payload (insertAfterCurrent so the queue-history reads naturally).
-      latest.dispatch({
-        type: 'DELTA_UPDATE_CURRENT_CLIMB',
-        payload: { item: newItem, shouldAddToQueue: true, insertAfterCurrent: true, correlationId },
-      });
-      track('Set Active Climb', {
-        climbUuid: climb.uuid,
-        boardType: climb.boardType ?? null,
-        layoutId: climb.layoutId ?? null,
-        source: 'takeControl' satisfies SetActiveClimbSource,
-      });
-
-      if (latest.isDisconnected) {
-        latest.offlineBuffer.bufferAddition(newItem);
-        trackQueueOperation('takeControl', performance.now() - startTime, mode);
-        return newItem;
-      }
-
-      if (latest.hasConnected) {
-        try {
-          await latest.persistentSession.takeControl(newItem);
-          trackQueueOperation('takeControl', performance.now() - startTime, mode);
-        } catch (error: unknown) {
-          console.error('Failed to take control with climb:', error);
-          if (correlationId) latest.dispatch({ type: 'CLEANUP_PENDING_UPDATE', payload: { correlationId } });
-          // Roll back the optimistic driver claim — the mutation didn't land,
-          // so the server won't broadcast a DriverChanged to clear it for us.
-          latest.dispatch({ type: 'OPTIMISTIC_CLEAR_DRIVER' });
-          trackQueueOperationError('takeControl', mode);
-        }
-      } else {
-        trackQueueOperation('takeControl', performance.now() - startTime, mode);
-      }
-
-      return newItem;
-    },
-    [setCurrentClimb],
-  );
-
-  const releaseControl = useCallback(async (): Promise<void> => {
+  // Report this client's own BLE link drop to the session so every member's
+  // wall-confirmed lightbulb clears. Best-effort and a no-op in solo (the
+  // persistent-session helper short-circuits with no active session).
+  const reportWallDisconnect = useCallback(async (): Promise<void> => {
     const latest = latestRef.current;
     if (!latest.isPersistentSessionActive) return;
-    if (latest.guardMutation()) return;
     if (!latest.hasConnected) return;
     try {
-      await latest.persistentSession.releaseControl();
+      await latest.persistentSession.reportWallDisconnect();
     } catch (error: unknown) {
-      console.error('Failed to release control:', error);
+      console.error('Failed to report wall disconnect:', error);
     }
   }, []);
 
@@ -983,50 +793,16 @@ export const GraphQLQueueProvider = ({
     latestRef.current.fetchMoreClimbs();
   }, []);
 
-  const getNextClimbQueueItem = useCallback((options?: { from?: ClimbQueueItem | null; suggestionsOnly?: boolean }) => {
+  const getNextClimbQueueItem = useCallback((options?: { from?: ClimbQueueItem | null }) => {
     const latest = latestRef.current;
-    // `from` lets the drawer walk preview navigation from its locally-
-    // displayed climb without first writing to state.currentClimbQueueItem.
-    // Default anchor is the current wall climb, preserving existing callers.
-    //
-    // `suggestionsOnly` (queue-control-bar pivot, rule 5) is the non-driver
-    // swipe path: skip the shared queue entirely and walk only the
-    // suggested-climbs feed. The shared queue represents "climbs the driver
-    // is committed to," so a non-driver browsing it would scrub through
-    // someone else's plan; suggestedClimbs is the catalogue the user is
-    // already looking at and is the cleaner preview surface.
+    // `from` lets the drawer walk navigation from its locally-displayed climb
+    // without first writing to state.currentClimbQueueItem. Default anchor is
+    // the current wall climb, preserving existing callers. Always-live model:
+    // every participant navigates the shared queue (there is no non-driver
+    // suggestions-only path).
     const anchorUuid = options?.from ? options.from.uuid : latest.state.currentClimbQueueItem?.uuid;
     const anchorClimbUuid = options?.from ? options.from.climb?.uuid : latest.state.currentClimbQueueItem?.climb?.uuid;
     const buildSuggestedQueueItem = makeBuildSuggestedQueueItem(latest);
-    if (options?.suggestionsOnly) {
-      // Non-driver swipe-forward: walk the suggestedClimbs array by index so
-      // each tap advances one step. Mirrors the backward branch below — using
-      // `find(c => c.uuid !== anchorClimbUuid)` was position-blind and made
-      // the non-driver oscillate between suggestions[0] and suggestions[1].
-      if (latest.suggestedClimbs && latest.suggestedClimbs.length > 0) {
-        const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
-        // If the anchor isn't in suggestedClimbs (e.g. anchor is a queue item
-        // or the wall climb chosen by the driver), start from the top of the
-        // feed.
-        const nextClimb = anchorIdx < 0 ? latest.suggestedClimbs[0] : (latest.suggestedClimbs[anchorIdx + 1] ?? null);
-        if (nextClimb) return buildSuggestedQueueItem(nextClimb);
-      }
-      // Suggestions feed empty (no playlist active, no recent search anchor
-      // populated yet). Group-session feedback fix: instead of letting the
-      // non-driver swipe silently die, walk the current `climbSearchResults`
-      // from the anchor's position — still preview, still skips the shared
-      // queue (the helper filters queued climbs). The pivot rule "non-driver
-      // swipe doesn't navigate the shared queue" is preserved; we're only
-      // extending the source of climbs to peek at.
-      const fromSearch = findUnqueuedNeighborInSearchResults(
-        latest.climbSearchResults,
-        anchorClimbUuid,
-        latest.state.queue,
-        1,
-        buildSuggestedQueueItem,
-      );
-      return fromSearch;
-    }
     const queue = latest.state.queue;
     // With no anchor at all (no current climb, no `from`), Next surfaces queue[0]
     // so the Queue bar's Next button can start a queue the user has built but
@@ -1065,62 +841,36 @@ export const GraphQLQueueProvider = ({
     return fallback ? buildSuggestedQueueItem(fallback) : null;
   }, []);
 
-  const getPreviousClimbQueueItem = useCallback(
-    (options?: { from?: ClimbQueueItem | null; suggestionsOnly?: boolean }) => {
-      const latest = latestRef.current;
-      const anchorUuid = options?.from ? options.from.uuid : latest.state.currentClimbQueueItem?.uuid;
-      const anchorClimbUuid = options?.from
-        ? options.from.climb?.uuid
-        : latest.state.currentClimbQueueItem?.climb?.uuid;
-      const buildSuggestedQueueItem = makeBuildSuggestedQueueItem(latest);
-      if (options?.suggestionsOnly) {
-        // Non-driver previous: walk the suggestedClimbs array backwards.
-        // No fall-through into the queue — that would let a non-driver scrub
-        // backwards through someone else's committed plan.
-        if (latest.suggestedClimbs && latest.suggestedClimbs.length > 0) {
-          const anchorIdx = latest.suggestedClimbs.findIndex((climb: Climb) => climb.uuid === anchorClimbUuid);
-          if (anchorIdx > 0) {
-            const prevClimb = latest.suggestedClimbs[anchorIdx - 1];
-            return prevClimb ? buildSuggestedQueueItem(prevClimb) : null;
-          }
-        }
-        // Empty / no-anchor case: fall through to climbSearchResults (mirrors
-        // the forward branch). Still preview, still skips the shared queue.
-        return findUnqueuedNeighborInSearchResults(
-          latest.climbSearchResults,
-          anchorClimbUuid,
-          latest.state.queue,
-          -1,
-          buildSuggestedQueueItem,
-        );
-      }
-      // No anchor (no current climb, no `from`): backward navigation has no
-      // semantic answer — don't fabricate one from suggestions. Forward
-      // surfaces queue[0] to start an unactivated queue; backward has no
-      // symmetric "start" semantics.
-      if (anchorUuid == null) return null;
-      const queue = latest.state.queue;
-      const queueItemIndex = queue.findIndex((queueItem: ClimbQueueItem) => queueItem.uuid === anchorUuid);
-      if (queueItemIndex > 0) return queue[queueItemIndex - 1];
-      // In playlist-suggestion mode there's no "previous playlist climb" once
-      // the activated climb is current — the playlist is consumed forward
-      // only. Don't fall through to climbSearchResults, that would surface
-      // unrelated results.
-      if (latest.state.playlistSuggestionSource) return null;
-      // Backward navigation is history-oriented: the queue walk above is the
-      // history step. When neither queue nor search results yield a backward
-      // neighbour, don't fall through to suggestedClimbs — that's discovery
-      // (the forward direction).
-      return findUnqueuedNeighborInSearchResults(
-        latest.climbSearchResults,
-        anchorClimbUuid,
-        queue,
-        -1,
-        buildSuggestedQueueItem,
-      );
-    },
-    [],
-  );
+  const getPreviousClimbQueueItem = useCallback((options?: { from?: ClimbQueueItem | null }) => {
+    const latest = latestRef.current;
+    const anchorUuid = options?.from ? options.from.uuid : latest.state.currentClimbQueueItem?.uuid;
+    const anchorClimbUuid = options?.from ? options.from.climb?.uuid : latest.state.currentClimbQueueItem?.climb?.uuid;
+    const buildSuggestedQueueItem = makeBuildSuggestedQueueItem(latest);
+    // No anchor (no current climb, no `from`): backward navigation has no
+    // semantic answer — don't fabricate one from suggestions. Forward
+    // surfaces queue[0] to start an unactivated queue; backward has no
+    // symmetric "start" semantics.
+    if (anchorUuid == null) return null;
+    const queue = latest.state.queue;
+    const queueItemIndex = queue.findIndex((queueItem: ClimbQueueItem) => queueItem.uuid === anchorUuid);
+    if (queueItemIndex > 0) return queue[queueItemIndex - 1];
+    // In playlist-suggestion mode there's no "previous playlist climb" once
+    // the activated climb is current — the playlist is consumed forward
+    // only. Don't fall through to climbSearchResults, that would surface
+    // unrelated results.
+    if (latest.state.playlistSuggestionSource) return null;
+    // Backward navigation is history-oriented: the queue walk above is the
+    // history step. When neither queue nor search results yield a backward
+    // neighbour, don't fall through to suggestedClimbs — that's discovery
+    // (the forward direction).
+    return findUnqueuedNeighborInSearchResults(
+      latest.climbSearchResults,
+      anchorClimbUuid,
+      queue,
+      -1,
+      buildSuggestedQueueItem,
+    );
+  }, []);
 
   // Optimistic dispatch for widget navigation (Next/Previous from Live Activity).
   // The native WebSocket already sent the server mutation, so we only need to
@@ -1178,8 +928,7 @@ export const GraphQLQueueProvider = ({
       getPreviousClimbQueueItem,
       disconnect: stableDisconnect,
       dispatchWidgetNavigation,
-      takeControl,
-      releaseControl,
+      reportWallDisconnect,
       startSession: stableStartSession,
       joinSession: stableJoinSession,
       endSession: stableEndSession,
@@ -1223,8 +972,7 @@ export const GraphQLQueueProvider = ({
       clientId,
       participantId,
       isLeader,
-      driverParticipantId,
-      isDriver,
+      wallConfirmed,
       lastConnectedBoardSerial,
       isBackendMode: !!backendUrl,
       hasConnected,
@@ -1257,8 +1005,7 @@ export const GraphQLQueueProvider = ({
       clientId,
       participantId,
       isLeader,
-      driverParticipantId,
-      isDriver,
+      wallConfirmed,
       lastConnectedBoardSerial,
       backendUrl,
       hasConnected,
@@ -1323,8 +1070,7 @@ export const GraphQLQueueProvider = ({
       clientId,
       participantId,
       isLeader,
-      driverParticipantId,
-      isDriver,
+      wallConfirmed,
       lastConnectedBoardSerial,
       isBackendMode: !!backendUrl,
       hasConnected,
@@ -1344,8 +1090,7 @@ export const GraphQLQueueProvider = ({
       clientId,
       participantId,
       isLeader,
-      driverParticipantId,
-      isDriver,
+      wallConfirmed,
       lastConnectedBoardSerial,
       backendUrl,
       hasConnected,

@@ -7,7 +7,7 @@ import { MAX_RETRIES } from '../graphql/resolvers/shared/types';
 /**
  * Set the current climb (optionally appending it to the queue) and publish the
  * resulting queue event. Mirrors the body of the GraphQL `setCurrentClimb`
- * resolver so the new `takeControl(climb)` mutation can re-use the
+ * resolver so other call sites (the widget re-assert handler) can re-use the
  * optimistic-locking + event-publish logic without duplicating it.
  *
  * Accepts `item: null` to clear the current climb. The `shouldAddToQueue` arg

@@ -13,8 +13,6 @@ import { boardseshTicks, auroraCredentials, playlists, playlistClimbs, playlistO
 import { randomUUID } from 'crypto';
 import { convertQuality } from '@boardsesh/shared-schema';
 
-import { buildInferredSessionsForUser } from './inferred-session-builder';
-
 /**
  * Get NextAuth user ID from Aurora user ID
  */
@@ -529,23 +527,6 @@ export async function syncUserData(
 
     if (syncAttempts >= maxSyncAttempts) {
       console.warn(`Sync reached maximum attempts (${maxSyncAttempts}) for user ${userId}`);
-    }
-
-    // Build inferred sessions for any newly-imported ticks
-    const hasTickData = (totalResults['ascents']?.synced ?? 0) > 0 || (totalResults['bids']?.synced ?? 0) > 0;
-    if (hasTickData) {
-      try {
-        const db = getDb();
-        const nextAuthUserId = await getNextAuthUserId(db, board, userId);
-        if (nextAuthUserId) {
-          const assigned = await buildInferredSessionsForUser(nextAuthUserId);
-          if (assigned > 0) {
-            console.info(`Built inferred sessions: assigned ${assigned} ticks for user ${nextAuthUserId}`);
-          }
-        }
-      } catch (error) {
-        console.error('Error building inferred sessions after sync:', error);
-      }
     }
 
     return totalResults;

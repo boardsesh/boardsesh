@@ -1,4 +1,4 @@
-import { pgTable, bigserial, bigint, text, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, bigserial, bigint, integer, text, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
 
@@ -24,6 +24,11 @@ export const userBoardSerials = pgTable(
     layoutId: bigint('layout_id', { mode: 'number' }).notNull(),
     sizeId: bigint('size_id', { mode: 'number' }).notNull(),
     setIds: text('set_ids').notNull(),
+    // The API/protocol level advertised after the `@` in the BLE device name
+    // (`{DisplayName}#{SerialNumber}@{APILevel}`, e.g. `Kilter Board#751737@3`).
+    // Nullable: rows recorded before this column existed never observed it, and
+    // the parser's default of 2 is a guess we don't want to backfill as fact.
+    apiLevel: integer('api_level'),
     // ON DELETE SET NULL: when the linked saved board is removed (or soft-
     // deleted, since the resolver also filters by deletedAt), the link clears
     // but `boardName/layoutId/sizeId/setIds` remain pointing at the old config
@@ -32,7 +37,7 @@ export const userBoardSerials = pgTable(
     boardUuid: text('board_uuid').references(() => userBoards.uuid, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     // No DB-level ON UPDATE trigger — `defaultNow()` only fires on insert.
-    // Writers (the upsert in /api/internal/board-serials) must set this
+    // Writers (the `recordBoardSerial` GraphQL mutation's upsert) must set this
     // explicitly; raw SQL paths will silently leave it stale.
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },

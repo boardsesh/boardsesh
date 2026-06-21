@@ -25,7 +25,7 @@ import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
 export const socialProposalMutations = {
   createProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 5);
+    await applyRateLimit(ctx, 5, 'createProposal');
 
     const validated = validateInput(CreateProposalInputSchema, input, 'input');
     const { climbUuid, boardType, angle, type, proposedValue, reason } = validated;
@@ -197,7 +197,7 @@ export const socialProposalMutations = {
 
   voteOnProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'voteOnProposal');
 
     const validated = validateInput(VoteOnProposalInputSchema, input, 'input');
     const { proposalUuid, value } = validated;

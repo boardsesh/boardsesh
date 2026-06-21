@@ -12,7 +12,7 @@ import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
  */
 export async function setterOverrideCommunityStatus(_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) {
   requireAuthenticated(ctx);
-  await applyRateLimit(ctx, 10);
+  await applyRateLimit(ctx, 10, 'setterOverrideCommunityStatus');
 
   const validated = validateInput(SetterOverrideInputSchema, input, 'input');
   const { climbUuid, boardType, angle, communityGrade, isBenchmark } = validated;

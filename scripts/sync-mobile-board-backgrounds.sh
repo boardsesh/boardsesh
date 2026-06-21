@@ -17,9 +17,16 @@ set -euo pipefail
 #      iOS UIImage and Android BitmapFactory)
 #   2. .png fallback (only when no .webp exists)
 #
-# Paths under a `thumbs/` directory are skipped — the native renderer
-# only uses the full-quality variants. The RN app does no server fetches,
-# so every image it can render must come from this manifest.
+# Both full-quality and `thumbs/` variants are bundled. Small/decorative
+# surfaces (list thumbnails, blurred playlist backdrops) resolve the
+# 416px-wide `thumbs/<name>.webp` so expo-image never resamples a ~1080px
+# source on the main thread (the iOS app-hang fix); the full-size play
+# view uses the full-quality file. A `thumbs/` file becomes its own
+# manifest key (e.g. `kilter/product_sizes_layouts_sets/thumbs/54.webp`),
+# which background-image-cache.ts looks up for the thumb variant (falling
+# back to the full-quality key when a board has no thumb). The RN app does
+# no server fetches, so every image it can render must come from this
+# manifest.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -42,10 +49,8 @@ REQUIRE_PREFIX="../../../web/public/images"
 declare -A chosen
 while IFS= read -r -d '' src_path; do
   rel_to_images="${src_path#$WEB_IMAGES/}"
-  # Skip thumb variants — the native renderer always uses full-quality.
-  case "$rel_to_images" in
-    */thumbs/*) continue ;;
-  esac
+  # Thumbs ARE included now: a thumbs/ path is its own logical key, so it
+  # is bundled alongside the full-quality file (see header comment).
   logical_key="${rel_to_images%.*}"
   ext="${rel_to_images##*.}"
   current="${chosen[$logical_key]:-}"

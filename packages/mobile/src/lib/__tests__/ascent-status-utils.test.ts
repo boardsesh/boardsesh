@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeAscentStatus, pickHighestAscentStatus, type AscentStatusValue } from '../ascent-status-utils';
+import {
+  countSentAscents,
+  normalizeAscentStatus,
+  pickHighestAscentStatus,
+  type AscentLogEntry,
+  type AscentStatusValue,
+} from '../ascent-status-utils';
 
 describe('normalizeAscentStatus', () => {
   it('returns the literal status when set', () => {
@@ -65,5 +71,43 @@ describe('pickHighestAscentStatus', () => {
       yield 'send';
     }
     expect(pickHighestAscentStatus(gen())).toBe('send');
+  });
+});
+
+describe('countSentAscents', () => {
+  const climb = 'climb-1';
+  const angle = 40;
+  const make = (over: Partial<AscentLogEntry>): AscentLogEntry => ({ climb_uuid: climb, angle, ...over });
+
+  it('is 0 for an empty logbook', () => {
+    expect(countSentAscents([], climb, angle)).toBe(0);
+  });
+
+  it('counts sends and flashes for the matching climb + angle', () => {
+    const entries = [make({ status: 'send' }), make({ status: 'flash' }), make({ status: 'attempt' })];
+    expect(countSentAscents(entries, climb, angle)).toBe(2);
+  });
+
+  it('derives flash/send from is_ascent + tries when status is absent', () => {
+    const entries = [
+      make({ is_ascent: true, tries: 1 }),
+      make({ is_ascent: true, tries: 5 }),
+      make({ is_ascent: false }),
+    ];
+    expect(countSentAscents(entries, climb, angle)).toBe(2);
+  });
+
+  it('ignores other climbs and other angles', () => {
+    const entries = [
+      make({ status: 'send' }),
+      make({ status: 'send', climb_uuid: 'climb-2' }),
+      make({ status: 'send', angle: 20 }),
+    ];
+    expect(countSentAscents(entries, climb, angle)).toBe(1);
+  });
+
+  it('does not count attempts (so the toolbar only goes green on a real send)', () => {
+    const entries = [make({ status: 'attempt' }), make({ is_ascent: false, tries: 3 })];
+    expect(countSentAscents(entries, climb, angle)).toBe(0);
   });
 });

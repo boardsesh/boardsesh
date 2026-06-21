@@ -46,5 +46,7 @@ export type CredentialRecord = {
   auroraToken: string | null;
   syncStatus: string | null;
   syncError: string | null;
+  credentialFailureCount: number | null;
+  lastCredentialFailureAt: Date | null;
   lastSyncAt: Date | null;
 };

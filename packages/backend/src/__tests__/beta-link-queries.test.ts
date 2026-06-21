@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 const {
   selectMock,
   recentSelectMock,
+  offsetSpy,
   executeMock,
   updateMock,
   fetchInstagramMetaMock,
@@ -18,6 +19,7 @@ const {
 } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   recentSelectMock: vi.fn(),
+  offsetSpy: vi.fn(),
   executeMock: vi.fn(),
   updateMock: vi.fn(),
   fetchInstagramMetaMock: vi.fn(),
@@ -64,6 +66,10 @@ vi.mock('../db/client', () => ({
           leftJoin: () => chain,
           where: () => chain,
           orderBy: () => chain,
+          offset: (value: number) => {
+            offsetSpy(value);
+            return chain;
+          },
           limit: () => Promise.resolve(recentSelectMock()),
         };
         return chain;
@@ -90,6 +96,7 @@ vi.mock('../lib/instagram-meta', async () => {
     fetchInstagramMeta: fetchInstagramMetaMock,
     isInstagramUrl: shared.isInstagramUrl,
     getInstagramMediaId: shared.getInstagramMediaId,
+    normalizeBetaVideoUrl: shared.normalizeBetaVideoUrl,
   };
 });
 
@@ -142,6 +149,8 @@ type Row = {
   thumbnail: string | null;
   isListed: boolean | null;
   createdAt: string | null;
+  tickUuid: string | null;
+  boardId: number | null;
 };
 
 function row(overrides: Partial<Row>): Row {
@@ -154,6 +163,8 @@ function row(overrides: Partial<Row>): Row {
     thumbnail: null,
     isListed: true,
     createdAt: '2026-04-26T00:00:00Z',
+    tickUuid: null,
+    boardId: null,
     ...overrides,
   };
 }
@@ -266,6 +277,30 @@ describe('betaLinks resolver', () => {
     expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
   });
 
+  it('strips the Instagram share-attribution param on the cached-thumbnail (short-circuit) path', async () => {
+    selectMock.mockReturnValueOnce([
+      row({ link: 'https://www.instagram.com/reel/ABC/?igsh=NHB5ZXljZjV3bzB3', thumbnail: OUR_S3_THUMB }),
+    ]);
+
+    const result = await betaLinkQueries.betaLinks(undefined, { boardType: 'kilter', climbUuid: 'climb-1' });
+    expect(result[0]?.link).toBe('https://www.instagram.com/reel/ABC/');
+    expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
+  });
+
+  it('strips the Instagram share-attribution param on the fresh-fetch path', async () => {
+    selectMock.mockReturnValueOnce([row({ link: 'https://www.instagram.com/reel/ABC/?igsh=x', thumbnail: null })]);
+    fetchInstagramMetaMock.mockResolvedValueOnce({
+      status: 'ok',
+      thumbnail: 'https://scontent.cdninstagram.com/raw.jpg',
+      username: 'climber',
+    });
+    cacheInstagramMock.mockResolvedValueOnce(OUR_S3_THUMB);
+
+    const result = await betaLinkQueries.betaLinks(undefined, { boardType: 'kilter', climbUuid: 'climb-1' });
+    expect(result[0]?.link).toBe('https://www.instagram.com/reel/ABC/');
+    expect(fetchInstagramMetaMock).toHaveBeenCalled();
+  });
+
   it('routes TikTok URLs through the TikTok enricher', async () => {
     const tikUrl = 'https://www.tiktok.com/@climber/video/9999999999';
     selectMock.mockReturnValueOnce([row({ link: tikUrl })]);
@@ -367,6 +402,14 @@ describe('recentBetaLinks resolver', () => {
     expect(result[0]?.climbName).toBe('Project');
   });
 
+  it('strips the Instagram share-attribution param from the returned link', async () => {
+    executeMock.mockReturnValueOnce([cteRow({ link: 'https://www.instagram.com/reel/ABC/?igsh=x' }, 'Project')]);
+
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+
+    expect(result[0]?.betaLink.link).toBe('https://www.instagram.com/reel/ABC/');
+  });
+
   it('tolerates a null climbName (beta link arrived before the climb synced)', async () => {
     executeMock.mockReturnValueOnce([cteRow({}, null)]);
 
@@ -410,6 +453,7 @@ describe('recentBetaLinks resolver', () => {
 describe('userBetaLinks resolver', () => {
   beforeEach(() => {
     recentSelectMock.mockReset();
+    offsetSpy.mockReset();
     fetchInstagramMetaMock.mockReset();
     fetchTikTokMetaMock.mockReset();
   });
@@ -485,6 +529,28 @@ describe('userBetaLinks resolver', () => {
 
     expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
     expect(fetchTikTokMetaMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards the offset to the paged query for the next page', async () => {
+    recentSelectMock
+      .mockReturnValueOnce([{ instagramUrl: null }])
+      .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/PAGE2/' }, 'Page Two')]);
+
+    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 20, offset: 20 });
+
+    expect(offsetSpy).toHaveBeenCalledWith(20);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.climbName).toBe('Page Two');
+  });
+
+  it('defaults a missing offset to 0', async () => {
+    recentSelectMock
+      .mockReturnValueOnce([{ instagramUrl: null }])
+      .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/A/' })]);
+
+    await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+
+    expect(offsetSpy).toHaveBeenCalledWith(0);
   });
 });
 
@@ -630,5 +696,121 @@ describe('recentBetaLinks Redis cache', () => {
     await invalidateRecentBetaLinksCache();
 
     expect(redisDelMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('betaLinkPreview resolver', () => {
+  // requireAuthenticated + applyRateLimit run for real here (helpers isn't
+  // mocked); the redis mock defaults to disconnected so applyRateLimit falls
+  // back to the in-memory limiter and never needs a real Redis.
+  const ctx = (isAuthenticated: boolean) =>
+    ({ isAuthenticated, userId: 'user-1', connectionId: 'conn-1', clientIp: '127.0.0.1' }) as unknown as Parameters<
+      typeof betaLinkQueries.betaLinkPreview
+    >[2];
+
+  beforeEach(() => {
+    fetchInstagramMetaMock.mockReset();
+    fetchTikTokMetaMock.mockReset();
+    redisConnectedMock.mockReset();
+    redisConnectedMock.mockReturnValue(false);
+  });
+
+  it('returns thumbnail + caption for an authenticated Instagram preview', async () => {
+    fetchInstagramMetaMock.mockResolvedValueOnce({
+      status: 'ok',
+      thumbnail: 'https://scontent.cdninstagram.com/raw.jpg',
+      username: 'climber',
+      caption: 'Sent Purple Nurple 🧗',
+    });
+
+    const result = await betaLinkQueries.betaLinkPreview(
+      undefined,
+      { link: 'https://www.instagram.com/reel/ABC123/' },
+      ctx(true),
+    );
+
+    expect(result).toEqual({
+      link: 'https://www.instagram.com/reel/ABC123/',
+      thumbnail: 'https://scontent.cdninstagram.com/raw.jpg',
+      username: 'climber',
+      caption: 'Sent Purple Nurple 🧗',
+    });
+  });
+
+  it('strips the Instagram share-attribution param from the echoed link', async () => {
+    fetchInstagramMetaMock.mockResolvedValueOnce({
+      status: 'ok',
+      thumbnail: 'https://scontent.cdninstagram.com/raw.jpg',
+      username: 'climber',
+      caption: 'Sent it',
+    });
+
+    const result = await betaLinkQueries.betaLinkPreview(
+      undefined,
+      { link: 'https://www.instagram.com/reel/ABC123/?igsh=NHB5ZXljZjV3bzB3' },
+      ctx(true),
+    );
+
+    expect(result.link).toBe('https://www.instagram.com/reel/ABC123/');
+  });
+
+  it('throws when unauthenticated and never calls out to Instagram', async () => {
+    await expect(
+      betaLinkQueries.betaLinkPreview(undefined, { link: 'https://www.instagram.com/reel/ABC123/' }, ctx(false)),
+    ).rejects.toThrow(/auth/i);
+    expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
+  });
+
+  it('returns null fields (no error, no outbound call) for a non-IG/TikTok URL', async () => {
+    const result = await betaLinkQueries.betaLinkPreview(
+      undefined,
+      { link: 'https://example.com/whatever' },
+      ctx(true),
+    );
+
+    expect(result).toEqual({
+      link: 'https://example.com/whatever',
+      thumbnail: null,
+      username: null,
+      caption: null,
+    });
+    expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
+    expect(fetchTikTokMetaMock).not.toHaveBeenCalled();
+  });
+
+  it('previews TikTok (thumbnail + username; caption stays null)', async () => {
+    fetchTikTokMetaMock.mockResolvedValueOnce({
+      status: 'ok',
+      thumbnail: 'https://p16-common-sign.tiktokcdn.com/x.jpg',
+      username: 'climber',
+    });
+    const url = 'https://www.tiktok.com/@climber/video/9999999999';
+
+    const result = await betaLinkQueries.betaLinkPreview(undefined, { link: url }, ctx(true));
+
+    expect(result).toMatchObject({
+      link: url,
+      thumbnail: 'https://p16-common-sign.tiktokcdn.com/x.jpg',
+      username: 'climber',
+      caption: null,
+    });
+    expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
+  });
+
+  it('best-effort: an unavailable IG post yields null media fields, not an error', async () => {
+    fetchInstagramMetaMock.mockResolvedValueOnce({ status: 'gone' });
+
+    const result = await betaLinkQueries.betaLinkPreview(
+      undefined,
+      { link: 'https://www.instagram.com/p/GONE/' },
+      ctx(true),
+    );
+
+    expect(result).toMatchObject({
+      link: 'https://www.instagram.com/p/GONE/',
+      thumbnail: null,
+      username: null,
+      caption: null,
+    });
   });
 });

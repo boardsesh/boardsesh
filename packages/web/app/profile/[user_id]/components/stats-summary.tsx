@@ -226,11 +226,10 @@ export default function StatsSummary({
             </Typography>
             <CssBarChart
               bars={weeklyBars}
-              height={180}
-              mobileHeight={120}
+              height={200}
+              mobileHeight={150}
               gap={3}
               ariaLabel={t('stats.weeklyAttemptsAria')}
-              angledLabels
               maxLabels={12}
             />
           </div>

@@ -3,11 +3,12 @@ import type { ClimbQueueItem, Climb } from '@boardsesh/queue';
 
 // ── Factory helpers ────────────────────────────────────────────────────
 
-function makeClimb(uuid: string, frames = `p1r${uuid.charCodeAt(0)}`): Climb {
+function makeClimb(uuid: string, frames = `p1r${uuid.charCodeAt(0)}`, mirrored = false): Climb {
   return {
     uuid,
     name: `Climb ${uuid}`,
     frames,
+    mirrored,
     setter_username: 'setter',
     angle: 40,
     ascensionist_count: 0,
@@ -19,10 +20,10 @@ function makeClimb(uuid: string, frames = `p1r${uuid.charCodeAt(0)}`): Climb {
   };
 }
 
-function makeQueueItem(uuid: string, frames?: string): ClimbQueueItem {
+function makeQueueItem(uuid: string, frames?: string, mirrored = false): ClimbQueueItem {
   return {
     uuid,
-    climb: makeClimb(uuid, frames),
+    climb: makeClimb(uuid, frames, mirrored),
   };
 }
 
@@ -44,12 +45,24 @@ type DrainContext = {
   flush: () => Promise<void>;
   /** Abort the drain loop (simulates component unmount) */
   abort: () => void;
+  /**
+   * Simulate a `reassertWall()` nonce bump: clear the dedup signature once and
+   * re-drive the loop with the most-recent climb (the lightbulb re-take path).
+   */
+  reassert: () => void;
 };
+
+// Mirror of the component's dedup key: uuid + rendered frames + mirror state.
+function signatureOf(item: ClimbQueueItem): string {
+  return `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}`;
+}
 
 function createDrainLoop(sendDuration: 'instant' | 'deferred' = 'deferred'): DrainContext {
   let isWriting = false;
   let pendingClimb: ClimbQueueItem | null = null;
-  let lastSentUuid: string | null = null;
+  let lastSentSignature: string | null = null;
+  let lastEnqueuedItem: ClimbQueueItem | null = null;
+  let reassertPending = false;
 
   const abortController = new AbortController();
   const sentUuidsList: string[] = [];
@@ -80,8 +93,16 @@ function createDrainLoop(sendDuration: 'instant' | 'deferred' = 'deferred'): Dra
         if (signal.aborted) return;
         const item = toSend;
 
-        // Dedup same-uuid re-broadcasts
-        if (item.climb.uuid === lastSentUuid) {
+        // Honour a pending reassert when the climb is picked up (survives an
+        // in-flight write that re-set the signature on completion).
+        if (reassertPending) {
+          reassertPending = false;
+          lastSentSignature = null;
+        }
+
+        // Dedup byte-identical re-broadcasts (uuid + frames + mirror)
+        const sendSignature = signatureOf(item);
+        if (sendSignature === lastSentSignature) {
           toSend = pendingClimb;
           pendingClimb = null;
           continue;
@@ -93,7 +114,7 @@ function createDrainLoop(sendDuration: 'instant' | 'deferred' = 'deferred'): Dra
         if (signal.aborted) return;
 
         if (result === true) {
-          lastSentUuid = item.climb.uuid;
+          lastSentSignature = sendSignature;
         }
 
         toSend = pendingClimb;
@@ -107,6 +128,8 @@ function createDrainLoop(sendDuration: 'instant' | 'deferred' = 'deferred'): Dra
   return {
     enqueue(item: ClimbQueueItem) {
       if (abortController.signal.aborted) return;
+
+      lastEnqueuedItem = item;
 
       if (isWriting) {
         pendingClimb = item;
@@ -133,6 +156,22 @@ function createDrainLoop(sendDuration: 'instant' | 'deferred' = 'deferred'): Dra
 
     abort() {
       abortController.abort();
+    },
+
+    reassert() {
+      if (abortController.signal.aborted) return;
+      // The nonce bump flags a one-shot re-push; the drain loop clears the
+      // signature when it picks the climb up (mirrors the component, and
+      // survives an in-flight write).
+      reassertPending = true;
+      if (!lastEnqueuedItem) return;
+      const item = lastEnqueuedItem;
+      if (isWriting) {
+        pendingClimb = item;
+        return;
+      }
+      isWriting = true;
+      void drain(item);
     },
   };
 }
@@ -265,6 +304,99 @@ describe('BluetoothAutoSender drain loop', () => {
 
       expect(loop.sendCallCount()).toBe(3);
       expect(loop.sentUuids()).toEqual(['climb-X', 'climb-Y', 'climb-X']);
+    });
+  });
+
+  describe('payload-signature deduplication (uuid + frames + mirror)', () => {
+    it('skips a byte-identical re-broadcast (same uuid, frames and mirror)', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+
+      // Identical payload — deduped.
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(1);
+      expect(loop.sentUuids()).toEqual(['climb-A']);
+    });
+
+    it('re-pushes when the mirror flag flips on the same climb uuid', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15', false));
+      await loop.flush();
+
+      // Same uuid + frames, but mirror toggled — the rendered pixels differ.
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15', true));
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
+    });
+
+    it('re-pushes when the frames change on the same climb uuid (hold edit)', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+
+      // Same uuid, edited frames.
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15p2r12'));
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
+    });
+  });
+
+  describe('reassert (lightbulb re-take)', () => {
+    it('re-pushes the current climb once on reassert, then resumes dedup', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(1);
+
+      // A byte-identical broadcast is still deduped...
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(1);
+
+      // ...but a reassert punches through once.
+      loop.reassert();
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(2);
+
+      // After the one-shot, the unchanged climb is deduped again.
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
+    });
+
+    it('re-pushes after the in-flight write completes when reasserted mid-write', async () => {
+      const loop = createDrainLoop('deferred');
+
+      // Write for climb-A starts and hangs (simulates a slow / secretly-dead link).
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      expect(loop.sendCallCount()).toBe(1);
+
+      // Reassert lands while that write is still in flight.
+      loop.reassert();
+
+      // The in-flight write resolves and would normally re-set the signature,
+      // deduping the reassert away — the fix clears it again on pickup.
+      loop.resolveCurrentWrite();
+      await loop.flush();
+
+      // The reasserted climb re-fires after the in-flight write completed.
+      loop.resolveCurrentWrite();
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
     });
   });
 

@@ -14,6 +14,8 @@
         <string>Boardsesh App Store Distribution Second</string>
         <key>com.boardsesh.app.widgets</key>
         <string>Boardsesh Widgets App Store Distribution</string>
+        <key>com.boardsesh.app.share-extension</key>
+        <string>Boardsesh Share Extension App Store Distribution</string>
     </dict>
     <key>uploadBitcode</key>
     <false/>

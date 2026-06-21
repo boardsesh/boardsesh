@@ -2,6 +2,11 @@ import { useMemo } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap, HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import type { BoardHold, HoldPlacement } from './types';
+import {
+  getEffectiveHoldStateColor,
+  getEffectiveHoldStateShape,
+  useHoldColorOverrides,
+} from '../../lib/hold-color-overrides';
 
 /**
  * Parses a climb's `frames` string into an array of BoardHold objects ready for rendering.
@@ -23,6 +28,13 @@ export function useParseFrames(
   holdsData: HoldPlacement[],
   mirrored: boolean = false,
 ): BoardHold[] {
+  const {
+    overrides: holdColorOverrides,
+    shapes: holdShapeOverrides,
+    brushThickness,
+    shapeSize,
+  } = useHoldColorOverrides();
+
   return useMemo(() => {
     if (!frames) return [];
 
@@ -78,13 +90,16 @@ export function useParseFrames(
           cx: renderCx,
           cy: renderCy,
           radius: renderRadius,
-          color: holdInfo.displayColor,
+          color: getEffectiveHoldStateColor(holdInfo.state, holdInfo.displayColor, holdColorOverrides),
           role: holdInfo.state,
           renderStyle,
+          shape: getEffectiveHoldStateShape(holdInfo.state, holdShapeOverrides),
+          brushThickness,
+          shapeSize,
         });
       }
     }
 
     return result;
-  }, [frames, boardName, holdsData, mirrored]);
+  }, [frames, boardName, holdsData, mirrored, holdColorOverrides, holdShapeOverrides, brushThickness, shapeSize]);
 }

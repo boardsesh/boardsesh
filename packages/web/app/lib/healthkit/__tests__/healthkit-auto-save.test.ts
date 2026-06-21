@@ -34,6 +34,7 @@ const mockCreateClient = vi.mocked(createGraphQLHttpClient);
 const makeSummary = (overrides?: Partial<SessionSummary>): SessionSummary => ({
   sessionId: 'session-1',
   totalSends: 5,
+  totalFlashes: 2,
   totalAttempts: 10,
   gradeDistribution: [],
   participants: [],

@@ -1,8 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, inArray } from 'drizzle-orm';
 import { activityPushTokens, boardSessions } from '@boardsesh/db/schema/app';
+import { users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import type { LiveActivityContentState } from '../services/apns';
+import type { BoardHolder } from '../services/apns/board-connection';
 
 interface MockSendResult {
   sent: unknown[];
@@ -80,6 +82,7 @@ interface ApnsModule {
   hasPendingSend: (sessionId: string) => boolean;
   sendLiveActivityUpdate: (sessionId: string, contentState: LiveActivityContentState) => void;
   endLiveActivity: (sessionId: string) => Promise<void>;
+  setSessionHolderResolver: (resolver: ((sessionId: string) => Promise<BoardHolder | null>) | null) => void;
 }
 
 async function loadApns(): Promise<ApnsModule> {
@@ -102,6 +105,30 @@ async function insertTokens(sessionId: string, tokens: string[]): Promise<void> 
       sessionId,
     })),
   );
+}
+
+async function insertUser(userId: string): Promise<void> {
+  await db
+    .insert(users)
+    .values({ id: userId, email: `${userId}@apns-test.local`, name: userId })
+    .onConflictDoNothing();
+}
+
+async function insertTokenForUser(sessionId: string, token: string, userId: string | null): Promise<void> {
+  await db.insert(activityPushTokens).values({ token, sessionId, userId });
+}
+
+/** content-state of the first send whose token set includes `token`. */
+function contentStateForToken(
+  calls: [Record<string, unknown>, string[]][],
+  token: string,
+): (LiveActivityContentState & Record<string, unknown>) | undefined {
+  for (const [notification, tokens] of calls) {
+    if (!tokens.includes(token)) continue;
+    const aps = notification.aps as { 'content-state'?: LiveActivityContentState & Record<string, unknown> };
+    return aps['content-state'];
+  }
+  return undefined;
 }
 
 async function tokensForSession(sessionId: string): Promise<string[]> {
@@ -359,6 +386,100 @@ describe('APNs Live Activity service', () => {
         .from(activityPushTokens)
         .where(inArray(activityPushTokens.token, ['iso-token-A1', 'iso-token-A2']));
       expect(remainingA).toEqual([]);
+    });
+  });
+
+  describe('per-token board-connection grouping', () => {
+    it('omits boardConnection and sends a single group when no holder resolver is wired', async () => {
+      const sessionId = 'session-no-resolver';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertTokens(sessionId, ['group-none-1', 'group-none-2']);
+
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      const state = contentStateForToken(mockSend.mock.calls, 'group-none-1');
+      expect(state?.boardConnection).toBeUndefined();
+      expect(state?.holderDisplayName).toBeUndefined();
+    });
+
+    it('splits into connectedByMe (holder) and heldByPeer (others) groups', async () => {
+      const sessionId = 'session-grouping';
+      const holderUserId = 'holder-user';
+      const peerUserId = 'peer-user';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertUser(holderUserId);
+      await insertUser(peerUserId);
+      await insertTokenForUser(sessionId, 'holder-token', holderUserId);
+      await insertTokenForUser(sessionId, 'peer-token', peerUserId);
+      await insertTokenForUser(sessionId, 'anon-token', null);
+
+      apns.setSessionHolderResolver(async () => ({ holderUserId, holderDisplayName: 'Holder Name' }));
+
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+
+      // Two distinct states: connectedByMe (holder's device) + heldByPeer (the
+      // rest), so exactly two grouped sends.
+      expect(mockSend).toHaveBeenCalledTimes(2);
+
+      const holderState = contentStateForToken(mockSend.mock.calls, 'holder-token');
+      expect(holderState?.boardConnection).toBe('connectedByMe');
+      expect(holderState?.holderDisplayName).toBeUndefined();
+
+      const peerState = contentStateForToken(mockSend.mock.calls, 'peer-token');
+      expect(peerState?.boardConnection).toBe('heldByPeer');
+      expect(peerState?.holderDisplayName).toBe('Holder Name');
+
+      // The anonymous (null-userId) token can't be the holder → heldByPeer too,
+      // and should ride in the SAME group as the peer (same derived state).
+      const anonState = contentStateForToken(mockSend.mock.calls, 'anon-token');
+      expect(anonState?.boardConnection).toBe('heldByPeer');
+      expect(anonState?.holderDisplayName).toBe('Holder Name');
+    });
+
+    it('sends a single disconnected group when the resolver reports no holder', async () => {
+      const sessionId = 'session-disconnected';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertUser('disc-user');
+      await insertTokenForUser(sessionId, 'disc-token-1', 'disc-user');
+      await insertTokenForUser(sessionId, 'disc-token-2', null);
+
+      apns.setSessionHolderResolver(async () => ({ holderUserId: null, holderDisplayName: null }));
+
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      const state = contentStateForToken(mockSend.mock.calls, 'disc-token-1');
+      expect(state?.boardConnection).toBe('disconnected');
+      expect(state?.holderDisplayName).toBeUndefined();
+    });
+
+    it('falls back to a single boardConnection-omitted send when the resolver throws', async () => {
+      const sessionId = 'session-resolver-throws';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertTokens(sessionId, ['throw-token-1', 'throw-token-2']);
+
+      apns.setSessionHolderResolver(async () => {
+        throw new Error('redis down');
+      });
+
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      const state = contentStateForToken(mockSend.mock.calls, 'throw-token-1');
+      expect(state?.boardConnection).toBeUndefined();
     });
   });
 });

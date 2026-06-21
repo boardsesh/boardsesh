@@ -171,6 +171,19 @@ EMAIL_FROM=your-email@fastmail.com
 
 7. Copy **Client ID** and **Client Secret** to environment variables
 
+> **Mobile (React Native) Google Sign-In is different.** The native flow
+> (`@react-native-google-signin`) resolves the OAuth client by **package name +
+> signing-certificate SHA-1**, not by a client-id string — so each signing key
+> that ships `com.boardsesh.app` needs its own **Android** OAuth client (same
+> package, different SHA-1) in the _same_ Google Cloud project as the web
+> `clientId` the app ships. A missing SHA-1 makes sign-in fail client-side
+> (classic flow: `DEVELOPER_ERROR`; Credential Manager: an unmapped error),
+> before it reaches the backend. The backend
+> (`GOOGLE_WEB_CLIENT_ID` / `GOOGLE_ANDROID_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID`,
+> any of which it accepts as the token audience) must include that web client id.
+> Full key-by-key setup and SHA-1 extraction commands:
+> [docs/android-sideload-build.md](./android-sideload-build.md#google-sign-in-requires-sha-1-registration-per-signing-key).
+
 ### 2. Apple Sign-In
 
 **Difficulty**: Hard | **Time**: ~30-60 minutes | **Requires**: Paid Apple Developer Account ($99/year)

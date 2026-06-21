@@ -19,6 +19,23 @@ export type ConnectedClient = {
   avatarUrl?: string;
   isLeader: boolean;
   connectedAt: Date;
+  /**
+   * The board this connection last became the presence "holder" of (set in
+   * reportBoardClimb via roomManager.noteBoardWriter), recorded so the WS-close
+   * backstop can free the wall if the holder crashes without sending an explicit
+   * reportBoardDisconnect. Keyed by emitter so the clear is a no-op once someone
+   * else has taken over (always-take). The clean path is the client's BLE-drop
+   * reportBoardDisconnect; this is the crash backstop only.
+   *
+   * Single record (last write wins): one phone connects to one board at a time
+   * (Aurora BLE is last-connection-wins, and switching walls disconnects the
+   * old board first, which clears its hold), so we only track the latest. Caveat:
+   * for a logged-in user holding from two live connections (same userId emitter),
+   * either connection's drop frees the wall via compare-and-delete even though
+   * the other still holds — re-acquired on that connection's next send. Benign
+   * given always-take; the BLE-drop reportBoardDisconnect is the primary path.
+   */
+  boardWriterEmitter?: { boardId: number; emitterId: string };
 };
 
 export type LocalSessionParticipant = {

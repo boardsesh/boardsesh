@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { renderHook, act } from '@testing-library/react';
 import { useWallConfirmFallback, WALL_CONFIRM_TIMEOUT_MS } from '../use-wall-confirm-fallback';
-import { emitWallConfirm } from '../../board-bluetooth-control/wall-confirm-bus';
+import { emitWallConfirm } from '@boardsesh/play-view';
 
 const mockTrack = vi.fn();
 vi.mock('@/app/lib/analytics', () => ({

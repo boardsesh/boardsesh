@@ -103,11 +103,13 @@ describe('BoardPageClimbsList logbook seed', () => {
     vi.clearAllMocks();
     mockUseOptionalBoardProvider.mockReturnValue({
       boardName: 'kilter',
+      boardUuid: null,
       isAuthenticated: true,
       isLoading: false,
       error: null,
       isInitialized: true,
       logbook: [],
+      logbookByClimbAngle: new Map(),
       getLogbook: mockGetLogbook,
       saveTick: vi.fn(),
       saveClimb: vi.fn(),

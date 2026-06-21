@@ -24,8 +24,7 @@ The board most specs land on:
 - Must render at least one element matching `#onboarding-climb-card` or
   `[data-testid="climb-card"]` within 30 s of a cold load.
 - Must expose at least two onboarding-tagged rows (`#onboarding-climb-card` and
-  `#onboarding-climb-card-2`) so `app-store-screenshots.spec.ts:04-queue` can
-  populate three queue items.
+  `#onboarding-climb-card-2`) for the queue-population flows.
 
 ## Per-spec assumptions
 
@@ -36,7 +35,6 @@ The board most specs land on:
 | `queue-persistence.spec.ts`                                     | Default test board contract (above). `/playlists` and `/feed` reachable for the warmup.                                                                                                                                                                                                     | ✅                                    |
 | `help-screenshots.spec.ts` (unauthenticated)                    | Default test board contract.                                                                                                                                                                                                                                                                | ✅                                    |
 | `help-screenshots.spec.ts` (authenticated)                      | Test user contract. The `party mode active session` test additionally creates a real party session against the local backend — this is timing-sensitive and slated for follow-up to use the dummy sesh mount instead.                                                                       | ⚠️                                    |
-| `app-store-screenshots.spec.ts`                                 | Default test board contract. The `06-party-mode` test requires `OnboardingDummySeshMount` to be globally mounted; it dispatches `onboarding:open-dummy-sesh` and expects a swipeable drawer to open.                                                                                        | ✅ (with retry-dispatch from PR 2)    |
 | `layout-screenshots.spec.ts`                                    | One climb card present on every supported Kilter/Tension layout URL.                                                                                                                                                                                                                        | ✅                                    |
 | `climb-setter-zoom.spec.ts`                                     | `/create` route reachable; board renderer mounts an SVG inside `[data-testid="climb-setter-board"]`.                                                                                                                                                                                        | ✅                                    |
 | `play-view-swipe-close.spec.ts`                                 | Default test board contract (above). Tapping the first climb card (`#onboarding-climb-card` / `[data-testid="climb-card"]`) opens the play view drawer (`.MuiDrawer-paper[data-swipeable-drawer="true"]`).                                                                                  | ✅                                    |

@@ -46,7 +46,7 @@ Environment variables:
 | --------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
 | `PORT`                | `8080`                                                            | WebSocket server port                                    |
 | `DATABASE_URL`        | `postgresql://postgres:postgres@localhost:5432/boardsesh_backend` | PostgreSQL connection string                             |
-| `POSTHOG_PROJECT_KEY` | unset                                                             | Enables backend PostHog events for Live Activity usage   |
+| `POSTHOG_PROJECT_KEY` | `NEXT_PUBLIC_POSTHOG_KEY`, then unset                             | Enables backend PostHog events for Live Activity usage   |
 | `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                   |
 | `POSTHOG_ENVIRONMENT` | `SENTRY_ENVIRONMENT`, then `NODE_ENV`, then `development`         | Event environment property for backend PostHog analytics |
 

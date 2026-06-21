@@ -10,6 +10,7 @@ const mockBleManager = vi.hoisted(() => ({
   connectToDevice: vi.fn(),
   cancelDeviceConnection: vi.fn(),
   onDeviceDisconnected: vi.fn(),
+  onStateChange: vi.fn(),
 }));
 
 // ── Module mocks ────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ vi.mock('@boardsesh/ble-protocol', () => ({
 // ── Import after mocks ─────────────────────────────────────────────────
 
 import { RNBleAdapter } from '../adapter';
+import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { splitMessages } from '@boardsesh/ble-protocol';
 import { State } from 'react-native-ble-plx';
 
@@ -56,6 +58,7 @@ function createMockDevicePicker(): DevicePickerFn {
 describe('RNBleAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
   });
 
   describe('isAvailable', () => {
@@ -79,12 +82,43 @@ describe('RNBleAdapter', () => {
     });
 
     it('returns false when bluetooth state is Unknown', async () => {
-      mockBleManager.state.mockResolvedValue(State.Unknown);
-      const adapter = new RNBleAdapter(createMockDevicePicker());
+      vi.useFakeTimers();
+      try {
+        mockBleManager.state.mockResolvedValue(State.Unknown);
+        const adapter = new RNBleAdapter(createMockDevicePicker());
 
-      const available = await adapter.isAvailable();
+        const availablePromise = adapter.isAvailable();
+        await vi.advanceTimersByTimeAsync(2_500);
+        const available = await availablePromise;
 
-      expect(available).toBe(false);
+        expect(available).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('waits for transient bluetooth state to become PoweredOn', async () => {
+      vi.useFakeTimers();
+      try {
+        const stateListeners: Array<(state: State) => void> = [];
+        const removeListener = vi.fn();
+        mockBleManager.state.mockResolvedValue(State.Unknown);
+        mockBleManager.onStateChange.mockImplementation((listener: (state: State) => void) => {
+          stateListeners.push(listener);
+          return { remove: removeListener };
+        });
+        const adapter = new RNBleAdapter(createMockDevicePicker());
+
+        const availablePromise = adapter.isAvailable();
+        await Promise.resolve();
+        expect(stateListeners).toHaveLength(1);
+        stateListeners[0](State.PoweredOn);
+
+        await expect(availablePromise).resolves.toBe(true);
+        expect(removeListener).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('returns false when state() throws', async () => {
@@ -100,8 +134,6 @@ describe('RNBleAdapter', () => {
   describe('disconnect', () => {
     it('cancels device connection when connected', async () => {
       mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
-
-      const adapter = new RNBleAdapter(createMockDevicePicker());
 
       // Simulate a connected state by setting internal properties via
       // the requestAndConnect flow. We'll use a simplified approach by
@@ -140,6 +172,7 @@ describe('RNBleAdapter', () => {
               localName: 'TestBoard',
               name: 'TestBoard',
               rssi: -50,
+              serviceUUIDs: ['aurora-uuid'],
             });
           },
         );
@@ -198,7 +231,13 @@ describe('RNBleAdapter', () => {
 
       mockBleManager.startDeviceScan.mockImplementation(
         (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-          callback(null, { id: 'device-1', localName: 'Board', name: 'Board', rssi: -40 });
+          callback(null, {
+            id: 'device-1',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
         },
       );
 
@@ -234,7 +273,13 @@ describe('RNBleAdapter', () => {
       mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
       mockBleManager.startDeviceScan.mockImplementation(
         (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-          callback(null, { id: 'write-device', localName: 'Board', name: 'Board', rssi: -40 });
+          callback(null, {
+            id: 'write-device',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
         },
       );
 
@@ -277,7 +322,13 @@ describe('RNBleAdapter', () => {
       mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
       mockBleManager.startDeviceScan.mockImplementation(
         (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-          callback(null, { id: 'chunk-device', localName: 'Board', name: 'Board', rssi: -40 });
+          callback(null, {
+            id: 'chunk-device',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
         },
       );
 
@@ -325,7 +376,13 @@ describe('RNBleAdapter', () => {
       mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
       mockBleManager.startDeviceScan.mockImplementation(
         (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-          callback(null, { id: 'abort-device', localName: 'Board', name: 'Board', rssi: -40 });
+          callback(null, {
+            id: 'abort-device',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
         },
       );
 
@@ -348,6 +405,345 @@ describe('RNBleAdapter', () => {
       // No chunks should have been written since signal was aborted before start
       expect(mockWriteFn).not.toHaveBeenCalled();
     });
+
+    it('does not write the next chunk when aborted during the inter-chunk delay', async () => {
+      vi.useFakeTimers();
+      try {
+        const mockWriteFn = vi.fn().mockResolvedValue(undefined);
+        const mockCharacteristic = {
+          uuid: 'uart-write-uuid',
+          writeWithoutResponse: mockWriteFn,
+        };
+
+        const mockDeviceWithServices = {
+          id: 'abort-delay-device',
+          characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+          requestMTU: vi.fn().mockResolvedValue(undefined),
+          discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+        };
+
+        const mockConnectedDevice = {
+          id: 'abort-delay-device',
+          requestMTU: vi.fn().mockResolvedValue(undefined),
+          discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+        };
+
+        mockBleManager.connectToDevice.mockResolvedValue(mockConnectedDevice);
+        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+        mockBleManager.startDeviceScan.mockImplementation(
+          (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+            callback(null, {
+              id: 'abort-delay-device',
+              localName: 'Kilter Board#TEST@3',
+              name: 'Kilter Board#TEST@3',
+              rssi: -40,
+              serviceUUIDs: ['aurora-uuid'],
+            });
+          },
+        );
+
+        const adapter = new RNBleAdapter(() => Promise.resolve('abort-delay-device'));
+        await adapter.requestAndConnect();
+
+        const chunk1 = new Uint8Array([0x01]);
+        const chunk2 = new Uint8Array([0x02]);
+        vi.mocked(splitMessages).mockReturnValue([chunk1, chunk2]);
+
+        const abortController = new AbortController();
+        const writePromise = adapter.write(new Uint8Array([0x01, 0x02]), abortController.signal);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(mockWriteFn).toHaveBeenCalledTimes(1);
+        const writeExpectation = expect(writePromise).rejects.toThrow('Write aborted');
+        abortController.abort();
+        await vi.runAllTimersAsync();
+
+        await writeExpectation;
+        expect(mockWriteFn).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('normalises a write failure to the disconnect signature when the link is gone', async () => {
+      // react-native-ble-plx surfaces a mid-write drop as a CharacteristicWriteFailed
+      // BleError that doesn't name the disconnect. The adapter probes the live
+      // link; when the device is actually gone it normalises to the message the
+      // write-failure path keys on so the lightbulb darkens.
+      const writeFailure = new Error('Characteristic ABCD write failed for device 5C:F8');
+      const mockWriteFn = vi.fn().mockRejectedValue(writeFailure);
+      const isConnectedFn = vi.fn().mockResolvedValue(false);
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: mockWriteFn };
+
+      const mockDeviceWithServices = {
+        id: 'drop-device',
+        isConnected: isConnectedFn,
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      const mockConnectedDevice = {
+        id: 'drop-device',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      };
+
+      mockBleManager.connectToDevice.mockResolvedValue(mockConnectedDevice);
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, {
+            id: 'drop-device',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const adapter = new RNBleAdapter(() => Promise.resolve('drop-device'));
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+
+      await expect(adapter.write(data)).rejects.toThrow('Device disconnected during write');
+      expect(isConnectedFn).toHaveBeenCalledOnce();
+    });
+
+    it('rethrows the original error when the link is still alive after a write failure', async () => {
+      // A genuine transient write failure on a live link must NOT be normalised
+      // to a disconnect — otherwise it would falsely darken the lightbulb.
+      const writeFailure = new Error('Characteristic ABCD write failed for device 5C:F8');
+      const mockWriteFn = vi.fn().mockRejectedValue(writeFailure);
+      const isConnectedFn = vi.fn().mockResolvedValue(true);
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: mockWriteFn };
+
+      const mockDeviceWithServices = {
+        id: 'live-device',
+        isConnected: isConnectedFn,
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      const mockConnectedDevice = {
+        id: 'live-device',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      };
+
+      mockBleManager.connectToDevice.mockResolvedValue(mockConnectedDevice);
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, {
+            id: 'live-device',
+            localName: 'Kilter Board#TEST@3',
+            name: 'Kilter Board#TEST@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const adapter = new RNBleAdapter(() => Promise.resolve('live-device'));
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+
+      await expect(adapter.write(data)).rejects.toThrow(writeFailure);
+      expect(isConnectedFn).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('requestAndConnect — scan filtering', () => {
+    it('scans unfiltered and filters results in JS so MoonBoards surface', async () => {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          // A MoonBoard advertising no service UUIDs (the case a UUID-filtered
+          // scan would never see), plus an unrelated speaker that must not
+          // reach the picker.
+          callback(null, { id: 'moon-device', localName: 'MoonBoard A1', name: 'MoonBoard A1', rssi: -42 });
+          callback(null, { id: 'speaker', localName: 'JBL Flip 6', name: 'JBL Flip 6', rssi: -30 });
+        },
+      );
+
+      const seenDevices: Array<{ deviceId: string }> = [];
+      const devicePicker: DevicePickerFn = (subscribe) => {
+        subscribe((devices) => {
+          seenDevices.splice(0, seenDevices.length, ...devices);
+        });
+        return Promise.resolve('moon-device');
+      };
+
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() };
+      const mockDeviceWithServices = {
+        id: 'moon-device',
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'moon-device',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      });
+
+      const adapter = new RNBleAdapter(devicePicker, 'moonboard');
+      await adapter.requestAndConnect();
+
+      // Unfiltered scan: UUID filter must be null (a service filter hides MoonBoards).
+      expect(mockBleManager.startDeviceScan).toHaveBeenCalledWith(null, null, expect.any(Function));
+      expect(seenDevices.map((device) => device.deviceId)).toEqual(['moon-device']);
+    });
+
+    it('uses the Aurora service filter and rejects non-board peripherals on Aurora scans', async () => {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, { id: 'airpods', localName: "Marco's AirPods #1", name: "Marco's AirPods #1", rssi: -20 });
+          callback(null, {
+            id: 'kilter-device',
+            localName: 'Kilter Board#751737@3',
+            name: 'Kilter Board#751737@3',
+            rssi: -45,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const seenDevices: Array<{ deviceId: string }> = [];
+      const devicePicker: DevicePickerFn = (subscribe) => {
+        subscribe((devices) => {
+          seenDevices.splice(0, seenDevices.length, ...devices);
+        });
+        return Promise.resolve('kilter-device');
+      };
+
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() };
+      const mockDeviceWithServices = {
+        id: 'kilter-device',
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'kilter-device',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      });
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora');
+      await adapter.requestAndConnect();
+
+      expect(mockBleManager.startDeviceScan).toHaveBeenCalledWith(['aurora-uuid'], null, expect.any(Function));
+      expect(seenDevices.map((device) => device.deviceId)).toEqual(['kilter-device']);
+    });
+
+    it('deduplicates repeated board names even when the native device id changes', async () => {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, {
+            id: 'first-native-id',
+            localName: 'Kilter Board#751737@3',
+            name: 'Kilter Board#751737@3',
+            rssi: -45,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+          callback(null, {
+            id: 'second-native-id',
+            localName: 'Kilter Board#751737@3',
+            name: 'Kilter Board#751737@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const seenDeviceIdsByUpdate: string[][] = [];
+      const devicePicker: DevicePickerFn = (subscribe) => {
+        subscribe((devices) => {
+          seenDeviceIdsByUpdate.push(devices.map((device) => device.deviceId));
+        });
+        return Promise.resolve('second-native-id');
+      };
+
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() };
+      const mockDeviceWithServices = {
+        id: 'second-native-id',
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'second-native-id',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      });
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora');
+      await adapter.requestAndConnect();
+
+      expect(seenDeviceIdsByUpdate).toEqual([[], ['first-native-id'], ['second-native-id']]);
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('second-native-id');
+    });
+
+    it('replaces an unnamed row when a later scan response adds the board name', async () => {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, {
+            id: 'late-name-device',
+            localName: undefined,
+            name: undefined,
+            rssi: -45,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+          callback(null, {
+            id: 'late-name-device',
+            localName: 'Kilter Board#751737@3',
+            name: 'Kilter Board#751737@3',
+            rssi: -40,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const seenDevicesByUpdate: Array<Array<{ deviceId: string; name?: string }>> = [];
+      const devicePicker: DevicePickerFn = (subscribe) => {
+        subscribe((devices) => {
+          seenDevicesByUpdate.push(devices.map((device) => ({ deviceId: device.deviceId, name: device.name })));
+        });
+        return Promise.resolve('late-name-device');
+      };
+
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() };
+      const mockDeviceWithServices = {
+        id: 'late-name-device',
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'late-name-device',
+        requestMTU: vi.fn().mockResolvedValue(undefined),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      });
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora');
+      await adapter.requestAndConnect();
+
+      expect(seenDevicesByUpdate).toEqual([
+        [],
+        [{ deviceId: 'late-name-device', name: undefined }],
+        [{ deviceId: 'late-name-device', name: 'Kilter Board#751737@3' }],
+      ]);
+    });
   });
 
   describe('requestAndConnect — failure modes', () => {
@@ -360,7 +756,13 @@ describe('RNBleAdapter', () => {
         mockBleManager.connectToDevice.mockImplementation(() => new Promise(() => {}));
         mockBleManager.startDeviceScan.mockImplementation(
           (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
-            callback(null, { id: 'hang-device', localName: 'Board', name: 'Board', rssi: -40 });
+            callback(null, {
+              id: 'hang-device',
+              localName: 'Kilter Board#TEST@3',
+              name: 'Kilter Board#TEST@3',
+              rssi: -40,
+              serviceUUIDs: ['aurora-uuid'],
+            });
           },
         );
 
@@ -411,6 +813,77 @@ describe('RNBleAdapter', () => {
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toMatch(/scan failed/i);
       expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+    });
+
+    it('falls back to the picker when a reconnect-by-serial board never advertises', async () => {
+      vi.useFakeTimers();
+      try {
+        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+        mockBleManager.startDeviceScan.mockImplementation(() => {});
+
+        let pickerOpened = false;
+        // Picker stays open once shown.
+        const devicePicker: DevicePickerFn = () => {
+          pickerOpened = true;
+          return new Promise<string>(() => {});
+        };
+        const adapter = new RNBleAdapter(devicePicker);
+        const settled = adapter.requestAndConnect('NEEDLE-SERIAL').catch((reason) => reason);
+        await Promise.resolve();
+
+        // Silent auto-select before the grace window — no picker yet.
+        await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS - 1);
+        expect(pickerOpened).toBe(false);
+
+        // Grace window elapses with no match → picker opens instead of failing.
+        await vi.advanceTimersByTimeAsync(1);
+        expect(pickerOpened).toBe(true);
+
+        // Nothing ever advertises → scan timeout rejects so the sheet doesn't spin.
+        await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+        const error = await settled;
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/no boards found/i);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('signals scan-stopped to the picker on timeout when devices were found but not picked', async () => {
+      vi.useFakeTimers();
+      try {
+        mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+        // Surface a device immediately so the timeout takes the "found but not
+        // picked" branch rather than the empty-result reject.
+        mockBleManager.startDeviceScan.mockImplementation(
+          (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+            callback(null, {
+              id: 'seen-device',
+              localName: 'Kilter Board#TEST@3',
+              name: 'Kilter Board#TEST@3',
+              rssi: -40,
+              serviceUUIDs: ['aurora-uuid'],
+            });
+          },
+        );
+
+        const onScanStopped = vi.fn();
+        // Picker stays open (user hasn't tapped a device yet) and captures the
+        // scan-stopped notifier the adapter hands it.
+        const devicePicker: DevicePickerFn = (subscribe) => {
+          subscribe(() => {}, onScanStopped);
+          return new Promise<string>(() => {});
+        };
+        const adapter = new RNBleAdapter(devicePicker);
+        void adapter.requestAndConnect().catch(() => {});
+        await Promise.resolve();
+
+        expect(onScanStopped).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+        expect(onScanStopped).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

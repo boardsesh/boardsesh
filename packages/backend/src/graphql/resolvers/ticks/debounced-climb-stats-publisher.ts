@@ -47,10 +47,13 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
     });
   }
 
+  logger.info(`[debouncedClimbStats] queued ${key}`);
+
   pending.set(
     key,
     setTimeout(async () => {
       pending.delete(key);
+      logger.info(`[debouncedClimbStats] firing ${key}`);
 
       // Best-effort multi-instance dedup: if we can confirm via Redis that
       // we still own the latest nonce, clean up the key. If GET throws, the

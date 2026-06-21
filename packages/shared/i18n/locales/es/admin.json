@@ -24,7 +24,7 @@
     "table": {
       "user": "Usuario",
       "role": "Rol",
-      "board": "Board",
+      "board": "Plafón",
       "grantedBy": "Asignado por",
       "date": "Fecha",
       "actions": "Acciones"
@@ -32,6 +32,7 @@
     "labels": {
       "admin": "Admin",
       "leader": "Líder",
+      "tester": "Tester",
       "global": "Global",
       "fallbackUserInitial": "U",
       "fallbackEmpty": "-"
@@ -46,15 +47,16 @@
       "fallbackUserInitial": "U",
       "change": "Cambiar",
       "roleLabel": "Rol",
-      "boardTypeLabel": "Tipo de board (opcional)",
+      "boardTypeLabel": "Tipo de plafón (opcional)",
       "boardTypeOptions": {
-        "global": "Global (all boards)",
+        "global": "Global (todos los plafones)",
         "kilter": "Kilter",
         "tension": "Tension"
       },
       "roleOptions": {
         "communityLeader": "Líder de comunidad",
-        "admin": "Admin"
+        "admin": "Admin",
+        "tester": "Tester"
       },
       "cancel": "Cancelar",
       "submit": "Asignar"
@@ -72,10 +74,10 @@
       "label": "Alcance",
       "options": {
         "global": "Global",
-        "board": "Board",
+        "board": "Plafón",
         "climb": "Bloque"
       },
-      "boardTypeLabel": "Tipo de tabla de escalada",
+      "boardTypeLabel": "Tipo de plafón",
       "boardTypePlaceholder": "kilter, tension",
       "climbUuidLabel": "UUID del bloque",
       "climbUuidPlaceholder": "UUID del bloque"

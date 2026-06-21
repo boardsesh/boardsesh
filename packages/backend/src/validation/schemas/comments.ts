@@ -74,5 +74,6 @@ export const CommentsInputSchema = z.object({
  */
 export const BulkVoteSummaryInputSchema = z.object({
   entityType: SocialEntityTypeSchema,
-  entityIds: z.array(z.string().min(1).max(200)).min(1).max(100),
+  // Empty arrays are a valid no-op: the resolver returns []. (No `.min(1)` here.)
+  entityIds: z.array(z.string().min(1).max(200)).max(100),
 });

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Toast, type ToastVariant, type ToastData } from '../components/Toast';
 import { hapticSuccess, hapticError } from '../lib/haptics';
@@ -43,8 +43,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((toastItem) => toastItem.id !== id));
   }, []);
 
+  // Stable context value: showToast is a stable useCallback, so memoising the
+  // wrapper object keeps every useToast() consumer from re-rendering on each
+  // ToastProvider render (toasts state churns as toasts appear/dismiss).
+  const value = useMemo<ToastContextValue>(() => ({ showToast }), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={value}>
       {children}
       <View style={styles.overlay} pointerEvents="none">
         {toasts.map((toast) => (

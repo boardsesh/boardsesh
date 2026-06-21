@@ -40,7 +40,7 @@ import MoonBoardRenderer from '../moonboard-renderer/moonboard-renderer';
 import ZoomableBoard from '../board-renderer/zoomable-board';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import { useBoardProvider } from '../board-provider/board-provider-context';
-import { useCreateClimb } from './use-create-climb';
+import { useCreateClimb } from '@boardsesh/create-climb-react';
 import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import type { MoonBoardClimbDuplicateMatch, UpdateClimbInput } from '@boardsesh/shared-schema';
@@ -339,13 +339,13 @@ export default function CreateClimbForm({
   } | null>(null);
   const [showDuplicateMatchDrawer, setShowDuplicateMatchDrawer] = useState(false);
 
-  // Common state — in edit mode use the original name, not "{name} fork"
+  // Common state — in edit mode use the original name, not "{name} remix"
   const isEditMode = !!editClimb;
   let initialClimbName: string;
   if (isEditMode) {
     initialClimbName = forkName || '';
   } else if (forkName) {
-    initialClimbName = `${forkName} fork`;
+    initialClimbName = `${forkName} remix`;
   } else {
     initialClimbName = '';
   }

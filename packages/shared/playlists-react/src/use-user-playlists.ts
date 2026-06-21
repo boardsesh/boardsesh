@@ -40,7 +40,13 @@ export type UseUserPlaylistsResult = {
    *  translated error UI on top of this signal — the hook deliberately
    *  doesn't carry a translatable message. */
   hasError: boolean;
+  /** True when background pagination (pages 2+) gave up after three
+   *  consecutive failures. The loaded list is incomplete; surface this and
+   *  offer `retryLoadMore` rather than letting the rest go missing silently. */
+  hasLoadMoreError: boolean;
   loadMore: () => void;
+  /** Re-arm and retry background pagination after `hasLoadMoreError`. */
+  retryLoadMore: () => void;
   refetch: () => void;
 };
 
@@ -73,6 +79,7 @@ export function useUserPlaylists({
   const [hasMore, setHasMore] = useState(hasInitialData ? (initialHasMore ?? false) : false);
   const [totalCount, setTotalCount] = useState(hasInitialData ? (initialTotalCount ?? initialData.length) : 0);
   const [hasError, setHasError] = useState(false);
+  const [hasLoadMoreError, setHasLoadMoreError] = useState(false);
 
   const hasMoreRef = useRef(hasMore);
   // SSR delivers page 0; the next loadMore() must request page 1, not page 0
@@ -111,6 +118,7 @@ export function useUserPlaylists({
         pageRef.current = page + 1;
         loadMoreFailCountRef.current = 0;
         setHasError(false);
+        setHasLoadMoreError(false);
       } catch (err: unknown) {
         console.error('Failed to fetch user playlists:', err);
         if (isInitial) {
@@ -118,8 +126,11 @@ export function useUserPlaylists({
         } else {
           loadMoreFailCountRef.current += 1;
           if (loadMoreFailCountRef.current >= 3) {
+            // Stop the auto-retry loop, but flag the list as incomplete so the
+            // screen can show a "couldn't load the rest" affordance.
             setHasMore(false);
             hasMoreRef.current = false;
+            setHasLoadMoreError(true);
           }
         }
       } finally {
@@ -142,6 +153,8 @@ export function useUserPlaylists({
       skipFirstFetchRef.current = false;
       return;
     }
+    loadMoreFailCountRef.current = 0;
+    setHasLoadMoreError(false);
     if (!token) {
       setPlaylists([]);
       setIsLoading(false);
@@ -162,10 +175,33 @@ export function useUserPlaylists({
     }
   }, [fetchPage]);
 
+  // Manual retry after the auto-retry loop gave up: clear the failure count,
+  // re-arm pagination, and re-fetch the page that failed (pageRef wasn't
+  // advanced on failure). Draining then resumes on its own.
+  const retryLoadMore = useCallback(() => {
+    if (isFetchingRef.current) return;
+    loadMoreFailCountRef.current = 0;
+    setHasLoadMoreError(false);
+    setHasMore(true);
+    hasMoreRef.current = true;
+    void fetchPage(pageRef.current, false);
+  }, [fetchPage]);
+
   const refetch = useCallback(() => {
     pageRef.current = 0;
     void fetchPage(0, true);
   }, [fetchPage]);
 
-  return { playlists, isLoading, isLoadingMore, hasMore, totalCount, hasError, loadMore, refetch };
+  return {
+    playlists,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    totalCount,
+    hasError,
+    hasLoadMoreError,
+    loadMore,
+    retryLoadMore,
+    refetch,
+  };
 }

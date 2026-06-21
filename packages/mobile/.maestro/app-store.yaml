@@ -1,0 +1,169 @@
+appId: com.boardsesh.app
+name: app-store screenshots
+---
+# App Store hero shots against the prod backend + curated test user.
+#
+# Capture mechanism on this iOS 26 / RN Fabric build: Maestro's accessibility tree only
+# exposes native text inputs + system dialogs — plain Views/Text/pressables and gesture
+# rows do NOT surface, so app controls can't be matched by id/text. So the flow is driven
+# entirely by deep links (com.boardsesh.app://...), including screenshot-mode query params
+# the build only honours when EXPO_PUBLIC_SCREENSHOT_MODE=1 (see
+# packages/mobile/src/lib/screenshot-mode.ts):
+#     ://climbs?screenshotOpenFirst=1    -> auto-opens the first climb's board view
+#     ://climbs?screenshotBoardIndex=1   -> renders myBoards[1] (the 2nd followed board)
+#     ://profile?screenshotTab=logbook   -> profile Logbook tab
+#     ://profile?screenshotTab=sessions  -> profile Sessions tab; auto-opens newest session
+# There are NO coordinate taps. The active board is auto-activated on boot in screenshot
+# mode (ScreenshotBoardAutoActivator activates the user's first followed board), so the
+# board-backed screens render real content without a fragile board-picker tap. The old
+# board-pick / board-view / board-sheet coordinate taps are all gone — a missed pick used
+# to leave Climbs/Board View stuck on the "No board selected" empty state.
+#
+# This flow is captured once per (device, locale) pair: the orchestrator bakes
+# EXPO_PUBLIC_SCREENSHOT_LOCALE into the Metro bundle per locale and reruns it on each
+# device in --devices, writing app-stores/apple/screenshots/<app-store-locale>/<device>/.
+#
+# Notes:
+# - The .app is a Debug dev-client that auto-loads Metro on launch, so the orchestrator
+#   just simctl-launches it; the build auto-signs-in on boot, so there's no login screen
+#   and this flow opens straight into the shots (the orchestrator gates on `$screen /home`).
+# - Fresh install (orchestrator uninstalled/reinstalled + reset keychain): cold-loads with
+#   no active board (re-picked below), and the keychain reset forces the auto-sign-in to
+#   re-authenticate against the target backend rather than reuse a stale token.
+# - iOS re-pops an "Open in 'Boardsesh'?" confirmation on the first 1-2 in-session deep
+#   links (inconsistently); the flow primes it away up front (the prime block below) so the
+#   captured screens never catch it. Each openLink keeps an optional tapOn "Open" as backup.
+# - Order: for any screen visited twice, the PLAIN visit runs before the screenshot-param
+#   visit so no stale param leaks into it. Board view is LAST because the play drawer it
+#   opens overlays the whole app. (The active board is set at boot, so the board-backed
+#   shots no longer depend on an in-flow board-pick step.)
+# - The Record/session screen renders the WORKOUT GENERATOR because Metro bundles
+#   EXPO_PUBLIC_SCREENSHOT_WORKOUT (default volume).
+# - Filenames are numbered for store DISPLAY order (00..09), not capture order. Slot 03 is
+#   the second board-view (myBoards[1]); it was reserved for a party shot the flow never took.
+#
+# The screenshot build auto-signs-in on boot and lands straight on home (no login screen);
+# the orchestrator waits for home (the `$screen /home` log) before running Maestro, so the
+# flow opens right into the shots.
+
+# Prime the "Open in 'Boardsesh'?" dialog. simctl openurl of the custom scheme makes iOS
+# re-pop that confirmation on the first one or two in-session deep links (inconsistently —
+# en-US saw it once, es twice) and it BLOCKS the navigation until tapped. Dismiss it on
+# throwaway /home navigations BEFORE any capture, so no shot can catch the popup and every
+# real openLink below navigates cleanly (it's also why Discover needs no special handling
+# any more). The first openurl always pops it (wait + tap); the repeat mops up any
+# re-prompts (optional, after a settle so the dialog has appeared). iOS then remembers it.
+- openLink: com.boardsesh.app://home
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 12000
+- tapOn:
+    text: 'Open'
+- waitForAnimationToEnd
+- repeat:
+    times: 3
+    commands:
+      - openLink: com.boardsesh.app://home
+      - waitForAnimationToEnd
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+
+# Home — the global "Everyone" feed. The home screen defaults to it in screenshot
+# mode (see home/index.tsx) for a livelier hero than the test user's own crew.
+- waitForAnimationToEnd
+- takeScreenshot: 00-home
+
+# Discover — the playlist library (smart "Your Picks" + saved playlists). The dialog was
+# primed away above, so this navigates cleanly; the optional tap is just a backup.
+- openLink: com.boardsesh.app://discover
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 06-discover
+
+# Profile — progress tab (stats charts). Plain link FIRST so no stale screenshotTab
+# param carries over to it.
+- openLink: com.boardsesh.app://profile
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 09-profile
+
+# Logbook — the climbing history, every logged send. The screenshot-mode param selects
+# the Logbook sub-tab.
+- openLink: com.boardsesh.app://profile?screenshotTab=logbook
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 08-logbook
+
+# Session detail — the Sessions sub-tab auto-opens the newest session's recap in
+# screenshot mode (summary + grade chart + leaderboard + ticks). Two settle-waits bracket
+# the feed load and the detail push (Maestro has no sleep; tune if a capture lands early).
+- openLink: com.boardsesh.app://profile?screenshotTab=sessions
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 04-session-detail
+
+# The active board is already selected (auto-activated on boot in screenshot mode), so the
+# board-backed shots below render real content with no board-picker step.
+
+# Climbs — the main browse surface (now board-backed). Plain link FIRST (the list shot),
+# before the board-view param visit below.
+- openLink: com.boardsesh.app://climbs
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 01-climbs
+
+# Workout generator — the Record screen with a workout pre-selected (volume): target
+# grade, warm-up, set config + the generated preview queue.
+- openLink: com.boardsesh.app://record
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 05-workout-generator
+
+# Playlist detail — a smart playlist (crowd favourites): full-bleed gradient hero + climb
+# grid. Computed relative to the active board, so it needs the board picked above.
+- openLink: com.boardsesh.app://discover/smart/RECOMMENDED_CROWD_FAVORITES
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 07-playlist-detail
+
+# Board view — the signature feature: the wall with holds lit. The screenshot-mode param
+# auto-opens the first climb's play drawer (no coordinate tap). LAST, because the play
+# drawer overlays the app and would bleed into later shots.
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 02-board-view
+
+# Board view on the SECOND followed board (myBoards[1]) — a second wall lit up, so
+# the listing shows Boardsesh works across boards. screenshotBoardIndex=1 switches
+# the active board to the user's 2nd follow (sorted by follow date) before opening
+# its first climb. LAST too (also opens the play drawer). Slot 03 was the reserved
+# party shot, which the main flow never captured.
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 03-board-view-2

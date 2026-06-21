@@ -169,13 +169,12 @@ describe('BoardSessionBridge — SessionBoardPathChanged echo suppression', () =
     expect(mockReplace).toHaveBeenCalledWith('/kilter/8/25/28,29,26,27/35/list?minGrade=10&onlyClassics=true');
   });
 
-  it('ignores events for other types (DriverChanged, UserJoined, etc.)', () => {
+  it('ignores events for other types (WallDisconnected, UserJoined, etc.)', () => {
     renderBridge();
 
     emit({
-      __typename: 'DriverChanged',
-      driverParticipantId: 'someone-else',
-      previousDriverParticipantId: null,
+      __typename: 'WallDisconnected',
+      disconnectedByParticipantId: 'someone-else',
     } as SessionEvent);
     emit({
       __typename: 'UserJoined',

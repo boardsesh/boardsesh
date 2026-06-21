@@ -66,8 +66,15 @@ export function usePlaylistClimbs({
   const adapter = usePlaylistsAdapter();
   const executeGraphQL = executeGraphQLOverride ?? adapter.executeGraphQL;
 
+  // The selected angle parameterises the response (grades resolve at it), but a
+  // board's UUID is angle-agnostic — so the angle must be its own key segment.
+  // Without it, dialing to a new angle on the same board keeps the same key and
+  // React Query serves stale grades until staleTime lapses. Covers all-boards
+  // mode (activeAngle) and specific-board mode (angle).
+  const angleKey = boardInput?.activeAngle ?? boardInput?.angle ?? null;
+
   const query = useInfiniteQuery({
-    queryKey: ['playlistClimbs', playlistUuid, boardUuid ?? 'all', refreshKey],
+    queryKey: ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, refreshKey],
     queryFn: async ({ pageParam }) => {
       const input: GetPlaylistClimbsInput = {
         playlistId: playlistUuid,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { foldCatalogStat } from './catalog-sync';
+import { foldCatalogStat, foldCatalogStatOnce } from './catalog-sync';
 import type { KilterCatalogStat } from '../api/kilter-rest';
 import type { StatAccum } from './catalog-sync';
 
@@ -149,6 +149,38 @@ describe('foldCatalogStat — kilter catalog stat accumulation', () => {
     expect(accum.displayDifficulty).toBe(17); // first merged with a value wins
     expect(accum.qualityAverage).toBe(3.5); // m1 had null quality, m2 fills it
     expect(accum.hasOwnRowStats).toBe(false);
+  });
+
+  it('counts the same source climb stat only once across repeated Grips layouts', () => {
+    const map = new Map<string, StatAccum>();
+    const seen = new Set<string>();
+    const first = foldCatalogStatOnce(
+      map,
+      seen,
+      stat({ climbUuid: CANON, angle: 40, ascentCount: 12, currentDifficultyId: 20 }),
+      CANON,
+    );
+    const second = foldCatalogStatOnce(
+      map,
+      seen,
+      stat({ climbUuid: CANON, angle: 40, ascentCount: 12, currentDifficultyId: 20 }),
+      CANON,
+    );
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    const [accum] = [...map.values()];
+    expect(accum.kilterCount).toBe(12);
+  });
+
+  it('still sums distinct source UUIDs that resolve to the same canonical', () => {
+    const map = new Map<string, StatAccum>();
+    const seen = new Set<string>();
+    foldCatalogStatOnce(map, seen, stat({ climbUuid: 'alias-a', angle: 40, ascentCount: 12 }), CANON);
+    foldCatalogStatOnce(map, seen, stat({ climbUuid: 'alias-b', angle: 40, ascentCount: 5 }), CANON);
+
+    const [accum] = [...map.values()];
+    expect(accum.kilterCount).toBe(17);
   });
 
   it('#3: quality 0 or negative is stored as NULL (never a literal 0 rating); Grips 1-5 kept as-is', () => {

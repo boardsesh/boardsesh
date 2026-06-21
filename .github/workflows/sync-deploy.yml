@@ -1,0 +1,92 @@
+name: Sync Daemons Deploy
+
+# Builds the combined sync image (kilter + aurora + moonboard CLIs) and publishes
+# it to GHCR on push to main. Independent of production-deploy: this image is
+# pulled by whatever runs the sync daemons (the homelab boardsesh-sync host), and
+# the daemon/CLI to run is chosen by the container `command:`, not baked in.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'Dockerfile.sync'
+      - 'scripts/create-service-docker-context.mjs'
+      - 'vite.config.ts'
+      - 'bun.lock'
+      - 'package.json'
+      - '.github/workflows/sync-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: sync-deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: boardsesh-sync
+
+jobs:
+  build-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          # Same digest gets all of these tags. The homelab compose pins :production;
+          # :sha-<short> is for pinning/rollback.
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=staging,enable={{is_default_branch}}
+            type=raw,value=production,enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Generate sync Docker context
+        run: vp run docker-context:sync
+
+      - name: Build and push sync image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .docker-context/sync
+          file: .docker-context/sync/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=sync-main
+          cache-to: type=gha,mode=max,scope=sync-main
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

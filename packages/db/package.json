@@ -56,18 +56,18 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun scripts/migrate.ts",
     "test": "tsx --test scripts/**/*.test.ts src/**/*.test.ts",
+    "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
+    "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
-    "db:seed-locations": "tsx scripts/seed-board-locations.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts"
   },
   "dependencies": {
     "@boardsesh/board-constants": "*",
     "@boardsesh/shared-schema": "*",
-    "@hangtime/climbing-boards": "^1.0.6",
     "drizzle-orm": "^0.45.1",
     "postgres": "^3.4.8"
   },

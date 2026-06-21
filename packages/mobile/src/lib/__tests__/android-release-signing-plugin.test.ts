@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
-interface AndroidReleaseSigningPlugin {
+type AndroidReleaseSigningPlugin = {
   applyAndroidReleaseSigning(contents: string): string;
   MARKER: string;
   RELEASE_SIGNING_CONFIG_LINE: string;
-}
+};
 
 const plugin = require('../../../plugins/with-android-release-signing.js') as AndroidReleaseSigningPlugin;
 

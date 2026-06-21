@@ -1137,17 +1137,27 @@ Currently, both the Next.js frontend (via API routes) and the backend need `DATA
 2. A branch backend
 3. A preview frontend configured to use both
 
-If API routes move to the backend's GraphQL layer, the frontend only needs `NEXT_PUBLIC_WS_URL` - no direct database access. Branch deploys simplify to: branch database + branch backend. The frontend preview "just works" by pointing at the branch backend.
+If API routes move to the backend, the frontend only needs `NEXT_PUBLIC_WS_URL` - no direct database access. Branch deploys simplify to: branch database + branch backend. The frontend preview "just works" by pointing at the branch backend.
 
 ### What Stays in Next.js
 
 These routes are tightly coupled to Next.js auth/middleware and should remain:
 
-| Route                              | Reason                                                     |
-| ---------------------------------- | ---------------------------------------------------------- |
-| `/api/internal/ws-auth`            | Issues JWT tokens for WebSocket auth, uses Next.js session |
-| `/api/internal/aurora-credentials` | Manages Aurora API tokens, auth-gated                      |
-| `/api/internal/controllers`        | Board controller registration, auth-gated                  |
+| Route                       | Reason                                                     |
+| --------------------------- | ---------------------------------------------------------- |
+| `/api/internal/ws-auth`     | Issues JWT tokens for WebSocket auth, uses Next.js session |
+| `/api/internal/controllers` | Board controller registration, auth-gated                  |
+
+Aurora credential management has moved to backend REST endpoints:
+
+| Backend Route                            | Reason                                                        |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| `/api/aurora-credentials`                | Reads, saves, and deletes Aurora credentials                  |
+| `/api/aurora-credentials/unsynced`       | Reports pending local board data before import                |
+| `/api/board-credentials/kilter/handoff`  | Starts authenticated Kilter OAuth handoff                     |
+| `/api/board-credentials/kilter/finalize` | Finalizes Kilter linking with the signed-in user's bearer JWT |
+| `/board-credentials/kilter/start`        | Browser-facing Kilter OAuth redirect start                    |
+| `/board-credentials/kilter/callback`     | Browser-facing Kilter OAuth callback                          |
 
 ### What Moves to Backend GraphQL
 
@@ -1221,7 +1231,9 @@ Sync runs as **long-lived daemon CLIs on a VM**, not as HTTP crons:
 - `aurora-sync daemon` (Kilter/Tension via the Aurora API)
 - `kilter-sync daemon` (Kilter Grips via Keycloak + PowerSync + REST)
 
-Each loops internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticates with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed; a long-lived process is required so the shared/catalog piggyback's in-memory cooldown survives across cycles.
+The daemons loop internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticate with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed; a long-lived process is required so the shared/catalog piggyback's in-memory cooldown survives across cycles.
+
+MoonBoard public locations use a separate manual CLI, `moonboard-sync locations`, because there is no per-user MoonBoard daemon yet.
 
 ### Branch Deploy Sync Strategy
 
@@ -1233,15 +1245,18 @@ Branch deploys simply **don't run the daemons** — they use snapshot data from 
 
 What changed → what gets deployed:
 
-| Changed Package          | Branch Web | Branch DB | Branch Backend | Notes                               |
-| ------------------------ | :--------: | :-------: | :------------: | ----------------------------------- |
-| `packages/web` only      |    Yes     |    Yes    |      Yes       | Full stack for complete isolation   |
-| `packages/shared-schema` |    Yes     |    Yes    |      Yes       | Shared types affect both            |
-| `packages/backend` only  |    Yes     |    Yes    |      Yes       | Full stack for complete isolation   |
-| `packages/db/src/schema` |    Yes     |    Yes    |      Yes       | Schema change needs isolated DB     |
-| `packages/db/drizzle`    |    Yes     |    Yes    |      Yes       | Migration needs isolated DB         |
-| `packages/aurora-sync`   |     No     |    No     |    Optional    | Test via manual sync trigger        |
-| Multiple packages        |    Yes     |    Yes    |      Yes       | Full stack always deployed together |
+| Changed Package           | Branch Web | Branch DB | Branch Backend | Notes                               |
+| ------------------------- | :--------: | :-------: | :------------: | ----------------------------------- |
+| `packages/web` only       |    Yes     |    Yes    |      Yes       | Full stack for complete isolation   |
+| `packages/shared-schema`  |    Yes     |    Yes    |      Yes       | Shared types affect both            |
+| `packages/backend` only   |    Yes     |    Yes    |      Yes       | Full stack for complete isolation   |
+| `packages/db/src/schema`  |    Yes     |    Yes    |      Yes       | Schema change needs isolated DB     |
+| `packages/db/drizzle`     |    Yes     |    Yes    |      Yes       | Migration needs isolated DB         |
+| `packages/aurora-sync`    |    Yes     |    Yes    |      Yes       | Daemon is not run on branch deploys |
+| `packages/kilter-sync`    |    Yes     |    Yes    |      Yes       | Daemon is not run on branch deploys |
+| `packages/location-sync`  |    Yes     |    Yes    |      Yes       | Shared public location writer       |
+| `packages/moonboard-sync` |    Yes     |    Yes    |      Yes       | Manual CLI is not run automatically |
+| Multiple packages         |    Yes     |    Yes    |      Yes       | Full stack always deployed together |
 
 **Implementation:** The `dorny/paths-filter` step from Phase 1 (Section 1.3) drives this matrix. The build-images job builds both web and backend images. The deploy job invokes the Ansible playbook on a self-hosted runner.
 
@@ -1499,7 +1514,10 @@ Backend-affecting paths are defined in two places that must stay in sync:
 | `packages/backend/src/handlers/sync.ts`       | User sync cron endpoint                                                       |
 | `packages/backend/src/server.ts`              | All backend HTTP routes, session cleanup                                      |
 | `packages/backend/Dockerfile`                 | Backend container build                                                       |
-| `packages/aurora-sync/`                       | Shared sync library used by both web and backend                              |
+| `packages/aurora-sync/`                       | Aurora user/shared sync and public location sync                              |
+| `packages/kilter-sync/`                       | Kilter Grips user/catalog sync and public location sync                       |
+| `packages/location-sync/`                     | Shared public `gyms` / `user_boards` location writer                          |
+| `packages/moonboard-sync/`                    | MoonBoard public location sync CLI                                            |
 | `packages/web/vercel.json`                    | Build command (migration skip), cron definitions                              |
 | `.github/workflows/branch-deploy.yml`         | Build images + trigger Ansible deploy on PR open/sync                         |
 | `.github/workflows/branch-deploy-cleanup.yml` | Trigger Ansible cleanup + GHCR delete on PR close                             |

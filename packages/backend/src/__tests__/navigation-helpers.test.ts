@@ -49,7 +49,7 @@ describe('Navigation Helper Utilities', () => {
 
       expect(result.name).toBe('Boulder Problem');
       expect(result.grade).toBe('V5');
-      expect(result.gradeColor).toBe('#F44336'); // V5 color
+      expect(result.gradeColor).toBe('#F03E3E'); // V5 color
     });
 
     it('should use getGradeColor for mixed grade formats', () => {
@@ -61,7 +61,7 @@ describe('Navigation Helper Utilities', () => {
 
       const result = buildNavigationItem(queueItem);
 
-      expect(result.gradeColor).toBe('#E53935'); // V6 color
+      expect(result.gradeColor).toBe('#E22A2A'); // V6 color
     });
 
     it('should return default gray color for null difficulty', () => {

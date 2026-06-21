@@ -23,7 +23,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../adapter', () => ({ RNBleAdapter: harness.RNBleAdapter }));
-vi.mock('../native-ios-adapter', () => ({ NativeIosBleAdapter: harness.NativeIosBleAdapter }));
+vi.mock('../native-ios-adapter', () => ({
+  NativeIosBleAdapter: harness.NativeIosBleAdapter,
+  nativeBleSupportsConnectionAdoption: vi.fn(() => false),
+}));
 vi.mock('../../../../modules/live-activity/src/index', () => ({
   get boardBleNative() {
     return harness.module.boardBleNative;
@@ -47,7 +50,7 @@ describe('createBluetoothAdapter', () => {
   it('returns NativeIosBleAdapter on iOS when the native module is linked', () => {
     platformMock.OS = 'ios';
     harness.module.boardBleNative = { _placeholder: true };
-    createBluetoothAdapter(noopPicker);
+    createBluetoothAdapter(noopPicker, 'aurora');
     expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
     expect(RNBleAdapter).not.toHaveBeenCalled();
   });
@@ -55,7 +58,7 @@ describe('createBluetoothAdapter', () => {
   it('falls back to RNBleAdapter on iOS when the native module is missing', () => {
     platformMock.OS = 'ios';
     harness.module.boardBleNative = null;
-    createBluetoothAdapter(noopPicker);
+    createBluetoothAdapter(noopPicker, 'aurora');
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
@@ -63,7 +66,7 @@ describe('createBluetoothAdapter', () => {
   it('always returns RNBleAdapter on Android, even with native module present', () => {
     platformMock.OS = 'android';
     harness.module.boardBleNative = { _placeholder: true };
-    createBluetoothAdapter(noopPicker);
+    createBluetoothAdapter(noopPicker, 'aurora');
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
@@ -73,11 +76,11 @@ describe('isNativeIosBleAdapter', () => {
   it('returns true for the mocked NativeIosBleAdapter instance, false for RN', () => {
     platformMock.OS = 'ios';
     harness.module.boardBleNative = { _placeholder: true };
-    const nativeInstance = createBluetoothAdapter(noopPicker);
+    const nativeInstance = createBluetoothAdapter(noopPicker, 'aurora');
     expect(NativeIosBleAdapter).toHaveBeenCalled();
 
     platformMock.OS = 'android';
-    const rnInstance = createBluetoothAdapter(noopPicker);
+    const rnInstance = createBluetoothAdapter(noopPicker, 'moonboard');
     expect(RNBleAdapter).toHaveBeenCalled();
 
     // The factory uses instanceof against the imported NativeIosBleAdapter

@@ -1,57 +1,62 @@
 /**
- * Grade color scheme based on thecrag.com grade coloring.
+ * Grade color scheme — a punchier yellow→red→purple arc that ends on the
+ * Boardsesh logo's V11–V16 purples (kept byte-for-byte).
  *
  * Color progression from yellow (easy) to purple (hard):
- * - V0: Yellow
+ * - V0: Golden yellow
  * - V1-V2: Orange
- * - V3-V4: Dark orange/red-orange
+ * - V3-V4: Red-orange
  * - V5-V6: Red
- * - V7-V10: Dark red/crimson
- * - V11+: Purple/magenta
+ * - V7-V10: Crimson → magenta → grape (bridge into the logo purples)
+ * - V11+: Purple (logo range — unchanged)
+ *
+ * Luminance descends monotonically except the single V10→V11 step, which is
+ * inherent: the fixed logo purple V11 is brighter than its grape neighbours. The
+ * per-pill text colour is auto-picked by contrast (black on V0–V6, white on V7+).
  */
 
 // V-grade to hex color mapping
 export const V_GRADE_COLORS: Record<string, string> = {
-  V0: '#FFEB3B', // Yellow
-  V1: '#FFC107', // Amber/Yellow-orange
-  V2: '#FF9800', // Orange
-  V3: '#FF7043', // Deep orange
-  V4: '#FF5722', // Red-orange
-  V5: '#F44336', // Red
-  V6: '#E53935', // Red (slightly darker)
-  V7: '#D32F2F', // Dark red
-  V8: '#C62828', // Darker red
-  V9: '#B71C1C', // Deep red
-  V10: '#A11B4A', // Red-purple transition
-  V11: '#9C27B0', // Purple
-  V12: '#7B1FA2', // Dark purple
-  V13: '#6A1B9A', // Darker purple
-  V14: '#5C1A87', // Deep purple
-  V15: '#4A148C', // Very deep purple
-  V16: '#38006B', // Near black purple
+  V0: '#FFD400', // Golden yellow
+  V1: '#FFB300', // Amber
+  V2: '#FF9100', // Orange
+  V3: '#FF6D2E', // Deep orange
+  V4: '#FF5026', // Red-orange
+  V5: '#F03E3E', // Red
+  V6: '#E22A2A', // Red (slightly darker)
+  V7: '#CF1F3C', // Crimson
+  V8: '#B81A5A', // Raspberry
+  V9: '#9E1A78', // Magenta-purple
+  V10: '#7E1C8E', // Grape (bridge into the logo purples)
+  V11: '#9C27B0', // Purple (logo)
+  V12: '#7B1FA2', // Dark purple (logo)
+  V13: '#6A1B9A', // Darker purple (logo)
+  V14: '#5C1A87', // Deep purple (logo)
+  V15: '#4A148C', // Very deep purple (logo)
+  V16: '#38006B', // Near black purple (logo)
   V17: '#2A0054', // Darkest purple
 };
 
 // Font grade to hex color mapping (uses same color as corresponding V-grade)
 export const FONT_GRADE_COLORS: Record<string, string> = {
-  '4a': '#FFEB3B', // V0
-  '4b': '#FFEB3B', // V0
-  '4c': '#FFEB3B', // V0
-  '5a': '#FFC107', // V1
-  '5b': '#FFC107', // V1
-  '5c': '#FF9800', // V2
-  '6a': '#FF7043', // V3
-  '6a+': '#FF7043', // V3
-  '6b': '#FF5722', // V4
-  '6b+': '#FF5722', // V4
-  '6c': '#F44336', // V5
-  '6c+': '#F44336', // V5
-  '7a': '#E53935', // V6
-  '7a+': '#D32F2F', // V7
-  '7b': '#C62828', // V8
-  '7b+': '#C62828', // V8
-  '7c': '#B71C1C', // V9
-  '7c+': '#A11B4A', // V10
+  '4a': '#FFD400', // V0
+  '4b': '#FFD400', // V0
+  '4c': '#FFD400', // V0
+  '5a': '#FFB300', // V1
+  '5b': '#FFB300', // V1
+  '5c': '#FF9100', // V2
+  '6a': '#FF6D2E', // V3
+  '6a+': '#FF6D2E', // V3
+  '6b': '#FF5026', // V4
+  '6b+': '#FF5026', // V4
+  '6c': '#F03E3E', // V5
+  '6c+': '#F03E3E', // V5
+  '7a': '#E22A2A', // V6
+  '7a+': '#CF1F3C', // V7
+  '7b': '#B81A5A', // V8
+  '7b+': '#B81A5A', // V8
+  '7c': '#9E1A78', // V9
+  '7c+': '#7E1C8E', // V10
   '8a': '#9C27B0', // V11
   '8a+': '#7B1FA2', // V12
   '8b': '#6A1B9A', // V13

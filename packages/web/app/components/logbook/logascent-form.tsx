@@ -23,6 +23,7 @@ import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { track } from '@/app/lib/analytics';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { useBoardProvider } from '../board-provider/board-provider-context';
+import { useBoardPresenceControls } from '../board-presence/board-presence-context';
 import type { TickStatus } from '@boardsesh/board-react';
 import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
 import { isBetaVideoUrl, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@/app/lib/beta-video-url';
@@ -78,6 +79,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
   const { t } = useTranslation('climbs');
   const { t: tProfile } = useTranslation('profile');
   const { saveTick, isAuthenticated } = useBoardProvider();
+  const { boardId: presenceBoardId } = useBoardPresenceControls();
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
   const angleOptions = ANGLES[boardDetails.board_name];
   // Resolve the wall's current angle (route → party session → climb record).
@@ -202,6 +204,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         layoutId: boardDetails.layout_id,
         sizeId: boardDetails.size_id,
         setIds: Array.isArray(boardDetails.set_ids) ? boardDetails.set_ids.join(',') : String(boardDetails.set_ids),
+        ...(presenceBoardId !== null ? { boardId: presenceBoardId } : {}),
         videoUrl: logType === 'ascent' && trimmedVideoUrl ? trimmedVideoUrl : undefined,
       });
 

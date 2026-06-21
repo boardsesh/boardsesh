@@ -99,7 +99,7 @@ export const climbMutations = {
    */
   saveClimb: async (_: unknown, { input }: SaveClimbArgs, ctx: ConnectionContext): Promise<SaveClimbResult> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10);
+    await applyRateLimit(ctx, 10, 'saveClimb');
 
     const validated = validateInput(SaveClimbInputSchema, input, 'input');
     const isListed = !validated.isDraft;
@@ -224,23 +224,26 @@ export const climbMutations = {
       }
     });
 
-    await publishSocialEvent({
-      type: 'climb.created',
-      actorId: ctx.userId!,
-      entityType: 'climb',
-      entityId: uuid,
-      timestamp: Date.now(),
-      metadata: {
-        boardType: validated.boardType,
-        layoutId: String(validated.layoutId),
-        climbName: validated.name,
-        climbUuid: uuid,
-        angle: String(validated.angle),
-        frames: validated.frames,
-        setterDisplayName: preferredSetter || '',
-        setterAvatarUrl: avatarUrl || '',
-      },
-    });
+    if (!validated.isDraft) {
+      await publishSocialEvent({
+        type: 'climb.created',
+        actorId: ctx.userId!,
+        entityType: 'climb',
+        entityId: uuid,
+        timestamp: Date.now(),
+        metadata: {
+          boardType: validated.boardType,
+          layoutId: String(validated.layoutId),
+          climbName: validated.name,
+          climbUuid: uuid,
+          angle: String(validated.angle),
+          frames: validated.frames,
+          setterUsername: preferredSetter || '',
+          setterDisplayName: preferredSetter || '',
+          setterAvatarUrl: avatarUrl || '',
+        },
+      });
+    }
 
     return { uuid, synced: false, createdAt: now, publishedAt };
   },
@@ -255,7 +258,7 @@ export const climbMutations = {
     ctx: ConnectionContext,
   ): Promise<SaveClimbResult> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10);
+    await applyRateLimit(ctx, 10, 'saveMoonBoardClimb');
 
     const validated = validateInput(SaveMoonBoardClimbInputSchema, input, 'input');
     const isDraft = validated.isDraft ?? false;
@@ -376,24 +379,27 @@ export const climbMutations = {
         });
     }
 
-    await publishSocialEvent({
-      type: 'climb.created',
-      actorId: ctx.userId!,
-      entityType: 'climb',
-      entityId: uuid,
-      timestamp: Date.now(),
-      metadata: {
-        boardType: validated.boardType,
-        layoutId: String(validated.layoutId),
-        climbName: validated.name,
-        climbUuid: uuid,
-        angle: String(validated.angle),
-        frames,
-        setterDisplayName: preferredSetter || '',
-        setterAvatarUrl: avatarUrl || '',
-        difficultyName: validated.userGrade || '',
-      },
-    });
+    if (!isDraft) {
+      await publishSocialEvent({
+        type: 'climb.created',
+        actorId: ctx.userId!,
+        entityType: 'climb',
+        entityId: uuid,
+        timestamp: Date.now(),
+        metadata: {
+          boardType: validated.boardType,
+          layoutId: String(validated.layoutId),
+          climbName: validated.name,
+          climbUuid: uuid,
+          angle: String(validated.angle),
+          frames,
+          setterUsername: preferredSetter || '',
+          setterDisplayName: preferredSetter || '',
+          setterAvatarUrl: avatarUrl || '',
+          difficultyName: validated.userGrade || '',
+        },
+      });
+    }
 
     return { uuid, synced: false, createdAt: now, publishedAt };
   },
@@ -412,7 +418,7 @@ export const climbMutations = {
     ctx: ConnectionContext,
   ): Promise<UpdateClimbResult> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'updateClimb');
 
     const validated = validateInput(UpdateClimbInputSchema, input, 'input');
 
@@ -642,6 +648,7 @@ export const climbMutations = {
           climbUuid: validated.uuid,
           angle: validated.angle !== undefined ? String(validated.angle) : '',
           frames: validated.frames ?? '',
+          setterUsername: existing.setterUsername ?? preferredSetter ?? '',
           setterDisplayName: preferredSetter || '',
           setterAvatarUrl: avatarUrl || '',
         },
@@ -667,7 +674,7 @@ export const climbMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'deleteDraftClimb');
 
     const validatedUuid = validateInput(ExternalUUIDSchema, uuid, 'uuid');
     const validatedBoardType = validateInput(BoardNameSchema, boardType, 'boardType');

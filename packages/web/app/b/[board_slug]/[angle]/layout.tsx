@@ -79,7 +79,7 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
           angle={angle}
           boardSlug={board.slug}
         />
-        <BoardProvider boardName={parsedParams.board_name}>
+        <BoardProvider boardName={parsedParams.board_name} boardUuid={board.uuid}>
           <BoardSessionBridge boardDetails={boardDetails} parsedParams={parsedParams}>
             <ConnectionSettingsProvider>
               <WebSocketConnectionProvider>

@@ -8,7 +8,7 @@
 >
 > Where confidence is lower than HIGH, sections are explicitly marked.
 
-> **Correction (2026-06-01).** Earlier drafts of this doc assumed the *entire* catalog — including the world-readable climb catalog — is mirrored through PowerSync, served from inferred `public_climbs` / `global_catalog` buckets. The decompiled app shows that is **wrong**. PowerSync carries only (a) the small global **reference catalog** (holds, hold sets, grades, products, layouts, mounting holes, placement types) and (b) **per-user data** (the signed-in user's logs, attempts, ratings, circuits, walls, settings, social graph). The **public climb catalog (`climbs` + `climb_stats`) is fetched over REST**, paginated by board region, and cached into local SQLite — see [§6](#6-what-syncs-where) and [KILTER_HTTP_API_SPEC.md §5.2](KILTER_HTTP_API_SPEC.md#52-climbs). There is no PowerSync bucket that streams every public climb to every client. If you are trying to "sync the `public_climbs` bucket", stop — it does not exist; pull the catalog via REST instead.
+> **Correction (2026-06-01).** Earlier drafts of this doc assumed the _entire_ catalog — including the world-readable climb catalog — is mirrored through PowerSync, served from inferred `public_climbs` / `global_catalog` buckets. The decompiled app shows that is **wrong**. PowerSync carries only (a) the small global **reference catalog** (holds, hold sets, grades, products, layouts, mounting holes, placement types) and (b) **per-user data** (the signed-in user's logs, attempts, ratings, circuits, walls, settings, social graph). The **public climb catalog (`climbs` + `climb_stats`) is fetched over REST**, paginated by board region, and cached into local SQLite — see [§6](#6-what-syncs-where) and [KILTER_HTTP_API_SPEC.md §5.2](KILTER_HTTP_API_SPEC.md#52-climbs). There is no PowerSync bucket that streams every public climb to every client. If you are trying to "sync the `public_climbs` bucket", stop — it does not exist; pull the catalog via REST instead.
 
 ---
 
@@ -50,7 +50,7 @@ PowerSync sits between a Postgres database and SQLite clients. The shape:
 
 Key concepts:
 
-- **Sync rules** (server-side YAML) declare *buckets*. Each bucket is a parameterised query over Postgres that selects which rows belong in it. Buckets are the unit of sync — a client subscribes to buckets, the server streams oplog rows.
+- **Sync rules** (server-side YAML) declare _buckets_. Each bucket is a parameterised query over Postgres that selects which rows belong in it. Buckets are the unit of sync — a client subscribes to buckets, the server streams oplog rows.
 - **Parameters** come from the auth JWT (e.g. `request.user_id()`) or from client-supplied parameters in the connection request. Typical patterns: a `global` bucket of public catalog rows; one `by_user[uid]` bucket per authenticated user; potentially `by_wall[wall_uuid]`, `by_circuit[circuit_uuid]`, etc.
 - **Client schema**: clients register a SQLite schema declaring which tables/columns/indexes they want. The PowerSync SQLite extension creates the tables and maintains them as oplog rows arrive.
 - **CRUD upstream**: clients enqueue local mutations into a `ps_crud` table. PowerSync's `uploadData` callback hands those rows to app code, which calls the developer's REST API. After the REST call succeeds, the client calls `write-checkpoint2.json` so PowerSync knows the write has been persisted server-side.
@@ -62,18 +62,18 @@ PowerSync's client and protocol are open-source: see [`powersync-ja/powersync-se
 
 ## 2. Kilter's PowerSync deployment
 
-| Property | Value |
-| --- | --- |
-| Service host | `https://sync1.kiltergrips.com` |
-| Sync core | **Rust core `0.4.10`** (`powersync_rs_version` string in `libpowersync.so`), wrapped by the PowerSync Dart SDK |
-| Local schema mode | **Raw tables** — the app declares real `CREATE TABLE`s and PowerSync applies oplog rows through configured INSERT/UPDATE/DELETE statements, instead of the default auto-generated `ps_data_*` views (`RawTable` / `raw_tables` / `PendingStatement` in `libpowersync.so`) |
-| Sync model | PowerSync **Sync Streams** (`ps_stream_subscriptions`, `StreamSubscriptionRequest`, `subscribe`/`unsubscribe`, per-subscription `ttl`) — the newer stream-subscription protocol, not classic JWT-only bucket derivation |
-| Storage | Local SQLite + the PowerSync SQLite extension |
-| Backend connector | Custom — Kilter implements their own connector backed by the REST API |
-| Auth mode | **Keycloak access token used directly** as PowerSync JWT (see [§3](#3-authentication-for-the-sync-stream)) |
-| Streaming endpoint | `POST https://sync1.kiltergrips.com/sync/stream` |
-| Write-checkpoint endpoint | `https://sync1.kiltergrips.com/write-checkpoint2.json?client_id=<powersync_client_id>` |
-| Content-Type negotiation | `Accept: application/vnd.powersync.bson-stream;q=0.9,application/x-ndjson;q=0.8` |
+| Property                  | Value                                                                                                                                                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service host              | `https://sync1.kiltergrips.com`                                                                                                                                                                                                                                           |
+| Sync core                 | **Rust core `0.4.10`** (`powersync_rs_version` string in `libpowersync.so`), wrapped by the PowerSync Dart SDK                                                                                                                                                            |
+| Local schema mode         | **Raw tables** — the app declares real `CREATE TABLE`s and PowerSync applies oplog rows through configured INSERT/UPDATE/DELETE statements, instead of the default auto-generated `ps_data_*` views (`RawTable` / `raw_tables` / `PendingStatement` in `libpowersync.so`) |
+| Sync model                | PowerSync **Sync Streams** (`ps_stream_subscriptions`, `StreamSubscriptionRequest`, `subscribe`/`unsubscribe`, per-subscription `ttl`) — the newer stream-subscription protocol, not classic JWT-only bucket derivation                                                   |
+| Storage                   | Local SQLite + the PowerSync SQLite extension                                                                                                                                                                                                                             |
+| Backend connector         | Custom — Kilter implements their own connector backed by the REST API                                                                                                                                                                                                     |
+| Auth mode                 | **Keycloak access token used directly** as PowerSync JWT (see [§3](#3-authentication-for-the-sync-stream))                                                                                                                                                                |
+| Streaming endpoint        | `POST https://sync1.kiltergrips.com/sync/stream`                                                                                                                                                                                                                          |
+| Write-checkpoint endpoint | `https://sync1.kiltergrips.com/write-checkpoint2.json?client_id=<powersync_client_id>`                                                                                                                                                                                    |
+| Content-Type negotiation  | `Accept: application/vnd.powersync.bson-stream;q=0.9,application/x-ndjson;q=0.8`                                                                                                                                                                                          |
 
 The client identifies itself with a stable UUID returned by `SELECT powersync_client_id()` — the PowerSync extension generates and persists this per install. It's appended to write-checkpoint calls so the server can correlate uploaded writes with the streaming session.
 
@@ -90,26 +90,36 @@ Kilter does **not** mint a separate PowerSync JWT. The standard Keycloak `access
 This is **confirmed working** by a standalone `@powersync/node` scraper that syncs `gyms` + `walls`:
 
 ```ts
-const KILTER_AUTH_URL  = "https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token";
-const KILTER_SYNC_ENDPOINT = "https://sync1.kiltergrips.com";
-const KILTER_CLIENT_ID  = "kilter";              // the realm's public client
-const KILTER_SCOPE      = "openid offline_access";
+const KILTER_AUTH_URL = 'https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token';
+const KILTER_SYNC_ENDPOINT = 'https://sync1.kiltergrips.com';
+const KILTER_CLIENT_ID = 'kilter'; // the realm's public client
+const KILTER_SCOPE = 'openid offline_access';
 
 // Resource-Owner-Password grant → access_token, used verbatim as the PowerSync token.
 const body = new URLSearchParams({
-  grant_type: "password", client_id: KILTER_CLIENT_ID, username, password, scope: KILTER_SCOPE,
+  grant_type: 'password',
+  client_id: KILTER_CLIENT_ID,
+  username,
+  password,
+  scope: KILTER_SCOPE,
 });
-const { access_token, expires_in } = await (await fetch(KILTER_AUTH_URL, {
-  method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body,
-})).json();
+const { access_token, expires_in } = await (
+  await fetch(KILTER_AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+).json();
 
 const connector: PowerSyncBackendConnector = {
   fetchCredentials: async () => ({
     endpoint: KILTER_SYNC_ENDPOINT,
-    token: access_token,                          // Keycloak JWT, no exchange
+    token: access_token, // Keycloak JWT, no exchange
     expiresAt: new Date(Date.now() + (expires_in - 60) * 1000),
   }),
-  uploadData: async () => { /* read-only scraper */ },
+  uploadData: async () => {
+    /* read-only scraper */
+  },
 };
 ```
 
@@ -117,8 +127,8 @@ The minted access token carries `aud: ["kilter", "account"]` (the `account` audi
 
 **Two token theories that are NOT the answer** — both come up when the public climb catalog fails to sync, and both are dead ends:
 
-1. *"A different scope (`kilter-catalog`, `portal`, …) would mint `aud: ["kilter-portal", …]` and unlock more buckets."* The app binary contains exactly one OAuth scope (`offline_access`, plus implicit `openid`) and one realm/client. There is no second audience or catalog scope anywhere in `libapp.so`. PowerSync checks `aud` **once per connection**, not per bucket — if the token authenticates the stream at all (it does; gyms/walls sync), audience is not gating any particular table.
-2. *"The portal/web uses a different `client_id` that gets broader buckets."* The only Keycloak client is `kilter`. The other client-id strings in the binary (`androidClientId`, `iosClientId`, `kilter-app-analytics`, `…firebasestorage.app`) are **Firebase / Google** identifiers for Google Sign-In, Places, and analytics — unrelated to PowerSync auth.
+1. _"A different scope (`kilter-catalog`, `portal`, …) would mint `aud: ["kilter-portal", …]` and unlock more buckets."_ The app binary contains exactly one OAuth scope (`offline_access`, plus implicit `openid`) and one realm/client. There is no second audience or catalog scope anywhere in `libapp.so`. PowerSync checks `aud` **once per connection**, not per bucket — if the token authenticates the stream at all (it does; gyms/walls sync), audience is not gating any particular table.
+2. _"The portal/web uses a different `client_id` that gets broader buckets."_ The only Keycloak client is `kilter`. The other client-id strings in the binary (`androidClientId`, `iosClientId`, `kilter-app-analytics`, `…firebasestorage.app`) are **Firebase / Google** identifiers for Google Sign-In, Places, and analytics — unrelated to PowerSync auth.
 
 The real reason the catalog doesn't sync is structural, not credential: the public climb catalog is not served by PowerSync at all (see [§6](#6-what-syncs-where)). No token change unlocks it.
 
@@ -159,13 +169,13 @@ The body shape is fixed by the PowerSync protocol — clients don't choose bucke
 
 The server responds with `Transfer-Encoding: chunked`, emitting newline-delimited JSON (or length-prefixed BSON if the client negotiated BSON). Message types:
 
-| Message | Purpose |
-| --- | --- |
-| `StreamingSyncCheckpoint` | Marks a consistent checkpoint that includes a `last_op_id`, list of buckets, and per-bucket checksums |
-| `StreamingSyncCheckpointDiff` | Incremental change to the active bucket set |
-| `StreamingSyncCheckpointComplete` | Server has finished sending all data up to the checkpoint |
-| `StreamingSyncData` | A batch of oplog rows for one bucket (`{ bucket, data: [{ op_id, op, object_type, object_id, checksum, data }] }`) |
-| `StreamingSyncKeepalive` | Periodic heartbeat with `token_expires_in` seconds — client should refresh auth before this hits zero |
+| Message                           | Purpose                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `StreamingSyncCheckpoint`         | Marks a consistent checkpoint that includes a `last_op_id`, list of buckets, and per-bucket checksums              |
+| `StreamingSyncCheckpointDiff`     | Incremental change to the active bucket set                                                                        |
+| `StreamingSyncCheckpointComplete` | Server has finished sending all data up to the checkpoint                                                          |
+| `StreamingSyncData`               | A batch of oplog rows for one bucket (`{ bucket, data: [{ op_id, op, object_type, object_id, checksum, data }] }`) |
+| `StreamingSyncKeepalive`          | Periodic heartbeat with `token_expires_in` seconds — client should refresh auth before this hits zero              |
 
 ### 4.3 CRUD upload
 
@@ -192,37 +202,37 @@ These rows stream from `sync1.kiltergrips.com` and are confirmed (`gyms`, `walls
 
 **Global reference catalog** (small, identical for every user — the "static" board data):
 
-| Table | Indexed columns (and inferred PK) | Notes |
-| --- | --- | --- |
-| `products` | `product_name` (pk) | Board models (Kilter Original / Homewall / Mini / Grasshopper / etc.) |
-| `product_layouts` | `product_layout_uuid` (pk), `product_name` | Specific layout variants per product |
-| `mounting_holes` | `mounting_hole_uuid` (pk), `product_name` | Hardware catalog — every hole on every board |
-| `holds` | `hold_id` (pk) | Hold catalog |
-| `hold_sets` | `hold_set_name` (pk) | Hold-set groupings (Kilter HS, KS, etc.) |
-| `placement_types` | `placement_type` (pk), `short_ref` | start/hand/foot/finish enum |
-| `difficulty_grades` | `difficulty_grade_id` (pk) | Grade catalog (V-scale, font-scale) |
-| `gyms` | `gym_uuid` (pk) | Gym directory — schema confirmed (see [§5.3](#53-gyms-table-confirmed-schema)) |
-| `walls` | `wall_uuid` (pk), `product_layout_uuid`, `product_name`, `gym_uuid` | Physical boards |
+| Table               | Indexed columns (and inferred PK)                                   | Notes                                                                          |
+| ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `products`          | `product_name` (pk)                                                 | Board models (Kilter Original / Homewall / Mini / Grasshopper / etc.)          |
+| `product_layouts`   | `product_layout_uuid` (pk), `product_name`                          | Specific layout variants per product                                           |
+| `mounting_holes`    | `mounting_hole_uuid` (pk), `product_name`                           | Hardware catalog — every hole on every board                                   |
+| `holds`             | `hold_id` (pk)                                                      | Hold catalog                                                                   |
+| `hold_sets`         | `hold_set_name` (pk)                                                | Hold-set groupings (Kilter HS, KS, etc.)                                       |
+| `placement_types`   | `placement_type` (pk), `short_ref`                                  | start/hand/foot/finish enum                                                    |
+| `difficulty_grades` | `difficulty_grade_id` (pk)                                          | Grade catalog (V-scale, font-scale)                                            |
+| `gyms`              | `gym_uuid` (pk)                                                     | Gym directory — schema confirmed (see [§5.3](#53-gyms-table-confirmed-schema)) |
+| `walls`             | `wall_uuid` (pk), `product_layout_uuid`, `product_name`, `gym_uuid` | Physical boards                                                                |
 
 **Per-user data** (scoped to the authenticated `sub` by server-side stream rules):
 
-| Table | Indexed columns (and inferred PK) | Notes |
-| --- | --- | --- |
-| `users` | `user_uuid` (pk), `email` | Profiles |
-| `user_settings` | `user_uuid` (pk) | Per-user preferences |
-| `user_analytics` | `user_uuid` (pk) | Aggregated stats |
-| `user_followers` | `user_uuid` | Follower edges |
-| `user_blocked_climbs` | `user_uuid`, `climb_uuid` | Composite |
-| `user_notifications` | `user_uuid`, `receiver_uuid` | Notification feed |
-| `gym_followers` | `user_uuid` | Gym follow edges |
-| `gym_notifications` | `gym_uuid`, `receiver_uuid` | Notifications scoped to a gym |
-| `logs` | `user_uuid`, `climb_uuid`, `product_layout_uuid`, `created_at` | Confirmed ascents |
-| `attempts` | `user_uuid`, `product_layout_uuid`, `angle` | **Separate** from `logs` — attempts/bids vs sends |
-| `climb_ratings` | `climb_rating_uuid` (pk), `user_uuid`, `climb_uuid`, `wall_uuid`, `gym_uuid`, `product_layout_uuid`, `difficulty_grade_id` | Heavily indexed |
-| `circuits` | `circuit_uuid` (pk) | Curated route lists |
-| `circuit_climbs` | `circuit_uuid`, `climb_uuid` | Many-to-many |
-| `climb_mounting_holes` | `climb_uuid`, `product_layout_uuid`, `mounting_hole_uuid`, `hold_placement_id`, `placement_type`, `default_placement_type`, `hold_id` | Hold placements per climb |
-| `climb_beta_links` | `climb_uuid`, `angle`, `link` | External beta video/post links |
+| Table                  | Indexed columns (and inferred PK)                                                                                                     | Notes                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `users`                | `user_uuid` (pk), `email`                                                                                                             | Profiles                                          |
+| `user_settings`        | `user_uuid` (pk)                                                                                                                      | Per-user preferences                              |
+| `user_analytics`       | `user_uuid` (pk)                                                                                                                      | Aggregated stats                                  |
+| `user_followers`       | `user_uuid`                                                                                                                           | Follower edges                                    |
+| `user_blocked_climbs`  | `user_uuid`, `climb_uuid`                                                                                                             | Composite                                         |
+| `user_notifications`   | `user_uuid`, `receiver_uuid`                                                                                                          | Notification feed                                 |
+| `gym_followers`        | `user_uuid`                                                                                                                           | Gym follow edges                                  |
+| `gym_notifications`    | `gym_uuid`, `receiver_uuid`                                                                                                           | Notifications scoped to a gym                     |
+| `logs`                 | `user_uuid`, `climb_uuid`, `product_layout_uuid`, `created_at`                                                                        | Confirmed ascents                                 |
+| `attempts`             | `user_uuid`, `product_layout_uuid`, `angle`                                                                                           | **Separate** from `logs` — attempts/bids vs sends |
+| `climb_ratings`        | `climb_rating_uuid` (pk), `user_uuid`, `climb_uuid`, `wall_uuid`, `gym_uuid`, `product_layout_uuid`, `difficulty_grade_id`            | Heavily indexed                                   |
+| `circuits`             | `circuit_uuid` (pk)                                                                                                                   | Curated route lists                               |
+| `circuit_climbs`       | `circuit_uuid`, `climb_uuid`                                                                                                          | Many-to-many                                      |
+| `climb_mounting_holes` | `climb_uuid`, `product_layout_uuid`, `mounting_hole_uuid`, `hold_placement_id`, `placement_type`, `default_placement_type`, `hold_id` | Hold placements per climb                         |
+| `climb_beta_links`     | `climb_uuid`, `angle`, `link`                                                                                                         | External beta video/post links                    |
 
 > The app writes `logs`, `attempts`, `climb_ratings`, `circuits`, `circuit_climbs`, `walls`, `user_settings`, `user_blocked_climbs` locally (direct `INSERT … RETURNING *`) for optimistic UI, then uploads via REST; PowerSync mirrors the server's version back. For a read-only Boardsesh consumer, treat them as read-only sync targets.
 
@@ -230,13 +240,13 @@ These rows stream from `sync1.kiltergrips.com` and are confirmed (`gyms`, `walls
 
 These are plain local SQLite tables the app fills itself. **They are not PowerSync buckets.** This is the correction at the heart of this revision.
 
-| Table | Populated by | Notes |
-| --- | --- | --- |
-| `climbs` | REST: `GET /api/climbs/climbdetails/{productName}/edges?…limit=&offset=` (paginated by board region), `/api/climbs/curated`, `/api/climbs/all/` | Direct `INSERT INTO climbs (id, climb_uuid, …)` in app code. The full public climb catalog. |
-| `climb_stats` | REST: `/api/climb-stat/all/` (and inline with climb detail) | Direct `INSERT INTO climb_stats (…)`. Per-climb-angle aggregates. |
-| `climbs_for_product_fetch_info` | App bookkeeping | Tracks paginated-fetch progress per `(product_name, edge_*)`; drives the "Downloading data…" preparing screen on first login. Proof that the catalog is pulled, not streamed. |
-| `product_layout_updates` | App bookkeeping | Per-layout cache-invalidation marker (`updated_at`). |
-| `recently_tried_climbs` | App-local | Device-only history; never leaves the device. |
+| Table                           | Populated by                                                                                                                                    | Notes                                                                                                                                                                         |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `climbs`                        | REST: `GET /api/climbs/climbdetails/{productName}/edges?…limit=&offset=` (paginated by board region), `/api/climbs/curated`, `/api/climbs/all/` | Direct `INSERT INTO climbs (id, climb_uuid, …)` in app code. The full public climb catalog.                                                                                   |
+| `climb_stats`                   | REST: `/api/climb-stat/all/` (and inline with climb detail)                                                                                     | Direct `INSERT INTO climb_stats (…)`. Per-climb-angle aggregates.                                                                                                             |
+| `climbs_for_product_fetch_info` | App bookkeeping                                                                                                                                 | Tracks paginated-fetch progress per `(product_name, edge_*)`; drives the "Downloading data…" preparing screen on first login. Proof that the catalog is pulled, not streamed. |
+| `product_layout_updates`        | App bookkeeping                                                                                                                                 | Per-layout cache-invalidation marker (`updated_at`).                                                                                                                          |
+| `recently_tried_climbs`         | App-local                                                                                                                                       | Device-only history; never leaves the device.                                                                                                                                 |
 
 See [§6](#6-what-syncs-where) for the full data-flow picture and [KILTER_HTTP_API_SPEC.md §5.2](KILTER_HTTP_API_SPEC.md#52-climbs) for the catalog endpoints and `climbs` schema.
 
@@ -292,7 +302,7 @@ Kilter splits catalog data across **two transports**, and that split is the answ
 Five independent signals in the app, all pointing the same way:
 
 1. **Direct inserts.** The app issues `INSERT INTO climbs (id, climb_uuid, climb_concat, name, …)` and `INSERT INTO climb_stats (…)` itself — you don't hand-write inserts into a PowerSync-managed view.
-2. **A progress table.** `climbs_for_product_fetch_info(product_name, count, progress, edge_left, edge_right, edge_bottom, edge_top, last_updated_at)` exists only to track *paginated fetching* of climbs by board region. PowerSync tracks its own sync state; a per-region progress counter is a REST-pagination artifact.
+2. **A progress table.** `climbs_for_product_fetch_info(product_name, count, progress, edge_left, edge_right, edge_bottom, edge_top, last_updated_at)` exists only to track _paginated fetching_ of climbs by board region. PowerSync tracks its own sync state; a per-region progress counter is a REST-pagination artifact.
 3. **A count endpoint.** `/edges/count` returns a total so the client can drive a progress bar — a REST/pagination idiom, meaningless for a streamed bucket.
 4. **A "preparing" screen.** `preparing_screen.dart` shows "Downloading data…" on first login while it pages the catalog in. PowerSync's first sync needs no app-driven download loop.
 5. **It's confirmed empty over PowerSync.** A working `@powersync/node` scraper syncs `gyms`/`walls` fine but gets no public catalog when it adds `climbs` to the schema — because nothing streams there.
@@ -302,7 +312,7 @@ Five independent signals in the app, all pointing the same way:
 - **Catalog (Flow A):** pull `climbs` + `climb_stats` over REST, paging `/api/climbs/climbdetails/{productName}/edges` per product per board region (or try `/api/climbs/all/` + `/api/climb-stat/all/` for a bulk pull), using the same Keycloak token. Do **not** model it as a PowerSync bucket. See [kilter-sync.md → Catalog sync (Flow A)](kilter-sync.md#catalog-sync-flow-a).
 - **Per-user (Flow B):** a normal `@powersync/node` connection with the user's token streams their `logs` / `attempts` / `climb_ratings` / `circuits`, plus the reference catalog and `gyms`/`walls`. This is the part PowerSync is genuinely for.
 
-> Confidence: HIGH that the public catalog is REST-fed (five signals + the working scraper). HIGH that reference + per-user data is PowerSync. The exact server-side stream/bucket *names* remain server-side and unverifiable from the client, but they no longer matter for the integration — the client never names a bucket, it declares tables and the server fills them.
+> Confidence: HIGH that the public catalog is REST-fed (five signals + the working scraper). HIGH that reference + per-user data is PowerSync. The exact server-side stream/bucket _names_ remain server-side and unverifiable from the client, but they no longer matter for the integration — the client never names a bucket, it declares tables and the server fills them.
 
 ---
 

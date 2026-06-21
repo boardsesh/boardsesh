@@ -39,7 +39,7 @@
     "happy-dom": "^15",
     "react": "^19",
     "react-dom": "^19",
-    "typescript": "^5.9.3"
+    "typescript": "~6.0.3"
   },
   "peerDependencies": {
     "react": "^19"

@@ -225,8 +225,40 @@ describe('hydrateClimbsByRefs', () => {
       expect(result[0].angle).toBe(40);
     });
 
-    it('uses the override when it is a non-null number, even if statsAngle is set', async () => {
+    // The returned `angle` reflects the angle the stats row was actually joined
+    // at (`statsAngle`), so it always agrees with the difficulty/quality shown.
+    // The SQL joins at COALESCE(override-if-stats-exist, most-ascents), so when
+    // an override is applied the joined statsAngle IS the override angle.
+    it('returns the joined stats angle, which under an applied override is the override angle', async () => {
+      mockDb.select.mockReturnValueOnce(makeChain([{ ...baseRow, statsAngle: 25 }]));
+
+      const overrides = new Map<string, number | null>([['kilter:c1', 25]]);
+      const result = await hydrateClimbsByRefs([{ climbUuid: 'c1', boardType: 'kilter' }], {
+        angleOverrides: overrides,
+      });
+
+      expect(result[0].angle).toBe(25);
+    });
+
+    // When the override angle has no stats row, the SQL EXISTS guard drops the
+    // override and the join falls back to the most-ascended angle. The returned
+    // angle follows that fallback (statsAngle) so grade and angle stay in sync,
+    // rather than reporting an angle whose grade isn't shown.
+    it('follows the joined fallback angle when the override angle has no stats', async () => {
       mockDb.select.mockReturnValueOnce(makeChain([{ ...baseRow, statsAngle: 35 }]));
+
+      const overrides = new Map<string, number | null>([['kilter:c1', 25]]);
+      const result = await hydrateClimbsByRefs([{ climbUuid: 'c1', boardType: 'kilter' }], {
+        angleOverrides: overrides,
+      });
+
+      expect(result[0].angle).toBe(35);
+    });
+
+    // Only when the climb has no stats row at all (nothing to join) does the
+    // requested override angle survive as the reported angle.
+    it('uses the override as a last resort when the climb has no stats row', async () => {
+      mockDb.select.mockReturnValueOnce(makeChain([{ ...baseRow, statsAngle: null }]));
 
       const overrides = new Map<string, number | null>([['kilter:c1', 25]]);
       const result = await hydrateClimbsByRefs([{ climbUuid: 'c1', boardType: 'kilter' }], {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import {
   clearInstagramMetaCache,
+  extractInstagramCaption,
   fetchInstagramMeta,
   getInstagramMediaId,
   INSTAGRAM_META_TTL_MS,
@@ -72,6 +73,7 @@ describe('fetchInstagramMeta', () => {
       status: 'ok',
       thumbnail: 'https://scontent.cdninstagram.com/p1080x1080/photo.jpg',
       username: 'testclimber',
+      caption: null,
     });
   });
 
@@ -329,6 +331,7 @@ describe('fetchInstagramMeta', () => {
       status: 'ok',
       thumbnail: 'https://scontent.cdninstagram.com/photo.jpg',
       username: null,
+      caption: null,
     });
   });
 
@@ -380,5 +383,36 @@ describe('fetchInstagramMeta', () => {
     const result = await fetchInstagramMeta(SAMPLE_URL);
     // readBodyWithCap throws -> fetchInstagramMeta maps to transient_error.
     expect(result).toEqual({ status: 'transient_error' });
+  });
+});
+
+describe('extractInstagramCaption', () => {
+  it('parses the edge_media_to_caption JSON node', () => {
+    const html = `<html><script>{"edge_media_to_caption":{"edges":[{"node":{"text":"Sent Purple Nurple at 40\\u00b0 \\ud83e\\uddd7"}}]}}</script></html>`;
+    expect(extractInstagramCaption(html, 'someuser')).toBe('Sent Purple Nurple at 40° 🧗');
+  });
+
+  it('parses the rendered .Caption div, dropping the leading username, despite nested divs', () => {
+    const html = `
+      <div class="Caption">
+        <a class="CaptionUsername" href="/climber/"><div class="CaptionUsernameInner">climber</div></a>
+        First ascent of <b>The Crimp Master</b>! Felt solid.
+        <div class="CaptionComments">View all 12 comments</div>
+      </div>`;
+    expect(extractInstagramCaption(html, 'climber')).toBe('First ascent of The Crimp Master ! Felt solid.');
+  });
+
+  it('falls back to og:description and strips the like/comment prefix and quotes', () => {
+    const html = `<meta property="og:description" content="1,234 likes, 56 comments - climber on Instagram: &quot;Flashed Yellow Brick Road&quot;" />`;
+    expect(extractInstagramCaption(html, 'climber')).toBe('Flashed Yellow Brick Road');
+  });
+
+  it('ignores accessibility_caption when there is no real caption', () => {
+    const html = `<html><script>{"accessibility_caption":"Photo by climber on January 01, 2026."}</script></html>`;
+    expect(extractInstagramCaption(html, 'climber')).toBeNull();
+  });
+
+  it('returns null when nothing parseable is present', () => {
+    expect(extractInstagramCaption('<html><body>no caption here</body></html>', null)).toBeNull();
   });
 });

@@ -1,7 +1,15 @@
 import type { SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 import { themeTokens } from '@/app/theme/theme-config';
 
-export type SmartPlaylistSlug = 'five-stars' | 'most-repeated' | 'projects' | 'liked-climbs';
+export type SmartPlaylistSlug =
+  | 'five-stars'
+  | 'most-repeated'
+  | 'projects'
+  | 'liked-climbs'
+  | 'crowd-favorites'
+  | 'hidden-gems'
+  | 'at-your-level'
+  | 'fresh';
 
 export type SmartPlaylistPresentation = {
   type: SmartPlaylistType;
@@ -15,6 +23,41 @@ export type SmartPlaylistPresentation = {
 };
 
 export const SMART_PLAYLISTS: SmartPlaylistPresentation[] = [
+  // Recommendations lead the grid — discovering great new climbs for your board
+  // is the point of this surface. They're computed from the catalog for the
+  // user's biggest board, not from the user's own logbook.
+  {
+    type: 'RECOMMENDED_CROWD_FAVORITES',
+    slug: 'crowd-favorites',
+    icon: '🔥',
+    color: themeTokens.colors.accentRose,
+    titleI18nKey: 'library.smart.crowdFavorites.title',
+    descriptionI18nKey: 'library.smart.crowdFavorites.description',
+  },
+  {
+    type: 'RECOMMENDED_HIDDEN_GEMS',
+    slug: 'hidden-gems',
+    icon: '💎',
+    color: themeTokens.colors.purple,
+    titleI18nKey: 'library.smart.hiddenGems.title',
+    descriptionI18nKey: 'library.smart.hiddenGems.description',
+  },
+  {
+    type: 'RECOMMENDED_AT_LEVEL',
+    slug: 'at-your-level',
+    icon: '📈',
+    color: themeTokens.colors.accentGreen,
+    titleI18nKey: 'library.smart.atYourLevel.title',
+    descriptionI18nKey: 'library.smart.atYourLevel.description',
+  },
+  {
+    type: 'RECOMMENDED_FRESH',
+    slug: 'fresh',
+    icon: '🌱',
+    color: themeTokens.colors.amber,
+    titleI18nKey: 'library.smart.fresh.title',
+    descriptionI18nKey: 'library.smart.fresh.description',
+  },
   {
     type: 'FIVE_STARS',
     slug: 'five-stars',

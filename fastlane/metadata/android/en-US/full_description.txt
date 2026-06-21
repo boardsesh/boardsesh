@@ -1,0 +1,31 @@
+Search a climb, watch your wall light up. Less time on your phone, more time on the wall.
+
+LIGHT THE HOLDS
+Search any climb and Boardsesh lights the holds on the wall over Bluetooth, on Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper and So iLL. Full LED control on all seven, not browse-only.
+
+ONE APP FOR EVERY BOARD YOU CLIMB
+Kilter, Tension and MoonBoard each ship their own app for their own board. Boardsesh works across all of them, plus Decoy, Touchstone, Grasshopper and So iLL, in one place. Your whole climbing history across every board lives here.
+
+BOARD HISTORY, ALWAYS ON
+Share a board and you lose track of the last climb fast, and someone always wipes it by accident.
+In Boardsesh every board you connect to has a live feed of what's lit on that wall right now: the climb's name, who lit it, who set it, the grade and angle, and recent sends. It updates as the wall changes, so you always know what's up there.
+
+STAYS CONNECTED
+Boardsesh keeps the link to your board alive in the background, so the holds stay lit through your burns even when the screen is off or you switch apps. An ongoing notification puts Previous and Next on your lock screen, so you can move through the queue without reopening the app. No reconnecting between climbs.
+
+SESSIONS WITH YOUR CREW
+Start a session and you and your crew can share one queue everyone can drive. Anyone can light the next climb on the wall. When you're done you get a recap and tracking: sends and attempts, grade spread, your hardest send, and progress over time.
+
+BUILD A WORKOUT
+Pick Volume, Pyramid, Ladder or Grade Focus, set a target grade and warm-up, preview the climbs, then push them to the wall one at a time.
+
+TRACK YOUR CLIMBING
+Record sends, flashes and attempts, and watch your sends and grades climb on the Progress tab. Bring your past Kilter and Tension climbs across by importing your logbook from Aurora Climbing.
+
+FIND MORE TO CLIMB
+Follow your crew and setters, search climbers, and pin playlists from Discover.
+
+FREE, NO ADS, NO SUBSCRIPTIONS
+Open source on GitHub.
+
+Boardsesh is a community effort that works with these boards and is not affiliated with or endorsed by any board manufacturer.

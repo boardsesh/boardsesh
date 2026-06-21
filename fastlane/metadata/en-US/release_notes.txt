@@ -1,0 +1,12 @@
+Boardsesh 2.0 is a full native rebuild. The whole app is rewritten, so it's fast where it used to lag. Lists scroll smooth, search is instant.
+
+Same app, just faster:
+- Search a climb and light the holds over Bluetooth on Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper and So iLL.
+- Walk up to any wall and see what's on it right now: the lit climb, who lit it, the grade, angle and setter, live as people climb.
+- Climb with your crew in a live session: one shared queue anyone can add to, reorder and drive.
+- Run the session from your lock screen and Dynamic Island on iOS 17+ with Live Activities.
+- Build a Volume, Pyramid, Ladder or Grade Focus workout and fire the climbs to the wall one at a time.
+- Track sends, flashes and attempts, and watch your grades chart out on the Progress tab.
+- Save sessions to Apple Health and import your past Kilter and Tension logbook from Aurora Climbing.
+
+Free, no ads, open source.

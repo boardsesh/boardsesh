@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brand fallback for API 24-30. values-v31/colors.xml overrides these with
+     Material You (system_accent1 / system_neutral) on Android 12+. -->
+<resources>
+    <!-- Boardsesh green; tints the notification accent (small icon + app name). -->
+    <color name="session_accent">#3DA35D</color>
+    <!-- Dimmed accent for the "off" (reconnect) lightbulb. -->
+    <color name="session_accent_dim">#9AA0A6</color>
+    <!-- Near-black backing behind the climb thumbnail (matches the rounded bitmap
+         backing) so the fitCenter letterbox bars + load state read dark, not white. -->
+    <color name="session_image_placeholder">#FF0A0A0A</color>
+</resources>

@@ -140,6 +140,9 @@ beforeEach(async () => {
   mockWsAuth.token = 'test-token';
   mockWsAuth.isLoading = false;
 
+  // Reset the climb-session cookie so cookie state doesn't leak between tests.
+  document.cookie = 'boardsesh-climb-session-id=; path=/; SameSite=Lax; max-age=0';
+
   // Clear preferences DB
   try {
     const prefsDb = await openDB(PREFS_DB_NAME, 1, {
@@ -511,5 +514,99 @@ describe('PersistentSessionProvider auto-restore on mount', () => {
       const stored = await getPreference(ACTIVE_SESSION_KEY);
       expect(stored).toBeNull();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Stale IndexedDB session vs. fresh /join cookie
+// ---------------------------------------------------------------------------
+
+describe('Stale IndexedDB vs fresh /join cookie', () => {
+  function setClimbCookie(sessionId: string) {
+    document.cookie = `boardsesh-climb-session-id=${encodeURIComponent(sessionId)}; path=/; SameSite=Lax; max-age=86400`;
+  }
+
+  it('skips activation when the cookie has a different sessionId and leaves IndexedDB intact', async () => {
+    const stale = {
+      sessionId: 'session-A-old',
+      boardPath: '/kilter/1/10/1,2/40/list',
+      boardDetails: createTestBoardDetails(),
+      parsedParams: {
+        board_name: 'kilter' as const,
+        layout_id: 1,
+        size_id: 10,
+        set_ids: [1, 2],
+        angle: 40,
+      },
+    };
+    await setPreference(ACTIVE_SESSION_KEY, stale);
+    setClimbCookie('session-B-fresh');
+
+    const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLocalQueueLoaded).toBe(true);
+    });
+
+    expect(result.current.activeSession).toBeNull();
+
+    // IndexedDB is preserved — BoardSessionBridge overwrites on a successful join, and an unvalidated cookie (e.g. legacy ?session= migration) can still fall back to the persisted entry.
+    const stored = await getPreference(ACTIVE_SESSION_KEY);
+    expectSession(stored, stale);
+
+    expect(mockHttpRequest).not.toHaveBeenCalled();
+  });
+
+  it('restores normally when the cookie matches the persisted sessionId', async () => {
+    const sessionInfo = {
+      sessionId: 'session-match',
+      boardPath: '/kilter/1/10/1,2/40/list',
+      boardDetails: createTestBoardDetails(),
+      parsedParams: {
+        board_name: 'kilter' as const,
+        layout_id: 1,
+        size_id: 10,
+        set_ids: [1, 2],
+        angle: 40,
+      },
+    };
+    await setPreference(ACTIVE_SESSION_KEY, sessionInfo);
+    setClimbCookie('session-match');
+
+    const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expectSession(result.current.activeSession, sessionInfo);
+    });
+
+    const stored = await getPreference(ACTIVE_SESSION_KEY);
+    expectSession(stored, sessionInfo);
+  });
+
+  it('restores normally when no cookie is set (legacy reload path)', async () => {
+    // No cookie — fresh page reload with no /join interaction. The persisted
+    // session is the only signal we have, so it should be restored.
+    const sessionInfo = {
+      sessionId: 'session-no-cookie',
+      boardPath: '/kilter/1/10/1,2/40/list',
+      boardDetails: createTestBoardDetails(),
+      parsedParams: {
+        board_name: 'kilter' as const,
+        layout_id: 1,
+        size_id: 10,
+        set_ids: [1, 2],
+        angle: 40,
+      },
+    };
+    await setPreference(ACTIVE_SESSION_KEY, sessionInfo);
+
+    const { result } = renderHook(() => usePersistentSession(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expectSession(result.current.activeSession, sessionInfo);
+    });
+
+    const stored = await getPreference(ACTIVE_SESSION_KEY);
+    expectSession(stored, sessionInfo);
   });
 });

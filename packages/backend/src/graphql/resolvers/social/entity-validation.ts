@@ -7,15 +7,27 @@ import type { SocialEntityType } from '@boardsesh/shared-schema';
  * Validates that a target entity exists before allowing a comment or vote.
  * Performs minimal SELECT ... LIMIT 1 existence checks.
  */
-export async function validateEntityExists(entityType: SocialEntityType, entityId: string): Promise<void> {
+export async function validateEntityExists(
+  entityType: SocialEntityType,
+  entityId: string,
+  viewerUserId?: string,
+): Promise<void> {
   switch (entityType) {
     case 'climb': {
       const [climb] = await db
-        .select({ uuid: dbSchema.boardClimbs.uuid })
+        .select({
+          uuid: dbSchema.boardClimbs.uuid,
+          userId: dbSchema.boardClimbs.userId,
+          isDraft: dbSchema.boardClimbs.isDraft,
+          isListed: dbSchema.boardClimbs.isListed,
+        })
         .from(dbSchema.boardClimbs)
         .where(eq(dbSchema.boardClimbs.uuid, entityId))
         .limit(1);
       if (!climb) {
+        throw new Error('Climb not found');
+      }
+      if ((climb.isDraft === true || climb.isListed === false) && climb.userId !== viewerUserId) {
         throw new Error('Climb not found');
       }
       break;
@@ -117,20 +129,12 @@ export async function validateEntityExists(entityType: SocialEntityType, entityI
     }
 
     case 'session': {
-      // Check both inferred sessions and party mode sessions
-      const [inferred] = await db
-        .select({ id: dbSchema.inferredSessions.id })
-        .from(dbSchema.inferredSessions)
-        .where(eq(dbSchema.inferredSessions.id, entityId))
-        .limit(1);
-      if (inferred) break;
-
-      const [party] = await db
+      const [session] = await db
         .select({ id: dbSchema.boardSessions.id })
         .from(dbSchema.boardSessions)
         .where(eq(dbSchema.boardSessions.id, entityId))
         .limit(1);
-      if (party) break;
+      if (session) break;
 
       throw new Error('Session not found');
     }

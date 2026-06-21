@@ -38,6 +38,11 @@ describe('getBaseFilterParts', () => {
     expect(getBaseFilterParts(filters, mockGrades, labels)).toEqual(['V2–V6']);
   });
 
+  it('shows a single grade name when min and max are the same grade', () => {
+    const filters: BaseFilters = { minGrade: 15, maxGrade: 15 };
+    expect(getBaseFilterParts(filters, mockGrades, labels)).toEqual(['V6']);
+  });
+
   it('shows min grade with plus', () => {
     expect(getBaseFilterParts({ minGrade: 10 }, mockGrades, labels)).toEqual(['V4+']);
   });
@@ -190,5 +195,41 @@ describe('formatFilterSummary', () => {
   it('shows all parts when maxParts is null (no limit)', () => {
     const parts = ['V4+', 'Quality', '25+ ascents', '3+ stars'];
     expect(formatFilterSummary(parts, labels, null)).toBe('V4+ · Quality · 25+ ascents · 3+ stars');
+  });
+
+  describe('character-budget mode (maxChars)', () => {
+    it('keeps every part when the joined string fits the budget', () => {
+      const parts = ['V4+', 'Quality'];
+      // "V4+ · Quality" is 13 chars, under 20.
+      expect(formatFilterSummary(parts, labels, null, 20)).toBe('V4+ · Quality');
+    });
+
+    it('truncates with "+N more" once adding the next part would exceed the budget', () => {
+      const parts = ['V4+', 'Quality', '25+ ascents', '3+ stars'];
+      // "V4+ · Quality" is 13 chars; adding " · 25+ ascents" would reach 27 > 20.
+      expect(formatFilterSummary(parts, labels, null, 20)).toBe('V4+ · Quality · +2 more');
+    });
+
+    it('always keeps the first part even when it alone exceeds the budget', () => {
+      const parts = ['A very long single filter part', 'Quality', '3+ stars'];
+      expect(formatFilterSummary(parts, labels, null, 5)).toBe('A very long single filter part · +2 more');
+    });
+
+    it('includes a lone trailing part in full instead of "+1 more"', () => {
+      const parts = ['V4+', 'Quality', '3+ stars'];
+      // "V4+ · Quality" is 13 chars; adding " · 3+ stars" reaches 24 > 14, but the
+      // single remaining part is shown rather than a same-length "+1 more".
+      expect(formatFilterSummary(parts, labels, null, 14)).toBe('V4+ · Quality · 3+ stars');
+    });
+
+    it('takes precedence over maxParts', () => {
+      const parts = ['V4+', 'Quality', '25+ ascents', '3+ stars'];
+      // maxParts=1 would yield "V4+ · +3 more"; the char budget fits two parts.
+      expect(formatFilterSummary(parts, labels, 1, 20)).toBe('V4+ · Quality · +2 more');
+    });
+
+    it('returns null for no parts regardless of budget', () => {
+      expect(formatFilterSummary([], labels, null, 20)).toBeNull();
+    });
   });
 });

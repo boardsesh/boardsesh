@@ -1,21 +1,19 @@
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
-import { Badge } from '../Badge';
 import { Text } from '../Text';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
-import { brandColors } from '../../theme/colors';
+import { LightbulbHolderBadge } from './LightbulbHolderBadge';
+import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
+import { useTheme } from '../../providers/theme-provider';
+// Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
+// `staticBrandColors` is the static set, used only for the count badge — a FILL
+// with white text that must stay legible in both schemes.
+import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing, shadows } from '../../theme/tokens';
+import { glassSize } from '../../theme/layout';
 import { hapticMedium } from '../../lib/haptics';
-
-type ButtonSize = 'lg' | 'sm';
-
-const SIZES: Record<ButtonSize, { dim: number; icon: number }> = {
-  lg: { dim: 56, icon: 28 },
-  sm: { dim: 40, icon: 22 },
-};
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -24,8 +22,23 @@ type PlayDrawerActionBarProps = {
   supportsMirroring: boolean;
   isFavorited: boolean;
   remainingQueueCount: number;
+  /** Filled/lit visual — OR'd in the parent (this device's BLE, a board-presence
+   *  holder, or the session wall-lit signal). Visual only. */
   lightbulbActive: boolean;
+  /** Whether THIS device's BLE link is connected. Drives the tap action's
+   *  meaning, so it also drives the accessibility label + selected state:
+   *  connected → tapping disconnects ("turn off"); not connected → tapping
+   *  connects ("connect board"). Distinct from `lightbulbActive`, which a peer
+   *  can light. */
+  lightbulbConnected: boolean;
   lightbulbPending?: boolean;
+  lightbulbAccessibilityLabel?: string;
+  lightbulbLongPressAccessibilityHint?: string;
+  lightbulbLongPressEnabled?: boolean;
+  /** Show the holder avatar pip on the lightbulb. Suppressed when the on-wall
+   *  banner already carries the driver's face in the header, so the same face
+   *  never appears twice in the drawer. */
+  showHolderBadge?: boolean;
   ascentCount: number;
   currentAngle?: number;
   onPrevClick: () => void;
@@ -33,6 +46,7 @@ type PlayDrawerActionBarProps = {
   onMirror: () => void;
   onToggleFavorite: () => void;
   onLightbulb: () => void;
+  onLightbulbLongPress?: () => void;
   onOpenActions: () => void;
   onOpenQueue: () => void;
   onShare: () => void;
@@ -49,7 +63,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   isFavorited,
   remainingQueueCount,
   lightbulbActive,
+  lightbulbConnected,
   lightbulbPending = false,
+  lightbulbAccessibilityLabel,
+  lightbulbLongPressAccessibilityHint,
+  lightbulbLongPressEnabled = lightbulbActive,
+  showHolderBadge = true,
   ascentCount,
   currentAngle,
   onPrevClick,
@@ -57,6 +76,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onMirror,
   onToggleFavorite,
   onLightbulb,
+  onLightbulbLongPress,
   onOpenActions,
   onOpenQueue,
   onShare,
@@ -67,7 +87,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
-  const { t: tCommon } = useTranslation('common');
+  const theme = useTheme();
 
   const handlePrev = useCallback(() => {
     hapticMedium();
@@ -100,16 +120,16 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   }, [onShare]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.rowPrimary}>
-        <View style={styles.primarySlot}>
+    <View style={drawerActionBarStyles.container}>
+      <View style={drawerActionBarStyles.rowPrimary}>
+        <View style={drawerActionBarStyles.primarySlot}>
           {supportsMirroring ? (
             <ActionButton
               size="lg"
               iconName="mirror"
               onPress={handleMirror}
               active={isMirrored}
-              activeColor={brandColors.primary}
+              activeColor={theme.brandColors.primary}
               accessibilityLabel={
                 isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')
               }
@@ -129,7 +149,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             />
           )}
         </View>
-        <View style={styles.primarySlot}>
+        <View style={drawerActionBarStyles.primarySlot}>
           <ActionButton
             size="lg"
             iconName="skip.previous"
@@ -138,7 +158,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             accessibilityLabel={t('playView.actionBar.previousAria')}
           />
         </View>
-        <View style={styles.primarySlot}>
+        <View style={drawerActionBarStyles.primarySlot}>
           <TickButton
             size="lg"
             ascentCount={ascentCount}
@@ -147,7 +167,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             accessibilityLabel={t('playView.tickFab.logAscentAria')}
           />
         </View>
-        <View style={styles.primarySlot}>
+        <View style={drawerActionBarStyles.primarySlot}>
           <ActionButton
             size="lg"
             iconName="skip.next"
@@ -156,31 +176,50 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             accessibilityLabel={t('playView.actionBar.nextAria')}
           />
         </View>
-        <View style={styles.primarySlot}>
+        <View style={drawerActionBarStyles.primarySlot}>
           <BleLightbulbButton
             isConnected={lightbulbActive}
+            accessibilitySelected={lightbulbConnected}
             isScanning={lightbulbPending}
             onPress={onLightbulb}
-            accessibilityLabel={lightbulbActive ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+            onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
+            accessibilityLabel={
+              lightbulbAccessibilityLabel ??
+              (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
+            }
             scanningAccessibilityHint={tSettings('ble.scanning')}
+            longPressAccessibilityHint={
+              lightbulbLongPressEnabled
+                ? (lightbulbLongPressAccessibilityHint ?? tSettings('ble.holdForControls'))
+                : undefined
+            }
             haptic="medium"
             size={SIZES.lg.icon}
             containerSize={SIZES.lg.dim}
           />
+          {/* "Who's connected" pip — the board-presence holder's avatar overlaid
+              on the lightbulb's top-right. Self-reads board presence and renders
+              nothing when the wall is free, so it never disturbs the slot's layout.
+              Suppressed when the on-wall banner already shows the driver in the
+              header, so the same face never appears twice in the drawer. */}
+          {showHolderBadge ? (
+            <View style={styles.connectionBadge} pointerEvents="none">
+              <LightbulbHolderBadge size={18} />
+            </View>
+          ) : null}
         </View>
       </View>
 
-      <View style={styles.rowSecondary}>
+      <View style={drawerActionBarStyles.rowSecondary}>
         {onOpenAngleSelector && currentAngle != null && (
           <Pressable
             onPress={handleAngleSelector}
             accessibilityRole="button"
             accessibilityLabel={t('mobile.angleSelector.title')}
-            style={({ pressed }) => [
-              styles.anglePill,
-              { height: SIZES.sm.dim, borderRadius: SIZES.sm.dim / 2 },
-              pressed && styles.actionButtonPressed,
-            ]}
+            // A label-only mini pill (32pt); hit-slop lifts the tap target back to
+            // the 44pt floor without growing the visual chip.
+            hitSlop={8}
+            style={({ pressed }) => [styles.anglePill, pressed && drawerActionBarStyles.actionButtonPressed]}
           >
             <Text variant="caption1" style={styles.angleText}>
               {currentAngle}°
@@ -205,78 +244,19 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           accessibilityLabel={t('playView.actionBar.climbActionsAria')}
         />
 
-        <View style={styles.spacer} />
+        <View style={drawerActionBarStyles.spacer} />
 
         <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
-        <View>
-          <ActionButton
-            size="sm"
-            iconName="queue"
-            onPress={onOpenQueue}
-            accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
-          />
-          {remainingQueueCount > 0 && (
-            <View style={styles.badgeContainer}>
-              <Badge count={remainingQueueCount} color={brandColors.primary} size="small" />
-            </View>
-          )}
-        </View>
+        <ActionButton
+          size="sm"
+          iconName="queue"
+          onPress={onOpenQueue}
+          accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingQueueCount })}
+        />
       </View>
     </View>
   );
 });
-
-type ActionButtonProps = {
-  iconName: import('../icon-map').IconName;
-  size: ButtonSize;
-  onPress: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  activeColor?: string;
-  iconColor?: string;
-  accessibilityLabel: string;
-};
-
-function ActionButton({
-  iconName,
-  size,
-  onPress,
-  disabled = false,
-  active = false,
-  activeColor,
-  iconColor,
-  accessibilityLabel,
-}: ActionButtonProps) {
-  const { dim, icon } = SIZES[size];
-  const buttonStyle: ViewStyle[] = [
-    styles.actionButton,
-    { width: dim, height: dim, borderRadius: dim / 2 },
-  ];
-  if (active && activeColor) {
-    buttonStyle.push({ backgroundColor: `${activeColor}20` });
-  }
-
-  const resolvedColor = disabled
-    ? iosSystemColors.systemGray4
-    : (iconColor ?? (active && activeColor ? activeColor : iosSystemColors.systemGray));
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [
-        ...buttonStyle,
-        disabled && styles.actionButtonDisabled,
-        pressed && !disabled && styles.actionButtonPressed,
-      ]}
-    >
-      <Icon name={iconName} size={icon} color={resolvedColor} />
-    </Pressable>
-  );
-}
 
 type ShareButtonProps = {
   size: ButtonSize;
@@ -295,9 +275,9 @@ function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
-        styles.actionButton,
+        drawerActionBarStyles.actionButton,
         { width: dim, height: dim, borderRadius: dim / 2 },
-        pressed && styles.actionButtonPressed,
+        pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
       <Icon name="share" size={icon} color={iosSystemColors.systemGray} />
@@ -315,6 +295,7 @@ type TickButtonProps = {
 
 function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabel }: TickButtonProps) {
   const { dim, icon } = SIZES[size];
+  const theme = useTheme();
   const handlePress = useCallback(() => {
     hapticMedium();
     onPress();
@@ -332,12 +313,14 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
-        styles.tickButton,
+        drawerActionBarStyles.actionButton,
         { width: dim, height: dim, borderRadius: dim / 2 },
-        pressed && styles.tickButtonPressed,
+        pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon name="tick.outline" size={icon} color={iosSystemColors.white} />
+      {/* The primary log action: a green glyph on the glass sheet (colour on the
+          icon, not a fill) — its hue and the count badge mark it as the hero. */}
+      <Icon name="tick.outline" size={icon} color={theme.brandColors.success} />
       {ascentCount > 0 && (
         <View style={styles.countBadge}>
           <Text variant="caption2" color={iosSystemColors.white} style={styles.countText}>
@@ -350,67 +333,25 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 }
 
 const styles = StyleSheet.create({
-  container: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
-  },
-  rowPrimary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-  },
-  primarySlot: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowSecondary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[3],
-  },
-  spacer: {
-    flex: 1,
-  },
-  actionButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionButtonDisabled: {
-    opacity: 0.4,
-  },
-  actionButtonPressed: {
-    opacity: 0.6,
-    transform: [{ scale: 0.9 }],
-  },
-  badgeContainer: {
+  // Holder avatar overlaid on the lightbulb's top-right corner.
+  connectionBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: -2,
+    right: -2,
   },
+  // A neutral, label-only outlined capsule (no colour fill) — the mini inline tier.
   anglePill: {
-    paddingHorizontal: 14,
+    height: glassSize.mini,
+    borderRadius: glassSize.mini / 2,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: `${iosSystemColors.systemGray}1F`,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: iosSystemColors.separator,
   },
   angleText: {
     fontWeight: '600',
     color: iosSystemColors.systemGray,
-  },
-  tickButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: brandColors.success,
-    ...shadows.md,
-  },
-  tickButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.92 }],
   },
   countBadge: {
     position: 'absolute',
@@ -419,7 +360,8 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: brandColors.primary,
+    // FILL with white count text → static brand (see import note).
+    backgroundColor: staticBrandColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,

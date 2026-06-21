@@ -44,6 +44,8 @@ export const socialTypeDefs = /* GraphQL */ `
     displayName: String
     "Avatar URL"
     avatarUrl: String
+    "Instagram profile URL, if the user has set one"
+    instagramUrl: String
     "Number of followers"
     followerCount: Int!
     "Number of users being followed"
@@ -344,38 +346,6 @@ export const socialTypeDefs = /* GraphQL */ `
     voteScore: Int!
     "Current user's vote (-1, 0, or 1)"
     userVote: Int!
-  }
-
-  """
-  Input for updating an inferred session's metadata.
-  """
-  input UpdateInferredSessionInput {
-    "ID of the inferred session to update"
-    sessionId: ID!
-    "New session name (optional)"
-    name: String
-    "New session description/notes (optional)"
-    description: String
-  }
-
-  """
-  Input for adding a user to an inferred session.
-  """
-  input AddUserToSessionInput {
-    "ID of the inferred session"
-    sessionId: ID!
-    "User ID to add"
-    userId: ID!
-  }
-
-  """
-  Input for removing a user from an inferred session.
-  """
-  input RemoveUserFromSessionInput {
-    "ID of the inferred session"
-    sessionId: ID!
-    "User ID to remove"
-    userId: ID!
   }
 
   """

@@ -30,6 +30,27 @@
     }
   },
   "mobile": {
+    "edit": {
+      "screenTitle": "Edit board",
+      "save": "Save changes",
+      "updateError": "Couldn't save your changes. Try again.",
+      "notFound": "We couldn't find that board",
+      "back": "Go back",
+      "configLockedHint": "This board has logged climbs, so its layout, size, and sets are locked."
+    },
+    "manage": {
+      "ownedHeader": "Your boards",
+      "followingHeader": "Following",
+      "deleteTitle": "Delete board?",
+      "deleteMessage": "Remove \"{{name}}\" from your boards? This can't be undone.",
+      "deleteConfirm": "Delete",
+      "cancel": "Cancel",
+      "deleteError": "Couldn't delete that board. Try again.",
+      "unfollowError": "Couldn't unfollow that board. Try again.",
+      "editAria": "Edit {{name}}",
+      "deleteAria": "Delete {{name}}",
+      "unfollowAria": "Unfollow {{name}}"
+    },
     "emptyTitle": "No boards yet",
     "emptySubtitle": "Search for a board to get started",
     "signInTitle": "Sign in to see your boards",
@@ -38,26 +59,46 @@
     "errorTitle": "Couldn't load your boards",
     "errorRetry": "Try again",
     "boardSwitchError": "Couldn't save that board. Try again.",
+    "onboardingPrompt": "Follow the wall you climb on — that's what turns its history on.",
     "discovery": {
       "findNearby": "Find nearby",
       "bluetooth": "Bluetooth",
-      "custom": "Custom",
       "locationDenied": "Allow location",
       "nearbyTitle": "Near you",
       "nearbyShowing": "Showing nearby",
       "yourBoardsTitle": "Your boards",
       "popularTitle": "Popular setups",
-      "search": "Search"
+      "findGym": "Find gym",
+      "create": "Create board"
+    },
+    "create": {
+      "screenTitle": "Set up your board",
+      "previewHint": "Pick your layout and we'll show your wall",
+      "adjustable": "Adjustable angle",
+      "anglePreview": "Wall tilted to {{angle}}°",
+      "moreOptions": "More options",
+      "ownBoard": "I own this board",
+      "public": "Public board",
+      "publicHint": "Show it on the map so your crew can find it",
+      "unlisted": "Unlisted",
+      "hideLocation": "Hide exact location",
+      "location": "Location",
+      "locationPlaceholder": "Home, gym name, or city",
+      "useMyLocation": "Use my location",
+      "locationSet": "Location set",
+      "serial": "Controller serial",
+      "serialPlaceholder": "e.g. ABC-12345",
+      "serialHint": "Optional — your controller links itself the first time you connect.",
+      "save": "Save my board",
+      "createError": "Couldn't create that board. Try again."
     },
     "custom": {
-      "title": "Build a board",
       "board": "Board",
       "layout": "Layout",
       "size": "Size",
       "sets": "Sets",
       "angle": "Angle",
-      "start": "Start climbing",
-      "createError": "Couldn't create that board. Try again."
+      "name": "Board name"
     },
     "bluetooth": {
       "title": "Boards near you",
@@ -65,10 +106,6 @@
       "resolving": "Loading boards…",
       "noResults": "No boards in range",
       "unavailable": "Turn on Bluetooth to scan"
-    },
-    "search": {
-      "placeholder": "Search by name or place",
-      "mapUnavailable": "Update the app to see the map. You can still search by name."
     },
     "boardDetail": {
       "setActive": "Set as active board",
@@ -85,6 +122,26 @@
         "angle": "Angle",
         "adjustable": "adjustable"
       }
+    },
+    "disambiguation": {
+      "title": "Which board are you on?",
+      "subtitle": "This serial is shared by more than one board. Pick the wall you're at.",
+      "yourBoard": "Your board",
+      "cancel": "Not now"
+    },
+    "gyms": {
+      "title": "Gyms near you",
+      "subtitle": "Tap a gym to use its board",
+      "locationNeeded": "Share your location to find gyms nearby",
+      "grantLocation": "Use my location",
+      "empty": "No gyms nearby yet",
+      "noBoards": "No boards here yet",
+      "boardCount": "{{count}} boards",
+      "searchPlaceholder": "Search a city, gym, or board",
+      "showingPlace": "Showing {{place}}",
+      "clearSearch": "Clear search",
+      "closeMap": "Close",
+      "otherBoardsTitle": "Boards nearby"
     }
   },
   "boardEntity": {
@@ -216,6 +273,9 @@
   "boardFilterStrip": {
     "all": "All",
     "allBoards": "All Boards"
+  },
+  "boardPill": {
+    "switchHint": "Opens the board switcher"
   },
   "boardSwitchConfirm": {
     "session": {

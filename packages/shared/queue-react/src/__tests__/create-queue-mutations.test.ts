@@ -3,13 +3,13 @@ import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
+  REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
   SET_QUEUE,
   MIRROR_CURRENT_CLIMB,
   REPLACE_QUEUE_ITEM,
-  TAKE_CONTROL,
-  RELEASE_CONTROL,
   CONFIRM_CLIMB_ON_WALL,
+  REPORT_WALL_DISCONNECT,
   SET_SESSION_BOARD_SERIAL,
   SET_SESSION_BOARD_PATH,
 } from '@boardsesh/graphql/operations/queue-session';
@@ -57,6 +57,11 @@ describe('web mode (no ensureReady)', () => {
   it('issues REMOVE_QUEUE_ITEM', async () => {
     await make().removeQueueItem('x');
     expect(queriesFor(REMOVE_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'x' });
+  });
+
+  it('issues REORDER_QUEUE_ITEM with scalar indices', async () => {
+    await make().reorderQueueItem('a', 0, 2);
+    expect(queriesFor(REORDER_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'a', oldIndex: 0, newIndex: 2 });
   });
 
   it('maps the queue and the optional current item for SET_QUEUE', async () => {
@@ -111,6 +116,20 @@ describe('mobile mode (ensureReady)', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 
+  it('no-ops (no create, no execute) for reorderQueueItem when no session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    await make({ getSessionId: () => null, ensureReady }).reorderQueueItem('a', 0, 1);
+    expect(ensureReady).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it('issues REORDER_QUEUE_ITEM after ensureReady resolves an existing session', async () => {
+    const ensureReady = vi.fn(async (captured: string | null) => captured);
+    await make({ ensureReady }).reorderQueueItem('a', 2, 0);
+    expect(ensureReady).toHaveBeenCalledWith('S');
+    expect(queriesFor(REORDER_QUEUE_ITEM)[0][1].variables).toEqual({ uuid: 'a', oldIndex: 2, newIndex: 0 });
+  });
+
   it('no-ops instead of throwing when ensureReady returns null', async () => {
     const ensureReady = vi.fn(async () => null);
     await make({ ensureReady }).addQueueItem(item('a'));
@@ -132,21 +151,21 @@ describe('mobile mode (ensureReady)', () => {
 });
 
 describe('party / best-effort actions', () => {
-  it('takeControl no-ops when there is no session (both modes)', async () => {
-    await make({ getSessionId: () => null }).takeControl(item('a'));
+  it('reportWallDisconnect no-ops when there is no session', async () => {
+    await make({ getSessionId: () => null }).reportWallDisconnect();
     expect(executeMock).not.toHaveBeenCalled();
   });
 
-  it('takeControl issues TAKE_CONTROL with a session', async () => {
-    await make().takeControl(item('a'));
-    expect(queriesFor(TAKE_CONTROL)[0][1].variables).toEqual({ climb: { uuid: 'a', climb: { uuid: 'c-a' } } });
+  it('reportWallDisconnect issues REPORT_WALL_DISCONNECT with a session', async () => {
+    await make().reportWallDisconnect();
+    expect(queriesFor(REPORT_WALL_DISCONNECT)[0][1].variables).toEqual({});
   });
 
-  it('releaseControl no-ops without a session and issues RELEASE_CONTROL with one', async () => {
-    await make({ getSessionId: () => null }).releaseControl();
-    expect(executeMock).not.toHaveBeenCalled();
-    await make().releaseControl();
-    expect(queriesFor(RELEASE_CONTROL)[0][1].variables).toEqual({});
+  it('reportWallDisconnect swallows transport errors via onBestEffortError', async () => {
+    executeMock.mockRejectedValueOnce(new Error('socket down'));
+    const onBestEffortError = vi.fn();
+    await expect(make({ onBestEffortError }).reportWallDisconnect()).resolves.toBeUndefined();
+    expect(onBestEffortError).toHaveBeenCalledWith('reportWallDisconnect', expect.any(Error));
   });
 
   it('confirmClimbOnWall swallows transport errors via onBestEffortError', async () => {

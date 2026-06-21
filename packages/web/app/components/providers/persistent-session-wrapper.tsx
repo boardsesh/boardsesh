@@ -15,6 +15,8 @@ import { BoardProvider, useBoardProvider } from '../board-provider/board-provide
 import { ConnectionSettingsProvider } from '../connection-manager/connection-settings-context';
 import { WebSocketConnectionProvider } from '../connection-manager/websocket-connection-provider';
 import { BluetoothProvider } from '../board-bluetooth-control/bluetooth-context';
+import { WebBoardPresenceProvider } from '../board-presence/board-presence-context';
+import { BoardPresencePanel } from '../board-presence/board-presence-panel';
 import { FavoritesProvider } from '../climb-actions/favorites-batch-context';
 import { PlaylistsProvider } from '../climb-actions/playlists-batch-context';
 import { useClimbActionsData } from '@/app/hooks/use-climb-actions-data';
@@ -59,16 +61,24 @@ export default function PersistentSessionWrapper({ children, boardConfigs }: Per
             <SearchDrawerBridgeProvider>
               <StatsFilterBridgeProvider>
                 <ProfileHeaderShareProvider>
-                  <RootBluetoothProvider>
-                    <PlaylistsAdapterProvider>
-                      <GlobalHeader boardConfigs={boardConfigs} />
-                      {children}
-                      <RootBottomBar boardConfigs={boardConfigs} />
-                      <RootSessionSummaryDialog />
-                      <RootSeshSettingsDrawer />
-                      <SessionWakeLock />
-                    </PlaylistsAdapterProvider>
-                  </RootBluetoothProvider>
+                  {/* WebBoardPresenceProvider wraps the BLE provider so the
+                      connect→resolveBoardForSerial and wall-confirm→reportClimb
+                      wiring inside BluetoothProvider can read the wall context.
+                      Inert (no client, null boardId) until a BLE serial resolves
+                      to a board. */}
+                  <WebBoardPresenceProvider>
+                    <RootBluetoothProvider>
+                      <PlaylistsAdapterProvider>
+                        <GlobalHeader boardConfigs={boardConfigs} />
+                        {children}
+                        <RootBottomBar boardConfigs={boardConfigs} />
+                        <BoardPresencePanel />
+                        <RootSessionSummaryDialog />
+                        <RootSeshSettingsDrawer />
+                        <SessionWakeLock />
+                      </PlaylistsAdapterProvider>
+                    </RootBluetoothProvider>
+                  </WebBoardPresenceProvider>
                 </ProfileHeaderShareProvider>
               </StatsFilterBridgeProvider>
             </SearchDrawerBridgeProvider>

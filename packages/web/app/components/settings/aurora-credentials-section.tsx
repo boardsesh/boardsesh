@@ -17,6 +17,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { LoadingSpinner } from '@/app/components/ui/loading-spinner';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
@@ -34,10 +35,20 @@ import EmailOutlined from '@mui/icons-material/EmailOutlined';
 import FileUploadOutlined from '@mui/icons-material/FileUploadOutlined';
 import RadioButtonUncheckedOutlined from '@mui/icons-material/RadioButtonUncheckedOutlined';
 import { useSession } from 'next-auth/react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { AuroraCredentialStatus } from '@/app/api/internal/aurora-credentials/route';
-import type { UnsyncedCounts } from '@/app/api/internal/aurora-credentials/unsynced/route';
+import {
+  createKilterHandoffStartUrl,
+  deleteAuroraCredential,
+  finalizeKilterCredential,
+  getAuroraCredentials,
+  getAuroraUnsyncedCounts,
+  resolveAuroraBackendTransport,
+  saveAuroraCredential,
+  type AuroraCredentialStatus,
+  type UnsyncedCounts,
+} from '@/app/lib/aurora-credentials/client';
 import type { ImportResult } from '@/app/lib/data-sync/aurora/json-import';
 import { streamImport } from '@/app/lib/data-sync/aurora/json-import-stream';
 import {
@@ -55,7 +66,7 @@ type BoardUnsyncedCounts = {
 
 export type ImportPhase = 'preview' | 'importing' | 'complete' | 'error';
 
-export type ImportStep = 'climbs' | 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits' | 'sessions';
+export type ImportStep = 'climbs' | 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits';
 
 export type ImportProgress = {
   step: ImportStep;
@@ -64,7 +75,7 @@ export type ImportProgress = {
   total?: number;
 };
 
-export const STEP_ORDER: ImportStep[] = ['climbs', 'resolving', 'dedup', 'ascents', 'attempts', 'circuits', 'sessions'];
+export const STEP_ORDER: ImportStep[] = ['climbs', 'resolving', 'dedup', 'ascents', 'attempts', 'circuits'];
 
 export const STEP_LABELS: Record<ImportStep, string> = {
   climbs: 'Importing draft climbs',
@@ -73,7 +84,6 @@ export const STEP_LABELS: Record<ImportStep, string> = {
   ascents: 'Importing ascents',
   attempts: 'Importing attempts',
   circuits: 'Importing circuits',
-  sessions: 'Building sessions',
 };
 
 function getStepLabels(t: TFunction<'settings'>): Record<ImportStep, string> {
@@ -84,7 +94,6 @@ function getStepLabels(t: TFunction<'settings'>): Record<ImportStep, string> {
     ascents: t('aurora.import.steps.ascents'),
     attempts: t('aurora.import.steps.attempts'),
     circuits: t('aurora.import.steps.circuits'),
-    sessions: t('aurora.import.steps.sessions'),
   };
 }
 
@@ -108,15 +117,16 @@ export type BoardCredentialCardProps = {
   onAdd: () => void;
   onRemove: () => void;
   onImportJson: () => void;
+  onConnectKilter?: () => void;
   isRemoving: boolean;
   isImporting: boolean;
+  isConnectingKilter?: boolean;
   userName?: string | null;
   userEmail?: string | null;
   /**
    * When true and the user has no Kilter credential yet, render the
    * "Connect Kilter account" OAuth button instead of the shut-down notice.
-   * Allowlist-gated via KILTER_SYNC_ALLOWED_USER_IDS — see
-   * packages/web/app/lib/kilter-sync/access.ts.
+   * Allowlist-gated by the backend's credential status response.
    */
   kilterSyncEnabled?: boolean;
 };
@@ -128,8 +138,10 @@ export function BoardCredentialCard({
   onAdd,
   onRemove,
   onImportJson,
+  onConnectKilter,
   isRemoving,
   isImporting,
+  isConnectingKilter = false,
   userName,
   userEmail,
   kilterSyncEnabled = false,
@@ -189,8 +201,9 @@ export function BoardCredentialCard({
             {isKilter && kilterSyncEnabled && (
               <Button
                 variant="contained"
-                startIcon={<LinkOutlined />}
-                href="/api/internal/board-credentials/kilter/start"
+                startIcon={isConnectingKilter ? <CircularProgress size={16} /> : <LinkOutlined />}
+                onClick={onConnectKilter}
+                disabled={isConnectingKilter || !onConnectKilter}
               >
                 {t('aurora.card.kilterConnectButton')}
               </Button>
@@ -336,11 +349,17 @@ export function ImportProgressSteps({ progress }: { progress: ImportProgress | n
 export default function AuroraCredentialsSection() {
   const { t } = useTranslation('settings');
   const { data: session } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const [credentials, setCredentials] = useState<AuroraCredentialStatus[]>([]);
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
   const [loading, setLoading] = useState(true);
+  const [credentialsLoadError, setCredentialsLoadError] = useState(false);
   const [kilterSyncAllowed, setKilterSyncAllowed] = useState(false);
+  const [connectingKilter, setConnectingKilter] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBoard, setSelectedBoard] = useState<AuroraBoardName>('kilter');
   const [isSaving, setIsSaving] = useState(false);
@@ -357,50 +376,97 @@ export default function AuroraCredentialsSection() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const receivedCompleteRef = useRef(false);
+  const handledKilterCompletionRef = useRef<string | null>(null);
 
   const fetchCredentials = async () => {
+    setCredentialsLoadError(false);
+    const transport = resolveAuroraBackendTransport(authToken);
+    if (!transport) {
+      setCredentialsLoadError(true);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch('/api/internal/aurora-credentials');
-      if (response.ok) {
-        const data = await response.json();
-        setCredentials(data.credentials);
-      }
+      const data = await getAuroraCredentials(transport);
+      setCredentials(data.credentials);
+      setKilterSyncAllowed(data.kilterSyncAllowed);
     } catch (error) {
       console.error('Failed to fetch credentials:', error);
+      setCredentialsLoadError(true);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchUnsyncedCounts = async () => {
+    const transport = resolveAuroraBackendTransport(authToken);
+    if (!transport) return;
+
     try {
-      const response = await fetch('/api/internal/aurora-credentials/unsynced');
-      if (response.ok) {
-        const data = await response.json();
-        setUnsyncedCounts(data.counts);
-      }
+      setUnsyncedCounts(await getAuroraUnsyncedCounts(transport));
     } catch (error) {
       console.error('Failed to fetch unsynced counts:', error);
     }
   };
 
   useEffect(() => {
+    if (authTokenLoading) return;
+    setLoading(true);
     void fetchCredentials();
     void fetchUnsyncedCounts();
-    // One-shot check for kilter-sync feature flag. Failures fall back to
-    // false (the Settings card just hides the Connect button), so a
-    // backend hiccup never blocks the page render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken, authTokenLoading]);
+
+  const clearKilterSearchParams = () => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('kilter');
+    nextParams.delete('reason');
+    nextParams.delete('completion');
+    const query = nextParams.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (authTokenLoading) return;
+
+    const kilterStatus = searchParams.get('kilter');
+    if (!kilterStatus) return;
+
+    if (kilterStatus === 'error') {
+      showMessage(t('aurora.mobile.kilterConnectFailed'), 'error');
+      clearKilterSearchParams();
+      return;
+    }
+
+    if (kilterStatus !== 'connected') return;
+
+    const completion = searchParams.get('completion');
+    if (!completion) {
+      showMessage(t('aurora.mobile.kilterConnectFailed'), 'error');
+      clearKilterSearchParams();
+      return;
+    }
+    if (handledKilterCompletionRef.current === completion) return;
+    handledKilterCompletionRef.current = completion;
+
     void (async () => {
       try {
-        const response = await fetch('/api/internal/kilter-sync/access');
-        if (!response.ok) return;
-        const data = (await response.json()) as { allowed?: boolean };
-        if (data.allowed === true) setKilterSyncAllowed(true);
-      } catch {
-        // Stay disabled on any failure — fail closed.
+        const transport = resolveAuroraBackendTransport(authToken);
+        if (!transport) throw new Error(t('aurora.mobile.kilterConnectFailed'));
+
+        await finalizeKilterCredential(transport, completion);
+        showMessage(t('aurora.mobile.kilterConnected'), 'success');
+        await Promise.all([fetchCredentials(), fetchUnsyncedCounts()]);
+      } catch (error) {
+        handledKilterCompletionRef.current = null;
+        showMessage(error instanceof Error ? error.message : t('aurora.mobile.kilterConnectFailed'), 'error');
+      } finally {
+        clearKilterSearchParams();
       }
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken, authTokenLoading, searchParams]);
 
   const handleAddClick = (boardType: AuroraBoardName) => {
     setSelectedBoard(boardType);
@@ -418,20 +484,14 @@ export default function AuroraCredentialsSection() {
   const handleSaveCredentials = async (values: { username: string; password: string }) => {
     setIsSaving(true);
     try {
-      const response = await fetch('/api/internal/aurora-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boardType: selectedBoard,
-          username: values.username,
-          password: values.password,
-        }),
-      });
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.linkDialog.linkError'));
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || t('aurora.linkDialog.linkError'));
-      }
+      await saveAuroraCredential(transport, {
+        boardType: selectedBoard,
+        username: values.username,
+        password: values.password,
+      });
 
       showMessage(t('aurora.linkDialog.linkSuccess', { boardName: selectedBoardName }), 'success');
       setIsModalOpen(false);
@@ -447,38 +507,12 @@ export default function AuroraCredentialsSection() {
   const handleRemove = async (boardType: AuroraBoardName) => {
     setRemovingBoard(boardType);
     try {
-      // Kilter routes through its OAuth-aware disconnect endpoint, which
-      // revokes the refresh token at Keycloak before the local DELETE.
-      // The legacy /api/internal/aurora-credentials DELETE only cleans
-      // up local rows — fine for Aurora (username/password creds with
-      // no remote session) but leaves the Keycloak refresh token live
-      // for its full TTL after a Kilter disconnect.
-      const url =
-        boardType === 'kilter'
-          ? '/api/internal/board-credentials/kilter/disconnect'
-          : '/api/internal/aurora-credentials';
-      const init: RequestInit =
-        boardType === 'kilter'
-          ? { method: 'POST' }
-          : {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ boardType }),
-            };
-      const response = await fetch(url, init);
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.unlinkError'));
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || t('aurora.unlinkError'));
-      }
+      const result = await deleteAuroraCredential(transport, boardType);
 
-      // 207 Multi-Status from the kilter disconnect route means: local
-      // rows ARE gone, but Keycloak token revocation failed. The user
-      // believes they disconnected; warn them the IdP-side session may
-      // still be live so they can manually expire it via the Kilter
-      // portal. Without this, an outage at Keycloak silently leaves a
-      // refresh token usable for its full TTL.
-      if (response.status === 207) {
+      if (!result.success && result.reason === 'revocation_failed') {
         showMessage(t('aurora.unlinkPartial'), 'warning');
       } else {
         showMessage(t('aurora.unlinkSuccess'), 'success');
@@ -488,6 +522,22 @@ export default function AuroraCredentialsSection() {
       showMessage(error instanceof Error ? error.message : t('aurora.unlinkError'), 'error');
     } finally {
       setRemovingBoard(null);
+    }
+  };
+
+  const handleConnectKilter = async () => {
+    setConnectingKilter(true);
+    try {
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.mobile.kilterConnectFailed'));
+
+      const returnUrl =
+        typeof window === 'undefined' ? '/settings' : `${window.location.origin}${window.location.pathname}`;
+      const startUrl = await createKilterHandoffStartUrl(transport, returnUrl);
+      window.location.assign(startUrl);
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : t('aurora.mobile.kilterConnectFailed'), 'error');
+      setConnectingKilter(false);
     }
   };
 
@@ -558,37 +608,52 @@ export default function AuroraCredentialsSection() {
     receivedCompleteRef.current = false;
 
     try {
-      await streamImport(importingBoard, importRawData, (event) => {
-        switch (event.type) {
-          case 'progress':
-            setImportProgress({
-              step: event.step,
-              message: 'message' in event ? event.message : undefined,
-              current: 'current' in event ? event.current : undefined,
-              total: 'total' in event ? event.total : undefined,
-            });
-            break;
-          case 'complete':
-            receivedCompleteRef.current = true;
-            setImportResult(event.results);
-            setImportPhase('complete');
-            {
-              const totalImported =
-                event.results.climbs.imported +
-                event.results.ascents.imported +
-                event.results.attempts.imported +
-                event.results.circuits.imported;
-              showMessage(t('aurora.import.successCount', { count: totalImported }), 'success');
-            }
-            break;
-          case 'error':
-            receivedCompleteRef.current = true;
-            setImportError(event.error);
-            setImportPhase('error');
-            showMessage(event.error, 'error');
-            break;
-        }
-      });
+      const transport = resolveAuroraBackendTransport(authToken);
+      if (!transport) throw new Error(t('aurora.import.failed'));
+
+      await streamImport(
+        importingBoard,
+        importRawData,
+        (event) => {
+          switch (event.type) {
+            case 'progress':
+              setImportProgress({
+                step: event.step,
+                message: 'message' in event ? event.message : undefined,
+                current: 'current' in event ? event.current : undefined,
+                total: 'total' in event ? event.total : undefined,
+              });
+              break;
+            case 'complete':
+              receivedCompleteRef.current = true;
+              setImportResult(event.results);
+              setImportPhase('complete');
+              {
+                const totalImported =
+                  event.results.climbs.imported +
+                  event.results.ascents.imported +
+                  event.results.attempts.imported +
+                  event.results.circuits.imported;
+                if (event.results.partialError) {
+                  showMessage(t('aurora.import.partialWarning'), 'warning');
+                } else {
+                  showMessage(t('aurora.import.successCount', { count: totalImported }), 'success');
+                }
+              }
+              break;
+            case 'error':
+              receivedCompleteRef.current = true;
+              setImportError(event.error);
+              setImportPhase('error');
+              showMessage(event.error, 'error');
+              break;
+          }
+        },
+        {
+          backendUrl: transport.backendUrl,
+          authToken: transport.authToken,
+        },
+      );
 
       // If stream ended without a complete/error event (e.g. server timeout)
       if (!receivedCompleteRef.current) {
@@ -648,6 +713,33 @@ export default function AuroraCredentialsSection() {
     );
   }
 
+  if (credentialsLoadError) {
+    return (
+      <Card>
+        <CardContent>
+          <MuiAlert
+            severity="error"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  setLoading(true);
+                  void fetchCredentials();
+                  void fetchUnsyncedCounts();
+                }}
+              >
+                {t('aurora.loadRetry')}
+              </Button>
+            }
+          >
+            {t('aurora.mobile.loadFailed')}
+          </MuiAlert>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <>
       <Card>
@@ -658,22 +750,33 @@ export default function AuroraCredentialsSection() {
           </Typography>
 
           <Stack spacing={2} className={styles.cardsContainer}>
-            {AURORA_BOARDS.map((boardType) => (
-              <BoardCredentialCard
-                key={boardType}
-                boardType={boardType}
-                credential={getCredentialForBoard(boardType)}
-                unsyncedCounts={unsyncedCounts?.[boardType] ?? { ascents: 0, climbs: 0 }}
-                onAdd={() => handleAddClick(boardType)}
-                onRemove={() => handleRemove(boardType)}
-                onImportJson={() => handleImportClick(boardType)}
-                isRemoving={removingBoard === boardType}
-                isImporting={isImporting && importingBoard === boardType}
-                userName={boardType === 'kilter' ? session?.user?.name : undefined}
-                userEmail={boardType === 'kilter' ? session?.user?.email : undefined}
-                kilterSyncEnabled={boardType === 'kilter' && kilterSyncAllowed}
-              />
-            ))}
+            {AURORA_BOARDS.map((boardType) => {
+              const kilterProps =
+                boardType === 'kilter'
+                  ? {
+                      onConnectKilter: handleConnectKilter,
+                      isConnectingKilter: connectingKilter,
+                      userName: session?.user?.name ?? null,
+                      userEmail: session?.user?.email ?? null,
+                      kilterSyncEnabled: kilterSyncAllowed,
+                    }
+                  : {};
+
+              return (
+                <BoardCredentialCard
+                  key={boardType}
+                  boardType={boardType}
+                  credential={getCredentialForBoard(boardType)}
+                  unsyncedCounts={unsyncedCounts?.[boardType] ?? { ascents: 0, climbs: 0 }}
+                  onAdd={() => handleAddClick(boardType)}
+                  onRemove={() => handleRemove(boardType)}
+                  onImportJson={() => handleImportClick(boardType)}
+                  isRemoving={removingBoard === boardType}
+                  isImporting={isImporting && importingBoard === boardType}
+                  {...kilterProps}
+                />
+              );
+            })}
           </Stack>
         </CardContent>
       </Card>
@@ -790,6 +893,12 @@ export default function AuroraCredentialsSection() {
           {/* Complete phase */}
           {importPhase === 'complete' && importResult && (
             <>
+              {importResult.partialError && (
+                <MuiAlert severity="warning" className={styles.unsyncedAlert}>
+                  <AlertTitle>{t('aurora.import.results.partialTitle')}</AlertTitle>
+                  {t('aurora.import.results.partialBody')}
+                </MuiAlert>
+              )}
               <List dense>
                 {(importResult.climbs.imported > 0 || importResult.climbs.failed > 0) && (
                   <ListItem>

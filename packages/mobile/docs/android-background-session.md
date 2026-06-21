@@ -53,8 +53,6 @@ the BLE gate: a denial only hides the notification; the service still runs.
   Android-14 reconnect issues; explicit reconnect hardening and tying the service
   to the raw BLE connect/disconnect (rather than only session presence) is a
   device-tested follow-up.
-- **Notification small icon** is a placeholder (`ic_media_play`) until a
-  dedicated white-silhouette asset lands (Phase 6).
 - **OEM battery killers** (Samsung/Xiaomi) can still kill a connectedDevice FGS;
   an in-app battery-optimization explainer is a possible later mitigation.
 - **Play policy**: `FOREGROUND_SERVICE_CONNECTED_DEVICE` needs a Foreground

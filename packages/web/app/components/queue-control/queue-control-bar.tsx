@@ -42,7 +42,6 @@ import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutl
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import ChatBubbleOutlineOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import InputAdornment from '@mui/material/InputAdornment';
-import Avatar from '@mui/material/Avatar';
 import AvatarGroup from '@mui/material/AvatarGroup';
 import Badge from '@mui/material/Badge';
 import { TickBadgeAvatar } from '@/app/components/session/tick-badge-avatar';
@@ -112,17 +111,8 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   const isViewPage = pathname.includes('/view/');
   const { currentClimb } = useCurrentClimb();
   const { queue } = useQueueList();
-  const {
-    viewOnlyMode,
-    connectionState,
-    sessionId,
-    isDisconnected,
-    users,
-    clientId,
-    isPersistentSessionActive,
-    driverParticipantId,
-    isDriver,
-  } = useSessionData();
+  const { viewOnlyMode, connectionState, sessionId, isDisconnected, users, clientId, isPersistentSessionActive } =
+    useSessionData();
 
   // Drawer-local "displayed climb" — populated when a browse caller (list
   // row, suggestion thumbnail, logbook row) opens the drawer with a climb
@@ -137,8 +127,9 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // suggestions, queue items). When the event carries a climb payload, store
   // it as the drawer's locally-displayed item so the drawer can render the
   // requested climb. This matters in two cases:
-  //   - Party sessions: browse-doesn't-yank — `previewClimbFromBrowse` uses
-  //     this path so non-drivers don't change the wall climb for others.
+  //   - Browsing climbs: a board-page climb-list tap opens the drawer to
+  //     preview that climb without changing the shared wall climb. There's no
+  //     driver role — preview-vs-send applies to every member equally.
   //   - Solo direct hits to /view/{uuid}: the page dispatches with the SSR-
   //     fetched climb so the drawer has something to display before the queue
   //     context's `currentClimbQueueItem` is seeded.
@@ -146,10 +137,11 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     const handler = (event: Event) => {
       const detail = readPlayDrawerEventDetail(event);
       const climb = detail?.climb;
-      // Always store a climb payload when present — both party mode
-      // (preview-doesn't-yank via previewClimbFromBrowse) and solo direct
-      // hits to /view/{uuid} depend on this so the drawer has something to
-      // display before the queue context's currentClimbQueueItem is seeded.
+      // Always store a climb payload when present — both browsing climbs (a
+      // board-page list tap previews the climb without yanking the wall) and
+      // solo direct hits to /view/{uuid} depend on this so the drawer has
+      // something to display before the queue context's currentClimbQueueItem
+      // is seeded.
       if (climb) {
         setDrawerDisplayedItem({ climb, uuid: uuidv4(), suggested: true });
       } else {
@@ -303,17 +295,15 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
       method: 'swipeQueueBar',
       boardLayout,
     });
-    // Pivot Phase 5: bar swipe is a broadcast advance just like the bar
-    // button. Same semantics — anyone in the session can swipe; the presser
-    // stays in their current role.
+    // Bar swipe is a broadcast advance just like the bar button. Always-live
+    // model: anyone in the session can swipe to advance the wall climb.
     track('Wall Advance', {
       source: 'bar_swipe',
-      pressedByRole: isPersistentSessionActive && !isDriver ? 'non_driver' : 'driver',
       direction: 'next',
       mode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
     });
-  }, [nextClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive, isDriver]);
+  }, [nextClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive]);
 
   const handleSwipePrevious = useCallback(() => {
     if (!previousClimb || viewOnlyMode) return;
@@ -327,12 +317,11 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
     });
     track('Wall Advance', {
       source: 'bar_swipe',
-      pressedByRole: isPersistentSessionActive && !isDriver ? 'non_driver' : 'driver',
       direction: 'previous',
       mode: isPersistentSessionActive ? 'party' : 'solo',
       boardLayout,
     });
-  }, [previousClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive, isDriver]);
+  }, [previousClimb, viewOnlyMode, setCurrentClimbQueueItem, boardDetails, isPersistentSessionActive]);
 
   const tickBarActive = activeDrawer === 'tick';
   const canSwipeNext = !viewOnlyMode && !!nextClimb && !tickBarActive;
@@ -363,28 +352,15 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
   // Deduplicate session users by userId (stable DB UUID).
   // When userId is absent (unauthenticated), fall back to connection id
   // so distinct participants with the same display name aren't merged.
-  //
-  // Also sort driver-first (queue-control-bar pivot, Phase 3): the
-  // participant whose `id` matches `driverParticipantId` floats to position 0
-  // so the lightbulb badge on the bar's AvatarGroup unambiguously surfaces
-  // who's driving. Stable sort otherwise — non-drivers keep their existing
-  // order so the avatar group doesn't jitter on unrelated participant events.
   const uniqueSessionUsers = useMemo(() => {
     const seen = new Set<string>();
-    const deduped = sessionUsers.filter((user) => {
+    return sessionUsers.filter((user) => {
       const key = user.userId ?? user.id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    if (!driverParticipantId) return deduped;
-    const driverIdx = deduped.findIndex((u) => u.id === driverParticipantId);
-    if (driverIdx <= 0) return deduped;
-    const reordered = [...deduped];
-    const [driver] = reordered.splice(driverIdx, 1);
-    reordered.unshift(driver);
-    return reordered;
-  }, [sessionUsers, driverParticipantId]);
+  }, [sessionUsers]);
 
   // Resolve the current user's stable userId from the session users list
   const myUserId = useMemo(() => {
@@ -835,7 +811,6 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                               hasTicked={
                                 tickedBySet.has(user.id) || (user.userId != null && tickedBySet.has(user.userId))
                               }
-                              isDriver={driverParticipantId != null && user.id === driverParticipantId}
                             />
                           ))}
                         </AvatarGroup>
@@ -911,7 +886,6 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                                 tickedBySet.has(user.id) || (user.userId != null && tickedBySet.has(user.userId))
                               }
                               size={32}
-                              isDriver={driverParticipantId != null && user.id === driverParticipantId}
                             />
                             <Typography variant="caption" className={styles.participantName} noWrap>
                               {user.username}

@@ -52,3 +52,40 @@ export function parseBoardPath(path: string): ParsedBoardPath | null {
   const angle = angleRaw !== undefined && /^-?\d+$/.test(angleRaw) ? Number(angleRaw) : null;
   return { boardName, layoutId, sizeId, setIds, angle };
 }
+
+export type ParsedNamedBoardPath = {
+  slug: string;
+  angle: number | null;
+};
+
+/**
+ * Parse a named-board path — the `/b/{slug}` board-entity shape used for named
+ * gym boards (e.g. `/b/boiler-room-moonboard-c937dad5`), optionally carrying an
+ * angle and trailing route segments (`/b/{slug}/40/list`). Named boards are
+ * keyed by slug rather than the positional `{board}/{layout}/{size}/{sets}/{angle}`
+ * tuple, so {@link parseBoardPath} deliberately rejects this shape.
+ *
+ * Tolerant of a leading slash and a leading two-letter locale segment, mirroring
+ * `parseBoardPath`. `angle` is the numeric angle when the path carries one (e.g.
+ * `/b/{slug}/40/...`), otherwise `null` — a bare `/b/{slug}` has no angle, so the
+ * caller falls back to the board entity's stored angle. Returns `null` for any
+ * path that isn't a named-board path.
+ */
+export function parseNamedBoardPath(path: string): ParsedNamedBoardPath | null {
+  if (!path) return null;
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  // Drop a leading locale segment (two lowercase letters). The `/b/` marker is a
+  // single character, so this can't swallow it.
+  if (segments.length > 0 && /^[a-z]{2}$/.test(segments[0])) {
+    segments.shift();
+  }
+  // Named-board shape: `b/{slug}[/{angle}][/...]`. No positional board path uses
+  // `b` as its board-name segment, so this prefix is unambiguous.
+  if (segments.length < 2 || segments[0] !== 'b') return null;
+  const slug = segments[1];
+  if (!slug) return null;
+
+  const angleRaw = segments[2];
+  const angle = angleRaw !== undefined && /^-?\d+$/.test(angleRaw) ? Number(angleRaw) : null;
+  return { slug, angle };
+}

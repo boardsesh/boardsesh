@@ -79,6 +79,18 @@ function getNextPlaylistClimb(
   return source.climbs[index + 1] ?? null;
 }
 
+/** The playlist climb immediately before `currentClimbUuid` in the source's
+ * ordered list, or null if the current climb isn't in the playlist or is first. */
+function getPreviousPlaylistClimb(
+  source: PlaylistSuggestionSource | null,
+  currentClimbUuid: string | undefined,
+): Climb | null {
+  if (!source || !currentClimbUuid) return null;
+  const index = source.climbs.findIndex((climb) => climb.uuid === currentClimbUuid);
+  if (index <= 0) return null;
+  return source.climbs[index - 1] ?? null;
+}
+
 /** Wrap a suggested climb as a transient "peek" queue item. */
 function toPeekItem(climb: Climb): ClimbQueueItem {
   return { climb, addedBy: null, uuid: getPlaylistPeekQueueItemUuid(climb.uuid), suggested: true };
@@ -121,9 +133,40 @@ export function findNextQueueItemWithSuggestions(
 }
 
 /**
+ * Like findPreviousQueueItem, but when the current item isn't in the queue at
+ * all, fall through to the PREVIOUS playlist climb (the one immediately before
+ * the current climb in the suggestion source's ordered list) as a transient
+ * "peek" item — the mirror of findNextQueueItemWithSuggestions.
+ *
+ * This only matters for the wrong-board view-only preview, where peeked climbs
+ * are shown but never committed to the queue, so they have no queue predecessor
+ * to walk back to. Queue-first: while the current item IS in the queue we return
+ * its queue predecessor (or null at the head) exactly like findPreviousQueueItem,
+ * so the committed active-board path never peeks backward into the playlist.
+ */
+export function findPreviousQueueItemWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+): ClimbQueueItem | null {
+  if (!currentClimbQueueItem) return null;
+
+  const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
+  if (currentIndex >= 0) {
+    return currentIndex > 0 ? queue[currentIndex - 1] : null;
+  }
+
+  const prevClimb = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
+  return prevClimb ? toPeekItem(prevClimb) : null;
+}
+
+/**
  * computeNavigationState that lights up canNext/nextItem from playlist
- * suggestions when the queue is exhausted. canPrevious/prevItem stay queue-only
- * (web has no backward suggestion fall-through). remainingCount stays
+ * suggestions when the queue is exhausted, and canPrevious/prevItem from
+ * suggestions when the current climb isn't in the queue at all (the wrong-board
+ * view-only preview, whose peeked climbs are never committed to the queue). For
+ * a current climb that IS in the queue, prev stays queue-only — the committed
+ * active-board path never peeks backward into the playlist. remainingCount stays
  * queue-based to match web's action-bar remaining count.
  */
 export function computeNavigationStateWithSuggestions(
@@ -132,7 +175,7 @@ export function computeNavigationStateWithSuggestions(
   source: PlaylistSuggestionSource | null,
 ): NavigationState {
   const nextItem = findNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
-  const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem);
+  const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
 
   const currentIndex = currentClimbQueueItem ? queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid) : -1;
   const remainingCount = currentIndex >= 0 ? queue.length - currentIndex - 1 : queue.length;

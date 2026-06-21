@@ -67,11 +67,15 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       name: row.name || '',
       description: row.description || '',
       frames: row.frames || '',
+      // Scoped by the WHERE clause to this board + layout — carry them so the
+      // queue's BLE spill guard can tell a climb set for another board apart.
+      boardType: params.board_name,
+      layoutId: params.layout_id,
       angle: Number(params.angle),
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
       quality_average: row.quality_average?.toString() || '0',
-      stars: getClimbStars(params.board_name, row.quality_average),
+      stars: getClimbStars(row.quality_average),
       difficulty_error: row.difficulty_error?.toString() || '0',
       benchmark_difficulty:
         row.benchmark_difficulty && row.benchmark_difficulty > 0 ? row.benchmark_difficulty.toString() : null,

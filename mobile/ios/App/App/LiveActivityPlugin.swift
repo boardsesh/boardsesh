@@ -571,6 +571,8 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         // ws.boardsesh.com). Without this, registerActivityPushToken hits
         // the web origin and 404s silently.
         let graphqlUrl = call.getString("graphqlUrl")
+        let widgetNavigationAllowed = call.getBool("widgetNavigationAllowed") ?? true
+        let isPartySession = call.getBool("isPartySession") ?? false
 
         // Store session details for push token registration.
         tokenQueue.sync {
@@ -588,6 +590,13 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             components.fragment = nil
             return components.url?.absoluteString
         }()
+        let widgetTakeControlUrl: String? = {
+            guard let graphqlUrl, var components = URLComponents(string: graphqlUrl) else { return nil }
+            components.path = "/api/widget/take-control"
+            components.query = nil
+            components.fragment = nil
+            return components.url?.absoluteString
+        }()
 
         // Store board details in shared UserDefaults for App Intents
         // and thumbnail URL construction. Auth + push tokens go through
@@ -599,10 +608,18 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             if let widgetNavigateUrl {
                 defaults.set(widgetNavigateUrl, forKey: SharedConstants.widgetNavigateUrlKey)
             }
+            if let widgetTakeControlUrl {
+                defaults.set(widgetTakeControlUrl, forKey: SharedConstants.widgetTakeControlUrlKey)
+            }
             defaults.set(boardName, forKey: SharedConstants.boardNameKey)
             defaults.set(layoutId, forKey: SharedConstants.layoutIdKey)
             defaults.set(sizeId, forKey: SharedConstants.sizeIdKey)
             defaults.set(setIds, forKey: SharedConstants.setIdsKey)
+            SharedWidgetWallControlState.save(
+                navigationAllowed: widgetNavigationAllowed,
+                isPartySession: isPartySession,
+                to: defaults
+            )
         }
         if let authToken = authToken {
             if authToken.isEmpty {
@@ -749,6 +766,9 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             defaults.removeObject(forKey: SharedConstants.sessionIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateUrlKey)
+            defaults.removeObject(forKey: SharedConstants.widgetTakeControlUrlKey)
+            defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
+            defaults.removeObject(forKey: SharedConstants.partySessionKey)
             // Cover earlier builds that wrote tokens to UserDefaults so
             // we don't leave plaintext credentials behind after upgrade.
             defaults.removeObject(forKey: SharedConstants.authTokenKey)
@@ -785,10 +805,18 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         let hasNext = call.getBool("hasNext") ?? false
         let hasPrevious = call.getBool("hasPrevious") ?? false
         let climbUuid = call.getString("climbUuid") ?? ""
+        let widgetNavigationAllowed = call.getBool("widgetNavigationAllowed") ?? true
+        let isPartySession = call.getBool("isPartySession") ?? false
 
         // Parse the queue array from the call and store in shared UserDefaults
         // so App Intents can navigate locally.
+        var wallControlChanged = false
         if let defaults = SharedConstants.sharedDefaults {
+            let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
+            wallControlChanged =
+                previousWallControl.navigationAllowed != widgetNavigationAllowed ||
+                previousWallControl.requiresServerAuthorization != isPartySession
+
             var queueItems: [SharedQueueItem] = []
 
             if let queueArray = call.getArray("queue") as? [JSObject] {
@@ -816,6 +844,11 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             SharedQueueState.save(items: queueItems, currentIndex: currentIndex, to: defaults)
+            SharedWidgetWallControlState.save(
+                navigationAllowed: widgetNavigationAllowed,
+                isPartySession: isPartySession,
+                to: defaults
+            )
         }
 
         // Build and push the new content state to the Live Activity.
@@ -837,7 +870,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             // updated the Live Activity within the dedup window. The UserDefaults
             // write above still runs to keep state consistent.
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)
@@ -866,10 +899,23 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         let hasNext = call.getBool("hasNext") ?? false
         let hasPrevious = call.getBool("hasPrevious") ?? false
         let climbUuid = call.getString("climbUuid") ?? ""
+        let widgetNavigationAllowed = call.getBool("widgetNavigationAllowed") ?? true
+        let isPartySession = call.getBool("isPartySession") ?? false
 
         // Only update the current index in shared UserDefaults (not the full items array).
+        var wallControlChanged = false
         if let defaults = SharedConstants.sharedDefaults {
+            let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
+            wallControlChanged =
+                previousWallControl.navigationAllowed != widgetNavigationAllowed ||
+                previousWallControl.requiresServerAuthorization != isPartySession
+
             SharedQueueState.saveCurrentIndex(currentIndex, to: defaults)
+            SharedWidgetWallControlState.save(
+                navigationAllowed: widgetNavigationAllowed,
+                isPartySession: isPartySession,
+                to: defaults
+            )
         }
 
         let state = ClimbSessionAttributes.ContentState(
@@ -887,7 +933,7 @@ public class LiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
         Task {
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)

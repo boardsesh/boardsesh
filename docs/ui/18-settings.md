@@ -49,6 +49,38 @@ Card with "Display" title and subtitle.
 
 ---
 
+### Mobile: More tab — UI Style
+
+**Screen:** `packages/mobile/app/(tabs)/profile/more.tsx`
+
+The mobile More tab contains appearance and UI-style controls that have no direct web equivalent.
+
+**Appearance** (system / light / dark):
+
+- `SegmentedControl` with three options persisted as `ThemeOverride` in key-value storage.
+
+**UI Style**:
+
+- `SegmentedControl` with three options: Auto, Liquid Glass, Material.
+- Persisted as `UiVariantPreference` via `useTheme().setUiVariant`.
+- **Auto**: resolves to Liquid Glass on every iPhone (including iOS < 26, via the blur surface fallback) and Material on Android. `resolveUiVariant` keys this on `Platform.OS === 'ios'`, not glass capability.
+- **Liquid Glass**: the glass aesthetic. On a glass-capable device (iOS 26) it uses the native `NativeTabs` tab bar + `GlassView` surfaces; on iOS < 26 it falls back to the JS `MaterialTabBar` + frosted `BlurView` surfaces; on Android it falls back to the JS `MaterialTabBar` + solid surfaces. Whether the native tab bar mounts is gated by `useNativeTabBar()` (`liquidGlass && useGlassCapability()`).
+- **Material**: JS `MaterialTabBar` + opaque M3 surfaces.
+- All three options are always **selectable** on every platform — any phone can opt into Liquid Glass, falling back to JS buttons where the native iOS 26 chrome can't render. An explanatory footnote switches between `mobile.more.uiStyle.description` (glass-capable), `mobile.more.uiStyle.glassFallback` (iOS < 26), and `mobile.more.uiStyle.glassFallbackAndroid` (Android) based on capability and platform.
+
+**Grade Format** (V-Grade / Font / Both):
+
+- `SegmentedControl` persisted via `useGradeFormat()`.
+
+**Accessibility**:
+
+- Adds hold-role colour overrides for STARTING, HAND, FINISH, and FOOT.
+- Each role has a Default/User mode. Default stores no override and uses the board's canonical colour.
+- User mode opens a bottom sheet with RGB channel inputs and a live swatch preview.
+- Overrides are persisted in AsyncStorage via `useHoldColorOverrides()` and shared with board rendering plus Bluetooth payload encoding.
+
+---
+
 ### 11.3 Password Management
 
 **Component:** `SetPasswordSection`
@@ -72,7 +104,8 @@ Card with "Display" title and subtitle.
 
 ### 11.4 Aurora Account Linking
 
-**Component:** `AuroraCredentialsSection`
+**Web component:** `AuroraCredentialsSection`
+**Mobile component:** `BoardAccountsSection` on Connected apps
 
 Card for each board type (iterates `AURORA_BOARDS`: kilter, tension).
 
@@ -112,6 +145,23 @@ Card for each board type (iterates `AURORA_BOARDS`: kilter, tension).
    - Active step shows progress bar with count (e.g., "142 / 500").
 3. **Complete phase**: Results summary per category (imported/skipped/failed counts). Unresolved climbs warning (shows up to 20 names).
 4. **Error phase**: Error alert with message.
+
+**Mobile Connected apps differences:**
+
+- Route: `packages/mobile/app/(tabs)/profile/integrations.tsx`.
+- Board account cards render above platform/device integration cards.
+- Uses backend REST endpoints instead of Next internal routes.
+- Kilter can connect through OAuth only when `KILTER_SYNC_ALLOWED_USER_IDS`
+  allows the current user; otherwise the card offers JSON import and data
+  request actions.
+- Non-Kilter boards use the same username/password link dialog semantics as
+  web.
+- JSON import reads a local file with `expo-document-picker`, previews the
+  shared parsed counts, streams import progress from the backend, and surfaces
+  partial/unresolved results in the same phase model as web.
+- Strava cards are hidden unless the `strava-integration` feature flag is on;
+  static mobile builds can enable it with
+  `EXPO_PUBLIC_STRAVA_INTEGRATION=true`.
 
 ---
 
@@ -170,7 +220,9 @@ Card for each board type (iterates `AURORA_BOARDS`: kilter, tension).
 
 - `profile` -- REST `GET /api/internal/profile`.
 - `updateProfile` -- REST `PUT /api/internal/profile`.
-- `auroraCredentials` -- REST `GET/POST/DELETE /api/internal/aurora-credentials`.
+- `auroraCredentials` -- REST `GET/POST/DELETE /api/aurora-credentials`.
+- `auroraImport` -- streaming REST `POST /api/aurora-import`.
+- `kilterCredentialHandoff` -- REST `POST /api/board-credentials/kilter/handoff`, then browser redirects through `/board-credentials/kilter/start` and `/board-credentials/kilter/callback`, then the app finalizes with `POST /api/board-credentials/kilter/finalize`.
 - `myControllers` -- REST `GET/POST/DELETE /api/internal/controllers`.
 - `deleteAccountInfo` / `GET_DELETE_ACCOUNT_INFO` -- GraphQL query for published climb count.
 - `deleteAccount` / `DELETE_ACCOUNT` -- GraphQL mutation.

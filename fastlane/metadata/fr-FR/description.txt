@@ -1,0 +1,30 @@
+Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone, plus de temps sur le mur.
+
+UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
+Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+
+L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
+Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
+Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom de la voie, qui l'a allumée, qui l'a ouverte, la cotation et l'inclinaison, et les sends récents. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.
+
+LES SÉANCES AVEC TA CREW
+Lance une séance et toi et ta crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer la prochaine voie au mur. À la fin, tu reçois un récap et un suivi : sends et essais, éventail de cotations, ton plus gros send, et ta progression dans le temps.
+
+PILOTE DEPUIS TON ÉCRAN VERROUILLÉ (iOS 17+)
+Les Live Activities iOS t'indiquent la voie en cours depuis ton écran verrouillé, et te laissent en changer sans le quitter.
+
+MONTE UNE SÉANCE D'ENTRAÎNEMENT
+Choisis Volume, Pyramide, Échelle ou Cotation ciblée, fixe une cotation cible et un échauffement, prévisualise les voies, puis envoie-les au mur une par une.
+
+SUIS TON ESCALADE
+Note tes sends, tes flashs et tes essais, reçois un récap avec la durée, l'éventail de cotations et ton plus gros send, et regarde tes sends et tes cotations grimper dans l'onglet Progression.
+
+EMPORTE TON HISTORIQUE AVEC TOI
+Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et Tension depuis Aurora Climbing.
+
+TROUVE PLUS À GRIMPER
+Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
+
+Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper et So iLL.
+
+Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

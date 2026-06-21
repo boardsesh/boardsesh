@@ -103,7 +103,7 @@ export const socialCommunitySettingsQueries = {
 export const socialCommunitySettingsMutations = {
   setCommunitySettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     await requireAdminOrLeader(ctx);
-    await applyRateLimit(ctx, 10);
+    await applyRateLimit(ctx, 10, 'setCommunitySettings');
 
     const validated = validateInput(SetCommunitySettingInputSchema, input, 'input');
     const { scope, scopeKey, key, value } = validated;

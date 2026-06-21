@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import Busboy from 'busboy';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { mkdir, writeFile, unlink, access } from 'fs/promises';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
+import { buildStaticAvatarUrl } from '../lib/avatar-url';
 
 // Avatar upload configuration
 const AVATARS_DIR = './avatars';
@@ -232,6 +234,7 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
 
       // Determine file extension
       const ext = MIME_TO_EXT[mimeType] || 'jpg';
+      const avatarFileName = `${userId}.${ext}`;
       let avatarUrl: string;
 
       try {
@@ -240,19 +243,19 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
           await deleteUserAvatarsFromS3(userId);
 
           // Upload to S3
-          const s3Key = `avatars/${userId}.${ext}`;
+          const s3Key = `avatars/${avatarFileName}`;
           await uploadToS3(fileBuffer, s3Key, mimeType);
           // Return backend-relative URL instead of direct S3 URL
           // This allows the backend to proxy the image, avoiding S3 public access requirements
-          avatarUrl = `/static/avatars/${userId}.${ext}`;
+          avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
         } else {
           // Delete any existing avatars for this user (all extensions) from local storage
           await deleteExistingAvatars(userId);
 
           // Save to local file system
-          const filePath = path.join(AVATARS_DIR, `${userId}.${ext}`);
+          const filePath = path.join(AVATARS_DIR, avatarFileName);
           await writeFile(filePath, fileBuffer);
-          avatarUrl = `/static/avatars/${userId}.${ext}`;
+          avatarUrl = buildStaticAvatarUrl(avatarFileName, randomUUID());
         }
       } catch (saveErr) {
         logger.error('Failed to save avatar:', saveErr);

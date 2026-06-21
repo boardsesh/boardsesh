@@ -18,7 +18,12 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { logger } from '../utils/logger';
-import { fanoutFeedItems, fanoutNewClimbFeedItems } from './feed-fanout';
+import {
+  fanoutCommentFeedItems,
+  fanoutFeedItems,
+  fanoutNewClimbFeedItems,
+  fanoutProposalApprovedFeedItems,
+} from './feed-fanout';
 import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
 import crypto from 'crypto';
 
@@ -72,6 +77,7 @@ export class NotificationWorker {
       }
     } catch (error) {
       logger.error(`[NotificationWorker] Error processing event ${event.type}:`, error);
+      throw error;
     }
   }
 
@@ -88,6 +94,8 @@ export class NotificationWorker {
         event.metadata.commentUuid,
       );
     }
+
+    await fanoutCommentFeedItems(event);
   }
 
   private async handleCommentReply(event: SocialEvent): Promise<void> {
@@ -103,6 +111,8 @@ export class NotificationWorker {
         event.metadata.commentUuid,
       );
     }
+
+    await fanoutCommentFeedItems(event);
   }
 
   private async handleVoteCast(event: SocialEvent): Promise<void> {
@@ -191,6 +201,8 @@ export class NotificationWorker {
         event.entityId,
       );
     }
+
+    await fanoutProposalApprovedFeedItems(event);
   }
 
   private async handleProposalRejected(event: SocialEvent): Promise<void> {
@@ -245,29 +257,6 @@ export class NotificationWorker {
 
     if (!boardType || !layoutId) return;
 
-    const followerRecipients = await resolveClimbCreatedFollowerRecipients(event.actorId);
-    const subscriberRecipients = await resolveClimbCreatedSubscriptionRecipients(boardType, layoutId, event.actorId);
-
-    const followerIds = new Set(followerRecipients.map((r) => r.recipientId));
-    const allRecipients = [
-      ...followerRecipients,
-      ...subscriberRecipients.filter((r) => !followerIds.has(r.recipientId)),
-    ];
-
-    for (const recipient of allRecipients) {
-      await this.createAndPublishNotification(
-        recipient.recipientId,
-        event.actorId,
-        recipient.notificationType,
-        'climb',
-        event.entityId,
-      );
-    }
-
-    // Fan out feed items to followers only (not global subscribers)
-    await fanoutNewClimbFeedItems(event);
-
-    // Publish realtime new climb event to the board+layout channel
     const [climb] = await db
       .select({
         uuid: dbSchema.boardClimbs.uuid,
@@ -277,6 +266,8 @@ export class NotificationWorker {
         angle: dbSchema.boardClimbs.angle,
         frames: dbSchema.boardClimbs.frames,
         createdAt: dbSchema.boardClimbs.createdAt,
+        isDraft: dbSchema.boardClimbs.isDraft,
+        isListed: dbSchema.boardClimbs.isListed,
         setterDisplayName: dbSchema.userProfiles.displayName,
         setterAvatarUrl: dbSchema.userProfiles.avatarUrl,
         difficultyName: dbSchema.boardDifficultyGrades.boulderName,
@@ -302,24 +293,47 @@ export class NotificationWorker {
       .where(and(eq(dbSchema.boardClimbs.uuid, event.entityId), eq(dbSchema.boardClimbs.boardType, boardType)))
       .limit(1);
 
-    if (climb) {
-      const channelKey = `${boardType}:${climb.layoutId}`;
-      pubsub.publishNewClimbEvent(channelKey, {
-        climb: {
-          uuid: climb.uuid,
-          name: climb.name ?? climbName,
-          boardType,
-          layoutId: climb.layoutId,
-          setterDisplayName: climb.setterDisplayName ?? event.metadata.setterDisplayName ?? null,
-          setterAvatarUrl: climb.setterAvatarUrl ?? event.metadata.setterAvatarUrl ?? null,
-          angle: climb.angle ?? null,
-          frames: climb.frames ?? null,
-          difficultyName: climb.difficultyName ?? event.metadata.difficultyName ?? null,
-          isNoMatch: isNoMatchClimb(climb.description),
-          createdAt: climb.createdAt ?? new Date().toISOString(),
-        },
-      });
+    if (!climb || climb.isDraft === true || climb.isListed === false) return;
+
+    const followerRecipients = await resolveClimbCreatedFollowerRecipients(event.actorId);
+    const subscriberRecipients = await resolveClimbCreatedSubscriptionRecipients(boardType, layoutId, event.actorId);
+
+    const followerIds = new Set(followerRecipients.map((r) => r.recipientId));
+    const allRecipients = [
+      ...followerRecipients,
+      ...subscriberRecipients.filter((r) => !followerIds.has(r.recipientId)),
+    ];
+
+    for (const recipient of allRecipients) {
+      await this.createAndPublishNotification(
+        recipient.recipientId,
+        event.actorId,
+        recipient.notificationType,
+        'climb',
+        event.entityId,
+      );
     }
+
+    // Fan out feed items to followers only (not global subscribers)
+    await fanoutNewClimbFeedItems(event);
+
+    // Publish realtime new climb event to the board+layout channel
+    const channelKey = `${boardType}:${climb.layoutId}`;
+    pubsub.publishNewClimbEvent(channelKey, {
+      climb: {
+        uuid: climb.uuid,
+        name: climb.name ?? climbName,
+        boardType,
+        layoutId: climb.layoutId,
+        setterDisplayName: climb.setterDisplayName ?? event.metadata.setterDisplayName ?? null,
+        setterAvatarUrl: climb.setterAvatarUrl ?? event.metadata.setterAvatarUrl ?? null,
+        angle: climb.angle ?? null,
+        frames: climb.frames ?? null,
+        difficultyName: climb.difficultyName ?? event.metadata.difficultyName ?? null,
+        isNoMatch: isNoMatchClimb(climb.description),
+        createdAt: climb.createdAt ?? new Date().toISOString(),
+      },
+    });
   }
 
   private async isDuplicate(

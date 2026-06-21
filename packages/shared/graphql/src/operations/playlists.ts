@@ -146,6 +146,13 @@ export const REMOVE_CLIMB_FROM_PLAYLIST = gql`
   }
 `;
 
+// Reorder a climb within a playlist (single move to a new 0-based index)
+export const REORDER_PLAYLIST_CLIMB = gql`
+  mutation ReorderPlaylistClimb($input: ReorderPlaylistClimbInput!) {
+    reorderPlaylistClimb(input: $input)
+  }
+`;
+
 // Get climbs in a playlist with full climb data
 export const GET_PLAYLIST_CLIMBS = gql`
   query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {
@@ -158,6 +165,8 @@ export const GET_PLAYLIST_CLIMBS = gql`
         name
         description
         frames
+        framesCount
+        framesPace
         angle
         ascensionist_count
         difficulty
@@ -378,6 +387,20 @@ export type RemoveClimbFromPlaylistMutationResponse = {
   removeClimbFromPlaylist: boolean;
 };
 
+export type ReorderPlaylistClimbInput = {
+  playlistId: string;
+  climbUuid: string;
+  newIndex: number;
+};
+
+export type ReorderPlaylistClimbMutationVariables = {
+  input: ReorderPlaylistClimbInput;
+};
+
+export type ReorderPlaylistClimbMutationResponse = {
+  reorderPlaylistClimb: boolean;
+};
+
 export type GetPlaylistClimbsInput = {
   playlistId: string;
   boardName?: string;
@@ -385,6 +408,10 @@ export type GetPlaylistClimbsInput = {
   sizeId?: number;
   setIds?: string;
   angle?: number;
+  // All-boards mode only: render on-active-board climbs' grades at the user's
+  // selected angle instead of the added-at / most-ascents fallback.
+  activeBoardName?: string;
+  activeAngle?: number;
   page?: number;
   pageSize?: number;
 };
@@ -402,6 +429,8 @@ export type PlaylistClimbsResult = {
     name: string;
     description: string;
     frames: string;
+    framesCount?: number | null;
+    framesPace?: number | null;
     angle: number;
     ascensionist_count: number;
     difficulty: string;
@@ -444,13 +473,17 @@ export type DiscoverablePlaylist = {
   climbCount: number;
   creatorId: string;
   creatorName: string;
+  isGeneratedRecommendation: boolean;
 };
 
 export type DiscoverPlaylistsInput = {
   boardType?: string;
   layoutId?: number;
+  sizeId?: number | null;
+  angle?: number | null;
   name?: string;
   creatorIds?: string[];
+  generatedRecommendation?: boolean | null;
   sortBy?: 'recent' | 'popular';
   page?: number;
   pageSize?: number;
@@ -502,6 +535,7 @@ export const DISCOVER_PLAYLISTS = gql`
         climbCount
         creatorId
         creatorName
+        isGeneratedRecommendation
       }
       totalCount
       hasMore
@@ -620,7 +654,15 @@ export type UnfollowPlaylistMutationResponse = {
 // Smart (computed) Playlist Types and Operations
 // ============================================
 
-export type SmartPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
+export type SmartPlaylistType =
+  | 'FIVE_STARS'
+  | 'MOST_REPEATED'
+  | 'PROJECTS'
+  | 'LIKED_CLIMBS'
+  | 'RECOMMENDED_CROWD_FAVORITES'
+  | 'RECOMMENDED_HIDDEN_GEMS'
+  | 'RECOMMENDED_AT_LEVEL'
+  | 'RECOMMENDED_FRESH';
 
 export type SmartPlaylistMeta = {
   type: SmartPlaylistType;
@@ -641,6 +683,12 @@ export type GetSmartPlaylistInput = {
   type: SmartPlaylistType;
   userId: string;
   boardName?: string;
+  /** Recommendation: the specific owned board (uuid) to recommend for. */
+  boardUuid?: string;
+  /** Recommendation board-size override (size the user is browsing). */
+  sizeId?: number;
+  /** Recommendation board-angle override. */
+  angle?: number;
   page?: number;
   pageSize?: number;
 };
@@ -680,6 +728,8 @@ export const GET_SMART_PLAYLIST = gql`
         name
         description
         frames
+        framesCount
+        framesPace
         angle
         ascensionist_count
         difficulty

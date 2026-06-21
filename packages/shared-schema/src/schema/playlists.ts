@@ -130,6 +130,18 @@ export const playlistsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Input for reordering a climb within a playlist (single move).
+  """
+  input ReorderPlaylistClimbInput {
+    "Playlist ID"
+    playlistId: ID!
+    "Climb UUID to move"
+    climbUuid: String!
+    "Target 0-based index in the playlist's full ordered list"
+    newIndex: Int!
+  }
+
+  """
   Input for getting user's playlists.
   """
   input GetUserPlaylistsInput {
@@ -233,6 +245,10 @@ export const playlistsTypeDefs = /* GraphQL */ `
     setIds: String
     "Board angle"
     angle: Int
+    "Active board type for grade rendering in all-boards mode (omit in specific-board mode). On-board climbs render their grade at activeAngle."
+    activeBoardName: String
+    "Selected wall angle to render grades at for on-active-board climbs in all-boards mode"
+    activeAngle: Int
     "Page number"
     page: Int
     "Page size"
@@ -293,6 +309,8 @@ export const playlistsTypeDefs = /* GraphQL */ `
     creatorId: ID!
     "Creator's display name"
     creatorName: String!
+    "Whether this is a system-generated recommendation playlist"
+    isGeneratedRecommendation: Boolean!
   }
 
   """
@@ -303,10 +321,16 @@ export const playlistsTypeDefs = /* GraphQL */ `
     boardType: String
     "Layout ID (optional — omit to discover across all layouts)"
     layoutId: Int
+    "Board size ID for generated recommendation filters"
+    sizeId: Int
+    "Board angle for generated recommendation filters"
+    angle: Int
     "Filter by name (partial match)"
     name: String
     "Filter by creator IDs"
     creatorIds: [ID!]
+    "Filter by generated recommendation status"
+    generatedRecommendation: Boolean
     "Sort by: 'recent' (default) or 'popular'"
     sortBy: String
     "Page number"
@@ -390,17 +414,31 @@ export const playlistsTypeDefs = /* GraphQL */ `
   # ============================================
 
   """
-  A computed playlist generated from a user's logbook or favourites.
+  A computed playlist generated from a user's logbook or favourites, or a
+  recommendation computed from the catalog for the user's board.
+
+  Logbook-derived:
   - FIVE_STARS: climbs the user has rated 5/5
   - MOST_REPEATED: climbs the user has logged the most attempts on
   - PROJECTS: climbs with the most attempts that have never been sent
   - LIKED_CLIMBS: climbs the user has favourited
+
+  Recommendations (ranked within climbs that fit the user's biggest board,
+  excluding ones they've already sent):
+  - RECOMMENDED_CROWD_FAVORITES: proven classics for the board (ascents × rating)
+  - RECOMMENDED_HIDDEN_GEMS: highly rated but low-ascent climbs
+  - RECOMMENDED_AT_LEVEL: climbs near the user's grade band
+  - RECOMMENDED_FRESH: recently set climbs, weighted toward popular setters
   """
   enum SmartPlaylistType {
     FIVE_STARS
     MOST_REPEATED
     PROJECTS
     LIKED_CLIMBS
+    RECOMMENDED_CROWD_FAVORITES
+    RECOMMENDED_HIDDEN_GEMS
+    RECOMMENDED_AT_LEVEL
+    RECOMMENDED_FRESH
   }
 
   """
@@ -439,10 +477,16 @@ export const playlistsTypeDefs = /* GraphQL */ `
   input GetSmartPlaylistInput {
     "Smart playlist type"
     type: SmartPlaylistType!
-    "User whose logbook to compute from"
+    "User whose logbook (or board) to compute from"
     userId: ID!
     "Filter to a board type (optional)"
     boardName: String
+    "Recommendation: the specific owned board (uuid) to recommend for"
+    boardUuid: String
+    "Recommendation board-size override (the size the user is browsing)"
+    sizeId: Int
+    "Recommendation board-angle override"
+    angle: Int
     "Page number"
     page: Int
     "Page size"

@@ -24,10 +24,26 @@ export type BoardContextType = Omit<SharedBoardContextType, 'boardName'> & { boa
 
 export { BoardContext };
 
-export function BoardProvider({ boardName, children }: { boardName: BoardName; children: ReactNode }) {
+export function BoardProvider({
+  boardName,
+  boardUuid,
+  children,
+}: {
+  boardName: BoardName;
+  /**
+   * Active board entity UUID. Set by named-board routes (`/b/<slug>/...`) so
+   * ticks attach to that exact board even when the climber doesn't own it
+   * (e.g. a seeded gym board). Omit on the legacy config route, which doesn't
+   * reference a specific board entity.
+   */
+  boardUuid?: string;
+  children: ReactNode;
+}) {
   return (
     <BoardAdapterWrapper>
-      <SharedBoardProvider boardName={boardName}>{children}</SharedBoardProvider>
+      <SharedBoardProvider boardName={boardName} boardUuid={boardUuid}>
+        {children}
+      </SharedBoardProvider>
     </BoardAdapterWrapper>
   );
 }

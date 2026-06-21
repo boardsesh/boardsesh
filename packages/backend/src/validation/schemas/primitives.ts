@@ -124,11 +124,24 @@ export const ClimbUuidSchema = z.string().min(1, 'Climb UUID cannot be empty').m
  *    from the parser, so allowing them only widened the surface for malformed
  *    inputs ending up in Redis values.
  */
+/**
+ * Canonical serial: trimmed + upper-cased. Aurora controller serials are
+ * effectively case-insensitive hardware ids, so two phones whose BLE device
+ * names differ only in case/whitespace must resolve to the SAME board instead
+ * of minting duplicates. Apply everywhere a serial is stored or compared so the
+ * resolve path, the lookup path, and the DB rows all agree.
+ */
+export function normalizeSerial(serial: string): string {
+  return serial.trim().toUpperCase();
+}
+
 export const BoardSerialSchema = z
   .string()
+  .trim()
   .min(4, 'Board serial too short')
   .max(32, 'Board serial too long')
-  .regex(/^[A-Za-z0-9:-]+$/, 'Board serial must be alphanumeric (colon and hyphen allowed)');
+  .regex(/^[A-Za-z0-9:-]+$/, 'Board serial must be alphanumeric (colon and hyphen allowed)')
+  .transform(normalizeSerial);
 
 /**
  * Validate input and throw a user-friendly error if invalid.

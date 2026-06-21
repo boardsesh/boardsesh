@@ -34,7 +34,7 @@
     "toggleDarkMode": "Cambiar modo oscuro"
   },
   "boardSelector": {
-    "title": "Elige una tabla de escalada"
+    "title": "Elige un plafón"
   },
   "header": {
     "you": "Tú",
@@ -55,28 +55,28 @@
     "shareFailed": "No se pudo compartir"
   },
   "myBoards": {
-    "title": "Mis tablas de escalada",
-    "findBoard": "Buscar tabla de escalada",
-    "boardDetail": "Tabla de escalada",
+    "title": "Mis plafones",
+    "findBoard": "Buscar plafón",
+    "boardDetail": "Plafón",
     "searchPlaceholder": "Busca por nombre o ubicación...",
-    "ariaFindBoard": "Buscar tabla de escalada",
-    "ariaCreateBoard": "Crear tabla de escalada",
-    "empty": "Aún no tienes tablas de escalada. Crea una desde el selector de tablas de escalada."
+    "ariaFindBoard": "Buscar plafón",
+    "ariaCreateBoard": "Crear plafón",
+    "empty": "Aún no tienes plafones. Crea uno desde el selector de plafones."
   },
   "userDrawer": {
     "signIn": "Iniciar sesión",
     "signInModalTitle": "Inicia sesión en Boardsesh",
     "signInModalDescription": "Inicia sesión para guardar favoritos, registrar ascensos y más.",
-    "changeBoard": "Cambiar tabla de escalada",
+    "changeBoard": "Cambiar plafón",
     "devUrl": "URL de dev",
     "development": "Desarrollo",
     "classifyHolds": "Clasificar presas",
     "myPlaylists": "Mis listas",
     "recentSessions": "Sesiones recientes",
-    "help": "Ayuda",
     "about": "Sobre",
     "rateBoardsesh": "Valorar Boardsesh",
     "reportBug": "Reportar un bug",
+    "joinDiscord": "Únete a Discord",
     "logout": "Cerrar sesión",
     "devBuild": "Build de dev",
     "branch": "Rama",
@@ -85,13 +85,13 @@
   },
   "loading": {
     "messages": [
-      "Preparando tu tabla de escalada...",
+      "Preparando tu plafón...",
       "Configurando rutas...",
       "Calentando la pared...",
       "Cargando presas...",
       "Casi listos para escalar...",
       "Encendiendo los LEDs...",
-      "Sincronizando la tabla de escalada...",
+      "Sincronizando el plafón...",
       "Calibrando los grados...",
       "Entrando en flow...",
       "Revisando condiciones..."
@@ -204,30 +204,218 @@
     "resetZoom": "Restablecer zoom"
   },
   "mobile": {
+    "avatar": {
+      "viewProfile": "Ver el perfil de {{name}}",
+      "thisClimber": "este escalador"
+    },
     "more": {
       "title": "Más",
+      "library": "Biblioteca",
       "development": "Desarrollo",
       "metroServersTitle": "Servidores Metro",
       "metroServersSubtitle": "Cambia entre bundlers de Tailnet",
+      "accessibility": {
+        "title": "Accesibilidad",
+        "description": "Elige colores de presas que sean más fáciles de distinguir. Predeterminado usa los colores normales de cada plafón y no envía cambios por Bluetooth.",
+        "resetAll": "Restablecer colores de presas",
+        "save": "Guardar color",
+        "rowAccessibility": "{{role}}, {{mode}}",
+        "pickerSubtitle": "Usa cualquier color RGB.",
+        "modeLabel": "Modo de color de presa",
+        "defaultCopy": "Boardsesh usará el color predeterminado de este tipo de presa y lo omitirá en los cambios de Bluetooth.",
+        "invalidRgb": "Usa números del 0 al 255.",
+        "mode": {
+          "default": "Predeterminado",
+          "user": "Color personalizado"
+        },
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "shapeLabel": "Forma",
+        "shapes": {
+          "circle": "Círculo",
+          "triangleUp": "Triángulo arriba",
+          "triangleDown": "Triángulo abajo",
+          "square": "Cuadrado",
+          "diamond": "Rombo"
+        },
+        "brush": {
+          "title": "Grosor del trazo",
+          "subtitle": "Cambia el grosor de los contornos de los marcadores.",
+          "value": "{{value}}x",
+          "save": "Guardar grosor",
+          "rowAccessibility": "Grosor del trazo, {{value}}x"
+        },
+        "size": {
+          "title": "Tamaño del marcador",
+          "subtitle": "Cambia el tamaño de las formas de los marcadores.",
+          "value": "{{value}}x",
+          "save": "Guardar tamaño",
+          "rowAccessibility": "Tamaño del marcador, {{value}}x"
+        },
+        "channels": {
+          "red": "Rojo",
+          "green": "Verde",
+          "blue": "Azul"
+        },
+        "roles": {
+          "starting": "Inicio",
+          "hand": "Medio",
+          "finish": "Final",
+          "foot": "Pie"
+        }
+      },
       "appearance": {
         "title": "Apariencia",
         "system": "Sistema",
         "light": "Claro",
         "dark": "Oscuro"
       },
-      "searchLayout": {
-        "title": "Diseño de búsqueda",
-        "description": "Dónde se sitúan el grado y los filtros en la pantalla de bloques.",
-        "bottomBar": "Barra inferior",
-        "stickyStrip": "Barra superior"
+      "uiStyle": {
+        "title": "Estilo de interfaz",
+        "auto": "Automático",
+        "liquidGlass": "Liquid Glass",
+        "material": "Material",
+        "description": "Automático usa Liquid Glass en iPhone y Material en Android. Elige uno para anularlo.",
+        "glassFallback": "Liquid Glass usa una versión simplificada aquí. El efecto de vidrio completo requiere iOS 26.",
+        "glassFallbackAndroid": "Liquid Glass usa un aspecto simplificado de superficies sólidas en Android."
+      },
+      "gradeFormat": {
+        "title": "Formato de grado",
+        "description": "Elige cómo se muestran los grados en la app.",
+        "vGrade": "Grado V",
+        "font": "Francés",
+        "both": "Ambos"
+      },
+      "language": {
+        "title": "Idioma",
+        "system": "Sistema",
+        "description": "Sistema usa el idioma de tu dispositivo.",
+        "contributeTitle": "Ayuda a traducir Boardsesh",
+        "contributeSubtitle": "Las traducciones las mantiene la comunidad. Abre los archivos de {{language}} en GitHub para corregir o añadir una frase."
+      },
+      "diagnostics": {
+        "title": "Privacidad",
+        "recording": "Ayúdanos a mejorar",
+        "recordingDescription": "Envía grabaciones de sesión anónimas y enmascaradas para que corrijamos errores más rápido. Lo que escribes y tus fotos quedan ocultos. Desactívalo cuando quieras."
+      },
+      "integrations": {
+        "title": "Aplicaciones conectadas",
+        "subtitle": "Apple Health y Strava",
+        "subtitleWithStrava": "Cuentas de plafón, Apple Health, Strava"
+      },
+      "aboutSection": "Acerca de",
+      "changelogTitle": "Novedades",
+      "changelogSubtitle": "Últimas mejoras y correcciones",
+      "newPill": "Nuevo"
+    },
+    "about": {
+      "title": "Sobre Boardsesh",
+      "heroTitle": "Boardsesh",
+      "heroBody": "Controla tu plafón desde el móvil: encuentra bloques, prepara encadenes, ilumina el muro y mantén la sesión en marcha.",
+      "sectionTitle": "Para qué sirve Boardsesh",
+      "whatItDoesTitle": "Escala sin saltar entre apps",
+      "whatItDoesBody": "Busca, encola, ilumina, registra y comparte bloques desde un solo sitio mientras te concentras en el muro.",
+      "boardsTitle": "Para tus plafones",
+      "boardsBody": "Boardsesh soporta sesiones en tus plafones Kilter, Tension y MoonBoard sin presentarse como app oficial.",
+      "openTitle": "Construido en abierto",
+      "openBody": "El proyecto es open source para que los escaladores puedan reportar fallos, pedir funciones y ayudar a decidir lo siguiente.",
+      "independentBody": "Boardsesh no está afiliado ni respaldado por Aurora Climbing, Kilter, Tension, Moon Climbing ni ningún fabricante de plafones.",
+      "viewOnGithub": "Ver en GitHub",
+      "joinDiscord": "Únete a Discord",
+      "partnerTitle": "Colabora oficialmente con nosotros",
+      "partnerBody": "Boardsesh funciona con Kilter, Tension y MoonBoard desde fuera. Si fabricas plafones y quieres crear algo oficial juntos, nos encantaría hablar.",
+      "acknowledgementsLink": "Agradecimientos",
+      "acknowledgementsLinkBody": "Las personas detrás de Boardsesh",
+      "changelogLink": "Novedades",
+      "changelogLinkBody": "Últimas mejoras y correcciones"
+    },
+    "acknowledgements": {
+      "title": "Agradecimientos",
+      "intro": "Boardsesh existe gracias a quienes lo construyen, lo apoyan y aguantan que no pare de hablar de plafones. Gracias.",
+      "contributorsTitle": "Colaboradores",
+      "contributorsBody": "Todas las personas que han aportado código, arreglos e ideas en GitHub.",
+      "sponsorsTitle": "Patrocinadores",
+      "sponsorsBody": "Escaladores que mantienen esto en marcha a través de GitHub Sponsors.",
+      "sponsorsEmpty": "Aún no hay patrocinadores, ¿quieres ser el primero?",
+      "privateSponsorsThanks": "y {{count}} más patrocinando en privado — gracias también",
+      "becomeSponsor": "Hazte patrocinador",
+      "personalTitle": "Agradecimientos personales",
+      "discordTitle": "Toda la gente de nuestro Discord",
+      "discordBody": "Gracias por la beta, la motivación y los reportes de fallos. Toca para unirte.",
+      "friendsTitle": "La cuerda",
+      "friendsBody": "{{names}}, gracias por seguir queriendo sesionar conmigo, a pesar de haberles obligado a todos a hacer beta testing en vez de escalar. Vuestra experiencia real ha ayudado mucho a marcar el rumbo de Boardsesh.",
+      "alexBody": "Por dar feedback de diseño desde su retiro al otro lado del mundo — espero que volvamos a coincidir en la pared algún día.",
+      "dogBody": "Gracias a Scout por todo el apoyo emocional, es la verdadera MVP de Boardsesh. A pesar de no escalar y solo querer ser una perra de playa.",
+      "ossLicensesLink": "Licencias open source",
+      "ossLicensesBody": "El software open source con el que se construye Boardsesh"
+    },
+    "licenses": {
+      "title": "Licencias open source",
+      "intro": "Boardsesh se construye con estos paquetes open source. Gracias a quienes los mantienen.",
+      "viewSource": "Ver código",
+      "close": "Cerrar"
+    },
+    "onboarding": {
+      "replaySection": "Tutorial",
+      "replayTitle": "Repetir el tutorial",
+      "replaySubtitle": "Vuelve a ver el tutorial",
+      "replayError": "No se pudo abrir el tutorial. Inténtalo de nuevo.",
+      "prompt": {
+        "title": "Mira lo que está encendido en tu muro, en directo",
+        "body": "Sigue el plafón de tu rocódromo y Boardsesh te muestra lo que está encendido ahora mismo: quién lo encendió, el grado, quién lo montó y los encadenes recientes. No tienes que abrir nada; está ahí.",
+        "footnote": "Además, sesiones con tu peña, el generador de entrenos y el registro de encadenes, cuando estés en un muro.",
+        "findBoard": "Buscar mi plafón",
+        "lookAround": "Echar un vistazo primero"
+      },
+      "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
+      "tips": {
+        "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
+        "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
+        "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
+        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
       }
     },
     "nav": {
-      "boards": "Tablas",
+      "home": "Inicio",
+      "boards": "Plafones",
       "climbs": "Bloques",
-      "climb": "Bloque",
       "profile": "Perfil",
-      "setters": "Equipadores"
+      "holdFilter": "Tipos de presa",
+      "zoneFilter": "Zona del muro"
+    },
+    "changelog": {
+      "title": "Novedades",
+      "intro": "Últimas mejoras y correcciones, las más recientes primero.",
+      "currentBuild": "Estás en la versión del {{date}}",
+      "currentBuildVersion": "Estás en la versión {{version}}",
+      "category": {
+        "new": "Nuevo",
+        "improved": "Mejorado",
+        "fixed": "Corregido"
+      },
+      "viewPr": "Ver en GitHub",
+      "empty": "Aún no hay cambios registrados: hemos estado escalando demasiado. Vuelve después del próximo encadene.",
+      "nativeRelease": {
+        "title": "Actualización de la app",
+        "appStore": "Una nueva versión llegó a la App Store.",
+        "playStore": "Una nueva versión llegó a la Play Store."
+      },
+      "checkForUpdates": "Buscar actualizaciones",
+      "checking": "Buscando…",
+      "downloading": "Descargando…",
+      "upToDate": {
+        "title": "Estás al día",
+        "message": "Ya tienes la última versión."
+      },
+      "updateReady": {
+        "title": "Actualización lista",
+        "message": "¿Reiniciar Boardsesh ahora para usar la última versión?",
+        "restart": "Reiniciar",
+        "later": "Más tarde"
+      },
+      "checkError": {
+        "title": "No se pudo buscar actualizaciones",
+        "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
+      }
     }
   },
   "lightControl": {
@@ -235,18 +423,18 @@
     "turnOffAll": "Apagar todas las luces",
     "partyMode": "Modo fiesta",
     "stopParty": "Parar fiesta",
-    "partyUnsupported": "El modo fiesta no está disponible en esta tabla",
+    "partyUnsupported": "El modo fiesta no está disponible en este plafón",
     "discoMode": "Modo disco",
     "stopDisco": "Parar disco",
     "discoNeedsClimb": "Carga un bloque para empezar el disco",
-    "clearFailed": "No se pudo limpiar la tabla",
-    "lightShowFailed": "Se perdió la tabla a mitad del show. Reconéctate e inténtalo de nuevo.",
+    "clearFailed": "No se pudo limpiar el plafón",
+    "lightShowFailed": "Se perdió el plafón a mitad del show. Reconéctate e inténtalo de nuevo.",
     "customizeColors": "Personalizar colores",
-    "customizeColorsUnsupported": "Los colores personalizados no están disponibles en esta tabla",
+    "customizeColorsUnsupported": "Los colores personalizados no están disponibles en este plafón",
     "customizeColorsTitle": "Colores de los LED",
-    "customizeColorsHelp": "Elige los colores con los que tu tabla ilumina las manos, los pies y la presa final. Las presas de inicio mantienen su verde por defecto.",
+    "customizeColorsHelp": "Elige los colores con los que tu plafón ilumina las manos, los pies y la presa final. Las presas de inicio mantienen su verde por defecto.",
     "resetColors": "Restablecer",
-    "disconnect": "Desconectar tabla",
+    "disconnect": "Desconectar plafón",
     "role": {
       "HAND": "Manos",
       "FOOT": "Pies",
@@ -254,13 +442,13 @@
     }
   },
   "bluetooth": {
-    "boardTaken": "Se perdió la tabla: otro teléfono o app se conectó a ella.",
-    "takeItBack": "Recuperarla",
-    "boardNotFound": "No se encontró tu tabla. Asegúrate de que esté encendida y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",
-    "connectFailed": "No se pudo conectar. Acércate a la tabla e inténtalo de nuevo.",
-    "serviceMissing": "Conectado, pero la tabla no respondió. Reiníciala e inténtalo de nuevo.",
-    "unavailable": "El Bluetooth está apagado. Actívalo para conectar con tu tabla.",
-    "unknownError": "No se pudo conectar con tu tabla. Inténtalo de nuevo."
+    "boardTaken": "Se perdió el plafón: otro teléfono o app se conectó a él.",
+    "takeItBack": "Recuperarlo",
+    "boardNotFound": "No se encontró tu plafón. Asegúrate de que esté encendido y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",
+    "connectFailed": "No se pudo conectar. Acércate al plafón e inténtalo de nuevo.",
+    "serviceMissing": "Conectado, pero el plafón no respondió. Reinícialo e inténtalo de nuevo.",
+    "unavailable": "El Bluetooth está apagado. Actívalo para conectar con tu plafón.",
+    "unknownError": "No se pudo conectar con tu plafón. Inténtalo de nuevo."
   },
   "ascents": {
     "deleteTitle": "Eliminar encadene",

@@ -1,5 +1,7 @@
 #include "esp_web_server.h"
 
+#include <config/board_config.h>
+
 // Firmware version macros - provided by build flags or version.h in the project
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "dev"
@@ -223,6 +225,8 @@ void ESPWebServer::handleRoot() {
                 <input type="text" id="backendPath" placeholder="/graphql">
             </div>
         </div>
+        <label>Render URL</label>
+        <input type="text" id="renderBaseUrl" placeholder="https://www.boardsesh.com">
     </div>
 
     <div class="card">
@@ -264,6 +268,7 @@ void ESPWebServer::handleRoot() {
                 document.getElementById('backendHost').value = cfg.backend_host || '';
                 document.getElementById('backendPort').value = cfg.backend_port || 443;
                 document.getElementById('backendPath').value = cfg.backend_path || '/graphql';
+                document.getElementById('renderBaseUrl').value = cfg.render_base_url || 'https://www.boardsesh.com';
                 document.getElementById('proxyEnabled').checked = cfg.proxy_enabled || false;
                 document.getElementById('proxyMac').value = cfg.proxy_mac || '';
                 document.getElementById('proxyMacSection').style.display = cfg.proxy_enabled ? 'block' : 'none';
@@ -342,6 +347,7 @@ void ESPWebServer::handleRoot() {
                 backend_host: document.getElementById('backendHost').value,
                 backend_port: parseInt(document.getElementById('backendPort').value),
                 backend_path: document.getElementById('backendPath').value,
+                render_base_url: document.getElementById('renderBaseUrl').value,
                 proxy_enabled: document.getElementById('proxyEnabled').checked,
                 proxy_mac: document.getElementById('proxyMac').value
             };
@@ -496,6 +502,7 @@ void ESPWebServer::handleGetConfig() {
     doc["backend_host"] = Config.getString("backend_host");
     doc["backend_port"] = Config.getInt("backend_port", 443);
     doc["backend_path"] = Config.getString("backend_path", "/graphql");
+    doc["render_base_url"] = Config.getString("render_base_url", DEFAULT_RENDER_BASE_URL);
     doc["device_name"] = Config.getString("device_name", "Boardsesh Controller");
     doc["brightness"] = Config.getInt("brightness", 128);
     doc["display_brightness"] = Config.getInt("disp_br", 128);
@@ -532,6 +539,9 @@ void ESPWebServer::handleSetConfig() {
     }
     if (doc["backend_path"].is<const char*>()) {
         Config.setString("backend_path", doc["backend_path"]);
+    }
+    if (doc["render_base_url"].is<const char*>()) {
+        Config.setString("render_base_url", doc["render_base_url"]);
     }
     if (doc["device_name"].is<const char*>()) {
         Config.setString("device_name", doc["device_name"]);

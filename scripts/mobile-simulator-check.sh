@@ -15,12 +15,12 @@ if [ ! -d "$MOBILE_DIR" ]; then
   exit 1
 fi
 
-cd "$MOBILE_DIR"
+cd "$ROOT_DIR"
 
-echo "[mobile-sim] Building and launching on iOS simulator (expo run:ios)..."
+echo "[mobile-sim] Building and launching on iOS simulator (shared-cache expo run:ios)..."
 
-if ! bunx expo run:ios 2>&1; then
-  echo "[mobile-sim] FAILED: expo run:ios exited with an error"
+if ! tsx scripts/mobile-ios-run.ts 2>&1; then
+  echo "[mobile-sim] FAILED: mobile iOS build exited with an error"
   exit 1
 fi
 

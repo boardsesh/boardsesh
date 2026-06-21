@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { checkRateLimit, cleanupRateLimit, getRateLimitStatus } from '../utils/rate-limiter';
+import { checkRateLimit, cleanupRateLimit, getRateLimitStatus, RateLimitError } from '../utils/rate-limiter';
 
 describe('In-memory rate limiter', () => {
   beforeEach(() => {
@@ -45,6 +45,22 @@ describe('In-memory rate limiter', () => {
         expect.fail('should have thrown');
       } catch (err) {
         expect((err as Error).message).toMatch(/Try again in \d+ seconds/);
+      }
+    });
+
+    it('throws a RateLimitError carrying structured retryAfterSeconds (#2763)', () => {
+      for (let i = 0; i < 5; i++) {
+        checkRateLimit('test-conn', 5, 60_000);
+      }
+      // 10s elapsed of a 60s window → 50s remain.
+      vi.advanceTimersByTime(10_000);
+
+      try {
+        checkRateLimit('test-conn', 5, 60_000);
+        expect.fail('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(RateLimitError);
+        expect((err as RateLimitError).retryAfterSeconds).toBe(50);
       }
     });
 

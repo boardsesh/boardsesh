@@ -17,8 +17,23 @@ type BleLightbulbButtonProps = {
   isConnected: boolean;
   isScanning: boolean;
   onPress: () => void;
+  /**
+   * Secondary action on long-press. Wired to disconnect, since a tap now
+   * re-lights the wall (when connected) or reconnects (when disconnected)
+   * rather than toggling the connection.
+   */
+  onLongPress?: () => void;
   accessibilityLabel: string;
+  /**
+   * Whether the control reads as "selected" to assistive tech. Defaults to
+   * `isConnected`. Pass the local-BLE connection state when `isConnected` is an
+   * OR'd visual (e.g. the bulb is lit because a peer holds the wall) so
+   * VoiceOver reflects what tapping does, not just the filled look.
+   */
+  accessibilitySelected?: boolean;
   scanningAccessibilityHint?: string;
+  /** Hint describing the long-press action (e.g. "Hold to disconnect"). */
+  longPressAccessibilityHint?: string;
   haptic?: 'light' | 'medium' | 'none';
   size?: number;
   /**
@@ -35,8 +50,11 @@ export function BleLightbulbButton({
   isConnected,
   isScanning,
   onPress,
+  onLongPress,
   accessibilityLabel,
+  accessibilitySelected,
   scanningAccessibilityHint,
+  longPressAccessibilityHint,
   haptic = 'light',
   size = 24,
   containerSize = 44,
@@ -66,19 +84,33 @@ export function BleLightbulbButton({
     onPress();
   };
 
+  const handleLongPress = onLongPress
+    ? () => {
+        // A medium tap confirms the (heavier) disconnect action regardless of
+        // the configured tap haptic.
+        hapticMedium();
+        onLongPress();
+      }
+    : undefined;
+
   const visualState = getBleLightbulbVisualState({
     isConnected,
     connectedColor: brandColors.warning,
-    disconnectedColor: systemColors.secondaryLabel as string,
+    disconnectedColor: systemColors.secondaryLabel,
   });
 
   return (
     <AnimatedPressable
       onPress={handlePress}
+      onLongPress={handleLongPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityHint={getBleLightbulbAccessibilityHint(isScanning, scanningAccessibilityHint)}
-      accessibilityState={{ selected: isConnected }}
+      accessibilityHint={getBleLightbulbAccessibilityHint(
+        isScanning,
+        scanningAccessibilityHint,
+        longPressAccessibilityHint,
+      )}
+      accessibilityState={{ selected: accessibilitySelected ?? isConnected }}
       hitSlop={8}
       style={({ pressed }) => [
         styles.container,

@@ -45,6 +45,10 @@ export type {
 export { usePlaylistMutations } from './use-playlist-mutations';
 export type { UsePlaylistMutationsOptions, UsePlaylistMutationsResult } from './use-playlist-mutations';
 
+// Item-level mutation callbacks (reorder / remove climb).
+export { usePlaylistItemMutations } from './use-playlist-item-mutations';
+export type { UsePlaylistItemMutationsOptions, UsePlaylistItemMutationsResult } from './use-playlist-item-mutations';
+
 // Suggestion-refresh helper (also reachable via the
 // ./fetch-playlist-suggestion-climbs subpath).
 export {

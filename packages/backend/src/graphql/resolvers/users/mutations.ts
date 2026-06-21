@@ -8,13 +8,29 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { userIsTester } from './tester';
 import {
   UpdateProfileInputSchema,
   SaveAuroraCredentialInputSchema,
   BoardNameSchema,
   DeleteAccountInputSchema,
 } from '../../../validation/schemas';
-import { encrypt } from '@boardsesh/crypto';
+import {
+  deleteAuroraCredential,
+  saveAuroraCredential,
+  type AuroraCredentialStatus as RestAuroraCredentialStatus,
+} from '../../../services/aurora-credentials';
+import type { AuroraBoardName } from '@boardsesh/shared-schema';
+
+function mapAuroraCredentialStatus(credential: RestAuroraCredentialStatus): AuroraCredentialStatus {
+  return {
+    boardType: credential.boardType,
+    username: credential.auroraUsername,
+    userId: credential.auroraUserId ?? undefined,
+    syncedAt: credential.lastSyncAt ?? undefined,
+    hasToken: credential.syncStatus !== 'linked',
+  };
+}
 
 export const userMutations = {
   /**
@@ -72,6 +88,7 @@ export const userMutations = {
       email: user.email,
       displayName: profile?.displayName || user.name || undefined,
       avatarUrl: profile?.avatarUrl || user.image || undefined,
+      isTester: await userIsTester(user.id),
     };
   },
 
@@ -88,45 +105,14 @@ export const userMutations = {
     // Validate input
     validateInput(SaveAuroraCredentialInputSchema, input, 'input');
 
-    const userId = ctx.userId!;
-
-    // Only encrypt the password - username is not sensitive
-    const encryptedPassword = encrypt(input.password);
-
-    // Check if credential exists
-    const existing = await db
-      .select()
-      .from(dbSchema.auroraCredentials)
-      .where(
-        and(eq(dbSchema.auroraCredentials.userId, userId), eq(dbSchema.auroraCredentials.boardType, input.boardType)),
-      )
-      .limit(1);
-
-    if (existing.length === 0) {
-      await db.insert(dbSchema.auroraCredentials).values({
-        userId,
-        boardType: input.boardType,
-        encryptedUsername: input.username, // Username stored as-is (not sensitive)
-        encryptedPassword,
-      });
-    } else {
-      await db
-        .update(dbSchema.auroraCredentials)
-        .set({
-          encryptedUsername: input.username, // Username stored as-is (not sensitive)
-          encryptedPassword,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(dbSchema.auroraCredentials.userId, userId), eq(dbSchema.auroraCredentials.boardType, input.boardType)),
-        );
-    }
-
-    return {
-      boardType: input.boardType,
-      username: input.username,
-      hasToken: false, // Not validated yet
-    };
+    return mapAuroraCredentialStatus(
+      await saveAuroraCredential({
+        userId: ctx.userId!,
+        boardType: input.boardType as AuroraBoardName,
+        username: input.username,
+        password: input.password,
+      }),
+    );
   },
 
   /**
@@ -140,13 +126,9 @@ export const userMutations = {
     requireAuthenticated(ctx);
     validateInput(BoardNameSchema, boardType, 'boardType');
 
-    await db
-      .delete(dbSchema.auroraCredentials)
-      .where(
-        and(eq(dbSchema.auroraCredentials.userId, ctx.userId!), eq(dbSchema.auroraCredentials.boardType, boardType)),
-      );
+    const result = await deleteAuroraCredential(ctx.userId!, boardType as AuroraBoardName);
 
-    return true;
+    return result.success || result.localCleared;
   },
 
   /**

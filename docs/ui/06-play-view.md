@@ -52,11 +52,9 @@ The drawer uses a `SwipeableDrawer` component with `placement="bottom"`, `height
 
 1. **Drag handle** (top-center). Rendered by `SwipeableDrawer` via `showDragHandle`. A short horizontal pill that the user can grab to swipe the drawer down to close.
 
-2. **Driver indicator dot** (top-left, `position: absolute`, `top: 10px`, `left: 12px`, `z-index: 2`). Only renders in a party session when another user is driving (i.e., `isPersistentSessionActive && driverUser && !isDriver`). Shows the driver's `TickBadgeAvatar` at 18px size. `pointerEvents: none` so it does not interfere with touch targets.
+2. **Close button** (top-right, `position: absolute`, `top: 8px`, `right: 8px`, `z-index: 2`). An `IconButton` with `CloseOutlined` icon. Background: `action.selected`, hover: `action.focus`.
 
-3. **Close button** (top-right, `position: absolute`, `top: 8px`, `right: 8px`, `z-index: 2`). An `IconButton` with `CloseOutlined` icon. Background: `action.selected`, hover: `action.focus`.
-
-4. **Drawer content area** (`div.drawerContent`). A flex column that fills the drawer. Touch events on this div drive the pull-to-close gesture (`usePullToClose` hook with `deadZone: 60`, `closeThreshold: 70`). Contains `PlayDrawerContent` which renders `ClimbDetailShellClient` in `mode="play"`.
+3. **Drawer content area** (`div.drawerContent`). A flex column that fills the drawer. Touch events on this div drive the pull-to-close gesture (`usePullToClose` hook with `deadZone: 60`, `closeThreshold: 70`). Contains `PlayDrawerContent` which renders `ClimbDetailShellClient` in `mode="play"`.
 
    The shell splits into:
 
@@ -72,7 +70,7 @@ The drawer uses a `SwipeableDrawer` component with `placement="bottom"`, `height
 
    **Below-fold** (deferred render, scrollable): Sections mount after the drawer open transition completes (`sectionsEverEnabled`), using `startTransition` to avoid blocking the above-fold paint. The scroll container has `overflow-y: auto`, `-webkit-overflow-scrolling: touch`, `overscroll-behavior-y: contain`.
 
-5. **Nested drawers** (portal-less, stacked on top):
+4. **Nested drawers** (portal-less, stacked on top):
    - **Climb actions drawer** (`SwipeableDrawer`, height 60%, drag-to-resize)
    - **Playlist selector drawer** (`SwipeableDrawer`, height auto, max-height 70vh)
    - **Queue drawer** (`QueueDrawer`, height 60%)
@@ -173,17 +171,7 @@ A native non-passive `touchmove` listener is attached to the carousel element. W
 
 **Party session navigation behavior:**
 
-- **Driver / solo**: Swipe calls `setCurrentClimbQueueItem(item)`, which broadcasts the climb change to the wall and all participants. The BLE AutoSender picks up the change and sends it to the physical board.
-- **Non-driver**: Swipe only updates `drawerDisplayedItem` (local preview). The wall climb is unchanged. A coachmark pulse on the lightbulb fires on the first non-driver swipe (IndexedDB key `swipeHint:partyPreviewSeen`), explaining that the lightbulb is the path to send the climb to the wall.
-- **Non-driver, suggestions only**: Non-drivers navigate through the suggested climbs feed only (`suggestionsOnly: true`), skipping the shared queue which represents the driver's committed sequence.
-
-**Drift state:**
-
-When a non-driver has swiped to a different climb than the wall climb:
-
-- `isDriftedFromWall` is true.
-- Swiping left (previous) snaps back to the wall climb by clearing `drawerDisplayedItem`.
-- The mini session bar shows a "return to wall climb" button.
+Sessions are always-live, so swipe behaves the same solo or in a party: it calls `setCurrentClimbQueueItem(item)`, which broadcasts the climb change to the shared queue and all participants. Whoever holds a BLE connection relays it to the physical board via the AutoSender.
 
 #### Zoom and Pan (ZoomableBoard)
 
@@ -230,7 +218,7 @@ A horizontal row of icon buttons displayed below the board and mini session bar.
 
 Buttons from left to right:
 
-1. **Previous button** (`SkipPreviousOutlined`). Navigates to the previous climb. Disabled when `canSwipePrevious` is false (no previous climb in queue/suggestions). In drift state, tapping previous snaps back to the wall climb. Calls `navigate('previous', 'playViewDrawer')`.
+1. **Previous button** (`SkipPreviousOutlined`). Navigates to the previous climb. Disabled when `canSwipePrevious` is false (no previous climb in queue/suggestions). Calls `navigate('previous', 'playViewDrawer')`.
 
 2. **Mirror button** (`SyncOutlined`). Only rendered when `boardDetails.supportsMirroring` is true. Toggles the `mirrored` flag on the current climb. When active (`isMirrored=true`): purple background (`themeTokens.colors.purple`), white icon, purple border. When inactive: default styling. Calls `mirrorClimb()`.
 
@@ -242,11 +230,9 @@ Buttons from left to right:
    - **Pending** (`lightbulbPending=true`): Box-shadow pulse animation (`lightbulbPulse`, 1100ms ease-in-out infinite). Amber box-shadow expands to 6px and fades.
    - **Coachmark** (`lightbulbCoachmark=true`): Same pulse animation but single iteration (900ms). A MUI `Tooltip` with `placement="top"` and `arrow` shows coachmark text. The tooltip auto-dismisses on animation end via `onAnimationEnd`.
 
-   Tap behavior varies by context:
-   - **Solo, disconnected**: Opens the Bluetooth device picker (`bluetoothConnect()`).
-   - **Solo, connected**: Sends the displayed climb to the board via `takeControl(currentClimb)`. Clears any drawer-local preview.
-   - **Party, non-driver**: Takes wall control via `takeControl(currentClimb)`. Arms the 2-second wall-confirm watcher (`armWallConfirmWatcher`). Sets `pendingClimbUuid`. Clears drawer-local preview.
-   - **Party, driver**: Releases wall control via `releaseControl()`. Cancels any in-flight watcher. Clears pending state. Sets `pendingReleaseReasonRef='manual'` to suppress the yank analytics event.
+   Tap behavior (always-live — no driver role):
+   - **Disconnected**: Initiates the connect (`bluetoothConnect()` — silent reconnect to the last board's serial on native shells, otherwise the device picker), then arms the 2-second wall-confirm watcher (`armWallConfirmWatcher`) and sets `pendingClimbUuid`; `WallConfirmedClimb` lights the bulb. The watcher is armed **pulse-only** (`pulseOnly: true`): on timeout it only clears the pulse and never fires a connect fallback, because the tap already started a connect — a second connect while the picker is still open would start a duplicate scan ("Already scanning" on iOS). A `WallDisconnected` event (relaying BLE link dropped) turns the bulb back off while the current climb is preserved.
+   - **Connected**: Disconnects (turns the board off); the drop releases the session wall + board-presence holder so every member's lightbulb clears.
 
    Long-press (via `useLongPress` hook): Opens the `LightControlDrawer` (disco light shows, glyph animations, LED color palette customization, manual BLE disconnect). The `consumeLongPress()` method in the click handler swallows the synthesized click that follows a long-press, preventing both actions from firing.
 
@@ -335,33 +321,22 @@ Only renders when `isPersistentSessionActive` is true and `currentClimbQueueItem
 
 **Styling:** `display: flex`, `align-items: center`, `gap: 8px`, `px: 16px`, `py: 6px`, `border-top: 1px solid var(--neutral-200)`. Background: `color-mix(in srgb, {warning} 5%, transparent)` -- a warm whisper tint, 5% of the theme warning color. Min-height: 36px.
 
-The bar morphs between three states:
+The bar shows the current climb on the wall (sessions are always-live, so every participant sees the same climb):
 
-#### Driver State
+#### Wall state
 
-- **Left**: Filled `Lightbulb` icon (16px, amber/warning color) + "DRIVING" text (11px, weight 600, letter-spacing 0.5, amber/warning color).
+- **Left**: When our session's climb is confirmed on the wall (`WallConfirmedClimb`), a filled `Lightbulb` icon (16px, amber/warning color) + "ON WALL" text (11px, weight 600, letter-spacing 0.5, amber/warning color). After a `WallDisconnected` event the lightbulb is unlit; the current climb is preserved and pressing the lightbulb re-asserts it.
 - **Right**: Audience `AvatarGroup` (described below).
-
-#### Non-Driver, On Wall (not drifted)
-
-- **Left**: Driver's `MuiAvatar` (20px) + "ON WALL · {driver username}" text (11px, weight 600, letter-spacing 0.5, `text.secondary` color). If no driver user is found, shows "ON WALL" alone.
-- **Right**: Audience `AvatarGroup`.
-
-#### Non-Driver, Drifted (previewing a different climb)
-
-- **Full-width button**: `MuiButton` with `variant="text"`, `startIcon={ArrowBackOutlined}`. Contains the driver's avatar (20px) and text "{driver username} · {wall climb name}" (truncated with ellipsis). Tapping calls `onReturnToWallClimb`, which clears `drawerDisplayedItem` to snap back to the wall climb.
-- The button's typography matches the on-wall state (11px, weight 600, letter-spacing 0.5, `text.secondary`).
 
 #### Audience AvatarGroup
 
 - Positioned at `ml: auto` (right-aligned).
 - Shows up to 3 avatars (`max={3}`) of other session participants, excluding the local user.
 - Avatar size: 22px, font-size 10px, transparent 2px border.
-- Each avatar uses `TickBadgeAvatar`, which overlays a small tick badge if the user has ticked the currently displayed climb. The driver's avatar gets a driver indicator.
-- The driver is floated to position 0 in the audience list.
+- Each avatar uses `TickBadgeAvatar`, which overlays a small tick badge if the user has ticked the currently displayed climb.
 - `aria-label` reports audience count.
 
-**Tick badge context:** The tick badges reflect "who has done THIS climb" -- the climb the drawer is currently displaying (`drawerDisplayedItem ?? currentClimbQueueItem`), not necessarily the wall climb. This means non-driver preview shows accurate tick status for the previewed climb.
+**Tick badge context:** The tick badges reflect "who has done THIS climb" -- the climb the drawer is currently displaying (`drawerDisplayedItem ?? currentClimbQueueItem`), not necessarily the wall climb.
 
 ---
 

@@ -18,8 +18,12 @@ describe('deriveWsUrlFromHost', () => {
     expect(deriveWsUrlFromHost('localhost', true)).toBeNull();
   });
 
-  it('should return null for bare boardsesh.com', () => {
-    expect(deriveWsUrlFromHost('boardsesh.com', true)).toBeNull();
+  it('should derive wss URL for production domain', () => {
+    expect(deriveWsUrlFromHost('boardsesh.com', true)).toBe('wss://ws.boardsesh.com/graphql');
+  });
+
+  it('should derive wss URL for www production domain', () => {
+    expect(deriveWsUrlFromHost('www.boardsesh.com', true)).toBe('wss://ws.boardsesh.com/graphql');
   });
 
   it('should return null for non-numeric prefix', () => {
@@ -81,6 +85,24 @@ describe('getBackendWsUrl (client runtime local-network fallback)', () => {
 
     const { getBackendWsUrl } = await import('../backend-url');
     expect(getBackendWsUrl()).toBe('wss://backend.example.com/graphql');
+  });
+
+  it('derives production backend before using the local fallback', async () => {
+    process.env.NEXT_PUBLIC_WS_URL = 'ws://localhost:8080/graphql';
+
+    Object.defineProperty(global, 'window', {
+      configurable: true,
+      value: {
+        location: {
+          hostname: 'boardsesh.com',
+          protocol: 'https:',
+        },
+      },
+    });
+
+    const { getBackendWsUrl, getBackendHttpUrl } = await import('../backend-url');
+    expect(getBackendWsUrl()).toBe('wss://ws.boardsesh.com/graphql');
+    expect(getBackendHttpUrl()).toBe('https://ws.boardsesh.com');
   });
 });
 

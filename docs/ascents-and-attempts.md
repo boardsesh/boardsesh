@@ -35,29 +35,28 @@ Everything about ascents is single-table: one PostgreSQL table (`boardsesh_ticks
 
 Schema lives at `packages/db/src/schema/app/ascents.ts`. Key fields:
 
-| Field                       | Type                             | Purpose                                                                                                                      |
-| --------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `uuid`                      | `text` (unique)                  | Boardsesh-generated UUID, the stable identifier we expose externally                                                         |
-| `user_id`                   | `text` → `users.id`              | Owner of this tick; cascades on user delete                                                                                  |
-| `board_type`                | `text`                           | `'kilter'`, `'tension'`, or `'moonboard'`                                                                                    |
-| `climb_uuid`                | `text`                           | References `board_climbs.uuid` (logically — there's intentionally no FK; see schema comments)                                |
-| `angle`                     | `int`                            | Wall angle at climb time, in degrees                                                                                         |
-| `is_mirror`                 | `bool`                           | Whether the user climbed the mirrored variant                                                                                |
-| `status`                    | `tick_status` enum               | `'flash'` / `'send'` / `'attempt'`                                                                                           |
-| `attempt_count`             | `int`                            | Number of attempts for this entry. **Always `1` for flash.** For sends and attempts, it's the count the user reported        |
-| `quality`                   | `int?`                           | 1–5 user star rating. **Null for attempts**, optionally null for ascents                                                     |
-| `difficulty`                | `int?`                           | User's personal grade override (a `difficulty_id`, not a name). **Null means "use the climb's consensus grade"** — see below |
-| `is_benchmark`              | `bool`                           | Whether the user marked the climb as a benchmark                                                                             |
-| `comment`                   | `text`                           | Free-form note                                                                                                               |
-| `climbed_at`                | `timestamp`                      | When the climb happened (user-supplied, not server-time)                                                                     |
-| `created_at` / `updated_at` | `timestamp`                      | Row audit                                                                                                                    |
-| `session_id`                | `text?` → `board_sessions.id`    | If logged inside a party-mode session                                                                                        |
-| `inferred_session_id`       | `text?` → `inferred_sessions.id` | Auto-assigned grouping; see [Inferred Sessions](inferred-sessions.md)                                                        |
-| `board_id`                  | `bigint?` → `user_boards.id`     | The physical board the tick was recorded on, when known                                                                      |
-| `aurora_type`               | `aurora_table_type?` enum        | `'ascents'` / `'bids'`; null until synced to Aurora                                                                          |
-| `aurora_id`                 | `text?`                          | Aurora's UUID once synced (uniquely indexed)                                                                                 |
-| `aurora_synced_at`          | `timestamp?`                     | When the sync succeeded                                                                                                      |
-| `aurora_sync_error`         | `text?`                          | Last sync error if a sync attempt failed                                                                                     |
+| Field                       | Type                          | Purpose                                                                                                                      |
+| --------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `uuid`                      | `text` (unique)               | Boardsesh-generated UUID, the stable identifier we expose externally                                                         |
+| `user_id`                   | `text` → `users.id`           | Owner of this tick; cascades on user delete                                                                                  |
+| `board_type`                | `text`                        | `'kilter'`, `'tension'`, or `'moonboard'`                                                                                    |
+| `climb_uuid`                | `text`                        | References `board_climbs.uuid` (logically — there's intentionally no FK; see schema comments)                                |
+| `angle`                     | `int`                         | Wall angle at climb time, in degrees                                                                                         |
+| `is_mirror`                 | `bool`                        | Whether the user climbed the mirrored variant                                                                                |
+| `status`                    | `tick_status` enum            | `'flash'` / `'send'` / `'attempt'`                                                                                           |
+| `attempt_count`             | `int`                         | Number of attempts for this entry. **Always `1` for flash.** For sends and attempts, it's the count the user reported        |
+| `quality`                   | `int?`                        | 1–5 user star rating. **Null for attempts**, optionally null for ascents                                                     |
+| `difficulty`                | `int?`                        | User's personal grade override (a `difficulty_id`, not a name). **Null means "use the climb's consensus grade"** — see below |
+| `is_benchmark`              | `bool`                        | Whether the user marked the climb as a benchmark                                                                             |
+| `comment`                   | `text`                        | Free-form note                                                                                                               |
+| `climbed_at`                | `timestamp`                   | When the climb happened (user-supplied, not server-time)                                                                     |
+| `created_at` / `updated_at` | `timestamp`                   | Row audit                                                                                                                    |
+| `session_id`                | `text?` → `board_sessions.id` | If logged inside an explicitly-created session                                                                               |
+| `board_id`                  | `bigint?` → `user_boards.id`  | The physical board the tick was recorded on, when known                                                                      |
+| `aurora_type`               | `aurora_table_type?` enum     | `'ascents'` / `'bids'`; null until synced to Aurora                                                                          |
+| `aurora_id`                 | `text?`                       | Aurora's UUID once synced (uniquely indexed)                                                                                 |
+| `aurora_synced_at`          | `timestamp?`                  | When the sync succeeded                                                                                                      |
+| `aurora_sync_error`         | `text?`                       | Last sync error if a sync attempt failed                                                                                     |
 
 The `tick_status` and `aurora_table_type` enums are defined alongside the table. Don't introduce new enum values without coordinating with the Aurora API mapping in `packages/aurora-sync/src/sync/user-sync.ts`.
 
@@ -160,9 +159,15 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
 - `difficulty: validatedInput.difficulty ?? null` — undefined → null
 - `quality: validatedInput.quality ?? null`
 - Aurora fields all set to `null`; they get populated later by the periodic sync daemon.
-- Fires `assignInferredSession` (fire-and-forget) for non-party ticks.
 - Publishes `ascent.logged` event for the feed (only for `flash`/`send`, not `attempt`).
-- If `videoUrl` was attached, also inserts a `board_beta_links` row.
+- If `videoUrl` was attached to a successful ascent, also inserts a
+  `board_beta_links` row tied directly to the new tick via `tick_uuid` and to
+  the resolved wall via `board_id` when one is known. Attempts ignore
+  `videoUrl`.
+- Beta-link inserts store a `video_identity` canonicalized from the platform
+  media id when possible. That keeps one canonical beta row per video and one
+  beta row per tick; a same-climb duplicate on `saveTick` skips only the beta
+  side effect and still saves the tick.
 - Calls `queueClimbStatsRecompute(boardType, climbUuid, angle)`. The debounced job
   (2 s window, `packages/backend/src/graphql/resolvers/ticks/debounced-climb-stats-publisher.ts`)
   recomputes `board_climb_stats.boardsesh_ascensionist_count` from the
@@ -238,7 +243,7 @@ Aurora `bids` table      ───►  boardsesh_ticks.status = 'attempt'
 
 ## Sessions
 
-Every tick belongs to exactly one session — either an explicit party-mode `board_sessions` row (via `session_id`) or an auto-grouped `inferred_sessions` row (via `inferred_session_id`). See [`inferred-sessions.md`](inferred-sessions.md). The session attribution is independent of `status`, `difficulty`, or anything else discussed here.
+Ticks only belong to a session when they were logged inside an explicitly-created `board_sessions` row via `session_id`. Solo ticks are not auto-grouped into sessions.
 
 ---
 
@@ -248,8 +253,9 @@ Every tick belongs to exactly one session — either an explicit party-mode `boa
 2. **Don't pre-bake the consensus grade into the saved row.** The whole point of the nullable column is that it tracks consensus changes over time. If a user genuinely meant to override, they would have picked a grade.
 3. **Always join `board_climb_stats` and COALESCE** when grouping ticks by grade. Reuse `consensusDifficultyExpr` from `packages/backend/src/graphql/resolvers/shared/sql-expressions.ts`.
 4. **Status is the source of truth, not `attempt_count`.** New code must check `status === 'flash'` / `'send'` / `'attempt'`, not infer from attempt counts. The attempt-count heuristic in `buildFlashRedpointBars` is a legacy fallback for pre-status rows only.
-5. **All inserts go through `saveTick` or the Aurora sync.** Don't write ad-hoc inserts elsewhere; you'll skip inferred-session assignment, the `ascent.logged` event, beta-link attach, and the IndexedDB draft cleanup.
-6. **Aurora fields are owned by the sync daemon.** Don't set `aurora_id`, `aurora_type`, or `aurora_synced_at` from a write path other than the sync job.
-7. **Attempts never carry a `quality` or `difficulty`.** If you add an "attempt with grade override" UX, document it here first — every aggregation in this doc assumes the convention.
+5. **All inserts go through `saveTick` or the Aurora sync.** Don't write ad-hoc inserts elsewhere; you'll skip the `ascent.logged` event, beta-link attach, and the IndexedDB draft cleanup.
+6. **Tick-specific beta links belong on `board_beta_links.tick_uuid`.** The legacy climb-level lookup still exists for old rows, but new successful tick attachments should carry `tick_uuid`, `board_id` when known, and `video_identity`. A tick can have at most one beta link, and a canonical video can belong to only one beta row.
+7. **Aurora fields are owned by the sync daemon.** Don't set `aurora_id`, `aurora_type`, or `aurora_synced_at` from a write path other than the sync job.
+8. **Attempts never carry a `quality` or `difficulty`.** If you add an "attempt with grade override" UX, document it here first — every aggregation in this doc assumes the convention.
 
 If you change any of these invariants, update this document in the same PR.

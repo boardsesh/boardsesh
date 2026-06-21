@@ -14,7 +14,7 @@ export const socialSearchQueries = {
     { input }: { input: { query: string; boardType?: string; limit?: number; offset?: number } },
     ctx: ConnectionContext,
   ) => {
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'searchUsers');
 
     const validatedInput = validateInput(SearchUsersInputSchema, input, 'input');
     const query = validatedInput.query;

@@ -6,30 +6,218 @@
     "mustBeSignedIn": "Vous devez être connecté"
   },
   "mobile": {
+    "avatar": {
+      "viewProfile": "Voir le profil de {{name}}",
+      "thisClimber": "ce grimpeur"
+    },
     "more": {
       "title": "Plus",
+      "library": "Bibliothèque",
       "development": "Développement",
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
+      "accessibility": {
+        "title": "Accessibilité",
+        "description": "Choisis des couleurs de prises plus faciles à distinguer. Par défaut utilise les couleurs normales de chaque board et n'envoie aucune surcharge Bluetooth.",
+        "resetAll": "Réinitialiser les couleurs des prises",
+        "save": "Enregistrer la couleur",
+        "rowAccessibility": "{{role}}, {{mode}}",
+        "pickerSubtitle": "Utilise n'importe quelle couleur RGB.",
+        "modeLabel": "Mode de couleur des prises",
+        "defaultCopy": "Boardsesh utilisera la couleur par défaut pour ce type de prise et l'omettra des surcharges Bluetooth.",
+        "invalidRgb": "Utilise des nombres de 0 à 255.",
+        "mode": {
+          "default": "Par défaut",
+          "user": "Couleur personnalisée"
+        },
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "shapeLabel": "Forme",
+        "shapes": {
+          "circle": "Cercle",
+          "triangleUp": "Triangle vers le haut",
+          "triangleDown": "Triangle vers le bas",
+          "square": "Carré",
+          "diamond": "Losange"
+        },
+        "brush": {
+          "title": "Épaisseur du trait",
+          "subtitle": "Modifie l'épaisseur des contours des marqueurs.",
+          "value": "{{value}}x",
+          "save": "Enregistrer l'épaisseur",
+          "rowAccessibility": "Épaisseur du trait, {{value}}x"
+        },
+        "size": {
+          "title": "Taille du marqueur",
+          "subtitle": "Modifie la taille des formes des marqueurs.",
+          "value": "{{value}}x",
+          "save": "Enregistrer la taille",
+          "rowAccessibility": "Taille du marqueur, {{value}}x"
+        },
+        "channels": {
+          "red": "Rouge",
+          "green": "Vert",
+          "blue": "Bleu"
+        },
+        "roles": {
+          "starting": "Départ",
+          "hand": "Milieu",
+          "finish": "Top",
+          "foot": "Pied"
+        }
+      },
       "appearance": {
         "title": "Apparence",
         "system": "Système",
         "light": "Clair",
         "dark": "Sombre"
       },
-      "searchLayout": {
-        "title": "Disposition de recherche",
-        "description": "Où se trouvent le niveau et les filtres sur l'écran des blocs.",
-        "bottomBar": "Barre inférieure",
-        "stickyStrip": "Barre supérieure"
+      "uiStyle": {
+        "title": "Style d'interface",
+        "auto": "Automatique",
+        "liquidGlass": "Liquid Glass",
+        "material": "Material",
+        "description": "Automatique utilise Liquid Glass sur iPhone et Material sur Android. Choisis-en un pour passer outre.",
+        "glassFallback": "Liquid Glass utilise un rendu simplifié ici. L'effet de verre complet nécessite iOS 26.",
+        "glassFallbackAndroid": "Liquid Glass utilise un rendu simplifié à surfaces pleines sur Android."
+      },
+      "gradeFormat": {
+        "title": "Format de cotation",
+        "description": "Choisis comment les cotations s'affichent dans l'app.",
+        "vGrade": "Cotation V",
+        "font": "Français",
+        "both": "Les deux"
+      },
+      "language": {
+        "title": "Langue",
+        "system": "Système",
+        "description": "Système suit la langue de votre appareil.",
+        "contributeTitle": "Aidez à traduire Boardsesh",
+        "contributeSubtitle": "Les traductions sont maintenues par la communauté. Ouvrez les fichiers {{language}} sur GitHub pour corriger ou ajouter une phrase."
+      },
+      "diagnostics": {
+        "title": "Confidentialité",
+        "recording": "Aidez-nous à nous améliorer",
+        "recordingDescription": "Envoyez des enregistrements de session anonymes et masqués pour qu'on corrige les bugs plus vite. Ce que vous tapez et vos photos restent masqués. Désactivez quand vous voulez."
+      },
+      "integrations": {
+        "title": "Applications connectées",
+        "subtitle": "Apple Health et Strava",
+        "subtitleWithStrava": "Comptes de board, Apple Health, Strava"
+      },
+      "aboutSection": "À propos",
+      "changelogTitle": "Nouveautés",
+      "changelogSubtitle": "Dernières améliorations et corrections",
+      "newPill": "Nouveau"
+    },
+    "about": {
+      "title": "À propos de Boardsesh",
+      "heroTitle": "Boardsesh",
+      "heroBody": "Pilotez votre board depuis votre téléphone : trouvez des blocs, préparez les runs, allumez le mur et gardez la session en mouvement.",
+      "sectionTitle": "À quoi sert Boardsesh",
+      "whatItDoesTitle": "Grimpez sans changer d'app",
+      "whatItDoesBody": "Cherchez, mettez en file, allumez, enregistrez et partagez des blocs depuis un seul endroit pendant que vous restez concentré sur le mur.",
+      "boardsTitle": "Pour vos boards",
+      "boardsBody": "Boardsesh prend en charge les sessions sur vos setups Kilter, Tension et MoonBoard sans se présenter comme une app officielle.",
+      "openTitle": "Construit en public",
+      "openBody": "Le projet est open source pour que les grimpeurs puissent signaler les accrocs, demander des fonctions et aider à choisir la suite.",
+      "independentBody": "Boardsesh n'est ni affilié ni approuvé par Aurora Climbing, Kilter, Tension, Moon Climbing ou un fabricant de boards.",
+      "viewOnGithub": "Voir sur GitHub",
+      "joinDiscord": "Rejoindre Discord",
+      "partnerTitle": "Devenez partenaire officiel",
+      "partnerBody": "Boardsesh fonctionne avec Kilter, Tension et MoonBoard depuis l'extérieur. Si vous fabriquez des boards et voulez construire quelque chose d'officiel ensemble, on serait ravis d'en parler.",
+      "acknowledgementsLink": "Remerciements",
+      "acknowledgementsLinkBody": "Les personnes derrière Boardsesh",
+      "changelogLink": "Nouveautés",
+      "changelogLinkBody": "Dernières améliorations et corrections"
+    },
+    "acknowledgements": {
+      "title": "Remerciements",
+      "intro": "Boardsesh existe grâce aux personnes qui le construisent, le soutiennent et supportent que je parle sans fin de boards. Merci.",
+      "contributorsTitle": "Contributeurs",
+      "contributorsBody": "Toutes les personnes qui ont apporté du code, des correctifs et des idées sur GitHub.",
+      "sponsorsTitle": "Sponsors",
+      "sponsorsBody": "Les grimpeurs qui font vivre le projet via GitHub Sponsors.",
+      "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
+      "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
+      "becomeSponsor": "Devenir sponsor",
+      "personalTitle": "Remerciements personnels",
+      "discordTitle": "Tout le monde sur notre Discord",
+      "discordBody": "Merci pour la beta, la motivation et les rapports de bugs. Touchez pour rejoindre.",
+      "friendsTitle": "La team",
+      "friendsBody": "{{names}} — merci de vouloir encore sesh avec moi, malgré le fait que je vous ai forcés à faire du bêta-test plutôt que grimper. Vos retours concrets ont vraiment aidé à donner une direction à Boardsesh.",
+      "alexBody": "Pour les retours de design depuis sa retraite à l'autre bout du globe — j'espère qu'on grimpera ensemble un jour.",
+      "dogBody": "Merci à Scout pour tout le soutien moral, c'est la vraie MVP de Boardsesh. Même si elle ne grimpe pas et veut juste être une chienne de plage.",
+      "ossLicensesLink": "Licences open source",
+      "ossLicensesBody": "Les logiciels open source sur lesquels Boardsesh est construit"
+    },
+    "licenses": {
+      "title": "Licences open source",
+      "intro": "Boardsesh est construit avec ces paquets open source. Merci à leurs mainteneurs.",
+      "viewSource": "Voir le code",
+      "close": "Fermer"
+    },
+    "onboarding": {
+      "replaySection": "Tutoriel",
+      "replayTitle": "Revoir le tutoriel",
+      "replaySubtitle": "Affiche à nouveau le tutoriel",
+      "replayError": "Impossible de rouvrir le tutoriel. Réessaie.",
+      "prompt": {
+        "title": "Vois ce qui est allumé sur ton mur, en direct",
+        "body": "Suis le board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les sends récents. Tu ne lances rien ; c'est juste là.",
+        "footnote": "En plus : les séances avec ta crew, le générateur d'entraînement et le suivi de tes sends, une fois sur un mur.",
+        "findBoard": "Trouver mon board",
+        "lookAround": "Jeter un œil d'abord"
+      },
+      "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont envoyé au mur.",
+      "tips": {
+        "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, envoie-les une par une.",
+        "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui envoie la prochaine voie, sans passer le téléphone.",
+        "record": "Tes sends s'affichent ici dans Progression : éventail de cotations et ton plus gros send. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
       }
     },
     "nav": {
+      "home": "Accueil",
       "boards": "Boards",
       "climbs": "Blocs",
-      "climb": "Bloc",
       "profile": "Profil",
-      "setters": "Ouvreurs"
+      "holdFilter": "Types de prise",
+      "zoneFilter": "Zone du mur"
+    },
+    "changelog": {
+      "title": "Nouveautés",
+      "intro": "Dernières améliorations et corrections, les plus récentes en premier.",
+      "currentBuild": "Vous utilisez la version du {{date}}",
+      "currentBuildVersion": "Vous utilisez la version {{version}}",
+      "category": {
+        "new": "Nouveau",
+        "improved": "Amélioré",
+        "fixed": "Corrigé"
+      },
+      "viewPr": "Voir sur GitHub",
+      "empty": "Aucun changement pour l'instant : on était trop occupés à grimper. Reviens après le prochain enchaînement.",
+      "nativeRelease": {
+        "title": "Mise à jour de l'app",
+        "appStore": "Une nouvelle version est arrivée sur l'App Store.",
+        "playStore": "Une nouvelle version est arrivée sur le Play Store."
+      },
+      "checkForUpdates": "Rechercher des mises à jour",
+      "checking": "Recherche…",
+      "downloading": "Téléchargement…",
+      "upToDate": {
+        "title": "Vous êtes à jour",
+        "message": "Vous avez déjà la dernière version."
+      },
+      "updateReady": {
+        "title": "Mise à jour prête",
+        "message": "Redémarrer Boardsesh maintenant pour utiliser la dernière version ?",
+        "restart": "Redémarrer",
+        "later": "Plus tard"
+      },
+      "checkError": {
+        "title": "Impossible de rechercher des mises à jour",
+        "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
+      }
     }
   },
   "lightControl": {
@@ -136,10 +324,10 @@
     "classifyHolds": "Classer les prises",
     "myPlaylists": "Mes playlists",
     "recentSessions": "Sessions récentes",
-    "help": "Aide",
     "about": "À propos",
     "rateBoardsesh": "Noter Boardsesh",
     "reportBug": "Signaler un bug",
+    "joinDiscord": "Rejoindre Discord",
     "logout": "Se déconnecter"
   },
   "loading": {

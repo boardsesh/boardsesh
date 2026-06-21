@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -6,7 +6,7 @@ import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/h
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
 
-function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect) {
+function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect, commentCount = 0) {
   const meta = row.metadata || {};
   return {
     id: String(row.id),
@@ -35,8 +35,35 @@ function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect) {
     quality: (meta.quality as number) ?? null,
     attemptCount: (meta.attemptCount as number) ?? null,
     comment: (meta.comment as string) ?? null,
+    commentCount,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
   };
+}
+
+async function getCommentCountMap(rows: (typeof dbSchema.feedItems.$inferSelect)[]): Promise<Map<string, number>> {
+  const countableRows = rows.filter((row) => row.entityType === 'tick' || row.entityType === 'climb');
+  if (countableRows.length === 0) return new Map();
+
+  const commentRows = await db
+    .select({
+      entityType: dbSchema.comments.entityType,
+      entityId: dbSchema.comments.entityId,
+      commentCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(dbSchema.comments)
+    .where(
+      and(
+        isNull(dbSchema.comments.deletedAt),
+        or(
+          ...countableRows.map((row) =>
+            and(eq(dbSchema.comments.entityType, row.entityType), eq(dbSchema.comments.entityId, row.entityId)),
+          ),
+        ),
+      ),
+    )
+    .groupBy(dbSchema.comments.entityType, dbSchema.comments.entityId);
+
+  return new Map(commentRows.map((row) => [`${row.entityType}:${row.entityId}`, Number(row.commentCount)]));
 }
 
 type TickJoinRow = {
@@ -141,7 +168,10 @@ export const activityFeedQueries = {
 
     const hasMore = rows.length > limit;
     const resultRows = hasMore ? rows.slice(0, limit) : rows;
-    const items = resultRows.map(mapFeedItemToGraphQL);
+    const commentCountMap = await getCommentCountMap(resultRows);
+    const items = resultRows.map((row) =>
+      mapFeedItemToGraphQL(row, commentCountMap.get(`${row.entityType}:${row.entityId}`) ?? 0),
+    );
 
     let nextCursor: string | null = null;
     if (hasMore && resultRows.length > 0) {
@@ -164,23 +194,31 @@ export const activityFeedQueries = {
     // Build conditions - only successful ascents for trending
     const conditions = [sql`${dbSchema.boardseshTicks.status} IN ('flash', 'send')`];
 
-    // Board filter: look up board config and filter by boardType + layoutId
+    // Board filter: require an active board and scope to ticks recorded for it.
     let layoutIdFilter: number | null = null;
     if (validatedInput.boardUuid) {
       const board = await db
         .select({
+          id: dbSchema.userBoards.id,
           boardType: dbSchema.userBoards.boardType,
           layoutId: dbSchema.userBoards.layoutId,
         })
         .from(dbSchema.userBoards)
-        .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
+        .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
         .limit(1)
         .then((rows) => rows[0]);
 
-      if (board) {
-        conditions.push(eq(dbSchema.boardseshTicks.boardType, board.boardType));
-        layoutIdFilter = board.layoutId;
+      if (!board) {
+        return { items: [], cursor: null, hasMore: false };
       }
+
+      conditions.push(eq(dbSchema.boardseshTicks.boardId, board.id));
+      conditions.push(eq(dbSchema.boardseshTicks.boardType, board.boardType));
+      layoutIdFilter = board.layoutId;
+    }
+
+    if (layoutIdFilter !== null) {
+      conditions.push(eq(dbSchema.boardClimbs.layoutId, layoutIdFilter));
     }
 
     // Keyset pagination for chronological sort
@@ -193,11 +231,6 @@ export const activityFeedQueries = {
                 AND ${dbSchema.boardseshTicks.id} < ${cursor.id}))`,
         );
       }
-    }
-
-    // Apply layoutId filter from board config lookup
-    if (layoutIdFilter !== null) {
-      conditions.push(eq(dbSchema.boardClimbs.layoutId, layoutIdFilter));
     }
 
     const whereClause = and(...conditions);
@@ -232,11 +265,13 @@ export const activityFeedQueries = {
           eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbAliases.boardType),
         ),
       )
-      .leftJoin(
+      .innerJoin(
         dbSchema.boardClimbs,
         and(
           sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
           eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
+          sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
+          sql`${dbSchema.boardClimbs.isListed} IS NOT FALSE`,
         ),
       )
       .leftJoin(

@@ -2,21 +2,36 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuroraRequestError } from '../api/errors';
 import { SyncRunner } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
+import type { CredentialRecord } from './types';
 
 type SyncRunnerPrivates = {
-  updateCredentialStatus: (userId: string, boardType: string, status: string, error?: string | null) => Promise<void>;
-  syncSingleCredential: (cred: ReturnType<typeof createCredential>) => Promise<void>;
+  updateCredentialStatus: (
+    userId: string,
+    boardType: string,
+    status: string,
+    error?: string | null,
+    lastSyncAt?: Date,
+    credentialFailureUpdate?: {
+      credentialFailureCount?: number;
+      lastCredentialFailureAt?: Date | null;
+    },
+  ) => Promise<void>;
+  updateStoredToken: (userId: string, boardType: string, token: string) => Promise<void>;
+  syncSingleCredential: (cred: CredentialRecord) => Promise<void>;
   maybeRunSharedSync: (boardType: AuroraBoardName, token: string, userId: string) => Promise<void>;
-  getActiveCredentials: () => Promise<Array<ReturnType<typeof createCredential>>>;
-  getNextCredentialToSync: () => Promise<ReturnType<typeof createCredential> | null>;
+  getActiveCredentials: () => Promise<CredentialRecord[]>;
+  getNextCredentialToSync: () => Promise<CredentialRecord | null>;
 };
 
-const { mockDecrypt, mockEncrypt, mockSignIn, mockSyncSharedData } = vi.hoisted(() => ({
-  mockDecrypt: vi.fn(),
-  mockEncrypt: vi.fn(),
-  mockSignIn: vi.fn(),
-  mockSyncSharedData: vi.fn(),
-}));
+const { mockDecrypt, mockEncrypt, mockSignIn, mockSyncUserData, mockSyncSharedData, mockSyncAuroraBoardLocations } =
+  vi.hoisted(() => ({
+    mockDecrypt: vi.fn(),
+    mockEncrypt: vi.fn(),
+    mockSignIn: vi.fn(),
+    mockSyncUserData: vi.fn(),
+    mockSyncSharedData: vi.fn(),
+    mockSyncAuroraBoardLocations: vi.fn(),
+  }));
 
 vi.mock('@boardsesh/crypto', () => ({
   decrypt: mockDecrypt,
@@ -24,11 +39,17 @@ vi.mock('@boardsesh/crypto', () => ({
 }));
 
 vi.mock('../sync/user-sync', () => ({
-  syncUserData: vi.fn(),
+  syncUserData: mockSyncUserData,
 }));
 
 vi.mock('../sync/shared-sync', () => ({
   syncSharedData: mockSyncSharedData,
+}));
+
+vi.mock('../sync/locations-sync', () => ({
+  AURORA_LOCATION_BOARDS: ['tension', 'decoy', 'touchstone', 'grasshopper', 'soill'],
+  syncAuroraBoardLocations: mockSyncAuroraBoardLocations,
+  syncAllAuroraBoardLocations: vi.fn(),
 }));
 
 vi.mock('../api/aurora-client', () => ({
@@ -42,9 +63,12 @@ describe('SyncRunner login failure handling', () => {
     mockDecrypt.mockReset();
     mockEncrypt.mockReset();
     mockSignIn.mockReset();
+    mockSyncUserData.mockReset();
 
     mockDecrypt.mockImplementation((value: string) => `decrypted-${value}`);
     mockEncrypt.mockReturnValue('encrypted-token');
+    mockSyncUserData.mockResolvedValue(undefined);
+    process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
   });
 
   it('keeps credential state unchanged for transient Aurora login failures', async () => {
@@ -69,7 +93,7 @@ describe('SyncRunner login failure handling', () => {
     expect(updateCredentialStatus).not.toHaveBeenCalled();
   });
 
-  it('marks invalid credentials as an error', async () => {
+  it('marks the first invalid credential failure as an error', async () => {
     const runner = new SyncRunner();
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
     const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
@@ -93,15 +117,95 @@ describe('SyncRunner login failure handling', () => {
       'decoy',
       'error',
       'Login failed: Invalid username or password',
+      undefined,
+      {
+        credentialFailureCount: 1,
+        lastCredentialFailureAt: expect.any(Date),
+      },
+    );
+  });
+
+  it('expires credentials after the second invalid credential failure', async () => {
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    mockSignIn.mockRejectedValue(
+      new AuroraRequestError({
+        code: 'invalid_credentials',
+        message: 'Invalid username or password',
+        status: 422,
+        statusText: 'Unprocessable Entity',
+        url: 'https://decoyboardapp.com/sessions',
+      }),
+    );
+
+    await expect(runnerPrivates.syncSingleCredential(createCredential({ credentialFailureCount: 1 }))).rejects.toThrow(
+      'Login failed: Invalid username or password (expired after 2 failed credential attempts; reconnect to resume sync)',
+    );
+
+    expect(updateCredentialStatus).toHaveBeenCalledWith(
+      'user-123',
+      'decoy',
+      'expired',
+      'Login failed: Invalid username or password (expired after 2 failed credential attempts; reconnect to resume sync)',
+      undefined,
+      {
+        credentialFailureCount: 2,
+        lastCredentialFailureAt: expect.any(Date),
+      },
+    );
+  });
+
+  it('clears credential failure counters after a successful login', async () => {
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    const updateStoredToken = vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+
+    await runnerPrivates.syncSingleCredential(
+      createCredential({
+        credentialFailureCount: 1,
+        lastCredentialFailureAt: new Date('2026-06-16T00:00:00.000Z'),
+      }),
+    );
+
+    expect(updateStoredToken).toHaveBeenCalledWith('user-123', 'decoy', 'fresh-token');
+    expect(updateCredentialStatus).toHaveBeenCalledWith('user-123', 'decoy', 'active', null, expect.any(Date), {
+      credentialFailureCount: 0,
+      lastCredentialFailureAt: null,
+    });
+  });
+
+  it('does not increment credential failure counters for non-auth login errors', async () => {
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    mockSignIn.mockRejectedValue(new Error('Login succeeded but no token returned'));
+
+    await expect(runnerPrivates.syncSingleCredential(createCredential())).rejects.toThrow(
+      'Login failed: Login succeeded but no token returned',
+    );
+
+    expect(updateCredentialStatus).toHaveBeenCalledWith(
+      'user-123',
+      'decoy',
+      'error',
+      'Login failed: Login succeeded but no token returned',
     );
   });
 });
 
-function createCredential(overrides: Partial<ReturnType<typeof baseCredential>> = {}) {
+function createCredential(overrides: Partial<CredentialRecord> = {}): CredentialRecord {
   return { ...baseCredential(), ...overrides };
 }
 
-function baseCredential() {
+function baseCredential(): CredentialRecord {
   return {
     userId: 'user-123',
     boardType: 'decoy',
@@ -111,6 +215,8 @@ function baseCredential() {
     auroraToken: null,
     syncStatus: 'active',
     syncError: null,
+    credentialFailureCount: 0,
+    lastCredentialFailureAt: null,
     lastSyncAt: null,
   };
 }
@@ -119,6 +225,8 @@ describe('SyncRunner shared-sync per-board throttle', () => {
   beforeEach(() => {
     mockSyncSharedData.mockReset();
     mockSyncSharedData.mockResolvedValue({ complete: true, results: {}, newClimbs: [] });
+    mockSyncAuroraBoardLocations.mockReset();
+    mockSyncAuroraBoardLocations.mockResolvedValue({ boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0 });
     // postgres-js is lazy; getClient() builds a client object but won't open a
     // connection until something runs a query. The throttle tests never get
     // there because syncSharedData is mocked.
@@ -133,6 +241,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
 
     expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
     expect(mockSyncSharedData).toHaveBeenCalledWith(expect.anything(), 'decoy', 'token-abc', expect.any(Function));
+    expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(1);
   });
 
   it('skips shared sync when called again within the cooldown window', async () => {
@@ -144,6 +253,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     await runnerPrivates.maybeRunSharedSync('decoy', 'token-3', 'user-3');
 
     expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+    expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(1);
   });
 
   it('runs shared sync again once the cooldown has elapsed', async () => {
@@ -159,6 +269,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
       await runnerPrivates.maybeRunSharedSync('decoy', 'token-3', 'user-3');
 
       expect(mockSyncSharedData).toHaveBeenCalledTimes(2);
+      expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -177,6 +288,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
 
     expect(mockSyncSharedData).toHaveBeenCalledTimes(3);
     expect(mockSyncSharedData.mock.calls.map((call) => call[1])).toEqual(['decoy', 'tension', 'grasshopper']);
+    expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(3);
   });
 
   it('still respects the cooldown when the previous run failed', async () => {
@@ -189,6 +301,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     await runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u2');
 
     expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+    expect(mockSyncAuroraBoardLocations).not.toHaveBeenCalled();
   });
 });
 

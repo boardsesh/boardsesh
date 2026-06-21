@@ -2,10 +2,10 @@ import React, { useCallback } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
-import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
 
 type InlineStarPickerProps = {
   quality: number | null;
@@ -14,6 +14,7 @@ type InlineStarPickerProps = {
 
 export const InlineStarPicker = React.memo(function InlineStarPicker({ quality, onSelect }: InlineStarPickerProps) {
   const { t } = useTranslation('session');
+  const { brandColors } = useTheme();
 
   const handlePress = useCallback(
     (value: number) => {

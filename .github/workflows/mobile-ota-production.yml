@@ -1,0 +1,335 @@
+name: Mobile OTA Production (Self-Hosted)
+
+# Publishes a production OTA (JS bundle + manifest) to the self-hosted
+# expo-open-ota server on every push to main that touches the mobile app, and on
+# manual dispatch. Safe to auto-run because runtimeVersion uses the `fingerprint`
+# policy: the update only reaches a binary whose native fingerprint matches, so a
+# native change yields a new fingerprint and the OTA simply isn't delivered to old
+# installs (they keep their embedded bundle until a store build with the new
+# fingerprint ships). The matching native builds run in parallel via
+# ios-testflight-rn.yml / android-apk-rn.yml. See docs/mobile-ota-updates.md.
+
+on:
+  push:
+    branches: [main]
+    # Matches the native build workflows' trigger set (ios-testflight-rn.yml /
+    # android-apk-rn.yml) so a native build and its OTA fire on the same changes.
+    # packages/shared/** already covers queue / board-config / ble-protocol, which
+    # live under it.
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - '.github/workflows/mobile-ota-production.yml'
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Update message (defaults to the commit subject)'
+        required: false
+      platform:
+        description: 'Platform to publish (ios, android, all)'
+        required: false
+        default: 'all'
+
+permissions:
+  # read only: the push-back to main uses a dedicated GitHub App token (it must
+  # bypass main's "require a pull request" rule — the default GITHUB_TOKEN can't),
+  # so the workflow token just needs read for checkout/fetch.
+  contents: read
+
+concurrency:
+  # EXACTLY ONE production OTA publish at a time, repo-wide. This workflow owns
+  # changelog.generated.json (regenerate + push to main), so two concurrent runs
+  # would race on that file. A constant group (not per-ref) serializes push +
+  # dispatch + any branch into a single lane. cancel-in-progress: false never
+  # kills a publish mid-flight; a newer run just queues behind it and supersedes
+  # an older pending one — harmless, since the generator crawls all merged PRs, so
+  # the run that wins republishes the latest state anyway.
+  group: mobile-ota-production
+  cancel-in-progress: false
+
+# ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
+# MUST stay byte-identical to ios-testflight-rn.yml / android-apk-rn.yml, for two
+# distinct reasons (both at the workflow level there too, so the gate + build +
+# this publish all resolve the same fingerprint):
+#   1. Fingerprint parity. The fingerprint runtimeVersion hashes the *resolved
+#      Expo config* + the written .env (NOT the JS bundle). The vars that feed
+#      that config must match the native build or the published fingerprint won't
+#      match the shipped binary and the OTA silently never lands:
+#      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (→ google-signin iosUrlScheme, a native
+#      CFBundleURLScheme), GOOGLE_MAPS_API_KEY (→ android.config; set per-platform
+#      on the Android publish step below), and — once the committed cert activates
+#      the self-hosted updates block — EXPO_UPDATES_URL + EXPO_UPDATES_CHANNEL.
+#   2. Bundle correctness. The remaining EXPO_PUBLIC_* are inlined into the JS
+#      bundle (and hashed via .env); drift there ships an OTA pointing at the
+#      wrong backend/analytics. Both classes are enforced by
+#      scripts/mobile-ci-env-parity.test.ts. Keep this free of other
+#      fingerprint-affecting vars (EAS_BUILD, EAS_BUILD_PROFILE,
+#      BOARDSESH_APP_VARIANT, …) — they're unset in the native builds too.
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  # Baked into the binary by `expo prebuild`; the server maps this channel to a
+  # same-named branch. Part of the resolved config, so it's fingerprint-relevant.
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Gates EXPO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
+    environment: Production
+
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
+      INPUT_MESSAGE: ${{ github.event.inputs.message }}
+
+    steps:
+      # Mint the GitHub App token FIRST so checkout persists ITS credentials for
+      # the push-back. actions/checkout writes an http.extraheader for whatever
+      # token it's given, and that overrides any token in the remote URL — so the
+      # push must inherit the app token here, not swap it in later. The default
+      # GITHUB_TOKEN (github-actions[bot]) isn't in main's PR-bypass list and is
+      # rejected; the app is. Skips cleanly when the app isn't configured.
+      - name: Mint push token
+        id: push_token
+        if: vars.OTA_PUSH_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so the changelog push-back can rebase onto the latest main.
+          fetch-depth: 0
+          # The changelog generator reads the `fingerprint-<platform>-<hash>` tags
+          # (pushed by the native build workflows) to weave native-release markers
+          # into the changelog. fetch-depth: 0 already pulls tags, but be explicit
+          # so a future shallow tweak can't silently drop them.
+          fetch-tags: true
+          # Persist the app token (when configured) so the push-back authenticates
+          # as the app and bypasses the branch's PR rule. Falls back to the default
+          # token (read-only checkout) when the app isn't set up.
+          token: ${{ steps.push_token.outputs.token || github.token }}
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      - name: Check OTA infra is wired
+        id: gate
+        run: |
+          # Fail closed but skip gracefully: until the server URL is configured AND
+          # the signing cert is committed, app.config falls back to the EAS URL, so
+          # a published fingerprint could never match a self-hosted binary. Skip
+          # (green no-op) rather than publish to nowhere — mirrors the inert default.
+          if [ -z "$EXPO_UPDATES_URL" ] || [ ! -f packages/mobile/certs/certificate.pem ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Self-hosted OTA not wired yet (EXPO_UPDATES_URL unset or certs/certificate.pem missing) — skipping production OTA publish. See docs/mobile-ota-updates.md."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write .env for Expo build-time inlining
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EOF
+
+      # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
+      # It regenerates the "What's New" changelog from merged-PR Release Notes,
+      # commits it, and pushes it back to main so the committed copy is the single
+      # source of truth (native builds bundle it; the next OTA diffs against it).
+      # Nothing else writes this file: a CI guard blocks PRs from editing it, and
+      # the native-build / refresh workflows only read it. We commit (not just
+      # regenerate) for two reasons: `eoas publish` refuses to run on a dirty tree,
+      # and the committed copy must reach main. The commit carries [skip ci], so the
+      # push can't re-trigger this workflow. Rebase-and-retry guards a non-OTA push
+      # landing on main since checkout (OTA runs are serialized on main, so two of
+      # these never race). Degrades gracefully: a gh/network failure leaves the file
+      # unchanged (no diff → no commit/push) and exits 0. The default GITHUB_TOKEN
+      # reads public PRs. The file is JS-only, so it never affects the fingerprint.
+      # Commit (not just regenerate) for two reasons: `eoas publish` refuses to run
+      # on a dirty tree, and the committed copy is pushed to main below. [skip ci]
+      # keeps the later push from re-triggering this workflow. The file is JS-only,
+      # so it never affects the fingerprint. `changed` tells the push step whether
+      # there's anything to push.
+      - name: Generate changelog and commit
+        id: generate
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          vp run generate:changelog
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          # Both outputs of the generator: the mobile JSON feed and the root
+          # human-readable CHANGELOG.md (deterministic from the same entries).
+          git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Changelog unchanged — nothing to commit."
+          else
+            git commit -m "chore(changelog): refresh from merged PRs [skip ci]"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # iOS and Android are published in SEPARATE steps with platform-specific env.
+      # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
+      # Apple Maps), and it changes the resolved config — hence the fingerprint —
+      # for BOTH platforms. So the iOS publish must run WITHOUT the key (to match the
+      # iOS binary) and the Android publish WITH it (to match the Android binary). A
+      # single `--platform all` publish with one env could only ever match one side.
+      - name: Publish iOS OTA
+        id: publish_ios
+        if: steps.gate.outputs.configured == 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        # No EXPO_UPDATES_FINGERPRINT_OVERRIDE here: the publish resolves the CURRENT
+        # commit's fingerprint (app.config's `fingerprint` policy) and serves the JS
+        # under it. That matches the shipped binary — which embeds the same Linux gate
+        # fingerprint (set at build time, ios-testflight-rn.yml) — for a JS-only
+        # commit, and on a native change it resolves the NEW fingerprint, so old
+        # binaries (still on the old one) never receive JS that needs the new native
+        # code. Pinning to the last tag instead would do exactly that — a crash.
+        run: |
+          args=(--channel production --platform ios)
+          if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
+          vp run mobile:publish -- "${args[@]}"
+
+      - name: Publish Android OTA
+        id: publish_android
+        if: steps.gate.outputs.configured == 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        env:
+          # Must match the Android native prebuild (android-apk-rn.yml) so the
+          # resolved android.config.googleMaps block — and the freshly-resolved
+          # fingerprint — agree with the binary. (No fingerprint override: see the
+          # iOS publish step; the publish resolves the current commit's fingerprint.)
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          args=(--channel production --platform android)
+          if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
+          vp run mobile:publish -- "${args[@]}"
+
+      # Push the refreshed changelog to main so the committed copy is the single
+      # source of truth (native builds bundle it; the next OTA diffs against it).
+      # Runs AFTER publish, so the rebase here can't change what was just bundled.
+      # The commit carries [skip ci], so this push can't re-trigger the workflow.
+      # Rebase-and-retry guards a non-OTA push landing on main since checkout (OTA
+      # runs are serialized on main, so two of these never race; only this workflow
+      # writes the file, so the rebase can't conflict). always() + the `changed`
+      # gate: the file still lands even if a publish failed — its entry then ships
+      # on the next OTA.
+      # Auth is the app token that checkout persisted (the app is in main's
+      # PR-bypass list; github-actions[bot] is not, so it would 403). Skips when the
+      # app isn't configured — checkout then holds only the default token, the OTA
+      # already shipped, and main's committed copy is just left unchanged.
+      - name: Push changelog to main
+        if: always() && github.ref == 'refs/heads/main' && steps.generate.outputs.changed == 'true' && vars.OTA_PUSH_APP_ID != ''
+        run: |
+          set -euo pipefail
+          cp packages/mobile/src/data/changelog.generated.json "$RUNNER_TEMP/changelog.json"
+          cp CHANGELOG.md "$RUNNER_TEMP/CHANGELOG.md"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            # Idempotent: skip only when main already carries BOTH the same JSON
+            # entries (ignoring the generatedAt timestamp) AND the same CHANGELOG.md.
+            # Checking the markdown too covers the bootstrap case where main has the
+            # entries but not yet the (newly added) CHANGELOG.md.
+            main_entries="$(git show origin/main:packages/mobile/src/data/changelog.generated.json 2>/dev/null | jq -cS '.entries' 2>/dev/null || echo 'missing-json')"
+            our_entries="$(jq -cS '.entries' "$RUNNER_TEMP/changelog.json")"
+            main_md="$(git show origin/main:CHANGELOG.md 2>/dev/null || echo 'missing-md')"
+            our_md="$(cat "$RUNNER_TEMP/CHANGELOG.md")"
+            if [ "$main_entries" = "$our_entries" ] && [ "$main_md" = "$our_md" ]; then
+              echo "main already has the current changelog (json + CHANGELOG.md) — nothing to push."
+              exit 0
+            fi
+            # Land ONLY the two changelog files on top of the latest main: hard-reset
+            # to main (so we never revert files changed since our checkout), then
+            # re-apply our generated files. No rebase — a full-file regen can't
+            # auto-merge a different generatedAt.
+            git reset --hard origin/main
+            cp "$RUNNER_TEMP/changelog.json" packages/mobile/src/data/changelog.generated.json
+            cp "$RUNNER_TEMP/CHANGELOG.md" CHANGELOG.md
+            git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
+            if git diff --cached --quiet; then
+              echo "Changelog matches main (timestamp aside) — nothing to push."
+              exit 0
+            fi
+            git commit -m "chore(changelog): refresh from merged PRs [skip ci]"
+            if git push origin HEAD:main; then
+              echo "Pushed refreshed changelog to main."
+              exit 0
+            fi
+            echo "Push rejected (main advanced); retry ${attempt}/3…"
+          done
+          echo "::error::Could not push the changelog to main after 3 attempts."
+          exit 1
+
+      # Announce the publish to the Discord deploy channel (same webhook + pattern
+      # as ios-testflight-rn.yml / android-apk-rn.yml). Only when an OTA actually
+      # went out: gate wired AND at least one platform succeeded. A `--platform ios`
+      # run reports just "iOS" (the Android step is skipped, not success).
+      - name: Notify deployments channel
+        if: github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          platforms=""
+          [ "$IOS_OUTCOME" = "success" ] && platforms="iOS"
+          [ "$ANDROID_OUTCOME" = "success" ] && platforms="${platforms:+$platforms, }Android"
+          # INPUT_MESSAGE is the dispatch input (job env); fall back to the commit
+          # subject, which is the default update message mobile-publish.ts uses.
+          MESSAGE="${INPUT_MESSAGE:-$(git log -1 --pretty=%s)}"
+          CONTENT=$(printf '🚀 **Production OTA published** on `%s`\n• platforms: %s\n• channel: production\n• message: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$platforms" "$MESSAGE" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
+
+      - name: Notify deployments channel of failure
+        if: github.ref == 'refs/heads/main' && failure()
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          CONTENT=$(printf '🚨 **Production OTA publish failed** on `%s`\n<%s>' "${COMMIT_SHA:0:7}" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"

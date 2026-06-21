@@ -7,6 +7,7 @@ import {
   isTikTokUrl,
   mapBetaLinkRow as mapBetaLinkRowShared,
   mapBetaLinksResponse as mapBetaLinksResponseShared,
+  BETA_THUMBNAIL_REQUEST_SIZE,
   type BetaLink,
   type BetaLinksGqlRow,
 } from '@boardsesh/shared-schema';
@@ -31,14 +32,23 @@ export type { BetaLink, BetaLinksGqlRow };
  * origin so the browser actually hits the backend instead of 404-ing
  * against the frontend host.
  */
+function withThumbnailSize(url: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}size=${BETA_THUMBNAIL_REQUEST_SIZE}`;
+}
+
 function absolutizeThumbnail(thumbnail: string | null): string | null {
   if (!thumbnail || !thumbnail.startsWith('/')) return thumbnail;
   const backendBase = getBackendHttpUrl();
-  if (!backendBase) return thumbnail;
+  // Same-origin deploys keep the backend-relative path; split-domain deploys
+  // prepend the backend origin. Either way request a sized variant via
+  // `?size=` so the browser fetches a small thumbnail, not the full-res
+  // social image.
   // Defensive: getBackendHttpUrl strips a trailing slash today, but normalize
   // here too so a future change to its return shape can't produce
   // `https://host//static/...` which would 404.
-  return `${backendBase.replace(/\/+$/, '')}${thumbnail}`;
+  const base = backendBase ? `${backendBase.replace(/\/+$/, '')}${thumbnail}` : thumbnail;
+  return withThumbnailSize(base);
 }
 
 export function mapBetaLinkRow(row: BetaLinksGqlRow): BetaLink {

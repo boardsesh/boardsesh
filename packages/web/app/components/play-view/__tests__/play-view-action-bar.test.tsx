@@ -67,6 +67,7 @@ function buildProps(
     onOpenActions: vi.fn(),
     onOpenQueue: vi.fn(),
     lightbulbActive: true,
+    lightbulbConnected: false,
     displayedClimbName: 'Test Climb',
     onLightbulb: vi.fn(),
     ...overrides,
@@ -172,5 +173,23 @@ describe('PlayViewActionBar', () => {
     render(<PlayViewActionBar {...buildProps()} />);
     expect(screen.getByTestId('icon-skip-prev')).toBeTruthy();
     expect(screen.getByTestId('icon-skip-next')).toBeTruthy();
+  });
+
+  it('labels the lightbulb "send" when this device is not connected (tap connects)', () => {
+    render(<PlayViewActionBar {...buildProps({ lightbulbConnected: false })} />);
+    expect(screen.getByLabelText(/send .* to the wall/i)).toBeTruthy();
+  });
+
+  it('labels the lightbulb "turn off" when this device is connected (tap disconnects)', () => {
+    // Connected → the toggle disconnects; the label must not say "send".
+    render(<PlayViewActionBar {...buildProps({ lightbulbConnected: true })} />);
+    expect(screen.getByLabelText(/turn off the board/i)).toBeTruthy();
+  });
+
+  it('calls onLightbulb when the lightbulb is tapped', () => {
+    const onLightbulb = vi.fn();
+    render(<PlayViewActionBar {...buildProps({ lightbulbConnected: true, onLightbulb })} />);
+    fireEvent.click(screen.getByLabelText(/turn off the board/i));
+    expect(onLightbulb).toHaveBeenCalledOnce();
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "user_board_serials" ADD COLUMN "api_level" integer;

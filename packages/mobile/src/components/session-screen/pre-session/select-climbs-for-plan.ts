@@ -1,9 +1,14 @@
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { GeneratorOptions, PlannedClimbSlot } from '@boardsesh/playlist-generator';
+import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
 import { getHttpClient } from '../../../lib/graphql/client';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../lib/graphql/operations';
-import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
+import {
+  buildPools,
+  selectItemsFromPools,
+  type PreviewFetchContext,
+  type PreviewFilters,
+} from './workout-preview-pool';
 
 const POOL_SIZE_PER_GRADE = 50;
 
@@ -13,83 +18,68 @@ type SelectClimbsForPlanOptions = {
   isAuthenticated?: boolean;
   /** Filters that survived the generator UI; mapped onto SEARCH_CLIMBS the
    *  same way the web `playlist-generator-drawer` maps them. */
-  filters?: Pick<GeneratorOptions, 'minAscents' | 'minRating' | 'onlyTallClimbs' | 'climbBias'>;
+  filters?: PreviewFilters;
 };
+
+/**
+ * Build the SEARCH_CLIMBS input for a single target grade. Same mapping as the
+ * web `playlist-generator-drawer`: quality-sorted pool, optional ascent/rating/
+ * tall filters, and the auth-gated climbBias hide/show flags (anonymous users
+ * skip those entirely — the server rejects them without a user context).
+ */
+export function buildClimbSearchInput(grade: number, ctx: PreviewFetchContext): ClimbSearchInput {
+  const { board, isAuthenticated, filters } = ctx;
+  return {
+    boardName: board.boardType,
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+    setIds: board.setIds,
+    angle: board.angle,
+    minGrade: grade,
+    maxGrade: grade,
+    gradeAccuracy: 'moderate',
+    pageSize: POOL_SIZE_PER_GRADE,
+    page: 0,
+    // Quality-sorted so the generator favours the better climbs at each grade
+    // rather than whatever happens to be most-recently published.
+    sortBy: 'quality',
+    sortOrder: 'desc',
+    ...(filters?.minAscents != null ? { minAscents: filters.minAscents } : {}),
+    ...(filters?.minRating != null ? { minRating: filters.minRating } : {}),
+    ...(filters?.onlyTallClimbs ? { onlyTallClimbs: true } : {}),
+    ...(filters?.onlyWideClimbs ? { onlyWideClimbs: true } : {}),
+    ...(isAuthenticated && filters?.climbBias === 'unfamiliar' ? { hideAttempted: true, hideCompleted: true } : {}),
+    ...(isAuthenticated && filters?.climbBias === 'attempted' ? { showOnlyAttempted: true } : {}),
+  };
+}
+
+/**
+ * Fetch the candidate climb pool for one grade. The mobile-only fetcher injected
+ * into `@boardsesh/playlist-generator`'s pure pool helpers; the shared package
+ * intentionally stays platform-agnostic (no GraphQL client). Shuffling happens
+ * in `buildPools`, not here, so a refetch-on-refresh reshuffles.
+ */
+export async function fetchGradePool(grade: number, ctx: PreviewFetchContext): Promise<Climb[]> {
+  const input = buildClimbSearchInput(grade, ctx);
+  const response = await getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
+  return response.searchClimbs.climbs.slice();
+}
 
 /**
  * Turn a workout plan from `@boardsesh/playlist-generator` into a queue of
  * actual climbs by sampling SEARCH_CLIMBS one grade at a time. Mobile-only;
- * the equivalent web path lives in `playlist-generator-drawer.tsx`. The shared
- * package intentionally stays platform-agnostic (no GraphQL client).
+ * the equivalent web path lives in `playlist-generator-drawer.tsx`.
  */
 export async function selectClimbsForPlan(
   slots: PlannedClimbSlot[],
   board: UserBoard,
   options?: SelectClimbsForPlanOptions,
 ): Promise<ClimbQueueItem[]> {
-  // Aggregate the unique target grades; one fetch per grade keeps round-trips
-  // proportional to the workout shape rather than the climb count.
-  const uniqueGrades = Array.from(new Set(slots.map((slot) => slot.grade)));
-
-  const pools = new Map<number, Climb[]>();
-  await Promise.all(
-    uniqueGrades.map(async (grade) => {
-      const input: ClimbSearchInput = {
-        boardName: board.boardType,
-        layoutId: board.layoutId,
-        sizeId: board.sizeId,
-        setIds: board.setIds,
-        angle: board.angle,
-        minGrade: grade,
-        maxGrade: grade,
-        gradeAccuracy: 'moderate',
-        pageSize: POOL_SIZE_PER_GRADE,
-        page: 1,
-        // Quality-sorted so the generator favours the better climbs at each
-        // grade rather than whatever happens to be most-recently published.
-        sortBy: 'quality',
-        sortOrder: 'desc',
-        ...(options?.filters?.minAscents != null ? { minAscents: options.filters.minAscents } : {}),
-        ...(options?.filters?.minRating != null ? { minRating: options.filters.minRating } : {}),
-        ...(options?.filters?.onlyTallClimbs ? { onlyTallClimbs: true } : {}),
-        // climbBias maps onto the auth-gated hide/show flags — same mapping as
-        // the web generator. Anonymous users skip it entirely (the server
-        // rejects these fields without a user context).
-        ...(options?.isAuthenticated && options.filters?.climbBias === 'unfamiliar'
-          ? { hideAttempted: true, hideCompleted: true }
-          : {}),
-        ...(options?.isAuthenticated && options.filters?.climbBias === 'attempted'
-          ? { showOnlyAttempted: true }
-          : {}),
-      };
-      const response = await getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
-      const climbs = response.searchClimbs.climbs.slice();
-      // Fisher–Yates: deterministic enough per call, randomized across calls so
-      // two consecutive workouts at the same grade don't produce the same queue.
-      for (let i = climbs.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [climbs[i], climbs[j]] = [climbs[j], climbs[i]];
-      }
-      pools.set(grade, climbs);
-    }),
-  );
-
-  const items: ClimbQueueItem[] = [];
-  const usedUuids = new Set<string>();
-
-  for (const slot of slots) {
-    const pool = pools.get(slot.grade) ?? [];
-    // Walk the shuffled pool past any climb we've already queued. If we run
-    // out, fall back to reusing the first pool entry — better to repeat than
-    // skip a planned slot in a short pool.
-    const next = pool.find((climb) => !usedUuids.has(climb.uuid)) ?? pool[0];
-    if (!next) continue;
-    usedUuids.add(next.uuid);
-    // ClimbInput (the GraphQL mutation surface) is a strict subset of Climb —
-    // shape-pick via the shared helper so SEARCH_CLIMBS extras (`created_at`,
-    // ...) don't trip server validation.
-    items.push(climbToQueueItem(next, { suggested: true }));
-  }
-
-  return items;
+  const ctx: PreviewFetchContext = {
+    board,
+    isAuthenticated: options?.isAuthenticated ?? false,
+    filters: options?.filters,
+  };
+  const pools = await buildPools(slots, ctx, fetchGradePool);
+  return selectItemsFromPools(slots, pools).items.map((preview) => preview.item);
 }

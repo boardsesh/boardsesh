@@ -82,6 +82,7 @@ export type PublicPlaylistRow = {
   creatorId: string;
   creatorName: string;
   climbCount: number;
+  generatedRecommendation: string | null;
 };
 
 /** Transform a public playlist DB row into the GraphQL response shape. */
@@ -100,6 +101,7 @@ export function formatPublicPlaylist(p: PublicPlaylistRow) {
     climbCount: p.climbCount,
     creatorId: p.creatorId,
     creatorName: p.creatorName,
+    isGeneratedRecommendation: p.generatedRecommendation !== null,
   };
 }
 

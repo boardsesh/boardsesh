@@ -51,7 +51,7 @@ const mockUseWsAuthToken = vi.mocked(useWsAuthToken);
 function makeSessionFeedItem(id: string): SessionFeedItem {
   return {
     sessionId: id,
-    sessionType: 'inferred',
+    sessionType: 'party',
     sessionName: null,
     participants: [
       {
@@ -70,6 +70,10 @@ function makeSessionFeedItem(id: string): SessionFeedItem {
     gradeDistribution: [{ grade: 'V5', flash: 1, send: 2, attempt: 2 }],
     boardTypes: ['kilter'],
     hardestGrade: 'V5',
+    hardestSend: null,
+    featuredBeta: null,
+    socialEntityType: 'session',
+    socialEntityId: id,
     firstTickAt: '2024-01-15T10:00:00.000Z',
     lastTickAt: '2024-01-15T12:00:00.000Z',
     durationMinutes: 120,

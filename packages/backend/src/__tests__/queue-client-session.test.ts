@@ -223,37 +223,33 @@ describe('Queue client ↔ real backend (4-participant party session)', () => {
     });
   });
 
-  describe('Driver / wall control', () => {
-    it('makes the caller the driver for everyone and broadcasts the climb', async () => {
+  describe('Wall control (always-live)', () => {
+    it('broadcasts a current-climb change to every member (any member may navigate)', async () => {
       const { party, climbs } = await partyWithFourClimbs();
       const [alice] = party;
 
-      await alice.takeWall(climbs[0]);
+      await alice.navigateToClimb(climbs[0]);
 
-      await waitFor(() => party.every((p) => p.driverParticipantId === alice.participantId), {
-        label: 'driver = Alice',
-      });
       await assertConverged(party);
       for (const participant of party) {
         expect(participant.currentUuid).toBe(climbs[0].uuid);
       }
     });
 
-    it('hands the wall to another participant on take, and clears it on release', async () => {
-      const { party, climbs } = await partyWithFourClimbs();
+    it('fans a wall-disconnect signal out to every member', async () => {
+      const { party } = await partyWithFourClimbs();
       const [alice, bob] = party;
 
-      await alice.takeWall(climbs[0]);
-      await waitFor(() => party.every((p) => p.driverParticipantId === alice.participantId), {
-        label: 'driver = Alice',
-      });
+      await bob.reportWallDisconnect();
 
-      // Yank-on-press: Bob takes it from Alice.
-      await bob.takeWall(climbs[1]);
-      await waitFor(() => party.every((p) => p.driverParticipantId === bob.participantId), { label: 'driver = Bob' });
-
-      await bob.mutations.releaseControl();
-      await waitFor(() => party.every((p) => p.driverParticipantId === null), { label: 'driver released' });
+      // Every member (including Bob and Alice) sees the WallDisconnected event,
+      // stamped with the reporter's participantId.
+      await waitFor(
+        () => party.every((p) => p.wallDisconnects.some((d) => d.disconnectedByParticipantId === bob.participantId)),
+        { label: 'wall disconnect fanned out' },
+      );
+      // Alice (a peer) saw it too.
+      expect(alice.wallDisconnects.some((d) => d.disconnectedByParticipantId === bob.participantId)).toBe(true);
     });
 
     it('broadcasts a wall confirmation to every member', async () => {
@@ -261,10 +257,8 @@ describe('Queue client ↔ real backend (4-participant party session)', () => {
       const [alice, bob] = party;
 
       // The climb must have been on the wall recently for the confirm to be accepted.
-      await alice.takeWall(climbs[0]);
-      await waitFor(() => party.every((p) => p.driverParticipantId === alice.participantId), {
-        label: 'driver = Alice',
-      });
+      await alice.navigateToClimb(climbs[0]);
+      await assertConverged(party);
 
       await bob.mutations.confirmClimbOnWall(climbs[0].climb.uuid);
 

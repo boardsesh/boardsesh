@@ -4,6 +4,7 @@ export type PublicUserProfile = {
   id: string;
   displayName?: string;
   avatarUrl?: string;
+  instagramUrl?: string | null;
   followerCount: number;
   followingCount: number;
   isFollowedByMe: boolean;

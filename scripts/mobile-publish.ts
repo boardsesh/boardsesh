@@ -1,23 +1,61 @@
 /// <reference types="node" />
 
 /**
- * Publishes an EAS Update for the current branch so testers on the "preview"
- * build can receive it OTA. Each git branch gets its own EAS Update branch,
- * meaning multiple worktrees can publish independently and testers switch
- * between them by scanning a QR code or selecting the branch in the app.
+ * Publishes an OTA update for the mobile app. Two modes:
+ *
+ *   Preview (default) — `eas update` to EAS free-tier hosting (u.expo.dev).
+ *     Each git branch gets its own EAS Update branch, so multiple worktrees
+ *     publish independently and testers switch between them in-app.
+ *
+ *   Production (`--channel <name>`) — `eoas publish` to our self-hosted
+ *     expo-open-ota server. Requires EXPO_UPDATES_URL (the server's manifest
+ *     endpoint — eoas derives the upload host from updates.url in app.config)
+ *     and EXPO_TOKEN (Expo API auth for branch/channel mapping). The channel
+ *     name maps to a same-named branch on the server.
  *
  * Usage:
- *   vp run mobile:publish              # publishes to current git branch
- *   vp run mobile:publish -- --branch my-feature  # explicit branch name
- *   vp run mobile:publish -- --message "fix nav bug"  # custom update message
+ *   vp run mobile:publish                              # preview: current git branch
+ *   vp run mobile:publish -- --branch my-feature       # preview: explicit branch
+ *   vp run mobile:publish -- --message "fix nav bug"   # custom update message
+ *   vp run mobile:publish -- --channel production      # production: self-hosted OTA
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { closeSync, openSync, readSync } from 'node:fs';
+import { resolve, dirname, join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
+
+// vp (Vite+) prepends its own bun shim directory to PATH, and that shim's `bunx`
+// is a `/bin/sh` wrapper that forwards to `bun` WITHOUT switching to x-mode — so
+// `bunx <pkg>` runs as `bun <pkg>` (script mode) and dies with
+// `Script not found "<pkg>"`. The real bunx (from bun / setup-bun) is a binary
+// symlink, never a `#!` script. Under `vp run` this breaks BOTH the eoas/eas
+// invocation below AND the `expo export` eoas spawns via --packageRunner bunx
+// (it inherits this env). Drop any PATH entry whose `bunx` is a `#!` script shim
+// so a working bunx wins — fixes CI (vp on PATH) and local `vp run mobile:publish`.
+function bunxIsScriptShim(dir: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = openSync(join(dir, 'bunx'), 'r');
+    const head = Buffer.alloc(2);
+    readSync(fd, head, 0, 2, 0);
+    return head[0] === 0x23 && head[1] === 0x21; // "#!"
+  } catch {
+    return false; // no readable bunx here → not a shim we need to drop
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function pathWithoutBrokenBunxShims(rawPath: string | undefined): string {
+  return (rawPath ?? '')
+    .split(delimiter)
+    .filter((dir) => dir.length > 0 && !bunxIsScriptShim(dir))
+    .join(delimiter);
+}
 
 function resolveCurrentBranchName(): string | null {
   try {
@@ -56,10 +94,92 @@ function getCommitSubject(): string {
   }
 }
 
-function parseArgs(args: string[]): { branch: string | null; message: string | null; platform: string } {
+function publishToSelfHostedChannel(channelName: string, platform: string, explicitMessage: string | null): never {
+  const serverUrl = process.env.EXPO_UPDATES_URL;
+  if (!serverUrl) {
+    console.error('[mobile:publish] --channel requires EXPO_UPDATES_URL (the expo-open-ota manifest endpoint,');
+    console.error('[mobile:publish] e.g. https://ota.boardsesh.com/manifest). eoas derives the upload host from it.');
+    console.error('[mobile:publish] See docs/mobile-ota-updates.md.');
+    process.exit(1);
+  }
+  if (!process.env.EXPO_TOKEN) {
+    console.error('[mobile:publish] --channel requires EXPO_TOKEN (Expo API auth for branch/channel mapping).');
+    console.error('[mobile:publish] Run `bunx eas login` locally, or set EXPO_TOKEN in CI.');
+    process.exit(1);
+  }
+
+  const commitHash = getShortCommitHash();
+  const commitSubject = getCommitSubject();
+  const updateMessage = explicitMessage ?? `${commitHash} ${commitSubject}`.trim();
+
+  // eoas publish targets a server branch; the channel baked into the binary
+  // maps to a same-named branch (channel "production" → branch "production").
+  // Pin the major (matches the eas-cli@16 convention below): eoas 3.x is already
+  // in alpha, and an unpinned @latest could pull a breaking release into the
+  // production publish path with no change in this repo.
+  const eoasArgs = [
+    'eoas@2',
+    'publish',
+    '--branch',
+    channelName,
+    '--platform',
+    platform,
+    '--message',
+    updateMessage,
+    '--nonInteractive',
+    // The repo uses bun; force bunx so eoas spawns `bunx expo export` regardless
+    // of the nearest package.json's packageManager field.
+    '--packageRunner',
+    'bunx',
+  ];
+
+  console.log(`[mobile:publish] Mode:     production (self-hosted expo-open-ota)`);
+  console.log(`[mobile:publish] Server:   ${serverUrl}`);
+  console.log(`[mobile:publish] Branch:   ${channelName}`);
+  console.log(`[mobile:publish] Message:  ${updateMessage}`);
+  console.log(`[mobile:publish] Platform: ${platform}`);
+  console.log('');
+  console.log(`[mobile:publish] Running: bunx ${eoasArgs.join(' ')}`);
+  console.log('');
+
+  // EXPO_UPDATES_URL must resolve in app.config so eoas finds the server.
+  // EAS_BUILD must be unset or app.config returns the EAS URL and eoas would
+  // publish against the wrong host — strip it defensively so a stray value in
+  // the caller's env can't redirect a production publish.
+  const eoasEnv = { ...process.env };
+  delete eoasEnv.EAS_BUILD;
+  // Drop vp's broken bunx shim dir so bunx — and the `bunx expo export` eoas
+  // spawns via --packageRunner bunx — resolve a working bunx.
+  eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
+
+  const result = spawnSync('bunx', eoasArgs, {
+    cwd: MOBILE_DIR,
+    stdio: 'inherit',
+    env: eoasEnv,
+  });
+
+  if (result.status !== 0) {
+    console.error('');
+    console.error('[mobile:publish] eoas publish failed.');
+    process.exit(result.status ?? 1);
+  }
+
+  console.log('');
+  console.log(`[mobile:publish] Published to self-hosted channel "${channelName}".`);
+  console.log(`[mobile:publish] Testers on a build baked with this channel receive it on next launch.`);
+  process.exit(0);
+}
+
+function parseArgs(args: string[]): {
+  branch: string | null;
+  message: string | null;
+  platform: string;
+  channel: string | null;
+} {
   let branch: string | null = null;
   let message: string | null = null;
   let platform = 'all';
+  let channel: string | null = null;
 
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
@@ -71,6 +191,15 @@ function parseArgs(args: string[]): { branch: string | null; message: string | n
     }
     if (argument.startsWith('--branch=')) {
       branch = argument.slice('--branch='.length);
+      continue;
+    }
+
+    if (argument === '--channel' || argument === '-c') {
+      channel = args[++index] ?? null;
+      continue;
+    }
+    if (argument.startsWith('--channel=')) {
+      channel = argument.slice('--channel='.length);
       continue;
     }
 
@@ -93,16 +222,22 @@ function parseArgs(args: string[]): { branch: string | null; message: string | n
     }
   }
 
-  return { branch, message, platform };
+  return { branch, message, platform, channel };
 }
 
 const VALID_PLATFORMS = ['ios', 'android', 'all'] as const;
 
-const { branch: explicitBranch, message: explicitMessage, platform } = parseArgs(process.argv.slice(2));
+const { branch: explicitBranch, message: explicitMessage, platform, channel } = parseArgs(process.argv.slice(2));
 
 if (!VALID_PLATFORMS.includes(platform as (typeof VALID_PLATFORMS)[number])) {
   console.error(`[mobile:publish] Invalid platform "${platform}". Must be one of: ${VALID_PLATFORMS.join(', ')}`);
   process.exit(1);
+}
+
+// Production path: publish to the self-hosted expo-open-ota server via eoas.
+// The channel name maps to a same-named branch on the server.
+if (channel) {
+  publishToSelfHostedChannel(channel, platform, explicitMessage);
 }
 
 const branchName = explicitBranch ?? resolveCurrentBranchName();
@@ -139,7 +274,7 @@ console.log('');
 const result = spawnSync('bunx', easArgs, {
   cwd: MOBILE_DIR,
   stdio: 'inherit',
-  env: { ...process.env },
+  env: { ...process.env, PATH: pathWithoutBrokenBunxShims(process.env.PATH) },
 });
 
 if (result.status !== 0) {

@@ -17,7 +17,8 @@ on:
 jobs:
   report:
     name: Build flake report
-    if: github.event.workflow_run.event == 'pull_request'
+    # Disabled: Playwright sticky PR comments are too noisy for now.
+    if: false && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

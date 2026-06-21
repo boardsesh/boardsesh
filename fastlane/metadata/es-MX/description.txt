@@ -1,0 +1,30 @@
+Busca una vía y mira cómo se enciende tu muro. Menos tiempo en el móvil, más tiempo en el muro.
+
+UNA APP PARA CADA TABLA QUE ESCALAS
+Kilter, Tension y MoonBoard traen cada uno su propia app para su propia tabla. Boardsesh funciona con todas ellas, más Decoy, Touchstone, Grasshopper y So iLL, en un solo sitio. Todo tu historial de escalada en cada tabla vive aquí.
+
+HISTORIAL DEL MURO, SIEMPRE ACTIVO
+Si compartes muro, enseguida pierdes la cuenta de la última vía, y siempre hay alguien que la borra sin querer.
+En Boardsesh cada tabla a la que te conectas tiene un feed en directo de lo que hay encendido en esa pared ahora mismo: el nombre de la vía, quién la encendió, quién la montó, el grado y el ángulo, y los encadenes recientes. Se actualiza según cambia la pared, así que siempre sabes qué hay puesto.
+
+SESIONES CON TU EQUIPO
+Abre una sesión y tú y tu equipo compartís una cola que cualquiera puede llevar. Cualquiera enciende la siguiente vía en el muro. Al terminar te llevas un resumen y el seguimiento: encadenes e intentos, reparto de grados, tu vía más dura y el progreso a lo largo del tiempo.
+
+LLÉVALO DESDE LA PANTALLA DE BLOQUEO (iOS 17+)
+Las Live Activities te dicen qué vía hay puesta desde la pantalla de bloqueo, y te dejan cambiarla sin salir de ella.
+
+MÓNTATE UN ENTRENAMIENTO
+Elige Volumen, Pirámide, Escalera o Foco en grado, fija un grado objetivo y el calentamiento, previsualiza las vías y mándalas al muro de una en una.
+
+REGISTRA TU ESCALADA
+Apunta encadenes, flashes e intentos, recibe un resumen con la duración, el reparto de grados y tu vía más dura, y mira cómo suben tus encadenes y grados en la pestaña Progreso.
+
+LLÉVATE TU HISTORIAL CONTIGO
+Guarda tu sesión en Apple Health e importa tu logbook antiguo de Kilter y Tension desde Aurora Climbing.
+
+ENCUENTRA MÁS PARA ESCALAR
+Sigue a tu equipo y a los aperturistas, busca escaladores y fija playlists desde Discover.
+
+Tablas compatibles: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper y So iLL.
+
+Boardsesh es un proyecto comunitario que funciona con estas tablas y no está afiliado ni respaldado por ningún fabricante de tablas.

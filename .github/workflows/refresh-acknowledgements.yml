@@ -1,0 +1,65 @@
+name: Refresh Acknowledgements
+
+# Weekly: regenerate the mobile Acknowledgements data — GitHub contributors +
+# `boardsesh` org sponsors — and the bundled OSS license attribution. Both
+# generators degrade gracefully (keep the committed JSON on any failure), so a
+# missing token or API hiccup never produces an empty list. Idempotent: the
+# commit step only runs when the generated files actually change.
+on:
+  schedule:
+    - cron: '0 7 * * 1' # 07:00 UTC every Monday
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-acknowledgements
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Regenerate acknowledgements + OSS licenses
+        env:
+          # Contributors work with the default repo token. Reading the org's
+          # GitHub Sponsors needs a PAT with sponsors / read:org scope — set the
+          # ACKNOWLEDGEMENTS_GH_TOKEN secret to enable it; without it the sponsors
+          # list stays as-committed and the script still succeeds.
+          GH_TOKEN: ${{ secrets.ACKNOWLEDGEMENTS_GH_TOKEN || github.token }}
+        run: |
+          node --import tsx scripts/fetch-acknowledgements.ts
+          node --import tsx scripts/generate-oss-licenses.ts
+
+      # NOTE: changelog.generated.json is intentionally NOT refreshed here — the
+      # Mobile OTA Production workflow is its sole owner (it regenerates and pushes
+      # the file on every publish). Keep it out of this job to avoid two writers.
+      - name: Commit refreshed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain packages/mobile/src/data)" ]]; then
+            git add packages/mobile/src/data/acknowledgements.generated.json packages/mobile/src/data/oss-licenses.generated.json
+            git commit -m "chore: refresh acknowledgements + OSS licenses [skip ci]"
+            # Explicit target: commit back to the branch this run was dispatched from
+            # (main on the schedule) — checkout leaves a detached HEAD, so a bare
+            # `git push` has no upstream and could otherwise be ambiguous.
+            git push origin "HEAD:${{ github.ref_name }}"
+          else
+            echo "No changes to acknowledgements data."
+          fi

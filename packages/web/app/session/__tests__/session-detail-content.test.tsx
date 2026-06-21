@@ -31,9 +31,6 @@ vi.mock('@/app/hooks/use-session-detail', () => ({
   useSessionDetail: ({ initialData }: { initialData: unknown }) => ({
     session: initialData ?? null,
     isLoading: false,
-    updateSession: { isPending: false, mutateAsync: vi.fn() },
-    addUser: { isPending: false, mutateAsync: vi.fn() },
-    removeUser: { isPending: false, mutateAsync: vi.fn() },
   }),
 }));
 
@@ -150,10 +147,6 @@ vi.mock('@/app/components/ui/confirm-popover', () => ({
 }));
 
 vi.mock('@/app/components/healthkit/save-to-healthkit-button', () => ({
-  default: () => null,
-}));
-
-vi.mock('../[sessionId]/user-search-dialog', () => ({
   default: () => null,
 }));
 
@@ -294,7 +287,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 function makeSession(overrides: Partial<SessionDetail> = {}): SessionDetail {
   return {
     sessionId: 'session-1',
-    sessionType: 'inferred',
+    sessionType: 'party',
     sessionName: null,
     ownerUserId: 'user-1',
     participants: [

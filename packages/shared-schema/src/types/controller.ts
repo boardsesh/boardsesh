@@ -34,6 +34,7 @@ export type LedUpdate = {
   climbGrade?: string;
   gradeColor?: string;
   boardPath?: string;
+  frames?: string;
   angle?: number;
   navigation?: QueueNavigationContext | null;
   // ID of client that triggered this update (null if system-initiated)

@@ -31,7 +31,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     End a session (active participant only).
     """
-    endSession(sessionId: ID!): SessionSummary
+    endSession(sessionId: ID!, timezone: String): SessionSummary
 
     """
     Update display name and avatar in the current session.
@@ -85,40 +85,54 @@ export const mutationsTypeDefs = /* GraphQL */ `
     setQueue(queue: [ClimbQueueItemInput!]!, currentClimbQueueItem: ClimbQueueItemInput): QueueState!
 
     """
-    Claim wall-control authority in the current session and optionally broadcast a climb.
-    Any session participant may call — yank-on-press by design. If \`climb\` is provided, also
-    appends it to the queue (when not already present) and sets it as the current climb,
-    mirroring \`setCurrentClimb\`'s side effects. Publishes \`DriverChanged\`.
+    Deprecated. Sessions are always-live, so there is no wall driver to claim. Kept one
+    release as an inert compat shim for stale clients (cached web bundles, un-OTA'd native
+    apps) that still call it: if \`climb\` is provided it is set as the current climb (so the
+    stale client's wall change still propagates), otherwise it is a no-op. Never publishes
+    \`DriverChanged\`. Remove after the rollout window.
     """
     takeControl(climb: ClimbQueueItemInput): Session!
+      @deprecated(
+        reason: "Always-live; no driver. Sets the climb (if given) and returns the session. Remove after rollout."
+      )
 
     """
-    Release wall-control authority. Clears the driver only when the caller is the current
-    driver (idempotent otherwise). Publishes \`DriverChanged { driverParticipantId: null }\`.
+    Deprecated. No wall driver exists; inert no-op kept one release for stale clients.
+    Returns the session unchanged and never publishes \`DriverChanged\`. Remove after rollout.
     """
-    releaseControl: Session!
+    releaseControl: Session! @deprecated(reason: "Always-live; no driver. No-op. Remove after rollout.")
 
     """
     Confirm to all session participants that a climb was successfully relayed to the wall
-    over BLE from this client's phone. Any session participant may call (no driver
-    requirement) — the BLE-capable phone that handled the send is the source of truth for
-    confirmation. The server stamps \`confirmedAt\` and \`confirmedByParticipantId\` from
-    the caller's identity; clients cannot forge either field. Publishes
-    \`WallConfirmedClimb\`. The optional \`queueItemUuid\` disambiguates the press when
-    the same climb is queued twice. Returns the resolved Session so optimistic-UI callers
-    can apply server-derived state without a follow-up query (symmetric with
-    \`takeControl\` / \`releaseControl\`). Session identity is resolved from the WebSocket
-    connection context — no \`sessionId\` argument is required.
+    over BLE from this client's phone. Any session participant may call — the BLE-capable
+    phone that handled the send is the source of truth for confirmation. The server stamps
+    \`confirmedAt\` and \`confirmedByParticipantId\` from the caller's identity; clients
+    cannot forge either field. Publishes \`WallConfirmedClimb\`. The optional
+    \`queueItemUuid\` disambiguates the press when the same climb is queued twice. Returns
+    the resolved Session so optimistic-UI callers can apply server-derived state without a
+    follow-up query. Session identity is resolved from the WebSocket connection context —
+    no \`sessionId\` argument is required.
     """
     confirmClimbOnWall(climbUuid: ID!, queueItemUuid: ID): Session!
+
+    """
+    Report that this client's BLE link to the wall dropped (explicit lightbulb-off or a
+    detected drop), so every session participant turns the queue-control-bar lightbulb off.
+    The current climb is unchanged — pressing the lightbulb re-asserts (re-sends) it.
+    Publishes \`WallDisconnected\`. The session-scoped counterpart to board-presence's
+    \`reportBoardDisconnect\`. Session identity is resolved from the WebSocket connection
+    context — no \`sessionId\` argument is required.
+    """
+    reportWallDisconnect: Session!
 
     """
     Record the BLE board serial that this client paired with so other (mobile)
     participants can auto-connect to the same physical board. Any session participant
     may call. Idempotent: when the stored serial already matches, no event fires.
-    Publishes \`SessionBoardSerialChanged\` on change. Returns the resolved Session for
-    optimistic-UI symmetry with \`takeControl\` / \`releaseControl\`. Session identity is
-    resolved from the WebSocket connection context — no \`sessionId\` argument is required.
+    Publishes \`SessionBoardSerialChanged\` on change. Returns the resolved Session so
+    optimistic-UI callers can apply server-derived state without a follow-up query.
+    Session identity is resolved from the WebSocket connection context — no
+    \`sessionId\` argument is required.
     """
     setSessionBoardSerial(serial: String!): Session!
 
@@ -128,14 +142,90 @@ export const mutationsTypeDefs = /* GraphQL */ `
     angle is the only route-level dimension that members observe as a group;
     climb URLs are managed by setCurrentClimb. Any participant may call —
     angle is presentational and doesn't drive BLE (hold positions are sent
-    per-climb), so the queue-control-bar pivot's "only driver moves the wall"
-    rule doesn't apply. Idempotent: when the stored boardPath already matches,
-    no event fires. Publishes \`SessionBoardPathChanged\` on change. Returns
-    the resolved Session for optimistic-UI symmetry with takeControl /
-    releaseControl. Session identity is resolved from the WebSocket connection
+    per-climb). Idempotent: when the stored boardPath already matches, no event
+    fires. Publishes \`SessionBoardPathChanged\` on change. Returns the resolved
+    Session so optimistic-UI callers can apply server-derived state without a
+    follow-up query. Session identity is resolved from the WebSocket connection
     context — no \`sessionId\` argument is required.
     """
     setSessionBoardPath(boardPath: String!): Session!
+
+    # ============================================
+    # Board Presence Mutations ("now on the wall")
+    # ============================================
+
+    """
+    Legacy serial resolver, kept for already-shipped clients that can't render
+    a disambiguation prompt: always returns a single board. Serials are no
+    longer globally unique, so when several boards share one this auto-picks
+    (the caller's own board if present, else the oldest) and remembers it.
+    New clients should call \`resolveBoardCandidatesForSerial\`. The board config
+    args are used only to create the board the first time a serial is seen.
+    """
+    resolveBoardForSerial(
+      serial: String!
+      boardType: String!
+      layoutId: Int!
+      sizeId: Int!
+      setIds: String!
+    ): ResolvedBoard!
+
+    """
+    Resolve a BLE serial for clients that can disambiguate. Returns a single
+    \`board\` when the serial is unambiguous (remembered choice, only one match,
+    or freshly created), or a list of \`candidates\` when several boards share
+    the serial and the user must pick which wall they're at. Confirm the pick
+    with \`chooseBoardForSerial\`. The config args create the board the first
+    time a serial is seen.
+    """
+    resolveBoardCandidatesForSerial(
+      serial: String!
+      boardType: String!
+      layoutId: Int!
+      sizeId: Int!
+      setIds: String!
+    ): ResolveBoardResult!
+
+    """
+    Confirm which board a (non-unique) serial routes to after the user picks
+    from a disambiguation prompt. Remembers the choice per user so the prompt
+    doesn't reappear, and returns the bound board. The board must be active and
+    actually carry the serial.
+    """
+    chooseBoardForSerial(boardId: Int!, serial: String!): ResolvedBoard!
+
+    """
+    Resolve the wall feed for the selected named board. This binds to the actual
+    board entity, so board sheet stats/history are available before Bluetooth
+    connects and stay aligned with board-scoped ticks.
+    """
+    resolveBoardForUuid(boardUuid: ID!): ResolvedBoard!
+
+    """
+    Resolve the shared board feed for boards without a BLE serial. This is a
+    per-config fallback in v1: every caller with the same board type, layout,
+    size, and set IDs gets the same shared board id.
+    """
+    resolveBoardForConfig(boardType: String!, layoutId: Int!, sizeId: Int!, setIds: String!): ResolvedBoard!
+
+    """
+    Report the climb a connected phone just lit on the wall to the board's live
+    "now on the wall" feed. Auth-optional — anyone connected to the board emits
+    (logged-in or anonymous); a logged-in sender's identity is derived
+    server-side (never client-supplied), an anonymous sender carries no name or
+    avatar. Also makes the caller the board's current connection holder (the
+    "who's connected" indicator). Fire-and-forget after the BLE write succeeded —
+    no confirm/timeout handshake. \`angle\` is the wall angle (null = unspecified).
+    """
+    reportBoardClimb(boardId: Int!, climb: ClimbQueueItemInput!, angle: Int): Boolean!
+
+    """
+    Report that this client disconnected its BLE link to \`boardId\` (the explicit
+    lightbulb-off, or a detected drop). Clears the board's connection holder when
+    this caller held it, so the "who's connected" indicator goes free. No-op when
+    someone else now holds it. Auth-optional. Returns whether the slot was freed.
+    """
+    reportBoardDisconnect(boardId: Int!): Boolean!
 
     # ============================================
     # User Management Mutations (require auth)
@@ -200,7 +290,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     updateTick(uuid: ID!, input: UpdateTickInput!): Tick!
 
     """
-    Attach an Instagram post or reel as beta for a climb. Idempotent on
+    Attach an Instagram or TikTok video as beta for a climb. Idempotent on
     (boardType, climbUuid, link).
     """
     attachBetaLink(input: AttachBetaLinkInput!): Boolean!
@@ -261,6 +351,11 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Remove a climb from a playlist.
     """
     removeClimbFromPlaylist(input: RemoveClimbFromPlaylistInput!): Boolean!
+
+    """
+    Reorder a climb within a playlist by moving it to a new index (owner/editor).
+    """
+    reorderPlaylistClimb(input: ReorderPlaylistClimbInput!): Boolean!
 
     """
     Update only lastAccessedAt for a playlist (does not update updatedAt).
@@ -360,6 +455,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     unfollowBoard(input: FollowBoardInput!): Boolean!
 
+    """
+    Record the board configuration seen when connecting to a controller over
+    BLE, keyed by serial. Upserts the current user's serial→config recording.
+    Returns null when a saved board already matches the connect (nothing to record).
+    """
+    recordBoardSerial(input: RecordBoardSerialInput!): BoardSerialConfig
+
     # ============================================
     # Gym Entity Mutations (require auth)
     # ============================================
@@ -404,34 +506,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
-    # ============================================
-    # Session Editing Mutations (require auth)
-    # ============================================
-
     """
-    Update an inferred session's name and/or description.
-    Must be a participant of the session.
-    """
-    updateInferredSession(input: UpdateInferredSessionInput!): SessionDetail
-
-    """
-    Add a user to an inferred session by reassigning their overlapping ticks.
-    Must be a participant of the session.
-    """
-    addUserToSession(input: AddUserToSessionInput!): SessionDetail
-
-    """
-    Remove a user from an inferred session, restoring their ticks to original sessions.
-    Must be a participant of the session.
-    """
-    removeUserFromSession(input: RemoveUserFromSessionInput!): SessionDetail
-
-    """
-    Record that an inferred session has been mirrored to Apple HealthKit,
+    Record that an explicitly-created session has been mirrored to Apple HealthKit,
     storing the workout UUID for de-duplication and UI status.
     Must be a participant of the session.
     """
-    setInferredSessionHealthKitWorkoutId(sessionId: ID!, workoutId: String!): Boolean!
+    setSessionHealthKitWorkoutId(sessionId: ID!, workoutId: String!): Boolean!
 
     # ============================================
     # Notification Mutations (require auth)
@@ -573,5 +653,37 @@ export const mutationsTypeDefs = /* GraphQL */ `
     associated with the user.
     """
     submitAppFeedback(input: SubmitAppFeedbackInput!): Boolean!
+
+    # ============================================
+    # External Platform Integration Mutations
+    # ============================================
+
+    """
+    Mint a short-lived, single-use handoff code for starting the provider's
+    browser OAuth flow (GET /integrations/:provider/start?handoff=...). Keeps
+    the session token out of URLs, where it would persist in logs and browser
+    history. Requires authentication.
+    """
+    createIntegrationOAuthHandoff(provider: IntegrationProvider!): String!
+
+    """
+    Unlink an external platform integration. Revokes the token on the
+    provider's side (best-effort) and deletes the stored credentials.
+    Requires authentication.
+    """
+    disconnectIntegration(provider: IntegrationProvider!): Boolean!
+
+    """
+    Toggle automatic upload of finished sessions for a connected integration.
+    Requires authentication.
+    """
+    setIntegrationAutoSync(provider: IntegrationProvider!, enabled: Boolean!): IntegrationStatus!
+
+    """
+    Export an ended session to an external platform. Idempotent: returns the
+    existing export when the session was already uploaded (e.g. by auto-sync).
+    Caller must be a participant of the session. Requires authentication.
+    """
+    syncSessionToIntegration(provider: IntegrationProvider!, sessionId: ID!): IntegrationExportResult!
   }
 `;

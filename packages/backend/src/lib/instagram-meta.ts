@@ -1,8 +1,13 @@
-import { getInstagramMediaId, INSTAGRAM_URL_REGEX, isInstagramUrl } from '@boardsesh/shared-schema';
+import {
+  getInstagramMediaId,
+  INSTAGRAM_URL_REGEX,
+  isInstagramUrl,
+  normalizeBetaVideoUrl,
+} from '@boardsesh/shared-schema';
 import { createCircuitBreaker } from './circuit-breaker';
 import { logger } from '../utils/logger';
 
-export { INSTAGRAM_URL_REGEX, isInstagramUrl, getInstagramMediaId };
+export { INSTAGRAM_URL_REGEX, isInstagramUrl, getInstagramMediaId, normalizeBetaVideoUrl };
 
 const FETCH_TIMEOUT_MS = 4000;
 const USER_AGENT =
@@ -92,7 +97,7 @@ const CIRCUIT_THRESHOLD = 10;
 const CIRCUIT_COOLDOWN_MS = 5 * 60 * 1000;
 
 export type InstagramMetaResult =
-  | { status: 'ok'; thumbnail: string; username: string | null }
+  | { status: 'ok'; thumbnail: string; username: string | null; caption: string | null }
   | { status: 'gone' }
   | { status: 'transient_error' };
 
@@ -100,9 +105,13 @@ export type InstagramMetaResult =
 // count toward the circuit breaker. Body-cap rejections don't — they're a
 // local defense, not an IG-availability signal.
 type UncachedResult =
-  | { status: 'ok'; thumbnail: string; username: string | null }
+  | { status: 'ok'; thumbnail: string; username: string | null; caption: string | null }
   | { status: 'gone' }
   | { status: 'transient_error'; tripBreaker: boolean };
+
+// Cap the caption we keep. Matching a climb only needs the name, and the UI
+// preview truncates anyway — this guards against a pathological multi-KB body.
+const MAX_CAPTION_LENGTH = 2000;
 
 function decodeHtmlEntities(s: string): string {
   return s
@@ -121,6 +130,97 @@ function decodeJsonString(s: string): string {
   } catch {
     return s;
   }
+}
+
+/**
+ * Grab the inner HTML of the first `<div class="<className>">` while respecting
+ * nested `<div>`s — the captioned embed wraps the username in a nested div, so a
+ * non-greedy regex to the first `</div>` truncates the caption. Walks div
+ * open/close tags to find the matching close. Returns null if not found.
+ */
+function extractDivContentByClass(html: string, className: string): string | null {
+  const classMatch = new RegExp(`class=["']${className}["']`, 'i').exec(html);
+  if (!classMatch) return null;
+  const openTagEnd = html.indexOf('>', classMatch.index);
+  if (openTagEnd === -1) return null;
+  const contentStart = openTagEnd + 1;
+  const divTag = /<(\/?)div\b[^>]*>/gi;
+  divTag.lastIndex = contentStart;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = divTag.exec(html)) !== null) {
+    depth += match[1] ? -1 : 1;
+    if (depth === 0) return html.slice(contentStart, match.index);
+  }
+  return null;
+}
+
+/**
+ * Best-effort caption extraction from the /embed/captioned/ page. Caption is a
+ * convenience for auto-matching the climb on share — never required, so any
+ * parse miss returns null and the user picks the climb manually. Tries the
+ * structured JSON (cleanest), then the rendered `.Caption` div (the whole point
+ * of the captioned variant), then the og:description meta.
+ */
+export function extractInstagramCaption(html: string, username: string | null): string | null {
+  const cap = (text: string): string | null => {
+    const trimmed = text.trim();
+    return trimmed ? trimmed.slice(0, MAX_CAPTION_LENGTH) : null;
+  };
+
+  const fromEdge = html.match(
+    /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"/,
+  );
+  if (fromEdge) {
+    const text = cap(decodeJsonString(fromEdge[1]));
+    if (text) return text;
+  }
+
+  // Require a `{`/`,` before the key so we don't latch onto "accessibility_caption".
+  const fromCaptionField = html.match(/[,{]\s*"caption"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  if (fromCaptionField) {
+    const text = cap(decodeJsonString(fromCaptionField[1]));
+    if (text) return text;
+  }
+
+  const captionDiv = extractDivContentByClass(html, 'Caption');
+  if (captionDiv) {
+    // The caption div nests a "View all N comments" block (.CaptionComments)
+    // and sometimes a timestamp after the caption text — cut them off.
+    const commentsIdx = captionDiv.search(/class=["']Caption(?:Comments|Time)["']/i);
+    const captionOnly =
+      commentsIdx === -1
+        ? captionDiv
+        : captionDiv.slice(
+            0,
+            captionDiv.lastIndexOf('<div', commentsIdx) === -1
+              ? commentsIdx
+              : captionDiv.lastIndexOf('<div', commentsIdx),
+          );
+    let text = decodeHtmlEntities(captionOnly.replace(/<[^>]+>/g, ' '))
+      .replace(/\s+/g, ' ')
+      .trim();
+    // The CaptionUsername link renders the poster's handle as the first token.
+    if (username && text.toLowerCase().startsWith(username.toLowerCase())) {
+      text = text.slice(username.length).trim();
+    }
+    const capped = cap(text);
+    if (capped) return capped;
+  }
+
+  const ogDescription = html.match(/property=["']og:description["']\s+content=["']([^"']*)["']/i)?.[1];
+  if (ogDescription) {
+    const decoded = decodeHtmlEntities(ogDescription).trim();
+    // IG formats this as: `1,234 likes, 56 comments - username on Instagram: "caption"`.
+    const stripped = decoded
+      .replace(/^[\d,.]+\s+likes?,\s+[\d,.]+\s+comments?\s+-\s+.*?\son\sInstagram[^:]*:\s*/i, '')
+      .replace(/^["“]([\s\S]*)["”]$/, '$1')
+      .trim();
+    const text = cap(stripped || decoded);
+    if (text) return text;
+  }
+
+  return null;
 }
 
 /**
@@ -240,7 +340,9 @@ async function fetchInstagramMetaUncached(url: string): Promise<UncachedResult> 
   // shouldn't end up in boardBetaLinks.foreign_username.
   const username = sanitizeInstagramUsername(rawUsername);
 
-  return { status: 'ok', thumbnail, username };
+  const caption = extractInstagramCaption(html, username);
+
+  return { status: 'ok', thumbnail, username, caption };
 }
 
 export async function fetchInstagramMeta(url: string): Promise<InstagramMetaResult> {

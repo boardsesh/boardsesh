@@ -252,6 +252,84 @@ describe('playlistClimbs resolver', () => {
     expect(result.climbs[1].name).toBe('Tension Climb');
   });
 
+  it('renders on-active-board climbs at the selected angle and leaves off-board climbs on their added-at angle', async () => {
+    const ctx = makeCtx();
+
+    // 1. Playlist exists and is public
+    mockDb.select.mockReturnValueOnce(createMockChain([{ id: BigInt(1), isPublic: true }]));
+    // 2. Count query
+    mockDb.select.mockReturnValueOnce(createMockChain([{ count: 2 }]));
+    // 3. Refs: a kilter climb added at 40°, a tension climb added at 25°.
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        { climbUuid: 'climb-kilter', boardType: 'kilter', playlistAngle: 40 },
+        { climbUuid: 'climb-tension', boardType: 'tension', playlistAngle: 25 },
+      ]),
+    );
+    // 4. Hydrate rows. statsAngle is null here so the JS-resolved `angle` surfaces
+    // the override the resolver passed in — the kilter (active-board) climb should
+    // carry the selected angle (55), the tension (off-board) climb its added-at 25.
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          climbUuid: 'climb-kilter',
+          layoutId: 1,
+          boardType: 'kilter',
+          setter_username: 's',
+          name: 'Kilter Climb',
+          description: '',
+          frames: '',
+          statsAngle: null,
+          ascensionist_count: 10,
+          difficulty_id: 25,
+          quality_average: 3.5,
+          difficulty_error: 0.2,
+          benchmark_difficulty: null,
+        },
+        {
+          climbUuid: 'climb-tension',
+          layoutId: 2,
+          boardType: 'tension',
+          setter_username: 't',
+          name: 'Tension Climb',
+          description: '',
+          frames: '',
+          statsAngle: null,
+          ascensionist_count: 5,
+          difficulty_id: 15,
+          quality_average: 2.0,
+          difficulty_error: 0.1,
+          benchmark_difficulty: null,
+        },
+      ]),
+    );
+
+    const result = await playlistQueries.playlistClimbs(
+      null,
+      { input: { playlistId: 'test-pl', activeBoardName: 'kilter', activeAngle: 55 } },
+      ctx,
+    );
+
+    const byUuid = Object.fromEntries(result.climbs.map((climb) => [climb.uuid, climb]));
+    // Active-board climb: selected angle (55) wins over the added-at angle (40).
+    expect(byUuid['climb-kilter'].angle).toBe(55);
+    // Off-board climb: keeps its added-at angle (25), unaffected by the active board.
+    expect(byUuid['climb-tension'].angle).toBe(25);
+  });
+
+  it('rejects either activeBoardName or activeAngle alone — they must be provided together', async () => {
+    const ctx = makeCtx();
+    // Validation runs before any DB access, so no select mocks are needed. Assert
+    // the specific refine message (not just "throws") so an unrelated DB/resolver
+    // failure can't make this pass, and cover both directions of the refine.
+    await expect(
+      playlistQueries.playlistClimbs(null, { input: { playlistId: 'test-pl', activeBoardName: 'kilter' } }, ctx),
+    ).rejects.toThrow(/must be provided together/);
+    await expect(
+      playlistQueries.playlistClimbs(null, { input: { playlistId: 'test-pl', activeAngle: 40 } }, ctx),
+    ).rejects.toThrow(/must be provided together/);
+  });
+
   it('should return climbs in specific-board mode when boardName is provided', async () => {
     const ctx = makeCtx();
 

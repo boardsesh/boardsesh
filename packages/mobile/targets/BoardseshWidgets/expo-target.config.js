@@ -7,8 +7,8 @@
 /// @bacons/apple-targets creates the generated Xcode target.
 ///
 /// Files duplicated from the main app target (ClimbSessionAttributes,
-/// SharedConstants, SharedKeychain, WidgetNetworking) are intentional copies. Each Xcode
-/// target compiles its own binary — there's no shared module — so the
+/// SharedConstants, SharedKeychain, WidgetNetworking, TakeControlIntent) are
+/// intentional copies. Each Xcode target compiles its own binary — there's no shared module — so the
 /// duplicates must stay byte-identical or the JSON encoded into shared
 /// UserDefaults will mismatch between processes.
 /** @type {import('@bacons/apple-targets/app.plugin').Config} */

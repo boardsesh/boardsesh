@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+name: onboarding illustrations android
+---
+# Android version of onboarding.yaml for the standalone screenshot APK. The
+# screenshot-mode params are app code, so the same ://climbs?screenshotOpenBoardSheet=1
+# deep link opens the board-presence hero here too; no "Open in Boardsesh?" dialog
+# to prime on Android.
+- launchApp
+
+# Browse hero (alternate illustration): the climbs list.
+- openLink: com.boardsesh.app://climbs
+- extendedWaitUntil:
+    visible:
+      id: 'climb-list'
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: onboarding-welcome
+
+# Board-history hero (the framing card image): the board-presence "now on the wall" sheet.
+- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: onboarding-board-history

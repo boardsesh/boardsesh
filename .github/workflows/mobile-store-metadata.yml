@@ -1,0 +1,158 @@
+name: Mobile Store Metadata
+
+# Pushes the source-controlled store listing assets to App Store Connect / Google
+# Play for the React Native app (packages/mobile). iOS uses deliver
+# (fastlane/metadata/en-US/) and pushes listing text only — no binary, no
+# screenshots, no review submission. Android uses supply and pushes the full
+# committed listing: text (fastlane/metadata/android/en-US/*.txt), images
+# (.../images/icon.png + featureGraphic.png), AND phone screenshots
+# (app-stores/google/screenshots/pixel-2/*.png). No binary, no staged rollout.
+#
+# Android review: supply commits with changes_not_sent_for_review: false (it
+# sends the changes for review). With managed publishing OFF, Google auto-
+# publishes once review passes. The lanes set rescue_changes_not_sent_for_review:
+# false so a "can't auto-send for review" rejection fails LOUDLY here instead of
+# being silently committed-but-never-submitted (the old false-green that left the
+# live listing stale). iOS deliver still lands text on the editable version
+# without submitting (submit_for_review: false).
+#
+# Runs automatically when the committed listing assets change on main
+# (fastlane/metadata/**, fastlane/Fastfile, or app-stores/google/screenshots/**),
+# pushing to both stores. The Android screenshot set is refreshed by
+# mobile-screenshots-android.yml, which captures fresh shots and commits them
+# back to main — that commit re-triggers this workflow, which uploads them. Also
+# dispatchable by hand to push a single store on demand. A push build always
+# targets `all`; a manual build uses the chosen platform input.
+#
+# iOS "What's New" (release_notes.txt) is part of the deliver text and IS pushed
+# here. The Android "What's new", by contrast, is NOT pushed here: it ships with
+# the AAB at release time via android-apk-rn.yml (whatsNewDirectory), sourced from
+# the same changelogs/default.txt.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'fastlane/metadata/**'
+      - 'fastlane/Fastfile'
+      - 'app-stores/google/screenshots/**'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which store(s) to push listing text to'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - ios
+          - android
+
+concurrency:
+  group: mobile-store-metadata-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scopes the job to the Production GitHub Environment so it can read the
+    # App Store Connect / Google Play credentials (same secrets as the screenshot
+    # upload jobs in mobile-screenshots-ios.yml / mobile-screenshots-android.yml).
+    environment: Production
+    # Manual runs honour the chosen platform input; automatic push runs have no
+    # input, so default to pushing both stores.
+    env:
+      PLATFORM: ${{ github.event.inputs.platform || 'all' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby and fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Decode App Store Connect API key
+        if: ${{ env.PLATFORM == 'ios' || env.PLATFORM == 'all' }}
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_API_KEY_ID."; exit 1; }
+          [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ] || { echo "::error::Missing APP_STORE_CONNECT_API_KEY_BASE64."; exit 1; }
+          mkdir -p "$HOME/.private_keys"
+          key_path="$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
+          grep -q 'BEGIN PRIVATE KEY' "$key_path" || { echo "::error::APP_STORE_CONNECT_API_KEY_BASE64 did not decode to an App Store Connect private key."; exit 1; }
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Upload App Store listing text
+        if: ${{ env.PLATFORM == 'ios' || env.PLATFORM == 'all' }}
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
+          bundle exec fastlane ios metadata
+
+      - name: Clean up App Store Connect key
+        if: always()
+        run: rm -f "$HOME/.private_keys/AuthKey_"*.p8 2>/dev/null || true
+
+      - name: Upload Play Store listing text
+        if: ${{ env.PLATFORM == 'android' || env.PLATFORM == 'all' }}
+        working-directory: fastlane
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."; exit 1; }
+          bundle exec fastlane android metadata
+
+      - name: Upload Play Store listing images
+        if: ${{ env.PLATFORM == 'android' || env.PLATFORM == 'all' }}
+        working-directory: fastlane
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."; exit 1; }
+          bundle exec fastlane android images
+
+      # Uploads the committed phone screenshots (source of truth:
+      # app-stores/google/screenshots/pixel-2/), refreshed by
+      # mobile-screenshots-android.yml's commit-back. sync_image_upload: true in
+      # the lane means an unchanged set is a sha256 no-op, so re-running on a
+      # text-only change doesn't re-submit screenshots for review. Skips cleanly
+      # if no screenshots are committed yet (the lane requires >= 2), so this
+      # never blocks a text/icon push.
+      - name: Upload Play Store screenshots
+        if: ${{ env.PLATFORM == 'android' || env.PLATFORM == 'all' }}
+        working-directory: fastlane
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."; exit 1; }
+          shots_dir="$GITHUB_WORKSPACE/app-stores/google/screenshots/pixel-2"
+          count=$(find "$shots_dir" -maxdepth 1 -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$count" -lt 2 ]; then
+            echo "No committed Play screenshots ($count found in $shots_dir); skipping screenshot upload."
+            exit 0
+          fi
+          bundle exec fastlane android screenshots

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { reportHandledError } from '../error-reporting';
 
 let connectedCount = 0;
 const listeners = new Set<() => void>();
@@ -42,6 +43,7 @@ export function disconnectAllBluetooth(): void {
       disconnect();
     } catch (error) {
       console.error('Failed to disconnect bluetooth:', error);
+      reportHandledError(error, { tags: { source: 'ble-disconnect' } });
     }
   }
 }

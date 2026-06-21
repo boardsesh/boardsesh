@@ -8,6 +8,12 @@ import {
   convertHoldsToFrames,
   computeEdgesFromHolds,
   generateClimbImportUuid,
+  normalizeAuroraExportClimbNameForResolution,
+  normalizeBoardClimbNameForAuroraExportResolution,
+  isClimbNameResolutionCandidateAllowed,
+  doesBoardClimbNameMatchAuroraQuestionPlaceholder,
+  resolveQuestionPlaceholderClimbNameForCandidates,
+  type ClimbNameResolutionCandidate,
 } from '../json-import';
 
 // Mock server-only and DB modules to avoid server-component import errors
@@ -16,7 +22,7 @@ vi.mock('@/app/lib/db/db', () => ({
   getDb: vi.fn(),
   getPool: vi.fn(),
 }));
-vi.mock('@/app/lib/db/schema', () => ({
+vi.mock('@boardsesh/db/schema', () => ({
   boardseshTicks: {},
   boardClimbs: {
     uuid: 'uuid',
@@ -35,14 +41,16 @@ vi.mock('@/app/lib/db/schema', () => ({
   playlists: {},
   playlistClimbs: {},
   playlistOwnership: {},
-  inferredSessions: {},
 }));
-vi.mock('@/app/lib/board-data', () => ({
+vi.mock('@boardsesh/db/queries', () => ({
+  populateDenormalizedColumns: vi.fn(),
+}));
+vi.mock('@boardsesh/board-config', () => ({
   fontGradeToDifficultyId: vi.fn(),
   BOARD_IMAGE_DIMENSIONS: {},
   SUPPORTED_BOARDS: ['kilter', 'tension'],
 }));
-vi.mock('@/app/lib/board-constants', () => ({
+vi.mock('@boardsesh/board-constants/product-sizes', () => ({
   LAYOUTS: {
     kilter: {
       1: { id: 1, name: 'Kilter Board Original', productId: 1 },
@@ -358,6 +366,166 @@ describe('dedup key consistency', () => {
       'ascents',
     );
     expect(id1).toBe(id2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Aurora export climb name resolution
+// ---------------------------------------------------------------------------
+
+describe('Aurora export climb name resolution', () => {
+  function candidate(
+    overrides: Partial<ClimbNameResolutionCandidate> & Pick<ClimbNameResolutionCandidate, 'uuid' | 'name'>,
+  ): ClimbNameResolutionCandidate {
+    return {
+      ascensionistCount: 0,
+      isListed: true,
+      isDraft: false,
+      userId: null,
+      ...overrides,
+    };
+  }
+
+  it('normalizes Aurora question-mark placeholders to match DB emoji names', () => {
+    expect(normalizeAuroraExportClimbNameForResolution('Friend Forever?')).toBe(
+      normalizeBoardClimbNameForAuroraExportResolution('Friend Forever👭'),
+    );
+    expect(normalizeAuroraExportClimbNameForResolution('?sssshht, Kyle!')).toBe(
+      normalizeBoardClimbNameForAuroraExportResolution('🤫sssshht, Kyle!'),
+    );
+    expect(normalizeAuroraExportClimbNameForResolution('????NEVER LET GO ROSE!????')).toBe(
+      normalizeBoardClimbNameForAuroraExportResolution('🚢🌹🚢🌹NEVER LET GO ROSE!🌹🚢🌹🚢'),
+    );
+  });
+
+  it('resolves exported names whose emoji were replaced by question marks', () => {
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('Friend Forever?', [
+        candidate({ uuid: 'friend-forever', name: 'Friend Forever👭', ascensionistCount: 15178 }),
+      ]),
+    ).toBe('friend-forever');
+
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('?sssshht, Kyle!', [
+        candidate({ uuid: 'sssshht-kyle', name: '🤫sssshht, Kyle!', ascensionistCount: 597 }),
+      ]),
+    ).toBe('sssshht-kyle');
+
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('????NEVER LET GO ROSE!????', [
+        candidate({ uuid: 'rose', name: '🚢🌹🚢🌹NEVER LET GO ROSE!🌹🚢🌹🚢', ascensionistCount: 7711 }),
+      ]),
+    ).toBe('rose');
+  });
+
+  it('requires the DB candidate to contain emoji where Aurora exported question marks', () => {
+    expect(doesBoardClimbNameMatchAuroraQuestionPlaceholder('Friend Forever?', 'Friend Forever👭')).toBe(true);
+    expect(doesBoardClimbNameMatchAuroraQuestionPlaceholder('Friend Forever?', 'Friend Forever')).toBe(false);
+
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('Friend Forever?', [
+        candidate({ uuid: 'plain-base-name', name: 'Friend Forever', ascensionistCount: 99999 }),
+        candidate({ uuid: 'emoji-name', name: 'Friend Forever👭', ascensionistCount: 1 }),
+      ]),
+    ).toBe('emoji-name');
+  });
+
+  it('normalizes DB climb names before checking the question-mark placeholder positions', () => {
+    expect(doesBoardClimbNameMatchAuroraQuestionPlaceholder('Friend Forever?', 'Ｆriend Forever👭')).toBe(true);
+  });
+
+  it('checks the candidate against the specific export question-mark pattern', () => {
+    expect(doesBoardClimbNameMatchAuroraQuestionPlaceholder('A?B', 'A😀B')).toBe(true);
+    expect(doesBoardClimbNameMatchAuroraQuestionPlaceholder('AB?', 'A😀B')).toBe(false);
+  });
+
+  it('does not fuzzy-match unrelated question-mark names', () => {
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('Dad?', [
+        candidate({ uuid: 'dad-dancing', name: 'Dad Dancing 6a+' }),
+        candidate({ uuid: 'hi-dad', name: 'Hi hungry, I’m dad.' }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('allows exact delisted catalog rows but not another user-owned private climb', () => {
+    expect(
+      isClimbNameResolutionCandidateAllowed(
+        candidate({ uuid: 'unlisted-catalog', name: 'Stige-spillet', isListed: false, userId: null }),
+      ),
+    ).toBe(true);
+
+    expect(
+      isClimbNameResolutionCandidateAllowed(
+        candidate({ uuid: 'other-user-private', name: 'Private Project', isListed: false, userId: 'other-user' }),
+        'current-user',
+      ),
+    ).toBe(false);
+  });
+
+  it('allows null isDraft catalog rows as non-draft matches', () => {
+    expect(
+      isClimbNameResolutionCandidateAllowed(
+        candidate({ uuid: 'null-draft-catalog', name: 'Stige-spillet', isDraft: null, isListed: false, userId: null }),
+      ),
+    ).toBe(true);
+  });
+
+  it("allows the current user's own climbs but rejects another user's drafts", () => {
+    expect(
+      isClimbNameResolutionCandidateAllowed(
+        candidate({ uuid: 'own-draft', name: 'Project', isDraft: true, isListed: false, userId: 'current-user' }),
+        'current-user',
+      ),
+    ).toBe(true);
+
+    expect(
+      isClimbNameResolutionCandidateAllowed(
+        candidate({ uuid: 'other-draft', name: 'Project', isDraft: true, isListed: false, userId: 'other-user' }),
+        'current-user',
+      ),
+    ).toBe(false);
+  });
+
+  it('prefers listed public matches over unlisted catalog matches', () => {
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates('Friend Forever?', [
+        candidate({
+          uuid: 'unlisted-popular',
+          name: 'Friend Forever👭',
+          ascensionistCount: 99999,
+          isListed: false,
+          userId: null,
+        }),
+        candidate({ uuid: 'listed-less-popular', name: 'Friend Forever👭', ascensionistCount: 1 }),
+      ]),
+    ).toBe('listed-less-popular');
+  });
+
+  it("prefers the current user's own climb over an unlisted catalog match", () => {
+    expect(
+      resolveQuestionPlaceholderClimbNameForCandidates(
+        'Friend Forever?',
+        [
+          candidate({
+            uuid: 'unlisted-catalog',
+            name: 'Friend Forever👭',
+            ascensionistCount: 99999,
+            isListed: false,
+            userId: null,
+          }),
+          candidate({
+            uuid: 'own-climb',
+            name: 'Friend Forever👭',
+            ascensionistCount: 1,
+            isDraft: true,
+            isListed: false,
+            userId: 'current-user',
+          }),
+        ],
+        'current-user',
+      ),
+    ).toBe('own-climb');
   });
 });
 

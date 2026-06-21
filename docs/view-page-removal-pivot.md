@@ -216,8 +216,8 @@ Standard project flow per CLAUDE.md:
   - **Direct hit on `/view/{uuid}` (incognito).** SSR HTML contains climb name + grade. Drawer animates open. Back button takes user off-site.
   - **Direct hit → close.** Pushes `/list` forward (since there's nothing to pop). Back from list returns to off-site.
   - **Direct hit → swipe next.** URL `replaceState` to next climb. Close returns to `/list`.
-  - **Party session, list → tap row → drawer opens.** Drawer shows the tapped climb (preview-only). URL changes to `/view/{tapped_uuid}` for the _local_ user. The wall mirror (the other party member's screen) is unchanged. The URL change does _not_ broadcast to other party members (it's a per-client browser state).
-  - **Party session, direct hit on `/view/{uuid}` while wall is on a different climb.** Drawer pre-opens on the share-link climb (preview-only). Bar still mirrors the wall climb. Closing drawer returns the local user to `/list`.
+  - **Party session, list → tap row → drawer opens.** Drawer shows the tapped climb locally. URL changes to `/view/{tapped_uuid}` for the _local_ user; the URL change does _not_ broadcast (it's per-client browser state). Activating that climb (via setCurrentClimb) does broadcast — sessions are always-live.
+  - **Party session, direct hit on `/view/{uuid}` while the shared climb is different.** Drawer pre-opens on the share-link climb locally. The bar shows the shared current climb. Closing the drawer returns the local user to `/list`.
   - **Share button on the drawer.** The URL it shares matches the URL in the address bar.
   - **OG image.** Crawl `curl /view/{uuid}` and check `og:image` resolves to the board render of the right climb.
   - **iOS/Android system back gesture.** Same behavior as browser back button.

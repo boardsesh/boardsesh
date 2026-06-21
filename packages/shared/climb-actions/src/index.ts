@@ -3,3 +3,4 @@
 // deduplicating). No React, no DOM, no React Native.
 
 export { FavoritesStore, favoritesStore } from './favorites-store';
+export { buildInstagramCaption, getBoardDisplayName, type InstagramCaptionInput } from './instagram-caption';

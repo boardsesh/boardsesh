@@ -1,0 +1,66 @@
+appId: com.boardsesh.app
+name: onboarding illustrations
+---
+# Captures the real board-presence "now on the wall" screen as the hero for the
+# single first-run framing card (OnboardingPrompt). The cropped PNG is already
+# committed and ESM-imported by ONBOARDING_PROMPT_CARD.image (onboarding-cards.ts);
+# re-running this flow refreshes that hero after the screen's UI changes.
+#
+# The orchestrator writes raw, full-device PNGs under
+# app-stores/apple/screenshots/<app-store-locale>/<device>/ (same tree as the
+# app-store flow — it does NOT crop). Turn them into the card asset with
+#   vp run mobile:onboarding-assets
+# (Linux-safe sharp crop to the card's 2:3 portrait) which overwrites the committed
+# packages/mobile/assets/onboarding/board-history.png that onboarding-cards.ts imports.
+#
+# Capture mechanism mirrors app-store.yaml: driven entirely by deep links + the
+# screenshot-mode params the build honours when EXPO_PUBLIC_SCREENSHOT_MODE=1
+# (see packages/mobile/src/lib/screenshot-mode.ts). The active board is
+# auto-activated on boot, so the board-backed shot renders real content; the new
+#   ://climbs?screenshotOpenBoardSheet=1
+# param opens the board-presence sheet deterministically (no coordinate tap).
+#
+# The .app is a Debug dev-client that auto-loads Metro on launch and auto-signs-in
+# (boots straight to home); the orchestrator gates on `$screen /home` before
+# running Maestro, so this flow opens right into the deep links below.
+
+# Prime the "Open in 'Boardsesh'?" confirmation away on throwaway /home
+# navigations before any capture (see app-store.yaml for the full rationale).
+- openLink: com.boardsesh.app://home
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 12000
+- tapOn:
+    text: 'Open'
+- waitForAnimationToEnd
+- repeat:
+    times: 3
+    commands:
+      - openLink: com.boardsesh.app://home
+      - waitForAnimationToEnd
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+
+# Browse hero (alternate illustration): the climbs list. NOTE: `id: climb-list`
+# is a testID on a Fabric FlashList View, which Maestro's iOS accessibility tree
+# does NOT expose (same caveat app-store.yaml documents) — so settle on animation,
+# never an id assertion, or the flow times out on a screen that actually rendered.
+- openLink: com.boardsesh.app://climbs
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: onboarding-welcome
+
+# Board-history hero (the framing card image): the board-presence "now on the
+# wall" sheet, opened deterministically via the screenshot-mode param.
+- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: onboarding-board-history

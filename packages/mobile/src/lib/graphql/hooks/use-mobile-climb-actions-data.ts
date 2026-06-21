@@ -21,7 +21,7 @@
 // re-render — the toggle path here doesn't touch that store.
 
 import { useCallback, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { TOGGLE_FAVORITE, type ToggleFavoriteMutationResponse } from '@boardsesh/graphql/operations/favorites';
 import {
   GET_ALL_USER_PLAYLISTS,
@@ -36,8 +36,35 @@ import {
 import { getHttpClient } from '../client';
 import { useAuth } from '../../../providers/auth-provider';
 import { useActiveBoard } from '../use-active-board';
+import type { PlaylistCreateBoard } from '../../../providers/playlists-provider';
 
 const PLAYLISTS_QUERY_KEY = ['userPlaylists'] as const;
+
+// The play-drawer's Add-to-Playlist sheet adds/removes by playlist uuid (the
+// backend resolvers match playlists.uuid), so `playlistId` here is the uuid the
+// detail screen keys its caches by: the climb list lives under
+// ['playlistClimbs', uuid, ...] (use-playlist-climbs.ts) and the metadata/hero
+// count under ['playlist', uuid] ([playlist_uuid].tsx). Invalidating those
+// prefixes refreshes an open detail screen after a membership change.
+function invalidatePlaylistDetail(queryClient: QueryClient, playlistUuid: string): void {
+  void queryClient.invalidateQueries({ queryKey: ['playlistClimbs', playlistUuid] });
+  void queryClient.invalidateQueries({ queryKey: ['playlist', playlistUuid] });
+}
+
+// Optimistically nudge the picker's count subtitle (sourced from the cached
+// ['userPlaylists'] list) so it reflects the add/remove immediately rather than
+// waiting out the 5-minute staleTime. Mirrors web's optimistic +1/-1. Match on
+// uuid OR id so the bump lands regardless of which identifier the call site
+// passed.
+function bumpPlaylistClimbCount(queryClient: QueryClient, playlistUuid: string, delta: number): void {
+  queryClient.setQueryData<Playlist[]>(PLAYLISTS_QUERY_KEY, (prev) =>
+    prev?.map((playlist) =>
+      playlist.uuid === playlistUuid || playlist.id === playlistUuid
+        ? { ...playlist, climbCount: Math.max(0, playlist.climbCount + delta) }
+        : playlist,
+    ),
+  );
+}
 
 type MobileClimbActionsData = {
   favoritesProviderProps: {
@@ -51,7 +78,13 @@ type MobileClimbActionsData = {
     playlistMemberships: Map<string, Set<string>>;
     addToPlaylist: (playlistId: string, climbUuid: string, angle: number) => Promise<void>;
     removeFromPlaylist: (playlistId: string, climbUuid: string) => Promise<void>;
-    createPlaylist: (name: string, description?: string, color?: string, icon?: string) => Promise<Playlist>;
+    createPlaylist: (
+      name: string,
+      description?: string,
+      color?: string,
+      icon?: string,
+      board?: PlaylistCreateBoard,
+    ) => Promise<Playlist>;
     isLoading: boolean;
     isAuthenticated: boolean;
     refreshPlaylists: () => Promise<void>;
@@ -112,6 +145,10 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid, angle: vars.angle },
       });
     },
+    onSuccess: (_response, vars) => {
+      invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
+      bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, 1);
+    },
   });
 
   const removePlaylistMutation = useMutation({
@@ -120,11 +157,21 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid },
       });
     },
+    onSuccess: (_response, vars) => {
+      invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
+      bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, -1);
+    },
   });
 
   const createPlaylistMutation = useMutation({
-    mutationFn: async (vars: { name: string; description?: string; color?: string; icon?: string }) => {
-      const { activeBoard: board } = mutationDepsRef.current;
+    mutationFn: async (vars: {
+      name: string;
+      description?: string;
+      color?: string;
+      icon?: string;
+      board?: PlaylistCreateBoard;
+    }) => {
+      const board = vars.board ?? mutationDepsRef.current.activeBoard;
       if (!board) throw new Error('Cannot create playlist: no active board selected.');
       // CreatePlaylistInput types layoutId as Int! — sending undefined would
       // round-trip a 400 from the server. Throw locally so the call site sees
@@ -171,12 +218,27 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   }, []);
 
   const createPlaylist = useCallback(
-    async (name: string, description?: string, color?: string, icon?: string): Promise<Playlist> => {
-      const created = await createPlaylistMutateRef.current({ name, description, color, icon });
+    async (
+      name: string,
+      description?: string,
+      color?: string,
+      icon?: string,
+      board?: PlaylistCreateBoard,
+    ): Promise<Playlist> => {
+      const created = await createPlaylistMutateRef.current({ name, description, color, icon, board });
+      const { queryClient: client } = mutationDepsRef.current;
+      // The picker query can still be in flight when a user creates from the
+      // sheet. Cancel it after create succeeds but before the optimistic prepend
+      // so a failed create does not disturb the only in-flight picker load, while
+      // an older page response still cannot overwrite the created playlist.
+      await client.cancelQueries({ queryKey: PLAYLISTS_QUERY_KEY });
       // Optimistically prepend to the cached list so the picker shows the new
       // playlist immediately, without waiting for a refetch round-trip.
-      const { queryClient: client } = mutationDepsRef.current;
-      client.setQueryData<Playlist[]>(PLAYLISTS_QUERY_KEY, (prev) => (prev ? [created, ...prev] : [created]));
+      client.setQueryData<Playlist[]>(PLAYLISTS_QUERY_KEY, (prev) => {
+        const withoutCreated =
+          prev?.filter((playlist) => playlist.uuid !== created.uuid && playlist.id !== created.id) ?? [];
+        return [created, ...withoutCreated];
+      });
       return created;
     },
     [],

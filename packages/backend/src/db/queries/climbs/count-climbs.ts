@@ -1,5 +1,5 @@
 import { sql, and } from 'drizzle-orm';
-import { db } from '../../client';
+import { dbRead } from '../../client';
 import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
 import { createClimbFilters, type BoardRouteParams, type ClimbSearchParams } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
@@ -22,7 +22,9 @@ export const countClimbs = async (
 ): Promise<number> => {
   const filters = createClimbFilters(params, searchParams, userId);
 
-  const isDraftsQuery = !!searchParams.onlyDrafts;
+  // Same unified drafts predicate searchClimbs uses (onlyDrafts AND a userId), so the
+  // size/stats filters are skipped here only when they're skipped there.
+  const isDraftsQuery = filters.isOnlyDrafts;
 
   const whereConditions = [
     ...filters.getClimbWhereConditions(),
@@ -33,14 +35,25 @@ export const countClimbs = async (
     ...(isDraftsQuery ? [] : filters.getClimbStatsConditions()),
   ];
 
+  // This broad LEFT JOIN count is the same plan shape that exhausted /dev/shm in the
+  // PR #1969 incident — a filtered count goes parallel (Gather) and each worker
+  // allocates a DSM segment. Disable per-gather parallelism inside a transaction
+  // (SET LOCAL needs a transaction; the client runs prepare:false behind PgBouncer
+  // transaction pooling), mirroring searchClimbs' standardSearch guard. Reproduced
+  // live on prod: a bare board_climbs aggregate raised "could not resize shared
+  // memory segment". The unused board_climb_stats join is left in place — Postgres
+  // already eliminates it via the stats PK when no condition references stats columns
+  // (verified by the EXPLAIN harness), so there's nothing to hand-optimize.
   try {
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(boardClimbs)
-      .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
-      .where(and(...whereConditions));
-
-    return Number(result[0]?.count ?? 0);
+    return await dbRead.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
+      const result = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(boardClimbs)
+        .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
+        .where(and(...whereConditions));
+      return Number(result[0]?.count ?? 0);
+    });
   } catch (error) {
     logger.error('Error in countClimbs:', error);
     throw error;

@@ -12,12 +12,15 @@
   "profile": {
     "title": "Perfil",
     "subtitle": "Personaliza cómo apareces en Boardsesh",
+    "editAction": "Editar perfil",
     "avatar": {
       "label": "Foto de perfil",
       "upload": "Subir",
       "change": "Cambiar",
       "remove": "Quitar",
-      "hint": "JPG, PNG, GIF o WebP. Hasta 10 MB — se comprime automáticamente."
+      "hint": "JPG, PNG, GIF o WebP. Hasta 10 MB — se comprime automáticamente.",
+      "hintMobile": "Se recorta en cuadrado y se comprime automáticamente.",
+      "permissionDenied": "Permite el acceso a las fotos en Ajustes para elegir una foto de perfil."
     },
     "displayName": {
       "label": "Nombre",
@@ -104,12 +107,12 @@
   },
   "controllers": {
     "title": "Controladores ESP32",
-    "subtitle": "Registra dispositivos ESP32 para controlar tu tabla a través de un puente Bluetooth. Así puedes usar BoardSesh con las apps oficiales de Kilter/Tension.",
+    "subtitle": "Registra dispositivos ESP32 para controlar tu plafón a través de un puente Bluetooth. Así puedes usar BoardSesh con las apps oficiales de Kilter/Tension.",
     "empty": "No hay controladores registrados. Añade un ESP32 para usar BoardSesh con las apps oficiales.",
     "add": "Añadir controlador",
     "card": {
       "unnamed": "Controlador sin nombre",
-      "board": "Tabla:",
+      "board": "Plafón:",
       "layout": "Diseño:",
       "layoutValue": "{{layoutId}} / Tamaño {{sizeId}}",
       "lastSeen": "Última conexión:",
@@ -136,8 +139,8 @@
       "title": "Registrar controlador ESP32",
       "description": "Registra un nuevo controlador ESP32 para recibir comandos LED de BoardSesh. Recibirás una clave API para configurarla en el dispositivo.",
       "nameLabel": "Nombre del controlador (opcional)",
-      "namePlaceholder": "Ej.: Tabla del salón",
-      "boardLabel": "Tipo de tabla",
+      "namePlaceholder": "Ej.: Plafón del salón",
+      "boardLabel": "Tipo de plafón",
       "layoutLabel": "Diseño",
       "sizeLabel": "Tamaño",
       "setsLabel": "Conjuntos de presas",
@@ -161,7 +164,7 @@
   },
   "aurora": {
     "title": "Cuentas de Aurora",
-    "subtitle": "Vincula tus cuentas de tabla para importar tus datos de Aurora a Boardsesh, o impórtalos desde un archivo JSON. Sincronizamos automáticamente tu logbook, encadenes y vías DESDE Aurora cada 12 horas. Los datos creados en Boardsesh se quedan locales y no se sincronizan de vuelta con Aurora.",
+    "subtitle": "Vincula tus cuentas de plafón para importar tus datos de Aurora a Boardsesh, o impórtalos desde un archivo JSON. Sincronizamos automáticamente tu logbook, encadenes y vías DESDE Aurora cada 12 horas. Los datos creados en Boardsesh se quedan locales y no se sincronizan de vuelta con Aurora.",
     "card": {
       "boardSuffix": "Board",
       "username": "Usuario:",
@@ -197,7 +200,7 @@
     },
     "linkDialog": {
       "title": "Vincular cuenta de {{boardName}}",
-      "description": "Introduce el usuario y la contraseña de tu cuenta de {{boardName}} Board para importar tus datos de Aurora. Tus credenciales se cifran y se guardan de forma segura. Los datos se sincronizan cada 12 horas.",
+      "description": "Introduce el usuario y la contraseña de tu cuenta de {{boardName}} para importar tus datos de Aurora. Tus credenciales se cifran y se guardan de forma segura. Los datos se sincronizan cada 12 horas.",
       "usernameLabel": "Usuario",
       "usernamePlaceholder": "Escribe tu usuario",
       "passwordLabel": "Contraseña",
@@ -210,6 +213,30 @@
     "unlinkSuccess": "Cuenta desvinculada",
     "unlinkError": "No se pudo desvincular la cuenta",
     "unlinkPartial": "Te hemos desvinculado por nuestro lado, pero la app de Kilter puede seguir conectada. Cierra sesión también en Kilter si quieres cortar el vínculo por completo.",
+    "loadRetry": "Reintentar",
+    "mobile": {
+      "connectedAs": "Conectado como {{name}}",
+      "connected": "Conectado",
+      "notConnected": "No conectado",
+      "kilterConnected": "Kilter conectado",
+      "kilterNotAllowed": "La sincronización con Kilter aún no está habilitada para esta cuenta.",
+      "kilterConnectFailed": "No se pudo conectar Kilter. Inténtalo de nuevo.",
+      "linkSuccess": "{{boardName}} vinculado",
+      "unlinkSuccess": "{{boardName}} desvinculado",
+      "unlinkPartial": "{{boardName}} se eliminó aquí, pero la sesión del proveedor puede seguir activa.",
+      "invalidCredentials": "Ese usuario o contraseña no funcionó.",
+      "rateLimited": "Demasiados intentos. Inténtalo más tarde.",
+      "requestFailed": "No se pudo guardar el vínculo. Inténtalo de nuevo.",
+      "loadFailed": "No se pudieron cargar tus cuentas de plafón.",
+      "importMissingUser": "Elige un archivo de exportación JSON de Aurora.",
+      "importBoardWarning": "Esto parece {{layoutName}}. Importa a {{boardName}} solo si es correcto.",
+      "importPreviewIntro": "Importar datos de {{username}} a {{boardName}}:",
+      "importPartial": "Importación parcialmente completada. Volver a importar el archivo es seguro.",
+      "importFailed": "La importación falló. Inténtalo de nuevo.",
+      "importInterrupted": "La importación se detuvo antes de terminar. Volver a importar el archivo es seguro.",
+      "requestDataFailed": "No se pudo abrir el correo. Inténtalo de nuevo.",
+      "passwordHelp": "Tus credenciales se cifran antes de guardarse."
+    },
     "import": {
       "steps": {
         "climbs": "Importando borradores de vías",
@@ -217,8 +244,7 @@
         "dedup": "Buscando duplicados",
         "ascents": "Importando encadenes",
         "attempts": "Importando intentos",
-        "circuits": "Importando circuitos",
-        "sessions": "Creando sesiones"
+        "circuits": "Importando circuitos"
       },
       "fileLabel": "Subir archivo JSON exportado de Aurora",
       "tooLarge": "El archivo es demasiado grande (máx. 200 MB). Comprueba que has elegido el archivo correcto.",
@@ -284,7 +310,8 @@
     "successRating": "Gracias — registrado.",
     "successBug": "Fallo registrado — gracias.",
     "errorRating": "No se pudo enviar — guardamos tus comentarios.",
-    "closeAria": "Cerrar"
+    "closeAria": "Cerrar",
+    "joinDiscord": "Únete a Discord"
   },
   "feedbackForm": {
     "missingHeading": "¿Qué falta?",
@@ -296,6 +323,10 @@
     "bugPlaceholder": "¿Qué estabas haciendo? ¿Qué esperabas y qué viste?",
     "ratingPlaceholder": "¿Qué piensas?",
     "remainingChars": "Faltan {{count}} caracteres",
+    "starRating_one": "{{count}} estrella",
+    "starRating_other": "{{count}} estrellas",
+    "sessionRecordingLabel": "Activar grabación de sesión",
+    "sessionRecordingDescription": "Ayúdanos a corregir tu error más rápido activando la grabación de sesión y reproduciendo el problema. Puedes desactivarla después.",
     "nextAria": "Siguiente"
   },
   "feedbackBanner": {
@@ -335,18 +366,29 @@
     }
   },
   "boardConfigMismatch": {
-    "title": "La configuración del tablero no coincide",
-    "intro": "Nuestros registros muestran que este tablero tiene una configuración diferente a la que tienes seleccionada.",
+    "title": "La configuración del plafón no coincide",
+    "intro": "Nuestros registros muestran que este plafón tiene una configuración diferente a la que tienes seleccionada.",
     "currentLabel": "<strong>Tienes configurado:</strong>",
     "recordedLabel": "<strong>Registrado para este controlador:</strong>",
+    "mobileCurrentLabel": "Tienes configurado: {{config}}",
+    "mobileRecordedLabel": "Registrado para este controlador: {{config}}",
+    "mobileConfigValue": "{{board}} diseño {{layoutId}}, tamaño {{sizeId}}, sets {{setIds}}",
+    "mobileUnknownConfig": "Configuración de plafón desconocida",
+    "mobileSkippedSpillToast_one": "Se omitió {{name}} — es de otro plafón",
+    "mobileSkippedSpillToast_other": "Se omitieron {{count}} vías de otro plafón",
+    "mobileSwitchFailed": "No se pudo cambiar a la configuración de ese plafón. Prueba Conectar igualmente.",
     "cancel": "Cancelar",
     "connectAnyway": "Conectar igualmente",
-    "switchToCorrect": "Cambiar a la configuración correcta"
+    "switchToCorrect": "Cambiar a la configuración correcta",
+    "mobileConnectAnyway": "Conectar igualmente",
+    "mobileConnectAnywayWarning": "Nuestros registros muestran que este controlador pertenece a otra configuración de plafón. Conectar igualmente podría iluminar las vías de forma incorrecta.",
+    "mobileSwitchSetup": "Cambiar de plafón",
+    "mobileUseRecordedSetup": "Usar la configuración registrada"
   },
   "devicePicker": {
-    "title": "Selecciona tu tablero",
-    "scanning": "Buscando tableros cercanos…",
-    "lastConnected": "Último tablero conectado",
+    "title": "Selecciona tu plafón",
+    "scanning": "Buscando plafones cercanos…",
+    "lastConnected": "Último plafón conectado",
     "unknownDevice": "Dispositivo desconocido",
     "lastConnectedAt": "Conectado por última vez {{time}}",
     "cancel": "Cancelar"
@@ -360,19 +402,59 @@
     "uploadAriaLabel": "Subir archivo JSON exportado de Aurora"
   },
   "ble": {
-    "scanning": "Buscando tableros cercanos…",
-    "selectBoard": "Seleccionar tablero",
-    "devicesFound_one": "{{count}} tablero encontrado",
-    "devicesFound_other": "{{count}} tableros encontrados",
-    "noDevicesFound": "No se encontraron tableros cercanos",
+    "scanning": "Buscando plafones cercanos…",
+    "selectBoard": "Seleccionar plafón",
+    "devicesFound_one": "{{count}} plafón encontrado",
+    "devicesFound_other": "{{count}} plafones encontrados",
+    "noDevicesFound": "No se encontraron plafones cercanos",
     "cancel": "Cancelar",
-    "unknownBoard": "Tablero desconocido",
-    "disconnected": "Tablero desconectado",
-    "reconnect": "Reconectar",
-    "connectBoard": "Conectar tablero",
-    "notAvailable": "Bluetooth no está disponible",
-    "errorLedMissing": "No se pudo enviar al tablero — faltan datos LED para esta configuración.",
-    "errorIncompatible": "Este boulder es para una configuración de tablero diferente.",
-    "errorConnectionFailed": "No se pudo conectar al tablero. Asegúrate de que esté encendido y cerca."
+    "connectBoard": "Conectar plafón",
+    "relightBoard": "Reiluminar plafón",
+    "turnOff": "Apagar el plafón",
+    "holdForControls": "Mantén pulsado para los controles",
+    "sendFailedTitle": "No se pudo iluminar el plafón",
+    "connectionFailedTitle": "No se pudo conectar",
+    "permissionRequired": "Permiso de Bluetooth necesario",
+    "errorPermissionDenied": "Permite los permisos de Bluetooth para conectar un plafón.",
+    "errorLedMissing": "No se pudo enviar al plafón — faltan datos LED para esta configuración.",
+    "errorIncompatible": "Este bloque es para una configuración de plafón diferente.",
+    "barControl": {
+      "connectedLabel": "Plafón conectado, tienes el control",
+      "connectedHint": "Abre los controles del plafón",
+      "peerLabel": "En el muro de {{name}}",
+      "peerLabelAnonymous": "En el muro",
+      "peerHint": "Abre la vía en el muro",
+      "disconnectedLabel": "Plafón desconectado",
+      "disconnectedHint": "Conéctate al plafón"
+    }
+  },
+  "integrations": {
+    "title": "Aplicaciones conectadas",
+    "appleHealth": {
+      "title": "Apple Health",
+      "autoSave": "Guardar sesiones automáticamente",
+      "autoSaveDescription": "Las sesiones terminadas se añaden a Apple Health como entrenamientos de escalada con calorías estimadas.",
+      "permissionDenied": "El acceso a Salud está desactivado. Permite que Boardsesh escriba entrenamientos en Ajustes.",
+      "openSettings": "Abrir Ajustes"
+    },
+    "strava": {
+      "title": "Strava",
+      "connect": "Conectar con Strava",
+      "connectedAs": "Conectado como {{name}}",
+      "connected": "Conectado",
+      "autoSync": "Subir sesiones automáticamente",
+      "autoSyncDescription": "Las sesiones terminadas aparecen en tu feed de Strava como actividades de escalada.",
+      "disconnect": "Desconectar",
+      "disconnectConfirmTitle": "¿Desconectar Strava?",
+      "disconnectConfirmBody": "Las nuevas sesiones dejarán de subirse a Strava. Las actividades ya subidas se quedan en Strava.",
+      "reconnect": "Reconectar",
+      "expired": "La conexión caducó. Reconecta para seguir subiendo."
+    },
+    "toast": {
+      "connected": "Strava conectado",
+      "connectFailed": "No se pudo conectar con Strava",
+      "disconnected": "Strava desconectado",
+      "disconnectFailed": "No se pudo desconectar Strava. Inténtalo de nuevo."
+    }
   }
 }

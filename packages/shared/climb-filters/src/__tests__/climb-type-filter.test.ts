@@ -7,7 +7,7 @@ import {
 } from '../filter-state';
 
 const board = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
-const pagination = { page: 1, pageSize: 20 };
+const pagination = { page: 0, pageSize: 20 };
 
 function inputFor(overrides: Partial<ClimbFilterState>) {
   return toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, ...overrides }, board, pagination);

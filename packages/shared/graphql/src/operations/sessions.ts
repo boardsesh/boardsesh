@@ -9,21 +9,29 @@ export const SESSION_SUMMARY_FIELDS = gql`
   fragment SessionSummaryFields on SessionSummary {
     sessionId
     totalSends
+    totalFlashes
     totalAttempts
     gradeDistribution {
       grade
-      count
+      flash
+      send
+      attempt
     }
     hardestClimb {
       climbUuid
       climbName
       grade
+      frames
+      layoutId
+      boardType
+      isMirror
     }
     participants {
       userId
       displayName
       avatarUrl
       sends
+      flashes
       attempts
     }
     startedAt
@@ -39,8 +47,8 @@ export const SESSION_SUMMARY_FIELDS = gql`
 
 export const END_SESSION = gql`
   ${SESSION_SUMMARY_FIELDS}
-  mutation EndSession($sessionId: ID!) {
-    endSession(sessionId: $sessionId) {
+  mutation EndSession($sessionId: ID!, $timezone: String) {
+    endSession(sessionId: $sessionId, timezone: $timezone) {
       ...SessionSummaryFields
     }
   }
@@ -65,6 +73,8 @@ export const GET_SESSION_SUMMARY = gql`
 
 export type EndSessionVariables = {
   sessionId: string;
+  /** IANA timezone of the ending device, for local-time export to platforms like Strava. */
+  timezone?: string;
 };
 
 export type EndSessionResponse = {

@@ -10,15 +10,15 @@
 
 Three pieces of feedback from the first draft drove these changes:
 
-- *"While the same climb should only count once, mirrored climbs should count separately from their original — the same hold pattern feels very different on the other side."* → Per-climb dedup is now keyed on `(climb_uuid, is_mirror)`, not just `climb_uuid`. Sending a V8 normally and the same V8 mirrored gives full V-points credit for both. Same change applies to `grade.repeat` (mirror counts as a separate send) but **not** to `grade.first` — the grade is the grade, you only "first V8" once. See §4.1.1 and §4.4.
-- *"Would be fun to see my stats across angles"* / *"Performance and grade distribution are quite different at some angles, would be great to see/track."* → Added a per-angle stats surface (§7.7) and a small set of angle achievements (§4.5.1) calibrated against prod (avg max grade on Kilter ranges from V3 at 0° to V7 at 40-50° back down to V5 at 70°).
-- *"Excited that you're thinking about it from a climber-who-wants-to-improve POV, rather than board-seller."* → Reinforced in §2 principle 1; no scope change beyond the explicit wording.
+- _"While the same climb should only count once, mirrored climbs should count separately from their original — the same hold pattern feels very different on the other side."_ → Per-climb dedup is now keyed on `(climb_uuid, is_mirror)`, not just `climb_uuid`. Sending a V8 normally and the same V8 mirrored gives full V-points credit for both. Same change applies to `grade.repeat` (mirror counts as a separate send) but **not** to `grade.first` — the grade is the grade, you only "first V8" once. See §4.1.1 and §4.4.
+- _"Would be fun to see my stats across angles"_ / _"Performance and grade distribution are quite different at some angles, would be great to see/track."_ → Added a per-angle stats surface (§7.7) and a small set of angle achievements (§4.5.1) calibrated against prod (avg max grade on Kilter ranges from V3 at 0° to V7 at 40-50° back down to V5 at 70°).
+- _"Excited that you're thinking about it from a climber-who-wants-to-improve POV, rather than board-seller."_ → Reinforced in §2 principle 1; no scope change beyond the explicit wording.
 
 ---
 
 ## 1. Why we're building this
 
-The hardware boards and Aurora's stock app both treat climbing as a sequence of disconnected sends. Boardsesh already has a richer object — the **session** (party + inferred) — and a session feed where users can vote, comment, and follow each other. Achievements turn that feed into something users want to come back to: a personal record of progress that surfaces *during* a session and gets shared *after* it.
+The hardware boards and Aurora's stock app both treat climbing as a sequence of disconnected sends. Boardsesh already has a richer object — the explicit **session** — and a session feed where users can vote, comment, and follow each other. Achievements turn that feed into something users want to come back to: a personal record of progress that surfaces _during_ a session and gets shared _after_ it.
 
 Concretely, achievements should:
 
@@ -40,11 +40,11 @@ Concretely, achievements should:
 These exist because the prod data analysis (§3) showed each of them mattering:
 
 1. **Calibrate to the median user, not the power user.** P50 user has 84 lifetime ticks and 39 lifetime sessions. The first achievement tier must unlock fast — within a session or two — or 70% of users will never see one fire. **The frame is climber-improvement, not board-marketing**: every achievement should answer "what does this tell a climber about how they're progressing?" — not "which feature of the product do we want them to use more?" If we can't articulate the climber-improvement story for an achievement in one sentence, cut it.
-2. **Streaks are weeks, not days.** Only **22 users have ever had a 5-day climbing streak**, and 5 users a 7-day streak. Climbers rest. Use *sessions per calendar week* (a much more reachable signal: 252 users have logged 3+ sessions in a single week).
+2. **Streaks are weeks, not days.** Only **22 users have ever had a 5-day climbing streak**, and 5 users a 7-day streak. Climbers rest. Use _sessions per calendar week_ (a much more reachable signal: 252 users have logged 3+ sessions in a single week).
 3. **Aurora-imported flash counts are unreliable.** 70% of all ticks have status=`flash`, vs 16% `send`, 14% `attempt`. This is because Aurora's data import treats default ascents as flashes. **Scope flash-based achievements to ticks that originated in Boardsesh** (or to the most recent N days where users are actively logging the difference) — otherwise we hand "Flash Master" badges to anyone with a synced history.
 4. **Reward grinding, not just sending.** 7,074 sessions contain a send of a climb the user previously attempted in a different session — that "I came back and got it" moment is core to bouldering and almost no app honors it.
-5. **Stable IDs, idempotent awards.** Every achievement award must be replayable. Inferred sessions already use deterministic UUIDv5 — we'll lean on that to recompute history without dupes.
-6. **No notification spam.** A user who imports years of Aurora history will trigger hundreds of achievements. The first computation per user is silent (or a single "Welcome to your achievements" digest); only achievements earned *after* enrollment fire notifications.
+5. **Stable IDs, idempotent awards.** Every achievement award must be replayable. Explicit sessions already have durable UUIDs; evaluators must use those ids to recompute history without dupes.
+6. **No notification spam.** A user who imports years of Aurora history will trigger hundreds of achievements. The first computation per user is silent (or a single "Welcome to your achievements" digest); only achievements earned _after_ enrollment fire notifications.
 7. **Session-bound first, lifetime second.** Most awards should resolve at session close so the session detail page is the natural celebration surface. Lifetime/cross-session awards are a smaller secondary set.
 8. **Boring names, generous criteria.** "First V6" is fine. Avoid the gamification voice ("LEGENDARY!" "BEAST MODE!"). Match the existing CLAUDE.md copy guidance.
 
@@ -56,44 +56,46 @@ All numbers from prod snapshot 2026-05-12.
 
 ### 3.1 Population
 
-| Metric                             | Count   |
-| ---------------------------------- | ------- |
-| Users (table)                      | 1,007   |
-| Users with ≥1 tick                 | 574     |
-| Active last 7d / 30d / 90d         | 169 / 356 / 542 |
-| Total ticks                        | 252,891 |
-| Inferred sessions                  | 34,530  |
-| Party (board) sessions             | 1,559   |
+| Metric                       | Count           |
+| ---------------------------- | --------------- |
+| Users (table)                | 1,007           |
+| Users with ≥1 tick           | 574             |
+| Active last 7d / 30d / 90d   | 169 / 356 / 542 |
+| Total ticks                  | 252,891         |
+| Historical inferred sessions | 34,530          |
+| Party (board) sessions       | 1,559           |
+
+The historical inferred-session count is from the pre-removal production analysis only. New achievement work should use explicitly-created `board_sessions` rows; solo ticks are not auto-grouped into sessions.
 
 Tick volume is heavily long-tailed:
 
-| Bucket          | Users | Total ticks |
-| --------------- | ----- | ----------- |
-| <10             | 162   | 627         |
-| 10–49           | 89    | 1,962       |
-| 50–99           | 51    | 3,805       |
-| 100–499         | 134   | 37,476      |
-| 500–999         | 62    | 46,187      |
-| 1000–4999       | 73    | 142,242     |
-| 5000+           | 3     | 20,593      |
+| Bucket    | Users | Total ticks |
+| --------- | ----- | ----------- |
+| <10       | 162   | 627         |
+| 10–49     | 89    | 1,962       |
+| 50–99     | 51    | 3,805       |
+| 100–499   | 134   | 37,476      |
+| 500–999   | 62    | 46,187      |
+| 1000–4999 | 73    | 142,242     |
+| 5000+     | 3     | 20,593      |
 
 P50 = 84 ticks, P90 = 1,275, P99 = 3,998, max = 7,960.
 
 ### 3.2 Session shape
 
-- Median inferred session: **5 unique climbs, 7 ticks, 40 minutes**.
-- P90 inferred session: 14 climbs, 113 minutes.
+- Median historical session: **5 unique climbs, 7 ticks, 40 minutes**.
+- P90 historical session: 14 climbs, 113 minutes.
 - Median user has 39 lifetime sessions, P90 has 205, max = 631.
 - **Multi-board sessions are essentially nonexistent** (5 / 34,530). Multi-board exploration achievements will be aspirational/niche, not core.
 - **Party mode is mostly used solo** (avg 1.04 distinct participants per party session, max 3, only 90 named, only 16 with a goal). Don't over-index on party-only achievements.
 
 ### 3.3 Climb status mix
 
-| Status  | Count   | Note                                          |
-| ------- | ------- | --------------------------------------------- |
-| flash   | 176,065 | 70% — heavily inflated by Aurora import       |
-| send    | 41,711  | 16%                                           |
-| attempt | 35,116  | 14%                                           |
+| Status  | Count   | Note                                    |
+| ------- | ------- | --------------------------------------- |
+| flash   | 176,065 | 70% — heavily inflated by Aurora import |
+| send    | 41,711  | 16%                                     |
+| attempt | 35,116  | 14%                                     |
 
 Repeat behaviour per (user, climb) pair:
 
@@ -107,18 +109,18 @@ Repeat behaviour per (user, climb) pair:
 
 Distribution of each user's hardest sent grade on Kilter:
 
-| Hardest grade  | Users |
-| -------------- | ----- |
-| ≤ V2           | 21    |
-| V3             | 26    |
-| V4             | 32    |
-| V5             | 51    |
-| V6             | 37    |
-| V7             | 46    |
-| V8             | 104   |
-| V9             | 49    |
-| V10            | 23    |
-| V11+           | 33    |
+| Hardest grade | Users |
+| ------------- | ----- |
+| ≤ V2          | 21    |
+| V3            | 26    |
+| V4            | 32    |
+| V5            | 51    |
+| V6            | 37    |
+| V7            | 46    |
+| V8            | 104   |
+| V9            | 49    |
+| V10           | 23    |
+| V11+          | 33    |
 
 Useful for tiering: V6 is roughly the median ceiling, V8 is the bulge, V10+ is rare.
 
@@ -154,7 +156,7 @@ The headline insight: 100 V-points is a real stretch goal for an individual (top
 - **720 sessions** mix mirror and normal sends (≥3 of each); **75 sessions are pure mirror** — niche flex, advertise as legendary.
 - Hardest mirror grade per user: 20 users have mirror-sent V6+, 9 V8+, 6 V9+, **2 V10+**.
 
-The audience is small, devoted, and overlapping with the Tension power-user base. Mirror achievements should *celebrate* that minority rather than try to convert the majority — frame them as "Tension Mirror" badges, with the implicit message that this is a real training discipline.
+The audience is small, devoted, and overlapping with the Tension power-user base. Mirror achievements should _celebrate_ that minority rather than try to convert the majority — frame them as "Tension Mirror" badges, with the implicit message that this is a real training discipline.
 
 ### 3.9 Beta videos and the supply gap
 
@@ -174,21 +176,21 @@ We split by **scope** (when/where it resolves) and **family** (what it's about).
 
 ### 4.1 Session achievements (resolve at session close)
 
-These fire when an inferred session "closes" — i.e. 4-hour gap elapses since the last tick, or the user explicitly ends a party session. They appear inline on the session detail page and become shareable feed cards.
+These fire when an explicit session closes. They appear inline on the session detail page and become shareable feed cards.
 
-| ID                       | Name                  | Trigger                                                                  | Calibration |
-| ------------------------ | --------------------- | ------------------------------------------------------------------------ | ----------- |
-| `session.first_send`     | First send            | Any send/flash in this session, only when the user has 0 prior sessions  | Universal   |
-| `session.send_count.{n}` | Volume                | Tiers at 5 / 10 / 20 / 30 sends in one session                           | T1=57% sess, T4=1% |
-| `session.flash_count.{n}`| Flash run             | 3 / 5 / 10 in-app flashes in one session (Aurora ticks excluded)         | TBD post-launch |
-| `session.pr_session`     | New personal best     | Session contained a send at the user's all-time hardest grade            | 1,166 historical |
-| `session.redpoint`       | Stuck the project     | Sent a climb in this session that you'd attempted in an earlier session  | 7,074 historical |
-| `session.long_haul`      | Long session          | ≥120 minutes between first and last tick                                 | ~10% of sessions |
-| `session.angle_explorer` | Angle hop             | ≥3 distinct angles in one session                                        | Niche |
-| `session.board_hop`      | Two-board day         | ≥2 board types in one session                                            | Very rare (5 historical) — keep but advertise as legendary |
-| `session.with_a_friend`  | Logged together       | Inferred session overlaps in time/location with another user's session   | Computable when geofence + friendship exists |
-| `session.v_points.{n}`   | V-point session       | Sum of V-grades sent in one session — tiers at 25 / 50 / 100 / 200       | See §4.1.1 — 100 V-points has been hit by 72 users ever |
-| `session.crew_v_points.{n}` | Crew V-points      | Sum of V-grades across **all participants** in one session — 100 / 250 / 500 / 1000 | See §4.1.1 — Gold (1000) requires a real crew |
+| ID                          | Name              | Trigger                                                                             | Calibration                                                |
+| --------------------------- | ----------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `session.first_send`        | First send        | Any send/flash in this session, only when the user has 0 prior sessions             | Universal                                                  |
+| `session.send_count.{n}`    | Volume            | Tiers at 5 / 10 / 20 / 30 sends in one session                                      | T1=57% sess, T4=1%                                         |
+| `session.flash_count.{n}`   | Flash run         | 3 / 5 / 10 in-app flashes in one session (Aurora ticks excluded)                    | TBD post-launch                                            |
+| `session.pr_session`        | New personal best | Session contained a send at the user's all-time hardest grade                       | 1,166 historical                                           |
+| `session.redpoint`          | Stuck the project | Sent a climb in this session that you'd attempted in an earlier session             | 7,074 historical                                           |
+| `session.long_haul`         | Long session      | ≥120 minutes between first and last tick                                            | ~10% of sessions                                           |
+| `session.angle_explorer`    | Angle hop         | ≥3 distinct angles in one session                                                   | Niche                                                      |
+| `session.board_hop`         | Two-board day     | ≥2 board types in one session                                                       | Very rare (5 historical) — keep but advertise as legendary |
+| `session.with_a_friend`     | Logged together   | Explicit session has another participant                                            | Computable from session participants                       |
+| `session.v_points.{n}`      | V-point session   | Sum of V-grades sent in one session — tiers at 25 / 50 / 100 / 200                  | See §4.1.1 — 100 V-points has been hit by 72 users ever    |
+| `session.crew_v_points.{n}` | Crew V-points     | Sum of V-grades across **all participants** in one session — 100 / 250 / 500 / 1000 | See §4.1.1 — Gold (1000) requires a real crew              |
 
 #### 4.1.1 V-points — calibration & rules
 
@@ -225,12 +227,12 @@ That gives a clean mapping (Kilter, same shape on Tension):
 
 Calibration from prod (33,534 sessions with ≥1 send, applying half-grades + per-(climb, orientation) dedup):
 
-| Tier (per user, per session) | V-points | Sessions ever | Users ever                |
-| ---------------------------- | -------- | ------------- | ------------------------- |
+| Tier (per user, per session) | V-points | Sessions ever | Users ever                  |
+| ---------------------------- | -------- | ------------- | --------------------------- |
 | Bronze                       | 25       | 13,556 (40%)  | 274 (48% of active tickers) |
-| Silver                       | 50       | 5,117 (15%)   | 187 (33%)                 |
-| Gold                         | 100      | 854 (2.5%)    | 69 (12%)                  |
-| Platinum                     | 200      | 30 (0.09%)    | 13                        |
+| Silver                       | 50       | 5,117 (15%)   | 187 (33%)                   |
+| Gold                         | 100      | 854 (2.5%)    | 69 (12%)                    |
+| Platinum                     | 200      | 30 (0.09%)    | 13                          |
 
 Top solo session ever recorded: **420 V-points** (zero solo sessions have ever cleared 500). Distribution: P50=19, P90=61.5, P99=126. The mirror-as-separate rule shifts the totals very slightly (mirror is rare even among the cohort that does it), but the principle is right.
 
@@ -238,8 +240,8 @@ Crew V-points (multi-user, summed across everyone in the same session) tier at 1
 
 Implementation notes:
 
-- **Per-user evaluator** runs at session close. Reads ticks where `inferred_session_id` matches and `status IN ('send','flash')`, joins to `board_difficulty_grades`, applies the scoring rule above (look up `v_points` from a derived view computed once at startup from `board_difficulty_grades`), sums after per-climb dedup.
-- **Crew evaluator** runs against `board_sessions` (party mode) at close, summing across `boardsesh_ticks` for every distinct `user_id` in that session. For *inferred* multi-user sessions we additionally sum across all users whose ticks are linked to the session via `session_member_overrides`.
+- **Per-user evaluator** runs at session close. Reads ticks where `session_id` matches and `status IN ('send','flash')`, joins to `board_difficulty_grades`, applies the scoring rule above (look up `v_points` from a derived view computed once at startup from `board_difficulty_grades`), sums after per-climb dedup.
+- **Crew evaluator** runs against `board_sessions` at close, summing across `boardsesh_ticks` for every distinct `user_id` in that session.
 - **Cap per climb-orientation = once per session.** Repeating the same climb 5 times in one session counts the V-grade once. **But normal and mirror count as separate climbs** — sending V8 normally then sending the same V8 mirrored credits 16 V-points (or 8.5+8.5 for V8+), not 8. Per direct user feedback: "even though it's the same hold pattern, climbs can feel very different on one side compared to the other." Implement as `SELECT DISTINCT (user_id, session_id, climb_uuid, COALESCE(is_mirror, false))` before summing.
 - **Crew dedup.** If two users both sent V8 of the same climb in a crew session, both their points count — different bodies, different sends. Only the per-user dedup applies.
 - **Display.** Show as integer when whole (`100 V-points`), one decimal when fractional (`5.5 V-points` for a single V5+ send). Never round to integer in storage — half-points compound (10× V5+ sessions = 55 V-points exactly, not 50).
@@ -248,39 +250,39 @@ UI: V-points become a first-class number on the session summary, alongside Sends
 
 ### 4.2 Lifetime / cumulative achievements
 
-Resolve whenever the running total crosses a threshold. Computed on each tick save *and* on session close.
+Resolve whenever the running total crosses a threshold. Computed on each tick save _and_ on session close.
 
-| Family               | Tiers (count)                       | Notes                                                                             |
-| -------------------- | ----------------------------------- | --------------------------------------------------------------------------------- |
-| Total sends          | 10 / 50 / 100 / 500 / 1000 / 5000   | Reachable by all tiers (P50 user has 84 ticks → first two tiers feasible).        |
-| Distinct climbs sent | 25 / 100 / 500 / 1000 / 2500        | P90 user has 714 distinct climbs.                                                 |
-| Sessions logged      | 1 / 10 / 50 / 100 / 250 / 500       | Median 39 → first three tiers reachable in a season.                              |
-| Hours on the wall    | 5 / 25 / 100 / 500                  | Sum of (lastTickAt − firstTickAt) per session. Excludes single-tick sessions.     |
-| Hardest grade        | One award per V-grade unlocked      | "First V3", "First V4" … one row per (user, grade, board_type).                   |
-| Total V-points       | 100 / 1k / 10k / 50k / 100k         | Lifetime sum across all sends. P90 user (~714 distinct climbs at avg V5) ≈ 3,500. |
+| Family               | Tiers (count)                     | Notes                                                                             |
+| -------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| Total sends          | 10 / 50 / 100 / 500 / 1000 / 5000 | Reachable by all tiers (P50 user has 84 ticks → first two tiers feasible).        |
+| Distinct climbs sent | 25 / 100 / 500 / 1000 / 2500      | P90 user has 714 distinct climbs.                                                 |
+| Sessions logged      | 1 / 10 / 50 / 100 / 250 / 500     | Median 39 → first three tiers reachable in a season.                              |
+| Hours on the wall    | 5 / 25 / 100 / 500                | Sum of (lastTickAt − firstTickAt) per session. Excludes single-tick sessions.     |
+| Hardest grade        | One award per V-grade unlocked    | "First V3", "First V4" … one row per (user, grade, board_type).                   |
+| Total V-points       | 100 / 1k / 10k / 50k / 100k       | Lifetime sum across all sends. P90 user (~714 distinct climbs at avg V5) ≈ 3,500. |
 
 ### 4.3 Rhythm / streak achievements (week-based)
 
-| ID                          | Trigger                                                  | Reachable by today |
-| --------------------------- | -------------------------------------------------------- | ------------------ |
-| `rhythm.weekly_x3`          | 3 sessions in a single ISO week                          | 252 users (~44% of active) |
-| `rhythm.weekly_x4`          | 4 sessions in a single ISO week                          | 147 users (~26%)   |
-| `rhythm.month_active`       | ≥1 session in 4 consecutive ISO weeks                    | TBD                |
-| `rhythm.comeback`           | First session in ≥30 days after a previous session       | High recall, high meaning |
-| `rhythm.year_in_review`     | Annual auto-summary on user's account anniversary        | Triggered yearly   |
+| ID                      | Trigger                                            | Reachable by today         |
+| ----------------------- | -------------------------------------------------- | -------------------------- |
+| `rhythm.weekly_x3`      | 3 sessions in a single ISO week                    | 252 users (~44% of active) |
+| `rhythm.weekly_x4`      | 4 sessions in a single ISO week                    | 147 users (~26%)           |
+| `rhythm.month_active`   | ≥1 session in 4 consecutive ISO weeks              | TBD                        |
+| `rhythm.comeback`       | First session in ≥30 days after a previous session | High recall, high meaning  |
+| `rhythm.year_in_review` | Annual auto-summary on user's account anniversary  | Triggered yearly           |
 
 We deliberately do **not** ship a "7-day streak" achievement because only 5 users have ever earned it. Day-streaks reward people who don't rest, which is bad climbing advice.
 
 ### 4.4 Grade & projecting achievements
 
-| ID                          | Trigger                                                            |
-| --------------------------- | ------------------------------------------------------------------ |
-| `grade.first.{V}`           | First send at each V-grade *and each half-grade* (per board_type) — `V5` and `V5+` are separate awards |
-| `grade.flash.{V}`           | First flash at each V-grade and half-grade (in-app ticks only, see §2 principle 3) |
-| `grade.repeat.{V}`          | 10 / 50 sends at the same V-grade or half-grade — "Solid at V6", "Solid at V5+" |
-| `project.long_grind`        | Sent a climb after ≥10 cumulative attempts                         |
-| `project.epic_grind`        | Sent a climb after ≥50 attempts                                    |
-| `project.spite_send`        | Sent a climb 30+ days after first attempt                          |
+| ID                   | Trigger                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `grade.first.{V}`    | First send at each V-grade _and each half-grade_ (per board_type) — `V5` and `V5+` are separate awards |
+| `grade.flash.{V}`    | First flash at each V-grade and half-grade (in-app ticks only, see §2 principle 3)                     |
+| `grade.repeat.{V}`   | 10 / 50 sends at the same V-grade or half-grade — "Solid at V6", "Solid at V5+"                        |
+| `project.long_grind` | Sent a climb after ≥10 cumulative attempts                                                             |
+| `project.epic_grind` | Sent a climb after ≥50 attempts                                                                        |
+| `project.spite_send` | Sent a climb 30+ days after first attempt                                                              |
 
 The `{V}` variant uses the V-display form from §4.1.1 (`V1`, `V2`, …, `V3+`, `V4+`, `V5+`, `V8+`). On the boards we ship today this means up to 22 distinct first-send awards per board_type (Kilter has 39 grade rows but they collapse to V0 through V22, with the four half-grades adding extra awards at V3+/V4+/V5+/V8+). We use the V-display form (not the French grade) because it's what climbers in friend groups actually say out loud.
 
@@ -288,30 +290,30 @@ The `{V}` variant uses the V-display form from §4.1.1 (`V1`, `V2`, …, `V3+`, 
 
 ### 4.5 Exploration achievements
 
-| ID                          | Trigger                                                            |
-| --------------------------- | ------------------------------------------------------------------ |
-| `explore.angles_5`          | Sent climbs at 5 distinct angles                                   |
-| `explore.angle_extreme`     | Send at angle ≥60° **and** ≤20°                                    |
-| `explore.boards_2`          | Logged on 2 board types (Kilter + Tension etc.)                    |
-| `explore.boards_3`          | Logged on 3 board types                                            |
-| `explore.layouts_3`         | Logged on 3 distinct layout/size combos                            |
-| `explore.benchmark_set`     | Sent the full benchmark set at a given grade                       |
+| ID                      | Trigger                                         |
+| ----------------------- | ----------------------------------------------- |
+| `explore.angles_5`      | Sent climbs at 5 distinct angles                |
+| `explore.angle_extreme` | Send at angle ≥60° **and** ≤20°                 |
+| `explore.boards_2`      | Logged on 2 board types (Kilter + Tension etc.) |
+| `explore.boards_3`      | Logged on 3 board types                         |
+| `explore.layouts_3`     | Logged on 3 distinct layout/size combos         |
+| `explore.benchmark_set` | Sent the full benchmark set at a given grade    |
 
 #### 4.5.1 Angle-stratified achievements (per user feedback)
 
-Two users specifically asked for angle stats — *"performance and grade distribution are quite different at some angles, would be great to see/track."* The prod data confirms it: average max grade on Kilter is V3 at 0° (slab), climbs to **V7 at 40-50°**, then drops back to V5 at 70°. There's a real story per user that the current `you/progress` page doesn't tell.
+Two users specifically asked for angle stats — _"performance and grade distribution are quite different at some angles, would be great to see/track."_ The prod data confirms it: average max grade on Kilter is V3 at 0° (slab), climbs to **V7 at 40-50°**, then drops back to V5 at 70°. There's a real story per user that the current `you/progress` page doesn't tell.
 
 The headline deliverable is the **per-angle stats surface** (§7.7), not the achievements — but a small set of achievements anchors the surface and gives users something to chase per angle.
 
-| ID                            | Trigger                                                              | Reachability today |
-| ----------------------------- | -------------------------------------------------------------------- | ------------------ |
-| `angle.specialist.{angle}`    | 50 sends at one angle — your "home" angle (variant = `40`, `50`, etc.) | 40° has 475 users; specialist tier is plausibly hundreds |
-| `angle.steep_specialist`      | 25 / 100 sends at angle ≥50° (steep)                                 | 134 / 65 users today |
-| `angle.slab_specialist`       | 25 / 100 sends at angle ≤25° (slab)                                  | 85 / 33 users today |
-| `angle.versatile_v6`          | Sent V6+ at 3 / 5 / 7 distinct angles                                | 185 / 121 / 61 users today |
-| `angle.full_spectrum`         | Sent at every angle the layout/size has set                          | Niche, layout-aware — Bronze of "send it everywhere" |
-| `angle.balanced_pyramid`      | Sent at least 5 climbs at each of 3+ different angles, ≥V3 each      | Rewards real cross-training, not just one-and-done |
-| `grade.angle_pr.{angle}.{V}`  | New PR at a *specific* angle (e.g. "V7 at 50°" was harder than your previous best at 50°) | Generated lazily — many users have already done this once per angle |
+| ID                           | Trigger                                                                                   | Reachability today                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `angle.specialist.{angle}`   | 50 sends at one angle — your "home" angle (variant = `40`, `50`, etc.)                    | 40° has 475 users; specialist tier is plausibly hundreds            |
+| `angle.steep_specialist`     | 25 / 100 sends at angle ≥50° (steep)                                                      | 134 / 65 users today                                                |
+| `angle.slab_specialist`      | 25 / 100 sends at angle ≤25° (slab)                                                       | 85 / 33 users today                                                 |
+| `angle.versatile_v6`         | Sent V6+ at 3 / 5 / 7 distinct angles                                                     | 185 / 121 / 61 users today                                          |
+| `angle.full_spectrum`        | Sent at every angle the layout/size has set                                               | Niche, layout-aware — Bronze of "send it everywhere"                |
+| `angle.balanced_pyramid`     | Sent at least 5 climbs at each of 3+ different angles, ≥V3 each                           | Rewards real cross-training, not just one-and-done                  |
+| `grade.angle_pr.{angle}.{V}` | New PR at a _specific_ angle (e.g. "V7 at 50°" was harder than your previous best at 50°) | Generated lazily — many users have already done this once per angle |
 
 `grade.angle_pr` is the most novel one: it acknowledges that hitting V7 at 30° is a different milestone from hitting V7 at 50°, and rewards both. We compute it the same way as `grade.first.{V}` but partitioned by angle. This is the achievement form of the angle-stats surface — every PR per angle gets its moment.
 
@@ -319,16 +321,15 @@ Variant naming: `angle.specialist.40`, `angle.versatile_v6` (no variant — uses
 
 ### 4.6 Social achievements
 
-These align with the existing social tables (`comments`, `feed_items`, `board_follows`, `inferred_sessions` member overrides):
+These align with the existing social tables (`comments`, `feed_items`, `board_follows`, `board_sessions`):
 
-| ID                          | Trigger                                                            |
-| --------------------------- | ------------------------------------------------------------------ |
-| `social.first_follow`       | Followed your first climber                                        |
-| `social.session_added`      | Got added to another climber's session via `session_member_overrides` |
-| `social.crew_session`       | Session has ≥3 distinct participants (party or override)           |
-| `social.commenter`          | Posted a comment on 5 different climbs                             |
-| `social.first_party`        | Created your first party-mode session                              |
-| `social.public_session`     | Made a discoverable session that someone else joined               |
+| ID                      | Trigger                                              |
+| ----------------------- | ---------------------------------------------------- |
+| `social.first_follow`   | Followed your first climber                          |
+| `social.crew_session`   | Session has ≥3 distinct participants                 |
+| `social.commenter`      | Posted a comment on 5 different climbs               |
+| `social.first_party`    | Created your first party-mode session                |
+| `social.public_session` | Made a discoverable session that someone else joined |
 
 ### 4.7 Beta video contributor achievements
 
@@ -342,21 +343,21 @@ The data state today (snapshot 2026-05-12):
 
 These tiers can't be calibrated against historical data (the column is empty). Initial thresholds are conservative; recalibrate at 30/90 days post-launch using the SQL in Appendix B.
 
-| ID                          | Trigger                                                                                       | Why it matters |
-| --------------------------- | --------------------------------------------------------------------------------------------- | -------------- |
-| `beta.first_share`          | Posted your first attributed beta video                                                       | Onboarding moment |
-| `beta.contributor.{n}`      | 5 / 25 / 100 / 500 beta videos posted                                                         | Volume tier    |
-| `beta.first_on_climb`       | You posted the first beta video for a climb (the row's PK was previously empty for that climb)| **23k climbs eligible today** — highest-impact contribution |
-| `beta.fills_demand`         | Posted beta on a climb with ≥5 prior sends and no prior beta                                  | 2,705 climbs eligible — these are the ones people are actively looking up |
-| `beta.from_the_source`      | Posted beta on a climb you've personally sent                                                 | "I climbed it, here's how" — the credible-source moment |
-| `beta.hard_send.{V}`        | Posted beta on a climb at V8 / V10 / V12 that you've sent                                     | Rewards the rare voices on hard projects |
-| `beta.benchmark`            | Posted beta on a benchmark climb (`is_benchmark=true`)                                        | Benchmarks are the most-attempted climbs in the catalog |
-| `beta.session_share`        | Posted a beta video for a climb you sent in the last 24h                                      | Session-scope — fires on the session detail page |
+| ID                     | Trigger                                                                                        | Why it matters                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `beta.first_share`     | Posted your first attributed beta video                                                        | Onboarding moment                                                         |
+| `beta.contributor.{n}` | 5 / 25 / 100 / 500 beta videos posted                                                          | Volume tier                                                               |
+| `beta.first_on_climb`  | You posted the first beta video for a climb (the row's PK was previously empty for that climb) | **23k climbs eligible today** — highest-impact contribution               |
+| `beta.fills_demand`    | Posted beta on a climb with ≥5 prior sends and no prior beta                                   | 2,705 climbs eligible — these are the ones people are actively looking up |
+| `beta.from_the_source` | Posted beta on a climb you've personally sent                                                  | "I climbed it, here's how" — the credible-source moment                   |
+| `beta.hard_send.{V}`   | Posted beta on a climb at V8 / V10 / V12 that you've sent                                      | Rewards the rare voices on hard projects                                  |
+| `beta.benchmark`       | Posted beta on a benchmark climb (`is_benchmark=true`)                                         | Benchmarks are the most-attempted climbs in the catalog                   |
+| `beta.session_share`   | Posted a beta video for a climb you sent in the last 24h                                       | Session-scope — fires on the session detail page                          |
 
 Implementation notes:
 
 - Trigger: `beta_link_created` — a new event fired by the resolver/route that inserts into `board_beta_links`. Payload = full row.
-- `beta.first_on_climb` evaluator: `SELECT COUNT(*) FROM board_beta_links WHERE board_type=$1 AND climb_uuid=$2` *excluding the just-inserted row*. If 0, fire. Idempotent because the unique award row keys on `(user_id, achievement_id, variant=climb_uuid)`.
+- `beta.first_on_climb` evaluator: `SELECT COUNT(*) FROM board_beta_links WHERE board_type=$1 AND climb_uuid=$2` _excluding the just-inserted row_. If 0, fire. Idempotent because the unique award row keys on `(user_id, achievement_id, variant=climb_uuid)`.
 - `beta.from_the_source` evaluator: `EXISTS` query against `boardsesh_ticks` with the same user/climb/board and `status IN ('send','flash')`. The data already has the index `boardsesh_ticks_climb_idx` to support this cheaply.
 - `beta.fills_demand` evaluator: count prior sends on the climb (`boardsesh_ticks` with same climb_uuid + board_type + status in send/flash) and prior beta links. Fires on the threshold cross.
 - **No backfill** for any beta achievement — the column is empty before today, so backfill would award nothing. Run the evaluators forward-only.
@@ -366,16 +367,16 @@ Implementation notes:
 
 Driven by `boardsesh_ticks.is_mirror`. See §3.8 for the data — almost all activity is on Tension Board, by ~40 dedicated users. Tiers are calibrated tight because the population is small; "mirror your first climb" is meaningful here in a way "send your first climb" isn't.
 
-| ID                           | Trigger                                                                  | Reachability today                              |
-| ---------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| `mirror.first_send`          | First send/flash with `is_mirror=true`                                   | 40 users have already done this                 |
-| `mirror.contributor.{n}`     | 5 / 25 / 100 / 500 mirror sends total                                    | T1≈24, T2≈15, T3≈7, T4=1 user today             |
-| `mirror.both_ways.first`     | First climb sent both normal AND mirrored                                | 37 users today                                  |
-| `mirror.both_ways.{n}`       | 10 / 50 / 200 climbs sent both ways                                      | 22 / 8 / 3 users today (top 1,984)              |
-| `mirror.hard.{V}`            | Mirror send at V6 / V8 / V10                                             | 20 / 9 / 2 users today                          |
-| `mirror.symmetric_grade`     | Sent your lifetime hardest grade both normally and mirrored              | Rare flex — true two-sided strength             |
-| `session.mirror_balanced`    | Session with ≥3 mirror sends AND ≥3 normal sends — "trained both sides"  | 720 historical sessions                         |
-| `session.full_mirror`        | Session where 100% of sends are mirrored (≥3 sends)                      | 75 historical — keep but advertise as legendary |
+| ID                        | Trigger                                                                 | Reachability today                              |
+| ------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------- |
+| `mirror.first_send`       | First send/flash with `is_mirror=true`                                  | 40 users have already done this                 |
+| `mirror.contributor.{n}`  | 5 / 25 / 100 / 500 mirror sends total                                   | T1≈24, T2≈15, T3≈7, T4=1 user today             |
+| `mirror.both_ways.first`  | First climb sent both normal AND mirrored                               | 37 users today                                  |
+| `mirror.both_ways.{n}`    | 10 / 50 / 200 climbs sent both ways                                     | 22 / 8 / 3 users today (top 1,984)              |
+| `mirror.hard.{V}`         | Mirror send at V6 / V8 / V10                                            | 20 / 9 / 2 users today                          |
+| `mirror.symmetric_grade`  | Sent your lifetime hardest grade both normally and mirrored             | Rare flex — true two-sided strength             |
+| `session.mirror_balanced` | Session with ≥3 mirror sends AND ≥3 normal sends — "trained both sides" | 720 historical sessions                         |
+| `session.full_mirror`     | Session where 100% of sends are mirrored (≥3 sends)                     | 75 historical — keep but advertise as legendary |
 
 Implementation notes:
 
@@ -428,7 +429,7 @@ CREATE TABLE user_achievements (
   earned_at             TIMESTAMP NOT NULL,    -- the *climb* time, not the compute time
   granted_at            TIMESTAMP NOT NULL DEFAULT now(),
   -- Provenance: which session/tick caused this award. Enables "view the moment".
-  source_session_id     TEXT,                  -- COALESCE(party, inferred)
+  source_session_id     TEXT,                  -- board_sessions.id
   source_tick_id        BIGINT REFERENCES boardsesh_ticks(id) ON DELETE SET NULL,
   -- Per-grade / per-board specifiers stored here so 'grade.first.V6.kilter'
   -- and 'grade.first.V6.tension' are different rows of the same definition.
@@ -450,12 +451,12 @@ CREATE INDEX user_achievements_feed_idx
 Notes:
 
 - `achievement_definitions` is a thin DB mirror of a TS catalog (`packages/shared-schema/src/achievements/catalog.ts`). The catalog is the source of truth — the table exists so `feed_items` and Postgres-side queries can JOIN cleanly.
-- `earned_at` is the climb time (the wall-clock moment the achievement *would have* unlocked), `granted_at` is when our evaluator wrote the row. They diverge during backfill.
+- `earned_at` is the climb time (the wall-clock moment the achievement _would have_ unlocked), `granted_at` is when our evaluator wrote the row. They diverge during backfill.
 - Tier is a small int rather than per-tier rows-with-different-IDs because it makes "show me my highest tier per achievement" a one-line query.
 
 ### 5.2 Reuse existing rows
 
-We do not need new aggregate columns on `inferred_sessions` — the existing `total_sends`, `total_flashes`, `total_attempts`, `tick_count`, `first_tick_at`, `last_tick_at` carry everything the session-scope evaluators need. For lifetime achievements, we recompute the relevant counter at evaluation time (cheap with the existing `boardsesh_ticks_user_climbed_at_idx` index).
+We do not need new aggregate columns on sessions; session-scope evaluators can compute from `boardsesh_ticks.session_id`. For lifetime achievements, we recompute the relevant counter at evaluation time (cheap with the existing `boardsesh_ticks_user_climbed_at_idx` index).
 
 ### 5.3 Feed/notification integration
 
@@ -475,9 +476,10 @@ Achievements get a new `feed_item_type` value (`'achievement'`) and a new `socia
 // packages/backend/src/achievements/evaluators/types.ts
 export type AchievementContext = {
   user: { id: string; createdAt: Date };
-  trigger: { kind: 'tick_saved'; tick: Tick }
-         | { kind: 'session_closed'; session: InferredSession }
-         | { kind: 'periodic'; weekStart: Date };
+  trigger:
+    | { kind: 'tick_saved'; tick: Tick }
+    | { kind: 'session_closed'; session: BoardSession }
+    | { kind: 'periodic'; weekStart: Date };
   // Read-only DB handle. Evaluators query freely; the framework enforces
   // a per-evaluator timeout and short-circuits on failure.
   db: ReadOnlyDb;
@@ -504,11 +506,11 @@ Each evaluator owns one definition (or one family of tiers). They're pure functi
 
 ### 6.2 Trigger points
 
-| Trigger        | Where                                                                   | Evaluators run                            |
-| -------------- | ----------------------------------------------------------------------- | ----------------------------------------- |
-| `tick_saved`   | `saveTick` in backend, after `assignInferredSession` writes inferred_session_id | Lifetime counters, grade firsts, projecting wins |
-| `session_closed` | New job: when `inferred_sessions.last_tick_at < now() - 4h` and not yet `endedAt`. Runs every 30 min as a Vercel cron + on demand from `buildInferredSessionsForUser`. | Session-scope evaluators (volume, PR, redpoint, long_haul, angle_explorer, board_hop) |
-| `periodic`     | Daily cron, end of week / month / year                                  | Rhythm achievements, year-in-review       |
+| Trigger          | Where                                       | Evaluators run                                                                        |
+| ---------------- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `tick_saved`     | `saveTick` in backend after the tick commit | Lifetime counters, grade firsts, projecting wins                                      |
+| `session_closed` | When an explicit session ends               | Session-scope evaluators (volume, PR, redpoint, long_haul, angle_explorer, board_hop) |
+| `periodic`       | Daily cron, end of week / month / year      | Rhythm achievements, year-in-review                                                   |
 
 Evaluation never blocks tick save — it runs after the transactional write is committed, in a fire-and-forget queue (existing pattern: see how feed/notification writes already work). A failure logs and retries on the next trigger but never bubbles back to the user request.
 
@@ -531,13 +533,12 @@ This is the difference between "delightful" and "spammy" for the 73 users with 1
 
 ### 6.5 Failure modes
 
-| Failure                                | Effect                                                  | Recovery                                         |
-| -------------------------------------- | ------------------------------------------------------- | ------------------------------------------------ |
-| Evaluator throws                       | Logged with `user_id` + `evaluator.id`, others continue | Backfill job re-runs nightly                     |
-| Race: same achievement evaluated twice | `ON CONFLICT DO NOTHING` on UNIQUE constraint           | None needed                                      |
-| Tick deleted (`deleteTick`)            | Source-of-truth counters change. Achievement stays.     | We do **not** revoke earned achievements.       |
-| Session merged via `addUserToSession`  | New session boundaries. Re-evaluate the affected sessions for the affected users. | Mutation handler enqueues re-evaluation. |
-| Aurora bulk re-sync                    | Could re-trigger same evaluators on already-evaluated ticks. | Idempotent by design. |
+| Failure                                | Effect                                                       | Recovery                                  |
+| -------------------------------------- | ------------------------------------------------------------ | ----------------------------------------- |
+| Evaluator throws                       | Logged with `user_id` + `evaluator.id`, others continue      | Backfill job re-runs nightly              |
+| Race: same achievement evaluated twice | `ON CONFLICT DO NOTHING` on UNIQUE constraint                | None needed                               |
+| Tick deleted (`deleteTick`)            | Source-of-truth counters change. Achievement stays.          | We do **not** revoke earned achievements. |
+| Aurora bulk re-sync                    | Could re-trigger same evaluators on already-evaluated ticks. | Idempotent by design.                     |
 
 ---
 
@@ -573,7 +574,7 @@ Show top 6 highest-tier achievements as a row near the top, with a "See all" lin
 
 ### 7.7 Per-angle stats surface (`/you/angles`)
 
-A direct response to user feedback — *"would be great to see my stats across angles."* Lives next to `/you/achievements` as a sibling tab, also accessible from a "Stats by angle" link on the user's profile.
+A direct response to user feedback — _"would be great to see my stats across angles."_ Lives next to `/you/achievements` as a sibling tab, also accessible from a "Stats by angle" link on the user's profile.
 
 Layout (sketch — final design lives in Figma):
 
@@ -582,7 +583,7 @@ Layout (sketch — final design lives in Figma):
 - A second view toggle: **"Compared to you"** — for each angle, shows your distribution overlaid on the gym/global distribution at that angle (e.g. "you tend to send harder at 50° than your overall PR suggests"). This is the climber-improvement frame the feedback specifically called out.
 - Surfaces achievements from §4.5.1 inline — a "V7 PR at 50°" badge sits on the 50° card the moment it fires.
 
-This page is the *real* deliverable from the angle feedback. The achievements are the gamified hook into it.
+This page is the _real_ deliverable from the angle feedback. The achievements are the gamified hook into it.
 
 Implementation notes:
 
@@ -616,7 +617,7 @@ Success criterion: the 73 users with 1000+ ticks each see a coherent achievement
 
 ### Phase 2.5: crew V-points (1 week, only if Phase 2 lands cleanly)
 
-- **`session.crew_v_points`** evaluator (party-mode sessions + inferred sessions with `session_member_overrides`).
+- **`session.crew_v_points`** evaluator for explicit multi-user sessions.
 - Live crew V-point counter on the active party-session header — this is the "10 friends gang up for 1000" social loop.
 - Push notification when a crew session crosses each tier in real time.
 
@@ -626,7 +627,7 @@ Success criterion: every active user (213 in last 30d) sees ≥1 achievement on 
 
 - Periodic trigger + weekly cron.
 - Rhythm evaluators (`weekly_x3`, `weekly_x4`, `comeback`).
-- Social evaluators (`first_follow`, `session_added`, `crew_session`).
+- Social evaluators (`first_follow`, `crew_session`).
 - Notifications + feed_items writes (post-enrollment only).
 
 ### Phase 4: exploration + mirror + hidden + polish (1 week)
@@ -669,7 +670,7 @@ The mirror evaluators are cheap to add (small cohort, narrow query surface) and 
 - **Points / XP / levels.** No "Climber Level 27." Achievements are categorical, not numeric.
 - **Global leaderboards.** Closest thing is the existing follower feed; we won't add ranking screens.
 - **Daily-streak push notifications.** See §2 principle 2 — bad climbing advice.
-- **Per-user custom goals as achievements.** Goals already exist on `board_sessions.goal` and `inferred_sessions.description`. Merging them with the achievements system muddles "I described what I wanted" with "the system noticed something happened."
+- **Per-user custom goals as achievements.** Goals already exist on `board_sessions.goal`. Merging them with the achievements system muddles "I described what I wanted" with "the system noticed something happened."
 - **Aurora-synced achievement state.** Achievements are a Boardsesh primitive; we don't push them back to Aurora.
 
 ---
@@ -713,23 +714,22 @@ export const gradeFirstEvaluator: Evaluator = {
       .select({ name: boardDifficultyGrades.boulderName })
       .from(boardDifficultyGrades)
       .where(
-        and(
-          eq(boardDifficultyGrades.boardType, tick.boardType),
-          eq(boardDifficultyGrades.difficulty, tick.difficulty),
-        ),
+        and(eq(boardDifficultyGrades.boardType, tick.boardType), eq(boardDifficultyGrades.difficulty, tick.difficulty)),
       );
 
-    return [{
-      achievementId: 'grade.first',
-      // toVDisplay('6c+/V5')  -> 'V5+', toVDisplay('7a/V6') -> 'V6'
-      // (defined in shared-schema/grades — half-grades emit V3+/V4+/V5+/V8+)
-      variant: `${toVDisplay(grade?.name) ?? tick.difficulty}:${tick.boardType}`,
-      tier: 1,
-      earnedAt: tick.climbedAt,
-      sourceTickId: tick.id,
-      sourceSessionId: tick.inferredSessionId ?? tick.sessionId ?? undefined,
-      metricValue: tick.difficulty,
-    }];
+    return [
+      {
+        achievementId: 'grade.first',
+        // toVDisplay('6c+/V5')  -> 'V5+', toVDisplay('7a/V6') -> 'V6'
+        // (defined in shared-schema/grades — half-grades emit V3+/V4+/V5+/V8+)
+        variant: `${toVDisplay(grade?.name) ?? tick.difficulty}:${tick.boardType}`,
+        tier: 1,
+        earnedAt: tick.climbedAt,
+        sourceTickId: tick.id,
+        sourceSessionId: tick.sessionId ?? undefined,
+        metricValue: tick.difficulty,
+      },
+    ];
   },
 };
 ```
@@ -766,7 +766,7 @@ export const sessionVPointsEvaluator: Evaluator = {
         JOIN board_grade_points p
           ON p.board_type = t.board_type AND p.difficulty = t.difficulty
         WHERE t.user_id = ${user.id}
-          AND t.inferred_session_id = ${session.id}
+          AND t.session_id = ${session.id}
           AND t.status IN ('send','flash')
       )
       SELECT COALESCE(SUM(v_points), 0) AS "totalVPoints" FROM per_climb;
@@ -804,8 +804,8 @@ WITH user_max AS (
 SELECT board_type, d, COUNT(*) FROM user_max GROUP BY 1,2 ORDER BY 1,2;
 
 -- Sessions per ISO week per user (rhythm tier calibration)
-SELECT user_id, DATE_TRUNC('week', last_tick_at::timestamp) AS wk, COUNT(*)
-FROM inferred_sessions GROUP BY 1,2;
+SELECT created_by_user_id, DATE_TRUNC('week', COALESCE(started_at, created_at)::timestamp) AS wk, COUNT(*)
+FROM board_sessions GROUP BY 1,2;
 
 -- Day-streak distribution (validation that day-streaks are a bad signal)
 WITH days AS (SELECT user_id, DATE(climbed_at) d FROM boardsesh_ticks GROUP BY 1,2),
@@ -818,10 +818,10 @@ WITH first_attempt AS (
   SELECT user_id, climb_uuid, MIN(climbed_at) AS first_at
   FROM boardsesh_ticks WHERE status='attempt' GROUP BY 1,2
 )
-SELECT COUNT(DISTINCT t.inferred_session_id)
+SELECT COUNT(DISTINCT t.session_id)
 FROM boardsesh_ticks t
 JOIN first_attempt fa USING (user_id, climb_uuid)
-WHERE t.status IN ('send','flash') AND t.climbed_at > fa.first_at;
+WHERE t.status IN ('send','flash') AND t.climbed_at > fa.first_at AND t.session_id IS NOT NULL;
 
 -- V-points per session (with half-grade increments + per-climb dedup)
 WITH dg AS (
@@ -838,12 +838,12 @@ WITH dg AS (
          ELSE v_int::numeric END AS v_points
   FROM dg
 ), tick_v AS (
-  SELECT DISTINCT t.user_id, t.inferred_session_id, t.climb_uuid, p.v_points
+  SELECT DISTINCT t.user_id, t.session_id, t.climb_uuid, p.v_points
   FROM boardsesh_ticks t
   JOIN dg_pts p ON p.board_type = t.board_type AND p.difficulty = t.difficulty
-  WHERE t.status IN ('send','flash') AND t.inferred_session_id IS NOT NULL
+  WHERE t.status IN ('send','flash') AND t.session_id IS NOT NULL
 )
-SELECT inferred_session_id, SUM(v_points) AS v_points
+SELECT session_id, SUM(v_points) AS v_points
 FROM tick_v GROUP BY 1 ORDER BY v_points DESC LIMIT 50;
 
 -- Beta supply gap: most-sent climbs with no beta video yet

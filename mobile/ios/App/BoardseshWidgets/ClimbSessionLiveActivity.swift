@@ -18,6 +18,7 @@ func loadThumbnail(climbUuid: String) -> UIImage? {
 
 private let backgroundColor = Color(red: 10 / 255, green: 10 / 255, blue: 10 / 255)
 private let pillBackground = Color.white.opacity(0.15)
+private let wallDriverTint = Color.yellow
 
 // MARK: - Shared Subviews
 
@@ -60,6 +61,131 @@ private struct DifficultyPill: View {
             .padding(.vertical, 3)
             .background(pillBackground)
             .clipShape(Capsule())
+    }
+}
+
+@available(iOS 17.0, *)
+private struct WallControlViewState {
+    let navigationAllowed: Bool
+    let isPartySession: Bool
+
+    static func current() -> WallControlViewState {
+        guard let defaults = SharedConstants.sharedDefaults else {
+            return WallControlViewState(navigationAllowed: true, isPartySession: false)
+        }
+
+        let wallControl = SharedWidgetWallControlState.load(from: defaults)
+        return WallControlViewState(
+            navigationAllowed: wallControl.navigationAllowed,
+            isPartySession: wallControl.requiresServerAuthorization
+        )
+    }
+}
+
+@available(iOS 17.0, *)
+private struct NavigationButtonLabel: View {
+    let title: String
+    let systemImage: String
+    let imagePlacement: ImagePlacement
+    let enabled: Bool
+
+    enum ImagePlacement {
+        case leading
+        case trailing
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if imagePlacement == .leading {
+                Image(systemName: systemImage)
+            }
+
+            Text(title)
+
+            if imagePlacement == .trailing {
+                Image(systemName: systemImage)
+            }
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundColor(enabled ? .white : .white.opacity(0.3))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(enabled ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+@available(iOS 17.0, *)
+private struct WallControlStatus: View {
+    let wallControl: WallControlViewState
+
+    var body: some View {
+        Image(systemName: wallControl.navigationAllowed ? "lightbulb.fill" : "lightbulb")
+            .font(.subheadline.weight(.semibold))
+            .foregroundColor(wallControl.navigationAllowed ? wallDriverTint : .white.opacity(0.45))
+            .frame(width: 44)
+            .padding(.vertical, 8)
+            .background(
+                wallControl.navigationAllowed
+                    ? wallDriverTint.opacity(0.18)
+                    : Color.white.opacity(0.06)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityLabel(wallControl.navigationAllowed ? "Wall driver" : "Take wall control")
+    }
+}
+
+@available(iOS 17.0, *)
+private struct WallControlButton: View {
+    let wallControl: WallControlViewState
+
+    var body: some View {
+        if wallControl.isPartySession && !wallControl.navigationAllowed {
+            Button(intent: TakeControlIntent()) {
+                WallControlStatus(wallControl: wallControl)
+            }
+            .buttonStyle(.plain)
+        } else {
+            WallControlStatus(wallControl: wallControl)
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+private struct NavigationControlsView: View {
+    let hasPrevious: Bool
+    let hasNext: Bool
+    let wallControl: WallControlViewState
+
+    var body: some View {
+        let previousEnabled = hasPrevious && wallControl.navigationAllowed
+        let nextEnabled = hasNext && wallControl.navigationAllowed
+
+        HStack(spacing: 10) {
+            Button(intent: PreviousClimbIntent()) {
+                NavigationButtonLabel(
+                    title: "Prev",
+                    systemImage: "chevron.left",
+                    imagePlacement: .leading,
+                    enabled: previousEnabled
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!previousEnabled)
+
+            WallControlButton(wallControl: wallControl)
+
+            Button(intent: NextClimbIntent()) {
+                NavigationButtonLabel(
+                    title: "Next",
+                    systemImage: "chevron.right",
+                    imagePlacement: .trailing,
+                    enabled: nextEnabled
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!nextEnabled)
+        }
     }
 }
 
@@ -112,37 +238,11 @@ struct ClimbSessionLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 12) {
-                        Button(intent: PreviousClimbIntent()) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left")
-                                Text("Prev")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(context.state.hasPrevious ? .white : .white.opacity(0.3))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(context.state.hasPrevious ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!context.state.hasPrevious)
-
-                        Button(intent: NextClimbIntent()) {
-                            HStack(spacing: 4) {
-                                Text("Next")
-                                Image(systemName: "chevron.right")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(context.state.hasNext ? .white : .white.opacity(0.3))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(context.state.hasNext ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!context.state.hasNext)
-                    }
+                    NavigationControlsView(
+                        hasPrevious: context.state.hasPrevious,
+                        hasNext: context.state.hasNext,
+                        wallControl: WallControlViewState.current()
+                    )
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
@@ -163,6 +263,7 @@ struct ClimbSessionLiveActivity: Widget {
                 Text(context.state.climbDifficulty)
                     .font(.caption.bold())
                     .foregroundColor(.white)
+                    .offset(y: -1)
             } minimal: {
                 Image(systemName: "mountain.2.fill")
                     .font(.system(size: 12))
@@ -227,37 +328,11 @@ private struct LockScreenView: View {
                 Spacer(minLength: 4)
 
                 // Bottom row: navigation buttons
-                HStack(spacing: 10) {
-                    Button(intent: PreviousClimbIntent()) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Prev")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(context.state.hasPrevious ? .white : .white.opacity(0.3))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(context.state.hasPrevious ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!context.state.hasPrevious)
-
-                    Button(intent: NextClimbIntent()) {
-                        HStack(spacing: 4) {
-                            Text("Next")
-                            Image(systemName: "chevron.right")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(context.state.hasNext ? .white : .white.opacity(0.3))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(context.state.hasNext ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!context.state.hasNext)
-                }
+                NavigationControlsView(
+                    hasPrevious: context.state.hasPrevious,
+                    hasNext: context.state.hasNext,
+                    wallControl: WallControlViewState.current()
+                )
             }
         }
         .padding(16)

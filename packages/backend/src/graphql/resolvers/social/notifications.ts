@@ -361,7 +361,7 @@ export const socialNotificationMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 60, 'notification_read');
+    await applyRateLimit(ctx, 60, 'markNotificationRead');
     const userId = ctx.userId!;
 
     await db
@@ -378,7 +378,7 @@ export const socialNotificationMutations = {
     ctx: ConnectionContext,
   ): Promise<number> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 60, 'notification_read');
+    await applyRateLimit(ctx, 60, 'markGroupNotificationsRead');
     const userId = ctx.userId!;
 
     // Build conditions for the group
@@ -411,7 +411,7 @@ export const socialNotificationMutations = {
 
   markAllNotificationsRead: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 5, 'notification_read_all');
+    await applyRateLimit(ctx, 5, 'markAllNotificationsRead');
     const userId = ctx.userId!;
 
     await db

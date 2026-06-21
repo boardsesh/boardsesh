@@ -14,4 +14,3 @@ export { SimilarClimbsSection } from './SimilarClimbsSection';
 export { CommunitySection } from './CommunitySection';
 export { BetaVideosSection } from './BetaVideosSection';
 export { BetaVideoCard } from './BetaVideoCard';
-export { BetaVideoAddSheet, type BetaVideoAddSheetHandle } from './BetaVideoAddSheet';

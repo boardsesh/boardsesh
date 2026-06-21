@@ -2,11 +2,28 @@ import type { Climb } from '@boardsesh/shared-schema';
 import { searchClimbs as searchClimbsQuery, countClimbs } from '../../../db/queries/climbs/index';
 import type { ClimbSearchContext } from '../shared/types';
 import { searchCache, DEFAULT_SEARCH_CACHE_TTL } from '../../../services/search-cache';
+import {
+  logSearchClimbsMetrics,
+  type SearchClimbsMetricDimensions,
+  type SearchClimbsMetricSource,
+} from './search-metrics';
 
 type CachedClimbsResult = {
   climbs: Climb[];
   hasMore: boolean;
 };
+
+/** Pull the stable latency dimensions out of the search context. */
+function metricDimensions(parent: ClimbSearchContext): Omit<SearchClimbsMetricDimensions, 'resultCount'> {
+  return {
+    boardName: parent.params.board_name,
+    angle: parent.params.angle,
+    page: parent.searchParams.page ?? 0,
+    pageSize: parent.searchParams.pageSize ?? 20,
+    sortBy: parent.searchParams.sortBy ?? 'ascents',
+    cacheable: parent._isCacheable ?? false,
+  };
+}
 
 /**
  * Field-level resolvers for ClimbSearchResult
@@ -18,8 +35,17 @@ export const climbFieldResolvers = {
    * Uses Redis caching for anonymous queries and in-memory caching to avoid duplicate queries
    */
   climbs: async (parent: ClimbSearchContext): Promise<Climb[]> => {
+    const startTime = performance.now();
+    const finalize = (climbs: Climb[], source: SearchClimbsMetricSource): Climb[] => {
+      logSearchClimbsMetrics('searchClimbs.climbs', performance.now() - startTime, source, {
+        ...metricDimensions(parent),
+        resultCount: climbs.length,
+      });
+      return climbs;
+    };
+
     if (parent._cachedClimbs !== undefined) {
-      return parent._cachedClimbs;
+      return finalize(parent._cachedClimbs, 'precomputed');
     }
 
     // User-specific queries bypass Redis cache entirely
@@ -27,7 +53,7 @@ export const climbFieldResolvers = {
       const result = await searchClimbsQuery(parent.params, parent.searchParams, parent.userId);
       parent._cachedClimbs = result.climbs;
       parent._cachedHasMore = result.hasMore;
-      return result.climbs;
+      return finalize(result.climbs, 'db');
     }
 
     const cacheKey = searchCache.buildCacheKey(parent.params, parent.searchParams, 'climbs');
@@ -35,7 +61,7 @@ export const climbFieldResolvers = {
     if (cached) {
       parent._cachedClimbs = cached.climbs;
       parent._cachedHasMore = cached.hasMore;
-      return cached.climbs;
+      return finalize(cached.climbs, 'redis');
     }
 
     // Cache miss — query DB and store in Redis
@@ -44,7 +70,7 @@ export const climbFieldResolvers = {
     parent._cachedHasMore = result.hasMore;
 
     searchCache.setCachedResult(cacheKey, { climbs: result.climbs, hasMore: result.hasMore }, DEFAULT_SEARCH_CACHE_TTL);
-    return result.climbs;
+    return finalize(result.climbs, 'db');
   },
 
   /**
@@ -52,28 +78,39 @@ export const climbFieldResolvers = {
    * Uses Redis caching for anonymous queries
    */
   totalCount: async (parent: ClimbSearchContext): Promise<number> => {
+    const startTime = performance.now();
+    const finalize = (count: number, source: SearchClimbsMetricSource): number => {
+      logSearchClimbsMetrics(
+        'searchClimbs.totalCount',
+        performance.now() - startTime,
+        source,
+        metricDimensions(parent),
+      );
+      return count;
+    };
+
     if (parent._cachedTotalCount !== undefined) {
-      return parent._cachedTotalCount;
+      return finalize(parent._cachedTotalCount, 'precomputed');
     }
 
     if (!parent._isCacheable) {
       const count = await countClimbs(parent.params, parent.searchParams, parent.userId);
       parent._cachedTotalCount = count;
-      return count;
+      return finalize(count, 'db');
     }
 
     const cacheKey = searchCache.buildCacheKey(parent.params, parent.searchParams, 'count');
     const cached = await searchCache.getCachedResult<number>(cacheKey);
     if (cached !== null) {
       parent._cachedTotalCount = cached;
-      return cached;
+      return finalize(cached, 'redis');
     }
 
     const count = await countClimbs(parent.params, parent.searchParams, parent.userId);
     parent._cachedTotalCount = count;
 
     searchCache.setCachedResult(cacheKey, count, DEFAULT_SEARCH_CACHE_TTL);
-    return count;
+    return finalize(count, 'db');
   },
 
   /**

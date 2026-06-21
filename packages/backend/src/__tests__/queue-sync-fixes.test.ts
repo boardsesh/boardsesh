@@ -593,4 +593,32 @@ describe('setCurrentClimb - combined queue/current state publishing', () => {
       }),
     );
   });
+
+  it('round-trips boardType/layoutId through setCurrentClimb storage (party spill metadata)', async () => {
+    const sessionId = uuidv4();
+    const boardPath = '/tension/8/2/3/40';
+    await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
+
+    // A peer on tension / layout 8 sends a climb carrying its own board metadata.
+    const climb = createTestClimb();
+    climb.climb.boardType = 'tension';
+    climb.climb.layoutId = 8;
+
+    const ctx = {
+      connectionId: 'client-1',
+      sessionId,
+      rateLimitTokens: 60,
+      rateLimitLastReset: Date.now(),
+    };
+
+    await queueMutations.setCurrentClimb({}, { item: climb, shouldAddToQueue: true }, ctx);
+
+    // The stored state — what a FullSync / subscription serializes back to peers —
+    // must keep the metadata, so a peer on another board can skip the spill climb.
+    const state = await roomManager.getQueueState(sessionId);
+    expect(state.currentClimbQueueItem?.climb.boardType).toBe('tension');
+    expect(state.currentClimbQueueItem?.climb.layoutId).toBe(8);
+    expect(state.queue[0]?.climb.boardType).toBe('tension');
+    expect(state.queue[0]?.climb.layoutId).toBe(8);
+  });
 });

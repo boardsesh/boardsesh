@@ -1,10 +1,12 @@
-import { memo, useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { memo, useMemo, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
+import { DrawerHeader } from '../DrawerHeader';
+import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing } from '../../theme/tokens';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -15,8 +17,13 @@ type PlayDrawerHeaderProps = {
   rawDifficulty?: string;
   qualityAverage: string;
   ascensionistCount: number;
-  stars: number;
   setterUsername: string;
+  /** Intrinsic attributes shown as grey glyphs after the name. */
+  isNoMatch?: boolean | null;
+  benchmarkDifficulty?: string | null;
+  /** Left-aligned element on the name's row (e.g. the on-wall status). The header
+   *  balances both flanks so the name stays centered. */
+  leading?: ReactNode;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -25,8 +32,10 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   rawDifficulty,
   qualityAverage,
   ascensionistCount,
-  stars,
   setterUsername,
+  isNoMatch,
+  benchmarkDifficulty,
+  leading,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const gradeColor = useMemo(
@@ -34,79 +43,58 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
     [rawDifficulty, difficulty],
   );
 
-  const qualityNum = parseFloat(qualityAverage);
-  const qualityDisplay = stars > 0 ? stars.toFixed(1) : qualityNum > 0 ? qualityNum.toFixed(1) : null;
-
   const subtitleParts: string[] = [];
-  if (qualityDisplay) subtitleParts.push(`${qualityDisplay}★`);
-  subtitleParts.push(t('sends', { count: ascensionistCount }));
+  if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
+  const qualityNum = parseFloat(qualityAverage);
+  if (qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
   if (setterUsername) subtitleParts.push(setterUsername);
 
   return (
-    <View style={styles.container}>
-      {/* Grade */}
-      <View style={styles.gradeColumn}>
-        <View style={[styles.gradePill, { backgroundColor: gradeColor }]}>
-          <Text variant="footnote" color={iosSystemColors.white} style={styles.gradeText}>
-            {difficulty}
+    <DrawerHeader
+      leading={leading}
+      center={
+        <>
+          <View style={styles.nameRow}>
+            <Text variant="body" style={styles.nameText} numberOfLines={1}>
+              {name}
+            </Text>
+            <ClimbAttributeIcons isNoMatch={isNoMatch} benchmarkDifficulty={benchmarkDifficulty} />
+          </View>
+          <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
+            {subtitleParts.join(' · ')}
           </Text>
-        </View>
-      </View>
-
-      {/* Name + details */}
-      <View style={styles.centerColumn}>
-        <Text variant="body" style={styles.nameText} numberOfLines={1}>
-          {name}
+        </>
+      }
+      trailing={
+        <Text variant="headline" style={[styles.gradeText, { color: gradeColor }]} numberOfLines={1}>
+          {difficulty}
         </Text>
-        <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
-          {subtitleParts.join(' · ')}
-        </Text>
-      </View>
-
-      {/* Spacer for symmetry */}
-      <View style={styles.spacer} />
-    </View>
+      }
+    />
   );
 });
 
 const styles = StyleSheet.create({
-  container: {
+  gradeText: {
+    fontVariant: ['tabular-nums'],
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    minHeight: 56,
-    gap: spacing[3],
-  },
-  gradeColumn: {
-    flexShrink: 0,
-    minWidth: 48,
-    alignItems: 'center',
-  },
-  gradePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  gradeText: {
-    fontWeight: '700',
-  },
-  centerColumn: {
-    flex: 1,
+    justifyContent: 'center',
     minWidth: 0,
-    alignItems: 'center',
   },
   nameText: {
     fontWeight: '700',
     textAlign: 'center',
+    // Shrink so a long name truncates while the attribute glyphs stay visible.
+    flexShrink: 1,
   },
   subtitleText: {
     color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',
-  },
-  spacer: {
-    flexShrink: 0,
-    minWidth: 48,
   },
 });

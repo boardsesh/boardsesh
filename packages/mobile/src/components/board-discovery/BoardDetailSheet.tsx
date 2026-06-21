@@ -37,18 +37,18 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     }
   }, [visible, board]);
 
-  const footer = board
-    ? isActiveBoard(board, activeBoard?.uuid)
-      ? (
-        <View style={[styles.activePill, { backgroundColor: systemColors.tertiaryBackground }]}>
-          <Icon name="tick" size={16} color={systemColors.secondaryLabel} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('mobile.boardDetail.alreadyActive')}
-          </Text>
-        </View>
-      )
-      : <Button title={t('mobile.boardDetail.setActive')} size="large" onPress={() => onSetActive(board)} />
-    : null;
+  const footer = board ? (
+    isActiveBoard(board, activeBoard?.uuid) ? (
+      <View style={[styles.activePill, { backgroundColor: systemColors.tertiaryBackground }]}>
+        <Icon name="tick" size={16} color={systemColors.secondaryLabel} />
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {t('mobile.boardDetail.alreadyActive')}
+        </Text>
+      </View>
+    ) : (
+      <Button title={t('mobile.boardDetail.setActive')} size="large" onPress={() => onSetActive(board)} />
+    )
+  ) : null;
 
   return (
     <Sheet

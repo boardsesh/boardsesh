@@ -201,19 +201,17 @@ test.describe('Help Page Screenshots - Authenticated', () => {
   // produced one of the suite's worst flake rates (~10 of the last 30
   // failed runs on shard 7).
   //
-  // It now reuses the `OnboardingDummySeshMount` dispatch path (same
-  // helper `app-store-screenshots.spec.ts` uses for `06-party-mode`),
-  // which mounts the SeshSettingsDrawer without touching the session
-  // backend. The screenshot still shows the active-session drawer; what
-  // it no longer shows is a real backend handshake.
+  // It reuses the `OnboardingDummySeshMount` dispatch path, which mounts
+  // the SeshSettingsDrawer without touching the session backend. The
+  // screenshot still shows the active-session drawer; what it no longer
+  // shows is a real backend handshake.
   //
   // If you ever need true backend coverage for session creation, move it
   // to a dedicated `party-session-integration.spec.ts` that runs on a
   // separate cadence — don't put it back in the screenshot job.
   test('party mode active session', async ({ page }) => {
     await openDummySesh(page);
-    // 800ms settle matches the budget app-store-screenshots: 06-party-mode
-    // uses for the same drawer animation.
+    // 800ms settle for the drawer animation.
     await page.waitForTimeout(800);
     await page.screenshot({ path: `${SCREENSHOT_DIR}/party-mode-active.png` });
   });

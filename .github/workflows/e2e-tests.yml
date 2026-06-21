@@ -1,21 +1,7 @@
 name: E2E Tests
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'packages/**'
-      - 'bun.lock'
-      - 'package.json'
-      - 'vite.config.ts'
-      - '.github/workflows/e2e-tests.yml'
-  pull_request:
-    paths:
-      - 'packages/**'
-      - 'bun.lock'
-      - 'package.json'
-      - 'vite.config.ts'
-      - '.github/workflows/e2e-tests.yml'
+  workflow_dispatch:
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -355,7 +341,7 @@ jobs:
           NEXT_PUBLIC_WS_URL: ws://localhost:8080/graphql
 
       - name: Run Playwright shard ${{ matrix.shard }}/8
-        # `--project=chromium` keeps screenshot specs (app-store/help/layout)
+        # `--project=chromium` keeps screenshot specs (help/layout)
         # out of the functional shards. Those projects already run in the
         # dedicated `screenshots` job below; without this filter every
         # screenshot test ran twice per PR and contributed double to the
@@ -534,7 +520,7 @@ jobs:
           NEXT_PUBLIC_WS_URL: ws://localhost:8080/graphql
 
       - name: Clear tracked screenshot output dirs
-        # `mobile/screenshots/` and `packages/web/public/help/` are product
+        # `packages/web/public/help/` and the layout screenshots are product
         # assets tracked in git. If we leave the committed PNGs in place
         # and the Playwright capture step fails partway through, the stage
         # step below picks up the stale tracked files and report-screenshots
@@ -542,14 +528,12 @@ jobs:
         # soft-fail notice. Wipe them first so the stage step only ever
         # sees files the current Playwright run actually wrote.
         run: |
-          rm -f mobile/screenshots/*.png \
-                packages/web/public/help/*.png \
+          rm -f packages/web/public/help/*.png \
                 packages/web/e2e/screenshots/layouts/*.png
 
       - name: Capture screenshots
         run: |
           bunx playwright test \
-            --project=app-store-screenshots \
             --project=layout-screenshots \
             --project=help-screenshots
         working-directory: packages/web
@@ -573,8 +557,7 @@ jobs:
       - name: Stage screenshots for upload
         if: always()
         run: |
-          mkdir -p screenshots-out/app-store screenshots-out/layouts screenshots-out/help
-          cp mobile/screenshots/*.png                     screenshots-out/app-store/ 2>/dev/null || true
+          mkdir -p screenshots-out/layouts screenshots-out/help
           cp packages/web/e2e/screenshots/layouts/*.png    screenshots-out/layouts/   2>/dev/null || true
           cp packages/web/public/help/*.png                screenshots-out/help/      2>/dev/null || true
           ls -R screenshots-out || true
@@ -591,7 +574,8 @@ jobs:
   report-screenshots:
     name: Report screenshots on PR
     needs: screenshots
-    if: always() && github.event_name == 'pull_request'
+    # Disabled: Playwright sticky PR comments are too noisy for now.
+    if: false && always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -633,11 +617,9 @@ jobs:
 
           # Per-SHA subpath so each commit's URLs are unique — cached browser
           # views never serve stale bytes when a PR pushes follow-up commits.
-          mkdir -p "/tmp/ss-branch/${SHORT_SHA}/app-store" \
-                   "/tmp/ss-branch/${SHORT_SHA}/layouts" \
+          mkdir -p "/tmp/ss-branch/${SHORT_SHA}/layouts" \
                    "/tmp/ss-branch/${SHORT_SHA}/help"
 
-          cp screenshots-out/app-store/*.png "/tmp/ss-branch/${SHORT_SHA}/app-store/" 2>/dev/null || true
           cp screenshots-out/layouts/*.png  "/tmp/ss-branch/${SHORT_SHA}/layouts/"  2>/dev/null || true
           cp screenshots-out/help/*.png     "/tmp/ss-branch/${SHORT_SHA}/help/"     2>/dev/null || true
 

@@ -5,6 +5,7 @@ import type { BoardDetails } from '@/app/lib/types';
 import { getPreference, removePreference } from '@/app/lib/user-preferences-db';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_SESSION_SUMMARY, type GetSessionSummaryResponse } from '@boardsesh/graphql/operations/sessions';
+import { getClimbSessionCookie } from '@/app/lib/climb-session-cookie';
 import { type ActiveSessionInfo, ACTIVE_SESSION_KEY, DEBUG } from '../types';
 
 type UseQueueStorageArgs = {
@@ -90,6 +91,19 @@ export function useQueueStorage({
       try {
         const persisted = await getPreference<ActiveSessionInfo>(ACTIVE_SESSION_KEY);
         if (persisted && persisted.sessionId && persisted.boardPath && persisted.boardDetails) {
+          // Cookie wins over stale IndexedDB — skip activation and let BoardSessionBridge activate the cookie's session. Leave IndexedDB intact so an unvalidated cookie (e.g. legacy ?session= migration) can't wipe a recoverable entry.
+          const cookieSessionId = getClimbSessionCookie();
+          if (cookieSessionId && cookieSessionId !== persisted.sessionId) {
+            if (DEBUG)
+              console.info('[PersistentSession] Cookie session differs from persisted; skipping restore.', {
+                cookieSessionId,
+                persistedSessionId: persisted.sessionId,
+              });
+            hasRunPreflightRef.current = true;
+            setIsLocalQueueLoaded(true);
+            return;
+          }
+
           if (DEBUG) console.info('[PersistentSession] Restoring persisted session:', persisted.sessionId);
 
           if (!wsAuthToken) {

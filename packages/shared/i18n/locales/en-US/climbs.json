@@ -1,6 +1,6 @@
 {
-  "sends_one": "{{count}} send",
-  "sends_other": "{{count}} sends",
+  "sends_one": "{{formattedCount}} send",
+  "sends_other": "{{formattedCount}} sends",
   "metadata": {
     "list": {
       "title": "{{boardName}} climbs at {{angle}}°",
@@ -536,8 +536,9 @@
   "mobile": {
     "emptyState": {
       "noBoard": {
-        "title": "No board selected",
-        "subtitle": "Add a board first to browse climbs"
+        "title": "Follow your wall",
+        "subtitle": "Pick the board you climb on to browse its problems and see what's lit on it right now.",
+        "cta": "Find my board"
       },
       "noClimbs": {
         "title": "No climbs found",
@@ -549,17 +550,7 @@
       }
     },
     "detail": {
-      "notFound": "Climb not found",
-      "addToQueue": "Add to Queue",
-      "logAscent": "Log Ascent",
-      "sent_one": "Sent {{count}} time",
-      "sent_other": "Sent {{count}} times",
-      "sentWithAttempts_one": "Sent {{count}} time in {{attempts}} {{attemptWord}}",
-      "sentWithAttempts_other": "Sent {{count}} times in {{attempts}} {{attemptWord}}",
-      "attempt_one": "attempt",
-      "attempt_other": "attempts",
-      "send_one": "send",
-      "send_other": "sends"
+      "notFound": "Climb not found"
     },
     "logAscent": {
       "attempt": "Attempt",
@@ -630,14 +621,16 @@
       "setters": "Setters",
       "none": "None",
       "tall": "Tall climbs only",
+      "tallClimbs": "Tall climbs",
       "tallDescription": "Reach the top of the wall",
       "wide": "Wide climbs only",
+      "wideClimbs": "Wide climbs",
       "wideDescription": "Use the 10x10 side expansion",
       "betaVideos": "Beta videos only",
+      "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
       "searchSetters": "Search setters",
       "noSetters": "No setters yet",
-      "cancel": "Cancel",
       "done": "Done",
       "clearAll": "Clear all"
     },
@@ -646,33 +639,152 @@
       "clearRecent": "Clear",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
-      "gradeMax": "Up to {{grade}}",
-      "ascents": "{{count}}+ ascents",
-      "rating": "{{count}}+ stars",
+      "gradeMax": "≤{{grade}}",
+      "ascents": "{{count}}+ 🧗",
+      "rating": "{{count}}+ ⭐",
       "more": "+{{count}} more",
+      "setterName": "By {{setter}}",
       "settersCount_one": "{{count}} setter",
       "settersCount_other": "{{count}} setters",
       "climbsCount_one": "{{count}} climb",
       "climbsCount_other": "{{count}} climbs",
-      "grade": "Grade",
-      "anyGrade": "Any grade",
       "gradeClear": "Any",
-      "gradeHint": "Tap a grade · tap a second for a range",
       "filters": "Filters",
-      "removeFilter": "Remove {{name}} filter"
+      "filterCountAria": "Filters, {{count}} active",
+      "filterHint": "Opens all climb filters",
+      "gradeAction": "Set grade range",
+      "gradeOpenHint": "Opens the grade picker",
+      "gradeCloseHint": "Closes the grade picker",
+      "boardSwitcherHint": "Opens the board switcher",
+      "allClimbs": "All climbs"
+    },
+    "gradeRail": {
+      "setFilterAria": "Set grade filter to {{grade}}",
+      "selectedFilterAria": "{{grade}} grade filter selected",
+      "rangeFilterAria": "{{grade}} is in the selected grade range",
+      "anyGradeAria": "Any grade selected",
+      "clearFilterAria": "Clear grade filter",
+      "closeAria": "Close grade selector",
+      "rangeHint": "Tap another grade to make a range",
+      "setLogGradeAria": "Set log grade to {{grade}}",
+      "selectedLogGradeAria": "{{grade}} log grade selected",
+      "consensusGradeAria": "{{grade}}, consensus grade"
     },
     "climbRow": {
       "addToQueue": "Add to queue",
       "toggleFavorite": "Toggle favorite",
       "share": "Share climb",
-      "projectFallback": "Project"
+      "projectFallback": "Project",
+      "ascentStatus": {
+        "flash": "Flashed",
+        "send": "Sent",
+        "attempt": "Tried"
+      },
+      "noMatch": "No matching",
+      "benchmark": "Benchmark"
     },
     "climbActions": {
+      "preview": "Preview",
       "copyLink": "Copy link",
-      "report": "Report",
       "linkCopied": "Link copied",
       "tick": "Log a tick",
-      "openInApp": "Open in Aurora app"
+      "addBetaVideo": "Add beta video",
+      "openInApp": "Open in Aurora app",
+      "fork": "Remix this climb",
+      "edit": "Edit climb",
+      "editEntry": "Edit logbook entry"
+    },
+    "create": {
+      "brush": {
+        "start": "Start",
+        "hand": "Hand",
+        "finish": "Finish",
+        "foot": "Foot",
+        "erase": "Erase"
+      },
+      "counts": {
+        "start": "Start: {{count}}/2",
+        "finish": "Finish: {{count}}/2"
+      },
+      "actions": {
+        "clear": "Clear holds",
+        "setActive": "Set as active climb",
+        "undo": "Undo",
+        "redo": "Redo"
+      },
+      "holdRole": {
+        "title": "Set hold role",
+        "clear": "Clear"
+      },
+      "settings": {
+        "draftLabel": "Save as draft",
+        "draftDescription": "Drafts stay private until you publish them.",
+        "showAllHoldsLabel": "Show all holds",
+        "showAllHoldsDescription": "Highlight every tappable hold on the board.",
+        "noMatchLabel": "No matching",
+        "noMatchDescription": "Hands can't match on the same hold"
+      },
+      "drafts": {
+        "holds_one": "{{count}} hold",
+        "holds_other": "{{count}} holds",
+        "sectionTitle": "Open drafts"
+      },
+      "unavailable": {
+        "title": "Can't build here yet",
+        "subtitle": "This board layout is not supported for creating climbs."
+      },
+      "fab": {
+        "ariaLabel": "Create a climb"
+      },
+      "header": {
+        "newClimb": "New climb"
+      },
+      "save": {
+        "idle": "Save",
+        "login": "Sign in to save",
+        "saving": "Saving…",
+        "done": "Saved",
+        "draftToast": "Draft saved",
+        "publishedToast": "Climb published"
+      }
+    },
+    "holdFilter": {
+      "title": "Hold types",
+      "include": "Include",
+      "exclude": "Exclude",
+      "applyModeLabel": "Include or exclude",
+      "includedSuffix": "included",
+      "excludedSuffix": "excluded",
+      "hint": "Tap holds on the board to filter by which type they must be.",
+      "summaryCount_one": "{{count}} hold",
+      "summaryCount_other": "{{count}} holds",
+      "type": {
+        "starting": "Start",
+        "hand": "Hand",
+        "finish": "Finish",
+        "foot": "Foot",
+        "any": "Any"
+      }
+    },
+    "zoneFilter": {
+      "title": "Board region",
+      "summaryActive": "On",
+      "enable": "Add a region",
+      "clearZone": "Clear region",
+      "allHolds": "All holds",
+      "anyHold": "Any hold",
+      "modeLabel": "Which holds must fit the region",
+      "hint": "Add a region to find climbs that stay inside one part of the board.",
+      "activeHint": "Drag the box and its corners to set the region. All holds must fit inside; switch to Any hold to keep climbs that reach into it.",
+      "regionLabel": "Board region",
+      "regionHint": "Swipe up or down to move the region across the board.",
+      "corner": {
+        "topLeft": "Top-left corner",
+        "topRight": "Top-right corner",
+        "bottomLeft": "Bottom-left corner",
+        "bottomRight": "Bottom-right corner",
+        "hint": "Swipe up or down to grow or shrink the region from this corner."
+      }
     }
   }
 }

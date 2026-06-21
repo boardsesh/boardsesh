@@ -19,6 +19,33 @@
   "activityFeed": {
     "signInPrompt": "Sign in to see a personalized feed from climbers you follow."
   },
+  "mobile": {
+    "home": {
+      "betaTitle": "Fresh beta",
+      "betaEmpty": "No beta videos yet",
+      "betaError": "Couldn't load beta videos.",
+      "betaOpenError": "Couldn't open that beta video.",
+      "betaCardLabel": "Open beta video",
+      "feedTitle": "From your crew",
+      "signInTitle": "Sign in to see your feed",
+      "signInBody": "Follow climbers to see their sessions and daily sends here.",
+      "searchAction": "Find climbers",
+      "emptyTitle": "No sessions yet",
+      "emptyBody": "Follow climbers to fill this with sessions and daily sends.",
+      "unknownClimb": "Unknown climb",
+      "sessionsTitle": "Recent sessions",
+      "betaTitleBoard": "Fresh beta on this board",
+      "boardEmptyTitle": "Quiet on {{board}} right now",
+      "boardEmptyBody": "Be the first to log a session, or see what everyone else is climbing.",
+      "boardEmptyCta": "Browse everyone",
+      "scope": {
+        "myCrew": "My crew",
+        "everyone": "Everyone",
+        "findGym": "Find a gym near you",
+        "hint": "Switches whose climbs you see"
+      }
+    }
+  },
   "ascentsFeed": {
     "mirrored": "Mirrored",
     "benchmark": "Benchmark",
@@ -191,10 +218,37 @@
   },
   "sessionFeedCard": {
     "climbCount_one": "{{count}} climb",
-    "climbCount_other": "{{count}} climbs"
+    "climbCount_other": "{{count}} climbs",
+    "sendsCount_one": "{{count}} send",
+    "sendsCount_other": "{{count}} sends",
+    "flashesCount_one": "{{count}} flash",
+    "flashesCount_other": "{{count}} flashes",
+    "hardestGrade": "{{grade}} hardest",
+    "status": {
+      "flash": "Flash",
+      "send": "Send",
+      "attempt": "Attempt"
+    },
+    "hardest": "Hardest",
+    "betaEyebrow": "Beta",
+    "betaBy": "Beta by {{name}}",
+    "gradeSpread": "Grade spread {{min}} to {{max}}, {{sends}} sends",
+    "unknownClimb": "Unknown climb",
+    "attempts_one": "{{count}} try",
+    "attempts_other": "{{count}} tries",
+    "openHint": "Opens the session",
+    "openHardestClimb": "Open {{climb}}"
   },
   "sessionSummary": {
     "completed": "Session completed"
+  },
+  "socialActions": {
+    "upvoteWithCount_one": "Like, {{count}} like",
+    "upvoteWithCount_other": "Like, {{count}} likes",
+    "removeUpvoteWithCount_one": "Remove like, {{count}} like",
+    "removeUpvoteWithCount_other": "Remove like, {{count}} likes",
+    "openCommentsWithCount_one": "Open comments, {{count}} comment",
+    "openCommentsWithCount_other": "Open comments, {{count}} comments"
   },
   "socialFeedItem": {
     "climbed": "climbed"

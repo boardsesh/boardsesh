@@ -19,6 +19,7 @@ export const proposalsTypeDefs = /* GraphQL */ `
   enum CommunityRoleType {
     admin
     community_leader
+    tester
   }
 
   """

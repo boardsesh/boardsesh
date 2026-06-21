@@ -40,5 +40,13 @@ describe('Session Feed Input Validation', () => {
       const result = ActivityFeedInputSchema.safeParse({ cursor: 'abc123' });
       expect(result.success).toBe(true);
     });
+
+    it('accepts session feed flags', () => {
+      const result = ActivityFeedInputSchema.safeParse({
+        followingOnly: true,
+        includeDailyHighlights: true,
+      });
+      expect(result.success).toBe(true);
+    });
   });
 });

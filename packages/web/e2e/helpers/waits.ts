@@ -11,7 +11,7 @@ export async function waitForBoardListReady(page: Page, timeout = 30_000): Promi
   // slower CI runners. Without a hydration guard, the very next click in
   // a test sometimes lands before the onClick handler is attached and is
   // silently dropped — the source of "clicked the button but nothing
-  // happened" flakes in app-store-screenshots / help-screenshots. Two
+  // happened" flakes in the help/layout screenshot specs. Two
   // consecutive `requestAnimationFrame` callbacks bracket at least one
   // React commit cycle, which is a cheap and reliable post-hydration
   // signal without needing a product-side marker.

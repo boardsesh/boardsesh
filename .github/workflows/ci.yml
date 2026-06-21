@@ -36,6 +36,9 @@ jobs:
       sharedSchema: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.sharedSchema }}
       i18nCatalogs: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.i18nCatalogs }}
       rootCi: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.rootCi }}
+      # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
+      # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
+      changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
       # True if any downstream job's gate would fire. setup gates on this so
       # docs-only / firmware-only PRs skip the bun-install + build:db pass
       # nothing downstream would consume. Must mirror the union of every
@@ -82,6 +85,10 @@ jobs:
               - 'packages/board-constants/**'
               - 'packages/crypto/**'
               - 'packages/aurora-sync/**'
+              - 'packages/kilter-sync/**'
+              - 'packages/location-sync/**'
+              - 'packages/moonboard-sync/**'
+              - 'packages/sync-runtime/**'
             sharedSchema:
               - 'packages/shared-schema/**'
               - 'packages/shared/graphql/**'
@@ -92,6 +99,9 @@ jobs:
               - 'vite.config.ts'
               - 'package.json'
               - 'bun.lock'
+            changelogData:
+              - 'packages/mobile/src/data/changelog.generated.json'
+              - 'CHANGELOG.md'
 
   setup:
     needs: [changes]
@@ -149,12 +159,12 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           # Match the staged-hook scope in root vite.config.ts: TS/JS files,
-          # excluding generated/, mobile (excluded from vp lint by config), and
-          # embedded firmware sources. xargs -r ensures no-op on empty input.
+          # excluding generated/, board-controller, and embedded firmware sources.
+          # xargs -r ensures no-op on empty input.
           git diff --name-only --diff-filter=ACMR \
             "origin/$BASE_REF...HEAD" \
             -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' \
-            | grep -vE '(/node_modules/|/generated/|^packages/mobile/|^packages/board-controller/|^embedded/)' \
+            | grep -vE '(/node_modules/|/generated/|^packages/board-controller/|^embedded/)' \
             > changed-lintable.txt || true
           if [ -s changed-lintable.txt ]; then
             xargs -r vp check < changed-lintable.txt
@@ -480,18 +490,136 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Check mobile board art stays bundled
+        run: vp run check:mobile-board-art-network
       # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
       # @sentry/cli unresolvable from packages/mobile under Bun's isolated
       # linker) here on Linux, instead of in the macOS TestFlight archive on
       # push-to-main. Runs before the heavier Metro bundle so it fails fast.
       - name: Check native build-phase deps resolve
         run: vp run check:mobile-native-deps
+      # A Bun patch is keyed by an exact version, so an Expo/RN bump can silently
+      # drop it: install only warns, and typecheck + the Metro bundle stay green
+      # while a native-only behavior (e.g. the iOS 26 tab-bar minimize tracking
+      # the climbs FlashList) regresses all the way into TestFlight. Assert the
+      # patched source is actually present on this cheap Linux runner.
+      - name: Check native patches are applied
+        run: vp run check:mobile-patches
+      # Cheap source guard: no raw theme-variant magic-string compares regrew in
+      # mobile components (they must route through the variant primitives/tokens —
+      # see packages/mobile/src/theme/variants/README.md).
+      - name: Check mobile variant usage
+        run: vp run check:mobile-variants
       - name: Download built packages
         uses: actions/download-artifact@v4
         with:
           name: built-packages
       - name: Metro bundle check
         run: vp run check:mobile-bundle
+
+  commit-lint:
+    needs: [changes]
+    # Conventional Commit gate. The PR TITLE is the authoritative hard check — it's
+    # the merge/squash subject and the source of the changelog category. The
+    # per-commit range check is ADVISORY (continue-on-error): the repo uses merge
+    # commits, so intermediate WIP/fixup commits land on main verbatim and much of
+    # the existing history is non-conventional — blocking on it would red most PRs.
+    # The local commit-msg hook nudges new commits toward the convention.
+    # Also gate on mobile/sharedDeps so the PR-title check runs whenever the
+    # release-notes job does — a non-JS mobile/shared change still produces a
+    # changelog entry whose category comes from the (conventional) PR title.
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 50
+      - name: Fetch base ref
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Lint PR title (hard gate)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The PR title is the merge/squash subject and the source of the changelog
+          # category, so it must be conventional. This is the blocking check.
+          vp run check:commit-message -- --pr-title "$PR_TITLE"
+      - name: Lint PR commit subjects (advisory)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Surface non-conventional commits without blocking the merge (see job note).
+          vp run check:commit-message -- --range "origin/$BASE_REF..HEAD"
+      - name: Lint commit subjects (push, advisory)
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          # On a normal push, github.event.before is the previous tip; validate the
+          # newly pushed commits. On a branch's first push it can be all-zeros — fall
+          # back to just the head commit to avoid an unbounded range.
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            vp run check:commit-message -- --range "$HEAD_SHA~1..$HEAD_SHA"
+          else
+            vp run check:commit-message -- --range "$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+  release-notes:
+    needs: [changes]
+    # PR-only. Gated on the mobile/shared filter: those PRs ship via OTA, so they
+    # must carry user-facing Release Notes (escape hatch: the skip-changelog
+    # label, or `none` under the heading).
+    if: github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check PR has Release Notes
+        env:
+          # Write the body to a file (via env, not interpolated into the script) so
+          # a markdown body with backticks/quotes can't break the shell.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          printf '%s' "$PR_BODY" > pr-body.txt
+          vp run check:release-notes -- --body-file pr-body.txt
+
+  changelog-owned:
+    needs: [changes]
+    # The Mobile OTA Production workflow is the SOLE writer of
+    # changelog.generated.json — it regenerates and pushes it on every publish. A
+    # PR must never hand-edit it (that would fight the OTA bot and could revert
+    # shipped entries). Fail if a PR touches the file.
+    if: github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Reject manual changelog edits
+        run: |
+          echo "::error::The changelog files (packages/mobile/src/data/changelog.generated.json and CHANGELOG.md) are owned by the Mobile OTA Production workflow (it regenerates and pushes them on every OTA). Revert your change — they're generated from PR Release Notes, never edited in a PR."
+          exit 1
 
   test-report:
     needs: [test-default, test-backend, test-ocr]
@@ -537,6 +665,9 @@ jobs:
       - test-backend
       - test-ocr
       - mobile-bundle
+      - commit-lint
+      - release-notes
+      - changelog-owned
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

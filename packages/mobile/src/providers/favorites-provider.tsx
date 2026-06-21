@@ -11,8 +11,10 @@
 // mobile screen needs favorites, build `useMobileClimbActionsData` and
 // wire its output into this provider's props.
 
-import { createContext, useContext, useLayoutEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { favoritesStore } from '@boardsesh/climb-actions';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../lib/analytics';
 
 type FavoritesContextValue = {
   toggleFavorite: (uuid: string) => Promise<boolean>;
@@ -56,7 +58,23 @@ export function FavoritesProvider({
     favoritesStore.setMeta(isLoading, isAuthenticated);
   }, [isLoading, isAuthenticated]);
 
-  const value = useMemo<FavoritesContextValue>(() => ({ toggleFavorite }), [toggleFavorite]);
+  const trackedToggleFavorite = useCallback(
+    async (uuid: string): Promise<boolean> => {
+      const isNowFavorited = await toggleFavorite(uuid);
+      track(SHARED_EVENTS.FavoriteToggle, {
+        action: isNowFavorited ? 'added' : 'removed',
+        climbUuid: uuid,
+        source: 'mobile',
+      });
+      return isNowFavorited;
+    },
+    [toggleFavorite],
+  );
+
+  const value = useMemo<FavoritesContextValue>(
+    () => ({ toggleFavorite: trackedToggleFavorite }),
+    [trackedToggleFavorite],
+  );
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;
 }

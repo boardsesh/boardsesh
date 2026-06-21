@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use crate::types::{Color, HoldStateInfo, ParsedHold};
+use std::collections::HashMap;
 
 /// Parse a frames string like "p1073r42p1090r43p1157r44" into a list of ParsedHold.
 /// Only the first frame is used (before first comma delimiter).
-pub fn parse_frames(
-    frames: &str,
-    hold_state_map: &HashMap<u32, HoldStateInfo>,
-) -> Vec<ParsedHold> {
+pub fn parse_frames(frames: &str, hold_state_map: &HashMap<u32, HoldStateInfo>) -> Vec<ParsedHold> {
     // Take only the first frame (before comma)
     let first_frame = frames.split(',').next().unwrap_or("");
 
@@ -28,6 +25,7 @@ pub fn parse_frames(
                 hold_id,
                 color,
                 render_style: state_info.render_style,
+                shape: state_info.shape,
             })
         })
         .collect()
@@ -39,10 +37,38 @@ mod tests {
 
     fn kilter_state_map() -> HashMap<u32, HoldStateInfo> {
         let mut map = HashMap::new();
-        map.insert(42, HoldStateInfo { color: "#00FF00".into(), render_style: Default::default() });
-        map.insert(43, HoldStateInfo { color: "#00FFFF".into(), render_style: Default::default() });
-        map.insert(44, HoldStateInfo { color: "#FF00FF".into(), render_style: Default::default() });
-        map.insert(45, HoldStateInfo { color: "#FFAA00".into(), render_style: Default::default() });
+        map.insert(
+            42,
+            HoldStateInfo {
+                color: "#00FF00".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
+        map.insert(
+            43,
+            HoldStateInfo {
+                color: "#00FFFF".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
+        map.insert(
+            44,
+            HoldStateInfo {
+                color: "#FF00FF".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
+        map.insert(
+            45,
+            HoldStateInfo {
+                color: "#FFAA00".into(),
+                render_style: Default::default(),
+                shape: Default::default(),
+            },
+        );
         map
     }
 
@@ -82,13 +108,20 @@ mod tests {
     #[test]
     fn test_parse_render_style() {
         let mut state_map = kilter_state_map();
-        state_map.insert(46, HoldStateInfo {
-            color: "#FFE066".into(),
-            render_style: crate::types::HoldRenderStyle::AboveMarker,
-        });
+        state_map.insert(
+            46,
+            HoldStateInfo {
+                color: "#FFE066".into(),
+                render_style: crate::types::HoldRenderStyle::AboveMarker,
+                shape: Default::default(),
+            },
+        );
 
         let holds = parse_frames("p1r46", &state_map);
         assert_eq!(holds.len(), 1);
-        assert_eq!(holds[0].render_style, crate::types::HoldRenderStyle::AboveMarker);
+        assert_eq!(
+            holds[0].render_style,
+            crate::types::HoldRenderStyle::AboveMarker
+        );
     }
 }

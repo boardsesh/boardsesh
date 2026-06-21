@@ -93,9 +93,6 @@ vi.mock('@/app/hooks/use-session-detail', () => ({
     session: mockSessionDetail,
     isLoading: false,
     isError: false,
-    updateSession: { mutateAsync: vi.fn(), isPending: false },
-    addUser: { mutateAsync: vi.fn(), isPending: false },
-    removeUser: { mutateAsync: vi.fn(), isPending: false },
   }),
   SESSION_DETAIL_QUERY_KEY: (id: string) => ['sessionDetail', id],
 }));

@@ -8,6 +8,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getLocales } from 'expo-localization';
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE, DEFAULT_NAMESPACE, MOBILE_NAMESPACES, type Locale } from '@boardsesh/i18n';
+import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
 
 // --- Locale catalogs from @boardsesh/i18n ---
 // Static imports so Metro bundles only the namespaces the mobile app uses;
@@ -108,8 +109,15 @@ const resources = {
 /**
  * Detect the best matching locale from the device settings.
  * Falls back to en-US if no supported locale matches.
+ *
+ * Exported so the locale-preference layer can resolve the `'system'` choice
+ * to a concrete language without duplicating the matching logic.
  */
-function detectDeviceLocale(): Locale {
+export function detectDeviceLocale(): Locale {
+  if (SCREENSHOT_LOCALE_OVERRIDE) {
+    return SCREENSHOT_LOCALE_OVERRIDE;
+  }
+
   const deviceLocales = getLocales();
 
   for (const deviceLocale of deviceLocales) {
@@ -134,7 +142,7 @@ function detectDeviceLocale(): Locale {
   return DEFAULT_LOCALE;
 }
 
-i18n.use(initReactI18next).init({
+void i18n.use(initReactI18next).init({
   compatibilityJSON: 'v4',
   resources,
   lng: detectDeviceLocale(),

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material You (Android 12+) overrides: the notification accent and placeholder
+     follow the wallpaper-derived system palette. v24-30 fall back to
+     values/colors.xml automatically via the resource qualifier. -->
+<resources>
+    <color name="session_accent">@android:color/system_accent1_400</color>
+    <color name="session_accent_dim">@android:color/system_neutral1_400</color>
+    <!-- Keep the thumbnail backing near-black (NOT system_neutral2_100, which is a
+         near-white tone on Android 12+ and showed through holds-only renders). -->
+    <color name="session_image_placeholder">#FF0A0A0A</color>
+</resources>

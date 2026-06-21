@@ -28,6 +28,13 @@ export const subscriptionsTypeDefs = /* GraphQL */ `
     """
     newClimbCreated(boardType: String!, layoutId: Int!): NewClimbCreatedEvent!
 
+    """
+    Subscribe to the live "now on the wall" feed for a shared board (board_id
+    resolved from the BLE serial). Membership-free: any authenticated user who
+    has connected to the board can watch. Sessions are not involved.
+    """
+    boardNowPlaying(boardId: Int!): BoardPresenceEvent!
+
     # ESP32 subscribes to receive LED commands - uses API key auth via connectionParams
     controllerEvents(sessionId: ID!): ControllerEvent!
   }

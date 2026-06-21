@@ -45,6 +45,8 @@ export const auroraCredentials = pgTable(
     lastSyncAt: timestamp('last_sync_at'),
     syncStatus: text('sync_status').default('pending').notNull(), // 'pending' | 'active' | 'error' | 'expired'
     syncError: text('sync_error'),
+    credentialFailureCount: integer('credential_failure_count').default(0).notNull(),
+    lastCredentialFailureAt: timestamp('last_credential_failure_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },

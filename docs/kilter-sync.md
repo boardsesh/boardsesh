@@ -180,6 +180,28 @@ A full run reports a small `climbsUnmapped` count (~0.01% after the UUID-first m
 - **New multi-frame animated climbs.** Kilter's animated (`frame_count > 1`) climbs encode `climb_concat` as `h{hole}p{code}s{startFrame}e{endFrame}` rather than the comma-frame format, which the parser doesn't decode. Existing animated climbs match by UUID (so they still get stats); only a _new_ animated climb (unseen UUID) is skipped. Decoding the `s`/`e` format is a follow-up.
 - **Post-2024 hold-set placements.** A handful of climbs use holds whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails. Refreshing `board_placements` (needs the `mounting_holes` PowerSync bucket) is a follow-up.
 
+## Public board locations
+
+Kilter public locations come from the same PowerSync reference pull as the catalog. `global_gyms` carries `gyms`, `walls`, `products`, and `product_layouts`; `syncKilterLocations` maps each wall to a Boardsesh layout/size/set config and then delegates the actual `gyms` / `user_boards` upsert to `@boardsesh/location-sync`.
+
+The location writer creates deterministic system-owned public rows:
+
+- one `gyms` row per upstream gym UUID
+- one public, unowned `user_boards` row per upstream wall
+- stable UUIDs and slugs derived from the upstream source key
+
+It never deletes rows that disappear upstream. Rows with missing layout mappings, unsupported product/size data, or invalid coordinates are reported as skipped.
+
+The catalog sync refreshes locations after a successful catalog pull. You can also run the location-only path:
+
+```bash
+bunx kilter-sync locations --user <nextauth-user-id>
+```
+
+For local testing without a linked credential, set `KILTER_TEST_USERNAME` and `KILTER_TEST_PASSWORD`; the CLI will use the password token flow.
+
+The package `sync:locations` script passes `--skip-if-missing-credentials` so aggregate repo tasks can run in clean environments. Direct `kilter-sync locations` calls still require `--user` or test credentials unless that flag is passed explicitly.
+
 ## Climb dedup
 
 Kilter's catalog has duplicate climbs at different UUIDs with identical hold layouts. We collapse them behind a canonical row.
@@ -192,18 +214,28 @@ Kilter's catalog has duplicate climbs at different UUIDs with identical hold lay
 2. **Fingerprint hit** — a new UUID whose `(layout_id, fingerprint)` matches an existing or already-seen-this-run canonical becomes an alias (`board_climb_aliases`), not a new row.
 3. **Miss** — insert a new canonical row + a self-alias.
 
-**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `kilter_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
+**Stats accumulation (worked example).** Two listed climbs `A` (count 18) and `B` (count 5) with identical holds collapse onto one canonical: `A` is canonical with `kilter_ascensionist_count = 18`, `B` aliases to `A` and its 5 ascents accumulate → 23. The accumulation is computed **in memory per `(canonical, angle)` and written as an overwrite** (not `+=`), so re-running recomputes the same 23 — idempotent. If the same source climb stat appears through multiple Grips `product_layout_uuid`s that collapse to one Boardsesh layout, it is counted once by `(source climb UUID, angle)`. Display fields (`difficulty/quality/fa`) come only from the canonical climb's own stat row.
 
 ### `ascensionist_count` — aurora/kilter are aliased, not summed
 
-`board_climb_stats.ascensionist_count` is the materialized count the search hot path reads. There are three owned columns (`aurora_`, `kilter_`, `boardsesh_`), but for the **Kilter board `aurora_` and `kilter_` are the SAME ascents**: the legacy column was filled from the pre-split `kilterboardapp.com` and `kilter_` is filled from `kiltergrips.com`, which Kilter migrated the same logs into. They match within snapshot noise (median ratio 1.0). **Summing them double-counts** — every Kilter benchmark would read ~2× its real ascents — so the formula takes Kilter (the live source) and falls back to aurora, then adds the independent Boardsesh contribution:
+`board_climb_stats.ascensionist_count` is the materialized count the search hot path reads. There are three owned columns (`aurora_`, `kilter_`, `boardsesh_`), but for the **Kilter board `aurora_` and `kilter_` are the SAME ascents**: the legacy column was filled from the pre-split `kilterboardapp.com` and `kilter_` is filled from `kiltergrips.com`, which Kilter migrated the same logs into. They match within snapshot noise (median ratio 1.0). **Summing them double-counts** — every Kilter benchmark would read ~2× its real ascents — so the formula takes the higher upstream count, then adds the independent Boardsesh contribution:
 
 ```
-ascensionist_count = COALESCE(kilter_ascensionist_count, aurora_ascensionist_count, 0)
+ascensionist_count = GREATEST(COALESCE(kilter_ascensionist_count, 0), COALESCE(aurora_ascensionist_count, 0))
                    + COALESCE(boardsesh_ascensionist_count, 0)
 ```
 
 For boards with only one catalog source (e.g. Tension, `kilter_` is NULL) this collapses to `aurora_ + boardsesh_` — behaviour unchanged. The same formula is used at all three writers: the catalog sync (`catalog-sync.ts`), aurora-sync (`shared-sync.ts`), and the Boardsesh-tick recompute (`recompute-climb-stats.ts`). `boardsesh_ascensionist_count` stays additive because Boardsesh-native ticks aren't (yet) pushed to Kilter; revisit when push-back lands.
+
+### Stats repair
+
+A single Boardsesh layout maps to several Grips `product_layout_uuid`s (size variants). Before the `(source climb UUID, angle)` dedup landed, the catalog sync folded each repeated source stat once per variant, so `kilter_ascensionist_count` (and thus `ascensionist_count`) was inflated by the number of variants a climb appeared in. The fix prevents new inflation; existing rows need a one-time `repair-stats` pass (`stats-repair.ts`).
+
+`repair-stats` re-fetches every listed Grips layout, dedupes stats the same way the live sync now does, and **overwrites** `kilter_ascensionist_count` from the deduped value (also re-asserting Grips `display_difficulty / difficulty_average / quality_average` on canonical rows). It is idempotent — re-running converges and the second run is a no-op.
+
+- **Dry-run is the default and is read-only.** It reports `changedKilterRows`, `maxKilterDrop` / `maxKilterRise` (largest per-row decrease/increase), `statsDeduped`, `statsUnresolved`, and a `topBefore` list. Review these before applying — a large `maxKilterDrop` can also signal a partial Grips fetch (delisted climbs, rate-limit truncation), so treat it as a stop-and-investigate signal rather than blindly applying.
+- **`--apply` writes inside a single transaction** (overwrite + materialized-total recompute are atomic) and prints `topAfter`. A fetch error aborts before any write, since writes only run after the full fetch loop completes.
+- Run it with the **daemon paused** so a concurrent catalog sync doesn't interleave, and run it **unscoped** (no `--layouts`) for the production cleanup — the materialized-total recompute pass touches all Kilter rows, so a scoped run can leave inconsistent state. Rows for climbs Grips no longer lists aren't re-fetched, so this tool does not correct delisted-climb inflation.
 
 ### Quality scale — every board on 1–5
 
@@ -238,19 +270,30 @@ The catalog-relevant schema (`board_climbs.hold_fingerprint` + index, `board_cli
 
 ## OAuth handshake
 
-The web app exposes three routes under `/api/internal/board-credentials/kilter/` (mirrors the `/api/internal/aurora-credentials/` layout — these are third-party board credential flows, not NextAuth providers, so they intentionally live outside `/api/auth/*`):
+The backend owns the Kilter credential flow. Web and mobile both start with
+`POST /api/board-credentials/kilter/handoff`, then send the user through the
+browser-facing `/board-credentials/kilter/start` and
+`/board-credentials/kilter/callback` routes. The callback returns only a
+short-lived completion token; the app must finish linking with
+`POST /api/board-credentials/kilter/finalize` using the signed-in user's bearer
+JWT.
 
-- `start` — generates a PKCE verifier + state, sets HttpOnly cookies scoped to `/api/internal/board-credentials/kilter`, redirects to Keycloak's authorize endpoint with `scope=openid offline_access`.
-- `callback` — validates state, exchanges the code for `{access_token, refresh_token, id_token}`, decodes the `sub` + `preferred_username` from the id_token (no signature verification — we just received it over TLS from Keycloak, and we never accept id_tokens via client redirects), encrypts the refresh token via `@boardsesh/crypto`, and upserts:
+- `handoff` - creates a short-lived signed handoff for the authenticated Boardsesh user and records a one-time nonce.
+- `start` - verifies the handoff, generates a PKCE verifier + state, sets HttpOnly cookies scoped to `/board-credentials/kilter`, and redirects to Keycloak's authorize endpoint with `scope=openid offline_access`.
+- `callback` - validates state, exchanges the code for `{access_token, refresh_token, id_token}`, decodes the `sub` + `preferred_username` from the id_token (no signature verification - we just received it over TLS from Keycloak, and we never accept id_tokens via client redirects), encrypts the refresh token via `@boardsesh/crypto`, and redirects back with a signed completion token.
+- `finalize` - requires the bearer JWT for the active Boardsesh session, verifies that the completion token belongs to the same user, consumes a one-time nonce, decrypts the refresh token, and upserts:
   - `aurora_credentials` (`board_type = 'kilter'`, `encrypted_refresh_token`, `username/password = NULL`).
-  - `user_board_mappings` (`board_user_id_text = sub`, `board_user_id = NULL` — kilter sub is a UUID, not an integer).
-- `disconnect` — revokes locally (clears the credential row + mapping).
+  - `user_board_mappings` (`board_user_id_text = sub`, `board_user_id = NULL` - kilter sub is a UUID, not an integer).
+- `DELETE /api/aurora-credentials` - revokes locally (clears the credential row + mapping).
 
-The callback is **account-linking only**. It never creates a NextAuth session — the user must already be signed in. If `offline_access` doesn't return a `refresh_token`, the handshake fails closed with `reason=no-refresh-token` rather than persisting an unrenewable credential.
+The callback is **account-linking only**. It never creates a NextAuth session and
+never saves credentials directly. If `offline_access` doesn't return a
+`refresh_token`, the handshake fails closed with `reason=no-refresh-token` rather
+than persisting an unrenewable credential.
 
 ### Access gate
 
-Account linking is gated by `KILTER_SYNC_ALLOWED_USER_IDS` (comma-separated NextAuth user IDs) — see [`packages/web/app/lib/kilter-sync/access.ts`](../packages/web/app/lib/kilter-sync/access.ts). Empty/unset means the feature is off for everyone. Both `start` and `callback` enforce the gate, and the settings UI hides the Connect button when it returns false. The allowlist is parsed once at module load; flipping it requires a redeploy. PR 15 removes the gate.
+Account linking is gated by `KILTER_SYNC_ALLOWED_USER_IDS` (comma-separated NextAuth user IDs) - see [`packages/web/app/lib/kilter-sync/access.ts`](../packages/web/app/lib/kilter-sync/access.ts). Empty/unset means the feature is off for everyone. Handoff, start, callback, and finalize enforce the gate, and the settings UI hides the Connect button when it returns false. The allowlist is parsed once at module load; flipping it requires a redeploy. PR 15 removes the gate.
 
 ## Daemon
 
@@ -267,7 +310,14 @@ bunx kilter-sync list                # List all stored kilter credentials
 bunx kilter-sync user <userId>       # Force a sync for one user
 bunx kilter-sync daemon              # Run the daemon (one-user-per-cycle, quiet hours)
 bunx kilter-sync catalog --user <id> # Sync the public climb catalog (Flow A)
+bunx kilter-sync repair-stats --user <id>          # Dry-run: report deduped Kilter counts vs DB (no writes)
+bunx kilter-sync repair-stats --user <id> --apply  # Write the deduped counts + recompute totals
+bunx kilter-sync repair-stats --user <id> --layouts <uuid,uuid>  # Scope to specific Grips product_layout_uuids
+bunx kilter-sync locations --user <id> # Sync public Kilter gym/board locations
+bunx kilter-sync locations --skip-if-missing-credentials # No-op when no token source is configured
 ```
+
+`repair-stats` is a one-time cleanup for the catalog-stats inflation (see [Stats repair](#stats-repair)). It defaults to a read-only dry-run; nothing is written without `--apply`.
 
 Run with 1Password like aurora-sync:
 

@@ -6,30 +6,218 @@
     "mustBeSignedIn": "You must be signed in"
   },
   "mobile": {
+    "avatar": {
+      "viewProfile": "View {{name}}'s profile",
+      "thisClimber": "this climber"
+    },
     "more": {
       "title": "More",
+      "library": "Library",
       "development": "Development",
       "metroServersTitle": "Metro servers",
       "metroServersSubtitle": "Switch between Tailnet bundlers",
+      "accessibility": {
+        "title": "Accessibility",
+        "description": "Pick hold colours and marker shapes that are easier to tell apart. Shape, size, and brush changes only affect the app overlay, not the board lights.",
+        "resetAll": "Reset hold markers",
+        "save": "Save marker",
+        "rowAccessibility": "{{role}}, {{mode}}",
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "pickerSubtitle": "Use any RGB colour and marker shape.",
+        "shapeLabel": "Shape",
+        "modeLabel": "Hold colour mode",
+        "defaultCopy": "Boardsesh will use the default colour for this hold type and skip it in Bluetooth overrides.",
+        "invalidRgb": "Use numbers from 0 to 255.",
+        "mode": {
+          "default": "Default",
+          "user": "User colour"
+        },
+        "shapes": {
+          "circle": "Circle",
+          "triangleUp": "Triangle up",
+          "triangleDown": "Triangle down",
+          "square": "Square",
+          "diamond": "Diamond"
+        },
+        "brush": {
+          "title": "Brush thickness",
+          "subtitle": "Change how thick overlay marker outlines are.",
+          "value": "{{value}}x",
+          "save": "Save thickness",
+          "rowAccessibility": "Brush thickness, {{value}}x"
+        },
+        "size": {
+          "title": "Marker size",
+          "subtitle": "Change how large overlay marker shapes are.",
+          "value": "{{value}}x",
+          "save": "Save size",
+          "rowAccessibility": "Marker size, {{value}}x"
+        },
+        "channels": {
+          "red": "Red",
+          "green": "Green",
+          "blue": "Blue"
+        },
+        "roles": {
+          "starting": "Start",
+          "hand": "Mid",
+          "finish": "Finish",
+          "foot": "Foot"
+        }
+      },
       "appearance": {
         "title": "Appearance",
         "system": "System",
         "light": "Light",
         "dark": "Dark"
       },
-      "searchLayout": {
-        "title": "Search layout",
-        "description": "Where the grade and filters sit on the climbs screen.",
-        "bottomBar": "Bottom bar",
-        "stickyStrip": "Top strip"
+      "uiStyle": {
+        "title": "UI style",
+        "auto": "Auto",
+        "liquidGlass": "Liquid Glass",
+        "material": "Material",
+        "description": "Auto uses Liquid Glass on iPhone and Material on Android. Pick one to override.",
+        "glassFallback": "Liquid Glass uses a simpler fallback here. The full glass effect needs iOS 26.",
+        "glassFallbackAndroid": "Liquid Glass uses a simpler, solid-surface look on Android."
+      },
+      "gradeFormat": {
+        "title": "Grade format",
+        "description": "Choose how climb grades read across the app.",
+        "vGrade": "V grade",
+        "font": "French",
+        "both": "Both"
+      },
+      "language": {
+        "title": "Language",
+        "system": "System",
+        "description": "System follows your device language.",
+        "contributeTitle": "Help translate Boardsesh",
+        "contributeSubtitle": "These come from the community. Open the {{language}} files on GitHub to fix or add a phrase."
+      },
+      "diagnostics": {
+        "title": "Privacy",
+        "recording": "Help us improve",
+        "recordingDescription": "Send anonymous, masked session recordings so we can squash bugs faster. Your typing and photos stay hidden. Flip it off whenever you like."
+      },
+      "integrations": {
+        "title": "Connected apps",
+        "subtitle": "Board accounts, Apple Health",
+        "subtitleWithStrava": "Board accounts, Apple Health, Strava"
+      },
+      "aboutSection": "About",
+      "changelogTitle": "What's New",
+      "changelogSubtitle": "Recent updates and fixes",
+      "newPill": "New"
+    },
+    "about": {
+      "title": "About",
+      "heroTitle": "Boardsesh",
+      "heroBody": "Run your board from your phone: find climbs, line up sends, light the wall, and keep the session moving.",
+      "sectionTitle": "What Boardsesh is for",
+      "whatItDoesTitle": "Climb without app-hopping",
+      "whatItDoesBody": "Search, queue, light, log, and share climbs from one place while you stay focused on the wall.",
+      "boardsTitle": "For your boards",
+      "boardsBody": "Boardsesh supports sessions on your Kilter, Tension, and MoonBoard setups without pretending to be an official app.",
+      "openTitle": "Built in the open",
+      "openBody": "The project is open source so climbers can report rough edges, request features, and help steer what comes next.",
+      "independentBody": "Boardsesh is not affiliated with or endorsed by Aurora Climbing, Kilter, Tension, Moon Climbing, or any board manufacturer.",
+      "viewOnGithub": "View on GitHub",
+      "joinDiscord": "Join Discord",
+      "partnerTitle": "Partner with us officially",
+      "partnerBody": "Boardsesh works with Kilter, Tension, and MoonBoard from the outside. If you build boards and want to make something official together, we're keen to talk.",
+      "acknowledgementsLink": "Acknowledgements",
+      "acknowledgementsLinkBody": "The people behind Boardsesh",
+      "changelogLink": "What's New",
+      "changelogLinkBody": "Recent updates and fixes"
+    },
+    "acknowledgements": {
+      "title": "Acknowledgements",
+      "intro": "Boardsesh exists because of the people who build it, back it, and put up with endless board talk. Thank you.",
+      "contributorsTitle": "Contributors",
+      "contributorsBody": "Everyone who's shipped code, fixes, and ideas on GitHub.",
+      "sponsorsTitle": "Sponsors",
+      "sponsorsBody": "Climbers keeping the lights on through GitHub Sponsors.",
+      "sponsorsEmpty": "No sponsors yet — want to be the first?",
+      "privateSponsorsThanks": "and {{count}} more sponsoring privately — thank you too",
+      "becomeSponsor": "Become a sponsor",
+      "personalTitle": "Personal thanks",
+      "discordTitle": "Everyone on our Discord",
+      "discordBody": "Thanks for the beta, the psyche, and the bug reports. Tap to join.",
+      "friendsTitle": "The crew",
+      "friendsBody": "{{names}}, thanks for still wanting to sesh with me, despite me forcing everyone to beta test instead of climb. Your real world feedback has really helped set direction for Boardsesh.",
+      "alexBody": "For providing design feedback while in retirement from the other side of the globe — hope to cross climbing paths again some day.",
+      "dogBody": "Thanks Scout for all the emotional support, she's the real MVP of Boardsesh. Despite not even climbing and just wanting to be a beach dog.",
+      "ossLicensesLink": "Open source licenses",
+      "ossLicensesBody": "The open source software Boardsesh is built on"
+    },
+    "licenses": {
+      "title": "Open source licenses",
+      "intro": "Boardsesh is built with these open source packages. Thank you to their maintainers.",
+      "viewSource": "View source",
+      "close": "Close"
+    },
+    "onboarding": {
+      "replaySection": "Walkthrough",
+      "replayTitle": "Replay walkthrough",
+      "replaySubtitle": "See the walkthrough again",
+      "replayError": "Couldn't reopen the walkthrough. Try again.",
+      "prompt": {
+        "title": "See what's lit on your wall, live",
+        "body": "Follow your gym's board and Boardsesh shows what's lit right now: who lit it, the grade, who set it, recent sends. You don't start anything; it's just there.",
+        "footnote": "Plus crew sessions, the workout builder, and send tracking once you're on a wall.",
+        "findBoard": "Find my board",
+        "lookAround": "Look around first"
+      },
+      "boardRevealTip": "Tap to see what other Boardsesh users have sent to the wall.",
+      "tips": {
+        "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
+        "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
+        "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
+        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
       }
     },
     "nav": {
+      "home": "Home",
       "boards": "Boards",
       "climbs": "Climbs",
-      "climb": "Climb",
       "profile": "Profile",
-      "setters": "Setters"
+      "holdFilter": "Hold types",
+      "zoneFilter": "Board region"
+    },
+    "changelog": {
+      "title": "What's New",
+      "intro": "Recent updates and fixes, newest first.",
+      "currentBuild": "You're on the build from {{date}}",
+      "currentBuildVersion": "You're on version {{version}}",
+      "category": {
+        "new": "New",
+        "improved": "Improved",
+        "fixed": "Fixed"
+      },
+      "viewPr": "View on GitHub",
+      "empty": "No changes logged yet — we've been too busy climbing. Check back after the next send.",
+      "nativeRelease": {
+        "title": "App update",
+        "appStore": "A new version shipped to the App Store.",
+        "playStore": "A new version shipped to the Play Store."
+      },
+      "checkForUpdates": "Check for updates",
+      "checking": "Checking…",
+      "downloading": "Downloading…",
+      "upToDate": {
+        "title": "You're up to date",
+        "message": "You're already on the latest version."
+      },
+      "updateReady": {
+        "title": "Update ready",
+        "message": "Restart Boardsesh now to use the latest version?",
+        "restart": "Restart",
+        "later": "Later"
+      },
+      "checkError": {
+        "title": "Couldn't check for updates",
+        "message": "Something went wrong getting the latest version. Try again in a bit."
+      }
     }
   },
   "lightControl": {
@@ -136,10 +324,10 @@
     "classifyHolds": "Classify holds",
     "myPlaylists": "My playlists",
     "recentSessions": "Recent sessions",
-    "help": "Help",
     "about": "About",
     "rateBoardsesh": "Rate Boardsesh",
     "reportBug": "Report a bug",
+    "joinDiscord": "Join Discord",
     "logout": "Log out"
   },
   "loading": {

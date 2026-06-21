@@ -123,6 +123,20 @@ echo "Setting up Git hooks..."
 vp config
 print_success "Git hooks installed (pre-commit will run vp staged)"
 
+# Install the Conventional Commit message hook alongside vp's generated
+# pre-commit, without touching core.hooksPath (vp owns that file). Resolving the
+# hooks dir via git rev-parse handles worktrees and custom layouts.
+HOOKS_DIR=$(git -C "$REPO_ROOT" rev-parse --git-path hooks 2>/dev/null)
+if [ -n "$HOOKS_DIR" ] && [ -f "$REPO_ROOT/.githooks/commit-msg" ]; then
+    mkdir -p "$HOOKS_DIR"
+    cp "$REPO_ROOT/.githooks/commit-msg" "$HOOKS_DIR/commit-msg"
+    chmod +x "$HOOKS_DIR/commit-msg"
+    print_success "commit-msg hook installed (Conventional Commit check)"
+    print_warning "Local hooks are best-effort across git worktrees — CI's commit-lint job is the authoritative gate."
+else
+    print_warning "Could not resolve a hooks dir; skipping commit-msg hook (CI still enforces it)."
+fi
+
 print_step "Step 3: Installing Dependencies"
 
 echo "Installing packages..."

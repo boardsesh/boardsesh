@@ -10,8 +10,9 @@ import { createQueueMutations, type QueueMutationsActions, type QueueMutationsDe
  *
  * Web injects a synchronous client + session getter and omits `ensureReady`
  * (already-joined, throw-on-disconnect). Mobile injects `getWsClient()`, a
- * `sessionIdRef` getter, and an `ensureReady` that runs ensureSession +
- * ensureJoined (lazy-create, no-op-on-disconnect).
+ * `sessionIdRef` getter, and an `ensureReady` that runs ensureJoined for an
+ * existing session and returns null otherwise (solo stays local,
+ * no-op-on-disconnect).
  */
 export function useQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): QueueMutationsActions<TItem> {
   const depsRef = useRef(deps);

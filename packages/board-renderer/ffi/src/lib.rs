@@ -1,6 +1,6 @@
-use std::slice;
 use board_renderer_core::renderer::render_overlay;
 use board_renderer_core::types::RenderConfig;
+use std::slice;
 
 /// Render a board overlay from a JSON config string.
 ///
@@ -17,8 +17,11 @@ pub unsafe extern "C" fn board_renderer_render(
     out_width: *mut u32,
     out_height: *mut u32,
 ) -> i32 {
-    if config_json.is_null() || out_data.is_null() || out_len.is_null()
-        || out_width.is_null() || out_height.is_null()
+    if config_json.is_null()
+        || out_data.is_null()
+        || out_len.is_null()
+        || out_width.is_null()
+        || out_height.is_null()
     {
         return -1;
     }
@@ -93,7 +96,14 @@ mod tests {
         let mut out_w: u32 = 0;
         let mut out_h: u32 = 0;
         let result = unsafe {
-            board_renderer_render(ptr::null(), 0, &mut out_data, &mut out_len, &mut out_w, &mut out_h)
+            board_renderer_render(
+                ptr::null(),
+                0,
+                &mut out_data,
+                &mut out_len,
+                &mut out_w,
+                &mut out_h,
+            )
         };
         assert_eq!(result, -1);
         assert!(out_data.is_null());
@@ -165,7 +175,10 @@ mod tests {
         // Mobile callers omit `mirrored` because they flip with CSS;
         // the field must default to false rather than failing to parse.
         let json = minimal_config_json();
-        assert!(!json.contains("mirrored"), "test fixture should not declare mirrored");
+        assert!(
+            !json.contains("mirrored"),
+            "test fixture should not declare mirrored"
+        );
 
         let mut out_data: *mut u8 = ptr::null_mut();
         let mut out_len: u32 = 0;

@@ -14,4 +14,6 @@
 #define DEFAULT_SIZE_ID 1
 #define DEFAULT_SET_IDS "5,6,7,8,9,10"
 
+#define DEFAULT_RENDER_BASE_URL "https://www.boardsesh.com"
+
 #endif

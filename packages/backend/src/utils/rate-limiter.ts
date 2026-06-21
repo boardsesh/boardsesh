@@ -8,6 +8,22 @@ type RateLimitEntry = {
   resetAt: number;
 };
 
+/**
+ * Thrown when a caller exceeds its window. Carries `retryAfterSeconds` so the
+ * GraphQL layer (`applyRateLimit`) can surface a structured `RATE_LIMITED`
+ * error instead of forcing clients to string-match the message. The message
+ * text is kept stable for older clients that still read it.
+ */
+export class RateLimitError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+    this.name = 'RateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 // Store rate limit state per connection
 const rateLimitMap = new Map<string, RateLimitEntry>();
 
@@ -42,7 +58,7 @@ export function checkRateLimit(
   // Check if limit exceeded
   if (entry.count >= maxRequests) {
     const retryAfterSeconds = Math.ceil((entry.resetAt - now) / 1000);
-    throw new Error(`Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+    throw new RateLimitError(retryAfterSeconds);
   }
 
   // Increment counter

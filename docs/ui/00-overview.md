@@ -25,7 +25,7 @@ When the web app uses a web-specific technology (CSS Grid, MUI components, brows
 | [08-create-climb.md](08-create-climb.md)           | Create Climb      | 133   | Hold editor, form, draft save, BLE preview, MoonBoard import                    |
 | [09-queue-control-bar.md](09-queue-control-bar.md) | Queue Control Bar | 775   | Persistent bar: swipe nav, quick tick, session header, queue list               |
 | [10-session.md](10-session.md)                     | Session           | 216   | Create, join, details, summary, settings                                        |
-| [11-party-mode.md](11-party-mode.md)               | Party Mode        | 114   | Driver control, wall confirmation, participant tracking, angle sync             |
+| [11-party-mode.md](11-party-mode.md)               | Party Mode        | 114   | Always-live wall control, wall confirmation, participant tracking, angle sync   |
 | [12-bluetooth.md](12-bluetooth.md)                 | Bluetooth         | 136   | BLE connect, frame sending, light control, disconnect handling                  |
 | [13-onboarding.md](13-onboarding.md)               | Onboarding        | 124   | 15-step guided tour overlay with state management                               |
 | [14-playlists.md](14-playlists.md)                 | Playlists         | 147   | Library, detail, create/edit, smart playlists, discover                         |

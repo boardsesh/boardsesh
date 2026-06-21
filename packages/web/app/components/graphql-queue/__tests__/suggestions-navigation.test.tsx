@@ -36,10 +36,9 @@ vi.mock('../../queue-control/hooks/use-queue-data-fetching', () => ({
   }),
 }));
 
-// Non-driver: no party session active so isDriver is true in solo, but the
-// suggestionsOnly branch under test fires regardless of driver — the bar/drawer
-// call site is the only consumer that distinguishes. Here we just need the
-// helper itself to walk suggestions correctly.
+// Solo (no active party session). Always-live model: every participant walks
+// the shared queue / search results; we just need the helper itself to walk
+// correctly.
 const mockPersistentSession = {
   activeSession: null,
   session: null,
@@ -49,7 +48,6 @@ const mockPersistentSession = {
   clientId: null,
   participantId: null,
   isLeader: false,
-  driverParticipantId: null,
   users: [],
   currentClimbQueueItem: null,
   queue: [],
@@ -69,8 +67,7 @@ const mockPersistentSession = {
   mirrorCurrentClimb: vi.fn().mockResolvedValue(undefined),
   setQueue: vi.fn().mockResolvedValue(undefined),
   replaceQueueItem: vi.fn().mockResolvedValue(undefined),
-  takeControl: vi.fn().mockResolvedValue(undefined),
-  releaseControl: vi.fn().mockResolvedValue(undefined),
+  reportWallDisconnect: vi.fn().mockResolvedValue(undefined),
   confirmClimbOnWall: vi.fn().mockResolvedValue(undefined),
   setSessionBoardSerial: vi.fn().mockResolvedValue(undefined),
   offlineBufferRef: { current: [] as unknown[] },
@@ -199,148 +196,6 @@ function createWrapper() {
     );
   };
 }
-
-describe('getNextClimbQueueItem with suggestionsOnly (non-driver swipe-forward)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSuggestedClimbs = [];
-    mockClimbSearchResults = null;
-  });
-
-  // Regression: the forward branch used to call
-  //   suggestions.find(c => c.uuid !== anchorClimbUuid)
-  // which returned suggestions[0] whenever the anchor was suggestions[1]
-  // (or any later item — `find` walks from the start). That oscillated the
-  // non-driver between suggestions[0] and suggestions[1] on repeated taps.
-  // Fix uses findIndex(anchor) + 1 so each tap advances one position.
-  it('advances one step per call through ≥3 suggestion items', () => {
-    const climb0 = makeClimb('climb-0', 'A');
-    const climb1 = makeClimb('climb-1', 'B');
-    const climb2 = makeClimb('climb-2', 'C');
-    const climb3 = makeClimb('climb-3', 'D');
-    mockSuggestedClimbs = [climb0, climb1, climb2, climb3];
-
-    const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
-
-    // Step 1: anchor is suggestions[0] -> expect suggestions[1]
-    const anchor0: ClimbQueueItem = {
-      uuid: 'anchor-0',
-      climb: climb0,
-      suggested: true,
-    };
-    const step1 = result.current.getNextClimbQueueItem({ from: anchor0, suggestionsOnly: true });
-    expect(step1).not.toBeNull();
-    expect(step1?.climb.uuid).toBe('climb-1');
-
-    // Step 2: anchor is now suggestions[1] -> expect suggestions[2]
-    const anchor1: ClimbQueueItem = {
-      uuid: 'anchor-1',
-      climb: climb1,
-      suggested: true,
-    };
-    const step2 = result.current.getNextClimbQueueItem({ from: anchor1, suggestionsOnly: true });
-    expect(step2).not.toBeNull();
-    expect(step2?.climb.uuid).toBe('climb-2');
-
-    // Step 3: anchor is now suggestions[2] -> expect suggestions[3]
-    const anchor2: ClimbQueueItem = {
-      uuid: 'anchor-2',
-      climb: climb2,
-      suggested: true,
-    };
-    const step3 = result.current.getNextClimbQueueItem({ from: anchor2, suggestionsOnly: true });
-    expect(step3).not.toBeNull();
-    expect(step3?.climb.uuid).toBe('climb-3');
-
-    // Step 4: anchor is the last item -> expect null (end of feed).
-    const anchor3: ClimbQueueItem = {
-      uuid: 'anchor-3',
-      climb: climb3,
-      suggested: true,
-    };
-    const step4 = result.current.getNextClimbQueueItem({ from: anchor3, suggestionsOnly: true });
-    expect(step4).toBeNull();
-  });
-
-  it('starts at suggestions[0] when the anchor is not in the suggestions feed', () => {
-    const climb0 = makeClimb('climb-0', 'A');
-    const climb1 = makeClimb('climb-1', 'B');
-    mockSuggestedClimbs = [climb0, climb1];
-
-    const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
-
-    // Anchor is a queue item or wall-climb chosen by the driver — not in the
-    // suggestions feed. The forward walk should begin at index 0 rather than
-    // skipping it.
-    const orphanAnchor: ClimbQueueItem = {
-      uuid: 'wall-climb',
-      climb: makeClimb('outside-feed', 'Z'),
-      suggested: false,
-    };
-    const next = result.current.getNextClimbQueueItem({ from: orphanAnchor, suggestionsOnly: true });
-    expect(next).not.toBeNull();
-    expect(next?.climb.uuid).toBe('climb-0');
-  });
-
-  it('uses the same idx+1 stepping as the previous-walk (mirrors backward branch)', () => {
-    // Regression guard: forward and backward must move opposite directions
-    // through the same anchor. Without the fix, advancing then retreating from
-    // suggestions[1] would loop between suggestions[0] and suggestions[1].
-    const climb0 = makeClimb('climb-0', 'A');
-    const climb1 = makeClimb('climb-1', 'B');
-    const climb2 = makeClimb('climb-2', 'C');
-    mockSuggestedClimbs = [climb0, climb1, climb2];
-
-    const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
-
-    const anchor1: ClimbQueueItem = {
-      uuid: 'anchor-1',
-      climb: climb1,
-      suggested: true,
-    };
-    const fwd = result.current.getNextClimbQueueItem({ from: anchor1, suggestionsOnly: true });
-    const back = result.current.getPreviousClimbQueueItem({ from: anchor1, suggestionsOnly: true });
-    expect(fwd?.climb.uuid).toBe('climb-2');
-    expect(back?.climb.uuid).toBe('climb-0');
-  });
-
-  it('returns null when suggestedClimbs is empty', () => {
-    mockSuggestedClimbs = [];
-
-    const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
-
-    const anchor: ClimbQueueItem = {
-      uuid: 'any',
-      climb: makeClimb('any-climb', 'X'),
-      suggested: true,
-    };
-    expect(result.current.getNextClimbQueueItem({ from: anchor, suggestionsOnly: true })).toBeNull();
-  });
-
-  it('does not oscillate when called with the same anchor repeatedly', () => {
-    // The old bug: with anchor = suggestions[1], `find(c => c.uuid !== anchor)`
-    // returns suggestions[0] every time, so non-driver swipe-forward would
-    // bounce back to the top instead of advancing. This regression guard fires
-    // the call repeatedly with the same anchor and asserts the result is
-    // suggestions[anchorIdx + 1], not suggestions[0].
-    const climb0 = makeClimb('climb-0', 'A');
-    const climb1 = makeClimb('climb-1', 'B');
-    const climb2 = makeClimb('climb-2', 'C');
-    mockSuggestedClimbs = [climb0, climb1, climb2];
-
-    const { result } = renderHook(() => useQueueContext(), { wrapper: createWrapper() });
-
-    const anchor1: ClimbQueueItem = {
-      uuid: 'anchor-1',
-      climb: climb1,
-      suggested: true,
-    };
-    for (let i = 0; i < 3; i++) {
-      const next = result.current.getNextClimbQueueItem({ from: anchor1, suggestionsOnly: true });
-      expect(next?.climb.uuid).toBe('climb-2');
-    }
-  });
-});
 
 describe('getNextClimbQueueItem main-branch climbSearchResults walk', () => {
   beforeEach(() => {

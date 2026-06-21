@@ -79,10 +79,10 @@ describe('ImportProgressSteps', () => {
   });
 
   it('handles last step being active', () => {
-    const progress: ImportProgress = { step: 'sessions', message: 'Building sessions...' };
+    const progress: ImportProgress = { step: 'circuits', message: 'Importing circuits...' };
     const { container } = render(<ImportProgressSteps progress={progress} />);
 
-    // All steps before sessions should be complete
+    // All steps before circuits should be complete
     const checkIcons = container.querySelectorAll('[data-testid="CheckCircleOutlinedIcon"]');
     expect(checkIcons.length).toBe(STEP_ORDER.length - 1);
 

@@ -3,9 +3,7 @@ import {
   AURORA_SCAN_SERVICE_UUIDS,
   parseSerialNumber,
 } from '@/app/components/board-bluetooth-control/bluetooth-aurora';
-import { SERIAL_RECONNECT_GRACE_MS } from './scan-constants';
-
-const SCAN_TIMEOUT_MS = 30_000;
+import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from './scan-constants';
 
 type NativeBoardBlePlugin = NonNullable<NonNullable<Window['Capacitor']>['Plugins']['BoardBle']>;
 type NativeBoardBleListenerHandle = Awaited<ReturnType<NativeBoardBlePlugin['addListener']>>;

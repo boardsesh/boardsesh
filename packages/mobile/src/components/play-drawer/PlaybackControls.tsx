@@ -17,10 +17,15 @@ import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight, hapticSelection, hapticSuccess } from '../../lib/haptics';
-import { brandColors } from '../../theme/colors';
+// Aliased: this file reads scheme-aware brand from `useTheme()` for foregrounds
+// (slider/progress fills). `staticBrandColors` is intentionally the static set,
+// used only for the active speed pill — a FILL with white text that must stay
+// legible in both schemes (the lifted dark tint would fail white-on-fill).
+import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { springs, timing } from '../../theme/animations';
+import { roundedReportSpeed, shouldReportSpeed } from './playback-speed-report';
 
 // Continuous range; mirrors web's effective span. 1× is the natural default and
 // gets a gentle release-magnet (see commit()).
@@ -132,7 +137,11 @@ function SpeedPill({
       accessibilityRole="button"
       accessibilityState={{ expanded: active }}
       accessibilityLabel={accessibilityLabel}
-      style={[styles.speedPill, { backgroundColor: active ? brandColors.primary : systemColors.fill }, animatedStyle]}
+      style={[
+        styles.speedPill,
+        { backgroundColor: active ? staticBrandColors.primary : systemColors.fill },
+        animatedStyle,
+      ]}
     >
       <Text variant="footnote" color={active ? iosSystemColors.white : systemColors.label} style={styles.speedPillText}>
         {label}
@@ -158,7 +167,8 @@ function SpeedSlider({
   onChange: (speed: number) => void;
   onLiveChange: (speed: number) => void;
 }) {
-  const { systemColors } = useTheme();
+  const theme = useTheme();
+  const { systemColors } = theme;
   const [trackWidth, setTrackWidth] = useState(0);
   const usable = Math.max(0, trackWidth - THUMB_SIZE);
   const position = useSharedValue(0);
@@ -166,6 +176,10 @@ function SpeedSlider({
   const dragging = useSharedValue(false);
   const thumbScale = useSharedValue(1);
   const lastNotch = useSharedValue(-1);
+  // The last 0.1×-rounded speed pushed via `reportLive`, so the per-frame
+  // worklet skips the cross-thread `runOnJS` hop (and the PlaybackControls
+  // re-render it triggers) when the displayed value hasn't actually changed.
+  const lastReported = useSharedValue(-1);
 
   const ratioToSpeed = useCallback(
     (ratio: number) => Math.round((MIN_SPEED + clamp01(ratio) * (MAX_SPEED - MIN_SPEED)) * 10) / 10,
@@ -173,9 +187,11 @@ function SpeedSlider({
   );
 
   // Keep the thumb synced to the external value while not dragging (peer sync,
-  // commit echoes, resets). The guard avoids fighting the gesture.
+  // commit echoes, resets). Skip until layout gives a real track width — otherwise
+  // `usable` is 0 and the thumb snaps to the left before jumping into place. Read
+  // the SharedValue with `.get()` (Reanimated JS-thread accessor), not `.value`.
   useEffect(() => {
-    if (dragging.value) return;
+    if (usable <= 0 || dragging.get()) return;
     position.value = clamp01((value - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)) * usable;
   }, [value, usable, position, dragging]);
 
@@ -207,6 +223,7 @@ function SpeedSlider({
           thumbScale.value = withSpring(1.25, springs.snappy);
           lastNotch.value =
             Math.round((MIN_SPEED + (usable > 0 ? position.value / usable : 0) * (MAX_SPEED - MIN_SPEED)) * 2) / 2;
+          lastReported.value = roundedReportSpeed(position.value, usable);
           runOnJS(hapticSelection)();
         })
         .onUpdate((event) => {
@@ -219,7 +236,14 @@ function SpeedSlider({
             lastNotch.value = notch;
             runOnJS(hapticSelection)();
           }
-          runOnJS(reportLive)(next);
+          // Gate the cross-thread report on the 0.1×-rounded display value
+          // changing — without this it fires a runOnJS hop + a React setState
+          // (and a PlaybackControls re-render) on every drag frame.
+          const report = shouldReportSpeed(next, usable, lastReported.value);
+          if (report.changed) {
+            lastReported.value = report.rounded;
+            runOnJS(reportLive)(next);
+          }
         })
         .onEnd(() => {
           runOnJS(commit)(position.value);
@@ -228,7 +252,7 @@ function SpeedSlider({
           dragging.value = false;
           thumbScale.value = withSpring(1, springs.snappy);
         }),
-    [usable, position, startPosition, dragging, thumbScale, lastNotch, reportLive, commit],
+    [usable, position, startPosition, dragging, thumbScale, lastNotch, lastReported, reportLive, commit],
   );
 
   // Tap-to-seek on the track.
@@ -259,7 +283,7 @@ function SpeedSlider({
     <GestureDetector gesture={composed}>
       <View style={styles.sliderTrackWrapper} onLayout={handleLayout}>
         <View style={[styles.sliderTrack, { backgroundColor: systemColors.fill }]} />
-        <Animated.View style={[styles.sliderFill, fillStyle]} />
+        <Animated.View style={[styles.sliderFill, { backgroundColor: theme.brandColors.primary }, fillStyle]} />
         <Animated.View style={[styles.sliderThumb, thumbStyle]} />
       </View>
     </GestureDetector>
@@ -286,7 +310,8 @@ export function PlaybackControls({
   onSeek,
   onSpeedChange,
 }: PlaybackControlsProps) {
-  const { systemColors } = useTheme();
+  const theme = useTheme();
+  const { systemColors } = theme;
   const { t } = useTranslation('session');
   const atFirstFrame = frameIndex <= 0;
   const atLastFrame = frameIndex >= frameCount - 1;
@@ -336,7 +361,13 @@ export function PlaybackControls({
     const glide = isPlaying ? Math.max(timing.instant, paceMs / Math.max(speed, 0.01)) : timing.fast;
     progress.value = withTiming(target, { duration: glide });
   }, [frameIndex, frameCount, isPlaying, paceMs, speed, progress]);
-  const progressStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.max(0, progress.value) }] }));
+  // transformOrigin must live in the animated style, not the static StyleSheet —
+  // the latter isn't honoured for the Reanimated-driven scaleX, so the bar would
+  // grow from center instead of left-to-right.
+  const progressStyle = useAnimatedStyle(() => ({
+    transformOrigin: 'left',
+    transform: [{ scaleX: Math.max(0, progress.value) }],
+  }));
 
   const handleMain = useCallback(() => {
     hapticSelection();
@@ -354,7 +385,10 @@ export function PlaybackControls({
 
   return (
     <View style={[styles.container, { backgroundColor: systemColors.tertiaryBackground }]}>
-      <Animated.View style={[styles.progressBar, progressStyle]} pointerEvents="none" />
+      <Animated.View
+        style={[styles.progressBar, { backgroundColor: theme.brandColors.primary }, progressStyle]}
+        pointerEvents="none"
+      />
 
       <View style={styles.transportRow}>
         <View style={styles.sideLeft}>
@@ -437,8 +471,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: brandColors.primary,
-    transformOrigin: 'left',
   },
   transportRow: {
     flexDirection: 'row',
@@ -502,7 +534,6 @@ const styles = StyleSheet.create({
     left: 0,
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
-    backgroundColor: brandColors.primary,
   },
   sliderThumb: {
     position: 'absolute',

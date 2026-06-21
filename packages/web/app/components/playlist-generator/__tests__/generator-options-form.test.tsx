@@ -89,4 +89,30 @@ describe('GeneratorOptionsForm quality filters', () => {
 
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ onlyTallClimbs: true }));
   });
+
+  it('shows wide climbs option for 10x10 Kilter Homewall and updates options', () => {
+    const onChange = vi.fn();
+    render(
+      <GeneratorOptionsForm
+        workoutType="volume"
+        options={getDefaultOptions('volume', 18)}
+        onChange={onChange}
+        onReset={vi.fn()}
+        boardDetails={{
+          ...boardDetails,
+          board_name: 'kilter',
+          layout_id: 8,
+          size_id: 21,
+          size_name: '10x10',
+        }}
+        targetAngle={40}
+        onTargetAngleChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Wide Climbs Only')).toBeDefined();
+    fireEvent.click(screen.getByRole('switch'));
+
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ onlyWideClimbs: true }));
+  });
 });

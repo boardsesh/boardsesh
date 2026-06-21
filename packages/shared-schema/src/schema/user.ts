@@ -15,6 +15,8 @@ export const userTypeDefs = /* GraphQL */ `
     displayName: String
     "URL to user's avatar image"
     avatarUrl: String
+    "Whether this user can reach tester-only developer tooling (has the tester or admin community role)"
+    isTester: Boolean!
   }
 
   """

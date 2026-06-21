@@ -201,6 +201,12 @@ jobs:
           # happened when prod web moved to CI `vercel build`. Public client key
           # (phc_…), not a secret, so it's a GitHub Actions variable.
           NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+          # Keep the production client fallback pointed at the backend service.
+          # Without this, Next can inline the tracked local .env.local value
+          # (ws://localhost:8080/graphql) during CI builds. Runtime host
+          # derivation now protects boardsesh.com, but this keeps every caller
+          # that still reads the baked env on the right backend.
+          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://ws.boardsesh.com/graphql' }}
         run: vercel build --prod
 
       - name: Package prebuilt output
@@ -310,6 +316,7 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VERIFY_MIGRATION_JOURNAL: '1'
         run: bun run --filter=@boardsesh/db db:migrate
 
   deploy-web:

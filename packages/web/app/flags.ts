@@ -1,7 +1,15 @@
-export type FeatureFlags = Record<string, never>;
+// A flat bag of runtime feature flags. `Record<string, boolean | undefined>` (rather than
+// the prior `Record<string, never>`, which made `useFeatureFlag` resolve to
+// `never` and was therefore unusable) so consumers can call
+// `useFeatureFlag('some-flag')` for any string key and get a `boolean | undefined`
+// back. The live value is `undefined` (falsy) until a flag source is wired up, so
+// every flag is OFF by default — matching the mobile FeatureFlagsProvider placeholder.
+// There are currently no runtime flags.
+export type FeatureFlags = Record<string, boolean | undefined>;
 
 export const EMPTY_FEATURE_FLAGS: FeatureFlags = {};
 
-// Vercel's flags discovery endpoint still expects an allFlags export even when
-// there are no active runtime flags configured.
-export const allFlags: Array<{ key: string }> = [];
+export const FEATURE_FLAG_KEYS = [] as const;
+
+// Vercel's flags discovery endpoint expects an allFlags export.
+export const allFlags: Array<{ key: string }> = FEATURE_FLAG_KEYS.map((key) => ({ key }));

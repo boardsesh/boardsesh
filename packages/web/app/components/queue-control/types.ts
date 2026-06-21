@@ -69,13 +69,10 @@ export type QueueActionsType = {
    *  null when validation fails or the mutation is guarded. */
   setCurrentClimb: (climb: Climb, options: SetCurrentClimbOptions) => Promise<ClimbQueueItem | null>;
   setCurrentClimbQueueItem: (item: ClimbQueueItem) => void;
-  /** Browse-initiated drawer open. In solo (no active party session) this is
-   *  equivalent to setCurrentClimb + opening the play drawer — the climb is
-   *  sent to the wall as today. In an active party session, this only opens
-   *  the drawer locally with the tapped climb as a preview; it does not
-   *  mutate state.currentClimbQueueItem and does not broadcast, so other
-   *  party members are not yanked off the wall. The Set Active Climb menu
-   *  action is the only browse-initiated path that broadcasts in party. */
+  /** Browse-initiated drawer open. Always-live model: equivalent to
+   *  setCurrentClimb + opening the play drawer for every participant — the
+   *  climb is sent to the wall (and broadcast to other members when a party
+   *  session is active) exactly like solo. */
   previewClimbFromBrowse: (climb: Climb) => void;
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => void;
@@ -89,42 +86,23 @@ export type QueueActionsType = {
   fetchMoreClimbs: () => void;
   /** Returns the next ClimbQueueItem after `from` (defaults to the current
    *  wall climb). Walks the shared queue first, then falls through to
-   *  suggested climbs once the queue is exhausted.
-   *
-   *  Pass `suggestionsOnly: true` to skip the shared queue entirely and walk
-   *  only the suggested-climbs feed — the non-driver swipe path in party
-   *  (the shared queue is "what the driver committed to," not a non-driver's
-   *  browsing surface). */
-  getNextClimbQueueItem: (options?: {
-    from?: ClimbQueueItem | null;
-    suggestionsOnly?: boolean;
-  }) => ClimbQueueItem | null;
+   *  suggested climbs once the queue is exhausted. Every participant navigates
+   *  the same shared queue (always-live model). */
+  getNextClimbQueueItem: (options?: { from?: ClimbQueueItem | null }) => ClimbQueueItem | null;
   /** Returns the previous ClimbQueueItem before `from` (defaults to the
-   *  current wall climb). Default walks the queue only (no suggestions
-   *  fall-through). With `suggestionsOnly: true`, walks `suggestedClimbs`
-   *  backwards instead — used by the non-driver swipe-back path. */
-  getPreviousClimbQueueItem: (options?: {
-    from?: ClimbQueueItem | null;
-    suggestionsOnly?: boolean;
-  }) => ClimbQueueItem | null;
+   *  current wall climb). Walks the shared queue (no suggestions
+   *  fall-through). */
+  getPreviousClimbQueueItem: (options?: { from?: ClimbQueueItem | null }) => ClimbQueueItem | null;
   setQueue: (queue: ClimbQueueItem[]) => void;
   disconnect?: () => void;
   /** Dispatch an optimistic current-climb update from a native widget navigation.
    *  The native WebSocket already sent the server mutation, so this only updates
    *  the local reducer state and registers the correlationId for echo suppression. */
   dispatchWidgetNavigation?: (item: ClimbQueueItem, correlationId: string) => void;
-  /** Claim wall-control authority and optionally broadcast the given climb.
-   *  Resolves to the persisted `ClimbQueueItem` when a climb was provided
-   *  (matching the `setCurrentClimb` return shape), or `null` otherwise. In
-   *  solo (no party) this degrades to the existing `setCurrentClimb` path. In
-   *  party it sets `driverParticipantId` on the server, yanks control from
-   *  whoever held it, and — when a climb is provided — also appends-and-sets
-   *  it as the wall climb. The drawer's lightbulb (PR 2) and the bar's
-   *  lightbulb (PR 3) call this. */
-  takeControl: (climb?: Climb | null) => Promise<ClimbQueueItem | null>;
-  /** Release wall-control authority. Idempotent — no-op when the local user
-   *  isn't currently the driver. In solo, a no-op. */
-  releaseControl: () => Promise<void>;
+  /** Tell the session this client's own BLE link to the wall dropped so every
+   *  member's wall-confirmed lightbulb clears. Best-effort; a no-op in solo
+   *  (no active session). The current climb is preserved. */
+  reportWallDisconnect: () => Promise<void>;
 };
 
 // Frequently-changing state data
@@ -148,16 +126,13 @@ export type QueueDataType = {
   users?: SessionUser[];
   clientId?: string | null;
   /** Local user's stable participant id for the current session, or null
-   *  outside a session. Use this for comparisons against `driverParticipantId`
-   *  or `SessionUser.id`. */
+   *  outside a session. Use this for comparisons against `SessionUser.id`. */
   participantId?: string | null;
   isLeader?: boolean;
-  /** Participant id of the wall driver, or null when unclaimed (party only;
-   *  always null in solo). */
-  driverParticipantId?: string | null;
-  /** Whether the local user currently drives the wall (true in solo; in party,
-   *  true when local participant id matches `driverParticipantId`). */
-  isDriver?: boolean;
+  /** Session-scoped "the wall is currently lit" indicator (party only). Turns
+   *  on via `WallConfirmedClimb`, off via `WallDisconnected`. Always false in
+   *  solo. */
+  wallConfirmed?: boolean;
   /** Most recent BLE board serial the session has paired to (party). Null in
    *  solo and when no member has ever paired. Used by the drawer's lightbulb
    *  fallback to auto-connect to the same board another member is paired to. */

@@ -11,6 +11,7 @@ import { saveTickDraft } from '@/app/lib/tick-draft-db';
 
 const mockSaveTick = vi.fn();
 const mockLogbookRef: { current: LogbookEntry[] } = { current: [] };
+const mockPresenceControls = vi.hoisted(() => ({ boardId: null as number | null }));
 
 vi.mock('../../components/board-provider/board-provider-context', () => ({
   useBoardProvider: () => ({
@@ -23,6 +24,14 @@ vi.mock('../../components/board-provider/board-provider-context', () => ({
     isInitialized: true,
     getLogbook: vi.fn(),
     saveClimb: vi.fn(),
+  }),
+}));
+
+vi.mock('../../components/board-presence/board-presence-context', () => ({
+  useBoardPresenceControls: () => ({
+    enabled: mockPresenceControls.boardId !== null,
+    boardId: mockPresenceControls.boardId,
+    resolveAndBindBoard: vi.fn(),
   }),
 }));
 
@@ -186,6 +195,7 @@ describe('useTickSave', () => {
     vi.clearAllMocks();
     mockSaveTick.mockResolvedValue(undefined);
     mockLogbookRef.current = [];
+    mockPresenceControls.boardId = null;
   });
 
   afterEach(() => {
@@ -299,6 +309,28 @@ describe('useTickSave', () => {
 
     const call = mockSaveTick.mock.calls[0][0];
     expect(call.status).toBe('flash');
+    expect(call.boardId).toBeUndefined();
+  });
+
+  it('passes the resolved wall boardId when saving a tick while a presence board is bound', () => {
+    mockPresenceControls.boardId = 77;
+    const opts = makeOptions({
+      tickTarget: {
+        climb: makeClimb(),
+        angle: 40 as Angle,
+        boardDetails: makeBoardDetails(),
+        hasPriorHistory: true,
+      },
+    });
+
+    const { result } = renderHook(() => useTickSave(opts));
+
+    act(() => {
+      result.current.save();
+    });
+
+    const call = mockSaveTick.mock.calls[0][0];
+    expect(call.boardId).toBe(77);
   });
 
   it('save() sends status send when hasPriorHistory is true', () => {

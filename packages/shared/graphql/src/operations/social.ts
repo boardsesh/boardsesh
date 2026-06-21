@@ -36,6 +36,7 @@ export const GET_PUBLIC_PROFILE = gql`
       id
       displayName
       avatarUrl
+      instagramUrl
       followerCount
       followingCount
       isFollowedByMe
@@ -366,6 +367,8 @@ export const GET_SETTER_CLIMBS_FULL = gql`
         name
         description
         frames
+        framesCount
+        framesPace
         angle
         ascensionist_count
         difficulty
@@ -417,6 +420,8 @@ export const GET_USER_CLIMBS = gql`
         name
         description
         frames
+        framesCount
+        framesPace
         angle
         ascensionist_count
         difficulty

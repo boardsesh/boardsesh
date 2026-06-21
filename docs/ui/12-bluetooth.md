@@ -14,7 +14,7 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
 4. **Existing adapter cleanup** -- if a prior connection exists, emits `Bluetooth Disconnected` event with `reason: 'reconnect'`, then disconnects.
 5. **Device request and connect** -- `adapter.requestAndConnect(targetSerial)` opens the device picker (OS native on web, custom dialog on Capacitor with RSSI-based signal indicators).
 6. **Device name parsing** -- `parseApiLevel(deviceName)` extracts the Aurora API level from the device name (e.g., `Kilter Board#751737@3` yields API level 3). `parseSerialNumber(deviceName)` extracts the serial (e.g., `751737`).
-7. **Board configuration** -- `adapter.configureBoard()` is called with board name, layout ID, size ID, API level, device name, and colour overrides. Configuration is keyed and cached so reconfiguration is skipped when the key matches.
+7. **Board configuration** -- adapters with a native background writer call `adapter.configureBoard()` with board name, layout ID, size ID, API level, device name, and colour overrides.
 8. **Disconnection listener** -- `adapter.onDisconnect(handleDisconnection)` is registered.
 9. **Initial frames** -- if provided, `sendFramesToBoard(initialFrames, mirrored)` sends the first climb immediately.
 10. **Serial recording** -- for Aurora boards, `recordBoardSerial()` POSTs the serial-to-config mapping to `/api/internal/board-serials` for future auto-matching.
@@ -61,6 +61,14 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
 2. `getMoonboardBluetoothPacket(frames)` produces the packet.
 3. If all placements are skipped, shows error snackbar and returns `false`.
 4. Partial skips are logged to Sentry.
+5. User colour overrides are not sent to MoonBoard controllers because the protocol does not carry arbitrary RGB colours; they still affect in-app rendering.
+
+**Mobile accessibility colour overrides:**
+
+- Mobile stores hold-role colour overrides in `useHoldColorOverrides()` for STARTING, HAND, FINISH, and FOOT.
+- Default mode stores no value, so Aurora-family packets use the canonical board colours.
+- User mode stores RGB colours as hex strings, passes them to `getAuroraBluetoothPacket()`, and pushes the same map through native iOS `configureBoard()` so widget/background sends match the app.
+- The auto-sender includes the colour override signature in its dedupe key so changing a colour repaints the currently loaded climb even when the frames did not change.
 
 **Error handling:**
 

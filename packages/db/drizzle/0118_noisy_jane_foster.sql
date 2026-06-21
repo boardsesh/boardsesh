@@ -1,0 +1,2 @@
+ALTER TABLE "playlists" ADD COLUMN "generated_recommendation" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "playlists_generated_recommendation_idx" ON "playlists" USING btree ("generated_recommendation");

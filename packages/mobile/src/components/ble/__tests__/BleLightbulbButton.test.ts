@@ -30,8 +30,18 @@ describe('BleLightbulbButton state helpers', () => {
     });
   });
 
-  it('only exposes the scanning hint while scanning', () => {
-    expect(getBleLightbulbAccessibilityHint(true, 'Scanning for boards nearby')).toBe('Scanning for boards nearby');
-    expect(getBleLightbulbAccessibilityHint(false, 'Scanning for boards nearby')).toBeUndefined();
+  it('exposes the scanning hint while scanning, the long-press hint otherwise', () => {
+    expect(getBleLightbulbAccessibilityHint(true, 'Scanning for boards nearby', 'Hold for controls')).toBe(
+      'Scanning for boards nearby',
+    );
+    expect(getBleLightbulbAccessibilityHint(false, 'Scanning for boards nearby', 'Hold for controls')).toBe(
+      'Hold for controls',
+    );
+  });
+
+  it('does not fall back to the long-press hint while scanning without a scanning hint', () => {
+    // Scanning takes precedence: a missing scanning hint must not read as the
+    // long-press action (the bug the third arg guards against).
+    expect(getBleLightbulbAccessibilityHint(true, undefined, 'Hold for controls')).toBeUndefined();
   });
 });

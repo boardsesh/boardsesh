@@ -1,0 +1,13 @@
+{
+  "name": "thumbnail-client",
+  "version": "1.0.0",
+  "description": "Board-render thumbnail client (test build)",
+  "platforms": ["native", "espressif32"],
+  "dependencies": {
+    "mocks": "*",
+    "log-buffer": "*"
+  },
+  "build": {
+    "flags": ["-std=c++17", "-DUNIT_TEST"]
+  }
+}

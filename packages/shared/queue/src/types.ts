@@ -41,6 +41,11 @@ export type Climb = {
   userAttempts?: number | null;
   created_at?: string | null;
   published_at?: string | null;
+  // Multi-frame playback metadata: how many snapshots the climb has and the
+  // setter-chosen per-frame pace (ms). Carried through queue conversion so
+  // multi-frame playback uses the setter's pace instead of DEFAULT_PACE_MS.
+  framesCount?: number | null;
+  framesPace?: number | null;
 };
 
 export type ClimbQueueItem = {
@@ -99,7 +104,6 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
   lastReceivedSequence: number | null;
   lastReceivedStateHash: string | null;
   needsResync: boolean;
-  optimisticDriverParticipantId: string | null;
 };
 
 export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchParams> =
@@ -145,7 +149,5 @@ export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchPar
   | { type: 'CLEANUP_PENDING_UPDATE'; payload: { correlationId: string } }
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
   | { type: 'CLEAR_RESYNC_FLAG' }
-  | { type: 'OPTIMISTIC_SET_DRIVER'; payload: { participantId: string } }
-  | { type: 'OPTIMISTIC_CLEAR_DRIVER' }
   | { type: 'REGRADE_CLIMBS'; payload: { grades: Record<string, ClimbRegradePatch> } }
   | { type: 'CLEAR_QUEUE' };

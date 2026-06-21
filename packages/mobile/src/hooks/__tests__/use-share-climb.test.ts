@@ -2,13 +2,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-type SharePayload = { message: string; url: string };
+const ctrl = vi.hoisted(() => ({ os: 'ios' as string }));
+
+type IOSPayload = { message: string; url: string };
+type AndroidPayload = { message: string };
+type SharePayload = IOSPayload | AndroidPayload;
 
 const shareMock = vi.fn<(payload: SharePayload) => Promise<{ action: string }>>(async () => ({
   action: 'sharedAction',
 }));
 
 vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return ctrl.os;
+    },
+  },
   Share: {
     share: (payload: SharePayload) => shareMock(payload),
   },
@@ -33,9 +42,13 @@ const baseArgs = {
   angle: 40,
 };
 
+const expectedReadableShareUrl =
+  'https://www.boardsesh.com/kilter/original/12x14-commerical/screw_bolt/40/view/test-climb-climb-uuid-123';
+
 describe('useShareClimb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ctrl.os = 'ios';
   });
 
   it('returns a no-op when climb is null and does not call Share', async () => {
@@ -46,31 +59,45 @@ describe('useShareClimb', () => {
     expect(shareMock).not.toHaveBeenCalled();
   });
 
-  it('builds the boardsesh climb URL with the configured WEB_BASE_URL', async () => {
-    const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
-    await act(async () => {
-      await result.current();
+  describe('iOS', () => {
+    it('passes { message: climbName, url } — message has name only so URL appears exactly once', async () => {
+      const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
+      await act(async () => {
+        await result.current();
+      });
+      expect(shareMock).toHaveBeenCalledTimes(1);
+      const firstCall = shareMock.mock.calls[0];
+      if (!firstCall) throw new Error('Share.share was not called');
+      const payload = firstCall[0];
+      if (!('url' in payload)) throw new Error('Expected iOS payload shape { message, url }');
+      expect(payload.url).toBe(expectedReadableShareUrl);
+      expect(payload.url).not.toContain('/1/7/1,20/');
+      expect(payload.message).toBe('Test Climb');
+      expect(payload.message).not.toMatch(/https?:\/\//);
+      expect(payload).not.toHaveProperty('title');
     });
-    expect(shareMock).toHaveBeenCalledTimes(1);
-    const firstCall = shareMock.mock.calls[0];
-    if (!firstCall) throw new Error('Share.share was not called');
-    const payload = firstCall[0];
-    expect(payload.url.startsWith('https://www.boardsesh.com/')).toBe(true);
-    expect(payload.url).toContain('climb-uuid-123');
-    expect(payload.url).toContain('kilter');
-    expect(payload.url).toContain('40'); // angle
   });
 
-  it('includes the climb name and URL in the message body', async () => {
-    const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
-    await act(async () => {
-      await result.current();
+  describe('Android', () => {
+    beforeEach(() => {
+      ctrl.os = 'android';
     });
-    const firstCall = shareMock.mock.calls[0];
-    if (!firstCall) throw new Error('Share.share was not called');
-    const payload = firstCall[0];
-    expect(payload.message).toContain('Test Climb');
-    expect(payload.message).toContain(payload.url);
+
+    it('embeds climb name and URL in message — url field is ignored by the Android Share API', async () => {
+      const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));
+      await act(async () => {
+        await result.current();
+      });
+      expect(shareMock).toHaveBeenCalledTimes(1);
+      const firstCall = shareMock.mock.calls[0];
+      if (!firstCall) throw new Error('Share.share was not called');
+      const payload = firstCall[0];
+      if (!('message' in payload)) throw new Error('Expected Android payload shape { message }');
+      expect(payload.message).toContain('Test Climb');
+      expect(payload.message).toContain(expectedReadableShareUrl);
+      expect(payload.message).not.toContain('/1/7/1,20/');
+      expect(payload).not.toHaveProperty('url');
+    });
   });
 
   it('propagates rejections from Share.share so callers can surface failures', async () => {

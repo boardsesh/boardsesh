@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import * as Sentry from '@sentry/node';
 import type { ConnectionContext, SessionEvent, ClimbQueueItem } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
@@ -9,6 +10,16 @@ import {
   requireSessionMember,
   applyRateLimit,
   validateInput,
+  RATE_LIMIT_SESSION,
+  RATE_LIMIT_SESSION_OP,
+  RATE_LIMIT_JOIN_SESSION,
+  RATE_LIMIT_JOIN_SESSION_OP,
+  RATE_LIMIT_CREATE_SESSION,
+  RATE_LIMIT_CREATE_SESSION_OP,
+  RATE_LIMIT_END_SESSION,
+  RATE_LIMIT_END_SESSION_OP,
+  RATE_LIMIT_CONFIRM_CLIMB_ON_WALL,
+  RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP,
 } from '../shared/helpers';
 import {
   SessionIdSchema,
@@ -24,30 +35,30 @@ import {
   QueueArraySchema,
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
+import { markErrorReported } from '../../../utils/sentry-dedupe';
 import type { CreateSessionInput } from '../shared/types';
 import { db } from '../../../db/client';
 import { esp32Controllers, userBoards } from '@boardsesh/db/schema/app';
-import { sessionBoards } from '../../../db/schema';
+import { sessionBoards, sessions } from '../../../db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { generateSessionSummary } from './session-summary';
-import { adoptRecentTicksForSession, extractBoardType } from '../../../jobs/inferred-session-builder';
+import { autoSyncSessionToIntegrations } from '../../../integrations/export-service';
+import { normalizeIanaTimezone } from '../../../utils/timezone';
 import { endLiveActivity } from '../../../services/apns';
-import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
 import { buildSessionPayload } from './helpers';
+import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
 
 /**
- * Queue-control-bar pivot — `isLeader` audit (2026-05-23):
- * Confirmed that no `isLeader` / `leaderId` / `leaderConnectionId` /
- * `LeaderChanged` site in this file gates wall-control. The only
- * authorization use is `endSession` (line 870), which checks
- * `isCreator || isLeader` to authorize SESSION TERMINATION — not driver /
- * wall-control. Every other `isLeader` reference here is presentation:
- * passed back through the `Session.isLeader` field so clients can show the
- * legacy host-crown badge without a refetch. Wall-control authority lives
- * exclusively on `driverParticipantId` (added in PR #2198) and is gated by
- * `takeControl` / `releaseControl`. Web, iOS, and shared-schema searches
- * also turned up nothing wall-control-gated by `isLeader`. See
- * `docs/queue-control-bar-pivot.md` (What shipped vs spec) for details.
+ * `isLeader` audit (always-live sessions):
+ * No `isLeader` / `leaderId` / `leaderConnectionId` / `LeaderChanged` site
+ * in this file gates wall navigation. The only authorization use is
+ * `endSession`, which checks `isCreator || isLeader` to authorize SESSION
+ * TERMINATION. Every other `isLeader` reference here is presentation: passed
+ * back through the `Session.isLeader` field so clients can show the legacy
+ * host-crown badge without a refetch. Sessions are always-live — any member
+ * may navigate the wall (`setCurrentClimb` / `navigateToQueueItem` broadcast
+ * to all members with no gate). The session-scoped wall-disconnect signal is
+ * `reportWallDisconnect`, which publishes `WallDisconnected`.
  */
 
 /**
@@ -108,7 +119,7 @@ export const sessionMutations = {
         `[joinSession] START - connectionId: ${ctx.connectionId}, sessionId: ${sessionId}, username: ${username}, sessionName: ${sessionName}, initialQueueLength: ${initialQueue?.length || 0}`,
       );
 
-    await applyRateLimit(ctx, 10); // Limit session joins to prevent abuse
+    await applyRateLimit(ctx, RATE_LIMIT_JOIN_SESSION, RATE_LIMIT_JOIN_SESSION_OP);
 
     // Validate inputs
     validateInput(SessionIdSchema, sessionId, 'sessionId');
@@ -150,12 +161,6 @@ export const sessionMutations = {
     // Auto-authorize user's ESP32 controllers for this session (if authenticated)
     if (ctx.isAuthenticated && ctx.userId) {
       void authorizeUserControllersForSession(ctx.userId, sessionId);
-      // Adopt recent solo ticks into this session. The session row exists at
-      // this point (ensureSessionRecordExists ran inside roomManager.joinSession).
-      const boardTypeFromPath = extractBoardType(boardPath);
-      adoptRecentTicksForSession(ctx.userId, sessionId, boardTypeFromPath).catch((err) => {
-        logger.error(`[joinSession] Failed to adopt recent ticks for session ${sessionId}:`, err);
-      });
     }
 
     // Notify session about new or reconnected participant
@@ -194,115 +199,126 @@ export const sessionMutations = {
    * Optionally creates a discoverable session with GPS coordinates
    */
   createSession: async (_: unknown, { input }: { input: CreateSessionInput }, ctx: ConnectionContext) => {
-    if (DEBUG) logger.info(`[createSession] START - connectionId: ${ctx.connectionId}, boardPath: ${input.boardPath}`);
-
-    await applyRateLimit(ctx, 5); // Limit session creation to prevent abuse
-
-    // Validate input
-    validateInput(CreateSessionInputSchema, input, 'createSession input');
-
-    // Generate a unique session ID
-    const sessionId = uuidv4();
-    if (DEBUG) logger.info(`[createSession] Generated sessionId: ${sessionId}`);
-
-    if (input.discoverable) {
-      // Discoverable sessions require authentication (they write to DB with userId)
-      requireAuthenticated(ctx);
-      // Use authenticated userId from context
-      const userId = ctx.userId || ctx.connectionId;
-      await roomManager.createDiscoverableSession(
-        sessionId,
-        input.boardPath,
-        userId,
-        input.latitude,
-        input.longitude,
-        input.name,
-        input.goal,
-        input.isPermanent,
-        input.color,
-      );
-
-      // If boardIds provided, create sessionBoards junction rows
-      if (input.boardIds && input.boardIds.length > 0) {
-        // Verify boards exist
-        const boards = await db
-          .select({ id: userBoards.id, gymId: userBoards.gymId })
-          .from(userBoards)
-          .where(inArray(userBoards.id, input.boardIds));
-
-        if (boards.length !== input.boardIds.length) {
-          throw new Error('One or more board IDs do not exist');
-        }
-
-        // Validate all boards share the same gym (multi-board requires same gym)
-        const gymIds = new Set(boards.map((b) => b.gymId).filter(Boolean));
-        if (gymIds.size > 1) {
-          throw new Error('All boards must belong to the same gym for multi-board sessions');
-        }
-
-        // Insert junction rows
-        await db.insert(sessionBoards).values(
-          input.boardIds.map((boardId) => ({
-            sessionId,
-            boardId,
-          })),
-        );
-      }
-    }
-
-    // For HTTP requests (stateless), skip joining the session in-memory.
-    // The creator will join via WebSocket when they navigate to the board page.
-    const isHttpRequest = ctx.transport === 'http';
-
-    if (!isHttpRequest) {
-      // WebSocket path: join the session as the creator.
-      // For non-discoverable sessions, this also creates the board_sessions row
-      // via ensureSessionRecordExists inside roomManager.joinSession.
-      const result = await roomManager.joinSession(
-        ctx.connectionId,
-        sessionId,
-        input.boardPath,
-        undefined, // username will be set later
-        undefined, // avatarUrl will be set later
-        undefined, // initialQueue
-        null, // initialCurrentClimb
-        input.discoverable ? undefined : input.name,
-      );
+    try {
       if (DEBUG)
-        logger.info(`[createSession] Joined session - clientId: ${result.clientId}, isLeader: ${result.isLeader}`);
+        logger.info(`[createSession] START - connectionId: ${ctx.connectionId}, boardPath: ${input.boardPath}`);
 
-      updateContext(ctx.connectionId, { sessionId, participantId: result.participantId });
+      await applyRateLimit(ctx, RATE_LIMIT_CREATE_SESSION, RATE_LIMIT_CREATE_SESSION_OP);
 
-      // Adopt recent solo ticks now that the session row exists in board_sessions
-      // (boardsesh_ticks.session_id is a FK to board_sessions.id)
-      if (ctx.isAuthenticated && ctx.userId) {
-        const boardTypeFromPath = extractBoardType(input.boardPath);
-        adoptRecentTicksForSession(ctx.userId, sessionId, boardTypeFromPath).catch((err) => {
-          logger.error(`[createSession] Failed to adopt recent ticks for session ${sessionId}:`, err);
-        });
+      // Validate input
+      validateInput(CreateSessionInputSchema, input, 'createSession input');
+
+      // Generate a unique session ID
+      const sessionId = uuidv4();
+      if (DEBUG) logger.info(`[createSession] Generated sessionId: ${sessionId}`);
+
+      if (input.discoverable) {
+        // Discoverable sessions require authentication (they write to DB with userId)
+        requireAuthenticated(ctx);
+        // Use authenticated userId from context
+        const userId = ctx.userId || ctx.connectionId;
+        await roomManager.createDiscoverableSession(
+          sessionId,
+          input.boardPath,
+          userId,
+          input.latitude,
+          input.longitude,
+          input.name,
+          input.goal,
+          input.isPermanent,
+          input.color,
+        );
+
+        // If boardIds provided, create sessionBoards junction rows
+        if (input.boardIds && input.boardIds.length > 0) {
+          // Verify boards exist
+          const boards = await db
+            .select({ id: userBoards.id, gymId: userBoards.gymId })
+            .from(userBoards)
+            .where(inArray(userBoards.id, input.boardIds));
+
+          if (boards.length !== input.boardIds.length) {
+            throw new Error('One or more board IDs do not exist');
+          }
+
+          // Validate all boards share the same gym (multi-board requires same gym)
+          const gymIds = new Set(boards.map((b) => b.gymId).filter(Boolean));
+          if (gymIds.size > 1) {
+            throw new Error('All boards must belong to the same gym for multi-board sessions');
+          }
+
+          // Insert junction rows
+          await db.insert(sessionBoards).values(
+            input.boardIds.map((boardId) => ({
+              sessionId,
+              boardId,
+            })),
+          );
+        }
       }
+
+      // For HTTP requests (stateless), skip joining the session in-memory.
+      // The creator will join via WebSocket when they navigate to the board page.
+      const isHttpRequest = ctx.transport === 'http';
+
+      if (!isHttpRequest) {
+        // WebSocket path: join the session as the creator.
+        // For non-discoverable sessions, this also creates the board_sessions row
+        // via ensureSessionRecordExists inside roomManager.joinSession.
+        const result = await roomManager.joinSession(
+          ctx.connectionId,
+          sessionId,
+          input.boardPath,
+          undefined, // username will be set later
+          undefined, // avatarUrl will be set later
+          undefined, // initialQueue
+          null, // initialCurrentClimb
+          input.discoverable ? undefined : input.name,
+        );
+        if (DEBUG)
+          logger.info(`[createSession] Joined session - clientId: ${result.clientId}, isLeader: ${result.isLeader}`);
+
+        updateContext(ctx.connectionId, { sessionId, participantId: result.participantId });
+
+        return {
+          id: sessionId,
+          name: input.name || null,
+          boardPath: input.boardPath,
+          users: result.users,
+          queueState: {
+            sequence: result.sequence,
+            stateHash: result.stateHash,
+            queue: result.queue,
+            currentClimbQueueItem: result.currentClimbQueueItem,
+          },
+          isLeader: result.isLeader,
+          // No board has been paired yet; gets set the first time anyone in the
+          // session calls setSessionBoardSerial.
+          lastConnectedBoardSerial: null,
+          clientId: result.clientId,
+          participantId: result.participantId,
+          goal: input.goal || null,
+          isPublic: true,
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          isPermanent: input.isPermanent || false,
+          color: input.color || null,
+        };
+      }
+
+      // HTTP path: session membership is handled by joinSession when the client connects via WebSocket.
+      if (DEBUG) logger.info(`[createSession] HTTP request - returning session metadata without joining`);
 
       return {
         id: sessionId,
         name: input.name || null,
         boardPath: input.boardPath,
-        users: result.users,
-        queueState: {
-          sequence: result.sequence,
-          stateHash: result.stateHash,
-          queue: result.queue,
-          currentClimbQueueItem: result.currentClimbQueueItem,
-        },
-        isLeader: result.isLeader,
-        // Newly created sessions start with no driver — the creator must press
-        // the lightbulb to claim the wall. Null here lets the bar render the
-        // empty/outlined state in PR 2 onward.
-        driverParticipantId: null,
-        // No board has been paired yet; gets set the first time anyone in the
-        // session calls setSessionBoardSerial.
+        users: [],
+        queueState: null,
+        isLeader: false,
         lastConnectedBoardSerial: null,
-        clientId: result.clientId,
-        participantId: result.participantId,
+        clientId: null,
+        participantId: ctx.participantId || ctx.connectionId || '',
         goal: input.goal || null,
         isPublic: true,
         startedAt: new Date().toISOString(),
@@ -310,32 +326,31 @@ export const sessionMutations = {
         isPermanent: input.isPermanent || false,
         color: input.color || null,
       };
+    } catch (err) {
+      // Rate-limit hits are expected abuse-protection noise, not a session-start
+      // bug — let them flow through without a Sentry event.
+      if (err instanceof Error && err.message.startsWith('Rate limit exceeded')) throw err;
+      // Production masks GraphQL errors to "Unexpected error" (yoga.ts), and the
+      // mobile client discards the rest — so capture the true cause here, before
+      // masking, with enough context to triage a failed Start session.
+      Sentry.captureException(err, {
+        tags: { source: 'createSession', transport: ctx.transport },
+        extra: {
+          boardPath: input.boardPath,
+          discoverable: input.discoverable,
+          isAuthenticated: ctx.isAuthenticated,
+          userId: ctx.userId,
+          hasName: !!input.name,
+          hasGoal: !!input.goal,
+          boardIdCount: input.boardIds?.length ?? 0,
+        },
+      });
+      // Mark so the generic Yoga error handler skips its own capture (this would
+      // otherwise be a second event). Rethrow so client behaviour and the rest of
+      // the error pipeline are unchanged.
+      markErrorReported(err);
+      throw err;
     }
-
-    // HTTP path: adoption is handled by joinSession when the client connects
-    // via WebSocket (avoids double invocation for HTTP + discoverable sessions).
-
-    // HTTP path: return session metadata only; client joins via WebSocket later
-    if (DEBUG) logger.info(`[createSession] HTTP request - returning session metadata without joining`);
-
-    return {
-      id: sessionId,
-      name: input.name || null,
-      boardPath: input.boardPath,
-      users: [],
-      queueState: null,
-      isLeader: false,
-      driverParticipantId: null,
-      lastConnectedBoardSerial: null,
-      clientId: null,
-      participantId: ctx.participantId || ctx.connectionId || '',
-      goal: input.goal || null,
-      isPublic: true,
-      startedAt: new Date().toISOString(),
-      endedAt: null,
-      isPermanent: input.isPermanent || false,
-      color: input.color || null,
-    };
   },
 
   /**
@@ -384,95 +399,86 @@ export const sessionMutations = {
   },
 
   /**
-   * Claim wall-control authority and optionally broadcast a climb to the wall.
-   *
-   * Mediates the queue-control-bar pivot's lightbulb gesture. Any session
-   * participant may call — yank-on-press by design (the previous driver's
-   * lightbulb releases automatically when the new driver claims). When `climb`
-   * is provided, the climb is also appended to the queue (if not already
-   * present) and broadcast as the current climb, matching `setCurrentClimb`'s
-   * side effects. Publishes `DriverChanged` regardless of whether a climb was
-   * provided.
+   * Report that the wall connection relaying this session's current climb has
+   * dropped. The session-scoped counterpart to board-presence's wall signal:
+   * the device that was sending climbs to the wall over BLE lost its link
+   * (manual disconnect, BLE drop), so peers should clear their "climb is lit"
+   * lightbulb state. The current climb is unchanged — pressing the lightbulb
+   * re-asserts (re-sends) it. Any session participant may call. The server
+   * derives `disconnectedByParticipantId` from the caller's identity so it
+   * cannot be forged. Publishes `WallDisconnected`. Returns the resolved
+   * `Session` so optimistic-UI callers can apply server-derived state without
+   * a follow-up query (symmetric with `confirmClimbOnWall`). Session identity
+   * comes from the WebSocket connection context — no `sessionId` argument.
+   */
+  reportWallDisconnect: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
+    const sessionId = requireSession(ctx);
+    await requireSessionMember(ctx, sessionId);
+
+    // Hard-error when ctx.participantId is missing — same reasoning as
+    // confirmClimbOnWall: connectionIds rotate on every reconnect, so falling
+    // back would leak the reporter's identity across reconnects and weaken the
+    // wire event.
+    if (!ctx.participantId) {
+      throw new Error('reportWallDisconnect requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+    const participantId = ctx.participantId;
+
+    pubsub.publishSessionEvent(sessionId, {
+      __typename: 'WallDisconnected',
+      disconnectedByParticipantId: participantId,
+    });
+
+    // Mirror confirmClimbOnWall: return the resolved Session so optimistic-UI
+    // callers can apply server-derived state without a follow-up query.
+    return buildSessionPayload(sessionId, ctx, { participantId });
+  },
+
+  /**
+   * DEPRECATED compat shim — sessions are always-live, so there is no wall
+   * driver to claim. Kept one release for stale clients (cached web bundles,
+   * un-OTA'd native apps) that still call `takeControl`. If a climb is provided
+   * we set it as the current climb (so the stale client's wall change still
+   * propagates always-live, shouldAddToQueue=true mirrors setCurrentClimb);
+   * otherwise it's a no-op. NEVER publishes `DriverChanged`. Remove after the
+   * rollout window.
    */
   takeControl: async (_: unknown, { climb }: { climb?: ClimbQueueItem | null }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
     await requireSessionMember(ctx, sessionId);
     if (climb !== null && climb !== undefined) {
       validateInput(ClimbQueueItemSchema, climb, 'climb');
+      await setCurrentClimbAndPublish(sessionId, climb, true, roomManager, pubsub, ctx.connectionId || null, null);
     }
+    return buildSessionPayload(sessionId, ctx, ctx.participantId ? { participantId: ctx.participantId } : {});
+  },
 
-    // Hard-error when ctx.participantId is missing rather than silently
-    // falling back to connectionId. The connectionId rotates on every
-    // reconnect, so any subsequent clearSessionDriverIf/releaseDriverIfMatches
-    // call (e.g. driver bounces wifi, reconnects with a fresh connectionId)
-    // would fail to match the prior key and leak the driver assignment.
-    // Surfacing the failure forces auth to publish a real participantId.
-    if (!ctx.participantId) {
-      throw new Error('takeControl requires ctx.participantId; refusing to fall back to connectionId.');
-    }
-    const participantId = ctx.participantId;
-
-    // Broadcast the climb to the wall BEFORE swapping the driver. If
-    // setCurrentClimbAndPublish throws (e.g. Redis VersionConflict over
-    // MAX_RETRIES, or any other failure inside the queue-update path), the
-    // driver hasn't moved yet — subscribers don't end up in the wedged
-    // "B is driving, but the wall still shows A's previous climb" state
-    // that the old "driver first, then climb" ordering produced. The atomic
-    // swap below is the moment the driver actually flips for everyone.
-    if (climb) {
-      await setCurrentClimbAndPublish(
-        sessionId,
-        climb,
-        true, // takeControl always treats the climb as a queue-add candidate (matches the old setCurrentClimb+shouldAddToQueue:true path)
-        roomManager,
-        pubsub,
-        ctx.connectionId || null,
-        null,
-      );
-    }
-
-    // Atomic swap so the previous-vs-new comparison can't race a concurrent
-    // takeControl from another participant. The room manager returns the
-    // previous driver from a single Redis GETSET in multi-instance mode (and
-    // the in-memory shadow in single-instance), which we use to decide
-    // whether to publish DriverChanged.
-    const previousDriverParticipantId = await roomManager.setSessionDriverAndReturnPrevious(sessionId, participantId);
-
-    // Broadcast DriverChanged only on transitions. Self-claim while already
-    // driving is a no-op for the wire (avoids redundant subscriber work and
-    // keeps the time series clean for the Phase 5 instrumentation). The
-    // event carries the previous driver so subscribers can render
-    // "X took the wall from Y" toasts without local bookkeeping (Phase 5
-    // `previousDriver` analytics property).
-    if (previousDriverParticipantId !== participantId) {
-      pubsub.publishSessionEvent(sessionId, {
-        __typename: 'DriverChanged',
-        driverParticipantId: participantId,
-        previousDriverParticipantId,
-      });
-    }
-
-    // We already know the new driver from the atomic swap above; everything
-    // else fans out via the helper.
-    return buildSessionPayload(sessionId, ctx, {
-      driverParticipantId: participantId,
-      participantId,
-    });
+  /**
+   * DEPRECATED compat shim — no wall driver exists. Inert no-op kept one release
+   * for stale clients. NEVER publishes `DriverChanged`. Returns the session
+   * unchanged. Remove after the rollout window.
+   */
+  releaseControl: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
+    const sessionId = requireSession(ctx);
+    await requireSessionMember(ctx, sessionId);
+    return buildSessionPayload(sessionId, ctx, ctx.participantId ? { participantId: ctx.participantId } : {});
   },
 
   /**
    * Confirm to all session members that a climb was successfully sent to the
    * wall over BLE from this client's phone. Any session participant may call —
    * the BLE-capable phone that handled the send is the source of truth for
-   * confirmation, regardless of who holds the driver role. The server stamps
-   * `confirmedAt` and derives `confirmedByParticipantId` from the caller's
-   * identity so clients cannot forge either field. The optional
-   * `queueItemUuid` disambiguates the press when the same climb is queued
-   * twice. Publishes `WallConfirmedClimb`. Returns the resolved `Session` so
-   * optimistic-UI callers can apply server-derived state without a follow-up
-   * query (symmetric with `takeControl` / `releaseControl`). Session identity
-   * comes from the WebSocket connection context — no `sessionId` argument.
+   * confirmation. The server stamps `confirmedAt` and derives
+   * `confirmedByParticipantId` from the caller's identity so clients cannot
+   * forge either field. The optional `queueItemUuid` disambiguates the press
+   * when the same climb is queued twice. Publishes `WallConfirmedClimb`.
+   * Returns the resolved `Session` so optimistic-UI callers can apply
+   * server-derived state without a follow-up query (symmetric with
+   * `reportWallDisconnect`). Session identity comes from the WebSocket
+   * connection context — no `sessionId` argument.
    */
   confirmClimbOnWall: async (
     _: unknown,
@@ -487,18 +493,18 @@ export const sessionMutations = {
     // 2 s picker timeout. 60/min covers worst-case rapid swiping with
     // headroom while still choking off replay storms from a misbehaving
     // client.
-    await applyRateLimit(ctx, 60, 'confirmClimbOnWall');
+    await applyRateLimit(ctx, RATE_LIMIT_CONFIRM_CLIMB_ON_WALL, RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP);
     // Session identity comes from the WebSocket connection context (the
-    // "WS-implicit" pattern used by takeControl / releaseControl) — clients
-    // no longer pass `sessionId` as an argument.
+    // "WS-implicit" pattern) — clients no longer pass `sessionId` as an
+    // argument.
     const sessionId = requireSession(ctx);
     validateInput(ClimbUuidSchema, climbUuid, 'climbUuid');
     await requireSessionMember(ctx, sessionId);
 
     // Hard-error when ctx.participantId is missing. ConnectionIds rotate on
     // every reconnect, so falling back would leak the confirmer's identity
-    // across reconnects and weaken the wire event. See takeControl above for
-    // the full reasoning.
+    // across reconnects and weaken the wire event. See reportWallDisconnect
+    // above for the full reasoning.
     if (!ctx.participantId) {
       throw new Error('confirmClimbOnWall requires ctx.participantId; refusing to fall back to connectionId.');
     }
@@ -507,7 +513,7 @@ export const sessionMutations = {
     // Correlate the wire climb against the session's recent-climbs ring
     // buffer (last RECENT_CLIMBS_BUFFER_SIZE authoritative wall climbs, per
     // services/distributed-state/constants.ts). Strict equality against
-    // `currentClimbQueueItem` rejects legitimate confirms when the driver
+    // `currentClimbQueueItem` rejects legitimate confirms when a member
     // navigates on in the ~hundreds-of-ms window between BLE write and
     // mutation arrival — the buffer turns over every wall change, so it
     // still gates against arbitrary stale/forged UUIDs without the race.
@@ -526,7 +532,7 @@ export const sessionMutations = {
       queueItemUuid: queueItemUuid ?? null,
     });
 
-    // Mirror takeControl / releaseControl: return the resolved Session so
+    // Mirror reportWallDisconnect: return the resolved Session so
     // optimistic-UI callers can apply server-derived state without a
     // follow-up query.
     return buildSessionPayload(sessionId, ctx, { participantId });
@@ -539,17 +545,26 @@ export const sessionMutations = {
    * Idempotent: when the stored serial already equals the incoming value, no
    * `SessionBoardSerialChanged` event is emitted. Returns the resolved
    * `Session` so optimistic-UI callers can apply server-derived state without
-   * a follow-up query (symmetric with `takeControl` / `releaseControl`).
-   * Session identity comes from the WebSocket connection context — no
-   * `sessionId` argument.
+   * a follow-up query (symmetric with `confirmClimbOnWall`). Session identity
+   * comes from the WebSocket connection context — no `sessionId` argument.
    */
   setSessionBoardSerial: async (_: unknown, { serial }: { serial: string }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     // Session identity from the WebSocket context (WS-implicit pattern); no
     // sessionId argument.
     const sessionId = requireSession(ctx);
     validateInput(BoardSerialSchema, serial, 'serial');
     await requireSessionMember(ctx, sessionId);
+
+    // Hard-error when ctx.participantId is missing — same reasoning as
+    // confirmClimbOnWall: connectionIds aren't stable across
+    // reconnects. Must run BEFORE the roomManager write and event publish
+    // below; otherwise an anonymous/unidentified caller would mutate Redis
+    // and broadcast SessionBoardSerialChanged before we reject them.
+    if (!ctx.participantId) {
+      throw new Error('setSessionBoardSerial requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+    const participantId = ctx.participantId;
 
     const previousSerial = await roomManager.setSessionBoardSerialAndReturnPrevious(sessionId, serial);
     if (previousSerial !== serial) {
@@ -559,15 +574,7 @@ export const sessionMutations = {
       });
     }
 
-    // Hard-error when ctx.participantId is missing — same reasoning as
-    // takeControl / confirmClimbOnWall: connectionIds aren't stable across
-    // reconnects.
-    if (!ctx.participantId) {
-      throw new Error('setSessionBoardSerial requires ctx.participantId; refusing to fall back to connectionId.');
-    }
-    const participantId = ctx.participantId;
-
-    // Mirror takeControl / releaseControl: return the resolved Session.
+    // Mirror confirmClimbOnWall: return the resolved Session.
     // Re-read `lastConnectedBoardSerial` (via the helper's default lookup)
     // rather than echoing the input — another writer (different participant
     // on a different board) can land between our write and this read, and
@@ -579,16 +586,15 @@ export const sessionMutations = {
   /**
    * Broadcast a boardPath update (today: angle changes) to every session
    * participant. Any participant may call — angle is presentational and
-   * doesn't drive BLE (hold positions ride on the climb, not the
-   * boardPath), so the queue-control-bar pivot's "only driver moves the
-   * wall" rule doesn't apply. Idempotent: if the stored boardPath already
-   * matches, no event fires. Publishes `SessionBoardPathChanged` on
-   * change. Returns the resolved Session for optimistic-UI symmetry with
-   * takeControl / releaseControl. Session identity is resolved from the
-   * WebSocket connection context — no `sessionId` argument.
+   * doesn't drive BLE (hold positions ride on the climb, not the boardPath).
+   * Idempotent: if the stored boardPath already matches, no event fires.
+   * Publishes `SessionBoardPathChanged` on change. Returns the resolved
+   * Session for optimistic-UI symmetry with confirmClimbOnWall. Session
+   * identity is resolved from the WebSocket connection context — no
+   * `sessionId` argument.
    */
   setSessionBoardPath: async (_: unknown, { boardPath }: { boardPath: string }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = requireSession(ctx);
     validateInput(BoardPathSchema, boardPath, 'boardPath');
     await requireSessionMember(ctx, sessionId);
@@ -609,15 +615,13 @@ export const sessionMutations = {
 
     // Return the resolved Session. Fan independent reads in parallel —
     // matches setSessionBoardSerial's shape.
-    const [users, sessionData, queueState, driverParticipantId, lastConnectedBoardSerial, leaderConnectionId] =
-      await Promise.all([
-        roomManager.getSessionUsers(sessionId),
-        roomManager.getSessionById(sessionId),
-        roomManager.getQueueState(sessionId),
-        roomManager.getSessionDriverParticipantId(sessionId),
-        roomManager.getSessionBoardSerial(sessionId),
-        roomManager.getSessionLeaderConnectionId(sessionId),
-      ]);
+    const [users, sessionData, queueState, lastConnectedBoardSerial, leaderConnectionId] = await Promise.all([
+      roomManager.getSessionUsers(sessionId),
+      roomManager.getSessionById(sessionId),
+      roomManager.getQueueState(sessionId),
+      roomManager.getSessionBoardSerial(sessionId),
+      roomManager.getSessionLeaderConnectionId(sessionId),
+    ]);
 
     // `requireSessionMember` above already verified the session exists.
     // If the row vanished between membership check and this read we have
@@ -642,7 +646,6 @@ export const sessionMutations = {
         currentClimbQueueItem: queueState.currentClimbQueueItem,
       },
       isLeader: leaderConnectionId === ctx.connectionId,
-      driverParticipantId,
       lastConnectedBoardSerial,
       clientId: ctx.connectionId,
       participantId,
@@ -656,52 +659,16 @@ export const sessionMutations = {
   },
 
   /**
-   * Release wall-control authority. Idempotent — when the caller is not the
-   * current driver, the mutation is a no-op (returns the current session state
-   * with `driverParticipantId` unchanged). Publishes `DriverChanged { null }`
-   * only when the clear actually happened.
-   */
-  releaseControl: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx);
-    const sessionId = requireSession(ctx);
-    await requireSessionMember(ctx, sessionId);
-
-    // Hard-error when ctx.participantId is missing. Falling back to
-    // connectionId would silently fail to clear the driver key after the
-    // user's connectionId rotated — the original takeControl wrote under
-    // their stable participantId, and a release under a rotated connectionId
-    // wouldn't match. See takeControl above for the full reasoning.
-    if (!ctx.participantId) {
-      throw new Error('releaseControl requires ctx.participantId; refusing to fall back to connectionId.');
-    }
-    const participantId = ctx.participantId;
-    const cleared = await roomManager.clearSessionDriverIf(sessionId, participantId);
-
-    if (cleared) {
-      // `cleared = true` means the caller was the driver, so they are also the
-      // previousDriverParticipantId carried on the event.
-      pubsub.publishSessionEvent(sessionId, {
-        __typename: 'DriverChanged',
-        driverParticipantId: null,
-        previousDriverParticipantId: participantId,
-      });
-    }
-
-    // Short-circuit the driver lookup when we just cleared (we already know
-    // it's null). Everything else fans out through the helper.
-    return buildSessionPayload(sessionId, ctx, {
-      participantId,
-      ...(cleared ? { driverParticipantId: null } : {}),
-    });
-  },
-
-  /**
    * End a session explicitly.
    * Validates the caller is the creator or current leader.
    * Returns a session summary with stats, or null if no ticks.
    */
-  endSession: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx, 5);
+  endSession: async (
+    _: unknown,
+    { sessionId, timezone }: { sessionId: string; timezone?: string | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, RATE_LIMIT_END_SESSION, RATE_LIMIT_END_SESSION_OP);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
     // Ending a session is destructive (terminates every subscriber, generates
     // a summary row, marks the session ended in Postgres). The pre-#2128 code
@@ -753,6 +720,19 @@ export const sessionMutations = {
       }
     }
 
+    // Record the ending device's timezone before the session is closed out —
+    // exports to platforms like Strava need wall-clock local time, and UTC
+    // timestamps alone can't provide it. Best-effort: a bad zone string never
+    // fails the end.
+    const normalizedTimezone = normalizeIanaTimezone(timezone);
+    if (normalizedTimezone) {
+      try {
+        await db.update(sessions).set({ timezone: normalizedTimezone }).where(eq(sessions.id, sessionId));
+      } catch (error) {
+        logger.warn(`[endSession] failed to persist timezone for session ${sessionId}:`, error);
+      }
+    }
+
     // End the session via room manager
     await roomManager.endSession(sessionId);
 
@@ -774,6 +754,22 @@ export const sessionMutations = {
 
     // Generate and return summary
     const summary = await generateSessionSummary(sessionId);
+
+    // Fire-and-forget: upload the finished session to every participant's
+    // connected external integration (Strava) that has auto-sync on. Never
+    // blocks or fails the endSession response — failures are logged inside the
+    // service and here as a backstop.
+    // No summary (no recorded activity) means there is nothing to export —
+    // skip the dispatch entirely so the catch below can never misattribute
+    // that case as a failure.
+    if (summary) {
+      autoSyncSessionToIntegrations(sessionId, summary, sessionData.boardPath, normalizedTimezone).catch(
+        (error: unknown) => {
+          logger.error(`[Integrations] auto-sync dispatch failed for session ${sessionId}:`, error);
+        },
+      );
+    }
+
     return summary;
   },
 

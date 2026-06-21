@@ -7,6 +7,7 @@ on:
       - 'packages/**'
       - 'Dockerfile.backend'
       - 'Dockerfile.web'
+      - 'Dockerfile.sync'
       - '.dockerignore'
       - 'railway.toml'
       - 'bun.lock'
@@ -21,11 +22,13 @@ on:
       - '.github/workflows/branch-deploy.yml'
       - '.github/workflows/e2e-tests.yml'
       - '.github/workflows/service-deploy-inputs.yml'
+      - '.github/workflows/sync-deploy.yml'
   pull_request:
     paths:
       - 'packages/**'
       - 'Dockerfile.backend'
       - 'Dockerfile.web'
+      - 'Dockerfile.sync'
       - '.dockerignore'
       - 'railway.toml'
       - 'bun.lock'
@@ -40,6 +43,7 @@ on:
       - '.github/workflows/branch-deploy.yml'
       - '.github/workflows/e2e-tests.yml'
       - '.github/workflows/service-deploy-inputs.yml'
+      - '.github/workflows/sync-deploy.yml'
 
 jobs:
   check:

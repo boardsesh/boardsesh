@@ -3,23 +3,20 @@
  * Phase 3.1 of the queue-control-bar pivot simplify pass.
  *
  * The helper is now the canonical path for every Session-returning
- * resolver (joinSession, takeControl, releaseControl, confirmClimbOnWall,
+ * resolver (joinSession, reportWallDisconnect, confirmClimbOnWall,
  * setSessionBoardSerial, queries.session). The undefined-vs-explicit-null
- * override semantics + the `cleared ? { driverParticipantId: null } : {}`
- * pattern from `releaseControl` are subtle enough that indirect coverage
- * through the resolver tests isn't enough — this file exercises the
- * helper's behaviour directly.
+ * override semantics are subtle enough that indirect coverage through the
+ * resolver tests isn't enough — this file exercises the helper's behaviour
+ * directly.
  *
  * Behaviours verified:
- *  1. Default (no overrides) — all six fetchers fire in parallel; the
- *     payload shape mirrors what the pre-helper resolvers built by hand.
+ *  1. Default (no overrides) — all fetchers fire in parallel; the payload
+ *     shape mirrors what the pre-helper resolvers built by hand.
  *  2. `inputs.users` / `inputs.queueState` / `inputs.sessionData` /
- *     `inputs.driverParticipantId` / `inputs.lastConnectedBoardSerial` /
- *     `inputs.leaderConnectionId` — each short-circuits its corresponding
- *     fetch when supplied, no Redis round-trip.
- *  3. `inputs.driverParticipantId: null` is honoured as a real override
- *     (the releaseControl `cleared ? { driverParticipantId: null } : {}`
- *     pattern) — `getSessionDriverParticipantId` is NOT called.
+ *     `inputs.lastConnectedBoardSerial` / `inputs.leaderConnectionId` — each
+ *     short-circuits its corresponding fetch when supplied, no Redis round-trip.
+ *  3. `inputs.lastConnectedBoardSerial: null` is honoured as a real override
+ *     — `getSessionBoardSerial` is NOT called.
  *  4. `inputs.isLeader` short-circuits the `leaderConnectionId` fetch
  *     entirely — it's only ever consumed to compute `isLeader`, so
  *     fetching it just to discard the value is wasted Redis traffic.
@@ -37,7 +34,6 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 const getSessionUsersMock = vi.fn();
 const getSessionByIdMock = vi.fn();
 const getQueueStateMock = vi.fn();
-const getSessionDriverParticipantIdMock = vi.fn();
 const getSessionBoardSerialMock = vi.fn();
 const getSessionLeaderConnectionIdMock = vi.fn();
 
@@ -46,7 +42,6 @@ vi.mock('../services/room-manager', () => ({
     getSessionUsers: (...args: unknown[]) => getSessionUsersMock(...args),
     getSessionById: (...args: unknown[]) => getSessionByIdMock(...args),
     getQueueState: (...args: unknown[]) => getQueueStateMock(...args),
-    getSessionDriverParticipantId: (...args: unknown[]) => getSessionDriverParticipantIdMock(...args),
     getSessionBoardSerial: (...args: unknown[]) => getSessionBoardSerialMock(...args),
     getSessionLeaderConnectionId: (...args: unknown[]) => getSessionLeaderConnectionIdMock(...args),
   },
@@ -95,13 +90,12 @@ beforeEach(() => {
     ]);
   getSessionByIdMock.mockReset().mockResolvedValue(sampleSessionData);
   getQueueStateMock.mockReset().mockResolvedValue(sampleQueueState);
-  getSessionDriverParticipantIdMock.mockReset().mockResolvedValue('participant-2');
   getSessionBoardSerialMock.mockReset().mockResolvedValue('SERIAL-123');
   getSessionLeaderConnectionIdMock.mockReset().mockResolvedValue('conn-1');
 });
 
 describe('buildSessionPayload — defaults (no overrides)', () => {
-  it('returns the full 16-field Session shape with values from the room manager', async () => {
+  it('returns the full Session shape with values from the room manager', async () => {
     const payload = await buildSessionPayload('session-1', makeCtx());
 
     expect(payload).toEqual({
@@ -116,7 +110,6 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
         currentClimbQueueItem: null,
       },
       isLeader: true, // leaderConnectionId === ctx.connectionId
-      driverParticipantId: 'participant-2',
       lastConnectedBoardSerial: 'SERIAL-123',
       clientId: 'conn-1',
       participantId: 'participant-1',
@@ -129,13 +122,12 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
     });
   });
 
-  it('fires all six room-manager reads in parallel', async () => {
+  it('fires all room-manager reads in parallel', async () => {
     await buildSessionPayload('session-1', makeCtx());
 
     expect(getSessionUsersMock).toHaveBeenCalledWith('session-1');
     expect(getSessionByIdMock).toHaveBeenCalledWith('session-1');
     expect(getQueueStateMock).toHaveBeenCalledWith('session-1');
-    expect(getSessionDriverParticipantIdMock).toHaveBeenCalledWith('session-1');
     expect(getSessionBoardSerialMock).toHaveBeenCalledWith('session-1');
     expect(getSessionLeaderConnectionIdMock).toHaveBeenCalledWith('session-1');
   });
@@ -176,16 +168,6 @@ describe('buildSessionPayload — override short-circuits', () => {
     expect(payload.endedAt).toBeNull();
     expect(payload.isPermanent).toBe(false);
     expect(payload.color).toBeNull();
-  });
-
-  it('honours inputs.driverParticipantId: null (the releaseControl cleared shortcut)', async () => {
-    // This is the subtle one — releaseControl spreads
-    // `...(cleared ? { driverParticipantId: null } : {})`, so the override
-    // is a real null, not an absent key. The fetcher should NOT run.
-    const payload = await buildSessionPayload('session-1', makeCtx(), { driverParticipantId: null });
-
-    expect(getSessionDriverParticipantIdMock).not.toHaveBeenCalled();
-    expect(payload.driverParticipantId).toBeNull();
   });
 
   it('skips getSessionBoardSerial when inputs.lastConnectedBoardSerial is supplied (incl null)', async () => {

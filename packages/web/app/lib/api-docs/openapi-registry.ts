@@ -68,7 +68,7 @@ export const ClimbSchema = z
     ascensionist_count: z.number().describe('Number of people who have completed this climb'),
     difficulty: z.string().describe('Difficulty grade of the climb'),
     quality_average: z.string().describe('Average quality rating'),
-    stars: z.number().describe('Star rating (0-3)'),
+    stars: z.number().describe('Star rating (0-5), rounded from quality_average'),
     difficulty_error: z.string().describe('Difficulty uncertainty/spread'),
     litUpHoldsMap: LitUpHoldsMapSchema.describe('Map of holds to light up on the board'),
     mirrored: z.boolean().optional().describe('Whether the climb is displayed mirrored'),

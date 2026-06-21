@@ -23,6 +23,7 @@ describe('validateInstagramBetaLink', () => {
       status: 'ok',
       thumbnail: 'https://cdn.example.com/photo.jpg',
       username: 'camgibbs',
+      caption: null,
     });
 
     await expect(validateInstagramBetaLink('https://www.instagram.com/p/CU-NOpdL8Kf/')).resolves.toEqual({
@@ -41,6 +42,7 @@ describe('validateInstagramBetaLink', () => {
       status: 'ok',
       thumbnail: 'https://cdn.example.com/photo.jpg',
       username: 'someone',
+      caption: null,
     });
 
     await expect(validateInstagramBetaLink('https://www.instagram.com/reel/DLM2nf9S1h6/')).resolves.toMatchObject({
@@ -80,6 +82,7 @@ describe('validateInstagramBetaLink', () => {
       status: 'ok',
       thumbnail: '',
       username: null,
+      caption: null,
     });
 
     await expect(validateInstagramBetaLink('https://www.instagram.com/p/CU-NOpdL8Kf/')).resolves.toEqual({

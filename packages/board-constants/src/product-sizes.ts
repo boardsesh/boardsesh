@@ -1,5 +1,6 @@
 import { AURORA_BOARDS, type BoardName } from '@boardsesh/shared-schema';
-import { AURORA_PRODUCT_SIZES, HOLE_PLACEMENTS, IMAGE_FILENAMES, LAYOUTS, SETS } from './generated/product-sizes-data';
+import { AURORA_PRODUCT_SIZES, IMAGE_FILENAMES, LAYOUTS, SETS } from './generated/product-sizes-data';
+import { HOLE_PLACEMENTS, getBoardHolePlacements } from './hole-placements';
 import type { HoldTuple, LayoutData, ProductSizeData, SetData, SizeEdges } from './types';
 
 export type { HoldTuple, LayoutData, ProductSizeData, SetData, SizeEdges } from './types';
@@ -22,7 +23,14 @@ export const PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeData>> =
   moonboard: MOONBOARD_PRODUCT_SIZES,
 };
 
-export { LAYOUTS, SETS, IMAGE_FILENAMES, HOLE_PLACEMENTS };
+export { LAYOUTS, SETS, IMAGE_FILENAMES, HOLE_PLACEMENTS, getBoardHolePlacements };
+
+// The Kilter Homewall is layout 8 / product 7 in Aurora's data. These gate the
+// tall/wide climb filters and the expansion-aware hold filtering, so web,
+// mobile, and the db query layer all read the same value from here rather than
+// each redefining the magic number.
+export const KILTER_HOMEWALL_LAYOUT_ID = 8;
+export const KILTER_HOMEWALL_PRODUCT_ID = 7;
 
 // 23/24 are 8x12 Full Ride/Mainline, 25/26 are 10x12 Full Ride/Mainline.
 const KILTER_HOMEWALL_TALL_SIZE_ID_SET: ReadonlySet<number> = new Set([23, 24, 25, 26]);
@@ -53,6 +61,20 @@ export const getProductSize = (boardName: BoardName, sizeId: number): ProductSiz
 
 export const getLayout = (boardName: BoardName, layoutId: number): LayoutData | null => {
   return LAYOUTS[boardName]?.[layoutId] ?? null;
+};
+
+/**
+ * Resolve a layout id to its human-readable name (e.g. `1` → "Kilter Board
+ * Original"). Returns `''` for an unknown layout, matching web's
+ * `boardDetails.layout_name || ''` fallback so analytics `boardLayout`
+ * properties carry the same string value on web and mobile.
+ *
+ * Shared by every call site that reports `boardLayout` to analytics
+ * (create-climb events, and the hold/zone filter events) so a numeric layout
+ * id is never sent where web sends a name.
+ */
+export const getLayoutName = (boardName: BoardName, layoutId: number): string => {
+  return LAYOUTS[boardName]?.[layoutId]?.name ?? '';
 };
 
 export const getAllLayouts = (boardName: BoardName): LayoutData[] => {
@@ -170,5 +192,8 @@ export const getImageFilename = (
 
 export const getHolePlacements = (boardName: BoardName, layoutId: number, setId: number): HoldTuple[] => {
   const key = `${layoutId}-${setId}`;
-  return HOLE_PLACEMENTS[boardName]?.[key] ?? [];
+  // Load only the requested board's shard (lazily, via getBoardHolePlacements) so
+  // selecting a board never evaluates every board's holds. On Hermes this is the
+  // difference between a ~30–86 KB per-board eval and a ~200 KB all-boards eval.
+  return getBoardHolePlacements(boardName)[key] ?? [];
 };

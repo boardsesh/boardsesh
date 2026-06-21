@@ -223,9 +223,18 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
           // Sort newest-first explicitly so firstTickAt/lastTickAt don't depend
           // on the server's arrival order. Compare epoch millis so mixed
           // timezone offsets (e.g. `+05:30` vs `Z`) still sort correctly.
-          const ticks = [...event.ticks].sort(
-            (a, b) => new Date(b.climbedAt).getTime() - new Date(a.climbedAt).getTime(),
+          // The live stats event omits per-climb beta links (the subscription
+          // doesn't select them), so carry over the ones the detail query
+          // already cached, keyed by climb, rather than dropping them.
+          // Key by `${boardType}:${climbUuid}` to match the session-detail
+          // resolver's beta map, so a climb UUID shared across two boards keeps
+          // its own beta.
+          const betaByClimb = new Map(
+            prev.ticks.map((tick) => [`${tick.boardType}:${tick.climbUuid}`, tick.betaLinks ?? []]),
           );
+          const ticks = [...event.ticks]
+            .sort((a, b) => new Date(b.climbedAt).getTime() - new Date(a.climbedAt).getTime())
+            .map((tick) => ({ ...tick, betaLinks: betaByClimb.get(`${tick.boardType}:${tick.climbUuid}`) ?? [] }));
           const firstTickAt = ticks.length > 0 ? ticks[ticks.length - 1].climbedAt : prev.firstTickAt;
           const lastTickAt = ticks.length > 0 ? ticks[0].climbedAt : prev.lastTickAt;
 

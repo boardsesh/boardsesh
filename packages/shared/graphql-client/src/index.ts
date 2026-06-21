@@ -10,7 +10,7 @@ export {
 } from './constants';
 
 export type { GraphQLErrorExtensions } from './errors';
-export { GraphQLOperationError, isClimbDuplicateExtension } from './errors';
+export { GraphQLOperationError, isClimbDuplicateExtension, isRateLimitedExtension } from './errors';
 
 export { getOperationName } from './operation-name';
 

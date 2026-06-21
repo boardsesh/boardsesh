@@ -6,7 +6,15 @@
 
 import type { SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 
-export type SmartPlaylistSlug = 'five-stars' | 'most-repeated' | 'projects' | 'liked-climbs';
+export type SmartPlaylistSlug =
+  | 'five-stars'
+  | 'most-repeated'
+  | 'projects'
+  | 'liked-climbs'
+  | 'crowd-favorites'
+  | 'hidden-gems'
+  | 'at-your-level'
+  | 'fresh';
 
 export type SmartPlaylistPresentation = {
   type: SmartPlaylistType;
@@ -22,6 +30,38 @@ export type SmartPlaylistPresentation = {
 };
 
 export const SMART_PLAYLISTS: SmartPlaylistPresentation[] = [
+  {
+    type: 'RECOMMENDED_CROWD_FAVORITES',
+    slug: 'crowd-favorites',
+    icon: '🔥',
+    color: '#d65a4f',
+    titleI18nKey: 'library.smart.crowdFavorites.title',
+    descriptionI18nKey: 'library.smart.crowdFavorites.description',
+  },
+  {
+    type: 'RECOMMENDED_HIDDEN_GEMS',
+    slug: 'hidden-gems',
+    icon: '💎',
+    color: '#9C27B0',
+    titleI18nKey: 'library.smart.hiddenGems.title',
+    descriptionI18nKey: 'library.smart.hiddenGems.description',
+  },
+  {
+    type: 'RECOMMENDED_AT_LEVEL',
+    slug: 'at-your-level',
+    icon: '📈',
+    color: '#5fb27a',
+    titleI18nKey: 'library.smart.atYourLevel.title',
+    descriptionI18nKey: 'library.smart.atYourLevel.description',
+  },
+  {
+    type: 'RECOMMENDED_FRESH',
+    slug: 'fresh',
+    icon: '🌱',
+    color: '#FBBF24',
+    titleI18nKey: 'library.smart.fresh.title',
+    descriptionI18nKey: 'library.smart.fresh.description',
+  },
   {
     type: 'FIVE_STARS',
     slug: 'five-stars',
@@ -42,7 +82,7 @@ export const SMART_PLAYLISTS: SmartPlaylistPresentation[] = [
     type: 'PROJECTS',
     slug: 'projects',
     icon: '🎯',
-    color: '#d65a4f', // themeTokens.colors.accentRose
+    color: '#2563EB', // blue — distinct from the amber/purple/pink presets
     titleI18nKey: 'library.smart.projects.title',
     descriptionI18nKey: 'library.smart.projects.description',
   },
@@ -55,6 +95,8 @@ export const SMART_PLAYLISTS: SmartPlaylistPresentation[] = [
     descriptionI18nKey: 'library.smart.likedClimbs.description',
   },
 ];
+
+export const DEFAULT_PINNED_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = ['LIKED_CLIMBS', 'FIVE_STARS'];
 
 const BY_TYPE = new Map<SmartPlaylistType, SmartPlaylistPresentation>(
   SMART_PLAYLISTS.map((preset) => [preset.type, preset]),

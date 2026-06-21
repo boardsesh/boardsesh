@@ -1,38 +1,36 @@
 ## Party Mode
 
-### Driver Control System
+### Wall Control (always-live)
 
-The driver control system manages which participant controls the physical climbing board's LEDs. It is wired through the persistent session context (`PersistentSessionContext`) and the Bluetooth context (`BluetoothContext`).
+Group sessions are always-live. There is no driver role and no preview-only gating: any participant who changes the current climb broadcasts it to everyone, and whoever holds a BLE connection relays it to the board — same as solo. The lightbulb is wired through the persistent session context (`PersistentSessionContext`) and the Bluetooth context (`BluetoothContext`).
 
 **State model (`PersistentSessionStateType`):**
 
-- `driverParticipantId: string | null` -- stable participant ID of the wall driver, or null when unclaimed.
 - `participantId: string | null` -- the local user's participant ID (user UUID for authenticated, equals `clientId` for anonymous).
-- Driver derivation: `isDriver = driverParticipantId === participantId`.
+- Wall-confirmed state is tracked from `WallConfirmedClimb` (lit) and `WallDisconnected` (unlit) session events, not from a driver claim.
 
 **Lightbulb button states:**
 
-1. **Disconnected (no BLE):** Tapping initiates Bluetooth pairing. The `BluetoothProvider` creates a fresh adapter, shows the device picker (Web Bluetooth's `requestDevice` on web, custom `DevicePickerDialog` on Capacitor), and connects.
+The lightbulb is a send / re-assert affordance. Lit means our session's climb is confirmed on the wall; unlit means the relaying connection dropped and we no longer know the board still shows our climb. The current climb is preserved either way.
 
-2. **Connected, no driver:** Board is connected but no one is driving. Lightbulb appears filled. Tapping calls `takeControl` mutation which claims the wall, optionally sending the current climb.
+1. **Disconnected (no BLE):** Tapping initiates Bluetooth pairing. The `BluetoothProvider` creates a fresh adapter, shows the device picker (Web Bluetooth's `requestDevice` on web, custom `DevicePickerDialog` on Capacitor), and connects, then sends the current climb.
 
-3. **Pending:** After tapping the lightbulb, a 2-second watcher timer starts. If `confirmClimbOnWall` arrives within that window (via the `wall-confirm-bus`), the timer is dismissed. If not, a fallback runs (auto-connect or device picker).
+2. **Connected, unlit:** Tapping re-asserts (re-sends) the current climb to the board.
 
-4. **Driver (self):** Active lightbulb with "ON WALL" pill indicator. Tapping calls `releaseControl` mutation to give up wall control.
+3. **Pending:** After tapping the lightbulb, a 2-second watcher timer starts. If `confirmClimbOnWall` arrives within that window (via the `wall-confirm-bus`), the timer is dismissed and the lightbulb lights. If not, the timer just clears the pulse. The tap already initiated the connect above, so the watcher is armed **pulse-only** (`pulseOnly: true`) and never fires its own connect fallback — a second connect while the device picker is still open would start a duplicate scan (the iOS "Already scanning" failure). The controller's `auto_connect` / `picker` fallbacks remain for callers that arm without first connecting.
 
-5. **Non-driver viewing driver's climb:** The climb the driver confirmed on the wall is displayed. The queue auto-sends the current climb to the board via `BluetoothAutoSender`.
-
-6. **Non-driver previewing different climb:** A "Return to wall" button appears, indicating the user has drifted from the driver's active climb.
+4. **Lit:** Our session's climb is confirmed on the wall. A `WallDisconnected` event turns it back off for everyone when the relaying connection drops.
 
 **Wall confirmation flow:**
 
-1. Driver taps lightbulb, triggering `takeControl` mutation (optionally passing a climb).
+1. A participant changes the current climb; it broadcasts to all members and whoever has BLE relays it.
 2. `BluetoothAutoSender` sends LED frames to the board via BLE (`sendFramesToBoard`).
 3. On successful BLE write:
    - `emitWallConfirm(climbUuid)` fires on the local wall-confirm bus so the same phone's drawer dismisses its timer.
    - If a session exists, `confirmClimbOnWall(climbUuid)` mutation broadcasts to all participants.
-4. All participants receive the `WallConfirmedClimb` event via their session-event subscription. The event is republished onto the wall-confirm bus.
+4. All participants receive the `WallConfirmedClimb` event via their session-event subscription. The event is republished onto the wall-confirm bus and lights the lightbulb.
 5. The session records `confirmedAt` and `confirmedByParticipantId`.
+6. When the relaying device's BLE drops, it calls `reportWallDisconnect`, which publishes a `WallDisconnected { disconnectedByParticipantId }` event; every member turns the lightbulb off while the current climb stays put. (If that device's WebSocket closes uncleanly, the room manager publishes `WallDisconnected` with `disconnectedByParticipantId: null` as a backstop.)
 
 **BLE write serialization (`BluetoothAutoSender`):**
 
@@ -53,7 +51,6 @@ The auto-sender uses a latest-wins queue pattern to avoid overlapping GATT opera
 
 **Avatar group:**
 
-- Current driver is highlighted with a lightbulb badge.
 - Tick badges on avatars show who has sent the current climb (from `tickedBy` on `ClimbQueueItem`).
 - Tapping the avatar group expands to a full participant list with display names.
 
@@ -101,14 +98,13 @@ When any participant changes the board angle:
 
 ### Data Layer
 
-| Operation               | Type         | Purpose                                                                                           |
-| ----------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
-| `takeControl`           | Mutation     | Claims wall driver status, optionally with a climb                                                |
-| `releaseControl`        | Mutation     | Releases wall driver status                                                                       |
-| `confirmClimbOnWall`    | Mutation     | Confirms a climb was sent to the board via BLE                                                    |
-| `setSessionBoardPath`   | Mutation     | Broadcasts angle/board path change to all members                                                 |
-| `setSessionBoardSerial` | Mutation     | Shares which physical board serial is connected                                                   |
-| `sessionUpdates`        | Subscription | Real-time session events (driver changes, path changes, serial changes, participant joins/leaves) |
-| `queueUpdates`          | Subscription | Real-time queue state changes (add, remove, reorder, current climb)                               |
+| Operation               | Type         | Purpose                                                                                        |
+| ----------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| `confirmClimbOnWall`    | Mutation     | Confirms a climb was sent to the board via BLE (lights the lightbulb for all members)          |
+| `reportWallDisconnect`  | Mutation     | Reports the relaying BLE link dropped (unlights the lightbulb for all members)                 |
+| `setSessionBoardPath`   | Mutation     | Broadcasts angle/board path change to all members                                              |
+| `setSessionBoardSerial` | Mutation     | Shares which physical board serial is connected                                                |
+| `sessionUpdates`        | Subscription | Real-time session events (wall confirm/disconnect, path changes, serial changes, joins/leaves) |
+| `queueUpdates`          | Subscription | Real-time queue state changes (add, remove, reorder, current climb)                            |
 
 ---

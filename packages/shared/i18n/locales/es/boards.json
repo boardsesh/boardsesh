@@ -1,78 +1,115 @@
 {
   "discovery": {
     "section": {
-      "nearby": "Boards cerca de ti"
+      "nearby": "Plafones cerca de ti"
     },
     "findNearby": {
-      "loading": "Buscando tablas de escalada...",
+      "loading": "Buscando plafones...",
       "geoDenied": "Ubicación no disponible",
-      "error": "Error al cargar tablas de escalada cercanas",
-      "noResults": "No se encontraron tablas de escalada cercanas",
+      "error": "Error al cargar plafones cercanos",
+      "noResults": "No se encontraron plafones cercanos",
       "idle": "Buscar cerca"
     },
     "search": {
-      "ariaLabel": "Buscar una tabla de escalada",
+      "ariaLabel": "Buscar un plafón",
       "label": "Buscar"
     },
     "custom": {
-      "ariaLabel": "Crear una tabla personalizada",
-      "label": "Tabla de escalada personalizada"
+      "ariaLabel": "Crear un plafón personalizado",
+      "label": "Plafón personalizado"
     },
     "create": {
-      "defaultLabel": "Nueva tabla de escalada"
+      "defaultLabel": "Nuevo plafón"
     },
     "bluetooth": {
       "scanning": "Escaneando…",
-      "boardsFound": "Tablas de escalada encontradas",
-      "noBoardsFound": "No se encontraron tablas de escalada",
+      "boardsFound": "Plafones encontrados",
+      "noBoardsFound": "No se encontraron plafones",
       "unavailable": "Bluetooth no disponible",
       "idle": "Inicio rápido"
     }
   },
   "mobile": {
-    "emptyTitle": "Aún no tienes boards",
-    "emptySubtitle": "Busca un board para empezar",
-    "signInTitle": "Inicia sesión para ver tus boards",
-    "signInSubtitle": "Tus boards están vinculados a tu cuenta.",
+    "edit": {
+      "screenTitle": "Editar plafón",
+      "save": "Guardar cambios",
+      "updateError": "No se pudieron guardar los cambios. Inténtalo de nuevo.",
+      "notFound": "No encontramos ese plafón",
+      "back": "Volver",
+      "configLockedHint": "Este plafón tiene ascensos registrados, así que su layout, tamaño y sets están bloqueados."
+    },
+    "manage": {
+      "ownedHeader": "Tus plafones",
+      "followingHeader": "Siguiendo",
+      "deleteTitle": "¿Eliminar plafón?",
+      "deleteMessage": "¿Quitar \"{{name}}\" de tus plafones? No se puede deshacer.",
+      "deleteConfirm": "Eliminar",
+      "cancel": "Cancelar",
+      "deleteError": "No se pudo eliminar ese plafón. Inténtalo de nuevo.",
+      "unfollowError": "No se pudo dejar de seguir ese plafón. Inténtalo de nuevo.",
+      "editAria": "Editar {{name}}",
+      "deleteAria": "Eliminar {{name}}",
+      "unfollowAria": "Dejar de seguir {{name}}"
+    },
+    "emptyTitle": "Aún no tienes plafones",
+    "emptySubtitle": "Busca un plafón para empezar",
+    "signInTitle": "Inicia sesión para ver tus plafones",
+    "signInSubtitle": "Tus plafones están vinculados a tu cuenta.",
     "signInCta": "Iniciar sesión",
-    "errorTitle": "No se pudieron cargar tus boards",
+    "errorTitle": "No se pudieron cargar tus plafones",
     "errorRetry": "Reintentar",
-    "boardSwitchError": "No se pudo guardar ese board. Inténtalo de nuevo.",
+    "boardSwitchError": "No se pudo guardar ese plafón. Inténtalo de nuevo.",
+    "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
     "discovery": {
       "findNearby": "Buscar cerca",
       "bluetooth": "Bluetooth",
-      "custom": "Personalizar",
       "locationDenied": "Permitir ubicación",
       "nearbyTitle": "Cerca de ti",
       "nearbyShowing": "Mostrando cercanos",
-      "yourBoardsTitle": "Tus boards",
+      "yourBoardsTitle": "Tus plafones",
       "popularTitle": "Configuraciones populares",
-      "search": "Buscar"
+      "findGym": "Buscar gimnasio",
+      "create": "Crear plafón"
+    },
+    "create": {
+      "screenTitle": "Configura tu plafón",
+      "previewHint": "Elige tu layout y te mostramos tu pared",
+      "adjustable": "Ángulo ajustable",
+      "anglePreview": "Pared inclinada a {{angle}}°",
+      "moreOptions": "Más opciones",
+      "ownBoard": "Este plafón es mío",
+      "public": "Plafón público",
+      "publicHint": "Muéstralo en el mapa para que tu gente lo encuentre",
+      "unlisted": "No listado",
+      "hideLocation": "Ocultar ubicación exacta",
+      "location": "Ubicación",
+      "locationPlaceholder": "Casa, nombre del gimnasio o ciudad",
+      "useMyLocation": "Usar mi ubicación",
+      "locationSet": "Ubicación guardada",
+      "serial": "Número de serie del controlador",
+      "serialPlaceholder": "p. ej. ABC-12345",
+      "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
+      "save": "Guardar mi plafón",
+      "createError": "No se pudo crear ese plafón. Inténtalo de nuevo."
     },
     "custom": {
-      "title": "Crea un board",
-      "board": "Board",
+      "board": "Plafón",
       "layout": "Layout",
       "size": "Tamaño",
       "sets": "Sets",
       "angle": "Ángulo",
-      "start": "Empezar a escalar",
-      "createError": "No se pudo crear ese board. Inténtalo de nuevo."
+      "name": "Nombre del plafón"
     },
     "bluetooth": {
-      "title": "Boards cerca de ti",
-      "scanning": "Buscando boards…",
-      "resolving": "Cargando boards…",
-      "noResults": "Ningún board al alcance",
+      "title": "Plafones cerca de ti",
+      "scanning": "Buscando plafones…",
+      "resolving": "Cargando plafones…",
+      "noResults": "Ningún plafón al alcance",
       "unavailable": "Activa el Bluetooth para buscar"
     },
-    "search": {
-      "placeholder": "Busca por nombre o lugar",
-      "mapUnavailable": "Actualiza la app para ver el mapa. Puedes buscar por nombre."
-    },
     "boardDetail": {
-      "setActive": "Usar esta tabla",
-      "alreadyActive": "Tabla activa",
+      "setActive": "Usar este plafón",
+      "alreadyActive": "Plafón activo",
       "stats": {
         "ascents": "ascensiones",
         "climbers": "escaladores",
@@ -85,10 +122,30 @@
         "angle": "Ángulo",
         "adjustable": "ajustable"
       }
+    },
+    "disambiguation": {
+      "title": "¿En qué plafón estás?",
+      "subtitle": "Este número de serie lo comparten varios plafones. Elige el muro en el que estás.",
+      "yourBoard": "Tu plafón",
+      "cancel": "Ahora no"
+    },
+    "gyms": {
+      "title": "Gimnasios cerca de ti",
+      "subtitle": "Toca un gimnasio para usar su plafón",
+      "locationNeeded": "Comparte tu ubicación para encontrar gimnasios cerca",
+      "grantLocation": "Usar mi ubicación",
+      "empty": "Aún no hay gimnasios cerca",
+      "noBoards": "Aún no hay plafones aquí",
+      "boardCount": "{{count}} plafones",
+      "searchPlaceholder": "Busca una ciudad, gimnasio o plafón",
+      "showingPlace": "Mostrando {{place}}",
+      "clearSearch": "Borrar búsqueda",
+      "closeMap": "Cerrar",
+      "otherBoardsTitle": "Plafones cercanos"
     }
   },
   "boardEntity": {
-    "notFound": "Tabla de escalada no encontrada",
+    "notFound": "Plafón no encontrado",
     "chips": {
       "unlisted": "No listado",
       "locationHidden": "Ubicación oculta"
@@ -109,49 +166,49 @@
       "comments": "comentarios"
     },
     "delete": {
-      "title": "Eliminar tabla de escalada",
+      "title": "Eliminar plafón",
       "confirm": "¿Eliminar \"{{name}}\"? No se puede deshacer.",
       "cancel": "Cancelar",
       "delete": "Eliminar"
     },
     "snackbar": {
-      "deleted": "Tabla de escalada eliminada",
-      "deleteFailed": "Error al eliminar la tabla de escalada",
-      "linkedToGym": "Tabla de escalada vinculada al gimnasio",
-      "unlinkedFromGym": "Tabla de escalada desvinculada del gimnasio",
-      "linkFailed": "Error al vincular la tabla de escalada al gimnasio"
+      "deleted": "Plafón eliminado",
+      "deleteFailed": "Error al eliminar el plafón",
+      "linkedToGym": "Plafón vinculado al gimnasio",
+      "unlinkedFromGym": "Plafón desvinculado del gimnasio",
+      "linkFailed": "Error al vincular el plafón al gimnasio"
     },
     "comments": {
-      "title": "Discusión de la tabla de escalada"
+      "title": "Discusión del plafón"
     },
     "follow": {
-      "entityLabel": "tabla de escalada"
+      "entityLabel": "plafón"
     }
   },
   "boardForm": {
     "create": {
-      "submit": "Crear tabla de escalada",
-      "authRequired": "Debes iniciar sesión para crear una tabla de escalada",
-      "errorMessage": "Error al crear la tabla de escalada. Puede que ya exista para esta configuración.",
-      "duplicateNamed": "Ya tienes una tabla de escalada llamada «{{name}}» con esta configuración.",
-      "goToExisting": "Ir a tu tabla de escalada",
-      "nameRequired": "Se requiere el nombre de la tabla de escalada",
-      "createdNamed": "¡Tabla de escalada \"{{name}}\" creada!",
-      "namePlaceholder": "p. ej., Tabla de casa, Nombre del gimnasio",
+      "submit": "Crear plafón",
+      "authRequired": "Debes iniciar sesión para crear un plafón",
+      "errorMessage": "Error al crear el plafón. Puede que ya exista para esta configuración.",
+      "duplicateNamed": "Ya tienes un plafón llamado «{{name}}» con esta configuración.",
+      "goToExisting": "Ir a tu plafón",
+      "nameRequired": "Se requiere el nombre del plafón",
+      "createdNamed": "¡Plafón \"{{name}}\" creado!",
+      "namePlaceholder": "p. ej., Plafón de casa, Nombre del gimnasio",
       "locationPlaceholder": "p. ej., Ciudad, Nombre del gimnasio"
     },
     "fields": {
-      "name": "Nombre de la tabla de escalada",
+      "name": "Nombre del plafón",
       "slug": "URL personalizada",
       "description": "Descripción",
       "location": "Ubicación",
       "serialNumber": "Número de serie del controlador",
       "defaultAngle": "Ángulo por defecto",
       "angleAdjustable": "Ángulo ajustable",
-      "isPublic": "Tabla de escalada pública",
+      "isPublic": "Plafón público",
       "unlisted": "No listado",
-      "hideLocation": "Ocultar de tablas de escalada cercanas",
-      "isOwned": "Soy dueño de esta tabla de escalada",
+      "hideLocation": "Ocultar de plafones cercanos",
+      "isOwned": "Soy dueño de este plafón",
       "layout": "Disposición",
       "size": "Tamaño",
       "holdSets": "Conjuntos de presas"
@@ -162,18 +219,18 @@
     },
     "helperText": {
       "unlisted": "Oculto de los resultados de búsqueda pero accesible por enlace directo",
-      "hideLocation": "Oculto de las búsquedas de tablas de escalada cercanas a menos que sigas al buscador"
+      "hideLocation": "Oculto de las búsquedas de plafones cercanos a menos que sigas al buscador"
     },
     "alerts": {
-      "configEditable": "Puedes cambiar la disposición de la tabla de escalada porque aún no se han registrado bloques."
+      "configEditable": "Puedes cambiar la disposición del plafón porque aún no se han registrado bloques."
     }
   },
   "editBoard": {
-    "title": "Editar tabla de escalada",
+    "title": "Editar plafón",
     "submitLabel": "Guardar cambios",
     "snackbar": {
-      "updated": "¡Tabla de escalada actualizada!",
-      "updateFailed": "Error al actualizar la tabla de escalada"
+      "updated": "¡Plafón actualizado!",
+      "updateFailed": "Error al actualizar el plafón"
     }
   },
   "editGym": {
@@ -189,7 +246,7 @@
     "setOnMap": "Marca la ubicación en el mapa",
     "searchPlaceholder": "Busca una dirección o ciudad...",
     "myLocation": "Mi ubicación",
-    "helpText": "Haz clic en el mapa para fijar la ubicación de la tabla de escalada, o arrastra el marcador para ajustar"
+    "helpText": "Haz clic en el mapa para fijar la ubicación del plafón, o arrastra el marcador para ajustar"
   },
   "boardLeaderboard": {
     "empty": "Aún no hay actividad en este periodo.",
@@ -207,7 +264,7 @@
     }
   },
   "boardConfigSelects": {
-    "board": "Tabla de escalada",
+    "board": "Plafón",
     "layout": "Disposición",
     "size": "Tamaño",
     "holdSets": "Conjuntos de presas",
@@ -215,27 +272,30 @@
   },
   "boardFilterStrip": {
     "all": "Todos",
-    "allBoards": "Todas las tablas de escalada"
+    "allBoards": "Todos los plafones"
+  },
+  "boardPill": {
+    "switchHint": "Abre el selector de plafones"
   },
   "boardSwitchConfirm": {
     "session": {
       "title": "¿Salir de tu sesión?",
-      "body": "Estás en una sesión en {{lockedLabel}}. Cambiar a {{targetLabel}} desconecta tu tabla de escalada pero mantiene la sesión activa."
+      "body": "Estás en una sesión en {{lockedLabel}}. Cambiar a {{targetLabel}} desconecta tu plafón pero mantiene la sesión activa."
     },
     "connection": {
-      "title": "¿Desconectar tu tabla de escalada?",
+      "title": "¿Desconectar tu plafón?",
       "body": "Tu {{lockedLabel}} sigue conectado. Cambiar a {{targetLabel}} lo desconecta."
     },
     "stay": "Quedarse",
-    "switch": "Cambiar de tabla de escalada"
+    "switch": "Cambiar de plafón"
   },
   "boardSearchDrawer": {
-    "title": "Buscar una tabla de escalada",
-    "searchPlaceholder": "Busca tablas de escalada por nombre o ubicación",
+    "title": "Buscar un plafón",
+    "searchPlaceholder": "Busca plafones por nombre o ubicación",
     "clear": "Limpiar",
-    "radiusInfo": "Mostrando tablas de escalada en un radio de {{radiusKm}} km del centro del mapa",
-    "empty": "No hay tablas de escalada en esta zona. Mueve el mapa o aleja el zoom para encontrar más.",
-    "emptyWithQuery": "No hay tablas de escalada que coincidan con \"{{query}}\" aquí. Aleja el zoom o busca en otra zona.",
+    "radiusInfo": "Mostrando plafones en un radio de {{radiusKm}} km del centro del mapa",
+    "empty": "No hay plafones en esta zona. Mueve el mapa o aleja el zoom para encontrar más.",
+    "emptyWithQuery": "No hay plafones que coincidan con \"{{query}}\" aquí. Aleja el zoom o busca en otra zona.",
     "open": "Abrir"
   },
   "boardSearchMap": {
@@ -264,14 +324,14 @@
     "createNew": "Crear nuevo"
   },
   "selectorDrawer": {
-    "customTitle": "Tabla de escalada personalizada",
-    "createTitle": "Crear tabla de escalada",
-    "createButton": "Crear tabla de escalada",
+    "customTitle": "Plafón personalizado",
+    "createTitle": "Crear plafón",
+    "createButton": "Crear plafón",
     "quickSession": "Sesión rápida",
     "configSection": {
-      "label": "Configuración de la tabla de escalada",
-      "title": "Configuración de la tabla de escalada",
-      "defaultSummary": "Selecciona una tabla de escalada"
+      "label": "Configuración del plafón",
+      "title": "Configuración del plafón",
+      "defaultSummary": "Selecciona un plafón"
     }
   },
   "gymEntity": {
@@ -285,7 +345,7 @@
       "delete": "Eliminar"
     },
     "stats": {
-      "boards": "tablas de escalada",
+      "boards": "plafones",
       "members": "miembros",
       "followers": "seguidores",
       "comments": "comentarios"

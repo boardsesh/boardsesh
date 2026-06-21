@@ -1,168 +1,23 @@
-import type { ZoneBox } from '@/app/lib/types';
-
 /**
- * Bounding edges of the board playing surface in placement-grid coordinates.
- * Matches the `edge_*` fields on `BoardDetails`.
- */
-export type BoardEdges = {
-  edgeLeft: number;
-  edgeRight: number;
-  edgeBottom: number;
-  edgeTop: number;
-};
-
-export type DragMode = 'move' | 'nw' | 'ne' | 'sw' | 'se';
-
-/**
- * Default zone covers the inner 60% of the board so the user immediately
- * sees a visible rectangle they can manipulate.
- */
-export function buildDefaultZone(edges: BoardEdges): ZoneBox {
-  const widthGrid = edges.edgeRight - edges.edgeLeft;
-  const heightGrid = edges.edgeTop - edges.edgeBottom;
-  const padX = Math.round(widthGrid * 0.2);
-  const padY = Math.round(heightGrid * 0.2);
-  return {
-    edgeLeft: edges.edgeLeft + padX,
-    edgeRight: edges.edgeRight - padX,
-    edgeBottom: edges.edgeBottom + padY,
-    edgeTop: edges.edgeTop - padY,
-  };
-}
-
-/**
- * Constrain a (potentially mid-drag) box to fit inside the board edges
- * and respect the 5%-of-board minimum size.
- */
-export function clampZoneBox(box: ZoneBox, edges: BoardEdges): ZoneBox {
-  const minWidth = Math.max(1, Math.round((edges.edgeRight - edges.edgeLeft) * 0.05));
-  const minHeight = Math.max(1, Math.round((edges.edgeTop - edges.edgeBottom) * 0.05));
-  let { edgeLeft: l, edgeRight: r, edgeBottom: b, edgeTop: t } = box;
-  l = Math.max(edges.edgeLeft, Math.min(l, edges.edgeRight - minWidth));
-  r = Math.min(edges.edgeRight, Math.max(r, l + minWidth));
-  b = Math.max(edges.edgeBottom, Math.min(b, edges.edgeTop - minHeight));
-  t = Math.min(edges.edgeTop, Math.max(t, b + minHeight));
-  return {
-    edgeLeft: Math.round(l),
-    edgeRight: Math.round(r),
-    edgeBottom: Math.round(b),
-    edgeTop: Math.round(t),
-  };
-}
-
-/**
- * Apply a drag delta (in grid coordinates) to a starting box, given the
- * drag mode (which corner / move). Edge handles in the SVG correspond to
- * grid-axis pairs as follows: visually-upper-Y = larger `edgeTop`,
- * visually-lower-Y = smaller `edgeBottom`.
- */
-export function applyDrag(startBox: ZoneBox, mode: DragMode, dx: number, dy: number, edges: BoardEdges): ZoneBox {
-  if (mode === 'move') {
-    const widthGrid = startBox.edgeRight - startBox.edgeLeft;
-    const heightGrid = startBox.edgeTop - startBox.edgeBottom;
-    const next: ZoneBox = {
-      edgeLeft: startBox.edgeLeft + dx,
-      edgeRight: startBox.edgeRight + dx,
-      edgeBottom: startBox.edgeBottom + dy,
-      edgeTop: startBox.edgeTop + dy,
-    };
-    if (next.edgeLeft < edges.edgeLeft) {
-      next.edgeLeft = edges.edgeLeft;
-      next.edgeRight = edges.edgeLeft + widthGrid;
-    }
-    if (next.edgeRight > edges.edgeRight) {
-      next.edgeRight = edges.edgeRight;
-      next.edgeLeft = edges.edgeRight - widthGrid;
-    }
-    if (next.edgeBottom < edges.edgeBottom) {
-      next.edgeBottom = edges.edgeBottom;
-      next.edgeTop = edges.edgeBottom + heightGrid;
-    }
-    if (next.edgeTop > edges.edgeTop) {
-      next.edgeTop = edges.edgeTop;
-      next.edgeBottom = edges.edgeTop - heightGrid;
-    }
-    return clampZoneBox(next, edges);
-  }
-  const next: ZoneBox = { ...startBox };
-  if (mode === 'nw' || mode === 'sw') next.edgeLeft = startBox.edgeLeft + dx;
-  if (mode === 'ne' || mode === 'se') next.edgeRight = startBox.edgeRight + dx;
-  if (mode === 'nw' || mode === 'ne') next.edgeTop = startBox.edgeTop + dy;
-  if (mode === 'sw' || mode === 'se') next.edgeBottom = startBox.edgeBottom + dy;
-  return clampZoneBox(next, edges);
-}
-
-export type BoardDimensions = BoardEdges & {
-  boardWidth: number;
-  boardHeight: number;
-};
-
-/**
- * Convert a grid-coordinate point to SVG-pixel coordinates.
- * Mirrors the math in `board-constants.ts` so the rectangle lines up with
- * the rendered hold positions.
- */
-export function gridToSvg(x: number, y: number, dims: BoardDimensions): { x: number; y: number } {
-  const xSpacing = dims.boardWidth / (dims.edgeRight - dims.edgeLeft);
-  const ySpacing = dims.boardHeight / (dims.edgeTop - dims.edgeBottom);
-  return {
-    x: (x - dims.edgeLeft) * xSpacing,
-    y: dims.boardHeight - (y - dims.edgeBottom) * ySpacing,
-  };
-}
-
-/**
- * Inverse of `gridToSvg` — translate a point in SVG coordinate space back
- * to grid coordinates. Used to convert a pointer event (after applying
- * the SVG's screen CTM) back to where the user is in board space.
- */
-export function svgToGrid(svgX: number, svgY: number, dims: BoardDimensions): { x: number; y: number } {
-  const xSpacing = dims.boardWidth / (dims.edgeRight - dims.edgeLeft);
-  const ySpacing = dims.boardHeight / (dims.edgeTop - dims.edgeBottom);
-  return {
-    x: svgX / xSpacing + dims.edgeLeft,
-    y: dims.edgeBottom + (dims.boardHeight - svgY) / ySpacing,
-  };
-}
-
-/**
- * Pick a sensible handle radius in SVG units. Scales with board size but
- * clamps against absolute lower/upper bounds so handles never overlap on
- * tiny boards or balloon to cover half the rectangle on huge ones.
- */
-export function computeHandleRadius(dims: BoardDimensions): number {
-  const HANDLE_FRACTION = 0.04;
-  const MIN_HANDLE = 8;
-  const MAX_HANDLE = 40;
-  const fromBoard = Math.max(dims.boardWidth, dims.boardHeight) * HANDLE_FRACTION;
-  return Math.max(MIN_HANDLE, Math.min(MAX_HANDLE, fromBoard));
-}
-
-/**
- * Whether a hold sits inside (or on the edge of) a zone box. `cx`/`cy` come
- * from `BoardDetails.holdsData` in SVG-pixel space (see board-constants.ts);
- * the zone box is in grid coordinates, so we run the hold position through
- * `svgToGrid` and compare against the box edges.
+ * The zone-rectangle geometry now lives in the shared `@boardsesh/climb-filters`
+ * package so web and mobile share one implementation. This module re-exports it
+ * so existing relative imports (`../climb-zone-math`) keep working.
  *
- * Inclusive on all four sides — the backend zone filter keeps a climb if
- * every hold fits inside the box, so a hold exactly on the edge still
- * leaves the climb eligible.
- *
- * Returns `true` for a null/undefined zone — semantically "no zone
- * constraint = every hold is unconstrained" — so callers that prune holds
- * after a zone change can pass `null` without a separate guard.
+ * The shared functions are typed against {@link import('@boardsesh/shared-schema').ZoneBoxInput},
+ * which is structurally identical to the web `ZoneBox` alias, so call sites that
+ * pass a `ZoneBox` continue to type-check.
  */
-export function isHoldInsideZone(
-  hold: { cx: number; cy: number },
-  zone: ZoneBox | null | undefined,
-  dims: BoardDimensions,
-): boolean {
-  if (!zone) return true;
-  const gridPoint = svgToGrid(hold.cx, hold.cy, dims);
-  return (
-    gridPoint.x >= zone.edgeLeft &&
-    gridPoint.x <= zone.edgeRight &&
-    gridPoint.y >= zone.edgeBottom &&
-    gridPoint.y <= zone.edgeTop
-  );
-}
+export {
+  buildDefaultZone,
+  clampZoneBox,
+  applyDrag,
+  gridToSvg,
+  svgToGrid,
+  computeHandleRadius,
+  isHoldInsideZone,
+  pruneHoldsToZone,
+  type BoardEdges,
+  type DragMode,
+  type BoardDimensions,
+  type HoldPositionLookup,
+} from '@boardsesh/climb-filters';

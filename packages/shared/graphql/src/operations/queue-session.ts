@@ -4,6 +4,8 @@
 // Fragment for reusable climb fields
 const CLIMB_FIELDS = `
   uuid
+  boardType
+  layoutId
   setter_username
   name
   frames
@@ -49,7 +51,6 @@ export const JOIN_SESSION = `
       clientId
       participantId
       isLeader
-      driverParticipantId
       lastConnectedBoardSerial
       goal
       isPublic
@@ -86,8 +87,8 @@ export const LEAVE_SESSION = `
 `;
 
 export const END_SESSION = `
-  mutation EndSession($sessionId: ID!) {
-    endSession(sessionId: $sessionId) {
+  mutation EndSession($sessionId: ID!, $timezone: String) {
+    endSession(sessionId: $sessionId, timezone: $timezone) {
       sessionId
       totalSends
       totalAttempts
@@ -165,50 +166,31 @@ export const REPLACE_QUEUE_ITEM = `
   }
 `;
 
-// Driver mutations — claim or release the wall in a party session.
-// In solo (no party), the web client short-circuits these without hitting the
-// backend; the server-side mutations require an active session connection.
-export const TAKE_CONTROL = `
-  mutation TakeControl($climb: ClimbQueueItemInput) {
-    takeControl(climb: $climb) {
-      id
-      participantId
-      driverParticipantId
-      queueState {
-        sequence
-        stateHash
-        queue {
-          ${QUEUE_ITEM_FIELDS}
-        }
-        currentClimbQueueItem {
-          ${QUEUE_ITEM_FIELDS}
-        }
-      }
-    }
-  }
-`;
-
-export const RELEASE_CONTROL = `
-  mutation ReleaseControl {
-    releaseControl {
-      id
-      driverParticipantId
-    }
-  }
-`;
-
 // Wall confirmation — the BLE-capable phone tells the backend that the climb
 // was successfully relayed to the board. Server broadcasts WallConfirmedClimb
 // to every session participant so non-BLE clients can flip the lightbulb to
 // confirmed and dismiss their fallback timer. The optional $queueItemUuid
 // disambiguates which queued press the confirmation matches when the same
-// climb is queued twice. Returns Session! for optimistic-UI symmetry with
-// takeControl / releaseControl; the selection set mirrors releaseControl's.
+// climb is queued twice. Returns Session! so optimistic-UI callers can apply
+// server-derived state without a follow-up query.
 export const CONFIRM_CLIMB_ON_WALL = `
   mutation ConfirmClimbOnWall($climbUuid: ID!, $queueItemUuid: ID) {
     confirmClimbOnWall(climbUuid: $climbUuid, queueItemUuid: $queueItemUuid) {
       id
-      driverParticipantId
+      lastConnectedBoardSerial
+    }
+  }
+`;
+
+// Wall disconnect — the session-scoped counterpart to board-presence's
+// reportBoardDisconnect. The BLE-capable phone tells the backend its link to
+// the wall dropped so the server broadcasts WallDisconnected and every member
+// turns the lightbulb off. The current climb is preserved; pressing the
+// lightbulb re-asserts it.
+export const REPORT_WALL_DISCONNECT = `
+  mutation ReportWallDisconnect {
+    reportWallDisconnect {
+      id
       lastConnectedBoardSerial
     }
   }
@@ -216,23 +198,21 @@ export const CONFIRM_CLIMB_ON_WALL = `
 
 // Session board serial — when a phone pairs with a physical board over BLE,
 // it records the serial on the session so other (mobile) participants can
-// auto-connect without picking from a list. Returns Session! for optimistic-UI
-// symmetry with takeControl / releaseControl.
+// auto-connect without picking from a list. Returns Session! so optimistic-UI
+// callers can apply server-derived state without a follow-up query.
 export const SET_SESSION_BOARD_SERIAL = `
   mutation SetSessionBoardSerial($serial: String!) {
     setSessionBoardSerial(serial: $serial) {
       id
-      driverParticipantId
       lastConnectedBoardSerial
     }
   }
 `;
 
 // Session board path — broadcasts angle (and any presentational route
-// changes) across all session participants. Optimistic-UI symmetry with
-// takeControl / releaseControl: the angle selector pushes the URL locally
-// for instant feedback, then fires this mutation so the backend persists
-// the new boardPath and broadcasts SessionBoardPathChanged to other
+// changes) across all session participants. The angle selector pushes the URL
+// locally for instant feedback, then fires this mutation so the backend
+// persists the new boardPath and broadcasts SessionBoardPathChanged to other
 // members, who then router.replace into the new angle.
 export const SET_SESSION_BOARD_PATH = `
   mutation SetSessionBoardPath($boardPath: String!) {
@@ -267,7 +247,6 @@ export const CREATE_SESSION = `
       clientId
       participantId
       isLeader
-      driverParticipantId
       lastConnectedBoardSerial
       goal
       isPublic
@@ -329,15 +308,14 @@ export const SESSION_UPDATES = `
         leaderId
         leaderConnectionId
       }
-      ... on DriverChanged {
-        driverParticipantId
-        previousDriverParticipantId
-      }
       ... on WallConfirmedClimb {
         climbUuid
         confirmedAt
         confirmedByParticipantId
         queueItemUuid
+      }
+      ... on WallDisconnected {
+        disconnectedByParticipantId
       }
       ... on SessionBoardSerialChanged {
         lastConnectedBoardSerial

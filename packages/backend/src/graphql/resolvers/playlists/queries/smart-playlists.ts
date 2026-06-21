@@ -1,17 +1,30 @@
 import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
+import { isRecommendationType, RECOMMENDATION_TYPES, type RecommendationType } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
+import { resolveRecommendationBoardTarget } from '../helpers/recommendation-board-target';
+import { selectRecommendationClimbRefs, countRecommendationClimbRefs } from '../helpers/recommendation-refs';
 
-type SmartPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
+// Logbook-derived smart playlists (computed from the user's own ticks).
+type LogbookPlaylistType = 'FIVE_STARS' | 'MOST_REPEATED' | 'PROJECTS' | 'LIKED_CLIMBS';
+// Catalog-derived recommendations (computed for the user's board) share the
+// same query envelope but a different candidate source.
+type SmartPlaylistType = LogbookPlaylistType | RecommendationType;
 
 type SmartPlaylistInput = {
   type: SmartPlaylistType;
   userId: string;
   boardName?: string;
+  /** The specific owned board to recommend for; ignored by logbook playlists. */
+  boardUuid?: string;
+  /** Browsing-context overrides for recommendation types (a board the user is
+   * viewing); ignored by logbook playlists. */
+  sizeId?: number;
+  angle?: number;
   page?: number;
   pageSize?: number;
 };
@@ -62,7 +75,7 @@ function notSentExists(userId: string): SQL {
  * pushed into the database — we never materialize the full list in memory.
  */
 async function selectSmartClimbRefs(
-  type: SmartPlaylistType,
+  type: LogbookPlaylistType,
   userId: string,
   boardName: string | undefined,
   page: number,
@@ -148,7 +161,7 @@ async function selectSmartClimbRefs(
  * the same conditions as selectSmartClimbRefs so that paging is consistent.
  */
 async function countSmartClimbRefs(
-  type: SmartPlaylistType,
+  type: LogbookPlaylistType,
   userId: string,
   boardName: string | undefined,
 ): Promise<number> {
@@ -202,9 +215,35 @@ async function countSmartClimbRefs(
   return row?.count ?? 0;
 }
 
+/** Cap deep pagination for recommendation types — they run heavy catalog joins,
+ * so we don't let an authenticated user page past this offset. */
+const MAX_RECOMMENDATION_OFFSET = 500;
+
+/** Display name + avatar for the playlist hero, or null if the user is gone. */
+async function fetchUserMeta(userId: string): Promise<{ userName: string; userAvatar: string | null } | null> {
+  const [user] = await db
+    .select({
+      name: dbSchema.users.name,
+      image: dbSchema.users.image,
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+    })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
+    .where(eq(dbSchema.users.id, userId))
+    .limit(1);
+  if (!user) return null;
+  return {
+    userName: user.displayName || user.name || 'Climber',
+    userAvatar: user.avatarUrl || user.image || null,
+  };
+}
+
 /**
- * Public smart playlist query — anyone with the URL can view a user's
- * computed playlist. Uses the user's logbook (boardseshTicks).
+ * Smart playlist query. Logbook types (FIVE_STARS, …) are public/shareable —
+ * anyone with the URL can view a user's computed playlist. Recommendation types
+ * are owner-private (see below). Uses the user's logbook (boardseshTicks) or, for
+ * recommendations, the catalog scored for the user's board.
  *
  * Rate limited per-IP (anonymous) or per-user (authenticated). Each call
  * fans out to 3+ DB queries (user lookup + page refs + count + hydrate),
@@ -233,20 +272,57 @@ export const smartPlaylist = async (
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
 
-  const [user] = await db
-    .select({
-      id: dbSchema.users.id,
-      name: dbSchema.users.name,
-      image: dbSchema.users.image,
-      displayName: dbSchema.userProfiles.displayName,
-      avatarUrl: dbSchema.userProfiles.avatarUrl,
-    })
-    .from(dbSchema.users)
-    .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
-    .where(eq(dbSchema.users.id, input.userId))
-    .limit(1);
+  // Catalog-derived recommendations are owner-private: they expose the user's
+  // board config and (via AT_LEVEL) grade. Short-circuit BEFORE any user lookup
+  // so a non-owner/anonymous caller can't probe user existence and a
+  // shared/guessed URL doesn't 500 — they get a uniform empty result.
+  if (isRecommendationType(input.type)) {
+    const emptyMeta = {
+      type: input.type,
+      userId: input.userId,
+      userName: 'Climber',
+      userAvatar: null as string | null,
+      climbCount: 0,
+    };
+    if (!ctx.userId || ctx.userId !== input.userId) {
+      return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
+    }
+    const target = await resolveRecommendationBoardTarget(input.userId, {
+      boardUuid: input.boardUuid,
+      sizeId: input.sizeId,
+      angle: input.angle,
+    });
+    if (!target) {
+      return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
+    }
+    const recPage = Math.min(page, Math.floor(MAX_RECOMMENDATION_OFFSET / pageSize));
+    const owner = await fetchUserMeta(input.userId);
+    const [pageRefs, totalCount] = await Promise.all([
+      selectRecommendationClimbRefs(input.type, target, input.userId, recPage, pageSize),
+      countRecommendationClimbRefs(input.type, target, input.userId),
+    ]);
+    // Hydrate at the board's angle, not the most-ascended angle.
+    const angleOverrides = new Map<string, number>(
+      pageRefs.map((ref) => [`${ref.boardType}:${ref.climbUuid}`, target.angle]),
+    );
+    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides });
+    return {
+      meta: {
+        type: input.type,
+        userId: input.userId,
+        userName: owner?.userName ?? 'Climber',
+        userAvatar: owner?.userAvatar ?? null,
+        climbCount: totalCount,
+      },
+      climbs,
+      totalCount,
+      hasMore: (recPage + 1) * pageSize < totalCount,
+    };
+  }
 
-  if (!user) {
+  // Logbook smart playlists — public/shareable.
+  const owner = await fetchUserMeta(input.userId);
+  if (!owner) {
     throw new Error('User not found');
   }
 
@@ -254,20 +330,19 @@ export const smartPlaylist = async (
     selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize),
     countSmartClimbRefs(input.type, input.userId, input.boardName),
   ]);
-  const hasMore = (page + 1) * pageSize < totalCount;
   const climbs = await hydrateClimbsByRefs(pageRefs);
 
   return {
     meta: {
       type: input.type,
-      userId: user.id,
-      userName: user.displayName || user.name || 'Climber',
-      userAvatar: user.avatarUrl || user.image || null,
+      userId: input.userId,
+      userName: owner.userName,
+      userAvatar: owner.userAvatar,
       climbCount: totalCount,
     },
     climbs,
     totalCount,
-    hasMore,
+    hasMore: (page + 1) * pageSize < totalCount,
   };
 };
 
@@ -351,10 +426,25 @@ export const mySmartPlaylistCounts = async (
     byType.set(row.type, Number(row.count ?? 0));
   }
 
-  return [
+  const counts: Array<{ type: SmartPlaylistType; count: number }> = [
     { type: 'FIVE_STARS', count: byType.get('FIVE_STARS') ?? 0 },
     { type: 'MOST_REPEATED', count: byType.get('MOST_REPEATED') ?? 0 },
     { type: 'PROJECTS', count: byType.get('PROJECTS') ?? 0 },
     { type: 'LIKED_CLIMBS', count: byType.get('LIKED_CLIMBS') ?? 0 },
   ];
+
+  // Recommendation cards: scoped to the user's resolved board. Counted in
+  // parallel; all zero (cards hidden) when no board can be determined.
+  const target = await resolveRecommendationBoardTarget(userId);
+  if (target) {
+    const recCounts = await Promise.all(
+      RECOMMENDATION_TYPES.map(async (type) => ({
+        type,
+        count: await countRecommendationClimbRefs(type, target, userId),
+      })),
+    );
+    counts.push(...recCounts);
+  }
+
+  return counts;
 };

@@ -31,16 +31,20 @@ export type PlayViewActionBarProps = {
   onToggleFavorite: () => void;
   onOpenActions: () => void;
   onOpenQueue: () => void;
-  /** Whether the lightbulb should render as filled/lit. In party this is
-   *  `isDriver` (you hold the wall). In solo it's `isBluetoothConnected`
-   *  (a paired board IS the wall — when nothing's paired, the lightbulb is
-   *  outlined to signal "tap to connect"). The driver concept doesn't carry
-   *  any BLE meaning in solo, so the visual would always be lit if we used
-   *  isDriver there — masking the actual connection state. */
+  /** Whether the lightbulb should render as filled/lit (the visual). In party
+   *  this is the session-scoped `wallConfirmed` indicator OR'd with this
+   *  device's BLE / the board-presence holder; in solo it's
+   *  `isBluetoothConnected`. Visual only — the tap action keys on
+   *  `lightbulbConnected` (this device's BLE), not this. */
   lightbulbActive: boolean;
-  /** Pulse the lightbulb while a take-control press is in flight. Set
-   *  between the press and the matching `WallConfirmedClimb` event (or the
-   *  2-second timeout fallback). Independent from `lightbulbActive`. */
+  /** Whether THIS device's BLE link is connected. Drives the tap action's
+   *  meaning (and its aria label): connected → tapping disconnects ("turn off");
+   *  not connected → tapping connects + sends ("send to the wall"). Distinct
+   *  from `lightbulbActive`, which can be lit by a peer/board-presence holder. */
+  lightbulbConnected: boolean;
+  /** Pulse the lightbulb while a send press is in flight. Set between the
+   *  press and the matching `WallConfirmedClimb` event (or the 2-second
+   *  timeout fallback). Independent from `lightbulbActive`. */
   lightbulbPending?: boolean;
   /** Single-iteration pulse + tooltip on first drawer open. The parent
    *  reads `swipeHint:lightbulbSeen` from IndexedDB and toggles this true
@@ -55,9 +59,9 @@ export type PlayViewActionBarProps = {
   /** Name of the currently displayed climb. Used in the lightbulb's aria
    *  label so screen-reader users hear what they're sending. */
   displayedClimbName: string | null;
-  /** Pivot's lightbulb gesture: in solo it sends the climb to the wall via
-   *  the existing BLE auto-sender path; in party it claims driver and
-   *  broadcasts the climb. */
+  /** Lightbulb gesture: send / re-assert the displayed climb to the wall
+   *  (connecting first if needed). In party it also broadcasts the climb so
+   *  every member follows. Always-live — no driver claim. */
   onLightbulb: () => void;
   /** Long-press the lightbulb to open the light-control drawer (disco, party
    *  glyphs, palette, and the manual BLE disconnect). Optional — when the
@@ -80,6 +84,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   onOpenActions,
   onOpenQueue,
   lightbulbActive,
+  lightbulbConnected,
   lightbulbPending = false,
   lightbulbCoachmark = false,
   lightbulbCoachmarkText,
@@ -90,19 +95,17 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
   angleSelector,
 }: PlayViewActionBarProps) {
   const { t } = useTranslation('session');
-  // Lightbulb aria label — active (filled) vs inactive (outlined) framing
-  // makes the action's destructive-vs-additive nature explicit for screen
-  // readers. "Driving" copy reads fine in solo too (you're driving the board
-  // when BLE is connected).
-  const lightbulbLabel = displayedClimbName
-    ? lightbulbActive
-      ? t('playView.actionBar.lightbulb.drivingNamed', { name: displayedClimbName })
-      : t('playView.actionBar.lightbulb.takeNamed', { name: displayedClimbName })
-    : lightbulbActive
-      ? t('playView.actionBar.lightbulb.driving')
-      : t('playView.actionBar.lightbulb.take');
+  // Lightbulb aria label — the lightbulb is a connect/disconnect toggle keyed on
+  // THIS device's BLE link (not the filled `lightbulbActive` visual, which a
+  // peer/board-presence holder can light). Connected → tapping disconnects
+  // ("turn off the board"); not connected → tapping connects + sends.
+  const lightbulbLabel = lightbulbConnected
+    ? t('playView.actionBar.lightbulb.turnOff')
+    : displayedClimbName
+      ? t('playView.actionBar.lightbulb.sendNamed', { name: displayedClimbName })
+      : t('playView.actionBar.lightbulb.send');
   // Long-press the lightbulb to reach the light-control drawer (and the
-  // manual BLE disconnect that lives inside it). Tap stays the take-control
+  // manual BLE disconnect that lives inside it). Tap stays the send/connect
   // gesture; consumeLongPress() in the click handler swallows the synthesized
   // click that follows a long-press so we don't fire both.
   const { ref: lightbulbLongPressRef, consumeLongPress } = useLongPress<HTMLButtonElement>(onLightbulbLongPress);
@@ -136,10 +139,10 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
       <IconButton onClick={onToggleFavorite}>
         {isFavorited ? <Favorite sx={{ color: themeTokens.colors.error }} /> : <FavoriteBorderOutlined />}
       </IconButton>
-      {/* Lightbulb: the queue-control-bar pivot's primary "send/take" gesture.
-          Filled+amber-glowing when the lightbulb is active (driver in party,
-          BLE-paired in solo); outlined when inactive (non-driver in party,
-          unpaired in solo). The warm-amber styling matches the ShareBoardButton
+      {/* Lightbulb: the primary "send to the wall" gesture.
+          Filled+amber-glowing when the lightbulb is active (wall confirmed in
+          party, BLE-paired in solo); outlined when inactive (wall not confirmed
+          in party, unpaired in solo). The warm-amber styling matches the ShareBoardButton
           that this drawer replaced — it reads as "this bulb is lit" rather
           than the dusty-rose primary, which the user kept misreading as an
           error state. Long-press opens the light-control drawer (disco /

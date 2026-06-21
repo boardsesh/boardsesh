@@ -4,7 +4,8 @@ import { stat } from 'fs/promises';
 import path, { extname } from 'path';
 import { applyCorsHeaders } from './cors';
 import { getAvatarsDir } from './avatars';
-import { isS3Configured, getFromS3 } from '../storage/s3';
+import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
+import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -15,13 +16,83 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
+ * Serve a resized (size×size, JPEG) version of an S3 object. Returns false
+ * when the base object doesn't exist (caller should 404); true once it has
+ * written a response.
+ *
+ * `cacheVariant` controls whether the resized bytes are persisted back to
+ * S3 under a `@<size>.jpg` key: immutable sources (beta thumbnails) cache;
+ * mutable ones (avatars, overwritten on re-upload at the same key) resize
+ * on the fly so a re-upload can't be shadowed by a stale variant. If the
+ * resize itself fails (corrupt/unsupported source), the original bytes are
+ * served unchanged.
+ */
+async function serveResizedImageFromS3(
+  res: ServerResponse,
+  baseKey: string,
+  size: AllowedImageSize,
+  options: { cacheVariant: boolean; cacheControl: string },
+): Promise<boolean> {
+  if (options.cacheVariant) {
+    const cached = await getFromS3(resizedVariantKey(baseKey, size));
+    if (cached) {
+      res.writeHead(200, {
+        'Content-Type': cached.contentType || 'image/jpeg',
+        ...(cached.contentLength && { 'Content-Length': cached.contentLength }),
+        'Cache-Control': options.cacheControl,
+      });
+      cached.stream.pipe(res);
+      return true;
+    }
+  }
+
+  const original = await getFromS3(baseKey);
+  if (!original) return false;
+
+  const originalBuffer = await streamToBuffer(original.stream);
+  let body = originalBuffer;
+  let contentType = original.contentType || 'application/octet-stream';
+  try {
+    body = await resizeImageBuffer(originalBuffer, size);
+    contentType = 'image/jpeg';
+    if (options.cacheVariant) {
+      // Best-effort cache; serve the resized bytes regardless. ACL null —
+      // we proxy these bytes ourselves, so no public-read is needed.
+      try {
+        await uploadToS3(body, resizedVariantKey(baseKey, size), 'image/jpeg', {
+          cacheControl: options.cacheControl,
+          acl: null,
+        });
+      } catch {
+        // Ignore cache-write failures.
+      }
+    }
+  } catch {
+    // Resize failed — fall back to the original bytes (already assigned).
+  }
+
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Content-Length': body.length,
+    'Cache-Control': options.cacheControl,
+  });
+  res.end(body);
+  return true;
+}
+
+/**
  * Static avatar file serving handler
  * GET /static/avatars/:filename
  *
  * When S3 is configured, proxies the image from S3 (avoids ACL/public access requirements).
  * Otherwise, serves avatar files from local storage with caching headers.
  */
-export async function handleStaticAvatar(req: IncomingMessage, res: ServerResponse, fileName: string): Promise<void> {
+export async function handleStaticAvatar(
+  req: IncomingMessage,
+  res: ServerResponse,
+  fileName: string,
+  size: AllowedImageSize | null = null,
+): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
   // Security: validate filename to prevent path traversal
@@ -35,6 +106,22 @@ export async function handleStaticAvatar(req: IncomingMessage, res: ServerRespon
   // This avoids requiring S3 public access / ACLs which many S3-compatible services don't support
   if (isS3Configured()) {
     const s3Key = `avatars/${fileName}`;
+
+    // Avatars are overwritten in place on re-upload (key = userId.ext), so
+    // resize on the fly without persisting a variant — a cached variant
+    // would shadow a new avatar. Matches the base avatar's 1-day cache.
+    if (size !== null) {
+      const served = await serveResizedImageFromS3(res, s3Key, size, {
+        cacheVariant: false,
+        cacheControl: 'public, max-age=86400',
+      });
+      if (!served) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
+      }
+      return;
+    }
+
     const s3Object = await getFromS3(s3Key);
 
     if (!s3Object) {
@@ -57,7 +144,9 @@ export async function handleStaticAvatar(req: IncomingMessage, res: ServerRespon
     return;
   }
 
-  // Serve from local storage
+  // Serve from local storage. Note: the `?size=` resize path is S3-only — in
+  // local-dev (no S3) we serve the full-size original, so avatar sizing is a
+  // no-op there. That's intentional; production runs with S3 configured.
   const avatarsDir = getAvatarsDir();
   const filePath = path.join(avatarsDir, fileName);
 
@@ -118,6 +207,7 @@ export async function handleStaticBetaThumbnail(
   res: ServerResponse,
   platform: string,
   fileName: string,
+  size: AllowedImageSize | null = null,
 ): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
@@ -136,6 +226,21 @@ export async function handleStaticBetaThumbnail(
   }
 
   const s3Key = `beta-link-thumbnails/${platform}/${fileName}`;
+
+  // Thumbnail keys are immutable per shortcode, so resized variants are
+  // safe to cache in S3 and reuse.
+  if (size !== null) {
+    const served = await serveResizedImageFromS3(res, s3Key, size, {
+      cacheVariant: true,
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+    if (!served) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    }
+    return;
+  }
+
   const s3Object = await getFromS3(s3Key);
 
   if (!s3Object) {

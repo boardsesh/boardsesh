@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessions, boardSessionParticipants, type Session } from '../../db/schema';
@@ -7,6 +8,7 @@ import type { ConnectedClient, LocalSessionParticipant } from './types';
 import { restoreSessionWithLock } from './session-restoration';
 import type { WriteScheduler } from './write-scheduler';
 import { logger } from '../../utils/logger';
+import { markErrorReported } from '../../utils/sentry-dedupe';
 
 /**
  * Register a new client connection.
@@ -100,6 +102,25 @@ export async function joinSession(
   if (!client) {
     throw new Error('Client not registered');
   }
+
+  // Refuse to resurrect a server-ended session (#2696). The Postgres row is the
+  // durable source of truth (Redis only holds live presence), so a stale/ended
+  // session id must not be treated as "new" and recreated as an empty zombie
+  // room. Mirror the sessionStatus resolver's predicate. Runs before any client
+  // state is mutated or the current session is left, so a failed join here
+  // never disturbs a session the client is already in.
+  const existingSession = await getSessionById(sessionId);
+  if (existingSession && (existingSession.status === 'ended' || existingSession.endedAt !== null)) {
+    const endedError = new GraphQLError('This session has ended', {
+      extensions: { code: 'SESSION_ENDED' },
+    });
+    // Expected client condition (stale/offline rejoin), not a server fault —
+    // keep it out of Sentry's generic capture loop.
+    markErrorReported(endedError);
+    logger.info(`[RoomManager] Rejecting JOIN_SESSION for ended session ${sessionId}`);
+    throw endedError;
+  }
+
   // SECURITY: Never trust a client-supplied participantId. SessionUser.id is
   // broadcast to every peer in the session, so accepting an arbitrary
   // participantId here lets any member impersonate any other participant
@@ -149,9 +170,9 @@ export async function joinSession(
         );
       }
     } else {
-      // No Redis, check Postgres directly for session existence
-      const pgSession = await getSessionById(sessionId);
-      if (!pgSession || pgSession.status === 'ended') {
+      // No Redis: a missing Postgres row means this is a brand-new session.
+      // Ended rows were already rejected by the guard at the top of joinSession.
+      if (!existingSession) {
         isNewSession = true;
         logger.info(
           `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,

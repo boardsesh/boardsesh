@@ -137,7 +137,7 @@ This component serves two modes:
 - Session name (`h6`, truncated) or auto-generated name from `generateSessionName(firstTickAt, boardTypes)`.
 - Date subtitle (`caption`, formatted as "Wed, Jan 15, 2025").
 - Share button (`IosShare` icon) using `shareWithFallback`.
-- Edit button (only for inferred sessions where the current user is a participant): toggles inline `TextField` for name and description editing, with save/cancel `IconButton`s.
+- Share button: opens the native share flow or copies the session URL.
 - `SessionOverviewPanel` in full mode.
 - Session-level social row: `VoteButton` (like only) + comment toggle (`ChatBubbleOutlineOutlined` with comment count badge) + collapsible `CommentSection`.
 - HealthKit save button (for participants only).

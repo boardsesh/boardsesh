@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, count, isNull, sql, ilike, or, desc, inArray, like } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -15,22 +17,32 @@ import {
   SearchBoardsInputSchema,
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
+  RecordBoardSerialInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
 import { generateUniqueGymSlug } from './gyms';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
+import { isUniqueViolation } from '../../../utils/postgres-errors';
 
 // ============================================
 // Helpers
 // ============================================
+
+function throwIfBoardSerialConflict(error: unknown): void {
+  if (isUniqueViolation(error, 'user_boards_unique_owner_serial')) {
+    throw new GraphQLError('You already have another board linked to that serial', {
+      extensions: { code: 'BOARD_SERIAL_ALREADY_LINKED' },
+    });
+  }
+}
 
 /**
  * Generate a unique slug from a board name.
  * Uses a single query to fetch all existing slugs that share the same prefix,
  * then picks the next available suffix in-memory — no sequential DB loop.
  */
-async function generateUniqueSlug(name: string): Promise<string> {
+export async function generateUniqueSlug(name: string): Promise<string> {
   const baseSlug =
     name
       .toLowerCase()
@@ -653,7 +665,7 @@ export const socialBoardQueries = {
    * Unauthenticated callers receive stripped responses (no GPS/owner data).
    */
   boardsBySerialNumbers: async (_: unknown, { serialNumbers }: { serialNumbers: string[] }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'boardsBySerialNumbers');
 
     // Behaviour change: this used to silently `.slice(0, 20)` on overflow, now
     // it throws via Zod (`SerialNumberLookupSchema.max(20)`). Callers MUST cap
@@ -729,7 +741,7 @@ export const socialBoardQueries = {
    */
   myBoardSerialConfigs: async (_: unknown, { serialNumbers }: { serialNumbers: string[] }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'myBoardSerialConfigs');
 
     const validated = validateInput(SerialNumberLookupSchema, { serialNumbers }, 'serialNumbers');
     const cleaned = validated.serialNumbers.filter((s) => s.length > 0);
@@ -749,6 +761,7 @@ export const socialBoardQueries = {
         layoutId: dbSchema.userBoardSerials.layoutId,
         sizeId: dbSchema.userBoardSerials.sizeId,
         setIds: dbSchema.userBoardSerials.setIds,
+        apiLevel: dbSchema.userBoardSerials.apiLevel,
         updatedAt: dbSchema.userBoardSerials.updatedAt,
         boardUuid: dbSchema.userBoardSerials.boardUuid,
         boardSlug: dbSchema.userBoards.slug,
@@ -762,15 +775,16 @@ export const socialBoardQueries = {
         and(eq(dbSchema.userBoardSerials.userId, userId), inArray(dbSchema.userBoardSerials.serialNumber, cleaned)),
       );
 
-    return rows.map((r) => ({
-      serialNumber: r.serialNumber,
-      boardName: r.boardName,
-      layoutId: Number(r.layoutId),
-      sizeId: Number(r.sizeId),
-      setIds: r.setIds,
-      updatedAt: r.updatedAt.toISOString(),
-      boardUuid: r.boardUuid,
-      boardSlug: r.boardSlug,
+    return rows.map((row) => ({
+      serialNumber: row.serialNumber,
+      boardName: row.boardName,
+      layoutId: Number(row.layoutId),
+      sizeId: Number(row.sizeId),
+      setIds: row.setIds,
+      apiLevel: row.apiLevel,
+      updatedAt: row.updatedAt.toISOString(),
+      boardUuid: row.boardUuid,
+      boardSlug: row.boardSlug,
     }));
   },
 
@@ -826,7 +840,7 @@ export const socialBoardQueries = {
    * Search public boards
    */
   searchBoards: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'searchBoards');
     const validatedInput = validateInput(SearchBoardsInputSchema, input, 'input');
     const { query, boardType, latitude, longitude, radiusKm } = validatedInput;
     const limit = validatedInput.limit ?? 20;
@@ -1153,11 +1167,161 @@ export const socialBoardQueries = {
 
 export const socialBoardMutations = {
   /**
+   * Record the (serial, board config) the current user was on when connecting
+   * to a controller over BLE. Replaces the deleted REST route
+   * POST /api/internal/board-serials. Upserts into userBoardSerials keyed by
+   * (userId, serialNumber), capturing the API level advertised after the `@` in
+   * the device name. Returns the stored recording, or null when the user already
+   * has a saved board whose config matches the connect (nothing to record).
+   */
+  recordBoardSerial: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    // Dedicated `recordBoardSerial` namespace so this 30/min budget is isolated
+    // from the shared 'default' bucket. requireAuthenticated already rejects
+    // anonymous callers before any DB work, so an unauthenticated flood never
+    // reaches here — the per-user limit (in-memory + Redis, keyed on the
+    // validated token's userId) replaces the deleted REST route's IP guard,
+    // which only existed to throttle that pre-auth path.
+    await applyRateLimit(ctx, 30, 'recordBoardSerial');
+
+    const validatedInput = validateInput(RecordBoardSerialInputSchema, input, 'input');
+    const userId = ctx.userId!;
+    const { serialNumber, boardName, layoutId, sizeId, setIds, apiLevel, boardUuid } = validatedInput;
+
+    // If the user already has a saved board for this controller AND its config
+    // matches, the recording adds nothing — skip the write and return null. The
+    // saved board stays authoritative for serial→board lookups; recordings only
+    // exist to provide a fallback and to detect drift when the configs differ.
+    const [savedMatch] = await db
+      .select({
+        boardType: dbSchema.userBoards.boardType,
+        layoutId: dbSchema.userBoards.layoutId,
+        sizeId: dbSchema.userBoards.sizeId,
+        setIds: dbSchema.userBoards.setIds,
+      })
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          eq(dbSchema.userBoards.ownerId, userId),
+          eq(dbSchema.userBoards.serialNumber, serialNumber),
+          isNull(dbSchema.userBoards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (
+      savedMatch &&
+      savedMatch.boardType === boardName &&
+      Number(savedMatch.layoutId) === layoutId &&
+      Number(savedMatch.sizeId) === sizeId &&
+      normaliseSetIds(savedMatch.setIds) === normaliseSetIds(setIds)
+    ) {
+      return null;
+    }
+
+    // Validate boardUuid before linking: only persist the link if the user can
+    // legitimately reach the board (owner or public). A forged/unauthorised uuid
+    // is silently dropped to null so it can't attach the controller to someone
+    // else's private board.
+    let linkedBoardUuid: string | null = null;
+    if (boardUuid) {
+      const [allowed] = await db
+        .select({ uuid: dbSchema.userBoards.uuid })
+        .from(dbSchema.userBoards)
+        .where(
+          and(
+            eq(dbSchema.userBoards.uuid, boardUuid),
+            isNull(dbSchema.userBoards.deletedAt),
+            or(eq(dbSchema.userBoards.ownerId, userId), eq(dbSchema.userBoards.isPublic, true)),
+          ),
+        )
+        .limit(1);
+      if (allowed) {
+        linkedBoardUuid = boardUuid;
+      }
+    }
+
+    // Coalesce to an explicit null rather than letting `undefined` fall through.
+    // On the insert path the two are equivalent, but in the onConflictDoUpdate
+    // `set` below Drizzle omits `undefined` columns from the UPDATE — which would
+    // preserve a stale api_level from a previous connect instead of recording
+    // what *this* connect observed. The explicit null keeps the row honest.
+    const apiLevelValue = apiLevel ?? null;
+
+    await db
+      .insert(dbSchema.userBoardSerials)
+      .values({
+        userId,
+        serialNumber,
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        apiLevel: apiLevelValue,
+        boardUuid: linkedBoardUuid,
+      })
+      .onConflictDoUpdate({
+        target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+        set: {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          apiLevel: apiLevelValue,
+          boardUuid: linkedBoardUuid,
+          updatedAt: new Date(),
+        },
+      });
+
+    const [row] = await db
+      .select({
+        serialNumber: dbSchema.userBoardSerials.serialNumber,
+        boardName: dbSchema.userBoardSerials.boardName,
+        layoutId: dbSchema.userBoardSerials.layoutId,
+        sizeId: dbSchema.userBoardSerials.sizeId,
+        setIds: dbSchema.userBoardSerials.setIds,
+        apiLevel: dbSchema.userBoardSerials.apiLevel,
+        updatedAt: dbSchema.userBoardSerials.updatedAt,
+        boardUuid: dbSchema.userBoardSerials.boardUuid,
+        boardSlug: dbSchema.userBoards.slug,
+      })
+      .from(dbSchema.userBoardSerials)
+      .leftJoin(
+        dbSchema.userBoards,
+        and(eq(dbSchema.userBoards.uuid, dbSchema.userBoardSerials.boardUuid), isNull(dbSchema.userBoards.deletedAt)),
+      )
+      .where(
+        and(eq(dbSchema.userBoardSerials.userId, userId), eq(dbSchema.userBoardSerials.serialNumber, serialNumber)),
+      )
+      .limit(1);
+
+    // The upsert above always writes a row, so the re-select can only come back
+    // empty under a concurrent delete of this exact (userId, serialNumber). Guard
+    // it so that race surfaces as a clean GraphQL error instead of an untyped
+    // "cannot read property of undefined" crash.
+    if (!row) {
+      throw new Error('Failed to record board serial');
+    }
+
+    return {
+      serialNumber: row.serialNumber,
+      boardName: row.boardName,
+      layoutId: Number(row.layoutId),
+      sizeId: Number(row.sizeId),
+      setIds: row.setIds,
+      apiLevel: row.apiLevel,
+      updatedAt: row.updatedAt.toISOString(),
+      boardUuid: row.boardUuid,
+      boardSlug: row.boardSlug,
+    };
+  },
+
+  /**
    * Create a new board
    */
   createBoard: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10);
+    await applyRateLimit(ctx, 10, 'createBoard');
 
     const validatedInput = validateInput(CreateBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
@@ -1292,37 +1456,44 @@ export const socialBoardMutations = {
 
           return await enrichBoard(board, userId);
         } catch (error) {
+          throwIfBoardSerialConflict(error);
           // Auto-gym creation failed; continue to create the board without a gym
           logger.error('Auto-gym creation failed, creating board without gym:', error);
         }
       }
     }
 
-    const [board] = await db
-      .insert(dbSchema.userBoards)
-      .values({
-        uuid,
-        slug,
-        ownerId: userId,
-        boardType: validatedInput.boardType,
-        layoutId: validatedInput.layoutId,
-        sizeId: validatedInput.sizeId,
-        setIds: validatedInput.setIds,
-        name: validatedInput.name,
-        description: validatedInput.description ?? null,
-        locationName: validatedInput.locationName ?? null,
-        latitude: validatedInput.latitude ?? null,
-        longitude: validatedInput.longitude ?? null,
-        isPublic: validatedInput.isPublic ?? true,
-        isUnlisted: validatedInput.isUnlisted ?? false,
-        hideLocation: validatedInput.hideLocation ?? false,
-        isOwned: validatedInput.isOwned ?? true,
-        angle: validatedInput.angle ?? 40,
-        isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
-        serialNumber: validatedInput.serialNumber ?? null,
-        gymId,
-      })
-      .returning();
+    let board: typeof dbSchema.userBoards.$inferSelect;
+    try {
+      [board] = await db
+        .insert(dbSchema.userBoards)
+        .values({
+          uuid,
+          slug,
+          ownerId: userId,
+          boardType: validatedInput.boardType,
+          layoutId: validatedInput.layoutId,
+          sizeId: validatedInput.sizeId,
+          setIds: validatedInput.setIds,
+          name: validatedInput.name,
+          description: validatedInput.description ?? null,
+          locationName: validatedInput.locationName ?? null,
+          latitude: validatedInput.latitude ?? null,
+          longitude: validatedInput.longitude ?? null,
+          isPublic: validatedInput.isPublic ?? true,
+          isUnlisted: validatedInput.isUnlisted ?? false,
+          hideLocation: validatedInput.hideLocation ?? false,
+          isOwned: validatedInput.isOwned ?? true,
+          angle: validatedInput.angle ?? 40,
+          isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
+          serialNumber: validatedInput.serialNumber ?? null,
+          gymId,
+        })
+        .returning();
+    } catch (error) {
+      throwIfBoardSerialConflict(error);
+      throw error;
+    }
 
     // Populate PostGIS location column if lat/lon provided
     if (validatedInput.latitude != null && validatedInput.longitude != null) {
@@ -1339,7 +1510,7 @@ export const socialBoardMutations = {
    */
   updateBoard: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'updateBoard');
 
     const validatedInput = validateInput(UpdateBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
@@ -1452,11 +1623,17 @@ export const socialBoardMutations = {
       updateValues.deletedAt = null;
     }
 
-    const [updated] = await db
-      .update(dbSchema.userBoards)
-      .set(updateValues)
-      .where(eq(dbSchema.userBoards.id, board.id))
-      .returning();
+    let updated: typeof dbSchema.userBoards.$inferSelect;
+    try {
+      [updated] = await db
+        .update(dbSchema.userBoards)
+        .set(updateValues)
+        .where(eq(dbSchema.userBoards.id, board.id))
+        .returning();
+    } catch (error) {
+      throwIfBoardSerialConflict(error);
+      throw error;
+    }
 
     // Update PostGIS location column
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
@@ -1479,7 +1656,7 @@ export const socialBoardMutations = {
    */
   deleteBoard: async (_: unknown, { boardUuid }: { boardUuid: string }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 10);
+    await applyRateLimit(ctx, 10, 'deleteBoard');
 
     validateInput(UUIDSchema, boardUuid, 'boardUuid');
     const userId = ctx.userId!;
@@ -1512,7 +1689,7 @@ export const socialBoardMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'followBoard');
 
     const validatedInput = validateInput(FollowBoardInputSchema, input, 'input');
     const userId = ctx.userId!;
@@ -1556,7 +1733,7 @@ export const socialBoardMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20);
+    await applyRateLimit(ctx, 20, 'unfollowBoard');
 
     const validatedInput = validateInput(FollowBoardInputSchema, input, 'input');
     const userId = ctx.userId!;

@@ -75,6 +75,8 @@ export function useSaveTick(boardName: BoardName | null) {
           layoutId: options.layoutId,
           sizeId: options.sizeId,
           setIds: options.setIds,
+          boardUuid: options.boardUuid,
+          ...(options.boardId != null ? { boardId: options.boardId } : {}),
           videoUrl: options.videoUrl,
         },
       };
@@ -116,6 +118,14 @@ export function useSaveTick(boardName: BoardName | null) {
       // these queries — keep them refreshing after a tick.
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+
+      // The You-page Logbook tab feed and the Sessions feed/detail are separate
+      // cache families from the optimistically-updated accumulated logbook, so
+      // a new tick won't appear there without busting them. Matches the
+      // edit/delete path (use-mutate-tick) — the create path was missing these.
+      void queryClient.invalidateQueries({ queryKey: ['userAscentsFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
 
       if (options.videoUrl) {
         void queryClient.invalidateQueries({

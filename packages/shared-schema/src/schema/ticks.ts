@@ -109,7 +109,11 @@ export const ticksTypeDefs = /* GraphQL */ `
     sizeId: Int
     "Set IDs for board resolution"
     setIds: String
-    "Optional Instagram post or reel URL to attach as beta for the climb"
+    "Specific board entity this tick is on, by uuid. When provided, takes precedence over (layoutId, sizeId, setIds) resolution and lets ticks attach to a board the climber doesn't own (e.g. a seeded gym board)."
+    boardUuid: String
+    "Resolved shared board id (from resolveBoardForSerial) for the BLE-connected wall everyone is logging to. Used when no boardUuid is given; falls back to board-config resolution if it doesn't match the payload."
+    boardId: Int
+    "Optional Instagram or TikTok video URL to attach as beta for the climb"
     videoUrl: String
   }
 
@@ -130,6 +134,8 @@ export const ticksTypeDefs = /* GraphQL */ `
     isBenchmark: Boolean
     "User comment"
     comment: String
+    "When the climb was attempted (ISO 8601)"
+    climbedAt: String
   }
 
   """
@@ -143,16 +149,18 @@ export const ticksTypeDefs = /* GraphQL */ `
   }
 
   """
-  Input for attaching an Instagram video as beta for a climb.
+  Input for attaching an Instagram or TikTok video as beta for a climb.
   """
   input AttachBetaLinkInput {
     "Board type"
     boardType: String!
     "Climb UUID"
     climbUuid: String!
-    "Instagram post or reel URL"
+    "Instagram or TikTok video URL"
     link: String!
     "Optional angle the video was climbed at"
     angle: Int
+    "Optional tick UUID this beta video belongs to"
+    tickUuid: ID
   }
 `;

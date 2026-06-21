@@ -33,7 +33,7 @@ export async function getSessionById(sessionId: string): Promise<Session | null>
  * at a time per device. If a future caller can't tolerate double-publish,
  * tighten to a single-statement CTE
  * (`UPDATE sessions SET boardPath = $2, ... FROM (SELECT boardPath AS prev FROM sessions WHERE id = $1) sub WHERE id = $1 AND sub.prev <> $2 RETURNING sub.prev`)
- * or use Redis-backed CAS the same way `setSessionDriverAndReturnPrevious`
+ * or use Redis-backed CAS the same way `setSessionBoardSerialAndReturnPrevious`
  * does. The concurrent double-publish path is pinned in
  * `wall-confirm-and-board-serial.test.ts`'s `setSessionBoardPath` block.
  */

@@ -1,16 +1,20 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { eq } from 'drizzle-orm';
-import { activityPushTokens } from '@boardsesh/db/schema/app';
-import { db } from '../db/client';
 import { applyCorsHeaders } from './cors';
 import { roomManager } from '../services/room-manager';
 import { pubsub } from '../pubsub/index';
 import { navigateToQueueItem } from '../services/queue-navigation';
+import { authenticateWidget, type WidgetAuthResult } from './widget-auth';
 import {
   trackLiveActivityWidgetNavigation,
   trackLiveActivityWidgetNavigationAttributionGap,
 } from '../services/analytics/live-activity';
+import { checkWidgetRateLimit, ensureWidgetRateLimitPruner, __resetWidgetRateLimitForTests } from './widget-rate-limit';
+import { verifyWidgetSession } from './widget-session-guard';
 import { logger } from '../utils/logger';
+
+// Re-exported so existing callers/tests that import the reset from this module
+// keep working after the bucket moved to the shared widget-rate-limit module.
+export { __resetWidgetRateLimitForTests };
 
 interface WidgetNavigateBody {
   sessionId: string;
@@ -65,79 +69,6 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/**
- * Per-session token bucket for widget navigation.
- *
- * Threat model: an iOS widget can fire navigate requests rapidly (e.g. user
- * mashing the next button while the lock screen renders). Without a limit,
- * `navigateToQueueItem`'s internal MAX_RETRIES=3 retry loop can amplify a
- * burst of widget taps into a stampede on `roomManager.updateQueueState`.
- *
- * Bucket: 2 capacity, refills at 1 token / 1.5s. So 2 quick taps go through;
- * sustained taps are limited to ~40 req/min per session.
- *
- * In-memory only — the widget endpoint runs per-instance and the limit is a
- * defense-in-depth measure, not a hard quota. Across instances the limit is
- * looser, which is acceptable for this threat model.
- */
-const RATE_BUCKET_CAPACITY = 2;
-const RATE_REFILL_PER_SECOND = 1 / 1.5;
-
-interface RateBucket {
-  tokens: number;
-  lastRefillMs: number;
-}
-
-const rateBuckets = new Map<string, RateBucket>();
-
-function checkRateLimit(sessionId: string): boolean {
-  const now = Date.now();
-  const existing = rateBuckets.get(sessionId);
-
-  if (!existing) {
-    rateBuckets.set(sessionId, { tokens: RATE_BUCKET_CAPACITY - 1, lastRefillMs: now });
-    return true;
-  }
-
-  // Refill tokens based on elapsed time
-  const elapsedSeconds = (now - existing.lastRefillMs) / 1000;
-  const refilled = Math.min(RATE_BUCKET_CAPACITY, existing.tokens + elapsedSeconds * RATE_REFILL_PER_SECOND);
-  existing.lastRefillMs = now;
-
-  if (refilled < 1) {
-    existing.tokens = refilled;
-    return false;
-  }
-
-  existing.tokens = refilled - 1;
-  return true;
-}
-
-/** Periodically prune buckets that haven't been touched for 5 minutes. */
-const RATE_BUCKET_PRUNE_INTERVAL_MS = 5 * 60 * 1000;
-const RATE_BUCKET_TTL_MS = 5 * 60 * 1000;
-let pruneIntervalHandle: ReturnType<typeof setInterval> | null = null;
-
-function ensurePrunerRunning(): void {
-  if (pruneIntervalHandle !== null) return;
-  pruneIntervalHandle = setInterval(() => {
-    const cutoff = Date.now() - RATE_BUCKET_TTL_MS;
-    for (const [sessionId, bucket] of rateBuckets) {
-      if (bucket.lastRefillMs < cutoff) {
-        rateBuckets.delete(sessionId);
-      }
-    }
-  }, RATE_BUCKET_PRUNE_INTERVAL_MS);
-  // Don't keep the process alive solely for this timer.
-  if (typeof pruneIntervalHandle.unref === 'function') pruneIntervalHandle.unref();
-}
-
-type AuthResult =
-  | { kind: 'ok'; userId: string | null }
-  | { kind: 'missing' } // No bearer at all → 401
-  | { kind: 'unknown' } // Bearer present but no row matches the token → 401
-  | { kind: 'wrong-session'; boundSessionId: string; userId: string | null }; // Token exists but bound to a different session → 410
-
 type WidgetNavigationAnalyticsEvent = Parameters<typeof trackLiveActivityWidgetNavigation>[0];
 type WidgetNavigationAnalyticsPayload = Omit<WidgetNavigationAnalyticsEvent, 'userId'>;
 
@@ -151,34 +82,6 @@ function trackWidgetNavigation(userId: string | null, event: WidgetNavigationAna
     ...event,
     reason: 'missing_user_id',
   });
-}
-
-/**
- * Verify that the bearer token in the Authorization header is registered to
- * `sessionId` in `activity_push_tokens`. This is the auth contract the iOS
- * widget honors: the widget reads its APNs Live Activity push token (already
- * registered via `registerActivityPushToken`) and sends it as a Bearer header.
- *
- * Distinguishes "token unknown" (genuinely bogus → 401) from "token bound to
- * a different session" (need to re-register → 410). iOS uses the 410 hint to
- * fire a fresh `registerActivityPushToken` mutation.
- */
-async function authenticateWidget(authHeader: string | undefined, sessionId: string): Promise<AuthResult> {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return { kind: 'missing' };
-  const bearer = authHeader.slice(7).trim();
-  if (!bearer) return { kind: 'missing' };
-
-  const rows = await db
-    .select({ sessionId: activityPushTokens.sessionId, userId: activityPushTokens.userId })
-    .from(activityPushTokens)
-    .where(eq(activityPushTokens.token, bearer))
-    .limit(1);
-
-  if (rows.length === 0) return { kind: 'unknown' };
-  const boundSessionId = rows[0].sessionId;
-  const userId = rows[0].userId ?? null;
-  if (boundSessionId !== sessionId) return { kind: 'wrong-session', boundSessionId, userId };
-  return { kind: 'ok', userId };
 }
 
 /**
@@ -202,7 +105,7 @@ async function authenticateWidget(authHeader: string | undefined, sessionId: str
  * 429 to absorb widget-button mashes.
  */
 export async function handleWidgetNavigate(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  ensurePrunerRunning();
+  ensureWidgetRateLimitPruner();
 
   // CORS headers (allow the widget's URLSession to call this).
   // applyCorsHeaders already replies 200 for OPTIONS preflight and returns
@@ -246,7 +149,7 @@ export async function handleWidgetNavigate(req: IncomingMessage, res: ServerResp
   const authHeader = req.headers['authorization'];
   const authHeaderValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
 
-  let authResult: AuthResult;
+  let authResult: WidgetAuthResult;
   try {
     authResult = await authenticateWidget(authHeaderValue, sessionId);
   } catch (error) {
@@ -283,20 +186,42 @@ export async function handleWidgetNavigate(req: IncomingMessage, res: ServerResp
     return;
   }
 
-  // Rate limit (per session) — apply *after* auth so unauth requests can't poison the bucket
-  if (!checkRateLimit(sessionId)) {
-    trackWidgetNavigation(authResult.userId, {
-      sessionId,
-      action,
-      outcome: 'rate_limited',
-      statusCode: 429,
-    });
-    res.writeHead(429, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: false, error: 'Too many requests' }));
-    return;
-  }
-
   try {
+    // Sessions are always-live: any current session member may navigate the
+    // wall (no driver gate). The Live Activity token proves the user joined at
+    // some point, but that row outlives session-end and leave — so re-check the
+    // durable session/membership below before mutating.
+
+    // Rate limit (per session) — apply *after* auth so an unauthenticated
+    // caller can't poison a member's bucket.
+    if (!checkWidgetRateLimit(sessionId)) {
+      trackWidgetNavigation(authResult.userId, {
+        sessionId,
+        action,
+        outcome: 'rate_limited',
+        statusCode: 429,
+      });
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'Too many requests' }));
+      return;
+    }
+
+    // Reject stale tokens whose session has ended or whose user isn't a
+    // participant, before any queue read/mutation (else a stale token revives
+    // an ended session's persisted queue).
+    const guard = await verifyWidgetSession(sessionId, authResult.userId);
+    if (!guard.ok) {
+      trackWidgetNavigation(authResult.userId, {
+        sessionId,
+        action,
+        outcome: guard.status === 410 ? 'session_ended' : 'not_participant',
+        statusCode: guard.status,
+      });
+      res.writeHead(guard.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: guard.error }));
+      return;
+    }
+
     // Determine target index based on action and current queue state
     const queueState = await roomManager.getQueueState(sessionId);
     const queueLength = queueState.queue.length;
@@ -385,17 +310,5 @@ export async function handleWidgetNavigate(req: IncomingMessage, res: ServerResp
     });
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: 'Internal server error' }));
-  }
-}
-
-/**
- * Test-only utility to clear in-memory rate-limit state between tests.
- * Not exported via the public module API; tests import directly.
- */
-export function __resetWidgetRateLimitForTests(): void {
-  rateBuckets.clear();
-  if (pruneIntervalHandle !== null) {
-    clearInterval(pruneIntervalHandle);
-    pruneIntervalHandle = null;
   }
 }

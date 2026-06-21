@@ -249,6 +249,7 @@ export function getMockSessionDetail(): SessionDetail {
     climbedAt: new Date(now.getTime() - seed.minutesAgo * 60_000).toISOString(),
     upvotes: 0,
     totalAttempts: null,
+    betaLinks: [],
   }));
 
   const totalSends = PARTICIPANTS.reduce((sum, p) => sum + p.sends, 0);

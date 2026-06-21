@@ -1,4 +1,4 @@
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { eq, and, gte, desc, asc } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
@@ -11,7 +11,7 @@ import {
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
-import { getSetterStats } from '@boardsesh/db/queries';
+import { getGradeLabel, getSetterStats } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import {
   type ClimbSearchParams,
@@ -144,6 +144,10 @@ export const climbQueries = {
     { input }: { input: ClimbSearchInput },
     ctx: ConnectionContext,
   ): Promise<ClimbSearchContext> => {
+    // 120/min/identity. This is the app's hottest query and infinite scroll fires one
+    // request per page, so the limit sits well above any interactive cadence while
+    // capping abuse (deep-OFFSET pages, holdsFilter floods) on an anonymous endpoint.
+    await applyRateLimit(ctx, 120, 'search-climbs');
     validateInput(ClimbSearchInputSchema, input, 'input');
 
     // Validate board name
@@ -338,5 +342,46 @@ export const climbQueries = {
       .orderBy(desc(dbSchema.boardClimbStatsHistory.createdAt));
 
     return rows;
+  },
+
+  /**
+   * Get current per-angle stats from the live board_climb_stats table.
+   * Replaces the uncached REST endpoint /api/v1/[board]/climb-stats/[uuid].
+   */
+  climbStatsForAngles: async (
+    _: unknown,
+    { boardName, climbUuid }: { boardName: string; climbUuid: string },
+    ctx: ConnectionContext,
+  ) => {
+    // 60/min/identity. The angle drawer keys on climbUuid and caches 5 min
+    // client-side, so this sits well above interactive cadence while capping
+    // a scraper hammering the (previously uncached) stats endpoint.
+    await applyRateLimit(ctx, 60, 'climb-stats-for-angles');
+    validateInput(BoardNameSchema, boardName, 'boardName');
+    validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
+
+    if (!isValidBoardName(boardName)) {
+      throw new Error(`Invalid board name: ${boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+    }
+
+    const rows = await dbRead
+      .select({
+        angle: dbSchema.boardClimbStats.angle,
+        ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        qualityAverage: dbSchema.boardClimbStats.qualityAverage,
+        difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
+        displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
+        faUsername: dbSchema.boardClimbStats.faUsername,
+        faAt: dbSchema.boardClimbStats.faAt,
+      })
+      .from(dbSchema.boardClimbStats)
+      .where(and(eq(dbSchema.boardClimbStats.boardType, boardName), eq(dbSchema.boardClimbStats.climbUuid, climbUuid)))
+      .orderBy(asc(dbSchema.boardClimbStats.angle));
+
+    return rows.map((row) => ({
+      ...row,
+      // Mirror the REST endpoint: round display difficulty to a grade id and label it.
+      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty)),
+    }));
   },
 };

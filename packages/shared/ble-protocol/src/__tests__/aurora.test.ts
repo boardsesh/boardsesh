@@ -229,4 +229,22 @@ describe('getAuroraBluetoothPacket', () => {
     const result = getAuroraBluetoothPacket(frames, placements, 'kilter', 3);
     expect(result.skippedRoleCount).toBe(1);
   });
+
+  it('honours a 6-digit hex color override', () => {
+    // Kilter role 12 = STARTING; override its colour with pure red.
+    const result = getAuroraBluetoothPacket('p100r12', { 100: 5 }, 'kilter', 3, { STARTING: '#FF0000' });
+    // Body: [ONLY, posLow, posHigh, color]; encodeColorV3('FF0000') = 224.
+    expect(result.packet).toEqual(Uint8Array.from(wrapBytes([84, 5, 0, 224])));
+  });
+
+  it('falls back to the canonical color for a malformed override', () => {
+    const placements = { 100: 5 };
+    const canonical = getAuroraBluetoothPacket('p100r12', placements, 'kilter', 3);
+    // Shorthand hex would parseInt('' , 16) = NaN in the encoder and stream a
+    // garbage byte to the wall — the override must be ignored, not honoured.
+    const shorthand = getAuroraBluetoothPacket('p100r12', placements, 'kilter', 3, { STARTING: '#fff' });
+    const named = getAuroraBluetoothPacket('p100r12', placements, 'kilter', 3, { STARTING: 'red' });
+    expect(shorthand.packet).toEqual(canonical.packet);
+    expect(named.packet).toEqual(canonical.packet);
+  });
 });

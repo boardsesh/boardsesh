@@ -17,6 +17,8 @@ import type {
   RawVPointsSeries,
   RawStatisticsSummary,
   RawLayoutPercentage,
+  RawActivityDay,
+  RawActivityHeatmap,
 } from './types';
 
 dayjs.extend(isoWeek);
@@ -150,9 +152,23 @@ export function buildWeeklyBars(
 
   const DEFAULT_MAX_WEEKS = 52;
   const allWeekKeys: string[] = [];
-  // Safe to drop the optional chain: `entries.length === 0` is handled above.
-  const first = parseTickTime(entries[entries.length - 1].climbed_at).startOf('isoWeek');
-  const last = parseTickTime(entries[0].climbed_at).endOf('isoWeek');
+  // `entries` is per-board tick arrays concatenated in BOARD_TYPES order
+  // (derive-view-model `Object.values(...).flat()`), each newest-first, so the
+  // combined array is NOT globally sorted. Derive the range from the true
+  // min/max timestamps rather than the array endpoints — otherwise multi-board
+  // logbooks can yield first > last (empty week loop → null chart). A single
+  // reduce pass avoids spread limits on huge logbooks.
+  let oldestMs = tickTimeMs(entries[0].climbed_at);
+  let newestMs = oldestMs;
+  for (const entry of entries) {
+    const ms = tickTimeMs(entry.climbed_at);
+    if (ms < oldestMs) oldestMs = ms;
+    if (ms > newestMs) newestMs = ms;
+  }
+  // `dayjs(ms)` is in local time (matching `parseTickTime`), so the isoWeek
+  // bounds line up with the per-entry week keys computed below.
+  const first = dayjs(oldestMs).startOf('isoWeek');
+  const last = dayjs(newestMs).endOf('isoWeek');
   let current = first;
   while (current.isBefore(last) || current.isSame(last)) {
     allWeekKeys.push(`${current.isoWeekYear()}-W${current.isoWeek()}`);
@@ -432,4 +448,62 @@ export function buildStatisticsSummary(
   );
 
   return { totalAscents, layoutPercentages };
+}
+
+// ── Activity heatmap (GitHub-style calendar) ────────────────────────
+
+const HEATMAP_WEEKS = 53;
+
+/**
+ * Per-day ascent counts over a trailing, week-aligned window ending this week —
+ * the data for a GitHub-style activity calendar. Every logged entry counts as
+ * activity (attempts included: you still showed up). Days are emitted oldest→
+ * newest and zero-filled so the renderer can chunk them into 7-row week columns
+ * without gap handling. Returns null when no activity falls inside the window.
+ *
+ * `today` defaults to now; pass a fixed day for deterministic tests so the
+ * window anchor doesn't drift with the wall clock.
+ */
+export function buildActivityHeatmap(
+  filteredLogbook: LogbookEntry[],
+  weeksWindow: number = HEATMAP_WEEKS,
+  today: dayjs.Dayjs = dayjs(),
+): RawActivityHeatmap | null {
+  if (filteredLogbook.length === 0) return null;
+
+  const countsByDay = new Map<string, number>();
+  for (const entry of filteredLogbook) {
+    const day = parseTickTime(entry.climbed_at).format('YYYY-MM-DD');
+    countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
+  }
+
+  // Week-align the grid to whole ISO weeks (Mon→Sun) so it lays out as clean
+  // 7-row columns. End on the current week, start `weeksWindow` weeks earlier.
+  // ISO weeks (not locale `week`) keep the grid deterministic regardless of the
+  // runtime locale's first-day-of-week, and match every other builder here.
+  const gridEnd = today.endOf('isoWeek');
+  const gridStart = gridEnd.subtract(weeksWindow * 7 - 1, 'day').startOf('isoWeek');
+
+  const days: RawActivityDay[] = [];
+  let maxCount = 0;
+  let cursor = gridStart;
+  while (cursor.isBefore(gridEnd) || cursor.isSame(gridEnd, 'day')) {
+    const key = cursor.format('YYYY-MM-DD');
+    const count = countsByDay.get(key) ?? 0;
+    if (count > maxCount) maxCount = count;
+    days.push({ date: key, count });
+    cursor = cursor.add(1, 'day');
+  }
+
+  // Every day in range was empty (e.g. an all-time logbook whose climbs predate
+  // the window) — nothing to draw.
+  if (maxCount === 0) return null;
+
+  return {
+    days,
+    weeks: Math.ceil(days.length / 7),
+    maxCount,
+    startDate: gridStart.format('YYYY-MM-DD'),
+    endDate: gridEnd.format('YYYY-MM-DD'),
+  };
 }

@@ -35,6 +35,16 @@
       "import": "./src/boulder-grade-mapping.ts",
       "default": "./src/boulder-grade-mapping.ts"
     },
+    "./grade-conversion": {
+      "types": "./src/grade-conversion.ts",
+      "import": "./src/grade-conversion.ts",
+      "default": "./src/grade-conversion.ts"
+    },
+    "./size-comparison": {
+      "types": "./src/size-comparison.ts",
+      "import": "./src/size-comparison.ts",
+      "default": "./src/size-comparison.ts"
+    },
     "./moonboard": {
       "types": "./src/moonboard.ts",
       "import": "./src/moonboard.ts",

@@ -16,25 +16,82 @@
   "tabs": {
     "progress": "Progression",
     "sessions": "Sessions",
-    "logbook": "Carnet"
+    "logbook": "Carnet",
+    "social": "Social",
+    "climbs": "Blocs"
   },
   "progress": {
     "title": "Progression"
   },
   "mobile": {
-    "settings": "Réglages",
     "unknownName": "Grimpeur",
     "cancel": "Annuler",
     "sessions": {
-      "empty": "Aucune session enregistrée — va grimper."
+      "weeklySends": "{{count}} réussites cette semaine",
+      "weekly": {
+        "sessions": "Sessions",
+        "sends": "Réussites",
+        "flashes": "Flashs",
+        "attempts": "Essais"
+      },
+      "streak": "Série de {{count}} semaines",
+      "sectionToday": "Aujourd'hui",
+      "sectionThisWeek": "Cette semaine",
+      "sectionEarlier": "Plus tôt",
+      "emptyTitle": "Pas encore de sessions",
+      "emptyBody": "Démarrez une session et vos voies apparaîtront ici.",
+      "emptyCta": "Démarrer une session"
     },
     "progress": {
       "empty": "Rien d'enregistré pour l'instant — tes stats apparaissent dès que tu coches des voies."
     },
+    "social": {
+      "title": "Social",
+      "followers": "Abonnés",
+      "following": "Abonnements",
+      "findFriends": "Chercher",
+      "searchPlaceholder": "Chercher des grimpeurs",
+      "clearSearch": "Effacer la recherche",
+      "you": "Vous",
+      "followAction": "Suivre",
+      "unfollowAction": "Ne plus suivre",
+      "followUser": "Suivre {{name}}",
+      "unfollowUser": "Ne plus suivre {{name}}",
+      "followerCount_one": "{{count}} abonné",
+      "followerCount_other": "{{count}} abonnés",
+      "followingCount": "{{count}} abonnements",
+      "recentAscents_one": "{{count}} croix ce mois-ci",
+      "recentAscents_other": "{{count}} croix ce mois-ci",
+      "emptyFollowers": "Aucun abonné pour le moment",
+      "emptyFollowing": "Aucun abonnement pour le moment",
+      "searchHint": "Tape au moins 2 caractères pour chercher des grimpeurs",
+      "emptySearch": "Aucun grimpeur trouvé",
+      "emptySearchBody": "Aucun grimpeur ne correspond à \"{{query}}\".",
+      "loadError": "Impossible de charger les grimpeurs",
+      "retry": "Réessaie",
+      "instagramLink": "Instagram",
+      "instagramOpenError": "Impossible d'ouvrir Instagram"
+    },
+    "profile": {
+      "title": "Profil",
+      "errorTitle": "Impossible de charger ce profil",
+      "notFoundTitle": "Grimpeur introuvable",
+      "notFoundBody": "Nous n'avons pas trouvé ce grimpeur.",
+      "noClimbs": "Aucun bloc créé pour l'instant",
+      "climbsError": "Impossible de charger les blocs",
+      "betaShelf": {
+        "title": "Vidéos de beta",
+        "seeAll": "Tout voir",
+        "allTitle": "Vidéos de beta",
+        "empty": "Pas encore de vidéos de beta",
+        "emptyBody": "La beta partagée par ce grimpeur apparaît ici."
+      }
+    },
     "comments": {
       "title": "Commentaires",
       "empty": "Aucun commentaire — lancez la discussion",
-      "placeholder": "Ajouter un commentaire…"
+      "placeholder": "Ajouter un commentaire…",
+      "sendError": "Impossible de publier ton commentaire. Réessaie."
     },
     "filter": {
       "title": "Filtres",
@@ -49,11 +106,17 @@
     },
     "logbook": {
       "empty": "Ton carnet est vide — enregistre ta première croix.",
+      "errorTitle": "Impossible de charger ton carnet",
+      "errorBody": "Vérifie ta connexion et réessaie.",
+      "retry": "Réessaie",
       "editTitle": "Modifier la croix",
       "statusLabel": "Statut",
       "gradeLabel": "Cotation",
       "qualityLabel": "Étoiles",
       "triesLabel": "Essais",
+      "dateLabel": "Date",
+      "timeLabel": "Heure",
+      "futureTimeAdjusted": "Heure future ajustée à maintenant.",
       "commentLabel": "Commentaire",
       "commentPlaceholder": "Comment ça s'est passé ?",
       "save": "Enregistrer",

@@ -59,6 +59,8 @@ export const favoriteClimbsQuery = {
         name: tables.climbs.name,
         description: tables.climbs.description,
         frames: tables.climbs.frames,
+        frames_count: tables.climbs.framesCount,
+        frames_pace: tables.climbs.framesPace,
         // Stats data
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -94,11 +96,13 @@ export const favoriteClimbsQuery = {
       name: result.name || '',
       description: result.description || '',
       frames: result.frames || '',
+      framesCount: result.frames_count ?? null,
+      framesPace: result.frames_pace ?? null,
       angle: input.angle,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),
       quality_average: result.quality_average?.toString() || '0',
-      stars: getClimbStars(boardName, result.quality_average),
+      stars: getClimbStars(result.quality_average),
       difficulty_error: result.difficulty_error?.toString() || '0',
       benchmark_difficulty:
         result.benchmark_difficulty && result.benchmark_difficulty > 0 ? result.benchmark_difficulty.toString() : null,

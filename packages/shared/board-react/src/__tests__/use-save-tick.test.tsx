@@ -111,6 +111,42 @@ describe('useSaveTick (shared)', () => {
     expect(cache?.[0].uuid).toBe('real-77');
   });
 
+  it('invalidates the You-page feeds on success so a new tick appears in Logbook and Sessions', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-feed' }) });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), []);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(tickOptions());
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const roots = invalidateSpy.mock.calls.map(
+      (call) => (call[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0],
+    );
+    // Matches the edit/delete path: a freshly logged tick must refresh the
+    // Logbook tab feed and the Sessions feed/detail, not just the stats charts.
+    expect(roots).toContain('userAscentsFeed');
+    expect(roots).toContain('sessionGroupedFeed');
+    expect(roots).toContain('sessionDetail');
+  });
+
+  it('forwards a resolved presence boardId when provided', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ saveTick: savedTick({ uuid: 'real-42' }) });
+    const { wrapper } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(tickOptions({ boardId: 4242 }));
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(executeHttp.mock.calls[0][1].input.boardId).toBe(4242);
+  });
+
   it('rolls back the optimistic entry on error', async () => {
     const executeHttp = vi.fn().mockRejectedValue(new Error('Server exploded'));
     const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

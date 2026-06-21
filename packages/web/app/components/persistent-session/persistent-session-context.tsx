@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import type { SubscriptionQueueEvent, SessionEvent } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
@@ -157,6 +157,25 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     refs,
   });
 
+  // Session-scoped "the wall is lit" indicator, owned here (root, always
+  // mounted) so it survives leaving/remounting a board route. Set from session
+  // events; reset whenever the active session changes/ends. The board-route
+  // queue provider and the off-board queue bridge both read it, so the
+  // persistent bar/drawer lightbulb is consistent everywhere.
+  const [isSessionWallLit, setIsSessionWallLit] = useState(false);
+  const activeSessionId = lifecycle.session?.id ?? null;
+  useEffect(() => {
+    setIsSessionWallLit(false);
+    const unsubscribe = subscriptions.subscribeToSessionEvents((event: SessionEvent) => {
+      if (event.__typename === 'WallConfirmedClimb') {
+        setIsSessionWallLit(true);
+      } else if (event.__typename === 'WallDisconnected' || event.__typename === 'SessionEnded') {
+        setIsSessionWallLit(false);
+      }
+    });
+    return unsubscribe;
+  }, [activeSessionId, subscriptions.subscribeToSessionEvents]);
+
   // --- Actions context value (stable — functions from hooks are already memoized) ---
   const actionsValue = useMemo<PersistentSessionActionsType>(
     () => ({
@@ -170,9 +189,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       publishPlaybackState: mutations.publishPlaybackState,
       setQueue: mutations.setQueue,
       replaceQueueItem: mutations.replaceQueueItem,
-      takeControl: mutations.takeControl,
-      releaseControl: mutations.releaseControl,
       confirmClimbOnWall: mutations.confirmClimbOnWall,
+      reportWallDisconnect: mutations.reportWallDisconnect,
       setSessionBoardSerial: mutations.setSessionBoardSerial,
       setSessionBoardPath: mutations.setSessionBoardPath,
       setLocalQueueState: queueStorage.setLocalQueueState,
@@ -198,9 +216,8 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       mutations.publishPlaybackState,
       mutations.setQueue,
       mutations.replaceQueueItem,
-      mutations.takeControl,
-      mutations.releaseControl,
       mutations.confirmClimbOnWall,
+      mutations.reportWallDisconnect,
       mutations.setSessionBoardSerial,
       mutations.setSessionBoardPath,
       queueStorage.setLocalQueueState,
@@ -220,12 +237,10 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       hasConnected: lifecycle.hasConnected,
       error: lifecycle.error,
       clientId: lifecycle.session?.clientId ?? null,
-      // Backend-resolved participantId from join — server uses this identity
-      // when broadcasting DriverChanged, so driver derivation compares against it.
       participantId: lifecycle.session?.participantId ?? null,
       isLeader: lifecycle.session?.isLeader ?? false,
-      driverParticipantId: lifecycle.session?.driverParticipantId ?? null,
       users: lifecycle.session?.users ?? [],
+      isSessionWallLit,
       currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
       queue: eventProcessor.queue,
       localQueue: queueStorage.localQueue,
@@ -250,6 +265,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
       lifecycle.sessionSummaryBoardType,
       lifecycle.sessionSummaryHealthKitWorkoutId,
       lifecycle.sessionSummaryAutoFinished,
+      isSessionWallLit,
       eventProcessor.currentClimbQueueItem,
       eventProcessor.queue,
       queueStorage.localQueue,

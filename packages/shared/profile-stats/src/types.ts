@@ -113,3 +113,25 @@ export type RawGradeHighlight = {
   label: string;
   status: 'send' | 'flash';
 };
+
+/** One calendar day in the activity heatmap (local date, ascent count). */
+export type RawActivityDay = {
+  /** Local calendar date, `YYYY-MM-DD`. */
+  date: string;
+  count: number;
+};
+
+/**
+ * GitHub-style activity grid: a week-aligned run of days (ordered oldest→newest)
+ * the renderer chunks into 7-row columns. Colors/intensity are resolved by the
+ * renderer from `count` / `maxCount`.
+ */
+export type RawActivityHeatmap = {
+  days: RawActivityDay[];
+  /** Number of week columns (`ceil(days.length / 7)`). */
+  weeks: number;
+  /** Busiest single day in the window — the top of the intensity ramp. */
+  maxCount: number;
+  startDate: string;
+  endDate: string;
+};

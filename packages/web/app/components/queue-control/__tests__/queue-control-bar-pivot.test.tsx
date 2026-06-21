@@ -57,7 +57,7 @@ vi.mock('@/app/components/graphql-queue', () => ({
     hasConnected: true,
     connectionError: null,
     isPersistentSessionActive: mockQueueContext.isPersistentSessionActive ?? false,
-    driverParticipantId: mockQueueContext.driverParticipantId ?? null,
+    wallConfirmed: mockQueueContext.wallConfirmed ?? false,
   }),
 }));
 
@@ -289,7 +289,6 @@ const baseQueueContext = {
   getPreviousClimbQueueItem: vi.fn().mockReturnValue(null),
   setQueue: vi.fn(),
   isPersistentSessionActive: false,
-  driverParticipantId: null,
 };
 
 const defaultProps = {
@@ -431,15 +430,15 @@ describe('QueueControlBar pivot', () => {
     expect(title!.getAttribute('aria-label')).toBe('Open the wall climb');
   });
 
-  // --- Driver-first ordering (P1-C) ----------------------------------------
+  // --- Always-live roster (no driver UI) -----------------------------------
 
-  it('renders the driver first in the participant roster', async () => {
+  it('renders participants in source order with no driver badge', async () => {
+    // Always-live model: no driver role, so no reordering and no "is driving"
+    // aria-label anywhere in the bar (mini AvatarGroup or expanded roster).
     mockQueueContext = {
       ...baseQueueContext,
       isPersistentSessionActive: true,
-      driverParticipantId: 'p-bob',
     };
-    // Alice is first in users[]; Bob is the driver and must float to slot 0.
     mockPersistentSessionState = makeSessionState([
       { id: 'p-alice', username: 'alice' },
       { id: 'p-bob', username: 'bob' },
@@ -450,103 +449,10 @@ describe('QueueControlBar pivot', () => {
       return render(<QueueControlBar {...defaultProps} />);
     });
 
-    // The expanded participant scroll renders each user as a labeled tile
-    // (`participantItem`) with the username as text. The bar's driver-first
-    // partition floats the driver to index 0, so the rendered DOM order of
-    // username labels should be: bob, alice, carol — even though the source
-    // users[] array declared them as alice, bob, carol.
     const items = container.querySelectorAll('[class*="participantItem"]');
     expect(items.length).toBe(3);
     const orderedUsernames = Array.from(items).map((el) => el.textContent?.trim());
-    expect(orderedUsernames).toEqual(['bob', 'alice', 'carol']);
-  });
-
-  it('does not reorder participants when there is no driver', async () => {
-    mockQueueContext = {
-      ...baseQueueContext,
-      isPersistentSessionActive: true,
-      driverParticipantId: null,
-    };
-    mockPersistentSessionState = makeSessionState([
-      { id: 'p-alice', username: 'alice' },
-      { id: 'p-bob', username: 'bob' },
-    ]);
-
-    await act(async () => {
-      render(<QueueControlBar {...defaultProps} />);
-    });
-
-    // No driver — no driving aria-label should be rendered.
-    expect(screen.queryByLabelText(/is driving/)).toBeNull();
-  });
-
-  // --- Driver badge & aria-label (P1-C) ------------------------------------
-
-  it('renders the driver avatar with an accessible "is driving" aria-label in the mini bar', async () => {
-    mockQueueContext = {
-      ...baseQueueContext,
-      isPersistentSessionActive: true,
-      driverParticipantId: 'p-bob',
-    };
-    mockPersistentSessionState = makeSessionState([
-      { id: 'p-alice', username: 'alice' },
-      { id: 'p-bob', username: 'bob' },
-    ]);
-
-    const { container } = await act(async () => {
-      return render(<QueueControlBar {...defaultProps} />);
-    });
-
-    // Mini-bar AvatarGroup carries the driver's "is driving" aria-label on
-    // its avatar — find it by scoping to the AvatarGroup so the expanded
-    // roster's duplicate label doesn't muddy this assertion.
-    const avatarGroup = container.querySelector('.MuiAvatarGroup-root');
-    expect(avatarGroup).toBeTruthy();
-    const drivingInMiniBar = avatarGroup!.querySelector('[aria-label="bob is driving"]');
-    expect(drivingInMiniBar).toBeTruthy();
-  });
-
-  it('renders the driver avatar with the "is driving" aria-label in the expanded roster', async () => {
-    mockQueueContext = {
-      ...baseQueueContext,
-      isPersistentSessionActive: true,
-      driverParticipantId: 'p-bob',
-    };
-    mockPersistentSessionState = makeSessionState([
-      { id: 'p-alice', username: 'alice' },
-      { id: 'p-bob', username: 'bob' },
-      { id: 'p-carol', username: 'carol' },
-    ]);
-
-    const { container } = await act(async () => {
-      return render(<QueueControlBar {...defaultProps} />);
-    });
-
-    // The expanded participant roster lives in `participantBar` and is always
-    // rendered (CSS toggles visibility on `participantBarExpanded`). Scope
-    // the query to that subtree so the assertion is unambiguous regardless of
-    // the mini-bar's matching avatar.
-    const participantBar = container.querySelector('[class*="participantBar"]');
-    expect(participantBar).toBeTruthy();
-    const driverInRoster = participantBar!.querySelector('[aria-label="bob is driving"]');
-    expect(driverInRoster).toBeTruthy();
-  });
-
-  it('does not surface a driver aria-label when no driver is set', async () => {
-    mockQueueContext = {
-      ...baseQueueContext,
-      isPersistentSessionActive: true,
-      driverParticipantId: null,
-    };
-    mockPersistentSessionState = makeSessionState([
-      { id: 'p-alice', username: 'alice' },
-      { id: 'p-bob', username: 'bob' },
-    ]);
-
-    await act(async () => {
-      render(<QueueControlBar {...defaultProps} />);
-    });
-
+    expect(orderedUsernames).toEqual(['alice', 'bob', 'carol']);
     expect(screen.queryByLabelText(/is driving/)).toBeNull();
   });
 });

@@ -1,5 +1,26 @@
 import { z } from 'zod';
-import { UUIDSchema, BoardNameSchema, LatitudeSchema, LongitudeSchema, SlugSchema } from './primitives';
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
+import {
+  UUIDSchema,
+  BoardNameSchema,
+  LatitudeSchema,
+  LongitudeSchema,
+  SlugSchema,
+  BoardSerialSchema,
+  normalizeSerial,
+} from './primitives';
+
+const OptionalBoardSerialInputSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, BoardSerialSchema.optional());
+
+const NullableBoardSerialInputSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}, BoardSerialSchema.optional().nullable());
 
 /**
  * Create board input validation schema
@@ -21,7 +42,7 @@ export const CreateBoardInputSchema = z.object({
   gymUuid: UUIDSchema.optional(),
   angle: z.number().int().min(0).max(70).optional(),
   isAngleAdjustable: z.boolean().optional(),
-  serialNumber: z.string().max(100).optional(),
+  serialNumber: OptionalBoardSerialInputSchema,
 });
 
 /**
@@ -44,7 +65,7 @@ export const UpdateBoardInputSchema = z.object({
   layoutId: z.number().int().positive('Layout ID must be positive').optional(),
   sizeId: z.number().int().positive('Size ID must be positive').optional(),
   setIds: z.string().min(1, 'Set IDs cannot be empty').optional(),
-  serialNumber: z.string().max(100).optional().nullable(),
+  serialNumber: NullableBoardSerialInputSchema,
 });
 
 /**
@@ -97,9 +118,33 @@ export const PopularBoardConfigsInputSchema = z.object({
 /**
  * Schema for `boardsBySerialNumbers` and `myBoardSerialConfigs` queries.
  * Caps the array length and per-element size so an attacker can't push a
- * massive IN-list into the resolver. Mirrors the route Zod schema in
- * `packages/web/app/api/internal/board-serials/route.ts`.
+ * massive IN-list into the resolver.
  */
 export const SerialNumberLookupSchema = z.object({
-  serialNumbers: z.array(z.string().trim().min(1).max(64)).max(20),
+  // Normalized so a lookup matches the canonical serials stored by the resolve
+  // and record paths (see normalizeSerial).
+  serialNumbers: z.array(z.string().trim().min(1).max(64).transform(normalizeSerial)).max(20),
+});
+
+/**
+ * Record-board-serial input validation schema. Mirrors the deleted REST route
+ * (`packages/web/app/api/internal/board-serials/route.ts`) and adds `apiLevel`,
+ * the protocol level parsed from the BLE device name's `@N` suffix. Only Aurora
+ * boards advertise a serial in this format, so `boardName` is the Aurora enum.
+ */
+export const RecordBoardSerialInputSchema = z.object({
+  serialNumber: z.string().trim().min(1).max(64).transform(normalizeSerial),
+  boardName: z.enum(AURORA_BOARDS),
+  layoutId: z.number().int().nonnegative(),
+  sizeId: z.number().int().nonnegative(),
+  // Comma-separated positive integers only — no whitespace, no empties.
+  setIds: z
+    .string()
+    .max(256)
+    .regex(/^\d+(,\d+)*$/, 'setIds must be a comma-separated list of integers'),
+  apiLevel: z.number().int().nonnegative().optional(),
+  // Saved-board uuids are RFC 4122 UUIDs; validate strictly like every other
+  // boardUuid in this file so a malformed value is rejected up front rather than
+  // reaching the ownership query as a garbage string that can't match anyway.
+  boardUuid: UUIDSchema.optional(),
 });

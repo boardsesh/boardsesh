@@ -37,6 +37,7 @@ import { useSession } from 'next-auth/react';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { StoredBoardConfig } from '@/app/lib/saved-boards-db';
 import { useBoardSwitchGuard } from '@/app/components/board-lock/use-board-switch-guard';
+import { BOARD_PRESENCE_SWITCH_BOARD_EVENT } from '../board-presence/board-presence-events';
 
 type Tab = 'home' | 'climbs' | 'library' | 'feed' | 'create' | 'you';
 
@@ -94,6 +95,19 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
   }, []);
   const handleBoardSelectorTransitionEnd = useCallback((open: boolean) => {
     if (!open) setIsBoardSelectorRendered(false);
+  }, []);
+
+  // The board-presence sheet's separated "Switch board" control dispatches a
+  // window event (instead of plumbing boardConfigs into the presence tree);
+  // open the existing custom board selector here. No-op when the flag is off —
+  // the sheet that fires the event only renders behind the board-presence flag.
+  useEffect(() => {
+    const handler = () => {
+      setIsCustomBoardRendered(true);
+      setIsCustomBoardOpen(true);
+    };
+    window.addEventListener(BOARD_PRESENCE_SWITCH_BOARD_EVENT, handler);
+    return () => window.removeEventListener(BOARD_PRESENCE_SWITCH_BOARD_EVENT, handler);
   }, []);
 
   const pathname = usePathnameWithoutLocale();

@@ -8,6 +8,7 @@ import {
   SetterProfileInputSchema,
   SetterClimbsInputSchema,
   SetterClimbsFullInputSchema,
+  BulkVoteSummaryInputSchema,
 } from '../validation/schemas';
 
 describe('Social Validation Schemas', () => {
@@ -303,6 +304,35 @@ describe('Social Validation Schemas', () => {
       if (result.success) {
         expect(result.data.boardType).toBe('kilter');
       }
+    });
+  });
+
+  describe('BulkVoteSummaryInputSchema', () => {
+    it('should accept a populated entityIds array', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'tick',
+        entityIds: ['a', 'b'],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept an empty entityIds array (no-op, resolver returns [])', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'session',
+        entityIds: [],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.entityIds).toEqual([]);
+      }
+    });
+
+    it('should reject more than 100 entityIds', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'tick',
+        entityIds: Array.from({ length: 101 }, (_unused, index) => `id-${index}`),
+      });
+      expect(result.success).toBe(false);
     });
   });
 });

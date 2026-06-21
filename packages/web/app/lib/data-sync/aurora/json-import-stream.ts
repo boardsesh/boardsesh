@@ -13,7 +13,12 @@ type ChunkPayload = {
     circuits: unknown[];
     climbs: unknown[];
   };
-  skipSessionBuild: boolean;
+  skipFinalization: boolean;
+};
+
+type StreamImportOptions = {
+  backendUrl?: string | null;
+  authToken?: string | null;
 };
 
 /**
@@ -70,10 +75,24 @@ function mergeResults(a: ImportResult, b: ImportResult): ImportResult {
  * Sends a single chunk to the import endpoint and reads the streaming response.
  * Returns the ImportResult from the 'complete' event, or throws on error.
  */
-async function sendChunk(payload: ChunkPayload, onEvent: (event: ImportProgressEvent) => void): Promise<ImportResult> {
-  const response = await fetch('/api/internal/aurora-import', {
+async function sendChunk(
+  payload: ChunkPayload,
+  onEvent: (event: ImportProgressEvent) => void,
+  options: StreamImportOptions,
+): Promise<ImportResult> {
+  if (!options.backendUrl) {
+    throw new Error('Import endpoint is not configured');
+  }
+
+  const endpoint = `${options.backendUrl.replace(/\/+$/, '')}/api/aurora-import`;
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (options.authToken) {
+    headers.set('Authorization', `Bearer ${options.authToken}`);
+  }
+
+  const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -159,6 +178,7 @@ export async function streamImport(
   boardType: AuroraBoardName,
   data: unknown,
   onEvent: (event: ImportProgressEvent) => void,
+  options: StreamImportOptions = {},
 ): Promise<void> {
   const typedData = data as {
     user: { username: string; email_address?: string; created_at?: string };
@@ -192,7 +212,7 @@ export async function streamImport(
     allChunks.push({
       boardType,
       data: { ...emptyData, climbs },
-      skipSessionBuild: true,
+      skipFinalization: true,
     });
   }
 
@@ -200,7 +220,7 @@ export async function streamImport(
     allChunks.push({
       boardType,
       data: { ...emptyData, ascents: batch },
-      skipSessionBuild: true,
+      skipFinalization: true,
     });
   }
 
@@ -208,7 +228,7 @@ export async function streamImport(
     allChunks.push({
       boardType,
       data: { ...emptyData, attempts: batch },
-      skipSessionBuild: true,
+      skipFinalization: true,
     });
   }
 
@@ -217,7 +237,7 @@ export async function streamImport(
     allChunks.push({
       boardType,
       data: { ...emptyData, circuits },
-      skipSessionBuild: true,
+      skipFinalization: true,
     });
   }
 
@@ -226,12 +246,12 @@ export async function streamImport(
     allChunks.push({
       boardType,
       data: emptyData,
-      skipSessionBuild: false,
+      skipFinalization: false,
     });
   }
 
-  // The last chunk triggers session building
-  allChunks[allChunks.length - 1].skipSessionBuild = false;
+  // The last chunk runs final import correction after all ticks are present.
+  allChunks[allChunks.length - 1].skipFinalization = false;
 
   const emptyResult: ImportResult = {
     ascents: { imported: 0, skipped: 0, failed: 0 },
@@ -256,7 +276,7 @@ export async function streamImport(
 
     const chunk = allChunks[i];
     try {
-      const chunkResult = await sendChunk(chunk, onEvent);
+      const chunkResult = await sendChunk(chunk, onEvent, options);
       merged = mergeResults(merged, chunkResult);
     } catch (error) {
       // Earlier chunks may have already committed server-side. Capture the

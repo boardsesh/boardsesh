@@ -4,9 +4,9 @@
  *
  * The helper now accepts `item: ClimbQueueItem | null`. Coverage here exists
  * because the consolidation pulled three call sites (queue/setCurrentClimb
- * with non-null item, queue/setCurrentClimb with null item, sessions/takeControl)
- * through the same path, and the null-item branch had its own retry+publish
- * ladder before the refactor.
+ * with non-null item, queue/setCurrentClimb with null item, the widget
+ * re-assert handler) through the same path, and the null-item branch had its
+ * own retry+publish ladder before the refactor.
  *
  * Behaviours verified:
  *  1. `item: null` → publishes `CurrentClimbChanged { item: null }`, never

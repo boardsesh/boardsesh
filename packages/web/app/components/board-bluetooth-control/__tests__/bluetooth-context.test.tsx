@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-context';
 import type { BoardDetails } from '@/app/lib/types';
+import type { BleSendFailureReason } from '@boardsesh/ble-protocol/connection-error';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('react-i18next', () => ({
@@ -31,21 +32,33 @@ type PickerStateMock = {
   handleCancel: () => void;
 } | null;
 
+// Mirrors the ref the real hook returns. The hook sets `.current` synchronously
+// on its failing path before resolving `false`; tests pre-set it to simulate
+// that, since the AutoSender reads it right after the awaited send resolves.
+const mockSendFailureReasonRef: { current: BleSendFailureReason | null } = { current: null };
+
 let mockBluetoothState = {
   isConnected: false,
   loading: false,
   connect: mockConnect,
   disconnect: mockDisconnect,
   sendFramesToBoard: mockSendFramesToBoard,
+  lastSendFailureReasonRef: mockSendFailureReasonRef,
 };
 let mockPickerState: PickerStateMock = null;
 
 // Capture the `onConnectSuccess` callback passed by BluetoothProvider so
 // tests can simulate "BLE connected with parsed serial" without rendering
 // the real adapter or stubbing every other useBoardBluetooth dependency.
-let lastUseBoardBluetoothOptions: { onConnectSuccess?: (serial: string | null) => void } | null = null;
+let lastUseBoardBluetoothOptions: {
+  onConnectSuccess?: (serial: string | null) => void;
+  onConnectionChange?: (connected: boolean) => void;
+} | null = null;
 vi.mock('../use-board-bluetooth', () => ({
-  useBoardBluetooth: (options: { onConnectSuccess?: (serial: string | null) => void }) => {
+  useBoardBluetooth: (options: {
+    onConnectSuccess?: (serial: string | null) => void;
+    onConnectionChange?: (connected: boolean) => void;
+  }) => {
     lastUseBoardBluetoothOptions = options;
     return { ...mockBluetoothState, pickerState: mockPickerState };
   },
@@ -126,6 +139,7 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
 
 const mockConfirmClimbOnWall = vi.fn().mockResolvedValue(undefined);
 const mockSetSessionBoardSerial = vi.fn().mockResolvedValue(undefined);
+const mockReportWallDisconnect = vi.fn().mockResolvedValue(undefined);
 let mockPersistentSessionState: { session: { id: string; lastConnectedBoardSerial?: string | null } | null } = {
   session: null,
 };
@@ -133,8 +147,25 @@ vi.mock('@/app/components/persistent-session', () => ({
   usePersistentSessionActions: () => ({
     confirmClimbOnWall: mockConfirmClimbOnWall,
     setSessionBoardSerial: mockSetSessionBoardSerial,
+    reportWallDisconnect: mockReportWallDisconnect,
   }),
   usePersistentSessionState: () => mockPersistentSessionState,
+}));
+
+// Board-presence controls. Default inert (boardId null), matching the real
+// DISABLED_CONTROLS fallback when no provider is mounted, so existing tests are
+// unaffected. A test can set mockPresenceBoardId to assert the BLE-drop holder
+// release. `useOptionalWallReport` stays inert (no wall reports in these tests).
+let mockPresenceBoardId: number | null = null;
+const mockReportBoardDisconnect = vi.fn().mockResolvedValue(true);
+const mockResolveAndBindBoard = vi.fn().mockResolvedValue(null);
+vi.mock('../../board-presence/board-presence-context', () => ({
+  useBoardPresenceControls: () => ({
+    boardId: mockPresenceBoardId,
+    resolveAndBindBoard: mockResolveAndBindBoard,
+    reportDisconnect: mockReportBoardDisconnect,
+  }),
+  useOptionalWallReport: () => ({ currentClimb: null, previousClimb: null, reportClimb: vi.fn() }),
 }));
 
 let mockCurrentClimbQueueItem: {
@@ -156,7 +187,7 @@ function createTestBoardDetails(overrides?: Partial<BoardDetails>): BoardDetails
     board_name: 'kilter',
     layout_id: 1,
     size_id: 10,
-    set_ids: '1,2',
+    set_ids: [1, 2],
     images_to_holds: {},
     holdsData: {},
     edge_left: 0,
@@ -184,21 +215,26 @@ describe('BluetoothProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCurrentClimbQueueItem = null;
+    mockSendFailureReasonRef.current = null;
     mockBluetoothState = {
       isConnected: false,
       loading: false,
       connect: mockConnect,
       disconnect: mockDisconnect,
       sendFramesToBoard: mockSendFramesToBoard,
+      lastSendFailureReasonRef: mockSendFailureReasonRef,
     };
     mockPickerState = null;
     lastPickerProps = null;
     lastMismatchProps = null;
     mockAuth = { token: null, isAuthenticated: false };
     mockResolveSerialNumbers.mockResolvedValue(new Map());
+    mockPresenceBoardId = null;
+    mockReportBoardDisconnect.mockResolvedValue(true);
     mockPersistentSessionState = { session: null };
     mockConfirmClimbOnWall.mockResolvedValue(undefined);
     mockSetSessionBoardSerial.mockResolvedValue(undefined);
+    mockReportWallDisconnect.mockResolvedValue(undefined);
     lastUseBoardBluetoothOptions = null;
   });
 
@@ -326,12 +362,89 @@ describe('BluetoothProvider', () => {
           expect(mockTrack).toHaveBeenCalledWith('Climb Sent to Board Success', {
             climbUuid: 'climb-1',
             boardLayout: 'Original',
+            boardId: undefined,
           });
         });
       });
     });
 
-    it('tracks failure analytics when send fails', async () => {
+    // The hook reports the precise cause via the ref; the AutoSender must label
+    // the failure with that reason — not the retired catch-all
+    // `characteristic_unavailable`, which hid the dominant mid-session drop.
+    // These are the reasons the hook sets synchronously on a `return false`. The
+    // throw-path reasons (`missing_mirror_mapping`, `dom_*`) come from the hook's
+    // catch via `classifyBleFailureReason` and are unit-tested directly in
+    // connection-error.test.ts; from the AutoSender's side they read identically
+    // through the same ref, so they aren't re-parametrized here.
+    const failureReasons: BleSendFailureReason[] = [
+      'disconnected',
+      'incompatible_climb',
+      'missing_led_placements',
+      'missing_mirror_data',
+      'write_failed',
+    ];
+    for (const reason of failureReasons) {
+      it(`tracks failure with the hook-reported reason: ${reason}`, async () => {
+        mockSendFailureReasonRef.current = reason;
+        mockSendFramesToBoard.mockResolvedValue(false);
+        mockCurrentClimbQueueItem = {
+          climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+        };
+        mockBluetoothState.isConnected = true;
+
+        renderHook(() => useBluetoothContext(), {
+          wrapper: createWrapper(),
+        });
+
+        await act(async () => {
+          await vi.waitFor(() => {
+            expect(mockTrack).toHaveBeenCalledWith('Climb Sent to Board Failure', {
+              climbUuid: 'climb-1',
+              boardLayout: 'Original',
+              boardId: undefined,
+              failureReason: reason,
+              climbHoldCount: 1,
+            });
+          });
+        });
+
+        // The misnomer must be gone for good.
+        expect(mockTrack).not.toHaveBeenCalledWith(
+          'Climb Sent to Board Failure',
+          expect.objectContaining({ failureReason: 'characteristic_unavailable' }),
+        );
+      });
+    }
+
+    it('reads the reason the hook set at resolution time (not a hardcoded label)', async () => {
+      // Faithful to the real hook: set the ref synchronously on the failing path
+      // right before resolving false. The AutoSender reads it in the same
+      // microtask the await resolves in.
+      mockSendFramesToBoard.mockImplementation(async () => {
+        mockSendFailureReasonRef.current = 'disconnected';
+        return false;
+      });
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(),
+      });
+
+      await act(async () => {
+        await vi.waitFor(() => {
+          expect(mockTrack).toHaveBeenCalledWith(
+            'Climb Sent to Board Failure',
+            expect.objectContaining({ failureReason: 'disconnected' }),
+          );
+        });
+      });
+    });
+
+    it('falls back to "unknown" when the hook left no reason', async () => {
+      mockSendFailureReasonRef.current = null;
       mockSendFramesToBoard.mockResolvedValue(false);
       mockCurrentClimbQueueItem = {
         climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
@@ -344,12 +457,10 @@ describe('BluetoothProvider', () => {
 
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockTrack).toHaveBeenCalledWith('Climb Sent to Board Failure', {
-            climbUuid: 'climb-1',
-            boardLayout: 'Original',
-            failureReason: 'characteristic_unavailable',
-            climbHoldCount: 1,
-          });
+          expect(mockTrack).toHaveBeenCalledWith(
+            'Climb Sent to Board Failure',
+            expect.objectContaining({ failureReason: 'unknown' }),
+          );
         });
       });
     });
@@ -391,6 +502,7 @@ describe('BluetoothProvider', () => {
           expect(mockTrack).toHaveBeenCalledWith('Climb Sent to Board Failure', {
             climbUuid: 'climb-1',
             boardLayout: 'Original',
+            boardId: undefined,
             failureReason: 'write_aborted',
             climbHoldCount: 1,
           });
@@ -399,6 +511,54 @@ describe('BluetoothProvider', () => {
 
       expect(consoleSpy).toHaveBeenCalledWith('Error sending climb to board:', expect.any(Error));
       consoleSpy.mockRestore();
+    });
+
+    // Part B regression: after a mid-session drop the AutoSender unmounts
+    // (isConnected → false), and on the take-back reconnect it remounts with a
+    // fresh dedup signature — which re-sends the queued climb on its own. This
+    // is the silent-drop recovery; it must fire EXACTLY ONCE per reconnect (no
+    // explicit reassert stacked on top, which would double-send and double-count
+    // analytics).
+    it('re-sends the current climb exactly once after a drop and take-back reconnect', async () => {
+      mockSendFramesToBoard.mockResolvedValue(true);
+      mockCurrentClimbQueueItem = {
+        climb: { uuid: 'climb-1', frames: 'p1r12', mirrored: false },
+      };
+      mockBluetoothState.isConnected = true;
+
+      const { rerender, result } = renderHook(() => useBluetoothContext(), {
+        wrapper: createWrapper(),
+      });
+
+      // Initial connection: AutoSender mounts and sends the climb once.
+      await act(async () => {
+        await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1));
+      });
+
+      // Board dropped: AutoSender unmounts, no further sends.
+      await act(async () => {
+        mockBluetoothState.isConnected = false;
+        rerender();
+      });
+      expect(result.current.isConnected).toBe(false);
+      expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1);
+
+      // Take-back reconnect: commit the remount (fresh dedup signature) inside
+      // act, then poll OUTSIDE act for the remount's async send — polling rather
+      // than a fixed delay so the assertion holds under slow CI. (vi.waitFor
+      // nested inside act doesn't advance the drain here.)
+      await act(async () => {
+        mockBluetoothState.isConnected = true;
+        rerender();
+      });
+      await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
+
+      // Exactly one re-send for the unchanged climb — never a double.
+      expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2);
+      expect(mockTrack).toHaveBeenCalledWith(
+        'Climb Sent to Board Success',
+        expect.objectContaining({ climbUuid: 'climb-1' }),
+      );
     });
   });
 
@@ -1060,6 +1220,77 @@ describe('BluetoothProvider', () => {
         expect(mockConfirmClimbOnWall).toHaveBeenCalledTimes(1);
       });
       expect(mockConfirmClimbOnWall).toHaveBeenCalledWith('climb-1');
+    });
+  });
+
+  describe('wall disconnect on BLE drop', () => {
+    it('reports wall disconnect to the session when the BLE link drops in a party', async () => {
+      mockPersistentSessionState = { session: { id: 'session-1' } };
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+
+      expect(lastUseBoardBluetoothOptions?.onConnectionChange).toBeDefined();
+      await act(async () => {
+        lastUseBoardBluetoothOptions?.onConnectionChange?.(false);
+        await Promise.resolve();
+      });
+
+      expect(mockReportWallDisconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report wall disconnect on (re)connect', async () => {
+      mockPersistentSessionState = { session: { id: 'session-1' } };
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+
+      await act(async () => {
+        lastUseBoardBluetoothOptions?.onConnectionChange?.(true);
+        await Promise.resolve();
+      });
+
+      expect(mockReportWallDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('does not report wall disconnect when solo (no session)', async () => {
+      mockPersistentSessionState = { session: null };
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+
+      await act(async () => {
+        lastUseBoardBluetoothOptions?.onConnectionChange?.(false);
+        await Promise.resolve();
+      });
+
+      expect(mockReportWallDisconnect).not.toHaveBeenCalled();
+    });
+
+    it('releases the board-presence holder on BLE drop when bound to a board (even solo)', async () => {
+      // Independent of session membership: a dropped BLE link must free the
+      // board-presence holder, or the lightbulb's holder OR keeps it lit.
+      mockPersistentSessionState = { session: null };
+      mockPresenceBoardId = 123;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+
+      await act(async () => {
+        lastUseBoardBluetoothOptions?.onConnectionChange?.(false);
+        await Promise.resolve();
+      });
+
+      expect(mockReportBoardDisconnect).toHaveBeenCalledWith(123);
+    });
+
+    it('does not release the board-presence holder when no board is bound', async () => {
+      mockPresenceBoardId = null;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+
+      await act(async () => {
+        lastUseBoardBluetoothOptions?.onConnectionChange?.(false);
+        await Promise.resolve();
+      });
+
+      expect(mockReportBoardDisconnect).not.toHaveBeenCalled();
     });
   });
 

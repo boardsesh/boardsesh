@@ -39,6 +39,56 @@ class BoardRendererModule : Module() {
         }
     }
 
+    private fun renderOverlay(configJson: String, cacheKey: String): String {
+        if (!pruned) {
+            synchronized(this@BoardRendererModule) {
+                if (!pruned) {
+                    pruneCacheIfNeeded(CACHE_CAP_BYTES)
+                    pruned = true
+                }
+            }
+        }
+        val outputFile = File(cacheDir, "$cacheKey.png")
+
+        if (outputFile.exists()) {
+            // Touch mtime so LRU treats hot files as recently used.
+            outputFile.setLastModified(System.currentTimeMillis())
+            return "file://${outputFile.absolutePath}"
+        }
+
+        val renderResult = BoardRendererBridge.render(configJson)
+            ?: throw Exception("Rust render failed")
+
+        val width = renderResult.width
+        val height = renderResult.height
+        val rgbaData = renderResult.data
+
+        // tiny-skia returns premultiplied RGBA, and ARGB_8888 bitmaps
+        // default to premultiplied storage in the same byte layout, so
+        // copyPixelsFromBuffer hands the buffer to the bitmap with no
+        // per-pixel JVM loop. setPremultiplied is true by default but
+        // we set it explicitly so future changes can't accidentally
+        // flip it. Recycled in finally so a throw between create and
+        // compress can't leak native pixel memory.
+        val overlayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            overlayBitmap.setPremultiplied(true)
+            overlayBitmap.copyPixelsFromBuffer(ByteBuffer.wrap(rgbaData))
+
+            FileOutputStream(outputFile).use { outputStream ->
+                val written = overlayBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                if (!written) {
+                    outputFile.delete()
+                    throw Exception("PNG compression failed")
+                }
+            }
+        } finally {
+            overlayBitmap.recycle()
+        }
+
+        return "file://${outputFile.absolutePath}"
+    }
+
     override fun definition() = ModuleDefinition {
         Name("BoardRenderer")
 
@@ -47,53 +97,13 @@ class BoardRendererModule : Module() {
         // bundled board backgrounds underneath this overlay, so backgrounds
         // aren't passed in here anymore.
         AsyncFunction("renderHoldsOverlay") { configJson: String, cacheKey: String ->
-            if (!pruned) {
-                synchronized(this@BoardRendererModule) {
-                    if (!pruned) {
-                        pruneCacheIfNeeded(CACHE_CAP_BYTES)
-                        pruned = true
-                    }
-                }
-            }
-            val outputFile = File(cacheDir, "$cacheKey.png")
+            renderOverlay(configJson, cacheKey)
+        }
 
-            if (outputFile.exists()) {
-                // Touch mtime so LRU treats hot files as recently used.
-                outputFile.setLastModified(System.currentTimeMillis())
-                return@AsyncFunction "file://${outputFile.absolutePath}"
-            }
-
-            val renderResult = BoardRendererBridge.render(configJson)
-                ?: throw Exception("Rust render failed")
-
-            val width = renderResult.width
-            val height = renderResult.height
-            val rgbaData = renderResult.data
-
-            // tiny-skia returns premultiplied RGBA, and ARGB_8888 bitmaps
-            // default to premultiplied storage in the same byte layout, so
-            // copyPixelsFromBuffer hands the buffer to the bitmap with no
-            // per-pixel JVM loop. setPremultiplied is true by default but
-            // we set it explicitly so future changes can't accidentally
-            // flip it. Recycled in finally so a throw between create and
-            // compress can't leak native pixel memory.
-            val overlayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            try {
-                overlayBitmap.setPremultiplied(true)
-                overlayBitmap.copyPixelsFromBuffer(ByteBuffer.wrap(rgbaData))
-
-                FileOutputStream(outputFile).use { outputStream ->
-                    val written = overlayBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                    if (!written) {
-                        outputFile.delete()
-                        throw Exception("PNG compression failed")
-                    }
-                }
-            } finally {
-                overlayBitmap.recycle()
-            }
-
-            "file://${outputFile.absolutePath}"
+        // Same renderer as renderHoldsOverlay, but the method's presence is a
+        // native capability signal for marker shape, brush, and size overrides.
+        AsyncFunction("renderHoldsOverlayWithMarkers") { configJson: String, cacheKey: String ->
+            renderOverlay(configJson, cacheKey)
         }
     }
 

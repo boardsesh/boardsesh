@@ -7,11 +7,11 @@ import { Icon } from './Icon';
 import type { RecentFilter } from '../lib/recent-filter-store';
 import { getFilterKey } from '../lib/recent-filter-store';
 import type { ClimbFilters } from './ClimbFilterSheet';
-import { brandColors } from '../theme/colors';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
 import { hapticSelection } from '../lib/haptics';
+import { useTheme } from '../providers/theme-provider';
 
 type RecentFilterPillsProps = {
   recentFilters: RecentFilter[];
@@ -32,6 +32,7 @@ function Pill({
   isActive: boolean;
   onApply: (filters: ClimbFilters, searchText: string) => void;
 }) {
+  const { brandColors } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -59,7 +60,13 @@ function Pill({
       accessibilityRole="button"
       accessibilityState={{ selected: isActive }}
       accessibilityLabel={filter.label}
-      style={[animatedStyle, styles.pill, isActive ? styles.pillActive : styles.pillInactive]}
+      style={[
+        animatedStyle,
+        styles.pill,
+        isActive
+          ? { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` }
+          : styles.pillInactive,
+      ]}
     >
       <Icon name="history" size={14} color={isActive ? brandColors.primary : iosSystemColors.systemGray} />
       <Text
@@ -82,6 +89,7 @@ export function RecentFilterPills({
   onClear,
 }: RecentFilterPillsProps) {
   const { t } = useTranslation('climbs');
+  const { brandColors } = useTheme();
   const currentKey = getFilterKey(currentFilters, currentSearchText);
 
   if (recentFilters.length === 0) return null;
@@ -146,10 +154,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: 20,
     borderWidth: 1,
-  },
-  pillActive: {
-    borderColor: brandColors.primary,
-    backgroundColor: `${brandColors.primary}14`,
   },
   pillInactive: {
     borderColor: iosSystemColors.separator,

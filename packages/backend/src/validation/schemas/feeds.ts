@@ -8,6 +8,8 @@ export const ActivityFeedInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(20),
   boardUuid: z.string().max(100).optional().nullable(),
   userId: z.string().max(100).optional().nullable(),
+  followingOnly: z.boolean().optional().nullable(),
+  includeDailyHighlights: z.boolean().optional().nullable(),
 });
 
 /**

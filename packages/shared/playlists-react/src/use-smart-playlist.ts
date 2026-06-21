@@ -68,6 +68,9 @@ export function useSmartPlaylist({
         page: pageParam,
         pageSize,
         ...(boardName !== undefined && { boardName }),
+        // Recommendations resolve the target from this specific owned board;
+        // logbook playlists ignore it.
+        ...(boardUuid ? { boardUuid } : {}),
       };
       const response = await executeGraphQL<GetSmartPlaylistQueryResponse, { input: GetSmartPlaylistInput }>(
         GET_SMART_PLAYLIST,

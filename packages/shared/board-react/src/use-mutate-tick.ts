@@ -21,9 +21,15 @@ function invalidateTickDependents(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ['logbook'] });
   void queryClient.invalidateQueries({ queryKey: ['climb'] });
   void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+  // The Sessions feed and session-detail screens aggregate sends/flashes/grade
+  // pyramids straight from these caches; without busting them, editing or
+  // deleting a tick leaves those cards showing stale totals until an unrelated
+  // refetch (pull-to-refresh, remount past staleTime, or a comment add).
+  void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+  void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
 }
 
-/** Edit an existing tick (status / grade / quality / attempts / comment). */
+/** Edit an existing tick (status / date / grade / quality / attempts / comment). */
 export function useUpdateTick() {
   const { isAuthenticated, executeHttp } = useBoardAdapter();
   const queryClient = useQueryClient();

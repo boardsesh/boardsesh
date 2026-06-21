@@ -15,9 +15,9 @@ import {
 describe('Grade Colors', () => {
   describe('getVGradeColor', () => {
     it('returns correct color for known V-grades', () => {
-      expect(getVGradeColor('V0')).toBe('#FFEB3B');
-      expect(getVGradeColor('V5')).toBe('#F44336');
-      expect(getVGradeColor('V10')).toBe('#A11B4A');
+      expect(getVGradeColor('V0')).toBe('#FFD400');
+      expect(getVGradeColor('V5')).toBe('#F03E3E');
+      expect(getVGradeColor('V10')).toBe('#7E1C8E');
       expect(getVGradeColor('V17')).toBe('#2A0054');
     });
 
@@ -46,8 +46,8 @@ describe('Grade Colors', () => {
 
   describe('getFontGradeColor', () => {
     it('returns correct color for known Font grades', () => {
-      expect(getFontGradeColor('6a')).toBe('#FF7043');
-      expect(getFontGradeColor('7b+')).toBe('#C62828');
+      expect(getFontGradeColor('6a')).toBe('#FF6D2E');
+      expect(getFontGradeColor('7b+')).toBe('#B81A5A');
     });
 
     it('is case-insensitive', () => {
@@ -118,14 +118,14 @@ describe('Grade Colors', () => {
     });
 
     it('correctly parses a real grade color', () => {
-      // V0 = #FFEB3B -> rgb(255, 235, 59)
-      expect(getGradeColorWithOpacity('#FFEB3B', 0.8)).toBe('rgba(255, 235, 59, 0.8)');
+      // V0 = #FFD400 -> rgb(255, 212, 0)
+      expect(getGradeColorWithOpacity('#FFD400', 0.8)).toBe('rgba(255, 212, 0, 0.8)');
     });
   });
 
   describe('isLightColor', () => {
     it('returns true for light colors (yellow)', () => {
-      expect(isLightColor('#FFEB3B')).toBe(true); // V0 yellow
+      expect(isLightColor('#FFD400')).toBe(true); // V0 golden yellow
     });
 
     it('returns true for white', () => {
@@ -141,14 +141,14 @@ describe('Grade Colors', () => {
     });
 
     it('returns false for dark red', () => {
-      expect(isLightColor('#B71C1C')).toBe(false); // V9 deep red
+      expect(isLightColor('#9E1A78')).toBe(false); // V9 magenta-purple
     });
   });
 
   describe('getGradeTextColor', () => {
     it('returns black (#000000) for light backgrounds', () => {
-      expect(getGradeTextColor('#FFEB3B')).toBe('#000000'); // V0 yellow
-      expect(getGradeTextColor('#FFC107')).toBe('#000000'); // V1 amber
+      expect(getGradeTextColor('#FFD400')).toBe('#000000'); // V0 golden yellow
+      expect(getGradeTextColor('#FFB300')).toBe('#000000'); // V1 amber
     });
 
     it('returns white (#FFFFFF) for dark backgrounds', () => {

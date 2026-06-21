@@ -94,20 +94,20 @@ Reimplement Next.js REST APIs as GraphQL queries/mutations. Only endpoints that 
 
 ### 2.4 User Management (High Priority)
 
-| REST Endpoint                                       | GraphQL Operation                      | Status  |
-| --------------------------------------------------- | -------------------------------------- | ------- |
-| `GET /api/internal/profile`                         | `Query.profile`                        | ✅ DONE |
-| `PUT /api/internal/profile`                         | `Mutation.updateProfile(...)`          | ✅ DONE |
-| `POST /api/internal/profile/avatar`                 | `Mutation.uploadAvatar(...)`           | TODO    |
-| `GET /api/internal/favorites`                       | `Query.favorites(...)`                 | ✅ DONE |
-| `POST /api/internal/favorites`                      | `Mutation.toggleFavorite(...)`         | ✅ DONE |
-| `GET /api/internal/aurora-credentials`              | `Query.auroraCredentials`              | ✅ DONE |
-| `GET /api/internal/aurora-credentials/[board_type]` | `Query.auroraCredential(...)`          | ✅ DONE |
-| `POST /api/internal/aurora-credentials`             | `Mutation.saveAuroraCredential(...)`   | ✅ DONE |
-| `DELETE /api/internal/aurora-credentials`           | `Mutation.deleteAuroraCredential(...)` | ✅ DONE |
-| `GET /api/internal/aurora-credentials/unsynced`     | `Query.unsyncedCounts`                 | TODO    |
-| `GET /api/internal/user-board-mapping`              | `Query.userBoardMappings`              | TODO    |
-| `POST /api/internal/user-board-mapping`             | `Mutation.createUserBoardMapping(...)` | TODO    |
+| REST Endpoint                           | Backend Operation                        | Status  |
+| --------------------------------------- | ---------------------------------------- | ------- |
+| `GET /api/internal/profile`             | `Query.profile`                          | ✅ DONE |
+| `PUT /api/internal/profile`             | `Mutation.updateProfile(...)`            | ✅ DONE |
+| `POST /api/internal/profile/avatar`     | `Mutation.uploadAvatar(...)`             | TODO    |
+| `GET /api/internal/favorites`           | `Query.favorites(...)`                   | ✅ DONE |
+| `POST /api/internal/favorites`          | `Mutation.toggleFavorite(...)`           | ✅ DONE |
+| `GET /api/aurora-credentials`           | Backend REST + `Query.auroraCredentials` | ✅ DONE |
+| `GET /api/aurora-credentials/unsynced`  | Backend REST                             | ✅ DONE |
+| `POST /api/aurora-credentials`          | Backend REST + shared credential service | ✅ DONE |
+| `DELETE /api/aurora-credentials`        | Backend REST + shared credential service | ✅ DONE |
+| `POST /api/board-credentials/kilter/*`  | Backend REST OAuth handoff/finalize      | ✅ DONE |
+| `GET /api/internal/user-board-mapping`  | `Query.userBoardMappings`                | TODO    |
+| `POST /api/internal/user-board-mapping` | `Mutation.createUserBoardMapping(...)`   | TODO    |
 
 ### 2.5 Endpoints Staying in Next.js
 

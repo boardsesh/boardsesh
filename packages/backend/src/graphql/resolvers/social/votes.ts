@@ -135,7 +135,7 @@ export const socialVoteMutations = {
     const { entityType, entityId, value } = validated;
     const userId = ctx.userId!;
 
-    await validateEntityExists(entityType as SocialEntityType, entityId);
+    await validateEntityExists(entityType as SocialEntityType, entityId, userId);
 
     // Check for existing vote
     const [existing] = await db

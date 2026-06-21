@@ -89,22 +89,35 @@ After every successful per-user sync, the daemon also runs a shared sync for tha
 
 When the climbs upsert sees previously-unseen UUIDs, the daemon also writes `new_climbs_synced` rows into the `notifications` table for each follower of the climb's setter (`setter_follows` and any linked `user_follows` accounts).
 
+#### Public board locations
+
+For non-Kilter Aurora boards, the shared sync also refreshes public gym/board locations through `GET /pins?gyms=1`. The location writer lives in `@boardsesh/location-sync`; it upserts a deterministic system-owned `gyms` row per source gym and one public, unowned `user_boards` row per board install. It does not delete gyms or boards that disappear upstream.
+
+Run it directly with:
+
+```bash
+aurora-sync locations --board all
+aurora-sync locations --board tension -v
+```
+
+The direct command supports the Aurora boards that still use Aurora's API for location pins: Tension, Decoy, So iLL, Touchstone, and Grasshopper. Kilter Grips locations are handled by `kilter-sync`, and MoonBoard locations are handled by `moonboard-sync`.
+
 ### `board_climb_stats`: multi-writer model
 
 `ascensionist_count` is the materialized count derived from per-source columns,
 each owned by a single writer:
 
-| Column                         | Owner                           | Updated by                                                                                                                    |
-| ------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `aurora_ascensionist_count`    | Aurora sync                     | `upsertClimbStats` (this file's daemon) — written verbatim from Aurora's payload                                              |
-| `kilter_ascensionist_count`    | Kilter Grips sync               | `packages/kilter-sync` catalog sync                                                                                           |
-| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats` | `packages/backend/src/graphql/resolvers/ticks/recompute-climb-stats.ts` — `COUNT(DISTINCT user_id)` over flash/send ticks     |
-| `ascensionist_count`           | All writers, kept in lockstep   | recomputed as `COALESCE(kilter_ascensionist_count, aurora_ascensionist_count, 0) + COALESCE(boardsesh_ascensionist_count, 0)` |
+| Column                         | Owner                           | Updated by                                                                                                                                           |
+| ------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aurora_ascensionist_count`    | Aurora sync                     | `upsertClimbStats` (this file's daemon) — written verbatim from Aurora's payload                                                                     |
+| `kilter_ascensionist_count`    | Kilter Grips sync               | `packages/kilter-sync` catalog sync                                                                                                                  |
+| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats` | `packages/backend/src/graphql/resolvers/ticks/recompute-climb-stats.ts` — `COUNT(DISTINCT user_id)` over flash/send ticks                            |
+| `ascensionist_count`           | All writers, kept in lockstep   | recomputed as `GREATEST(COALESCE(kilter_ascensionist_count, 0), COALESCE(aurora_ascensionist_count, 0)) + COALESCE(boardsesh_ascensionist_count, 0)` |
 
 `aurora_` and `kilter_` are **not summed**: for the Kilter board they are the
 same ascents from two backends across the Aurora→Kilter Grips split, so the sum
-takes Kilter (live) and falls back to aurora. For Aurora-only boards (Tension
-etc.) `kilter_` is NULL and it collapses to `aurora_`. See kilter-sync.md.
+takes the higher upstream count. For Aurora-only boards (Tension etc.)
+`kilter_` is NULL and it collapses to `aurora_`. See kilter-sync.md.
 
 The search hot path reads `ascensionist_count` through the covering index from
 migration 0067, so it stays a regular column (not `GENERATED`) — every writer
@@ -166,6 +179,10 @@ aurora-sync user <nextauth-user-id> -b tension -v
 
 # List stored credentials
 aurora-sync list
+
+# Refresh public gym and board locations from Aurora pins
+aurora-sync locations --board all
+aurora-sync locations --board tension -v
 ```
 
 ### Environment Variables
@@ -300,15 +317,25 @@ Since the Kilter backend has been shut down, API-based sync is no longer availab
 ### How It Works
 
 1. User downloads their data export from Aurora (a `.json` file)
-2. In Boardsesh Settings > Board Accounts, click **Import JSON** on the relevant board card
+2. In Boardsesh Settings > Board Accounts on web, or Connected apps on mobile,
+   click **Import JSON** on the relevant board card
 3. Select the export file — a preview shows the number of ascents, attempts, and circuits
 4. Confirm — the server resolves climb names to UUIDs, maps grades, and imports the data
 
 ### Technical Details
 
-- **Endpoint**: `POST /api/internal/aurora-import`
-- **Implementation**: `packages/web/app/lib/data-sync/aurora/json-import.ts`
-- **UI**: Import button in `packages/web/app/components/settings/aurora-credentials-section.tsx`
+- **Backend endpoint**: `POST /api/aurora-import` streams progress events for web and mobile
+- **Implementation**: `packages/aurora-sync/src/sync/json-import.ts`
+- **Preview parser**: `packages/shared-schema/src/aurora-import.ts`
+- **Web UI**: `packages/web/app/components/settings/aurora-credentials-section.tsx`
+- **Mobile UI**: `packages/mobile/src/components/integrations/BoardAccountsSection.tsx`
+
+Web and mobile credential management use backend REST endpoints instead of
+Backend REST routes: `GET/POST/DELETE /api/aurora-credentials` for
+credential state, `GET /api/aurora-credentials/unsynced` for pending local
+changes, and the `/api/board-credentials/kilter/handoff` +
+`/board-credentials/kilter/{start,callback}` OAuth handoff followed by
+`POST /api/board-credentials/kilter/finalize` for Kilter.
 
 ### Key Differences from API Sync
 
@@ -327,9 +354,13 @@ Since the Kilter backend has been shut down, API-based sync is no longer availab
 
 ### Climb Name Resolution
 
-Climb names are resolved via `board_climbs` table using a composite index on `(board_type, name)`. When multiple climbs share the same name (rare), the one with the highest `ascensionist_count` is chosen.
+Climb names are resolved via `board_climbs` table using a composite index on `(board_type, name)`. When multiple climbs share the same name (rare), listed public climbs are preferred first, then the importing user's own climbs, then unlisted Aurora catalog climbs. Within the same tier, the climb with the highest `ascensionist_count` is chosen.
 
-Unresolvable names (delisted climbs, typos) are returned to the user in the result dialog so they know which entries could not be imported.
+Exact non-draft Aurora catalog matches remain importable even if the climb has since been delisted in Boardsesh. This keeps historical logbook data importable without making the delisted climb appear in public search.
+
+Some Aurora exports replace emoji with literal `?` characters in climb names. After exact matching, the importer tries a narrow fallback for still-unresolved names containing `?`: it gathers candidates with an escaped `ILIKE` pattern, strips emoji from DB names, strips question marks from export names, and only accepts normalized exact matches. This recovers names such as `Friend Forever?` → `Friend Forever👭` without broad fuzzy matching.
+
+Unresolvable names (missing climbs, renamed climbs, typos) are returned to the user in the result dialog so they know which entries could not be imported.
 
 ## Migration from Vercel Cron
 

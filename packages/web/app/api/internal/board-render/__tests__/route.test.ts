@@ -39,6 +39,7 @@ const mockComposite = vi.fn();
 const mockResize = vi.fn();
 const mockWebpOptions = vi.fn();
 const mockPngOptions = vi.fn();
+const mockJpegOptions = vi.fn();
 const mockSharpInstance = () => {
   const instance = {
     composite: vi.fn((...args: unknown[]) => {
@@ -56,6 +57,10 @@ const mockSharpInstance = () => {
     png: vi.fn((opts: unknown) => {
       mockPngOptions(opts);
       return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) };
+    }),
+    jpeg: vi.fn((opts: unknown) => {
+      mockJpegOptions(opts);
+      return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xff, 0xd8, 0xff]))) };
     }),
   };
   return instance;
@@ -193,6 +198,16 @@ describe('board-render API route', () => {
     expect(config.frames).toBe('');
   });
 
+  it('accepts quoted Aurora delta frame segments', async () => {
+    const frames = 'p1073r42,"p1090r43,"x1073p1100r44';
+    const response = await GET(makeRequest({ ...validParams, frames }));
+
+    expect(response.status).toBe(200);
+    const configJson = mockRenderOverlay.mock.calls[0][0];
+    const config = JSON.parse(configJson);
+    expect(config.frames).toBe(frames);
+  });
+
   it('returns 400 for invalid board_name', async () => {
     const response = await GET(makeRequest({ ...validParams, board_name: 'invalid' }));
     expect(response.status).toBe(400);
@@ -205,6 +220,8 @@ describe('board-render API route', () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe('Invalid format');
+    expect(mockRenderOverlay).not.toHaveBeenCalled();
+    expect(mockJpegOptions).not.toHaveBeenCalled();
   });
 
   it.each(['decoy', 'touchstone', 'grasshopper', 'soill'])('accepts %s as a valid board_name', async (board) => {
@@ -218,6 +235,69 @@ describe('board-render API route', () => {
     const config = JSON.parse(configJson);
     expect(config.thumbnail).toBe(true);
     expect(config.output_width).toBe(200);
+  });
+
+  it('composites backgrounds and returns thumbnail JPEG content for format=jpg', async () => {
+    const response = await GET(makeRequest({ ...validParams, thumbnail: '1', include_background: '1', format: 'jpg' }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=31536000, s-maxage=31536000, immutable');
+    expect(mockComposite).toHaveBeenCalled();
+    expect(mockJpegOptions).toHaveBeenCalledWith({
+      quality: 85,
+      chromaSubsampling: '4:4:4',
+      progressive: false,
+      optimiseScans: false,
+    });
+    expect(mockPngOptions).not.toHaveBeenCalled();
+    expect(mockWebpOptions).not.toHaveBeenCalled();
+
+    const configJson = mockRenderOverlay.mock.calls[0][0];
+    const config = JSON.parse(configJson);
+    expect(config.thumbnail).toBe(true);
+    expect(config.output_width).toBe(200);
+  });
+
+  it('accepts format=jpeg and uses default JPEG options', async () => {
+    const response = await GET(makeRequest({ ...validParams, format: 'jpeg' }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(mockJpegOptions).toHaveBeenCalledWith({
+      quality: 90,
+      chromaSubsampling: '4:4:4',
+      mozjpeg: true,
+    });
+    expect(mockPngOptions).not.toHaveBeenCalled();
+    expect(mockWebpOptions).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when frames contains invalid syntax', async () => {
+    const response = await GET(makeRequest({ ...validParams, frames: 'p1073r42<script>' }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Invalid frames');
+    expect(mockRenderOverlay).not.toHaveBeenCalled();
+  });
+
+  it.each([',', 'p1r42,,p2r43', 'p1r42"p2r43', '"'])(
+    'returns 400 when frames has malformed segment separators: %s',
+    async (frames) => {
+      const response = await GET(makeRequest({ ...validParams, frames }));
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toBe('Invalid frames');
+      expect(mockRenderOverlay).not.toHaveBeenCalled();
+    },
+  );
+
+  it('returns 400 when frames exceeds the request cap', async () => {
+    const response = await GET(makeRequest({ ...validParams, frames: 'p1r42'.repeat(4097) }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Frames string is too large');
+    expect(mockRenderOverlay).not.toHaveBeenCalled();
   });
 
   it('uses native board width when not thumbnail', async () => {
@@ -311,6 +391,39 @@ describe('board-render API route', () => {
     expect(mockWebpOptions).toHaveBeenCalledWith({ lossless: true });
   });
 
+  it('adds a dim scrim layer to the composite when dim_background is set', async () => {
+    const response = await GET(
+      makeRequest({ ...validParams, thumbnail: '1', include_background: '1', dim_background: '0.18' }),
+    );
+    expect(response.status).toBe(200);
+    expect(mockComposite).toHaveBeenCalledTimes(1);
+    // The single background is the base; the composite array is [dim scrim, holds overlay].
+    const layers = mockComposite.mock.calls[0][0] as unknown[];
+    expect(layers).toHaveLength(2);
+  });
+
+  it('does not add a dim scrim when dim_background is absent', async () => {
+    const response = await GET(makeRequest({ ...validParams, thumbnail: '1', include_background: '1' }));
+    expect(response.status).toBe(200);
+    expect(mockComposite).toHaveBeenCalledTimes(1);
+    // composite array is [holds overlay] only — no scrim.
+    const layers = mockComposite.mock.calls[0][0] as unknown[];
+    expect(layers).toHaveLength(1);
+  });
+
+  it('returns 400 when dim_background is out of range', async () => {
+    const response = await GET(makeRequest({ ...validParams, dim_background: '1.5' }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toContain('dim_background');
+  });
+
+  it('ignores dim_background without include_background (overlay-only, no composite)', async () => {
+    const response = await GET(makeRequest({ ...validParams, dim_background: '0.18' }));
+    expect(response.status).toBe(200);
+    expect(mockComposite).not.toHaveBeenCalled();
+  });
+
   it('falls back to lossless when background images are missing', async () => {
     // Make findPublicImagePath return null for all candidates
     mockExistsSync.mockImplementation((path) => path.includes('.wasm'));
@@ -370,6 +483,10 @@ describe('board-render API route', () => {
         png: vi.fn((opts: unknown) => {
           mockPngOptions(opts);
           return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) };
+        }),
+        jpeg: vi.fn((opts: unknown) => {
+          mockJpegOptions(opts);
+          return { toBuffer: vi.fn(() => Promise.resolve(Buffer.from([0xff, 0xd8, 0xff]))) };
         }),
       };
       return instance;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { convertLitUpHoldsStringToMap, HOLD_STATE_MAP } from '@boardsesh/board-constants';
 import type { BoardHold, HoldPlacement } from '../board-renderer/types';
 
 // ── Type structure tests ────────────────────────────────────────────────
@@ -15,6 +16,9 @@ describe('BoardHold type structure', () => {
       color: '#FF0000',
       role: 'STARTING',
       renderStyle: 'circle',
+      shape: 'circle',
+      brushThickness: 1,
+      shapeSize: 1,
     };
 
     expect(hold.id).toBe(1);
@@ -35,6 +39,9 @@ describe('BoardHold type structure', () => {
       color: '#00FF00',
       role: 'FINISH',
       renderStyle: 'above-marker',
+      shape: 'circle',
+      brushThickness: 1,
+      shapeSize: 1,
     };
 
     expect(hold.renderStyle).toBe('above-marker');
@@ -72,13 +79,11 @@ describe('HoldPlacement type structure', () => {
 });
 
 describe('board-constants imports', () => {
-  it('convertLitUpHoldsStringToMap is importable and is a function', async () => {
-    const { convertLitUpHoldsStringToMap } = await import('@boardsesh/board-constants');
+  it('convertLitUpHoldsStringToMap is importable and is a function', () => {
     expect(typeof convertLitUpHoldsStringToMap).toBe('function');
   });
 
-  it('HOLD_STATE_MAP is importable and is an object with board keys', async () => {
-    const { HOLD_STATE_MAP } = await import('@boardsesh/board-constants');
+  it('HOLD_STATE_MAP is importable and is an object with board keys', () => {
     expect(typeof HOLD_STATE_MAP).toBe('object');
     expect(HOLD_STATE_MAP).not.toBeNull();
     // Should have at least kilter and tension entries
@@ -86,8 +91,7 @@ describe('board-constants imports', () => {
     expect('tension' in HOLD_STATE_MAP).toBe(true);
   });
 
-  it('convertLitUpHoldsStringToMap returns empty object for empty frames', async () => {
-    const { convertLitUpHoldsStringToMap } = await import('@boardsesh/board-constants');
+  it('convertLitUpHoldsStringToMap returns empty object for empty frames', () => {
     const result = convertLitUpHoldsStringToMap('', 'kilter');
     expect(result).toEqual({});
   });

@@ -37,3 +37,19 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   }
   return count;
 }
+
+/** True when a grade bound is set (either endpoint), matching hasActiveClimbFilters. */
+export function isGradeFilterActive(filters: ClimbFilterState): boolean {
+  return filters.minGrade != null || filters.maxGrade != null;
+}
+
+/**
+ * Total active-filter count INCLUDING grade — for a badge that should reflect
+ * every active refinement, grade included (e.g. the climbs filter FAB). Grade
+ * counts as one when either bound is set. Shared so web and mobile can't
+ * disagree on what the badge counts. Use {@link countActiveFiltersBeyondGrade}
+ * instead when grade has its own visible control and should be excluded.
+ */
+export function countActiveFilters(filters: ClimbFilterState, boardFilters?: ClimbBoardFilterState): number {
+  return countActiveFiltersBeyondGrade(filters, boardFilters) + (isGradeFilterActive(filters) ? 1 : 0);
+}

@@ -21,6 +21,8 @@ describe('mapBetaLinksResponse — thumbnail absolutization', () => {
       thumbnail,
       isListed: true,
       createdAt: '2026-04-26T00:00:00Z',
+      tickUuid: null,
+      boardId: null,
     };
   }
 
@@ -30,7 +32,7 @@ describe('mapBetaLinksResponse — thumbnail absolutization', () => {
 
     const [link] = mapBetaLinksResponse([commonRow('/static/beta-link-thumbnails/instagram/ABC.jpg')]);
 
-    expect(link.thumbnail).toBe('https://ws.boardsesh.com/static/beta-link-thumbnails/instagram/ABC.jpg');
+    expect(link.thumbnail).toBe('https://ws.boardsesh.com/static/beta-link-thumbnails/instagram/ABC.jpg?size=280');
   });
 
   it('leaves an absolute http(s) thumbnail untouched (legacy direct-bucket URLs that have not been backfilled yet)', async () => {
@@ -61,8 +63,9 @@ describe('mapBetaLinksResponse — thumbnail absolutization', () => {
 
     // Falls back to the relative path so same-origin deploys still render
     // the thumbnail; split-domain deploys without a configured backend URL
-    // would just have to set NEXT_PUBLIC_WS_URL.
-    expect(link.thumbnail).toBe('/static/beta-link-thumbnails/instagram/ABC.jpg');
+    // would just have to set NEXT_PUBLIC_WS_URL. The ?size= still rides
+    // along so same-origin deploys also get the sized variant.
+    expect(link.thumbnail).toBe('/static/beta-link-thumbnails/instagram/ABC.jpg?size=280');
   });
 
   it('does not produce double slashes if the backend URL ever ends with a slash', async () => {
@@ -76,6 +79,6 @@ describe('mapBetaLinksResponse — thumbnail absolutization', () => {
 
     const [link] = mapBetaLinksResponse([commonRow('/static/beta-link-thumbnails/instagram/ABC.jpg')]);
 
-    expect(link.thumbnail).toBe('https://ws.boardsesh.com/static/beta-link-thumbnails/instagram/ABC.jpg');
+    expect(link.thumbnail).toBe('https://ws.boardsesh.com/static/beta-link-thumbnails/instagram/ABC.jpg?size=280');
   });
 });

@@ -19,10 +19,24 @@
     },
     "sections": {
       "jumpBackIn": "Continúa donde lo dejaste",
+      "pinned": "Fijadas",
       "smart": "Tus selecciones",
-      "discover": "Descubre"
+      "discover": "Descubre",
+      "forYou": "Para ti",
+      "community": "Playlists de la comunidad"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "allPlaylists": {
+      "title": "Mis listas",
+      "seeAll": "Ver todas",
+      "searchPlaceholder": "Filtrar por título",
+      "clearSearch": "Borrar búsqueda",
+      "loadMoreError": "No se pudieron cargar todas tus listas.",
+      "noResults": "Ninguna lista coincide con \"{{query}}\""
     },
     "pin": {
+      "pin": "Fijar",
+      "unpin": "Desfijar",
       "pinAriaLabel": "Fijar playlist",
       "unpinAriaLabel": "Desfijar playlist",
       "pinFailed": "No se pudo fijar la playlist",
@@ -43,7 +57,27 @@
       },
       "likedClimbs": {
         "title": "Bloques favoritos",
-        "description": "Todos los bloques que has marcado con corazón."
+        "description": "Todos los bloques que has marcado con corazón.",
+        "empty": {
+          "title": "Aún no hay favoritos",
+          "supporting": "Toca el corazón de un bloque para guardarlo aquí."
+        }
+      },
+      "crowdFavorites": {
+        "title": "Favoritos de todos",
+        "description": "Los clásicos más encadenados para tu panel que aún no has hecho."
+      },
+      "hiddenGems": {
+        "title": "Joyas ocultas",
+        "description": "Bloques muy valorados para tu panel que aún no han explotado."
+      },
+      "atYourLevel": {
+        "title": "A tu nivel",
+        "description": "Bloques cerca de tu grado, ajustados a tu panel."
+      },
+      "fresh": {
+        "title": "Novedades",
+        "description": "Bloques nuevos para tu panel, de aperturistas que vale la pena seguir."
       },
       "notFound": {
         "title": "Playlist inteligente no encontrada",
@@ -59,7 +93,7 @@
     "createFab": {
       "ariaLabel": "Crear playlist"
     },
-    "customUnavailable": "Las configuraciones personalizadas todavía no están disponibles aquí. Elige uno de tus boards o una configuración popular de la lista.",
+    "customUnavailable": "Las configuraciones personalizadas todavía no están disponibles aquí. Elige uno de tus plafones o una configuración popular de la lista.",
     "errors": {
       "loadTitle": "No se pudo cargar la biblioteca",
       "loadDescription": "Hubo un error al cargar tu biblioteca. Inténtalo de nuevo.",
@@ -69,8 +103,18 @@
   "detail": {
     "share": "Compartir playlist",
     "actions": "Acciones de la playlist",
+    "activateAll": "Poner en cola todos los bloques",
+    "boardMismatch": {
+      "title": "Cambia a {{board}} para escalar esta playlist",
+      "subtitle": "Estos son bloques de {{board}}. Cambia de plafón para ponerlos en cola.",
+      "cta": "Cambiar de plafón"
+    },
+    "unrenderableClimb": {
+      "subtitle": "Faltan datos del plafón para este bloque."
+    },
     "menu": {
       "generate": "Generar",
+      "editClimbs": "Editar bloques",
       "edit": "Editar",
       "delete": "Eliminar"
     },
@@ -105,6 +149,20 @@
       "tryAgain": "Reintentar"
     }
   },
+  "editClimbs": {
+    "done": "Listo",
+    "editDetailsAria": "Editar detalles de la playlist",
+    "removeAria": "Quitar {{name}}",
+    "dragHandleAria": "Arrastra para reordenar {{name}}",
+    "removeConfirm": {
+      "title": "¿Quitar bloque?",
+      "message": "¿Quitar \"{{name}}\" de esta playlist?",
+      "confirm": "Quitar",
+      "cancel": "Cancelar"
+    },
+    "removeFailed": "No se pudo quitar el bloque",
+    "reorderFailed": "No se pudo guardar el nuevo orden"
+  },
   "edit": {
     "title": "Editar lista",
     "fields": {
@@ -114,6 +172,7 @@
       "descriptionPlaceholder": "Descripción opcional para tu lista...",
       "color": "Color",
       "icon": "Icono",
+      "iconHint": "Escribe cualquier emoji o elige uno abajo",
       "removeIcon": "Quitar",
       "visibility": "Visibilidad",
       "publicHint": "Las listas públicas pueden ser vistas por cualquiera con el enlace",
@@ -168,7 +227,9 @@
       "minRating": "Valoración mínima",
       "climbBias": "Sesgo de bloques",
       "tallClimbsLabel": "Solo bloques altos",
-      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en tableros 8x12 y 10x12)",
+      "tallClimbsTooltip": "Muestra solo bloques que usan presas en las 8 filas inferiores (solo disponible en plafones 8x12 y 10x12)",
+      "wideClimbsLabel": "Solo bloques anchos",
+      "wideClimbsTooltip": "Muestra solo bloques que usan las presas laterales extra del 10x10",
       "mainSetClimbs": "Bloques de la serie principal",
       "mainSetVariability": "Variabilidad de la serie principal",
       "numberOfSteps": "Número de pasos",
@@ -234,7 +295,7 @@
     "you": "Tú",
     "youSignInTitle": "Inicia sesión para ver tu progreso",
     "youSignInDescription": "Inicia sesión para registrar tus estadísticas, sesiones y logbook.",
-    "selectBoardForPlaylist": "Selecciona una tabla de escalada antes de crear una playlist",
+    "selectBoardForPlaylist": "Selecciona un plafón antes de crear una playlist",
     "createdPlaylistToast": "Playlist «{{name}}» creada",
     "createPlaylistFailed": "No se pudo crear la playlist"
   }

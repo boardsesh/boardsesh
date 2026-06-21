@@ -1,7 +1,9 @@
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { Badge as PaperBadge } from 'react-native-paper';
 import { Text } from './Text';
 import { iosSystemColors } from '../theme/ios-colors';
+import { createVariantComponent } from '../theme/variants';
 
 type BadgeProps = {
   count?: number;
@@ -10,7 +12,30 @@ type BadgeProps = {
   size?: 'small' | 'medium';
 };
 
-export function Badge({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+/**
+ * Badge routes to a Material 3 `Badge` on the Material variant, and to the
+ * existing animated Liquid-Glass dot/count badge on the Liquid Glass variant.
+ * The public prop API is identical for both, so call sites never change.
+ */
+export const Badge = createVariantComponent('Badge', { liquidGlass: BadgeGlass, material: BadgeMaterial });
+
+function BadgeMaterial({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+  const isDot = count === undefined || count === 0;
+  const displayCount = count && count > 99 ? '99+' : String(count ?? '');
+
+  // Paper renders a dot when it has no children; pass the count otherwise.
+  // `size` is a numeric diameter in Paper — mirror the glass dot/count sizing.
+  const badgeSize = size === 'small' ? 8 : isDot ? 10 : 18;
+
+  return (
+    <PaperBadge visible={visible} size={badgeSize} style={{ backgroundColor: color }}>
+      {isDot ? undefined : displayCount}
+    </PaperBadge>
+  );
+}
+
+// Liquid Glass badge — the original animated implementation, unchanged.
+function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
   if (!visible) return null;
 
   const isDot = count === undefined || count === 0;

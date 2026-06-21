@@ -4,8 +4,6 @@
 export type SetActiveClimbSource =
   | 'setCurrentClimb'
   | 'setCurrentClimbQueueItem'
-  | 'takeControl'
   | 'bridge.setCurrentClimb'
   | 'bridge.setCurrentClimbQueueItem.party'
-  | 'bridge.setCurrentClimbQueueItem.solo'
-  | 'bridge.takeControl';
+  | 'bridge.setCurrentClimbQueueItem.solo';

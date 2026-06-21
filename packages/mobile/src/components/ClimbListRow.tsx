@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useAnimatedReaction,
@@ -10,20 +10,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { Text } from './Text';
 import { Icon } from './Icon';
-import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
-import { AscentStatusBadge } from './AscentStatusBadge';
+import { ClimbListItemContent } from './ClimbListItemContent';
+import { climbListRowStyles } from './climb-list-row-styles';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
-import { formatSends, formatQuality } from '../lib/format-climb-stats';
-import { useGradeFormat } from '../hooks/use-grade-format';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
-import { spacing } from '../theme/tokens';
+import { selectedRowColors } from './climb-list-row-colors';
+import { useSwipeArm } from './use-swipe-arm';
 
 // Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
@@ -33,13 +29,26 @@ const ACTION_REVEAL = 150;
 const COMMIT_THRESHOLD = 96;
 const SWIPE_FRICTION = 1;
 
+// Per-row swipe perf: the panels below split into a cheap always-mounted shell
+// (just the coloured panel + its resting-state icon, zero shared values /
+// animated styles / reactions) and a heavy animated inner that carries the
+// drag-driven icon interpolation + haptic-detent reaction. FlashList recycles
+// rows, so when a row is just sitting in the list the shell is all that mounts.
+// The inner mounts lazily the instant a horizontal drag begins (`active`), so
+// the animated cost is paid only while the user is actually swiping — not on
+// every recycle during a scroll. The shell renders each panel's translation=0
+// appearance, so the lazy inner can mount a frame or two late without ever
+// showing a blank or wrong-looking panel: the panel is occluded by the opaque
+// row at rest and only the first frames of a drag are covered by the shell,
+// which already looks identical to the inner at translation≈0.
+
 /**
- * Leading "Queue" swipe action — Spotify-style commit-on-release (left-to-right
- * swipe). The panel shows a queue icon that flips to a "✓" once you cross the
- * commit threshold (with a haptic detent), so you feel and see that releasing
- * will queue the climb. The add fires from the row's onSwipeableWillOpen.
+ * Drag-driven inner of the "Queue" action. The queue icon flips to a "✓" once
+ * you cross the commit threshold (with a haptic detent), so you feel and see
+ * that releasing will queue the climb. Only mounted while the row is being
+ * dragged; the add itself still fires from the row's onSwipeableWillOpen.
  */
-function QueueSwipeAction({ translation }: { translation: SharedValue<number> }) {
+function QueueSwipeActionInner({ translation }: { translation: SharedValue<number> }) {
   // Haptic detent the instant the drag crosses the commit threshold.
   useAnimatedReaction(
     () => Math.abs(translation.value) >= COMMIT_THRESHOLD,
@@ -65,26 +74,46 @@ function QueueSwipeAction({ translation }: { translation: SharedValue<number> })
     return { opacity: armedProgress, transform: [{ scale: 0.6 + armedProgress * 0.4 }] };
   });
   return (
-    <View style={[styles.swipeAction, styles.queueAction]}>
-      <View style={styles.swipeIcon}>
-        <Animated.View style={[styles.swipeIconLayer, plusStyle]}>
-          <Icon name="queue" size={26} color={iosSystemColors.white} />
-        </Animated.View>
-        <Animated.View style={[styles.swipeIconLayer, checkStyle]}>
-          <Icon name="tick" size={26} color={iosSystemColors.white} />
-        </Animated.View>
-      </View>
+    <View style={styles.swipeIcon}>
+      <Animated.View style={[styles.swipeIconLayer, plusStyle]}>
+        <Icon name="queue" size={26} color={iosSystemColors.white} />
+      </Animated.View>
+      <Animated.View style={[styles.swipeIconLayer, checkStyle]}>
+        <Icon name="tick" size={26} color={iosSystemColors.white} />
+      </Animated.View>
     </View>
   );
 }
 
 /**
- * Trailing "Playlist" swipe action (right-to-left swipe) — commit-on-release
- * opens the playlist picker. Rose panel with a playlist icon that grows in with
- * the drag plus a haptic detent at the threshold; the picker opens from
- * onSwipeableWillOpen.
+ * Leading "Queue" swipe action — Spotify-style commit-on-release (left-to-right
+ * swipe). Cheap shell while resting; mounts the animated inner once a drag
+ * starts (`active`). The resting shell shows the queue icon at full opacity (the
+ * translation=0 state, where the "✓" is fully transparent), so the panel looks
+ * right from the first frame of a drag.
  */
-function PlaylistSwipeAction({ translation }: { translation: SharedValue<number> }) {
+function QueueSwipeAction({ translation, active }: { translation: SharedValue<number>; active: boolean }) {
+  return (
+    <View style={[styles.swipeAction, styles.queueAction]}>
+      {active ? (
+        <QueueSwipeActionInner translation={translation} />
+      ) : (
+        <View style={styles.swipeIcon}>
+          <View style={styles.swipeIconLayer}>
+            <Icon name="queue" size={26} color={iosSystemColors.white} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Drag-driven inner of the "Playlist" action — playlist icon grows in with the
+ * drag plus a haptic detent at the threshold. Only mounted while the row is
+ * being dragged; the picker still opens from the row's onSwipeableWillOpen.
+ */
+function PlaylistSwipeActionInner({ translation }: { translation: SharedValue<number> }) {
   useAnimatedReaction(
     () => Math.abs(translation.value) >= COMMIT_THRESHOLD,
     (armed, wasArmed) => {
@@ -98,13 +127,35 @@ function PlaylistSwipeAction({ translation }: { translation: SharedValue<number>
     ],
   }));
   return (
+    <Animated.View style={iconStyle}>
+      <Icon name="playlist" size={24} color={iosSystemColors.white} />
+    </Animated.View>
+  );
+}
+
+/**
+ * Trailing "Playlist" swipe action (right-to-left swipe) — commit-on-release
+ * opens the playlist picker. Cheap shell while resting; mounts the animated
+ * inner once a drag starts (`active`). At translation=0 the playlist icon is
+ * fully transparent, so the resting shell deliberately renders no icon — the
+ * panel matches the inner's first frame.
+ */
+function PlaylistSwipeAction({ translation, active }: { translation: SharedValue<number>; active: boolean }) {
+  return (
     <View style={[styles.swipeAction, styles.playlistAction]}>
-      <Animated.View style={iconStyle}>
-        <Icon name="playlist" size={24} color={iosSystemColors.white} />
-      </Animated.View>
+      {active ? <PlaylistSwipeActionInner translation={translation} /> : null}
     </View>
   );
 }
+
+export type ClimbListRowRenderContentArgs = {
+  climb: Climb;
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+};
 
 type ClimbListRowProps = {
   climb: Climb;
@@ -113,12 +164,17 @@ type ClimbListRowProps = {
   sizeId: number;
   setIds: string;
   angle: number;
-  onPress: (climb: Climb) => void;
+  onPress?: (climb: Climb) => void;
   onAddToQueue?: (climb: Climb) => void;
   onOpenPlaylist?: (climb: Climb) => void;
   onOpenActions?: (climb: Climb) => void;
   selected?: boolean;
   unsupported?: boolean;
+  renderContent?: (args: ClimbListRowRenderContentArgs) => ReactNode;
+  containerStyle?: StyleProp<ViewStyle>;
+  contentRowStyle?: StyleProp<ViewStyle>;
+  separatorStyle?: StyleProp<ViewStyle>;
+  showSeparator?: boolean;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -134,15 +190,26 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onOpenActions,
   selected,
   unsupported,
+  renderContent,
+  containerStyle,
+  contentRowStyle,
+  separatorStyle,
+  showSeparator = true,
 }: ClimbListRowProps) {
-  const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
-  const { formatGrade } = useGradeFormat();
-
-  const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
-  const formattedGrade = formatGrade(climb.difficulty);
+  const { systemColors, brandColors: brand } = useTheme();
+  // Active-row highlight colours, derived from the scheme-aware brand so the wash
+  // + accent stay visible in dark (lifted #A78BFA) as well as light.
+  const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
 
   const swipeableRef = useRef<SwipeableMethods>(null);
+
+  // Lazy swipe panels: the heavy animated action content (icon interpolation +
+  // haptic-detent reaction) only mounts once a drag actually starts on THIS
+  // row. While the row is just sitting in the list — the common case during a
+  // scroll — only the cheap panel shells mount. The hook resets the machine on
+  // recycle (climb.uuid) and exposes a ref so the render callbacks below can
+  // read the live value without taking it as a dep (see useSwipeArm for why).
+  const { armedRef: dragArmedRef, arm, disarm } = useSwipeArm(climb.uuid);
 
   // FlashList recycles rows (same instance, new climb). Snap any open swipe
   // shut so a recycled row never shows the previous climb's open panel.
@@ -150,7 +217,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // recycle would read as a glitch. The reset lands on the next UI frame, so a
   // row recycled mid-swipe can flash its panel for ~1 frame; the opaque
   // contentRow background occludes the panel once translation returns to 0, so
-  // that background must stay opaque.
+  // that background must stay opaque. (useSwipeArm disarms the lazy panels on
+  // the same climb.uuid change.)
   useEffect(() => {
     swipeableRef.current?.reset();
   }, [climb.uuid]);
@@ -171,8 +239,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
 
   const handleRowPress = useCallback(() => {
     if (unsupportedRef.current) return;
+    const press = onPressRef.current;
+    if (!press) return;
     hapticLight();
-    onPressRef.current(climbRef.current);
+    press(climbRef.current);
   }, []);
 
   const handleLongPress = useCallback(() => {
@@ -182,19 +252,50 @@ const ClimbListRow = React.memo(function ClimbListRow({
   }, []);
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
-  // releases past the threshold — no second tap. We close immediately so the
-  // panel snaps back rather than resting open (the Spotify feel).
+  // releases past the threshold — no second tap. We deliberately do NOT close
+  // here: closing mid-"will open" raced ReanimatedSwipeable's open animation
+  // and left its open/closed state machine out of sync, so only every OTHER
+  // swipe fired willOpen. The row finishes opening and is snapped shut from
+  // onSwipeableOpen (handleSwipeableOpened) instead — a clean closed→open→
+  // closed cycle that fires on every swipe.
   const handleAddToQueue = useCallback(() => {
+    const addToQueue = onAddToQueueRef.current;
+    if (!addToQueue) return;
     hapticSuccess();
-    onAddToQueueRef.current?.(climbRef.current);
-    swipeableRef.current?.close();
+    addToQueue(climbRef.current);
   }, []);
 
   const handleOpenPlaylist = useCallback(() => {
+    const openPlaylist = onOpenPlaylistRef.current;
+    if (!openPlaylist) return;
     hapticMedium();
-    onOpenPlaylistRef.current?.(climbRef.current);
+    openPlaylist(climbRef.current);
+  }, []);
+
+  // Snap the row shut once it has fully settled open. Runs after the action
+  // already fired on willOpen, so the user sees an instant commit and the row
+  // springs back.
+  const handleSwipeableOpened = useCallback(() => {
     swipeableRef.current?.close();
   }, []);
+
+  // Once the row has fully settled shut again — whether after a committed swipe
+  // (handleSwipeableOpened → close()) or a sub-threshold swipe that springs back
+  // — drop the lazy panels back to the cheap shell. translation is 0 by now, so
+  // unmounting the heavy inner is invisible, and an idle row that's been swiped
+  // once no longer keeps the animated inner mounted for the rest of its life.
+  const handleSwipeableClosed = useCallback(() => {
+    disarm();
+  }, [disarm]);
+
+  // Fired once when a horizontal drag begins (from a resting/closed row). This
+  // is the trigger that mounts the heavy animated action panels — the direction
+  // doesn't matter (we arm both sides; the non-dragged side stays occluded by
+  // the opaque row), so the panel reveal is fully animated by the time any
+  // meaningful translation is on screen.
+  const handleSwipeStartDrag = useCallback(() => {
+    arm();
+  }, [arm]);
 
   const handleSwipeWillOpen = useCallback(
     (direction: 'left' | 'right') => {
@@ -237,41 +338,40 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   // Left actions (revealed by a left-to-right swipe) = Queue; right actions
-  // (right-to-left swipe) = Playlist.
+  // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
+  // than the armed state directly so they stay dep-free: a changed render-
+  // callback reference makes ReanimatedSwipeable re-create the action-panel
+  // subtree, which would remount the heavy inner the instant it appears. The
+  // armed state change re-renders the row (and so re-runs these callbacks),
+  // while the stable identity keeps the shell→inner swap in place.
   const renderLeftActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <QueueSwipeAction translation={translation} />
+      <QueueSwipeAction translation={translation} active={dragArmedRef.current} />
     ),
-    [],
+    [dragArmedRef],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <PlaylistSwipeAction translation={translation} />
+      <PlaylistSwipeAction translation={translation} active={dragArmedRef.current} />
     ),
-    [],
+    [dragArmedRef],
   );
 
-  // Subtitle parts: sends · quality★ · setter (each dropped when absent).
-  const subtitleText = useMemo(() => {
-    const parts: string[] = [];
-    if (climb.is_draft) {
-      parts.push(t('createClimbForm.draftBadge'));
-    }
-    if (!climb.is_draft && climb.ascensionist_count) {
-      parts.push(formatSends(climb.ascensionist_count));
-    }
-    const qualityNum = parseFloat(climb.quality_average);
-    if (qualityNum > 0) {
-      parts.push(`${formatQuality(climb.quality_average)}★`);
-    }
-    if (climb.setter_username) {
-      parts.push(climb.setter_username);
-    }
-    return parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
-  }, [climb.is_draft, climb.ascensionist_count, climb.quality_average, climb.setter_username, t]);
+  const rowContent = renderContent ? (
+    renderContent({ climb, boardName, layoutId, sizeId, setIds, angle })
+  ) : (
+    <ClimbListItemContent
+      climb={climb}
+      boardName={boardName}
+      layoutId={layoutId}
+      sizeId={sizeId}
+      setIds={setIds}
+      angle={angle}
+    />
+  );
 
   return (
-    <View style={[styles.outerContainer, unsupported && styles.unsupported]}>
+    <View style={[styles.outerContainer, containerStyle, unsupported && styles.unsupported]}>
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
@@ -279,57 +379,39 @@ const ClimbListRow = React.memo(function ClimbListRow({
         rightThreshold={COMMIT_THRESHOLD}
         overshootLeft={false}
         overshootRight={false}
-        renderLeftActions={renderLeftActions}
-        renderRightActions={renderRightActions}
+        renderLeftActions={onAddToQueue ? renderLeftActions : undefined}
+        renderRightActions={onOpenPlaylist ? renderRightActions : undefined}
+        onSwipeableOpenStartDrag={handleSwipeStartDrag}
         onSwipeableWillOpen={handleSwipeWillOpen}
+        onSwipeableOpen={handleSwipeableOpened}
+        onSwipeableClose={handleSwipeableClosed}
       >
         <GestureDetector gesture={tapGesture}>
           <View
-            style={[styles.contentRow, { backgroundColor: systemColors.background }]}
+            testID="climb-row"
+            style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
             accessibilityRole="button"
             accessibilityLabel={climb.name}
             accessibilityState={{ selected: !!selected }}
           >
-            {/* Active-climb highlight: rose wash + left accent bar */}
-            {selected ? <View style={styles.selectedFill} pointerEvents="none" /> : null}
-            {selected ? <View style={styles.selectedAccent} pointerEvents="none" /> : null}
+            {/* Active-climb highlight: violet wash + left accent bar */}
+            {selected ? (
+              <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
+            ) : null}
+            {selected ? (
+              <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
+            ) : null}
 
-            {/* Left: portrait thumbnail with ascent badge */}
-            <View style={styles.thumbnailContainer}>
-              <ClimbListThumbnail
-                frames={climb.frames}
-                boardName={boardName}
-                layoutId={layoutId}
-                sizeId={sizeId}
-                setIds={setIds}
-                mirrored={climb.mirrored ?? false}
-              />
-              <AscentStatusBadge climbUuid={climb.uuid} angle={angle} />
-            </View>
-
-            {/* Center: name + subtitle */}
-            <View style={styles.centerColumn}>
-              <Text variant="body" numberOfLines={1} style={styles.climbName}>
-                {climb.name}
-              </Text>
-              <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
-                {subtitleText}
-              </Text>
-            </View>
-
-            {/* Right: colorized grade */}
-            <View style={styles.rightSection}>
-              <Text variant="headline" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-                {formattedGrade ?? climb.difficulty}
-              </Text>
-            </View>
+            {rowContent}
           </View>
         </GestureDetector>
       </ReanimatedSwipeable>
 
       {/* Separator — inset to start at the text column (after the thumbnail) */}
-      <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+      {showSeparator ? (
+        <View style={[climbListRowStyles.separator, { backgroundColor: systemColors.separator }, separatorStyle]} />
+      ) : null}
     </View>
   );
 });
@@ -344,16 +426,10 @@ const styles = StyleSheet.create({
   unsupported: {
     opacity: 0.5,
   },
-  contentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[2],
-    gap: spacing[3],
-  },
-  // Active-climb wash. Brand rose (#8C4A52) — kept distinct from the grade
-  // colour on the right of the row. Behind the content (crisp text). Bumped
-  // from 0.14 → 0.18 so it reads on near-black OLED, where the accent bar
+  // Active-climb wash + left accent bar. The COLOUR is applied inline from the
+  // scheme-aware brand (see `highlight` / selectedRowColors) so dark mode uses the
+  // lifted #A78BFA tint instead of the near-invisible dark fill — only layout
+  // lives here. The 0.18 wash alpha reads on near-black OLED, where the accent bar
   // scrolls off during a swipe and the wash is the only state cue left.
   selectedFill: {
     position: 'absolute',
@@ -361,7 +437,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(140, 74, 82, 0.18)',
   },
   selectedAccent: {
     position: 'absolute',
@@ -369,39 +444,6 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 5,
-    backgroundColor: brandColors.primary,
-  },
-  thumbnailContainer: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
-    flexShrink: 0,
-    position: 'relative',
-  },
-  centerColumn: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-    gap: 2,
-  },
-  climbName: {
-    fontWeight: '600',
-  },
-  subtitle: {
-    opacity: 0.6,
-  },
-  rightSection: {
-    flexShrink: 0,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  gradeText: {
-    fontWeight: '700',
-    minWidth: 34,
-    textAlign: 'right',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + spacing[2] + spacing[3],
   },
   swipeAction: {
     width: ACTION_REVEAL,
@@ -410,6 +452,9 @@ const styles = StyleSheet.create({
   // Pin each icon to the OUTER edge of its panel (queue = right/screen edge,
   // playlist = left/screen edge) so it appears as soon as the panel starts
   // revealing, instead of needing half the panel out to see a centred icon.
+  // These are full-bleed panels with WHITE icons, so they use the static brand
+  // FILL (white-legible in both schemes); the lifted dark-mode tints would fail
+  // white-on-fill contrast, so they intentionally don't vary by colour scheme.
   queueAction: {
     backgroundColor: brandColors.success,
     alignItems: 'flex-start',

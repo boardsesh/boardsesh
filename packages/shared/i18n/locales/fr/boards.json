@@ -30,6 +30,27 @@
     }
   },
   "mobile": {
+    "edit": {
+      "screenTitle": "Modifier le board",
+      "save": "Enregistrer",
+      "updateError": "Impossible d'enregistrer les modifications. Réessaie.",
+      "notFound": "Board introuvable",
+      "back": "Retour",
+      "configLockedHint": "Ce board a des voies enregistrées : son layout, sa taille et ses sets sont verrouillés."
+    },
+    "manage": {
+      "ownedHeader": "Tes boards",
+      "followingHeader": "Abonnements",
+      "deleteTitle": "Supprimer le board ?",
+      "deleteMessage": "Retirer \"{{name}}\" de tes boards ? C'est définitif.",
+      "deleteConfirm": "Supprimer",
+      "cancel": "Annuler",
+      "deleteError": "Impossible de supprimer ce board. Réessaie.",
+      "unfollowError": "Impossible de te désabonner de ce board. Réessaie.",
+      "editAria": "Modifier {{name}}",
+      "deleteAria": "Supprimer {{name}}",
+      "unfollowAria": "Se désabonner de {{name}}"
+    },
     "emptyTitle": "Aucun board pour le moment",
     "emptySubtitle": "Cherche un board pour commencer",
     "signInTitle": "Connecte-toi pour voir tes boards",
@@ -38,26 +59,46 @@
     "errorTitle": "Impossible de charger tes boards",
     "errorRetry": "Réessayer",
     "boardSwitchError": "Impossible d'enregistrer ce board. Réessaie.",
+    "onboardingPrompt": "Suis le mur où tu grimpes : c'est ça qui active son historique.",
     "discovery": {
       "findNearby": "À proximité",
       "bluetooth": "Bluetooth",
-      "custom": "Personnalisé",
       "locationDenied": "Autoriser la localisation",
       "nearbyTitle": "Près de toi",
       "nearbyShowing": "À proximité affichés",
       "yourBoardsTitle": "Tes boards",
       "popularTitle": "Configurations populaires",
-      "search": "Rechercher"
+      "findGym": "Trouver une salle",
+      "create": "Créer un board"
+    },
+    "create": {
+      "screenTitle": "Configure ton board",
+      "previewHint": "Choisis ton layout et on affiche ton mur",
+      "adjustable": "Angle réglable",
+      "anglePreview": "Mur incliné à {{angle}}°",
+      "moreOptions": "Plus d'options",
+      "ownBoard": "Ce board est à moi",
+      "public": "Board public",
+      "publicHint": "Affiche-le sur la carte pour que ton crew le trouve",
+      "unlisted": "Non listé",
+      "hideLocation": "Masquer l'emplacement exact",
+      "location": "Emplacement",
+      "locationPlaceholder": "Maison, nom de la salle ou ville",
+      "useMyLocation": "Utiliser ma position",
+      "locationSet": "Position enregistrée",
+      "serial": "Numéro de série du contrôleur",
+      "serialPlaceholder": "p. ex. ABC-12345",
+      "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
+      "save": "Enregistrer mon board",
+      "createError": "Impossible de créer ce board. Réessaie."
     },
     "custom": {
-      "title": "Crée un board",
       "board": "Board",
       "layout": "Layout",
       "size": "Taille",
       "sets": "Sets",
       "angle": "Angle",
-      "start": "Commencer à grimper",
-      "createError": "Impossible de créer ce board. Réessaie."
+      "name": "Nom du tableau"
     },
     "bluetooth": {
       "title": "Boards près de toi",
@@ -65,10 +106,6 @@
       "resolving": "Chargement des boards…",
       "noResults": "Aucun board à portée",
       "unavailable": "Active le Bluetooth pour rechercher"
-    },
-    "search": {
-      "placeholder": "Cherche par nom ou lieu",
-      "mapUnavailable": "Mets à jour l'app pour voir la carte. Tu peux chercher par nom."
     },
     "boardDetail": {
       "setActive": "Utiliser ce board",
@@ -85,6 +122,26 @@
         "angle": "Angle",
         "adjustable": "ajustable"
       }
+    },
+    "disambiguation": {
+      "title": "Sur quel mur es-tu ?",
+      "subtitle": "Ce numéro de série est partagé par plusieurs tableaux. Choisis le mur où tu te trouves.",
+      "yourBoard": "Ton tableau",
+      "cancel": "Pas maintenant"
+    },
+    "gyms": {
+      "title": "Salles près de toi",
+      "subtitle": "Touche une salle pour utiliser son tableau",
+      "locationNeeded": "Partage ta position pour trouver des salles à proximité",
+      "grantLocation": "Utiliser ma position",
+      "empty": "Aucune salle à proximité pour l'instant",
+      "noBoards": "Aucun tableau ici pour l'instant",
+      "boardCount": "{{count}} tableaux",
+      "searchPlaceholder": "Rechercher une ville, une salle ou un mur",
+      "showingPlace": "Résultats pour {{place}}",
+      "clearSearch": "Effacer la recherche",
+      "closeMap": "Fermer",
+      "otherBoardsTitle": "Murs à proximité"
     }
   },
   "boardEntity": {
@@ -216,6 +273,9 @@
   "boardFilterStrip": {
     "all": "Tous",
     "allBoards": "Tous les boards"
+  },
+  "boardPill": {
+    "switchHint": "Ouvre le sélecteur de board"
   },
   "boardSwitchConfirm": {
     "session": {

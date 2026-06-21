@@ -2,6 +2,7 @@
 import { program } from 'commander';
 import { SyncRunner } from '../runner/sync-runner';
 import { AURORA_BOARDS } from '../api/types';
+import { AURORA_LOCATION_BOARDS, type AuroraLocationBoardName } from '../sync/locations-sync';
 
 // Load environment variables from .env files if available
 import { config } from 'dotenv';
@@ -182,6 +183,30 @@ program
     } catch (error) {
       console.error('Error listing credentials:', error);
       await closePool();
+      process.exit(1);
+    }
+  });
+
+program
+  .command('locations')
+  .description('Sync public Aurora board gym locations into gyms / user_boards')
+  .option('-b, --board <type>', `Board type (${AURORA_LOCATION_BOARDS.join(', ')}, all)`, 'all')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (options: { board: string; verbose?: boolean }) => {
+    const runner = createRunner(options.verbose ?? false);
+    try {
+      const board = options.board.trim();
+      if (board !== 'all' && !AURORA_LOCATION_BOARDS.includes(board as AuroraLocationBoardName)) {
+        console.error(`Invalid board: ${board}. Expected one of ${AURORA_LOCATION_BOARDS.join(', ')} or all.`);
+        await runner.close();
+        process.exit(1);
+      }
+      const summary = await runner.syncLocations(board === 'all' ? 'all' : (board as AuroraLocationBoardName));
+      console.info('✓ Aurora location sync complete:', JSON.stringify(summary, null, 2));
+      await runner.close();
+    } catch (error) {
+      console.error('Location sync failed:', error instanceof Error ? error.message : error);
+      await runner.close();
       process.exit(1);
     }
   });

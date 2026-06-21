@@ -26,6 +26,28 @@ enum LiveActivityBleBridge {
             readyTimeout: 3.0
         )
     }
+
+    /// Reconnect to the last known board for the Live Activity lightbulb's
+    /// ReconnectBoardIntent, inside a `beginBackgroundTask` window so the connect
+    /// can finish even if the tap arrives while the app is suspended. Returns
+    /// whether the board reconnected; on success BoardBleManager re-lights the
+    /// wall from the shared queue state.
+    @MainActor
+    static func reconnectForIntent() async -> Bool {
+        let task = BleIntentBackgroundTask()
+        task.begin(name: "ble-reconnect-intent")
+        defer { task.end() }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            BoardBleManager.shared.reconnectToLastKnownBoard { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: true)
+                case .failure:
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
 }
 
 /// Owns a single `UIBackgroundTaskIdentifier`.

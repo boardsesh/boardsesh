@@ -12,6 +12,11 @@ import { usePathname } from 'next/navigation';
 import { track } from '@/app/lib/analytics';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useQuery } from '@tanstack/react-query';
+import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import {
+  CLIMB_STATS_FOR_ANGLES,
+  type ClimbStatsForAnglesResponse,
+} from '@boardsesh/graphql/operations/climb-stats-for-angles';
 import { ANGLES } from '@/app/lib/board-data';
 import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
@@ -48,12 +53,32 @@ export default function AngleSelector({
   const isDark = useIsDarkMode();
   const { activeSession, setSessionBoardPath } = usePersistentSession();
 
-  // Fetch climb stats for all angles when there's a current climb
+  // Fetch climb stats for all angles when there's a current climb.
+  // Runs through the GraphQL backend (graphql-request HTTP) rather than a
+  // Next.js API route, so it doesn't burn a serverless invocation per open.
   const { data: climbStats, isLoading } = useQuery<ClimbStatsForAngle[]>({
     queryKey: ['climbStats', boardName, currentClimb?.uuid],
-    queryFn: () => fetch(`/api/v1/${boardName}/climb-stats/${currentClimb!.uuid}`).then((res) => res.json()),
+    queryFn: async () => {
+      const client = createGraphQLHttpClient();
+      const { climbStatsForAngles } = await client.request<
+        ClimbStatsForAnglesResponse,
+        { boardName: BoardName; climbUuid: string }
+      >(CLIMB_STATS_FOR_ANGLES, { boardName, climbUuid: currentClimb!.uuid });
+      // Map camelCase GraphQL fields to the snake_case shape the cards render.
+      return climbStatsForAngles.map((stat) => ({
+        angle: stat.angle,
+        ascensionist_count: String(stat.ascensionistCount ?? 0),
+        quality_average: stat.qualityAverage == null ? null : String(stat.qualityAverage),
+        difficulty_average: stat.difficultyAverage,
+        display_difficulty: stat.displayDifficulty,
+        difficulty: stat.difficulty,
+        fa_username: stat.faUsername,
+        fa_at: stat.faAt,
+      }));
+    },
     enabled: !!currentClimb && isDrawerOpen,
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Create a map for easy lookup of stats by angle

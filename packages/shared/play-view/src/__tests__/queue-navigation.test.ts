@@ -6,6 +6,7 @@ import {
   findPreviousQueueItem,
   computeNavigationState,
   findNextQueueItemWithSuggestions,
+  findPreviousQueueItemWithSuggestions,
   computeNavigationStateWithSuggestions,
 } from '../queue-navigation';
 
@@ -225,6 +226,56 @@ describe('findNextQueueItemWithSuggestions', () => {
   });
 });
 
+describe('findPreviousQueueItemWithSuggestions', () => {
+  it('behaves like findPreviousQueueItem for a current item that IS in the queue', () => {
+    const items = [makeItem('a'), makeItem('b'), makeItem('c')];
+    expect(findPreviousQueueItemWithSuggestions(items, items[2], null)).toBe(items[1]);
+    expect(findPreviousQueueItemWithSuggestions(items, items[0], null)).toBeNull();
+    expect(findPreviousQueueItemWithSuggestions(items, null, null)).toBeNull();
+  });
+
+  it('never peeks backward into the playlist while the current item is in the queue', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    // current is the queue head and there IS an earlier playlist climb, but the
+    // committed active-board path must stay queue-only (no backward peek).
+    const queue = [itemFor(y)];
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[0], source)).toBeNull();
+  });
+
+  it('falls through to the previous playlist climb for an orphan current (view-only preview)', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const z = makeClimb('z');
+    const queue = [makeItem('a'), makeItem('b')];
+    const orphan = itemFor(y); // previewed climb, never committed to the queue
+    const source = makeSource(x, [x, y, z]);
+    const peek = findPreviousQueueItemWithSuggestions(queue, orphan, source);
+    // Diverges from findPreviousQueueItem (which would return null).
+    expect(peek?.climb.uuid).toBe('x');
+    expect(peek?.uuid).toBe(getPlaylistPeekQueueItemUuid('x'));
+    expect(peek?.suggested).toBe(true);
+    expect(peek?.addedBy).toBeNull();
+  });
+
+  it('returns null for an orphan current that is first in the playlist', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const orphan = itemFor(x); // x is the first playlist climb → nothing before it
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions([], orphan, source)).toBeNull();
+  });
+
+  it('returns null for an orphan current not in the playlist at all', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const orphan = itemFor(makeClimb('not-in-playlist'));
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions([], orphan, source)).toBeNull();
+  });
+});
+
 describe('computeNavigationStateWithSuggestions', () => {
   it('matches computeNavigationState when source is null', () => {
     const items = [makeItem('a'), makeItem('b'), makeItem('c')];
@@ -242,9 +293,24 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.canNext).toBe(true);
     expect(state.nextItem?.climb.uuid).toBe('y');
     expect(state.nextItem?.suggested).toBe(true);
-    // previous + remainingCount stay queue-based.
+    // For a queued current climb, previous + remainingCount stay queue-based.
     expect(state.canPrevious).toBe(false);
     expect(state.prevItem).toBeNull();
     expect(state.remainingCount).toBe(0);
+  });
+
+  it('lights up both directions for a view-only preview (orphan current in the playlist)', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const z = makeClimb('z');
+    // The wrong-board preview shows `y` without committing it to the queue.
+    const orphan = itemFor(y);
+    const source = makeSource(x, [x, y, z]);
+    const state = computeNavigationStateWithSuggestions([], orphan, source);
+    expect(state.canNext).toBe(true);
+    expect(state.nextItem?.climb.uuid).toBe('z');
+    expect(state.canPrevious).toBe(true);
+    expect(state.prevItem?.climb.uuid).toBe('x');
+    expect(state.prevItem?.suggested).toBe(true);
   });
 });

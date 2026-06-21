@@ -153,10 +153,12 @@ describe('useQueueDataFetching', () => {
       isInitialized: true,
       getLogbook: mockGetLogbook,
       logbook: [],
+      logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
+      boardUuid: null,
     });
 
     mockUseOptionalBoardProvider.mockReturnValue({
@@ -166,10 +168,12 @@ describe('useQueueDataFetching', () => {
       isInitialized: true,
       getLogbook: mockGetLogbook,
       logbook: [],
+      logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
+      boardUuid: null,
     });
 
     mockUseOptionalBoardProvider.mockReturnValue({
@@ -179,10 +183,12 @@ describe('useQueueDataFetching', () => {
       isInitialized: true,
       getLogbook: mockGetLogbook,
       logbook: [],
+      logbookByClimbAngle: new Map(),
       saveTick: vi.fn(),
       saveClimb: vi.fn(),
       updateClimb: vi.fn(),
       boardName: 'kilter',
+      boardUuid: null,
     });
 
     mockUseWsAuthToken.mockReturnValue({

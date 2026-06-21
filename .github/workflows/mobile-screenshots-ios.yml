@@ -1,0 +1,414 @@
+name: Mobile Screenshots (iOS)
+
+# Captures native App Store / onboarding screenshots from the RN app via Maestro
+# (scripts/mobile-screenshots.ts) and uploads them as a build artifact. Manual +
+# nightly only — never gates PRs.
+#
+# Split out from the old combined mobile-screenshots.yml so iOS and Android run
+# independently. The Android half lives in mobile-screenshots-android.yml.
+#
+# The screenshot app is a Debug dev-client that loads its JS from Metro, so the
+# native .app is reusable: it's cached (actions/cache) keyed on native inputs and
+# only rebuilt when those change. A JS-only run is a cache hit → install + Metro +
+# Maestro instead of a ~30-min from-scratch native compile.
+#
+# This is a 3-stage fan-out so every locale captures in parallel and a single
+# overloaded runner never thrashes:
+#   ios-build    — build/restore the cached .app ONCE (no per-shard cold build).
+#   ios-capture  — matrix of locale (en-US, es, fr) on one device size (the 6.9"
+#                  iPhone 16 Pro Max; Apple scales it down to all other iPhones) =
+#                  3 shards, each its own runner: one Metro, one simulator, one
+#                  capture.
+#   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
+#                  gate (it needs all four App Store locales at once), and upload.
+#
+# All runs capture against PROD signed in as the test user (the canonical store
+# recipe), so there's no local backend.
+#
+# On a manual dispatch with `upload = true`, ios-finalize also uploads the freshly
+# captured screenshots via fastlane (screenshots ONLY — no binary or text
+# metadata). The nightly cron never uploads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      flow:
+        description: 'Maestro flow to run'
+        type: choice
+        default: app-store
+        options:
+          - app-store
+          - onboarding
+      locales:
+        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all four store locales at once.'
+        type: string
+        default: ''
+      upload:
+        description: 'Upload captured screenshots to App Store Connect. Never runs on the nightly cron. Requires the full App Store set (app-store flow, empty locales).'
+        type: boolean
+        default: false
+  schedule:
+    # 06:00 UTC nightly — regenerate the artifact off the latest main.
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: mobile-screenshots-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Resolve the locale list once so the capture matrix can fan out on it. Empty
+  # `locales` = the full en-US,es,fr store set (the nightly cron and a no-arg
+  # dispatch); a value narrows it (e.g. a single locale).
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      ios_locales: ${{ steps.compute.outputs.ios_locales }}
+    steps:
+      - name: Compute locales
+        id: compute
+        run: |
+          set -euo pipefail
+          locales="${{ inputs.locales || '' }}"
+          flow="${{ inputs.flow || 'app-store' }}"
+          upload="${{ inputs.upload || 'false' }}"
+          # Empty locales = the full store set; otherwise split "en-US,es" into a
+          # JSON array for the capture matrix. `|| true` keeps a no-match grep
+          # (all-blank input) from aborting the step under pipefail; the empty
+          # result is then caught explicitly below with a clear error.
+          if [ -z "$locales" ]; then
+            ios_locales='["en-US","es","fr"]'
+          else
+            ios_locales=$(printf '%s' "$locales" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -cs . || true)
+            if [ -z "$ios_locales" ] || [ "$ios_locales" = "[]" ]; then
+              echo "::error::locales='$locales' resolved to no valid entries."
+              exit 1
+            fi
+          fi
+          # Uploading mutates the live App Store listing and needs the full store
+          # set, so refuse a contradictory narrowed/onboarding upload up front (on
+          # this cheap ubuntu job) instead of failing ~40 min later inside fastlane.
+          if [ "$upload" = "true" ] && { [ -n "$locales" ] || [ "$flow" = "onboarding" ]; }; then
+            echo "::error::upload=true requires the full App Store set: flow=app-store and empty locales. Narrowed / onboarding runs are capture-only."
+            exit 1
+          fi
+          echo "ios_locales=$ios_locales" >> "$GITHUB_OUTPUT"
+          echo "Resolved: ios_locales=$ios_locales upload=$upload flow=$flow"
+
+  # Build (or restore) the prebuilt simulator dev-client .app ONCE, so the three
+  # ios-capture shards don't each cold-build it on a cache miss (the thundering
+  # herd). It's a dev-client shell that loads its JS from Metro, so the native
+  # binary only changes when NATIVE inputs change — the key hashes exactly those
+  # (Expo/RN/native-module versions in packages/mobile/package.json, native config
+  # in app.config.ts, the config plugins + native modules, patch-package patches,
+  # and the root @expo/cli / react-native-screens pins). JS/TS-only and web-only
+  # changes (incl. bun.lock churn) do NOT bust it, so the common path is a cache
+  # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
+  # runner.arch is in the key because a simulator .app is arch-specific.
+  ios-build:
+    needs: setup
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      cache-key: ${{ steps.appkey.outputs.key }}
+    env:
+      # Reused from ios-rn-ci.yml so the Expo build links the same native config.
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      # Compute the .app cache key ONCE and surface it as a job output so every
+      # ios-capture shard restores the exact same bucket.
+      - name: Compute app cache key
+        id: appkey
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/package.json', 'patches/**', 'package.json') }}" >> "$GITHUB_OUTPUT"
+
+      # lookup-only: this job only needs to KNOW whether the .app is cached (the
+      # shards do the actual restore), so on a hit we skip downloading a .app this
+      # job never uses — keeping the common-path critical path to ~1-2 min.
+      - name: Check for cached simulator app
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+          lookup-only: true
+
+      # Deps are only needed to build; skipped entirely on a cache hit.
+      - name: Install Node.js dependencies
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      # Cache miss (a native-input change) → build the .app from scratch with
+      # xcodebuild (runs to completion; no `expo run:ios` launch-step hang).
+      - name: Build simulator dev-client app
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+
+      # Save for the ios-capture shards (and future runs). Only on a miss — on a
+      # hit the entry already exists.
+      - name: Save simulator app to cache
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+
+  ios-capture:
+    needs: [setup, ios-build]
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      # One shard failing shouldn't abandon the rest — let them all finish so
+      # ios-finalize can report exactly which (locale, device) is short.
+      fail-fast: false
+      # One device size only: the 6.9" iPhone 16 Pro Max. App Store Connect auto-scales
+      # it down to every smaller iPhone, so extra sizes add no value, only macOS-runner
+      # time. Locale is the axis that matters, so it stays a full sweep. Matrix = 3
+      # shards (one per locale), still one simulator per shard.
+      matrix:
+        # Locales come from the setup job: the full en-US,es,fr set by default, or
+        # the narrowed `locales` input when one is given.
+        locale: ${{ fromJSON(needs.setup.outputs.ios_locales) }}
+        device:
+          - { name: iPhone 16 Pro Max, slug: iphone-16-pro-max }
+
+    env:
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+      # The prod test/demo account the Maestro flow signs in with. Override via
+      # repo secrets if a different account is ever needed.
+      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
+      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
+      # Belt-and-suspenders ceiling for Maestro's XCTest driver startup. With
+      # --shutdown there's only one booted sim per shard so the default should
+      # pass; this is free on the happy path (a timeout cap, not a fixed wait) and
+      # guards against a slow cold runner ("iOS driver not ready in time").
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install Node.js dependencies
+        run: bun install --frozen-lockfile
+
+      # Restore the .app ios-build produced — read-only (never save) and
+      # fail-on-cache-miss so a shard can NEVER silently cold-build. ios-build
+      # populates the cache before these shards start (needs: + cache saves at job
+      # end), so this restore is a guaranteed hit.
+      - name: Restore prebuilt simulator app
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ needs.ios-build.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Install Maestro
+        # Pinned to a specific GitHub Releases asset and verified against a
+        # checksum committed in this repo — NOT `curl … get.maestro.mobile.dev | bash`,
+        # whose redirect target isn't pinned and would run arbitrary code on the
+        # runner if compromised. Because MAESTRO_SHA256 lives in version control,
+        # a swapped release asset fails the checksum gate here. Bump the version +
+        # hash together (from the release's checksums_sha256.txt) after
+        # re-validating the flow locally.
+        env:
+          MAESTRO_VERSION: 2.6.1
+          MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
+        run: |
+          set -euo pipefail
+          url="https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          curl -fsSL "$url" -o maestro.zip
+          echo "${MAESTRO_SHA256}  maestro.zip" | shasum -a 256 -c -
+          unzip -q maestro.zip -d "$HOME/.maestro-dist"
+          echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Capture screenshots (${{ matrix.locale }} · ${{ matrix.device.slug }})
+        # Installs the prebuilt .app, starts Metro with the screenshot env for this
+        # locale, and runs Maestro for this ONE device — no native build on this
+        # path. Always against prod (signed in as the test user); no
+        # EXPO_PUBLIC_BACKEND_URL override, so the bundle uses the app's production
+        # backend defaults. --locales is a single value: `es` expands to both es-ES
+        # and es-MX, so the 3 shards together produce all four App Store locales on
+        # the one device size. --shutdown is belt-and-suspenders (a shard only boots
+        # this one sim, so there's nothing to accumulate).
+        run: |
+          set -euo pipefail
+          vp run mobile:screenshots -- \
+            --platform ios \
+            --flow "${{ inputs.flow || 'app-store' }}" \
+            --backend prod \
+            --device "${{ matrix.device.name }}" \
+            --locales "${{ matrix.locale }}" \
+            --shutdown \
+            --app-path packages/mobile/.app-cache/Boardsesh.app
+
+      # On a capture failure, save Maestro's debug output (the failure screenshot +
+      # view hierarchy) and the simulator's Boardsesh logs, so we can see what was
+      # on screen and whether the dev-client/JS loaded. Best-effort — never fails
+      # the job. The Maestro tests dir is under $HOME (actions/upload-artifact
+      # doesn't expand ~), so copy it into the workspace first.
+      - name: Collect capture debug artifacts
+        if: failure()
+        run: |
+          mkdir -p capture-debug
+          cp -R "$HOME/.maestro/tests" capture-debug/maestro-tests 2>/dev/null || echo "no maestro tests dir"
+          xcrun simctl spawn booted log show --last 10m --predicate 'process == "Boardsesh"' \
+            > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"
+
+      - name: Upload capture debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # Per-shard name: upload-artifact@v4 rejects two uploads with the same
+          # name in one run.
+          name: capture-debug-${{ matrix.locale }}-${{ matrix.device.slug }}
+          path: capture-debug/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Hand this shard's PNGs to ios-finalize. The artifact's internal layout is
+      # <app-store-locale>/<device>/NN-name.png (upper paths stripped to the
+      # non-wildcard prefix); (locale, device) pairs are disjoint across shards, so
+      # the merge in ios-finalize has no collisions. Short retention — it's an
+      # intermediate; the combined tree is re-uploaded by ios-finalize.
+      - name: Upload shard screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots-${{ matrix.locale }}-${{ matrix.device.slug }}
+          path: app-stores/apple/screenshots/**
+          if-no-files-found: warn
+          retention-days: 1
+
+  ios-finalize:
+    needs: [setup, ios-capture]
+    # Run even if a capture shard failed, so the dimension gate still reports the
+    # gap (a missing locale fails it loudly rather than uploading a partial set).
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # Marks an upload dispatch — gates the App Store Connect upload steps so the
+      # nightly cron and capture-only runs never touch ASC.
+      UPLOAD_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.upload }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install Node.js dependencies
+        run: bun install --frozen-lockfile
+
+      # Merge every per-locale artifact back into ONE app-stores/apple/screenshots
+      # tree. merge-multiple flattens all matching artifacts into the single path,
+      # preserving each one's <locale>/<device>/NN-name.png layout — so the gate
+      # and fastlane see the full four-locale tree.
+      - name: Download locale screenshots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ios-screenshots-*
+          path: app-stores/apple/screenshots
+          merge-multiple: true
+
+      # Fail loudly if any capture isn't an App Store-accepted size for its slot,
+      # or if a locale/device folder is missing — so deliver can't get silently
+      # rejected by Apple (or upload a partial set). Requires all four App Store
+      # locales at once, which is why it runs here after the merge, not per-shard.
+      - name: Assert screenshot dimensions
+        # The gate needs the full App Store set (all four store locales, app-store
+        # flow). Skip it for the onboarding flow or a narrowed `locales` run, which
+        # are capture-only — the per-shard artifacts are still produced + uploaded.
+        if: ${{ inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        run: vp run check:screenshot-dimensions -- --platform ios
+
+      # --- Upload to App Store Connect (manual dispatch only; never on cron) ---
+      # Screenshots ONLY — no binary, no metadata, no review submission. Gated
+      # behind the `upload` input, which is unset on the schedule cron. The
+      # `success() &&` prefix is required: a custom `if:` overrides the default
+      # success() status check, so without it these would run even if a prior step
+      # failed. fastlane's screenshots lane is a pure network upload (no Xcode), so
+      # it runs fine on ubuntu.
+      - name: Set up Ruby + fastlane
+        if: success() && env.UPLOAD_RUN == 'true'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Decode App Store Connect API key
+        if: success() && env.UPLOAD_RUN == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_API_KEY_ID."; exit 1; }
+          [ -n "$APP_STORE_CONNECT_API_KEY_BASE64" ] || { echo "::error::Missing APP_STORE_CONNECT_API_KEY_BASE64."; exit 1; }
+          mkdir -p "$HOME/.private_keys"
+          key_path="$HOME/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
+          grep -q 'BEGIN PRIVATE KEY' "$key_path" || { echo "::error::APP_STORE_CONNECT_API_KEY_BASE64 did not decode to an App Store Connect private key."; exit 1; }
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Upload screenshots to App Store Connect
+        if: success() && env.UPLOAD_RUN == 'true'
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+          # The Fastfile uses deliver's `sync_screenshots: true`, which is still a
+          # beta feature; without this acknowledgement flag deliver hard-errors
+          # ("Please set a value to FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS").
+          FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: 'true'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
+          bundle exec fastlane ios screenshots
+
+      - name: Clean up App Store Connect key
+        if: always()
+        run: rm -f "$HOME/.private_keys/AuthKey_"*.p8 2>/dev/null || true
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots-ios
+          path: app-stores/apple/screenshots/**
+          if-no-files-found: warn
+          retention-days: 14

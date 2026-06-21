@@ -192,6 +192,8 @@ function makeItem(overrides: Partial<AscentFeedItem> = {}): AscentFeedItem {
     climbName: 'Test Climb',
     setterUsername: null,
     boardType: 'kilter',
+    boardId: null,
+    boardDisplayName: null,
     layoutId: 1,
     angle: 40,
     isMirror: false,
