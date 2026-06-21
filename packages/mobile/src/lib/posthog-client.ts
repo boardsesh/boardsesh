@@ -9,6 +9,7 @@ const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 // Native apps have no ad-blocker / first-party-cookie concern, so we talk to
 // PostHog cloud directly rather than the backend reverse proxy the web app uses.
 const host = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
+const isDiagnosticLoggingBuild = process.env.EXPO_PUBLIC_BOARDSESH_DIAGNOSTIC_LOGGING === '1';
 
 // Live only in non-dev builds with a key configured. Preview (TestFlight /
 // internal) and production builds are both `!__DEV__`, so telemetry flows from
@@ -51,6 +52,7 @@ export function getPostHogClient(): PostHog | null {
   // don't be surprised to see a few lifecycle events on a transient anon id.
   client = new PostHog(apiKey, {
     host,
+    ...(isDiagnosticLoggingBuild ? { flushAt: 1, flushInterval: 1000 } : {}),
     errorTracking: {
       autocapture: {
         uncaughtExceptions: true,

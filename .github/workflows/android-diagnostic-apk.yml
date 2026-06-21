@@ -1,0 +1,105 @@
+name: Android Diagnostic APK (React Native)
+
+# Manual-only build for contributor diagnostics on physical Android devices.
+# Produces a side-by-side "Boardsesh Dev" APK with remote diagnostic logging
+# enabled, so the tester only needs to sideload, reproduce, reopen, and send the
+# visible diagnostic code.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Optional note shown in the run summary'
+        required: false
+        default: ''
+      posthog_key:
+        description: 'Optional PostHog project key; falls back to the NEXT_PUBLIC_POSTHOG_KEY repo variable'
+        required: false
+        default: ''
+
+concurrency:
+  group: android-diagnostic-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      BOARDSESH_DIAGNOSTIC_APK_DIR: /tmp/boardsesh-diagnostic-apks
+      EXPO_PUBLIC_POSTHOG_KEY: ${{ inputs.posthog_key || vars.NEXT_PUBLIC_POSTHOG_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses and install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Assert diagnostic telemetry key is configured
+        run: |
+          if [ -z "$EXPO_PUBLIC_POSTHOG_KEY" ]; then
+            echo "::error::Set the posthog_key workflow input or the NEXT_PUBLIC_POSTHOG_KEY repo variable; diagnostic logs would not upload."
+            exit 1
+          fi
+
+      - name: Build diagnostic APK
+        run: ./node_modules/.bin/vp run mobile:android-diagnostic-apk
+
+      - name: Verify diagnostic APK
+        run: |
+          set -euo pipefail
+          apk="$(find "$BOARDSESH_DIAGNOSTIC_APK_DIR" -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          if [ -z "$apk" ]; then
+            echo "::error::No diagnostic APK found in $BOARDSESH_DIAGNOSTIC_APK_DIR"
+            exit 1
+          fi
+          echo "APK=$apk" >> "$GITHUB_ENV"
+          unzip -l "$apk" | grep 'lib/arm64-v8a/libboard_renderer_ffi.so'
+          unzip -l "$apk" | grep 'lib/arm64-v8a/libboard_renderer_jni.so'
+          bash scripts/check-16kb-alignment.sh "$apk"
+
+      - name: Upload diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: boardsesh-dev-diagnostics-${{ github.run_number }}
+          path: ${{ env.BOARDSESH_DIAGNOSTIC_APK_DIR }}/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Summary
+        env:
+          RUN_NOTE: ${{ inputs.note }}
+        run: |
+          {
+            echo "## Android diagnostic APK"
+            echo ""
+            echo "- Artifact: \`boardsesh-dev-diagnostics-${{ github.run_number }}\`"
+            echo "- Package: \`com.boardsesh.app.dev\`"
+            echo "- ABI: \`arm64-v8a\`"
+            echo "- Logging: PostHog diagnostic upload enabled"
+            echo "- Default mode: \`bare_climbs\`"
+            if [ -n "$RUN_NOTE" ]; then
+              echo "- Note: $RUN_NOTE"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

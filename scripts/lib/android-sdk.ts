@@ -46,6 +46,8 @@ const SDK_PACKAGES_BUILD = [`build-tools;${BUILD_TOOLS_VERSION}`];
 export interface EnsureSdkOptions {
   /** Also install build-tools — only needed for the local Gradle fallback build. */
   includeBuildTools?: boolean;
+  /** Also install emulator + system image packages. Needed for screenshot flows, not APK-only builds. */
+  includeEmulator?: boolean;
 }
 
 export interface AndroidToolchain {
@@ -87,6 +89,11 @@ export function emulatorPath(home: string): string {
 function findJava21(): string | null {
   const override = process.env.JAVA21_HOME ?? process.env.JAVA_21_HOME;
   if (override && existsSync(join(override, 'bin', 'java'))) return override;
+  const javaHome = process.env.JAVA_HOME;
+  if (javaHome && existsSync(join(javaHome, 'bin', 'java'))) {
+    const version = runCapture(join(javaHome, 'bin', 'java'), ['-version']);
+    if (/(version "21|openjdk 21|\b21\.\d)/.test(`${version.stderr}${version.stdout}`)) return javaHome;
+  }
   if (existsSync(join(JDK21_HOME, 'bin', 'java'))) return JDK21_HOME;
 
   const searchDirs = ['/usr/lib/jvm', '/usr/java', join(homedir(), '.sdkman', 'candidates', 'java')];
@@ -199,7 +206,11 @@ export function ensureAndroidSdk(options: EnsureSdkOptions = {}): AndroidToolcha
   const home = resolveAndroidHome();
   mkdirSync(home, { recursive: true });
 
-  const wanted = [...SDK_PACKAGES_CORE, ...(options.includeBuildTools ? SDK_PACKAGES_BUILD : [])];
+  const corePackages =
+    options.includeEmulator === false
+      ? ['platform-tools', `platforms;android-${ANDROID_API_LEVEL}`]
+      : SDK_PACKAGES_CORE;
+  const wanted = [...corePackages, ...(options.includeBuildTools ? SDK_PACKAGES_BUILD : [])];
   const needCmdlineTools = !existsSync(sdkmanagerPath(home));
   const missing = wanted.filter((pkg) => !existsSync(packageInstallPath(home, pkg)));
 

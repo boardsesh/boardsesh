@@ -9,6 +9,8 @@ import {
   type BackgroundVariant,
 } from '../lib/background-image-cache';
 import { reportError } from '../lib/error-reporting';
+import { logDiagnostic } from '../lib/diagnostic-logger';
+import { useDiagnosticMode } from './use-diagnostic-mode';
 import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
   DEFAULT_HOLD_BRUSH_THICKNESS,
@@ -111,6 +113,9 @@ type NativeClimbRenderResult = {
 const inflightRenders = new Map<string, Promise<string>>();
 const INFLIGHT_RENDERS_MAX = 50;
 const unsupportedRenderSignatures = new Set<string>();
+const loggedNativeUnavailableCacheKeys = new Set<string>();
+const loggedMissingConfigCacheKeys = new Set<string>();
+const loggedDiagnosticModeSkipCacheKeys = new Set<string>();
 
 const BOARD_CONFIG_CACHE_MAX = 20;
 
@@ -481,6 +486,9 @@ function getNativeModule() {
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
   const { frames, boardName, layoutId, sizeId, setIds, filledStyle = false, renderWidth } = params;
+  const diagnosticMode = useDiagnosticMode();
+  const skipNativeOverlay =
+    diagnosticMode === 'no_overlays' || diagnosticMode === 'no_thumbnails' || diagnosticMode === 'bare_climbs';
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
@@ -632,6 +640,24 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // have one for this cache key in the sync map.
   useEffect(() => {
     if (!frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
+    if (skipNativeOverlay) {
+      const skipKey = `${diagnosticMode}:${currentCacheKey}`;
+      if (!loggedDiagnosticModeSkipCacheKeys.has(skipKey)) {
+        loggedDiagnosticModeSkipCacheKeys.add(skipKey);
+        logDiagnostic('native_render_skipped_by_diagnostic_mode', {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth: renderWidth ?? null,
+          framesLength: frames.length,
+          cacheKey: currentCacheKey,
+          diagnosticMode,
+        });
+      }
+      return;
+    }
 
     if (renderedOverlays.has(currentCacheKey)) {
       // Sync map already has it — make sure local state reflects that
@@ -639,13 +665,38 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // overlay).
       const uri = renderedOverlays.get(currentCacheKey);
       if (uri && nativeRender?.key !== currentCacheKey) {
+        logDiagnostic('native_render_overlay_cache_hit', {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth: renderWidth ?? null,
+          framesLength: frames.length,
+          cacheKey: currentCacheKey,
+        });
         setNativeRender({ key: currentCacheKey, uri });
       }
       return;
     }
 
     const nativeModule = getNativeModule();
-    if (!nativeModule) return;
+    if (!nativeModule) {
+      if (!loggedNativeUnavailableCacheKeys.has(currentCacheKey)) {
+        loggedNativeUnavailableCacheKeys.add(currentCacheKey);
+        logDiagnostic('native_render_module_unavailable', {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth: renderWidth ?? null,
+          framesLength: frames.length,
+          cacheKey: currentCacheKey,
+        });
+      }
+      return;
+    }
 
     const boardConfig = getBoardConfig(
       boardName,
@@ -660,12 +711,39 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       shapeSize,
       holdRenderSignature,
     );
-    if (!boardConfig) return;
+    if (!boardConfig) {
+      if (!loggedMissingConfigCacheKeys.has(currentCacheKey)) {
+        loggedMissingConfigCacheKeys.add(currentCacheKey);
+        logDiagnostic('native_render_board_config_missing', {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth: renderWidth ?? null,
+          framesLength: frames.length,
+          cacheKey: currentCacheKey,
+        });
+      }
+      return;
+    }
 
+    const renderStartedAt = Date.now();
     const renderPromise = getOrStartInflightRender(currentCacheKey, () => {
       const configJson = JSON.stringify({
         ...boardConfig.configBase,
         frames,
+      });
+      logDiagnostic('native_render_start', {
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        filledStyle,
+        renderWidth: renderWidth ?? null,
+        framesLength: frames.length,
+        cacheKey: currentCacheKey,
+        configLength: configJson.length,
       });
       return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
     });
@@ -673,6 +751,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     renderPromise
       .then((fileUri) => {
         renderedOverlays.set(currentCacheKey, fileUri);
+        logDiagnostic('native_render_success', {
+          boardName,
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth: renderWidth ?? null,
+          framesLength: frames.length,
+          cacheKey: currentCacheKey,
+          durationMs: Date.now() - renderStartedAt,
+        });
         if (mountedRef.current) setNativeRender({ key: currentCacheKey, uri: fileUri });
       })
       .catch((error: unknown) => {
@@ -689,6 +778,22 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // overlay layer.
         // eslint-disable-next-line no-console
         console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
+        logDiagnostic(
+          'native_render_failed',
+          {
+            boardName,
+            layoutId,
+            sizeId,
+            setIds,
+            filledStyle,
+            renderWidth: renderWidth ?? null,
+            framesLength: frames.length,
+            cacheKey: currentCacheKey,
+            durationMs: Date.now() - renderStartedAt,
+            errorMessage: message,
+          },
+          'error',
+        );
         reportError(error, {
           tags: {
             feature: 'mobile_board_renderer',
@@ -722,11 +827,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     brushThickness,
     shapeSize,
     holdRenderSignature,
+    skipNativeOverlay,
+    diagnosticMode,
   ]);
 
   // Only surface the native URI if it matches the *current* cache key —
   // a stale render (from before a prop change) would otherwise show.
-  const overlayUri = frames && nativeRender?.key === currentCacheKey ? nativeRender.uri : null;
+  const overlayUri = frames && !skipNativeOverlay && nativeRender?.key === currentCacheKey ? nativeRender.uri : null;
   // Same guard for backgrounds: a stored entry from a prior boardKey
   // (FlashList row recycle case) must not bleed through to the new climb.
   const backgroundPaths = storedBackgrounds?.key === currentBoardKey ? storedBackgrounds.paths : [];

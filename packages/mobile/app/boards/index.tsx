@@ -23,6 +23,7 @@ import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metric
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
 import { track } from '../../src/lib/analytics';
+import { boardDiagnosticProperties, logDiagnostic } from '../../src/lib/diagnostic-logger';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
@@ -75,11 +76,13 @@ export default function BoardSelection() {
   const activateBoard = useCallback(
     async (board: UserBoard) => {
       hapticSelection();
+      logDiagnostic('board_selection_tap', boardDiagnosticProperties(board));
       try {
         // Persists to AsyncStorage + the ['activeBoard'] cache, then navigates
         // only once the write succeeds (a failed write must not strand the user
         // on a board that won't survive the next cold start).
         await setActiveBoard(board);
+        logDiagnostic('board_selection_active_board_set', boardDiagnosticProperties(board));
         if (fromOnboarding) {
           // The real activation metric — board history turns on the moment a
           // named board is bound — and the one-time Climbs reveal banner is armed
@@ -91,8 +94,21 @@ export default function BoardSelection() {
         // by default (including the onboarding hand-off), Discover when the pill
         // there opened it (replaces with that tab if it isn't already underneath,
         // e.g. opened from a deep link).
+        logDiagnostic('board_selection_dismiss_to_climbs', {
+          ...boardDiagnosticProperties(board),
+          returnTo: boardReturnTo,
+          fromOnboarding,
+        });
         router.dismissTo(boardReturnTo);
-      } catch {
+      } catch (error) {
+        logDiagnostic(
+          'board_selection_failed',
+          {
+            ...boardDiagnosticProperties(board),
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'error',
+        );
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },

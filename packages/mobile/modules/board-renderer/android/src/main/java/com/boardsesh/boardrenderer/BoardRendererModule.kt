@@ -1,6 +1,8 @@
 package com.boardsesh.boardrenderer
 
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -40,6 +42,7 @@ class BoardRendererModule : Module() {
     }
 
     private fun renderOverlay(configJson: String, cacheKey: String): String {
+        val totalStartNanos = SystemClock.elapsedRealtimeNanos()
         if (!pruned) {
             synchronized(this@BoardRendererModule) {
                 if (!pruned) {
@@ -53,11 +56,15 @@ class BoardRendererModule : Module() {
         if (outputFile.exists()) {
             // Touch mtime so LRU treats hot files as recently used.
             outputFile.setLastModified(System.currentTimeMillis())
+            Log.i(TAG, "renderOverlay cache hit cacheKey=$cacheKey sizeBytes=${outputFile.length()}")
             return "file://${outputFile.absolutePath}"
         }
 
+        Log.i(TAG, "renderOverlay start cacheKey=$cacheKey configLength=${configJson.length} configHash=${configJson.hashCode()}")
+        val nativeStartNanos = SystemClock.elapsedRealtimeNanos()
         val renderResult = BoardRendererBridge.render(configJson)
             ?: throw Exception("Rust render failed")
+        Log.i(TAG, "renderOverlay rust done cacheKey=$cacheKey durationMs=${elapsedMs(nativeStartNanos)}")
 
         val width = renderResult.width
         val height = renderResult.height
@@ -70,11 +77,16 @@ class BoardRendererModule : Module() {
         // we set it explicitly so future changes can't accidentally
         // flip it. Recycled in finally so a throw between create and
         // compress can't leak native pixel memory.
+        val bitmapStartNanos = SystemClock.elapsedRealtimeNanos()
         val overlayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Log.i(TAG, "renderOverlay bitmap allocated cacheKey=$cacheKey ${width}x${height} durationMs=${elapsedMs(bitmapStartNanos)}")
         try {
             overlayBitmap.setPremultiplied(true)
+            val copyStartNanos = SystemClock.elapsedRealtimeNanos()
             overlayBitmap.copyPixelsFromBuffer(ByteBuffer.wrap(rgbaData))
+            Log.i(TAG, "renderOverlay pixels copied cacheKey=$cacheKey bytes=${rgbaData.size} durationMs=${elapsedMs(copyStartNanos)}")
 
+            val writeStartNanos = SystemClock.elapsedRealtimeNanos()
             FileOutputStream(outputFile).use { outputStream ->
                 val written = overlayBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                 if (!written) {
@@ -82,10 +94,12 @@ class BoardRendererModule : Module() {
                     throw Exception("PNG compression failed")
                 }
             }
+            Log.i(TAG, "renderOverlay png written cacheKey=$cacheKey sizeBytes=${outputFile.length()} durationMs=${elapsedMs(writeStartNanos)}")
         } finally {
             overlayBitmap.recycle()
         }
 
+        Log.i(TAG, "renderOverlay done cacheKey=$cacheKey totalMs=${elapsedMs(totalStartNanos)}")
         return "file://${outputFile.absolutePath}"
     }
 
@@ -113,5 +127,9 @@ class BoardRendererModule : Module() {
         // Android may also reclaim on its own under storage pressure — this
         // is just our explicit upper bound.
         const val CACHE_CAP_BYTES: Long = 200L * 1024 * 1024
+        const val TAG = "BoardRenderer"
+
+        fun elapsedMs(startNanos: Long): Long =
+            (SystemClock.elapsedRealtimeNanos() - startNanos) / 1_000_000
     }
 }

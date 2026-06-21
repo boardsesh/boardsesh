@@ -566,6 +566,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-android-apk.ts',
         cache: false,
       },
+      'mobile:android-diagnostic-apk': {
+        command: 'tsx scripts/mobile-android-diagnostic-apk.ts',
+        cache: false,
+      },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
         cache: false,

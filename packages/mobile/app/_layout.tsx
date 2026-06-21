@@ -56,6 +56,7 @@ import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { DiagnosticBanner } from '../src/components/DiagnosticBanner';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -420,6 +421,7 @@ function RootLayout() {
                                                             JS bottom-bar variants. */}
                                                           <AccessoryOnboardingTip />
                                                           <OnboardingGate ready={authReady && fontsReady} />
+                                                          <DiagnosticBanner />
                                                         </UserDrawerProvider>
                                                       </TabBarHeightProvider>
                                                       <AnalyticsScreenTracker />

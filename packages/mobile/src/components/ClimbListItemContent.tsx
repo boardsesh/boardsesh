@@ -8,6 +8,7 @@ import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbLi
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { useGradeFormat } from '../hooks/use-grade-format';
 import { useAscentStatus } from '../hooks/use-ascent-status';
+import { useDiagnosticMode } from '../hooks/use-diagnostic-mode';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
@@ -126,7 +127,10 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   primarySubtitleOverride,
 }: ClimbListItemContentProps) {
   const { t } = useTranslation('climbs');
+  const theme = useTheme();
+  const diagnosticMode = useDiagnosticMode();
   const { formatGrade } = useGradeFormat();
+  const hideThumbnail = diagnosticMode === 'no_thumbnails' || diagnosticMode === 'bare_climbs';
 
   const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
   const formattedGrade = formatGrade(climb.difficulty);
@@ -169,14 +173,35 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     <>
       {/* Left: portrait thumbnail with ascent badge */}
       <View style={styles.thumbnailContainer}>
-        <ClimbListThumbnail
-          frames={climb.frames}
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          mirrored={climb.mirrored ?? false}
-        />
+        {hideThumbnail ? (
+          <View
+            style={[
+              styles.thumbnailPlaceholder,
+              {
+                backgroundColor: theme.systemColors.tertiaryBackground,
+                borderColor: theme.systemColors.separator,
+              },
+            ]}
+          >
+            <Text
+              variant="caption2"
+              color={theme.systemColors.secondaryLabel}
+              numberOfLines={2}
+              style={styles.thumbnailPlaceholderText}
+            >
+              No image
+            </Text>
+          </View>
+        ) : (
+          <ClimbListThumbnail
+            frames={climb.frames}
+            boardName={boardName}
+            layoutId={layoutId}
+            sizeId={sizeId}
+            setIds={setIds}
+            mirrored={climb.mirrored ?? false}
+          />
+        )}
       </View>
 
       {/* Center: name (+ intrinsic-attribute glyphs) + subtitle */}
@@ -218,6 +243,19 @@ const styles = StyleSheet.create({
     height: THUMBNAIL_HEIGHT,
     flexShrink: 0,
     position: 'relative',
+  },
+  thumbnailPlaceholder: {
+    width: THUMBNAIL_WIDTH,
+    height: THUMBNAIL_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 4,
+  },
+  thumbnailPlaceholderText: {
+    fontWeight: '600',
+    textAlign: 'center',
   },
   centerColumn: {
     flex: 1,

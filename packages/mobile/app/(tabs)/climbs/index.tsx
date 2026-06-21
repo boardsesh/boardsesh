@@ -36,6 +36,7 @@ import { type SearchHeaderHandle } from '../../../src/components/SearchHeader';
 import { RecentFilterPills } from '../../../src/components/RecentFilterPills';
 import { useNativeAccessoryActive } from '../../../src/hooks/use-bottom-accessory';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { useDiagnosticMode } from '../../../src/hooks/use-diagnostic-mode';
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
@@ -61,6 +62,7 @@ import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filt
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
+import { boardDiagnosticProperties, flushDiagnosticLogs, logDiagnostic } from '../../../src/lib/diagnostic-logger';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { glassSize } from '../../../src/theme/layout';
@@ -168,6 +170,8 @@ function ClimbListInner() {
   const visibleSearchTextRef = useRef('');
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
+  const diagnosticMode = useDiagnosticMode();
+  const useBareClimbsDiagnosticMode = diagnosticMode === 'bare_climbs';
 
   // iOS 26 uses the native tab-bar bottom accessory for current climb + tick, and
   // presents this screen's headerSearchBarOptions controller in the bottom tab
@@ -189,6 +193,13 @@ function ClimbListInner() {
     filterFabMinimumBottom,
     bottomChrome.floatingControlBottom + spacing[2] - filterFabNativeAccessoryDrop,
   );
+
+  useEffect(() => {
+    logDiagnostic('climbs_screen_mount');
+    return () => {
+      logDiagnostic('climbs_screen_unmount');
+    };
+  }, []);
 
   // On the Material variant the filter lives in the top-right toolbar (next to
   // the light/bluetooth button) inside ClimbTopChrome, so the bottom filter FAB
@@ -297,6 +308,11 @@ function ClimbListInner() {
 
   const { data: activeBoard, isLoading: isBoardLoading } = useActiveBoard();
 
+  useEffect(() => {
+    if (!activeBoard) return;
+    logDiagnostic('climbs_screen_active_board_ready', boardDiagnosticProperties(activeBoard));
+  }, [activeBoard]);
+
   // One-time board-history reveal banner: armed when the user binds a board from
   // the onboarding hand-off (app/boards/index.tsx) and consumed on focus so it
   // shows on the Climbs landing, pointing at the board's "now on the wall" sheet.
@@ -368,6 +384,14 @@ function ClimbListInner() {
     let cancelled = false;
     restoredKeyRef.current = null;
     setRestoredKey(null);
+    logDiagnostic('climbs_last_search_restore_start', {
+      boardName: boardConfig.boardName,
+      layoutId: boardConfig.layoutId,
+      sizeId: boardConfig.sizeId,
+      setIds: boardConfig.setIds,
+      angle: boardConfig.angle,
+      boardKey,
+    });
     getLastSearch(boardConfig, { isAuthenticated })
       .then((saved) => {
         if (cancelled) return;
@@ -384,14 +408,36 @@ function ClimbListInner() {
         }
         restoredKeyRef.current = boardKey;
         setRestoredKey(boardKey);
+        logDiagnostic('climbs_last_search_restore_success', {
+          boardName: boardConfig.boardName,
+          layoutId: boardConfig.layoutId,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds,
+          angle: boardConfig.angle,
+          boardKey,
+          hadSavedSearch: !!saved,
+        });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
         replaceSearch(DEFAULT_CLIMB_FILTER_STATE, '', DEFAULT_CLIMB_BOARD_FILTER_STATE);
         visibleSearchTextRef.current = '';
         applyVisibleSearchText('');
         restoredKeyRef.current = boardKey;
         setRestoredKey(boardKey);
+        logDiagnostic(
+          'climbs_last_search_restore_failed',
+          {
+            boardName: boardConfig.boardName,
+            layoutId: boardConfig.layoutId,
+            sizeId: boardConfig.sizeId,
+            setIds: boardConfig.setIds,
+            angle: boardConfig.angle,
+            boardKey,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'error',
+        );
       });
     return () => {
       cancelled = true;
@@ -406,14 +452,42 @@ function ClimbListInner() {
 
   useEffect(() => {
     if (!boardConfig || !searchReady) return;
+    if (useBareClimbsDiagnosticMode) {
+      logDiagnostic('climbs_board_holds_prewarm_skipped_by_diagnostic_mode', {
+        boardName: boardConfig.boardName,
+        layoutId: boardConfig.layoutId,
+        sizeId: boardConfig.sizeId,
+        setIds: boardConfig.setIds,
+        diagnosticMode,
+      });
+      return;
+    }
     let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    logDiagnostic('climbs_board_holds_prewarm_scheduled', {
+      boardName: boardConfig.boardName,
+      layoutId: boardConfig.layoutId,
+      sizeId: boardConfig.sizeId,
+      setIds: boardConfig.setIds,
+    });
     const timeout = setTimeout(() => {
       task = InteractionManager.runAfterInteractions(() => {
+        logDiagnostic('climbs_board_holds_prewarm_start', {
+          boardName: boardConfig.boardName,
+          layoutId: boardConfig.layoutId,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds,
+        });
         prewarmCreateBoardHolds({
           boardName: boardConfig.boardName as BoardName,
           layoutId: boardConfig.layoutId,
           sizeId: boardConfig.sizeId,
           setIds: parseSetIdsParam(boardConfig.setIds),
+        });
+        logDiagnostic('climbs_board_holds_prewarm_done', {
+          boardName: boardConfig.boardName,
+          layoutId: boardConfig.layoutId,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds,
         });
       });
     }, PREWARM_BOARD_HOLDS_DELAY_MS);
@@ -421,7 +495,7 @@ function ClimbListInner() {
       clearTimeout(timeout);
       task?.cancel();
     };
-  }, [boardConfig, searchReady]);
+  }, [boardConfig, searchReady, useBareClimbsDiagnosticMode, diagnosticMode]);
 
   useEffect(() => {
     // Compare NORMALIZED so an in-progress trim-only difference (e.g. the user
@@ -463,19 +537,42 @@ function ClimbListInner() {
   // over HTTP (the production CDN/WAF 403s the app's request).
   useEffect(() => {
     if (!activeBoard) return;
+    if (diagnosticMode === 'no_thumbnails' || useBareClimbsDiagnosticMode) {
+      logDiagnostic('climbs_background_cache_skipped_by_diagnostic_mode', {
+        ...boardDiagnosticProperties(activeBoard),
+        diagnosticMode,
+      });
+      return;
+    }
     const task = InteractionManager.runAfterInteractions(() => {
       const parsedSetIds = activeBoard.setIds.split(',').map(Number);
-      void ensureBackgroundsCached({
-        boardName: activeBoard.boardType as BoardName,
-        layoutId: activeBoard.layoutId,
-        sizeId: activeBoard.sizeId,
-        setIds: parsedSetIds,
-      });
+      logDiagnostic('climbs_background_cache_start', boardDiagnosticProperties(activeBoard));
+      void Promise.resolve(
+        ensureBackgroundsCached({
+          boardName: activeBoard.boardType as BoardName,
+          layoutId: activeBoard.layoutId,
+          sizeId: activeBoard.sizeId,
+          setIds: parsedSetIds,
+        }),
+      )
+        .then(() => {
+          logDiagnostic('climbs_background_cache_done', boardDiagnosticProperties(activeBoard));
+        })
+        .catch((error: unknown) => {
+          logDiagnostic(
+            'climbs_background_cache_failed',
+            {
+              ...boardDiagnosticProperties(activeBoard),
+              errorMessage: error instanceof Error ? error.message : String(error),
+            },
+            'error',
+          );
+        });
     });
     return () => {
       task.cancel();
     };
-  }, [activeBoard]);
+  }, [activeBoard, diagnosticMode, useBareClimbsDiagnosticMode]);
 
   const searchInput = useMemo(
     () =>
@@ -491,15 +588,19 @@ function ClimbListInner() {
     [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters],
   );
 
+  const searchQueryEnabled = searchReady && !useBareClimbsDiagnosticMode;
+
   const {
     data: searchPages,
     isLoading: isClimbsLoading,
+    isError: isClimbsError,
+    error: climbsError,
     isFetchingNextPage,
     isRefetching,
     fetchNextPage,
     hasNextPage,
     refetch,
-  } = useInfiniteSearchClimbs(searchInput, searchReady);
+  } = useInfiniteSearchClimbs(searchInput, searchQueryEnabled);
   const isLoadingMoreRef = useRef(false);
 
   const visibleClimbs = useMemo(() => {
@@ -516,6 +617,109 @@ function ClimbListInner() {
   }, [searchPages?.pages]);
 
   const firstSearchPage = searchPages?.pages[0];
+  const heartbeatSnapshotRef = useRef({
+    searchReady: false,
+    visibleCount: 0,
+    firstClimbUuid: null as string | null,
+    isClimbsLoading: false,
+    isFetchingNextPage: false,
+    isClimbsError: false,
+  });
+  heartbeatSnapshotRef.current = {
+    searchReady,
+    visibleCount: visibleClimbs.length,
+    firstClimbUuid: visibleClimbs[0]?.uuid ?? null,
+    isClimbsLoading,
+    isFetchingNextPage,
+    isClimbsError,
+  };
+
+  useEffect(() => {
+    if (!searchReady) return;
+    logDiagnostic('climbs_search_ready', {
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      nameLength: name.length,
+      activeFilterCount: countActiveFilters(filters, boardFilters),
+    });
+  }, [searchReady, boardName, layoutId, sizeId, setIds, angle, name.length, filters, boardFilters]);
+
+  useEffect(() => {
+    if (!activeBoard) return;
+    const boardProperties = boardDiagnosticProperties(activeBoard);
+    let heartbeatIndex = 0;
+    logDiagnostic('climbs_heartbeat_start', boardProperties);
+    const interval = setInterval(() => {
+      heartbeatIndex += 1;
+      const snapshot = heartbeatSnapshotRef.current;
+      logDiagnostic('climbs_heartbeat', {
+        ...boardProperties,
+        heartbeatIndex,
+        secondsSinceStart: heartbeatIndex * 5,
+        searchReady: snapshot.searchReady,
+        visibleCount: snapshot.visibleCount,
+        firstClimbUuid: snapshot.firstClimbUuid,
+        isClimbsLoading: snapshot.isClimbsLoading,
+        isFetchingNextPage: snapshot.isFetchingNextPage,
+        isClimbsError: snapshot.isClimbsError,
+      });
+      if (heartbeatIndex % 2 === 0) void flushDiagnosticLogs();
+      if (heartbeatIndex >= 12) clearInterval(interval);
+    }, 5000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [activeBoard]);
+
+  useEffect(() => {
+    if (!activeBoard || !useBareClimbsDiagnosticMode) return;
+    logDiagnostic('climbs_bare_mode_ready', boardDiagnosticProperties(activeBoard));
+  }, [activeBoard, useBareClimbsDiagnosticMode]);
+
+  useEffect(() => {
+    if (!firstSearchPage) return;
+    logDiagnostic('climbs_search_first_page_loaded', {
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      resultCount: firstSearchPage.climbs.length,
+      hasMore: firstSearchPage.hasMore,
+    });
+  }, [firstSearchPage, boardName, layoutId, sizeId, setIds, angle]);
+
+  useEffect(() => {
+    if (!isClimbsError) return;
+    logDiagnostic(
+      'climbs_search_failed',
+      {
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        angle,
+        errorMessage: climbsError instanceof Error ? climbsError.message : String(climbsError),
+      },
+      'error',
+    );
+  }, [isClimbsError, climbsError, boardName, layoutId, sizeId, setIds, angle]);
+
+  useEffect(() => {
+    if (visibleClimbs.length === 0) return;
+    logDiagnostic('climbs_visible_rows_ready', {
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      visibleCount: visibleClimbs.length,
+      firstClimbUuid: visibleClimbs[0]?.uuid ?? null,
+    });
+  }, [visibleClimbs, boardName, layoutId, sizeId, setIds, angle]);
 
   useEffect(() => {
     if (!isFetchingNextPage) {
@@ -942,6 +1146,29 @@ function ClimbListInner() {
     );
   }
 
+  if (useBareClimbsDiagnosticMode && activeBoard) {
+    return (
+      <View
+        testID="climbs-screen-bare-diagnostic"
+        style={[styles.container, { backgroundColor: systemColors.background }]}
+      >
+        <Stack.Screen options={stackOptions} />
+        <View style={styles.bareDiagnosticContainer}>
+          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Text variant="headline" style={styles.bareDiagnosticTitle}>
+            Bare diagnostic mode
+          </Text>
+          <Text variant="subheadline" style={styles.bareDiagnosticDetail}>
+            Active board loaded. Search, rows, thumbnails, renderer, and prewarm are off.
+          </Text>
+          <Text variant="caption1" style={styles.bareDiagnosticDetail}>
+            {activeBoard.boardType} · layout {activeBoard.layoutId} · size {activeBoard.sizeId}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
 
   return (
@@ -1090,5 +1317,20 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing[4],
     marginTop: spacing[2],
     marginBottom: spacing[2],
+  },
+  bareDiagnosticContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 8,
+  },
+  bareDiagnosticTitle: {
+    marginTop: 12,
+    opacity: 0.7,
+  },
+  bareDiagnosticDetail: {
+    opacity: 0.5,
+    textAlign: 'center',
   },
 });

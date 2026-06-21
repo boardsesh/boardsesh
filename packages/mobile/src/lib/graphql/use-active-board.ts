@@ -14,6 +14,7 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
+import { boardDiagnosticProperties, logDiagnostic } from '../diagnostic-logger';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 
@@ -41,8 +42,11 @@ export function useSetActiveBoard() {
   const queryClient = useQueryClient();
   return useCallback(
     async (board: UserBoard) => {
+      logDiagnostic('active_board_set_start', boardDiagnosticProperties(board));
       await setStoredActiveBoard(board);
+      logDiagnostic('active_board_storage_written', boardDiagnosticProperties(board));
       queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
+      logDiagnostic('active_board_cache_written', boardDiagnosticProperties(board));
     },
     [queryClient],
   );
