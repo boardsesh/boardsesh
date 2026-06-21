@@ -15,11 +15,11 @@ import { InteractionManager } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
+import { AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS } from '../after-interactions';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
-const DEFERRED_ACTIVE_BOARD_PUBLISH_TIMEOUT_MS = 450;
 
-function runAfterInteractionsWithTimeout(callback: () => void, timeoutMs = DEFERRED_ACTIVE_BOARD_PUBLISH_TIMEOUT_MS) {
+function runAfterInteractionsWithTimeout(callback: () => void, timeoutMs = AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS) {
   let settled = false;
   const publish = () => {
     if (settled) return;

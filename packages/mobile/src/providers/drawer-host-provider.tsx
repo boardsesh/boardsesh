@@ -33,6 +33,7 @@ import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
+import { AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS } from '../lib/after-interactions';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { useDeferredAfterInteractions } from '../hooks/use-deferred-after-interactions';
@@ -220,7 +221,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const androidActiveBoardSheetsReady = useDeferredAfterInteractions(
     Platform.OS === 'android' && activeBoardConfig != null,
     activeBoardMountKey,
-    500,
+    AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS,
   );
   const mountedActiveBoardConfig =
     activeBoardConfig != null && (Platform.OS !== 'android' || androidActiveBoardSheetsReady)

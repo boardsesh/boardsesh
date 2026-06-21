@@ -19,6 +19,7 @@ const { scheduled, runAfterInteractions } = vi.hoisted(() => {
 vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
 
 import { useDeferredAfterInteractions } from '../use-deferred-after-interactions';
+import { AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS } from '../../lib/after-interactions';
 
 function flushInteractions() {
   for (const callback of scheduled.splice(0)) callback();
@@ -69,7 +70,7 @@ describe('useDeferredAfterInteractions', () => {
     rerender({ key: 'b' });
     expect(result.current).toBe(false);
     act(() => {
-      vi.advanceTimersByTime(350);
+      vi.advanceTimersByTime(AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS);
     });
     expect(result.current).toBe(true);
   });

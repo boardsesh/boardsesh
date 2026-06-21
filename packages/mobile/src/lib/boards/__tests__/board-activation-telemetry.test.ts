@@ -10,12 +10,9 @@ vi.mock('../../analytics', () => ({
   track: analytics.track,
 }));
 
-import {
-  beginBoardActivationTelemetry,
-  BOARD_ACTIVATION_PHASE_EVENT,
-  markBoardActivationPhase,
-  resetBoardActivationTelemetryForTests,
-} from '../board-activation-telemetry';
+type BoardActivationTelemetryModule = typeof import('../board-activation-telemetry');
+
+let telemetry: BoardActivationTelemetryModule;
 
 function makeBoard(uuid: string): UserBoard {
   return {
@@ -36,18 +33,18 @@ function trackedPhases(): Array<string | undefined> {
 }
 
 function begin(board: UserBoard, returnTo: BoardReturnTo = '/(tabs)/climbs') {
-  beginBoardActivationTelemetry(board, { source: 'board_picker', returnTo });
+  telemetry.beginBoardActivationTelemetry(board, { source: 'board_picker', returnTo });
 }
 
 describe('board activation telemetry', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules();
     vi.useFakeTimers();
     analytics.track.mockClear();
-    resetBoardActivationTelemetryForTests();
+    telemetry = await import('../board-activation-telemetry');
   });
 
   afterEach(() => {
-    resetBoardActivationTelemetryForTests();
     vi.useRealTimers();
   });
 
@@ -56,11 +53,11 @@ describe('board activation telemetry', () => {
 
     begin(board);
     vi.advanceTimersByTime(6000);
-    markBoardActivationPhase('persisted', board);
+    telemetry.markBoardActivationPhase('persisted', board);
 
     expect(trackedPhases()).toEqual(['tap', 'timeout']);
     expect(analytics.track).toHaveBeenLastCalledWith(
-      BOARD_ACTIVATION_PHASE_EVENT,
+      telemetry.BOARD_ACTIVATION_PHASE_EVENT,
       expect.objectContaining({ phase: 'timeout', boardUuid: board.uuid }),
     );
   });
@@ -70,7 +67,7 @@ describe('board activation telemetry', () => {
     const staleBoard = makeBoard('board-2');
 
     begin(board);
-    markBoardActivationPhase('persisted', staleBoard);
+    telemetry.markBoardActivationPhase('persisted', staleBoard);
 
     expect(trackedPhases()).toEqual(['tap']);
   });
@@ -79,9 +76,9 @@ describe('board activation telemetry', () => {
     const board = makeBoard('board-1');
 
     begin(board);
-    markBoardActivationPhase('persisted', board);
-    markBoardActivationPhase('climbs_screen_ready', board);
-    markBoardActivationPhase('active_board_published', board);
+    telemetry.markBoardActivationPhase('persisted', board);
+    telemetry.markBoardActivationPhase('climbs_screen_ready', board);
+    telemetry.markBoardActivationPhase('active_board_published', board);
     vi.advanceTimersByTime(6000);
 
     expect(trackedPhases()).toEqual(['tap', 'persisted', 'climbs_screen_ready']);
@@ -91,9 +88,24 @@ describe('board activation telemetry', () => {
     const board = makeBoard('board-1');
 
     begin(board, '/(tabs)/discover');
-    markBoardActivationPhase('active_board_published', board);
-    markBoardActivationPhase('dismiss_requested', board);
+    telemetry.markBoardActivationPhase('active_board_published', board);
+    telemetry.markBoardActivationPhase('dismiss_requested', board);
 
     expect(trackedPhases()).toEqual(['tap', 'active_board_published']);
+  });
+
+  it('clears the previous timeout when a second activation starts', () => {
+    const firstBoard = makeBoard('board-1');
+    const secondBoard = makeBoard('board-2');
+
+    begin(firstBoard);
+    begin(secondBoard);
+    vi.advanceTimersByTime(6000);
+
+    expect(trackedPhases()).toEqual(['tap', 'tap', 'timeout']);
+    expect(analytics.track).toHaveBeenLastCalledWith(
+      telemetry.BOARD_ACTIVATION_PHASE_EVENT,
+      expect.objectContaining({ phase: 'timeout', boardUuid: secondBoard.uuid }),
+    );
   });
 });

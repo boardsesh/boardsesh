@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { InteractionManager } from 'react-native';
+import { AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS } from '../lib/after-interactions';
 
 /**
  * Defer mounting heavy content until just after an open/transition animation,
@@ -20,7 +21,11 @@ import { InteractionManager } from 'react-native';
  * content changes (e.g. the play-drawer board, which should render immediately
  * when you swipe to the next climb once the drawer is already open).
  */
-export function useDeferredAfterInteractions(active: boolean, resetKey?: string | number, timeoutMs = 350): boolean {
+export function useDeferredAfterInteractions(
+  active: boolean,
+  resetKey?: string | number,
+  timeoutMs = AFTER_INTERACTIONS_FALLBACK_TIMEOUT_MS,
+): boolean {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {

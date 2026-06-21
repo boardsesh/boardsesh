@@ -103,7 +103,3 @@ export function markBoardActivationPhase(phase: Exclude<BoardActivationPhase, 't
     clearPendingActivation(pending);
   }
 }
-
-export function resetBoardActivationTelemetryForTests(): void {
-  if (pendingBoardActivation) clearPendingActivation(pendingBoardActivation);
-}
