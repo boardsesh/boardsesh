@@ -27,6 +27,10 @@ class MainThreadWatchdogModule : Module() {
 
   @Volatile private var watcherThread: Thread? = null
   @Volatile private var running = false
+  // Set by start()/stop() so a foreground event only re-arms a watchdog the JS
+  // layer actually turned on. Defaults false → nothing runs until JS opts in
+  // (post-boot), so the watchdog can never interfere with native startup.
+  @Volatile private var enabled = false
 
   // Bumped on the main thread each tick; the watcher compares snapshots to tell
   // whether the main thread drained its queue within the interval.
@@ -133,13 +137,21 @@ class MainThreadWatchdogModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("MainThreadWatchdog")
 
-    OnCreate { startWatchdog() }
-    OnActivityEntersForeground { startWatchdog() }
+    // Never auto-start at OnCreate: the watchdog only runs once JS explicitly
+    // enables it (a few seconds after boot), so it can't interfere with native
+    // startup. Foreground re-arms it only if it was enabled before backgrounding.
+    OnActivityEntersForeground { if (enabled) startWatchdog() }
     OnActivityEntersBackground { stopWatchdog() }
     OnDestroy { stopWatchdog() }
 
-    Function("start") { startWatchdog() }
-    Function("stop") { stopWatchdog() }
+    Function("start") {
+      enabled = true
+      startWatchdog()
+    }
+    Function("stop") {
+      enabled = false
+      stopWatchdog()
+    }
     Function("isRunning") { running }
 
     AsyncFunction("getPendingStallReports") {
@@ -184,7 +196,9 @@ class MainThreadWatchdogModule : Module() {
     const val THRESHOLD_MS = 5000L
     // Re-sample every 3s while still hung to expose whether the stack is moving.
     const val SAMPLE_EVERY_MS = 3000L
-    const val MAX_SAMPLES = 4
+    // Capturing another thread's stack suspends it briefly; keep re-samples low so
+    // the watchdog itself can't aggravate a thread that's already struggling.
+    const val MAX_SAMPLES = 2
     const val MAX_STORED = 30
   }
 }

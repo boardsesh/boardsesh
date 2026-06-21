@@ -31,7 +31,11 @@ export type FreezeDebugFlag =
   | 'hideTopChrome'
   /** Skip the native board-hold overlay render in list cells — tests whether the
    *  burst of native renders on board activation drives the main-thread hang. */
-  | 'disableNativeRender';
+  | 'disableNativeRender'
+  /** Opt in to the native main-thread watchdog + JS heartbeat. OFF by default so
+   *  it can never run during (or be blamed for) app startup — a tester turns it
+   *  on, then reproduces the freeze to capture the main-thread stack. */
+  | 'enableWatchdog';
 
 export type FreezeDebugFlags = Record<FreezeDebugFlag, boolean>;
 
@@ -44,6 +48,7 @@ const DEFAULT_FLAGS: FreezeDebugFlags = {
   disableRowSwipe: false,
   hideTopChrome: false,
   disableNativeRender: false,
+  enableWatchdog: false,
 };
 
 const FLAG_KEYS = Object.keys(DEFAULT_FLAGS) as FreezeDebugFlag[];

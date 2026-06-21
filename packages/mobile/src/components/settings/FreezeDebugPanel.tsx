@@ -48,6 +48,12 @@ const ROWS: { flag: FreezeDebugFlag; label: string; description: string }[] = [
     label: 'Disable native render',
     description: 'Stops drawing the board-hold thumbnails (tests the native render burst on board select).',
   },
+  {
+    flag: 'enableWatchdog',
+    label: 'Enable main-thread watchdog',
+    description:
+      'OFF by default. Turn ON, then reproduce the freeze — it captures the main-thread stack and uploads it next time you open the app. Starts a few seconds after launch.',
+  },
 ];
 
 export function FreezeDebugPanel() {

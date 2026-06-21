@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { track } from './analytics';
+import { useFreezeDebugFlag } from './freeze-debug-store';
 import { mainThreadWatchdogNative, type MainThreadStallReport } from '../../modules/main-thread-watchdog/src';
 
 // JS + native instrumentation for the Android-16 climb-list freeze. Two probes
@@ -23,6 +24,10 @@ const HEARTBEAT_INTERVAL_MS = 1000;
 const JS_STALL_THRESHOLD_MS = 5000;
 // Don't ship a megabyte of frames to PostHog if a sampled stack is pathological.
 const MAX_STACK_CHARS = 8000;
+// Start the watchdog only a few seconds after mount so it can never run during —
+// or be blamed for — native startup. (A v1 build that auto-started it at native
+// OnCreate froze before any telemetry fired.)
+const WATCHDOG_START_DELAY_MS = 8000;
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let lastTickAt = 0;
@@ -44,6 +49,13 @@ function startHeartbeat(): void {
       track('JS Thread Stall', { gapMs, thresholdMs: JS_STALL_THRESHOLD_MS });
     }
   }, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 }
 
 export function getHeartbeatStatus(): { running: boolean; lastTickAt: number; worstGapMs: number } {
@@ -117,8 +129,13 @@ export async function reportPendingMainThreadStalls(): Promise<number> {
 // main-thread stall captured before a previous force-kill, then again whenever
 // the app returns to the foreground.
 export function useFreezeDiagnostics(): void {
+  const watchdogEnabled = useFreezeDebugFlag('enableWatchdog');
+
+  // Drain any stack captured before a previous force-kill and report it on launch
+  // + every foreground. Cheap and independent of the toggle (no-op when nothing
+  // is persisted), and it runs BEFORE the watchdog is (re)started so a stack from
+  // a frozen session uploads on the next clean launch.
   useEffect(() => {
-    startHeartbeat();
     void reportPendingMainThreadStalls();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') void reportPendingMainThreadStalls();
@@ -127,6 +144,37 @@ export function useFreezeDiagnostics(): void {
       subscription.remove();
     };
   }, []);
+
+  // Opt-in only. Start the JS heartbeat + native watchdog a few seconds after the
+  // toggle goes on — never during boot, so the watchdog can't regress startup.
+  useEffect(() => {
+    if (!watchdogEnabled) {
+      stopHeartbeat();
+      try {
+        mainThreadWatchdogNative?.stop?.();
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    const timer = setTimeout(() => {
+      startHeartbeat();
+      try {
+        mainThreadWatchdogNative?.start?.();
+      } catch {
+        // ignore
+      }
+    }, WATCHDOG_START_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      stopHeartbeat();
+      try {
+        mainThreadWatchdogNative?.stop?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, [watchdogEnabled]);
 }
 
 // Polled snapshot for the tester-only FreezeDebugPanel.
