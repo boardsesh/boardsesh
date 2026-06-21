@@ -35,6 +35,11 @@ const OTA = 'mobile-ota-production.yml';
 // fingerprint, so its fingerprint-affecting env must stay locked to the native
 // builds — or it would report a verdict against an env the binaries never had.
 const OTA_CHECK = 'mobile-ota-check.yml';
+// The per-PR preview publish (mobile-ota-preview.yml) ships a `pr-<number>` channel
+// onto the SAME store binary as production, so it must resolve the identical
+// fingerprint — including EXPO_UPDATES_CHANNEL=production (the baked header), NOT
+// pr-N (which is only the eoas upload target). Same parity rule as the rest.
+const OTA_PREVIEW = 'mobile-ota-preview.yml';
 
 // Workflow-level env keys that feed the resolved config (fingerprint) and/or the
 // inlined JS bundle (runtime correctness). Every one must be declared identically
@@ -65,9 +70,10 @@ function workflowEnvValue(source: string, key: string): string | null {
 }
 
 describe('mobile CI env parity (OTA fingerprint invariant)', () => {
-  // The PR-time OTA-compat check resolves the same fingerprint as the native
-  // builds + OTA publish, so it must share the same fingerprint-affecting env.
-  const workflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK];
+  // The PR-time OTA-compat check + the per-PR preview publish resolve the same
+  // fingerprint as the native builds + OTA publish, so they must share the same
+  // fingerprint-affecting env.
+  const workflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW];
 
   it.each(SHARED_ENV_KEYS)('declares %s identically across all mobile fingerprint workflows', (key) => {
     const values = workflows.map((name) => ({ name, value: workflowEnvValue(readWorkflow(name), key) }));
@@ -179,5 +185,76 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     // merely names it is fine — match a YAML/shell key, not the bare word).
     expect(ios).not.toMatch(/^\s*GOOGLE_MAPS_API_KEY:/m);
     expect(android).toMatch(/^\s*GOOGLE_MAPS_API_KEY:\s*\$\{\{\s*secrets\.GOOGLE_MAPS_API_KEY\s*\}\}/m);
+  });
+});
+
+// The per-PR preview publish (mobile-ota-preview.yml) + its sweep
+// (mobile-ota-preview-sweep.yml) ship and reap `pr-<number>` channels on the same
+// store binary + S3 bucket as production. The fingerprint-env parity above already
+// guards delivery; these guard the security boundary (never touch production) and
+// the cleanup boundary (the channel name's prefix must equal the S3 lifecycle
+// prefix, or previews never expire).
+const OTA_PREVIEW_SWEEP = 'mobile-ota-preview-sweep.yml';
+
+describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
+  it('publishes the preview to a pr-<number> channel, never production', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    // The baked channel header stays `production` (fingerprint parity); the publish
+    // target is the pr-<number> channel passed to mobile:publish.
+    expect(workflowEnvValue(preview, 'EXPO_UPDATES_CHANNEL')).toBe('production');
+    expect(preview).toMatch(/--channel "\$CHANNEL" --platform ios/);
+    expect(preview).toMatch(/--channel "\$CHANNEL" --platform android/);
+  });
+
+  it('guards every channel mutation behind ^pr-[0-9]+$', () => {
+    // Defense-in-depth: even if the resolved channel were wrong, the publish,
+    // cleanup, and sweep all refuse anything that isn't a numeric PR channel — so
+    // none of them can ever delete or overwrite `production`.
+    const preview = readWorkflow(OTA_PREVIEW);
+    const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
+    // publish-side assert + cleanup-side assert.
+    expect((preview.match(/\^pr-\[0-9\]\+\$/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(sweep).toMatch(/\^pr-\[0-9\]\+\$/);
+  });
+
+  it('keeps the channel-name prefix equal to the documented S3 lifecycle prefix', () => {
+    // expo-open-ota keys updates as <branch>/<rtv>/<ts>/…, so the S3 lifecycle rule
+    // that bounds storage is scoped to the channel-name prefix. If the workflow's
+    // channel prefix and the documented lifecycle prefix ever diverge, previews
+    // either never expire (storage leak) or the rule could match production.
+    const preview = readWorkflow(OTA_PREVIEW);
+    const guard = preview.match(/\^(pr-)\[0-9\]\+\$/);
+    expect(guard, 'preview workflow must guard channels as ^pr-[0-9]+$').not.toBeNull();
+    const channelPrefix = guard![1];
+
+    const docs = readFileSync(resolve(REPO_ROOT, 'docs/mobile-ota-updates.md'), 'utf8');
+    expect(docs.toLowerCase(), 'docs must describe the S3 lifecycle rule').toContain('lifecycle');
+    expect(docs, `docs must document the lifecycle prefix \`${channelPrefix}\``).toContain(`\`${channelPrefix}\``);
+  });
+
+  it('uses pull_request (never pull_request_target) so fork jobs get no secrets', () => {
+    // pull_request_target would run PR-author code with the production-capable
+    // EXPO_TOKEN — the exact thing this design forbids. Match the YAML trigger key
+    // (a comment may legitimately name the anti-pattern to warn against it).
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toMatch(/^on:/m);
+    expect(preview).toMatch(/^\s+pull_request:/m);
+    expect(preview).not.toMatch(/^\s*pull_request_target:/m);
+  });
+
+  it('gates the token-bearing publish behind the ota-preview environment', () => {
+    // The publish job runs PR-author HEAD code with EXPO_TOKEN, so it must sit in a
+    // protected environment (configured with required reviewers) — not run free.
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toMatch(/^\s+environment:\s*ota-preview\s*$/m);
+  });
+
+  it('sets GOOGLE_MAPS_API_KEY only on the Android preview publish', () => {
+    // Same per-platform split as production: iOS resolves without the key (Apple
+    // Maps), Android with it — so each platform's published fingerprint matches its
+    // binary. Exactly one occurrence ⇒ scoped to the Android step.
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toMatch(/GOOGLE_MAPS_API_KEY:\s*\$\{\{\s*secrets\.GOOGLE_MAPS_API_KEY\s*\}\}/);
+    expect((preview.match(/GOOGLE_MAPS_API_KEY:/g) ?? []).length).toBe(1);
   });
 });

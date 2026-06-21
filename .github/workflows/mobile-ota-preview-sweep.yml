@@ -1,0 +1,112 @@
+name: Mobile OTA Preview Sweep
+
+# Backstop cleanup for per-PR OTA preview channels (mobile-ota-preview.yml). The
+# on-close cleanup handles same-repo PRs, but misses fork-PR closes (no secrets) and
+# any close that raced a failing run. This daily sweep deletes every `pr-<number>`
+# Expo channel/branch whose PR is no longer open. S3 objects are reclaimed
+# separately by the bucket's `pr-` lifecycle rule — see docs/mobile-ota-updates.md.
+#
+# Trusted, scheduled job: it checks out main (no PR-author code) and only ever
+# touches channels matching ^pr-[0-9]+$, so it can never delete `production`.
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # daily, 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: mobile-ota-preview-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Skip if OTA isn't wired
+        id: gate
+        run: |
+          if [ -z "$EXPO_TOKEN" ] || [ -z "${{ vars.EXPO_UPDATES_URL }}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Self-hosted OTA not wired (EXPO_TOKEN / EXPO_UPDATES_URL) — skipping sweep."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout main
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Delete preview channels for non-open PRs
+        if: steps.gate.outputs.run == 'true'
+        working-directory: packages/mobile
+        run: |
+          set -uo pipefail
+
+          # Fail CLOSED: if we can't list open PRs, skip — otherwise OPEN_PRS is empty
+          # and EVERY pr-<number> channel reads as "not open" and gets mass-deleted.
+          if ! OPEN_PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number --jq '.[].number' | sort -u)"; then
+            echo "::warning::Could not list open PRs — skipping sweep this run."
+            exit 0
+          fi
+          echo "Open PRs: ${OPEN_PRS:-none}"
+
+          # eas-cli channel:list caps --limit at 25 (defaults to 10), so a single call
+          # silently misses channels past the first page — paginate with --offset, or
+          # older pr-<number> channels never get reaped. Hard offset cap bounds the loop
+          # even if --offset is ignored; `name` is pulled at any depth (wrapper-robust);
+          # sort -u dedupes. The permanent channels (production, preview-1..4) and any
+          # non pr-<number> name are dropped by the grep below.
+          ALL_NAMES=""
+          offset=0
+          while [ "$offset" -le 1000 ]; do
+            page="$(bunx eas-cli@16 channel:list --json --non-interactive --limit 25 --offset "$offset" 2>/dev/null || echo '[]')"
+            names="$(printf '%s' "$page" | jq -r '[.. | .name? // empty] | .[]' 2>/dev/null || true)"
+            [ -z "$names" ] && break
+            ALL_NAMES="$(printf '%s\n%s' "$ALL_NAMES" "$names")"
+            count="$(printf '%s' "$page" | jq '[.. | .name? // empty] | length' 2>/dev/null || echo 0)"
+            [ "$count" -lt 25 ] && break
+            offset=$((offset + 25))
+          done
+          PREVIEW_CHANNELS="$(printf '%s' "$ALL_NAMES" | grep -E '^pr-[0-9]+$' | sort -u || true)"
+          echo "Preview channels: ${PREVIEW_CHANNELS:-none}"
+
+          run_eas() {
+            echo "+ eas-cli $* --non-interactive"
+            bunx eas-cli@16 "$@" --non-interactive || echo "  (non-zero exit — fine if it's already gone)"
+          }
+
+          while IFS= read -r channel; do
+            [ -z "$channel" ] && continue
+            # SAFETY: never touch anything that isn't a pr-<number> preview channel.
+            if ! printf '%s' "$channel" | grep -Eq '^pr-[0-9]+$'; then
+              echo "Skipping unexpected channel '$channel'"
+              continue
+            fi
+            pr_num="${channel#pr-}"
+            if echo "$OPEN_PRS" | grep -qx "$pr_num"; then
+              echo "Keeping $channel (PR #$pr_num is open)"
+            else
+              echo "Deleting $channel (PR #$pr_num is not open)"
+              run_eas channel:delete "$channel"
+              run_eas branch:delete "$channel"
+            fi
+          done <<EOF
+          $PREVIEW_CHANNELS
+          EOF
+
+          echo "Sweep complete."

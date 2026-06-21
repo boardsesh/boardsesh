@@ -1,0 +1,474 @@
+name: Mobile OTA Preview (Per-PR Channel)
+
+# Publishes a PR's JS bundle to its own self-hosted OTA channel `pr-<number>` so a
+# tester on the store / TestFlight binary can load it via the in-app OTA Channel
+# Switcher (More → Development → type `pr-<number>`) — no per-tester build. Companion
+# to mobile-ota-production.yml, which owns the `production` channel. The published
+# runtimeVersion matches the shipped binary because EXPO_UPDATES_CHANNEL stays
+# `production` (it feeds the hashed config); the `pr-<number>` value is only the eoas
+# upload branch / switcher target. See docs/mobile-ota-updates.md.
+#
+# ─── SECURITY — READ BEFORE EDITING ──────────────────────────────────────────────
+# EXPO_TOKEN == the OTA server's trusted EXPO_ACCESS_TOKEN, so ANY job holding it can
+# `eoas publish --branch production`. The publish job runs PR-AUTHOR HEAD code
+# (app.config.ts calls execSync at config time; workspace postinstall) WITH that
+# token. The boundary is therefore "never let untrusted code touch the token without
+# a human gate", NOT the channel-name guard. Controls, all required:
+#   * `pull_request` (NEVER pull_request_target) → fork jobs get no secrets.
+#   * Same-repo auto-publish needs BOTH the `ota-preview` label AND non-fork.
+#   * Forks / on-demand builds run ONLY from a maintainer's `/ota-preview` comment
+#     (author_association OWNER/MEMBER/COLLABORATOR) or workflow_dispatch.
+#   * The publish job uses `environment: ota-preview`; configure it with required
+#     reviewers so a maintainer approves secret injection for that diff (the same
+#     human-review the merge-to-main production flow has).
+#   * `^pr-[0-9]+$` channel assertion is defense-in-depth, not the control.
+# NEVER switch to pull_request_target or auto-run `/ota-preview` on fork pushes —
+# either hands the production-capable token to untrusted code.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, closed]
+    paths:
+      - 'packages/mobile/**'
+      - 'packages/shared/**'
+      - 'packages/board-constants/**'
+      - 'packages/shared-schema/**'
+      - 'patches/**'
+      - '.github/workflows/mobile-ota-preview.yml'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to build a preview for (works for fork PRs)'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write # sticky comment
+  issues: write # sticky comment (PRs are issues)
+  deployments: write # the "preview ready" signal
+
+# ─── SHARED FINGERPRINT ENV (workflow-level) ─────────────────────────────────────
+# MUST stay byte-identical to mobile-ota-production.yml / ios-testflight-rn.yml /
+# android-apk-rn.yml / mobile-ota-check.yml — scripts/mobile-ci-env-parity.test.ts
+# fails the build if these drift. EXPO_UPDATES_CHANNEL stays `production` (NOT pr-N):
+# it feeds the hashed Expo config, so the published runtimeVersion equals the shipped
+# store binary's. The pr-N target is passed as `--channel pr-N` to mobile:publish
+# (the eoas upload branch), which is independent of this baked header.
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+
+jobs:
+  # ── Decide what to do, with NO secrets (read-only). Resolves the PR number and
+  # whether this run should publish or clean up, enforcing the trigger gates. Runs
+  # from the base/main copy of this file, so its logic isn't PR-author-editable.
+  gate:
+    # Skip unrelated comments (issue_comment fires on every comment in the repo).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/ota-preview'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      action: ${{ steps.decide.outputs.action }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
+      channel: ${{ steps.decide.outputs.channel }}
+    steps:
+      - name: Decide action + resolve PR
+        id: decide
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repoFull = `${context.repo.owner}/${context.repo.repo}`;
+            let action = 'skip';
+            let prNumber = '';
+
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              prNumber = pr.number;
+              if (context.payload.action === 'closed') {
+                action = 'cleanup';
+              } else {
+                const isFork = pr.head.repo.full_name !== repoFull;
+                const labeled = (pr.labels || []).some((l) => l.name === 'ota-preview');
+                action = (!isFork && labeled) ? 'publish' : 'skip';
+              }
+            } else if (context.eventName === 'issue_comment') {
+              const assoc = context.payload.comment.author_association;
+              const isMaintainer = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(assoc);
+              const body = (context.payload.comment.body || '').trim();
+              // Accept the bare command or with trailing args (ignored) so a near-miss
+              // like "/ota-preview please" doesn't silently resolve to skip.
+              const isCommand = body === '/ota-preview' || body.startsWith('/ota-preview ');
+              if (isCommand && isMaintainer) {
+                prNumber = context.payload.issue.number;
+                action = 'publish';
+              } else if (isCommand && !isMaintainer) {
+                core.notice(`Ignoring /ota-preview from ${assoc} — maintainers only.`);
+              }
+            } else if (context.eventName === 'workflow_dispatch') {
+              prNumber = context.payload.inputs.pr;
+              action = 'publish';
+            }
+
+            // Defense-in-depth: the channel must be a numeric PR preview channel.
+            if (!/^[0-9]+$/.test(String(prNumber))) {
+              action = 'skip';
+              prNumber = '';
+            }
+
+            const channel = prNumber ? `pr-${prNumber}` : '';
+            core.info(`event=${context.eventName} action=${action} channel=${channel || '(none)'}`);
+            core.setOutput('action', action);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('channel', channel);
+
+  # ── Publish pr-<number> to the self-hosted server. Holds EXPO_TOKEN and runs
+  # PR-author code → gated by `environment: ota-preview` (configure required
+  # reviewers) on top of the label/author/non-fork gates enforced in `gate`.
+  publish:
+    needs: gate
+    if: needs.gate.outputs.action == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ota-preview
+    concurrency:
+      # `needs` isn't reliably available to job-level concurrency, so derive the PR
+      # number straight from the event (one of these is set per trigger).
+      group: mobile-ota-preview-publish-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
+      cancel-in-progress: true
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      CHANNEL: ${{ needs.gate.outputs.channel }}
+      PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+    steps:
+      - name: Assert preview channel name
+        run: |
+          if ! printf '%s' "$CHANNEL" | grep -Eq '^pr-[0-9]+$'; then
+            echo "::error::Refusing to publish to non-preview channel '$CHANNEL' (must match ^pr-[0-9]+\$)."
+            exit 1
+          fi
+
+      - name: Start deployment (preview building)
+        id: deploy
+        uses: actions/github-script@v7
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber,
+            });
+            const headSha = pr.head.sha;
+            core.setOutput('head_sha', headSha);
+            // Deployment is a visibility nicety — never fail the publish over it.
+            try {
+              const dep = await github.rest.repos.createDeployment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                ref: headSha,
+                environment: 'pr-preview',
+                auto_merge: false,
+                required_contexts: [],
+                transient_environment: true,
+                production_environment: false,
+                description: `OTA preview ${process.env.CHANNEL}`,
+              });
+              if (dep.data && dep.data.id) {
+                core.setOutput('deployment_id', String(dep.data.id));
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  deployment_id: dep.data.id, state: 'in_progress',
+                  description: `Publishing ${process.env.CHANNEL}…`,
+                });
+              }
+            } catch (error) {
+              core.warning(`Could not create deployment: ${error.message}`);
+            }
+
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          # refs/pull/<n>/head exists in the base repo for every PR (fork or not),
+          # so this is uniform across the pull_request / comment / dispatch triggers.
+          ref: refs/pull/${{ needs.gate.outputs.pr_number }}/head
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (PR tree)
+        run: bun install --frozen-lockfile
+
+      # Materialize origin/main as a sibling worktree so the OTA-compat check can diff
+      # the PR fingerprint against main (per platform) and skip publishing a platform
+      # that is a native change (undeliverable to any shipped binary).
+      - name: Materialize origin/main baseline
+        run: |
+          git fetch origin main --depth=1
+          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+
+      - name: Install dependencies (main baseline)
+        working-directory: ${{ runner.temp }}/main-baseline
+        run: bun install --frozen-lockfile
+
+      # Writes packages/mobile/.env (the 8 EXPO_PUBLIC_* vars — same as the production
+      # publish) into both trees and emits verdict_ios / verdict_android. No maps key
+      # here: the diff-vs-main verdict is invariant to it (mirrors mobile-ota-check.yml).
+      - name: Resolve OTA compatibility (and write .env)
+        id: compat
+        run: |
+          vp run check:mobile-ota-compat -- --write-env --base-dir "$RUNNER_TEMP/main-baseline"
+
+      # Idempotent — tolerate "already exists" (mirrors scripts/mobile-ota-setup.ts
+      # setupExpoChannel). eoas publish requires a pre-created+mapped channel.
+      - name: Create + map Expo channel
+        working-directory: packages/mobile
+        run: |
+          run_eas() {
+            echo "+ eas-cli $* --non-interactive"
+            bunx eas-cli@16 "$@" --non-interactive || echo "  (non-zero exit — fine if it already exists)"
+          }
+          run_eas branch:create "$CHANNEL"
+          run_eas channel:create "$CHANNEL"
+          run_eas channel:edit "$CHANNEL" --branch "$CHANNEL"
+
+      # iOS WITHOUT GOOGLE_MAPS_API_KEY (Apple Maps), Android WITH it — the per-platform
+      # split that keeps each published fingerprint equal to its shipped binary
+      # (matches mobile-ota-production.yml). A native-change platform is skipped.
+      - name: Publish iOS OTA
+        id: publish_ios
+        if: steps.compat.outputs.verdict_ios != 'native-change-required'
+        run: vp run mobile:publish -- --channel "$CHANNEL" --platform ios
+
+      - name: Publish Android OTA
+        id: publish_android
+        if: steps.compat.outputs.verdict_android != 'native-change-required'
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
+
+      # Sticky comment + deployment status, reflecting per-platform outcome. Always
+      # runs so a native-only or failed publish still tells testers what happened.
+      - name: Announce preview on the PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.deploy.outputs.head_sha }}
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
+          VERDICT_IOS: ${{ steps.compat.outputs.verdict_ios }}
+          VERDICT_ANDROID: ${{ steps.compat.outputs.verdict_android }}
+          OUTCOME_IOS: ${{ steps.publish_ios.outcome }}
+          OUTCOME_ANDROID: ${{ steps.publish_android.outcome }}
+        with:
+          script: |
+            const channel = process.env.CHANNEL;
+            const prNumber = Number(process.env.PR_NUMBER);
+            const sha = (process.env.HEAD_SHA || '').slice(0, 7);
+            const marker = '<!-- mobile-ota-preview -->';
+
+            // success | skipped (native change) | failure | (didn't run)
+            const cell = (outcome, verdict) => {
+              if (outcome === 'success') return `✅ published \`${sha}\``;
+              if (verdict === 'native-change-required') return '⚠️ native change — needs a TestFlight/Play build';
+              if (outcome === 'failure') return '❌ publish failed (see the run log)';
+              return '—';
+            };
+            const iosCell = cell(process.env.OUTCOME_IOS, process.env.VERDICT_IOS);
+            const androidCell = cell(process.env.OUTCOME_ANDROID, process.env.VERDICT_ANDROID);
+            const anyPublished =
+              process.env.OUTCOME_IOS === 'success' || process.env.OUTCOME_ANDROID === 'success';
+            const anyFailed =
+              process.env.OUTCOME_IOS === 'failure' || process.env.OUTCOME_ANDROID === 'failure';
+            const nativeSkip =
+              process.env.VERDICT_IOS === 'native-change-required' ||
+              process.env.VERDICT_ANDROID === 'native-change-required';
+            // nativeOnly: nothing shipped, nothing errored — the skip is a legitimate
+            // native change, not a failure, so don't flag it red.
+            const nativeOnly = !anyPublished && !anyFailed && nativeSkip;
+
+            let headline;
+            let deployState;
+            let deployDesc;
+            if (anyPublished) {
+              headline =
+                `This PR is live on the OTA channel **\`${channel}\`**. Testers with the \`tester\` role on a ` +
+                `TestFlight / App Store build can load it without a new build:`;
+              deployState = 'success';
+              deployDesc = `OTA channel ${channel} ready`;
+            } else if (nativeOnly) {
+              headline =
+                `This PR is a **native change**, so it can't ride OTA — ship a TestFlight/Play build to test it. ` +
+                `No \`${channel}\` preview was published.`;
+              deployState = 'inactive';
+              deployDesc = `${channel}: native change — no OTA preview`;
+            } else {
+              headline = `Couldn't publish an OTA preview for this PR.`;
+              deployState = 'failure';
+              deployDesc = `OTA preview ${channel} failed`;
+            }
+            const howto = anyPublished
+              ? ['', '**More → Development → OTA Channel Switcher → type `' + channel + '`** → it downloads and ' +
+                 'reloads. Reset on the same screen (back to `production`).', '']
+              : [''];
+
+            const body = [
+              marker,
+              `### 📱 OTA preview — \`${channel}\``,
+              '',
+              headline,
+              ...howto,
+              '| Platform | Status |',
+              '| --- | --- |',
+              `| iOS | ${iosCell} |`,
+              `| Android | ${androidCell} |`,
+              '',
+              '<sub>Delivers only to a build whose fingerprint matches this commit (a JS-only change vs ' +
+                '`main`). A native change can\'t ride OTA — ship a TestFlight/Play build. Closing the PR ' +
+                'removes the channel.</sub>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body,
+              });
+            }
+
+            const deploymentId = process.env.DEPLOYMENT_ID;
+            if (deploymentId) {
+              try {
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  deployment_id: Number(deploymentId),
+                  state: deployState,
+                  description: deployDesc,
+                });
+              } catch (error) {
+                core.warning(`Could not update deployment status: ${error.message}`);
+              }
+            }
+
+  # ── Tear down pr-<number> when the PR closes. Runs NO PR-author code with the token
+  # (checks out the trusted base commit, deletes a hardcoded ^pr-[0-9]+$ channel).
+  # Fork-PR closes get no secrets → the scheduled sweep (mobile-ota-preview-sweep.yml)
+  # reclaims those; same-repo closes clean up here immediately.
+  cleanup:
+    needs: gate
+    if: needs.gate.outputs.action == 'cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: mobile-ota-preview-cleanup-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      CHANNEL: ${{ needs.gate.outputs.channel }}
+    steps:
+      - name: Assert preview channel name
+        run: |
+          if ! printf '%s' "$CHANNEL" | grep -Eq '^pr-[0-9]+$'; then
+            echo "::error::Refusing to delete non-preview channel '$CHANNEL'."
+            exit 1
+          fi
+
+      - name: Checkout base (trusted main — NOT PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Removes the channel→branch mapping so the server stops resolving pr-N. The S3
+      # objects are reclaimed by the bucket's `pr-` lifecycle rule (there is no
+      # branch-delete primitive). Skipped when EXPO_TOKEN is absent (fork close).
+      - name: Delete Expo channel + branch
+        if: env.EXPO_TOKEN != ''
+        working-directory: packages/mobile
+        run: |
+          run_eas() {
+            echo "+ eas-cli $* --non-interactive"
+            bunx eas-cli@16 "$@" --non-interactive || echo "  (non-zero exit — fine if it's already gone)"
+          }
+          run_eas channel:delete "$CHANNEL"
+          run_eas branch:delete "$CHANNEL"
+
+      - name: Mark preview removed (deployment + comment)
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const channel = process.env.CHANNEL;
+            const prNumber = Number(process.env.PR_NUMBER);
+            const marker = '<!-- mobile-ota-preview -->';
+
+            // Inactivate any pr-preview deployment for this PR's head commit.
+            try {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner, repo: context.repo.repo,
+                environment: 'pr-preview', sha: process.env.HEAD_SHA,
+              });
+              for (const deployment of deployments) {
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  deployment_id: deployment.id, state: 'inactive',
+                  description: `OTA channel ${channel} removed`,
+                });
+              }
+            } catch (error) {
+              core.warning(`Could not inactivate deployment: ${error.message}`);
+            }
+
+            // Update the sticky comment if one exists.
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+              });
+              const existing = comments.find((comment) => comment.body?.includes(marker));
+              if (existing) {
+                const body = [
+                  marker,
+                  `### 📱 OTA preview — \`${channel}\``,
+                  '',
+                  `Removed — this PR is closed, so the \`${channel}\` channel was torn down. Testers still pinned ` +
+                    `to it should reset to \`production\` in the OTA Channel Switcher.`,
+                ].join('\n');
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+                });
+              }
+            } catch (error) {
+              core.warning(`Could not update sticky comment: ${error.message}`);
+            }

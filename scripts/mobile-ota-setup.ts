@@ -10,6 +10,7 @@
  *   vp run mobile:ota-setup keys            # generate signing certs + print server env
  *   vp run mobile:ota-setup expo            # create+map the Expo `production` channel/branch
  *   vp run mobile:ota-setup github --url <BASE_URL>/manifest   # set the EXPO_UPDATES_URL variable
+ *   vp run mobile:ota-setup preview         # per-PR preview infra: S3 lifecycle rule + GitHub bits
  *
  * `vp run mobile:ota-setup` with no phase prints the runbook.
  */
@@ -28,6 +29,13 @@ const CERTS_DIR = resolve(MOBILE_DIR, 'certs');
 const EXPO_APP_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
 const CHANNEL = 'production';
 const LOG = '[mobile:ota-setup]';
+
+// Per-PR preview channels (mobile-ota-preview.yml). The channel-name prefix MUST
+// equal the S3 lifecycle prefix below — scripts/mobile-ci-env-parity.test.ts ties
+// the workflow's ^pr-[0-9]+$ guard to the `pr-` the docs document.
+const BUCKET = 'boardsesh-ota';
+const PREVIEW_CHANNEL_PREFIX = 'pr-';
+const PREVIEW_TTL_DAYS = 14;
 
 function log(message = ''): void {
   console.log(message ? `${LOG} ${message}` : '');
@@ -96,7 +104,7 @@ function setupExpoChannel(): void {
     fail('expo phase needs EXPO_TOKEN (run `bunx eas login` or export EXPO_TOKEN).');
   }
   // Idempotent: tolerate "already exists" so re-runs are safe. eas-cli@16 matches
-  // the version used by mobile-publish.ts / mobile-eas-update.yml.
+  // the version used by mobile-publish.ts / mobile-ota-preview.yml.
   const runEas = (args: string[]): void => {
     log(`eas ${args.join(' ')}`);
     const result = spawnSync('bunx', ['eas-cli@16', ...args, '--non-interactive'], {
@@ -156,6 +164,80 @@ function setupGithub(url: string | null): void {
   log('the fingerprint runtimeVersion + server URL + cert, then OTAs auto-publish on main.');
 }
 
+function ghTry(args: string[], okMessage: string): void {
+  log(`gh ${args.join(' ')}`);
+  const result = spawnSync('gh', args, { cwd: ROOT_DIR, stdio: 'inherit' });
+  if (result.status === 0) log(`✓ ${okMessage}`);
+  else log('(non-zero exit — fine if it already exists, or do it manually)');
+}
+
+function setupPreview(): void {
+  log('Per-PR OTA preview channels — one-time infra (mobile-ota-preview.yml).');
+  log('');
+  log('── 1. S3 lifecycle rule (bounds storage; the ONLY thing reclaiming preview bytes) ──');
+  log(`Expire objects under the "${PREVIEW_CHANNEL_PREFIX}" key prefix after ${PREVIEW_TTL_DAYS} days.`);
+  log('expo-open-ota keys updates as <branch>/<runtimeVersion>/<timestamp>/…, so this prefix matches');
+  log('only pr-<number> channels — production/ and preview-*/ are untouched. Keep S3_KEY_PREFIX UNSET;');
+  log(`if you ever set it, scope the rule prefix to "<S3_KEY_PREFIX>/${PREVIEW_CHANNEL_PREFIX}".`);
+  log('');
+  console.log(
+    JSON.stringify(
+      {
+        Rules: [
+          {
+            ID: 'expire-pr-preview-channels',
+            Filter: { Prefix: PREVIEW_CHANNEL_PREFIX },
+            Status: 'Enabled',
+            Expiration: { Days: PREVIEW_TTL_DAYS },
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  log('');
+  log('Apply (S3 / S3-compatible via the S3 API — add --endpoint-url <AWS_BASE_ENDPOINT> for R2):');
+  log(`  aws s3api put-bucket-lifecycle-configuration --bucket ${BUCKET} \\`);
+  log('    --lifecycle-configuration file://lifecycle.json [--endpoint-url <AWS_BASE_ENDPOINT>]');
+  log('  (or add it in the Cloudflare R2 dashboard: Object lifecycle rules → prefix "pr-").');
+  log('');
+  log('── 2. GitHub setup (best-effort, idempotent) ──');
+  ghTry(
+    ['api', '-X', 'PUT', 'repos/{owner}/{repo}/environments/ota-preview', '--silent'],
+    'ensured the `ota-preview` environment exists',
+  );
+  ghTry(
+    ['api', '-X', 'PUT', 'repos/{owner}/{repo}/environments/pr-preview', '--silent'],
+    'ensured the `pr-preview` environment exists (hosts the readiness Deployment; no protection needed)',
+  );
+  ghTry(
+    [
+      'label',
+      'create',
+      'ota-preview',
+      '--description',
+      'Publish a self-hosted OTA preview channel for this PR',
+      '--color',
+      '1D76DB',
+      '--force',
+    ],
+    'ensured the `ota-preview` label exists',
+  );
+  log('');
+  log('GOOGLE_MAPS_API_KEY must be readable by the (gated) preview job for Android fingerprint parity.');
+  const secrets = spawnSync('gh', ['secret', 'list'], { cwd: ROOT_DIR, encoding: 'utf-8' });
+  if (secrets.status === 0 && /(^|\n)GOOGLE_MAPS_API_KEY\b/.test(secrets.stdout)) {
+    log('✓ GOOGLE_MAPS_API_KEY repo secret present.');
+  } else {
+    log('⚠ Add GOOGLE_MAPS_API_KEY as a REPO-level secret (it already ships inside the public APK, so');
+    log('  this is not a new exposure): gh secret set GOOGLE_MAPS_API_KEY  (same value as Production).');
+  }
+  log('');
+  log('Finally — the security gate — in Settings → Environments → ota-preview, add the maintainers as');
+  log('REQUIRED REVIEWERS so each preview run pauses for approval before EXPO_TOKEN reaches PR code.');
+}
+
 function printRunbook(): void {
   log('Self-hosted production OTA setup. Run these phases as infra comes online:');
   log('');
@@ -168,6 +250,8 @@ function printRunbook(): void {
   log('       → creates + maps the Expo `production` channel/branch.');
   log('  4. vp run mobile:ota-setup github --url https://ota.boardsesh.com/manifest');
   log('       → sets the EXPO_UPDATES_URL repo variable + checks the EXPO_TOKEN secret.');
+  log('  5. vp run mobile:ota-setup preview     (optional — per-PR preview channels)');
+  log('       → prints the S3 `pr-` lifecycle rule + ensures the GitHub environments/label/secret.');
   log('');
   log('Full runbook: docs/mobile-ota-updates.md');
 }
@@ -185,9 +269,12 @@ switch (phase) {
   case 'github':
     setupGithub(parseUrlFlag(args));
     break;
+  case 'preview':
+    setupPreview();
+    break;
   case undefined:
     printRunbook();
     break;
   default:
-    fail(`Unknown phase "${phase}". Expected one of: keys, expo, github (or no argument for the runbook).`);
+    fail(`Unknown phase "${phase}". Expected one of: keys, expo, github, preview (or no argument for the runbook).`);
 }

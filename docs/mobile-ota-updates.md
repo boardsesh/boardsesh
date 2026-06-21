@@ -17,6 +17,10 @@ there's no MAU/bandwidth billing.
 | Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                   |
 | Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: `vp run mobile:publish -- --channel production` (→ `eoas publish`) |
 
+A third path rides the **same self-hosted server**: per-PR `pr-<number>` channels that let a tester
+validate a specific PR on a store/TestFlight build via the in-app switcher — see
+[Per-PR preview channels](#per-pr-preview-channels-self-hosted) below.
+
 The split is decided in `packages/mobile/app.config.ts` (`resolveUpdatesConfig`): when
 `EAS_BUILD` is set it returns the EAS URL; otherwise it uses the self-hosted server — but **only
 when both `EXPO_UPDATES_URL` and the signing cert `certs/certificate.pem` are present** (fail
@@ -342,8 +346,50 @@ validate a specific PR's OTA, without a per-tester build.
   `src/components/ChannelSwitcherScreen.tsx`. The `tester` role is global-only and grants nothing
   beyond this flag (`UserProfile.isTester`).
 
+## Per-PR preview channels (self-hosted)
+
+Every PR with React Native changes can publish its JS bundle to its own self-hosted channel
+`pr-<number>`, so a `tester` switches to it on a store/TestFlight build via the switcher above — no
+per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
+`mobile-ota-preview-sweep.yml`).
+
+- **Fingerprint parity.** The publish keeps `EXPO_UPDATES_CHANNEL=production` (so the runtimeVersion
+  equals the shipped binary's) and passes `--channel pr-<number>` as the `eoas` upload branch. The
+  two are independent: the baked `expo-channel-name` header drives the fingerprint, `--channel`
+  drives where the bundle lands and what the switcher selects. A native-change PR resolves a new
+  fingerprint no shipped binary has, so that platform is **skipped** — `vp run check:mobile-ota-compat`
+  (the same engine as `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The
+  env is held byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
+- **Who can publish (security).** `EXPO_TOKEN` == the server's trusted `EXPO_ACCESS_TOKEN`, and the
+  publish job runs PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with that
+  token — so the boundary is "no untrusted code touches the token without a human gate", not the
+  channel name. Controls: `pull_request` (never `pull_request_target`, so fork jobs get **no
+  secrets**); same-repo auto-publish needs the **`ota-preview` label** + non-fork; forks / on-demand
+  builds run only from a maintainer **`/ota-preview` comment** (`author_association`
+  OWNER/MEMBER/COLLABORATOR) or `workflow_dispatch`; and the publish job sits in the **`ota-preview`
+  GitHub environment** (configure required reviewers, so a maintainer approves secret injection for
+  that diff). The `^pr-[0-9]+$` channel guard is defense-in-depth.
+- **Readiness signal.** Each publish posts a sticky PR comment (channel name + switcher steps) and a
+  GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
+  cleanup marks it inactive on close.
+- **Cleanup + storage.** On PR close the `pr-<number>` channel + branch are deleted (mapping gone →
+  the server stops resolving it). The S3 bytes are reclaimed by a **bucket lifecycle rule** scoped to
+  the **`pr-`** key prefix: expo-open-ota keys updates as `<branch>/<runtimeVersion>/<timestamp>/…`,
+  and neither `production/` nor `preview-*/` starts with `pr-`, so production is never touched. A
+  daily sweep reaps `pr-<number>` channels whose PR is no longer open (the backstop for fork closes,
+  which get no secrets). The lifecycle rule is the **only** thing bounding S3 (there is no
+  branch-delete primitive, only per-update `DeleteUpdateFolder`), so treat it as load-bearing infra.
+  **Keep `S3_KEY_PREFIX` unset** — the bare `pr-` prefix depends on it; if you ever set it, re-scope
+  the lifecycle rule to `<prefix>/pr-`.
+
+One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
+(the `ota-preview` / `pr-preview` environments, the `ota-preview` label, and exposing
+`GOOGLE_MAPS_API_KEY` as a repo-level secret for the Android fingerprint).
+
 ## Deferred
 
 - **`beta` channel**: TestFlight on `beta`, App Store on `production`, promote at GA.
-- **Migrate the preview/dev-branch flow + in-app `BranchSwitcher`** (`src/lib/eas-api.ts`) off EAS
-  hosting onto expo-open-ota, to drop the Expo dependency entirely.
+- **In-app `BranchSwitcher`** (`src/lib/eas-api.ts`) still lists EAS-hosted branches for the
+  dev-client preview build. The store-binary preview flow now rides self-hosted `pr-<number>`
+  channels (above); migrating the dev-client switcher off EAS too would drop the Expo dependency
+  entirely.
