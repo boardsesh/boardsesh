@@ -2,7 +2,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { renderHook, act } from '@testing-library/react';
-import { useWallConfirmFallback, WALL_CONFIRM_TIMEOUT_MS } from '../use-wall-confirm-fallback';
+import {
+  useWallConfirmConvergence,
+  useWallConfirmFallback,
+  WALL_CONFIRM_TIMEOUT_MS,
+} from '../use-wall-confirm-fallback';
 import { emitWallConfirm } from '@boardsesh/play-view';
 
 const mockTrack = vi.fn();
@@ -498,5 +502,100 @@ describe('useWallConfirmFallback', () => {
     );
     expect(mockTrack).not.toHaveBeenCalledWith('Wall Confirm Connecting', expect.anything());
     expect(mockTrack).not.toHaveBeenCalledWith('Wall Confirm Timeout', expect.anything());
+  });
+});
+
+describe('useWallConfirmConvergence', () => {
+  type ConvergenceProps = Parameters<typeof useWallConfirmConvergence>[0];
+
+  function renderConvergence(initial: Partial<ConvergenceProps> = {}) {
+    const onConfirm = vi.fn();
+    const onSupersede = vi.fn();
+    const baseProps: ConvergenceProps = {
+      pendingClimbUuid: null,
+      wallCurrentClimbUuid: null,
+      committedClimbUuid: null,
+      onConfirm,
+      onSupersede,
+      ...initial,
+    };
+    const utils = renderHook((props: ConvergenceProps) => useWallConfirmConvergence(props), {
+      initialProps: baseProps,
+    });
+    return { ...utils, onConfirm, onSupersede, baseProps };
+  }
+
+  it('confirms when the wall transitions to the pending climb', () => {
+    // Wall shows A; user taps to light B (committed); B not yet on the wall.
+    const { rerender, onConfirm, baseProps } = renderConvergence({
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-a',
+      committedClimbUuid: 'climb-b',
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    // The wall now reports B (fresh BoardClimbSet) — a transition to pending.
+    rerender({
+      ...baseProps,
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-b',
+      committedClimbUuid: 'climb-b',
+    });
+
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onConfirm).toHaveBeenCalledWith('climb-b');
+  });
+
+  it('does NOT confirm when the wall already shows the pending climb at arm time (no transition)', () => {
+    // Board already lit B; first observed wall value is the baseline, not a
+    // transition — the local BLE write confirms this case, not convergence.
+    const { onConfirm } = renderConvergence({
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-b',
+      committedClimbUuid: 'climb-b',
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('supersedes when the committed climb moves off the pending one', () => {
+    const { rerender, onSupersede, baseProps } = renderConvergence({
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-a',
+      committedClimbUuid: 'climb-b',
+    });
+    expect(onSupersede).not.toHaveBeenCalled();
+
+    // Queue advances to a different committed climb.
+    rerender({
+      ...baseProps,
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-a',
+      committedClimbUuid: 'climb-c',
+    });
+
+    expect(onSupersede).toHaveBeenCalledOnce();
+  });
+
+  it('supersedes when the queue is emptied while a pulse is pending', () => {
+    // Regression: an empty queue (committed null) must still supersede, not wait
+    // out the full backstop.
+    const { onSupersede } = renderConvergence({
+      pendingClimbUuid: 'climb-b',
+      wallCurrentClimbUuid: 'climb-a',
+      committedClimbUuid: null,
+    });
+    expect(onSupersede).toHaveBeenCalledOnce();
+  });
+
+  it('is inert when no pulse is pending', () => {
+    const { rerender, onConfirm, onSupersede, baseProps } = renderConvergence({
+      pendingClimbUuid: null,
+      wallCurrentClimbUuid: 'climb-a',
+      committedClimbUuid: 'climb-a',
+    });
+    rerender({ ...baseProps, pendingClimbUuid: null, wallCurrentClimbUuid: 'climb-b', committedClimbUuid: 'climb-c' });
+
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onSupersede).not.toHaveBeenCalled();
   });
 });

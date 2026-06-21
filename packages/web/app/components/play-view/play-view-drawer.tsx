@@ -32,7 +32,11 @@ import { PlaybackControls } from '../playback/playback-controls';
 import { useWakeLock } from '../board-bluetooth-control/use-wake-lock';
 import { useBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import { isNativeApp } from '@/app/lib/ble/capacitor-utils';
-import { useWallConfirmFallback, WALL_CONFIRM_BACKSTOP_MS } from './use-wall-confirm-fallback';
+import {
+  useWallConfirmConvergence,
+  useWallConfirmFallback,
+  WALL_CONFIRM_BACKSTOP_MS,
+} from './use-wall-confirm-fallback';
 import { useDrawerPlayback } from './use-drawer-playback';
 import { themeTokens } from '@/app/theme/theme-config';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
@@ -407,36 +411,25 @@ const PlayViewDrawer: React.FC<PlayViewDrawerProps> = ({
     { onConfirmed: handleWallConfirmed, onTimeout: handleWallConfirmTimeout },
   );
 
-  // Derive the confirm from the convergent wall state: when the board-presence
-  // feed *transitions* to show the pending climb on the wall (a fresh seq'd
-  // `BoardClimbSet`, which also survives a reconnect catch-up), feed it into the
-  // same wall-confirm bus the watcher listens on so it records `Wall Confirmed`
-  // with the true, un-clipped latency. The bus coalesces, so this is safe
-  // alongside the local BLE write that fires it immediately. Gate on the
-  // transition (was-not → now-is), not steady-state equality: a tap while the
-  // board already shows the climb is confirmed by the local write, not a fresh
-  // round-trip, and would otherwise log a ~0 ms latency that skews the metric.
+  // Bridge the convergent board-presence state to the pulse: confirm when the
+  // wall transitions to the pending climb (feeding the same wall-confirm bus the
+  // watcher listens on, so it records the true un-clipped latency), and supersede
+  // when the committed queue climb moves off the pending one — so the longer
+  // backstop never leaves a stale pulse on the bulb. See `useWallConfirmConvergence`
+  // for the transition + empty-queue semantics.
   const wallCurrentClimbUuid = boardPresenceCurrent?.currentClimb?.climbUuid ?? null;
-  const prevWallCurrentClimbUuidRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prevWallClimbUuid = prevWallCurrentClimbUuidRef.current;
-    prevWallCurrentClimbUuidRef.current = wallCurrentClimbUuid;
-    if (pendingClimbUuid && wallCurrentClimbUuid === pendingClimbUuid && prevWallClimbUuid !== pendingClimbUuid) {
-      emitWallConfirm(pendingClimbUuid);
-    }
-  }, [wallCurrentClimbUuid, pendingClimbUuid]);
-
-  // Supersede: if the user navigates the queue off the pending climb before it
-  // confirms, the pulse was for a climb they've moved on from. Cancel the
-  // watcher silently (no confirm, no timeout — it's neither) and clear the
-  // pulse, so the longer backstop never leaves a stale pulse on the bulb.
   const committedCurrentClimbUuid = currentClimbQueueItem?.climb.uuid ?? null;
-  useEffect(() => {
-    if (pendingClimbUuid && committedCurrentClimbUuid && committedCurrentClimbUuid !== pendingClimbUuid) {
-      cancelWallConfirmWatcher();
-      setPendingClimbUuid(null);
-    }
-  }, [committedCurrentClimbUuid, pendingClimbUuid, cancelWallConfirmWatcher]);
+  const handleWallConfirmSupersede = useCallback(() => {
+    cancelWallConfirmWatcher();
+    setPendingClimbUuid(null);
+  }, [cancelWallConfirmWatcher]);
+  useWallConfirmConvergence({
+    pendingClimbUuid,
+    wallCurrentClimbUuid,
+    committedClimbUuid: committedCurrentClimbUuid,
+    onConfirm: emitWallConfirm,
+    onSupersede: handleWallConfirmSupersede,
+  });
 
   // Session-swap during pending: if the watcher hook cancels because the
   // session ended mid-window, also clear the local pending UI state. The

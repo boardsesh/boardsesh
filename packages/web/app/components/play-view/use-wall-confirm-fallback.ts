@@ -118,3 +118,63 @@ export function useWallConfirmFallback(deps: Deps, callbacks: Callbacks = {}) {
 
   return { armWatcher, cancelWatcher };
 }
+
+type WallConfirmConvergenceArgs = {
+  /** The climb whose pulse is currently armed, or null when idle. */
+  pendingClimbUuid: string | null;
+  /** The climb the board-presence feed currently shows on the wall, or null. */
+  wallCurrentClimbUuid: string | null;
+  /** The committed queue climb (what the AutoSender sends), null when the queue
+   *  is empty. */
+  committedClimbUuid: string | null;
+  /** Fired once when the wall *transitions* to the pending climb — feed the
+   *  wall-confirm bus so the watcher records the confirm with its true latency. */
+  onConfirm: (climbUuid: string) => void;
+  /** Fired when the pending climb is superseded — the committed climb moved off
+   *  it (queue advanced or emptied). */
+  onSupersede: () => void;
+};
+
+/**
+ * Bridges the convergent board-presence state to the wall-confirm pulse. Two
+ * rules:
+ *
+ *  - **Confirm on transition.** When the wall feed *becomes* the pending climb
+ *    (a fresh `BoardClimbSet`, or a reconnect catch-up), fire `onConfirm`. Gate
+ *    on the transition (was-not → now-is), never steady-state equality: a tap
+ *    while the board already shows the climb is confirmed by the local BLE
+ *    write, and a steady-state emit would log a ~0 ms latency that skews the
+ *    metric. The first observed wall value is the baseline, not a transition.
+ *  - **Supersede.** When the committed climb no longer matches the pending one
+ *    — including the queue being emptied (`committedClimbUuid === null`) — fire
+ *    `onSupersede` so the pulse clears immediately instead of waiting out the
+ *    backstop.
+ *
+ * Extracted from the drawer so both rules are unit-testable without the full
+ * play-view tree.
+ */
+export function useWallConfirmConvergence({
+  pendingClimbUuid,
+  wallCurrentClimbUuid,
+  committedClimbUuid,
+  onConfirm,
+  onSupersede,
+}: WallConfirmConvergenceArgs): void {
+  // `undefined` until the first observed wall value, so a mount that already
+  // shows the pending climb is treated as the baseline, not a transition.
+  const prevWallClimbUuidRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const prevWallClimbUuid = prevWallClimbUuidRef.current;
+    prevWallClimbUuidRef.current = wallCurrentClimbUuid;
+    if (prevWallClimbUuid === undefined) return;
+    if (pendingClimbUuid && wallCurrentClimbUuid === pendingClimbUuid && prevWallClimbUuid !== pendingClimbUuid) {
+      onConfirm(pendingClimbUuid);
+    }
+  }, [wallCurrentClimbUuid, pendingClimbUuid, onConfirm]);
+
+  useEffect(() => {
+    if (pendingClimbUuid && committedClimbUuid !== pendingClimbUuid) {
+      onSupersede();
+    }
+  }, [committedClimbUuid, pendingClimbUuid, onSupersede]);
+}
