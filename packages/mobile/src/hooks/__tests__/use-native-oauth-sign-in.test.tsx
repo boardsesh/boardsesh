@@ -27,12 +27,8 @@ vi.mock('../../lib/error-reporting', () => ({ reportError: (...args: unknown[]) 
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-// The hook reads Platform.OS to gate the browser web fallback (Google + Apple)
-// to iOS. A mutable hoisted ref lets each test flip the platform (default iOS,
-// where the fallback lives); the real react-native module is too heavy to load
-// under jsdom.
-const { platform } = vi.hoisted(() => ({ platform: { OS: 'ios' } as { OS: string } }));
-vi.mock('react-native', () => ({ Platform: platform }));
+// The browser web fallback is the recovery path on every platform (it used to be
+// iOS-only), so the hook no longer reads Platform.OS — no react-native mock needed.
 
 const { useNativeOAuthSignIn } = await import('../use-native-oauth-sign-in');
 
@@ -46,6 +42,12 @@ function trackedEvents(): TrackedEvent[] {
   }));
 }
 
+// The full props of every tracked event — for assertions that need a field
+// trackedEvents() doesn't surface, like failure_detail.
+function trackedProps(): Record<string, unknown>[] {
+  return trackMock.mock.calls.map(([, props]) => props as Record<string, unknown>);
+}
+
 async function runSignIn(provider: 'google' | 'apple', setError = vi.fn()) {
   const { result } = renderHook(() => useNativeOAuthSignIn({ setError }));
   await act(async () => {
@@ -54,9 +56,8 @@ async function runSignIn(provider: 'google' | 'apple', setError = vi.fn()) {
   return setError;
 }
 
-describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
+describe('useNativeOAuthSignIn — Google web fallback', () => {
   beforeEach(() => {
-    platform.OS = 'ios';
     trackMock.mockReset();
     reportErrorMock.mockReset();
     signInWithAppleMock.mockReset();
@@ -145,9 +146,8 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
   });
 });
 
-describe('useNativeOAuthSignIn — Apple web fallback (iOS)', () => {
+describe('useNativeOAuthSignIn — Apple web fallback', () => {
   beforeEach(() => {
-    platform.OS = 'ios';
     trackMock.mockReset();
     reportErrorMock.mockReset();
     signInWithAppleMock.mockReset();
@@ -246,9 +246,13 @@ describe('useNativeOAuthSignIn — Apple web fallback (iOS)', () => {
   });
 });
 
-describe('useNativeOAuthSignIn — Android has no web fallback', () => {
+// The Android-specific failure mode #3100 fixes: a native Google
+// DEVELOPER_ERROR (the running build's signing-cert SHA-1 isn't registered) used
+// to dead-end login after #3083 gated the browser fallback to iOS. The fallback
+// now runs on Android too, so the user recovers — while the native failure stays
+// visible in analytics so the underlying SHA-1 misconfig is still measurable.
+describe('useNativeOAuthSignIn — Android Google web fallback (DEVELOPER_ERROR recovery)', () => {
   beforeEach(() => {
-    platform.OS = 'android';
     trackMock.mockReset();
     reportErrorMock.mockReset();
     signInWithAppleMock.mockReset();
@@ -257,38 +261,43 @@ describe('useNativeOAuthSignIn — Android has no web fallback', () => {
     signInWithAppleWebMock.mockReset();
   });
 
-  it('surfaces the native error (no fallback) when Google throws — the SHA-1/DEVELOPER_ERROR case', async () => {
+  it('recovers via the web flow when native Google throws DEVELOPER_ERROR — and still records it', async () => {
     signInWithGoogleMock.mockRejectedValue(Object.assign(new Error('developer error'), { code: 'DEVELOPER_ERROR' }));
+    signInWithGoogleWebMock.mockResolvedValue({ success: true });
 
     const setError = await runSignIn('google');
 
-    expect(signInWithGoogleWebMock).not.toHaveBeenCalled();
-    // Reported once, tagged with the native code so PostHog records DEVELOPER_ERROR.
-    expect(reportErrorMock).toHaveBeenCalledTimes(1);
-    expect(reportErrorMock).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({
-        tags: expect.objectContaining({ provider: 'google', flow: 'native', native_error_code: 'DEVELOPER_ERROR' }),
-      }),
+    expect(signInWithGoogleWebMock).toHaveBeenCalledTimes(1);
+    // The browser recovered the user — no dead-end exception report.
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    expect(setError).toHaveBeenLastCalledWith(null);
+    const events = trackedEvents();
+    expect(events).toContainEqual({ event: 'Login Succeeded', flow: 'web_fallback', reason: undefined });
+    // The native failure is still tracked (flow: 'native') with the native code as
+    // failure_detail, so DEVELOPER_ERROR / the SHA-1 misconfig stays visible in PostHog.
+    const nativeFailure = trackedProps().find(
+      (props) => props.flow === 'native' && props.failure_reason === 'exception',
     );
-    expect(setError).toHaveBeenLastCalledWith('nativeStart.oauthError');
-    // No fallback on Android, so the native throw is terminal, not recoverable.
-    expect(trackedEvents()).toContainEqual({
+    expect(nativeFailure?.failure_detail).toBe('DEVELOPER_ERROR');
+    // Android now recovers via the fallback too, so the native throw is tagged
+    // recoverable (matches iOS) and the terminal-failure metric excludes it.
+    expect(events).toContainEqual({
       event: 'Login Failed',
       flow: 'native',
       reason: 'exception',
-      recoverable: false,
+      recoverable: true,
     });
   });
 
-  it('surfaces the native error (no fallback) when Google returns a non-cancel failure', async () => {
+  it('recovers via the web flow when native Google returns a non-cancel failure', async () => {
     signInWithGoogleMock.mockResolvedValue({ success: false, status: 401, error: 'invalid' });
+    signInWithGoogleWebMock.mockResolvedValue({ success: true });
 
     const setError = await runSignIn('google');
 
-    expect(signInWithGoogleWebMock).not.toHaveBeenCalled();
-    expect(reportErrorMock).toHaveBeenCalledTimes(1);
-    expect(setError).toHaveBeenLastCalledWith('nativeStart.oauthError');
+    expect(signInWithGoogleWebMock).toHaveBeenCalledTimes(1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    expect(setError).toHaveBeenLastCalledWith(null);
   });
 
   it('does NOT fall back or error when the user cancels native Google, and logs a cancel', async () => {
@@ -308,15 +317,23 @@ describe('useNativeOAuthSignIn — Android has no web fallback', () => {
     expect(events).not.toContainEqual(expect.objectContaining({ event: 'Login Failed' }));
   });
 
-  it('does not run the Apple web fallback on Android (the iOS gate holds)', async () => {
-    // Apple sign-in isn't offered on Android, but guard the gate anyway: a native
-    // throw must surface the real error, not silently open a browser fallback.
-    signInWithAppleMock.mockRejectedValue(Object.assign(new Error('unknown'), { code: 1000 }));
+  it('surfaces an error and reports once when the web fallback also fails (SHA-1 still unfixed)', async () => {
+    signInWithGoogleMock.mockRejectedValue(Object.assign(new Error('developer error'), { code: 'DEVELOPER_ERROR' }));
+    signInWithGoogleWebMock.mockResolvedValue({
+      success: false,
+      status: 401,
+      error: 'Invalid or expired transfer token',
+    });
 
-    const setError = await runSignIn('apple');
+    const setError = await runSignIn('google');
 
-    expect(signInWithAppleWebMock).not.toHaveBeenCalled();
+    // A genuine failure still reaches error tracking — re-tagged under flow: 'web_fallback'.
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     expect(setError).toHaveBeenLastCalledWith('nativeStart.oauthError');
+    expect(trackedEvents()).toContainEqual({
+      event: 'Login Failed',
+      flow: 'web_fallback',
+      reason: 'invalid_oauth_token',
+    });
   });
 });

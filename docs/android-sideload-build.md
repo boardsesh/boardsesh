@@ -188,9 +188,8 @@ signed the running APK** is registered as an Android OAuth client, in the same
 Google Cloud project as the `webClientId` the app ships
 (`401523882502-…`, project **401523882502**).
 
-If it isn't, `GoogleSignin.signIn()` fails **before any network call** — so the
-backend never logs anything, and the login screen shows the generic "Sign in
-didn't complete." (The classic Play Services flow reported this as
+If it isn't, `GoogleSignin.signIn()` fails **before any network call**, so the
+backend never logs anything. (The classic Play Services flow reported this as
 `DEVELOPER_ERROR` / status 10; the Credential Manager flow in current
 `@react-native-google-signin` surfaces an unmapped error instead, which is why
 the code below keys off "not a known status code" rather than a specific code.)
@@ -198,16 +197,26 @@ the code below keys off "not a known status code" rather than a specific code.)
 `native_error_code`, and a local dev build prints a hint — see
 `nativeSignInErrorCode` in `packages/mobile/src/lib/native-auth-analytics.ts`.
 
-**Spotting it in PostHog.** This lands in error tracking as a handled exception
-tagged `source: native-auth`, `provider: google` — message `DEVELOPER_ERROR` on
-the classic flow, or a generic `Error` with the troubleshooting URL on the
-Credential Manager flow. It was the single highest-volume mobile issue in June
-2026 (163 occurrences, 11 users). A spike here is almost always an unregistered
-signing key, not a code regression — it can't be fixed in-repo. Work the table
-below: enumerate every key currently shipping `com.boardsesh.app`, confirm each
-SHA-1 has an Android OAuth client in project **401523882502**, and add any that's
-missing. (Because handled exceptions without a JS stack group together, that same
-PostHog issue can also absorb unrelated handled errors — filter to
+The native failure no longer dead-ends the user: `useNativeOAuthSignIn` then runs
+the browser-OAuth fallback (the web NextAuth handoff, which doesn't touch the
+native SDK and so isn't affected by the SHA-1 gap), and only shows "Sign in didn't
+complete" if that also fails. Registering the SHA-1 is still the real fix — the
+fallback is recovery, not a substitute.
+
+**Spotting it in PostHog.** The native failure always lands as a `Login Failed`
+analytics event tagged `flow: native`, `auth_method: google`, with the native code
+in `failure_detail` (`DEVELOPER_ERROR` on the classic flow, an unmapped `Error` on
+the Credential Manager flow) — so a spike is visible there even when the browser
+fallback recovers the user. It only reaches **error tracking** as a handled
+exception when the fallback _also_ fails, and then it's tagged `flow: web_fallback`,
+`source: native-auth`, `provider: google` (before #3083/#3100 the native throw was
+reported directly under `flow: native`). It was the single highest-volume mobile
+issue in June 2026 (163 occurrences, 11 users). A spike is almost always an
+unregistered signing key, not a code regression — it can't be fixed in-repo. Work
+the table below: enumerate every key currently shipping `com.boardsesh.app`,
+confirm each SHA-1 has an Android OAuth client in project **401523882502**, and add
+any that's missing. (Because handled exceptions without a JS stack group together,
+that same PostHog issue can also absorb unrelated handled errors — filter to
 `source = native-auth` rather than reading the whole bucket as Google Sign-In.)
 
 `com.boardsesh.app` is signed by up to three different keys, each needing its own

@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { Platform } from 'react-native';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useAuth } from '../providers/auth-provider';
 import { track } from '../lib/analytics';
@@ -42,20 +41,24 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       // the flow dying programmatically (sub-second).
       const attemptStartedAt = Date.now();
 
-      // Browser-OAuth fallback, iOS-only, for both Google and Apple. The native
-      // SDK can fail before any network call — Google on iOS 26.5.1 (GIDSignIn
-      // "Unable to open Safari"), Apple on ASAuthorizationError.unknown (code
-      // 1000: device not signed into iCloud, 2FA disabled, transient Apple ID
-      // issues) — and that failure isn't fatal: the web NextAuth handoff completes
-      // sign-in without the native SDK. Reports its own telemetry under
-      // flow: 'web_fallback' so we can measure how often it rescues a native
-      // failure, and fully owns the outcome (success returns, a browser cancel
-      // stays silent, a real failure reaches error tracking + the error region).
-      // Not used on Android: the redirect to com.boardsesh.app://auth/callback
-      // doesn't reliably return through openAuthSessionAsync there, an Android
-      // native Google failure is almost always an unregistered signing-cert SHA-1
-      // (a Google Cloud fix), and Apple sign-in isn't offered on Android at all —
-      // so we surface the real error instead (see auth.ts).
+      // Browser-OAuth fallback, for both Google and Apple, on every platform. The
+      // native SDK can fail before any network call — Google on iOS 26.5.1
+      // (GIDSignIn "Unable to open Safari") or on Android when the running build's
+      // signing-cert SHA-1 isn't registered against the OAuth client
+      // (DEVELOPER_ERROR), Apple on ASAuthorizationError.unknown (code 1000: device
+      // not signed into iCloud, 2FA disabled, transient Apple ID issues) — and that
+      // failure isn't fatal: the web NextAuth handoff completes sign-in without the
+      // native SDK, and its com.boardsesh.app://auth/callback redirect returns
+      // through the scheme the app registers on both platforms (app.config.ts).
+      // Reports its own telemetry under flow: 'web_fallback' so we can measure how
+      // often it rescues a native failure, and fully owns the outcome (success
+      // returns, a browser cancel stays silent, a real failure reaches error
+      // tracking + the error region). The native failure is tracked separately
+      // under flow: 'native' before this runs, so a config bug like an unregistered
+      // Android SHA-1 stays visible in analytics even when the browser recovers the
+      // user — the real fix is still registering the SHA-1 (see
+      // docs/android-sideload-build.md). Apple isn't offered on Android, so that
+      // branch of the map is unreachable there.
       // Keyed by provider so the map is exhaustive: extending Provider without a
       // web fn here is a type error, rather than silently routing the new provider
       // to the Google flow.
@@ -136,75 +139,50 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           });
           return;
         }
-        // A real backend/token failure carrying the server's status + error. On
-        // iOS the browser fallback runs next, so this native failure is
-        // recoverable and shouldn't count toward the terminal failure metric;
-        // on Android it dead-ends and is terminal.
+        // A real backend/token failure carrying the server's status + error. The
+        // browser fallback runs next on every platform, so this native failure is
+        // recoverable and shouldn't count toward the terminal failure metric — the
+        // terminal event is the web_fallback one below if the browser also fails.
         const oauthFailureReason = classifyNativeAuthFailureReason(result, 'oauth');
         track(SHARED_EVENTS.LoginFailed, {
           auth_method: provider,
           flow: 'native',
           failure_reason: oauthFailureReason,
           failure_detail: result.error,
-          recoverable: Platform.OS === 'ios',
+          recoverable: true,
           duration_ms: Date.now() - attemptStartedAt,
           ...registrationProps,
         });
-        // On iOS, Google and Apple native failures are recoverable in the browser
-        // — the fallback owns the user-facing outcome and error tracking from
-        // here. Android has no working browser fallback and falls through to the
-        // real-error path below.
-        if (Platform.OS === 'ios') {
-          await runWebFallback();
-          return;
-        }
-        // Surface to error tracking too: an OAuth 401 / no_id_token is a config
-        // bug (client-id audience mismatch, unconfigured backend) rather than a
-        // user typo. Network blips downgrade to a warning.
-        reportError(new Error(`Native ${provider} sign-in failed: ${result.error}`), {
-          level: result.error === 'network' ? 'warning' : 'error',
-          tags: { source: 'native-auth', provider, flow: 'native', failure_reason: oauthFailureReason },
-          extra: { status: result.status, server_error: result.error },
-        });
-        setError(result.error === 'network' ? t('nativeStart.networkError') : t('nativeStart.oauthError'));
+        // Google and Apple native failures are recoverable in the browser — the
+        // fallback owns the user-facing outcome and error tracking from here. The
+        // native failure above is already recorded (flow: 'native'); if the browser
+        // recovers the user nothing more is reported, and if it also fails
+        // runWebFallback reports it under flow: 'web_fallback'.
+        await runWebFallback();
       } catch (oauthError) {
         // The native module threw (Play Services missing, no presenter, a
         // signing/client-id mismatch, …). Prefer the native `.code` for
         // failure_detail — far more actionable than the opaque message.
         const nativeErrorCode = nativeSignInErrorCode(oauthError);
-        // On iOS the browser fallback runs next (recoverable); on Android the
-        // native throw dead-ends and is terminal.
+        // The browser fallback runs next on every platform, so the native throw is
+        // recoverable and excluded from the terminal failure metric.
         track(SHARED_EVENTS.LoginFailed, {
           auth_method: provider,
           flow: 'native',
           failure_reason: 'exception',
           failure_detail: nativeErrorCode ?? (oauthError instanceof Error ? oauthError.message : undefined),
-          recoverable: Platform.OS === 'ios',
+          recoverable: true,
           duration_ms: Date.now() - attemptStartedAt,
           ...registrationProps,
         });
-        // Native throws land here — on iOS, recover via the browser flow instead
-        // of reporting and dead-ending the user. Google's is the iOS 26.5.1
-        // "Unable to open Safari" GIDSignIn throw; Apple's is
-        // ASAuthorizationError.unknown (code 1000). On Android a Google throw is
-        // almost always an unregistered signing-cert SHA-1 (DEVELOPER_ERROR) and
-        // Apple isn't offered, so fall through and let reportError tag it with
-        // native_error_code for PostHog rather than hide it behind a fallback that
-        // can't complete.
-        if (Platform.OS === 'ios') {
-          await runWebFallback();
-          return;
-        }
-        reportError(oauthError, {
-          tags: {
-            source: 'native-auth',
-            provider,
-            flow: 'native',
-            mechanism: 'exception',
-            native_error_code: nativeErrorCode,
-          },
-        });
-        setError(t('nativeStart.oauthError'));
+        // Native throws land here — recover via the browser flow instead of
+        // dead-ending the user. Google's is the iOS 26.5.1 "Unable to open Safari"
+        // GIDSignIn throw or an Android DEVELOPER_ERROR (unregistered signing-cert
+        // SHA-1); Apple's is ASAuthorizationError.unknown (code 1000). The throw is
+        // already tracked above (flow: 'native', failure_detail: native_error_code),
+        // so it stays visible in analytics; runWebFallback owns recovery and reports
+        // under flow: 'web_fallback' if the browser flow also fails.
+        await runWebFallback();
       } finally {
         setInProgress(false);
       }
