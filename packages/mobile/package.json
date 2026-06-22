@@ -74,6 +74,7 @@
     "expo-secure-store": "56.0.4",
     "expo-share-intent": "7.0.0",
     "expo-splash-screen": "56.0.10",
+    "expo-status-bar": "56.0.4",
     "expo-store-review": "56.0.3",
     "expo-symbols": "56.0.6",
     "expo-updates": "56.0.19",
