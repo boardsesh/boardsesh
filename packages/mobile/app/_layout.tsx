@@ -4,7 +4,7 @@
 // handler, not the other way round.
 import { wrapWithSentry } from '../src/lib/sentry';
 import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 56's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -62,7 +62,6 @@ import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScr
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
-import { windowRelayoutNative } from '../modules/window-relayout/src/index';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -291,18 +290,7 @@ function RootLayout() {
 
   useEffect(() => {
     if (!authReady || !fontsReady) return;
-    void SplashScreen.hideAsync().finally(() => {
-      // Android-16 (Pixel 9/10, Galaxy S24/S25) cold-start touch-freeze fix:
-      // the first screen's native hit-region is laid out against stale
-      // edge-to-edge window metrics and stays touch-dead until a Configuration
-      // change re-runs them. Force a window-insets re-dispatch once the splash
-      // is gone. Fire twice: one frame for the first layout pass, 500 ms for
-      // the occasional second measurement cycle. Confirmed via diagnostic APK:
-      // win 411x891 → 411x805, top inset 40 → 0 after requestApplyInsets.
-      if (Platform.OS !== 'android') return;
-      requestAnimationFrame(() => void windowRelayoutNative?.requestApplyInsets());
-      setTimeout(() => void windowRelayoutNative?.requestApplyInsets(), 500);
-    });
+    void SplashScreen.hideAsync();
   }, [authReady, fontsReady]);
 
   return (

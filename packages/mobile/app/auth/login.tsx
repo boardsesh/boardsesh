@@ -24,7 +24,6 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
 import { Button } from '../../src/components/Button';
-import { Icon } from '../../src/components/Icon';
 import { track } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
@@ -101,13 +100,6 @@ export default function LoginScreen() {
     }
   }
 
-  // Newer Android (15+/edge-to-edge) can leave the login form touch-dead in full
-  // screen while split-screen restores touch — under investigation. Surface the
-  // split-screen workaround so a stuck user can still sign in. iOS/older Android
-  // are unaffected, so the notice is gated to the device class that hits it.
-  const showAndroidFreezeNotice =
-    Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 35;
-
   const isDark = theme.colorScheme === 'dark';
 
   // Sign in with Apple is iOS-only; Google only when the build shipped its
@@ -121,9 +113,7 @@ export default function LoginScreen() {
   return (
     // SafeAreaView (not a bare View): login has no native header, so without it
     // the form draws under the status/nav bars under Android's mandatory
-    // edge-to-edge. (The Android-16 cold-start touch-freeze itself is handled
-    // app-wide by the relayout in app/_layout.tsx — it hits whatever screen is
-    // first, login or the home tab — not here.)
+    // edge-to-edge.
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
@@ -131,25 +121,6 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          {showAndroidFreezeNotice ? (
-            <View
-              style={[
-                styles.freezeNotice,
-                { backgroundColor: theme.systemColors.secondaryBackground, borderColor: theme.systemColors.separator },
-              ]}
-              accessibilityRole="alert"
-            >
-              <Icon name="warning" size={22} color={theme.brandColors.warning} />
-              <View style={styles.freezeNoticeText}>
-                <Text style={[styles.freezeNoticeTitle, { color: theme.systemColors.label }]}>
-                  {t('login.splitScreenNotice.title')}
-                </Text>
-                <Text style={[styles.freezeNoticeBody, { color: theme.systemColors.secondaryLabel }]}>
-                  {t('login.splitScreenNotice.body')}
-                </Text>
-              </View>
-            </View>
-          ) : null}
           <View style={styles.header}>
             <Image
               source={require('../../assets/splash-icon.png')}
@@ -308,27 +279,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  freezeNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 24,
-  },
-  freezeNoticeText: {
-    flex: 1,
-    gap: 4,
-  },
-  freezeNoticeTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  freezeNoticeBody: {
-    fontSize: 14,
-    lineHeight: 19,
-  },
   header: { alignItems: 'center', marginBottom: 32 },
   logo: { width: 96, height: 96, marginBottom: 16 },
   title: { fontSize: 34, fontWeight: '700', marginBottom: 8 },

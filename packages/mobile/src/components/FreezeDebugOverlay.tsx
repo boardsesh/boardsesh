@@ -10,7 +10,6 @@ import {
   type ScaledSize,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { windowRelayoutNative } from '../../modules/window-relayout/src/index';
 
 /**
  * Tester-only diagnostic overlay for the Android-16 edge-to-edge "touch-dead" bug
@@ -32,15 +31,9 @@ import { windowRelayoutNative } from '../../modules/window-relayout/src/index';
  *   - metrics LOOK CORRECT while touch is still dead          → a stuck overlay,
  *     native theme/resource, or screen-container hit-region issue, not measurement.
  *
- * Two action buttons drive the native WindowRelayout module (Android-only) so a
- * contributor can test the candidate fix IN THE SAME BUILD without entering
- * split-screen:
- *   - "Relayout" → ViewCompat.requestApplyInsets on the decor view (the
- *     lightweight fix). If touch returns, the freeze is an inset re-dispatch
- *     problem and the on-mount fix in app/_layout.tsx is the answer.
- *   - "Recreate" → Activity.recreate() (the heavy hammer, closest to the
- *     split-screen Configuration change). If only this restores touch, an inset
- *     re-dispatch isn't enough and a full relayout is required.
+ * The production fix must happen before React's root view is attached. This
+ * overlay stays read-only so diagnostic APKs can record whether the first root
+ * layout is already stable without shipping a JS-triggered relayout bridge.
  * Metrics auto-snapshot on mount and whenever the app returns to the foreground,
  * so a tester who only knows how to screenshot still captures usable numbers.
  */
@@ -64,7 +57,6 @@ function FreezeDebugOverlayInner() {
   const window = useWindowDimensions();
   const [screen, setScreen] = useState<ScaledSize>(() => Dimensions.get('screen'));
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [lastAction, setLastAction] = useState<string | null>(null);
 
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ screen: nextScreen }) => {
@@ -109,61 +101,20 @@ function FreezeDebugOverlayInner() {
     return () => subscription.remove();
   }, [snap]);
 
-  // Force a native window-insets re-dispatch (the lightweight candidate fix).
-  // Snapshots before + after so the metrics line shows whether the relayout moved
-  // win/scr/ins. `requestApplyInsets` resolves false if no activity is attached;
-  // null module means a non-Android build or an older binary without the module.
-  const relayout = useCallback(() => {
-    snap('pre-relayout');
-    if (!windowRelayoutNative) {
-      setLastAction('relayout: module unavailable (iOS / old binary)');
-      return;
-    }
-    windowRelayoutNative
-      .requestApplyInsets()
-      .then((applied) => {
-        setLastAction(applied ? 'relayout: requested ✓' : 'relayout: no activity');
-        // Give the layout pass a beat to land before recording the result.
-        setTimeout(() => snap('post-relayout'), 250);
-      })
-      .catch((error: unknown) => setLastAction(`relayout: error ${String(error)}`));
-  }, [snap]);
-
-  // Heavier hammer: recreate the Activity (closest to the split-screen config
-  // change). This remounts the tree, so snapshots reset — snapshot first.
-  const recreate = useCallback(() => {
-    snap('pre-recreate');
-    if (!windowRelayoutNative) {
-      setLastAction('recreate: module unavailable (iOS / old binary)');
-      return;
-    }
-    windowRelayoutNative
-      .recreate()
-      .then((done) => setLastAction(done ? 'recreate: requested ✓' : 'recreate: no activity'))
-      .catch((error: unknown) => setLastAction(`recreate: error ${String(error)}`));
-  }, [snap]);
-
   return (
     <View pointerEvents="box-none" style={[styles.root, { top: insets.top + 4 }]}>
       <View style={styles.panel}>
         <Text style={styles.title}>FREEZE DEBUG</Text>
         <Text style={styles.metrics}>{metricsRef.current}</Text>
         <Text style={styles.instructions}>
-          If the app won&apos;t respond after opening from a full close (login OR home): tap Snap, then Relayout. If
-          touch comes back, screenshot this box. Else enter split-screen and tap Snap again.
+          If the app won&apos;t respond after opening from a full close: tap Snap, screenshot this box, enter
+          split-screen, then tap Snap again.
         </Text>
         <View style={styles.buttonRow}>
           <Pressable onPress={() => snap()} style={styles.button} hitSlop={8}>
             <Text style={styles.buttonText}>Snap</Text>
           </Pressable>
-          <Pressable onPress={relayout} style={styles.button} hitSlop={8}>
-            <Text style={styles.buttonText}>Relayout</Text>
-          </Pressable>
-          <Pressable onPress={recreate} style={styles.button} hitSlop={8}>
-            <Text style={styles.buttonText}>Recreate</Text>
-          </Pressable>
         </View>
-        {lastAction ? <Text style={styles.action}>{lastAction}</Text> : null}
         {snapshots.map((snapshot) => (
           <Text key={snapshot.id} style={styles.snapshot}>
             {snapshot.text}
@@ -226,11 +177,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '600',
-  },
-  action: {
-    color: '#ffd54f',
-    fontSize: 11,
-    marginTop: 6,
   },
   snapshot: {
     color: '#9fe7ff',

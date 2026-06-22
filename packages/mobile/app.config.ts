@@ -400,10 +400,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // `Invalid resource ID 0x000000xx` and touch dies on most of the app until a
       // configuration change (e.g. split-screen) re-runs window metrics. Do NOT add
       // `android.edgeToEdgeEnabled` — Expo SDK 56 rejects it with a warning (Android 16
-      // makes edge-to-edge mandatory); the parent theme is the only knob, and this
-      // plugin is the supported way to set it (Expo's restore step explicitly defers
-      // to it). The runtime <SystemBars> in app/_layout.tsx drives bar icon contrast.
+      // makes edge-to-edge mandatory); the parent theme is the supported way to set
+      // it on RN 0.85 (Expo's restore step explicitly defers to it). The next plugin
+      // applies the matching window flags before React attaches its first root view.
       'react-native-edge-to-edge',
+      './plugins/with-android-early-edge-to-edge',
       // Android 12+ system splash + the launch screen on every platform. The
       // transparent brand mark sits on a black background for a consistent
       // icon-to-app handoff. app/_layout.tsx already drives
