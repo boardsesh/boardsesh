@@ -17,9 +17,12 @@ name: android login + navigate (no-freeze)
 - takeScreenshot: 01-login-mounted
 
 # --- Sign in ---
+# hideKeyboard between fields: with the keyboard up the password field sits under
+# it, so a tap there hits the keyboard and the text lands in the email field.
 - tapOn:
     id: 'auth-email-input'
 - inputText: ${EMAIL}
+- hideKeyboard
 - tapOn:
     id: 'auth-password-input'
 - inputText: ${PASSWORD}
