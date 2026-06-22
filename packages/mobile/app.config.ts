@@ -471,6 +471,14 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Caps Gradle heap + parallel workers so the heavy native build (CMake ×4
       // ABIs + Kotlin + JS bundle + R8) doesn't OOM-kill the daemon. EAS-safe.
       './plugins/with-android-gradle-memory',
+      // RN 0.86 edge-to-edge experiment (#3147): enable edge-to-edge through the
+      // framework's own edgeToEdgeEnabled=true Gradle property instead of the
+      // react-native-edge-to-edge config plugin, paired with the native nav-bar
+      // module below. Replaces SystemBars in app/_layout.tsx.
+      './plugins/with-android-edge-to-edge',
+      // Android navigation-bar control (the SystemBars replacement). Requires
+      // RN 0.86+ with edge-to-edge enabled (set above). No-op on iOS.
+      '@zoontek/react-native-navigation-bar',
       // Pins the generated Android wrapper below Gradle 9 until React Native's
       // included Foojay toolchain resolver plugin is compatible with Gradle 9.
       './plugins/with-android-gradle-wrapper-version',

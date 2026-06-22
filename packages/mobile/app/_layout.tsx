@@ -16,7 +16,8 @@ import {
   DarkTheme,
   DefaultTheme,
 } from 'expo-router';
-import { SystemBars } from 'react-native-edge-to-edge';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from '@zoontek/react-native-navigation-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { QueryProvider } from '../src/providers/query-provider';
@@ -256,10 +257,14 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
           contrast from the *resolved* scheme (honours the in-app appearance
           override), not "auto" — under Android's mandatory edge-to-edge the bars
           are transparent over app content, so a forced dark theme on a light OS
-          must still get light icons. SystemBars (react-native-edge-to-edge)
-          replaces expo-status-bar and also owns the nav-bar tint; a single string
-          style applies to both bars. */}
-      <SystemBars style={colorScheme === 'dark' ? 'light' : 'dark'} />
+          must still get light icons. On RN 0.86 edge-to-edge is enabled via the
+          framework's edgeToEdgeEnabled Gradle property (./plugins/with-android-
+          edge-to-edge), so we no longer need react-native-edge-to-edge's
+          SystemBars: expo-status-bar owns the status bar and
+          @zoontek/react-native-navigation-bar owns the Android nav-bar tint
+          (no-op on iOS). */}
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <NavigationBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
       {children}
     </NavigationThemeProvider>
   );
