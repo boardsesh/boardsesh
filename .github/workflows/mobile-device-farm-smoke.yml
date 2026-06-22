@@ -1,0 +1,142 @@
+name: Mobile Smoke (AWS Device Farm)
+
+# Manually-triggered happy-path smoke test on real devices via AWS Device Farm.
+# Builds a standalone, bundled-JS dev APK (com.boardsesh.app.dev) and runs the
+# Maestro smoke flow (sign in -> pick a board -> swipe + open a climb -> tabs) on
+# the configured device pool, then reports PASS/FAIL per device. Use it before
+# shipping to confirm the core journey still works across devices.
+#
+# Required (one-time) — add to the `aws-device-farm` environment:
+#   secrets: DEVICE_FARM_AWS_ACCESS_KEY_ID, DEVICE_FARM_AWS_SECRET_ACCESS_KEY,
+#            SMOKE_EMAIL, SMOKE_PASSWORD
+# The IAM user needs AWSDeviceFarmFullAccess; the device pool lives in
+# packages/mobile/device-farm/config.json (Device Farm API is us-west-2 only).
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_name:
+        description: 'Label for the Device Farm run'
+        required: false
+        default: ''
+
+concurrency:
+  group: mobile-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  # Side-by-side "Boardsesh Dev" identity (com.boardsesh.app.dev), debug-signed —
+  # no Production secrets needed to build a sideloadable test APK.
+  BOARDSESH_APP_VARIANT: dev
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: aws-device-farm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses and install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-rn-smoke-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-rn-smoke-
+
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EOF
+
+      - name: Disable Sentry source map upload
+        run: echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
+
+      - name: Expo prebuild (generate android/)
+        working-directory: packages/mobile
+        run: bunx expo prebuild --platform android --clean --no-install
+
+      - name: Set version code
+        run: |
+          set -euo pipefail
+          sed -Ei "s/^([[:space:]]*)versionCode .*/\\1versionCode ${{ github.run_number }}/" packages/mobile/android/app/build.gradle
+
+      - name: Build debug-signed arm64 release APK (bundled JS)
+        working-directory: packages/mobile/android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: |
+          set -euo pipefail
+          src="$(find packages/mobile/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          [ -n "$src" ] || { echo "::error::No release APK produced"; exit 1; }
+          echo "path=$src" >> "$GITHUB_OUTPUT"
+
+      - name: Run smoke flow on AWS Device Farm
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DEVICE_FARM_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DEVICE_FARM_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-west-2
+          AWS_DEFAULT_REGION: us-west-2
+        run: |
+          bunx tsx scripts/mobile-device-farm.ts -- \
+            --app-path "${{ steps.apk.outputs.path }}" \
+            --flow packages/mobile/.maestro/smoke-android.yaml \
+            --maestro-env EMAIL="${{ secrets.SMOKE_EMAIL }}" \
+            --maestro-env PASSWORD="${{ secrets.SMOKE_PASSWORD }}" \
+            --name "smoke-${{ inputs.run_name != '' && inputs.run_name || github.run_number }}"
+
+      - name: Upload Device Farm artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-farm-smoke-${{ github.run_number }}
+          path: packages/mobile/device-farm/runs/
+          retention-days: 14
+          if-no-files-found: ignore
