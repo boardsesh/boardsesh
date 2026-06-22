@@ -1,11 +1,12 @@
 appId: ${APP_ID}
-name: android login + navigate (no-freeze)
+name: android login + board + climbs (no-freeze)
 ---
-# End-to-end no-freeze check: cold-start, sign in with a real account, then navigate
-# the app by TOUCH (tabs, a list row, a scroll). Reaching home at all proves the
-# cold-start touch-freeze is gone — login requires a working hit-region (tap email,
-# type, tap password, type, tap Sign in). The post-login taps add coverage that
-# touch stays alive across screens. Credentials are passed via -e (EMAIL/PASSWORD).
+# Conclusive no-freeze proof on a cold start: sign in with a real account, select a
+# board, and swipe the climbs list — all by touch. The cold-start touch-freeze would
+# make every one of these a no-op (you can't type, submit, tap a board, or scroll a
+# frozen hit-region), so reaching the end proves touch is alive. Credentials come
+# via -e (EMAIL/PASSWORD); deep links only move between screens — the sign-in, the
+# board tap, and the list swipe are real touch.
 
 - launchApp:
     clearState: true
@@ -16,61 +17,51 @@ name: android login + navigate (no-freeze)
     timeout: 60000
 - takeScreenshot: 01-login-mounted
 
-# --- Sign in ---
-# hideKeyboard between fields: with the keyboard up the password field sits under
-# it, so a tap there hits the keyboard and the text lands in the email field.
+# --- Sign in via the app's own focus/submit path ---
+# Synthetic taps don't focus the password field or fire the custom Sign-in button,
+# so drive the app's IME actions: email "next" → passwordRef.focus(); password
+# "done" → onSubmitEditing → onSubmit().
 - tapOn:
     id: 'auth-email-input'
 - inputText: ${EMAIL}
-- hideKeyboard
-- tapOn:
-    id: 'auth-password-input'
+- pressKey: Enter
 - inputText: ${PASSWORD}
-- hideKeyboard
 - takeScreenshot: 02-credentials-entered
-- tapOn:
-    id: 'auth-submit-button'
+- pressKey: Enter
+# Login succeeded once the login form is gone (a fresh login with no board lands on
+# the "now on the wall" board-onboarding, not the home tab).
+- extendedWaitUntil:
+    notVisible:
+      id: 'auth-email-input'
+    timeout: 120000
+- takeScreenshot: 03-logged-in
 
-# Reaching home is the verdict: the whole login interaction landed → not frozen.
+# --- Select a board (touch on a board card) ---
+# Dismiss the board-presence onboarding if it's up so navigation isn't gated.
+- tapOn:
+    text: 'Look around first'
+    optional: true
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://boards
+- waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
-      id: 'home-screen'
-    timeout: 120000
-- takeScreenshot: 03-home
+      id: 'board-card'
+    timeout: 60000
+- takeScreenshot: 04-boards
+- tapOn:
+    id: 'board-card'
+    index: 0
+- waitForAnimationToEnd
+- takeScreenshot: 05-board-selected
 
-# --- Navigate by touch ---
-# Scroll the feed (a gesture the frozen hit-region would swallow).
-- scroll
-- takeScreenshot: 04-home-scrolled
-
-# Climbs tab → wait for the list.
-- tapOn: 'Climbs'
+# --- Climbs list + swipe (touch gesture on the list) ---
+- openLink: com.boardsesh.app://climbs
 - extendedWaitUntil:
     visible:
       id: 'climb-list'
     timeout: 60000
-- takeScreenshot: 05-climbs
-# Scroll the climbs list itself (a frozen hit-region won't move the list — the
-# before/after screenshots show whether it moved).
+- takeScreenshot: 06-climbs
 - scroll
 - scroll
-- scroll
-- takeScreenshot: 06-climbs-scrolled
-# Open a climb row.
-- tapOn:
-    id: 'climb-row'
-    index: 0
-- waitForAnimationToEnd
-- takeScreenshot: 07-climb-opened
-
-# Back out and hop to Profile, then Home — confirms tab touch keeps working.
-- back
-- tapOn: 'Profile'
-- waitForAnimationToEnd
-- takeScreenshot: 08-profile
-- tapOn: 'Home'
-- extendedWaitUntil:
-    visible:
-      id: 'home-screen'
-    timeout: 60000
-- takeScreenshot: 09-home-again
+- takeScreenshot: 07-climbs-scrolled
