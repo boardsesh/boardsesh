@@ -117,16 +117,9 @@ function backfillField<Field extends MergeableBetaLinkField>(
 // changed; an empty object means the survivor already had every populated field.
 export function backfillBetaLinkMetadata(keep: BetaLinkRow, remove: BetaLinkRow[]): BetaLinkBackfill {
   const backfill: BetaLinkBackfill = {};
-  backfillField(backfill, keep, remove, 'foreignUsername');
-  backfillField(backfill, keep, remove, 'angle');
-  backfillField(backfill, keep, remove, 'thumbnail');
-  backfillField(backfill, keep, remove, 'isListed');
-  backfillField(backfill, keep, remove, 'createdAt');
-  backfillField(backfill, keep, remove, 'tickUuid');
-  backfillField(backfill, keep, remove, 'boardId');
-  backfillField(backfill, keep, remove, 'shortcode');
-  backfillField(backfill, keep, remove, 'videoIdentity');
-  backfillField(backfill, keep, remove, 'createdByUserId');
+  for (const field of MERGEABLE_BETA_LINK_FIELDS) {
+    backfillField(backfill, keep, remove, field);
+  }
   return backfill;
 }
 
