@@ -1,0 +1,83 @@
+version: 0.1
+
+# AWS Device Farm custom test environment for the Android login-freeze probe.
+#
+# Maestro is not a native Device Farm test type, so we run it ourselves on the
+# Linux host (which has the selected device attached over adb) during the `test`
+# phase. The uploaded "test package" is unpacked to $DEVICEFARM_TEST_PACKAGE_PATH;
+# it contains login-freeze-android.yaml (and a stub package.json so the upload
+# validates as an Appium-Node package). The APK is installed by Device Farm from
+# the separately-uploaded ANDROID_APP.
+#
+# The package id is auto-detected from what Device Farm installed, so the SAME
+# spec works for the prod build (com.boardsesh.app) and the diagnostic build
+# (com.boardsesh.app.dev).
+#
+# Before the Maestro probe we capture the cold-start "layout tool" diagnostics —
+# the headless equivalent of Android Studio's Layout Inspector — so we can see WHY
+# touch is dead: uiautomator node bounds (the touchable regions), dumpsys window/
+# activity geometry (the real DecorView/ReactRootView sizes + insets — i.e. whether
+# the root view is laid out against stale metrics: the 891-vs-805 / top-inset 40-vs-0
+# signature), and a screenshot to compare drawn pixels against those bounds.
+#
+# Verdict: Maestro's exit code is the run result — non-zero (assertion failed =
+# frozen) fails the Device Farm run; zero (touch alive) passes it.
+
+phases:
+  install:
+    commands:
+      # Java + adb are preinstalled on the Device Farm Android host. Pin Maestro so
+      # runs are reproducible.
+      - export MAESTRO_VERSION=1.40.0
+      - curl -Ls "https://get.maestro.mobile.dev" | bash
+      - export PATH="$PATH:$HOME/.maestro/bin"
+      - maestro --version
+
+  pre_test:
+    commands:
+      - export PATH="$PATH:$HOME/.maestro/bin"
+      - adb devices
+      # Which Boardsesh package did Device Farm install? (prod or dev variant)
+      - export APP_ID=$(adb shell pm list packages | tr -d '\r' | grep -oE 'com\.boardsesh\.app(\.dev)?' | sort -u | tail -1)
+      - echo "detected APP_ID=$APP_ID"
+
+  test:
+    commands:
+      - export PATH="$PATH:$HOME/.maestro/bin"
+      - export APP_ID=$(adb shell pm list packages | tr -d '\r' | grep -oE 'com\.boardsesh\.app(\.dev)?' | sort -u | tail -1)
+      - cd "$DEVICEFARM_LOG_DIR"
+      # --- Android "layout tool" capture: cold-start frozen-state diagnostics ---
+      # Launch fresh and let it settle into the (possibly frozen) first frame, then
+      # snapshot the view tree + window geometry + pixels.
+      - adb shell am force-stop "$APP_ID" || true
+      - adb shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 || true
+      - sleep 12
+      - adb exec-out screencap -p > "$DEVICEFARM_LOG_DIR/coldstart.png" || true
+      - adb shell uiautomator dump /sdcard/uidump-coldstart.xml || true
+      - adb pull /sdcard/uidump-coldstart.xml "$DEVICEFARM_LOG_DIR/uidump-coldstart.xml" || true
+      - adb shell dumpsys activity top > "$DEVICEFARM_LOG_DIR/dumpsys-activity-top.txt" 2>&1 || true
+      - adb shell dumpsys window displays > "$DEVICEFARM_LOG_DIR/dumpsys-window-displays.txt" 2>&1 || true
+      - adb shell dumpsys window windows > "$DEVICEFARM_LOG_DIR/dumpsys-window-windows.txt" 2>&1 || true
+      # --- Maestro touch-liveness probe (the PASS/FAIL verdict) ---
+      - |
+        maestro test \
+          --format junit \
+          --output "$DEVICEFARM_LOG_DIR/maestro-report.xml" \
+          -e APP_ID="$APP_ID" \
+          "$DEVICEFARM_TEST_PACKAGE_PATH/login-freeze-android.yaml"
+
+  post_test:
+    commands:
+      # Maestro leaves the app foreground on the (frozen) login screen, so capture
+      # the APP-state hierarchy + geometry here — reliable, unlike the pre_test monkey
+      # launch which on some OEMs bounces back to the launcher before the dump.
+      - adb exec-out screencap -p > "$DEVICEFARM_LOG_DIR/post-maestro.png" 2>/dev/null || true
+      - adb shell uiautomator dump /sdcard/uidump-post.xml 2>/dev/null || true
+      - adb pull /sdcard/uidump-post.xml "$DEVICEFARM_LOG_DIR/uidump-post.xml" 2>/dev/null || true
+      - adb shell dumpsys activity top > "$DEVICEFARM_LOG_DIR/dumpsys-activity-top-post.txt" 2>&1 || true
+      # Maestro also writes a per-run dir (screenshots + command log + the view
+      # hierarchy it dumps on failure) under ~/.maestro/tests; fold it in.
+      - cp -r "$HOME/.maestro/tests" "$DEVICEFARM_LOG_DIR/maestro-tests" 2>/dev/null || true
+
+artifacts:
+  - $DEVICEFARM_LOG_DIR

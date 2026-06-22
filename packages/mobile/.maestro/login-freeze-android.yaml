@@ -1,0 +1,57 @@
+appId: ${APP_ID}
+name: android login freeze probe
+---
+# Touch-liveness probe for the Android-16 cold-start touch-freeze (Pixel 9/10,
+# Galaxy S24/S25). Runs on AWS Device Farm against the DIAGNOSTIC APK
+# (com.boardsesh.app.dev, EXPO_PUBLIC_FREEZE_DEBUG=1, NOT screenshot mode), so the
+# REAL login screen mounts on a logged-out cold start — the screenshot build
+# auto-signs-in and never shows login (see README.md).
+#
+# In the frozen state the native hit-region is dead: an injected tap lands but RN
+# never routes it, so the email field never focuses and typed text never appears.
+# This flow therefore FAILS when frozen (= bug reproduced) and PASSES when touch is
+# alive (= fix verified). That binary is the Device Farm run's verdict.
+#
+# Only the native TextInput is probed: on this RN Fabric build Maestro's a11y tree
+# may not expose custom Pressables (the Sign-in button), but it does expose native
+# text inputs (auth-email-input is an RN TextInput). The FREEZE DEBUG overlay
+# (win/scr/ins metrics) is on-screen in this build, so the screenshots also capture
+# the window metrics next to the frozen frame.
+
+# Force a genuine logged-out cold start: clear app data and stop the process first.
+- launchApp:
+    clearState: true
+    stopApp: true
+
+# The login screen is up once the email field exists. Native TextInput → reliably
+# found by testID even on Fabric.
+- extendedWaitUntil:
+    visible:
+      id: 'auth-email-input'
+    timeout: 45000
+- takeScreenshot: 01-login-mounted
+
+# --- Touch-liveness probe ---
+# If the hit-region is frozen this tap is a no-op: the field won't focus and the
+# text below won't register.
+- tapOn:
+    id: 'auth-email-input'
+- inputText: 'freeze-probe@boardsesh.com'
+- takeScreenshot: 02-after-type
+
+# The verdict. The typed email (not masked, unlike the password field) is only
+# visible if the tap focused the field — i.e. touch is alive. A frozen screen
+# fails here and fails the run.
+- assertVisible: 'freeze-probe@boardsesh.com'
+
+# Corroborate with a second field: focus password and clear the email to prove
+# repeated interaction works (not a one-shot fluke). No assertion on the password
+# value itself — it's secureTextEntry (masked).
+- tapOn:
+    id: 'auth-password-input'
+- takeScreenshot: 03-password-focused
+- tapOn:
+    id: 'auth-email-input'
+- eraseText
+- assertNotVisible: 'freeze-probe@boardsesh.com'
+- takeScreenshot: 04-email-cleared

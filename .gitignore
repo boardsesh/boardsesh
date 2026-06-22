@@ -11,6 +11,8 @@ coverage
 packages/web/playwright-report
 packages/web/test-results
 packages/web/e2e/screenshots/
+# AWS Device Farm run artifacts (videos/screenshots/logs downloaded per run)
+packages/mobile/device-farm/runs/
 
 # next.js
 .next/

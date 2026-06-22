@@ -570,6 +570,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-android-apk.ts',
         cache: false,
       },
+      'mobile:device-farm': {
+        command: 'tsx scripts/mobile-device-farm.ts',
+        cache: false,
+      },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
         cache: false,
