@@ -71,6 +71,9 @@ interface CliArgs {
   runName?: string;
   recreatePool: boolean;
   keep: boolean;
+  // Extra Maestro variables (e.g. EMAIL/PASSWORD) passed to the flow via `-e`. Kept
+  // out of git: written into the per-run test package only, never committed.
+  maestroEnv: Record<string, string>;
 }
 
 function fail(message: string): never {
@@ -111,7 +114,7 @@ function loadCredentials(): void {
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { flowPath: DEFAULT_FLOW_PATH, recreatePool: false, keep: false };
+  const args: CliArgs = { flowPath: DEFAULT_FLOW_PATH, recreatePool: false, keep: false, maestroEnv: {} };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     switch (token) {
@@ -133,6 +136,13 @@ function parseArgs(argv: string[]): CliArgs {
       case '--keep':
         args.keep = true;
         break;
+      case '--maestro-env': {
+        const pair = argv[(index += 1)] ?? '';
+        const eq = pair.indexOf('=');
+        if (eq === -1) fail(`--maestro-env expects KEY=VALUE, got: ${pair}`);
+        args.maestroEnv[pair.slice(0, eq)] = pair.slice(eq + 1);
+        break;
+      }
       default:
         if (token.startsWith('--')) fail(`unknown flag: ${token}`);
     }
@@ -194,7 +204,7 @@ async function ensureDevicePool(
 // Maestro (not Appium) in the spec, but the package must validate as an
 // Appium-Node zip: a package.json + a node_modules dir at the root. We add the
 // Maestro flow alongside; the spec runs it from $DEVICEFARM_TEST_PACKAGE_PATH.
-function buildTestPackageZip(flowPath: string, keep: boolean): string {
+function buildTestPackageZip(flowPath: string, maestroEnv: Record<string, string>, keep: boolean): string {
   if (!existsSync(flowPath)) fail(`flow not found: ${flowPath}`);
   const stageDir = mkdtempSync(join(tmpdir(), 'bs-df-pkg-'));
   writeFileSync(
@@ -204,8 +214,14 @@ function buildTestPackageZip(flowPath: string, keep: boolean): string {
   // Minimal node_modules so the APPIUM_NODE upload validates.
   mkdirSync(join(stageDir, 'node_modules'), { recursive: true });
   writeFileSync(join(stageDir, 'node_modules', '.package-lock.json'), '{"lockfileVersion":3,"requires":true}\n');
-  // The flow at the package root → $DEVICEFARM_TEST_PACKAGE_PATH/<flow basename>.
-  writeFileSync(join(stageDir, basename(flowPath)), readFileSync(flowPath, 'utf8'));
+  // The flow at a fixed name → the test spec stays flow-agnostic ($DEVICEFARM_TEST_PACKAGE_PATH/flow.yaml).
+  writeFileSync(join(stageDir, 'flow.yaml'), readFileSync(flowPath, 'utf8'));
+  // Extra Maestro vars (e.g. EMAIL/PASSWORD) the spec sources + forwards via `-e`.
+  // Single-quoted so special chars survive; embedded quotes are escaped.
+  const envScript = Object.entries(maestroEnv)
+    .map(([key, value]) => `export ${key}='${value.replace(/'/g, "'\\''")}'`)
+    .join('\n');
+  writeFileSync(join(stageDir, 'maestro-env.sh'), `${envScript}\n`);
 
   const zipPath = join(stageDir, '..', `bs-df-testpkg-${basename(stageDir)}.zip`);
   const zip = spawnSync('zip', ['-r', '-q', zipPath, '.'], { cwd: stageDir });
@@ -349,7 +365,7 @@ async function main(): Promise<void> {
   const projectArn = await ensureProject(client, config.projectName);
   const devicePoolArn = await ensureDevicePool(client, projectArn, config, args.recreatePool);
 
-  const testPackageZip = buildTestPackageZip(args.flowPath, args.keep);
+  const testPackageZip = buildTestPackageZip(args.flowPath, args.maestroEnv, args.keep);
 
   const appArn = await uploadFile(client, projectArn, 'ANDROID_APP', appPath, basename(appPath));
   const testPackageArn = await uploadFile(

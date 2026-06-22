@@ -1,0 +1,66 @@
+appId: ${APP_ID}
+name: android login + navigate (no-freeze)
+---
+# End-to-end no-freeze check: cold-start, sign in with a real account, then navigate
+# the app by TOUCH (tabs, a list row, a scroll). Reaching home at all proves the
+# cold-start touch-freeze is gone — login requires a working hit-region (tap email,
+# type, tap password, type, tap Sign in). The post-login taps add coverage that
+# touch stays alive across screens. Credentials are passed via -e (EMAIL/PASSWORD).
+
+- launchApp:
+    clearState: true
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'auth-email-input'
+    timeout: 60000
+- takeScreenshot: 01-login-mounted
+
+# --- Sign in ---
+- tapOn:
+    id: 'auth-email-input'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'auth-password-input'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- takeScreenshot: 02-credentials-entered
+- tapOn:
+    id: 'auth-submit-button'
+
+# Reaching home is the verdict: the whole login interaction landed → not frozen.
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 120000
+- takeScreenshot: 03-home
+
+# --- Navigate by touch ---
+# Scroll the feed (a gesture the frozen hit-region would swallow).
+- scroll
+- takeScreenshot: 04-home-scrolled
+
+# Climbs tab → wait for the list, then open a climb row.
+- tapOn: 'Climbs'
+- extendedWaitUntil:
+    visible:
+      id: 'climb-list'
+    timeout: 60000
+- takeScreenshot: 05-climbs
+- tapOn:
+    id: 'climb-row'
+    index: 0
+- waitForAnimationToEnd
+- takeScreenshot: 06-climb-opened
+
+# Back out and hop to Profile, then Home — confirms tab touch keeps working.
+- back
+- tapOn: 'Profile'
+- waitForAnimationToEnd
+- takeScreenshot: 07-profile
+- tapOn: 'Home'
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 60000
+- takeScreenshot: 08-home-again

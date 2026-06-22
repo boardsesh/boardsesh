@@ -58,13 +58,19 @@ phases:
       - adb shell dumpsys activity top > "$DEVICEFARM_LOG_DIR/dumpsys-activity-top.txt" 2>&1 || true
       - adb shell dumpsys window displays > "$DEVICEFARM_LOG_DIR/dumpsys-window-displays.txt" 2>&1 || true
       - adb shell dumpsys window windows > "$DEVICEFARM_LOG_DIR/dumpsys-window-windows.txt" 2>&1 || true
-      # --- Maestro touch-liveness probe (the PASS/FAIL verdict) ---
+      # Optional per-run Maestro vars (e.g. EMAIL/PASSWORD), written by the runner.
+      - . "$DEVICEFARM_TEST_PACKAGE_PATH/maestro-env.sh" 2>/dev/null || true
+      # --- Maestro probe (the PASS/FAIL verdict). flow.yaml is whatever flow the
+      #     runner uploaded (login-freeze probe, or login + navigate). Unused -e vars
+      #     are harmless, so we always forward APP_ID + credentials. ---
       - |
         maestro test \
           --format junit \
           --output "$DEVICEFARM_LOG_DIR/maestro-report.xml" \
           -e APP_ID="$APP_ID" \
-          "$DEVICEFARM_TEST_PACKAGE_PATH/login-freeze-android.yaml"
+          -e EMAIL="${EMAIL:-}" \
+          -e PASSWORD="${PASSWORD:-}" \
+          "$DEVICEFARM_TEST_PACKAGE_PATH/flow.yaml"
 
   post_test:
     commands:
