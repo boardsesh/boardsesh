@@ -105,7 +105,8 @@ export const SessionTickRow = memo(function SessionTickRow({
   // primarySubtitleOverride and attempt/comment/setter via subtitleDetailParts.
   // ListRow has no detail line, so setterText is excluded here to avoid it
   // appearing in the only subtitle slot alongside the attempt/comment text.
-  const fallbackSubtitle = [attemptText, tick.comment ?? null].filter((part): part is string => !!part).join(' · ') || undefined;
+  const fallbackSubtitle =
+    [attemptText, tick.comment ?? null].filter((part): part is string => !!part).join(' · ') || undefined;
 
   const handlePress = useCallback(() => {
     hapticSelection();

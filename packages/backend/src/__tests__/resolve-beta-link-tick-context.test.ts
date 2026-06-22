@@ -186,7 +186,12 @@ describe('resolveBetaLinkTickContext', () => {
     setupDbMocks(makeTick(), 'https://www.instagram.com/reel/EXISTING/');
     await expect(
       resolveBetaLinkTickContext(
-        { boardType: 'kilter', climbUuid: 'climb-1', tickUuid: 'tick-uuid-1', link: 'https://www.instagram.com/reel/DIFFERENT/' },
+        {
+          boardType: 'kilter',
+          climbUuid: 'climb-1',
+          tickUuid: 'tick-uuid-1',
+          link: 'https://www.instagram.com/reel/DIFFERENT/',
+        },
         'user-1',
       ),
     ).rejects.toMatchObject({ extensions: { code: 'BETA_LINK_TICK_ALREADY_LINKED' } });

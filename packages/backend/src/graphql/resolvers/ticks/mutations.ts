@@ -108,7 +108,11 @@ export async function findBetaLinkIdentityConflict(
 }
 
 const SAME_CLIMB_DUP_MESSAGE = 'We already have this video linked for this climb. Try a different post or reel.';
-const crossClimbDupMessage = (otherClimbName: string, existingBoardType: string, requestedBoardType: string): string => {
+const crossClimbDupMessage = (
+  otherClimbName: string,
+  existingBoardType: string,
+  requestedBoardType: string,
+): string => {
   if (existingBoardType !== requestedBoardType) {
     return `This video is already attached to "${otherClimbName}" on a different board. A video can only belong to one climb across all boards — please post a separate clip for this climb.`;
   }
@@ -213,7 +217,9 @@ export async function validateAndEnrichBetaLinkInsert(
     if (isCrossBoard && (options.onCrossBoardDup ?? 'throw') === 'skip') {
       return { action: 'skip-existing' };
     }
-    throw new InstagramBetaValidationError(crossClimbDupMessage(conflict.climbName, conflict.existingBoardType, boardType));
+    throw new InstagramBetaValidationError(
+      crossClimbDupMessage(conflict.climbName, conflict.existingBoardType, boardType),
+    );
   }
   if (conflict.kind === 'same-climb') {
     if (options.onSameClimbDup === 'throw') {

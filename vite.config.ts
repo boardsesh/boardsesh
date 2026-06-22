@@ -18,10 +18,23 @@ export default defineConfig({
     // formatting it produces noise diffs every time `vp check --fix`
     // runs without changing what ships, and the linter already ignores
     // the same path. Keep them in lock-step.
-    // CHANGELOG.md is generated (and owned/pushed) by the mobile OTA pipeline
-    // from PR Release Notes — never hand-format it, or the bot's output and a
-    // formatted copy would drift (and the push-to-main `vp check` would flag it).
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md'],
+    // Generated / tool-owned files — never hand-format, or the generator's output and a formatted
+    // copy drift (and CI flags it):
+    //   - CHANGELOG.md + *.generated.json (notably packages/mobile/src/data/changelog.generated.json):
+    //     owned by the mobile OTA pipeline, regenerated from PR Release Notes; the `changelog-owned`
+    //     CI gate rejects any PR that edits them. `**/generated/**` only matches a `generated/`
+    //     DIRECTORY, so the `.generated.json` NAME pattern is needed too (also covers e.g.
+    //     oss-licenses.generated.json).
+    //   - drizzle/meta/** (snapshots + _journal.json): emitted byte-for-byte by `drizzle-kit generate`;
+    //     reformatting them is noise drizzle re-churns on the next migration.
+    ignore: [
+      'design/**',
+      '**/generated/**',
+      '**/*.generated.json',
+      '**/drizzle/meta/**',
+      '**/board-controller/**',
+      'CHANGELOG.md',
+    ],
   },
   lint: {
     ignorePatterns: ['**/board-controller/**'],

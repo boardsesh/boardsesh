@@ -7,18 +7,20 @@ We pledge to make participation in our community a harassment-free experience fo
 ## Our Standards
 
 Examples of positive behavior:
-* Empathy and kindness toward others
-* Respecting differing opinions and experiences
-* Giving and accepting constructive feedback
-* Taking responsibility for mistakes
-* Focusing on what's best for the community
+
+- Empathy and kindness toward others
+- Respecting differing opinions and experiences
+- Giving and accepting constructive feedback
+- Taking responsibility for mistakes
+- Focusing on what's best for the community
 
 Examples of unacceptable behavior:
-* Sexualized language, imagery, or attention
-* Trolling, insults, derogatory comments
-* Harassment (public or private)
-* Publishing private information without permission
-* Other inappropriate conduct
+
+- Sexualized language, imagery, or attention
+- Trolling, insults, derogatory comments
+- Harassment (public or private)
+- Publishing private information without permission
+- Other inappropriate conduct
 
 ## Enforcement
 
