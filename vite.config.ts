@@ -177,6 +177,14 @@ export default defineConfig({
         // often targets DB_URL against a remote database instead of local Docker.
         cache: false,
       },
+      'db:dedupe-beta-links': {
+        command: 'bun run --filter=@boardsesh/db db:dedupe-beta-links',
+        // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
+        // runs this by hand against DB_URL (often a remote database), not local
+        // Docker. Dry-run by default; --apply is the only write path. Forward
+        // flags with `vp run db:dedupe-beta-links -- --apply`.
+        cache: false,
+      },
       'test:db': {
         command: 'bun run --filter=@boardsesh/db test',
       },

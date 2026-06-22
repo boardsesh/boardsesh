@@ -11,7 +11,10 @@
  *
  * The table PK is (board_type, climb_uuid, link), so the rows in a duplicate
  * group always differ by `link`, which makes a row-level delete unambiguous. One
- * row per group is kept (richest / most canonical — see dedupe-beta-links-helpers).
+ * row per group is kept (richest / most canonical — see dedupe-beta-links-helpers),
+ * and before the duplicates are deleted the survivor inherits any column it is
+ * missing from them, so metadata split across URL variants (e.g. the angle on one
+ * variant, the video_identity on the other) is preserved rather than lost.
  *
  * Default mode is dry-run. Use --apply only after reading the report.
  *
@@ -27,7 +30,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { pathToFileURL } from 'node:url';
 import { createScriptDb } from './db-connection.js';
 import { boardBetaLinks } from '../src/schema/boards/unified.js';
-import { groupDuplicateBetaLinks, type BetaLinkDuplicateGroup, type BetaLinkRow } from './dedupe-beta-links-helpers.js';
+import {
+  groupDuplicateBetaLinks,
+  type BetaLinkBackfill,
+  type BetaLinkDuplicateGroup,
+  type BetaLinkRow,
+} from './dedupe-beta-links-helpers.js';
 
 const APPLY_FLAG = '--apply';
 const BOARD_FLAG = '--board';
@@ -103,6 +111,10 @@ Options:
   --help            Show this help text.`);
 }
 
+function describeBackfill(backfill: BetaLinkBackfill): string {
+  return Object.keys(backfill).join(', ');
+}
+
 function printReport(
   totalRows: number,
   allGroups: BetaLinkDuplicateGroup[],
@@ -110,16 +122,26 @@ function printReport(
   apply: boolean,
 ): void {
   const redundantRows = allGroups.reduce((total, group) => total + group.remove.length, 0);
+  const recoverGroups = allGroups.filter((group) => Object.keys(group.backfill).length > 0).length;
   console.info(`[dedupe-beta-links] Scanned ${totalRows} beta link(s).`);
   console.info(
     `[dedupe-beta-links] ${allGroups.length} duplicate group(s), ${redundantRows} redundant row(s) to remove.`,
   );
+  if (recoverGroups > 0) {
+    console.info(
+      `[dedupe-beta-links] ${recoverGroups} survivor(s) will recover metadata from a duplicate before it is deleted.`,
+    );
+  }
   if (shown.length < allGroups.length) {
     console.info(`[dedupe-beta-links] Showing the first ${shown.length} group(s) (--limit).`);
   }
   for (const group of shown) {
     console.info('');
     console.info(`  keep   ${group.keep.boardType} ${group.keep.climbUuid} ${group.keep.link}`);
+    const recovered = describeBackfill(group.backfill);
+    if (recovered) {
+      console.info(`  recover ${recovered}`);
+    }
     for (const removal of group.remove) {
       console.info(`  remove ${removal.boardType} ${removal.climbUuid} ${removal.link}`);
     }
@@ -135,12 +157,16 @@ async function fetchRows(db: ReturnType<typeof createScriptDb>['db'], board: str
     boardType: boardBetaLinks.boardType,
     climbUuid: boardBetaLinks.climbUuid,
     link: boardBetaLinks.link,
-    videoIdentity: boardBetaLinks.videoIdentity,
-    createdByUserId: boardBetaLinks.createdByUserId,
-    tickUuid: boardBetaLinks.tickUuid,
+    foreignUsername: boardBetaLinks.foreignUsername,
     angle: boardBetaLinks.angle,
     thumbnail: boardBetaLinks.thumbnail,
+    isListed: boardBetaLinks.isListed,
     createdAt: boardBetaLinks.createdAt,
+    tickUuid: boardBetaLinks.tickUuid,
+    boardId: boardBetaLinks.boardId,
+    shortcode: boardBetaLinks.shortcode,
+    videoIdentity: boardBetaLinks.videoIdentity,
+    createdByUserId: boardBetaLinks.createdByUserId,
   };
   const query = db.select(columns).from(boardBetaLinks);
   return board ? query.where(eq(boardBetaLinks.boardType, board)) : query;
@@ -165,13 +191,18 @@ async function main(): Promise<void> {
       return;
     }
 
-    const deletedCount = await db.transaction(async (transaction) => {
+    const { removed, recovered } = await db.transaction(async (transaction) => {
       // Serialize dedupe runs so two concurrent invocations can't both decide to
       // delete the "loser" of the same group and race to remove the survivor.
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:beta-link-dedupe'))`);
 
-      let removed = 0;
+      let deletedRows = 0;
+      let recoveredSurvivors = 0;
       for (const group of selectedGroups) {
+        // Delete the duplicates first: video_identity and tick_uuid are uniquely
+        // indexed (partial, WHERE NOT NULL), so recovering one of those onto the
+        // survivor below would collide with the duplicate that still holds it
+        // unless that row is already gone.
         for (const removal of group.remove) {
           const deleted = await transaction
             .delete(boardBetaLinks)
@@ -183,14 +214,30 @@ async function main(): Promise<void> {
               ),
             )
             .returning({ link: boardBetaLinks.link });
-          removed += deleted.length;
+          deletedRows += deleted.length;
+        }
+        if (Object.keys(group.backfill).length > 0) {
+          await transaction
+            .update(boardBetaLinks)
+            .set(group.backfill)
+            .where(
+              and(
+                eq(boardBetaLinks.boardType, group.keep.boardType),
+                eq(boardBetaLinks.climbUuid, group.keep.climbUuid),
+                eq(boardBetaLinks.link, group.keep.link),
+              ),
+            );
+          recoveredSurvivors += 1;
         }
       }
-      return removed;
+      return { removed: deletedRows, recovered: recoveredSurvivors };
     });
 
     console.info('');
-    console.info(`[dedupe-beta-links] Deleted ${deletedCount} redundant row(s).`);
+    console.info(`[dedupe-beta-links] Deleted ${removed} redundant row(s).`);
+    if (recovered > 0) {
+      console.info(`[dedupe-beta-links] Recovered metadata onto ${recovered} survivor(s).`);
+    }
   } finally {
     await close();
   }
