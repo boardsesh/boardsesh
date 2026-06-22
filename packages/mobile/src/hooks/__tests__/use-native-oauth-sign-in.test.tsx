@@ -336,4 +336,19 @@ describe('useNativeOAuthSignIn — Android Google web fallback (DEVELOPER_ERROR 
       reason: 'invalid_oauth_token',
     });
   });
+
+  it('opens the Apple web fallback on Android too — the hook is platform-agnostic now', async () => {
+    // Apple sign-in isn't offered in the Android UI, but the gate that used to keep
+    // the fallback iOS-only is gone (#3083 → #3100). Locking the deliberate behavior:
+    // if a caller ever passes 'apple', it recovers in the browser rather than
+    // silently dead-ending — so a future regression that re-gates it is caught here.
+    signInWithAppleMock.mockRejectedValue(Object.assign(new Error('unknown'), { code: 1000 }));
+    signInWithAppleWebMock.mockResolvedValue({ success: true });
+
+    const setError = await runSignIn('apple');
+
+    expect(signInWithAppleWebMock).toHaveBeenCalledTimes(1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    expect(setError).toHaveBeenLastCalledWith(null);
+  });
 });

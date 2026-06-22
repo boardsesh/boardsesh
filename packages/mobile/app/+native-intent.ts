@@ -1,5 +1,10 @@
 import { getShareExtensionKey } from 'expo-share-intent';
 
+// The OAuth fallback callback — com.boardsesh.app://auth/callback?… or the
+// normalized /auth/callback?… form — anchored to the path segment so it can't catch
+// an unrelated route that merely contains the substring (e.g. /admin/auth/callback-debug).
+const OAUTH_CALLBACK_PATH = /(^|\/)auth\/callback(\?|$)/;
+
 // Expo Router's redirect hook for OS-level deep links. The iOS Share Extension
 // (expo-share-intent) opens the app via a synthetic `com.boardsesh.app://...
 // dataUrl=<key>` URL; without this redirect Expo Router treats that as an
@@ -19,10 +24,12 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   // Return '' so Expo Router skips that navigation: success still lands on home (the
   // auth state flips and the root layout redirects), and failure surfaces on the
   // still-mounted screen — exactly how iOS behaves, where ASWebAuthenticationSession
-  // consumes the redirect and it never becomes a deep link. The fallback only runs
-  // with the app foregrounded, so this is always a warm intent; a stale cold-start
-  // intent (initial) falls through to the app's normal initial route.
-  if (path.includes('auth/callback')) {
+  // consumes the redirect and it never becomes a deep link. Only for a *warm* intent:
+  // the fallback always runs foregrounded, and '' isn't a safe cold-start
+  // destination (the share branch returns '/' on cold start for the same reason). A
+  // stale cold-start auth/callback intent (no exchange in flight) falls through to
+  // normal routing → +not-found → home instead.
+  if (!initial && OAUTH_CALLBACK_PATH.test(path)) {
     return '';
   }
   try {

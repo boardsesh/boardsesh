@@ -27,7 +27,7 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path: 'com.boardsesh.app://share?dataUrl=SHAREKEY', initial: false })).toBe('');
   });
 
-  it('suppresses navigation for the OAuth fallback callback so the result handler owns it', () => {
+  it('suppresses navigation for a warm OAuth fallback callback so the result handler owns it', () => {
     // On Android the browser fallback's com.boardsesh.app://auth/callback redirect
     // is delivered as a real deep link; routing it would hit +not-found and navigate
     // the auth screen to home before runWebFallback can show its error. '' skips that.
@@ -36,6 +36,23 @@ describe('redirectSystemPath', () => {
     );
     // A ?error= callback is the case the suppression protects (must not navigate away).
     expect(redirectSystemPath({ path: '/auth/callback?error=session_missing', initial: false })).toBe('');
+  });
+
+  it('does NOT suppress a cold-start auth/callback (stale intent) — falls through to normal routing', () => {
+    // '' is not a safe cold-start destination. A stale queued auth/callback intent
+    // (no exchange in flight) must fall through to +not-found → home, not be swallowed.
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: '/auth/callback?error=session_missing', initial: true })).toBe(
+      '/auth/callback?error=session_missing',
+    );
+  });
+
+  it('only matches the auth/callback path segment, not routes that merely contain it', () => {
+    // The match is anchored so an unrelated route isn't silently suppressed.
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: '/admin/auth/callback-debug', initial: false })).toBe(
+      '/admin/auth/callback-debug',
+    );
   });
 
   it('leaves ordinary deep links untouched', () => {
