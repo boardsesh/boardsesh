@@ -40,27 +40,34 @@ name: android login + navigate (no-freeze)
 - scroll
 - takeScreenshot: 04-home-scrolled
 
-# Climbs tab → wait for the list, then open a climb row.
+# Climbs tab → wait for the list.
 - tapOn: 'Climbs'
 - extendedWaitUntil:
     visible:
       id: 'climb-list'
     timeout: 60000
 - takeScreenshot: 05-climbs
+# Scroll the climbs list itself (a frozen hit-region won't move the list — the
+# before/after screenshots show whether it moved).
+- scroll
+- scroll
+- scroll
+- takeScreenshot: 06-climbs-scrolled
+# Open a climb row.
 - tapOn:
     id: 'climb-row'
     index: 0
 - waitForAnimationToEnd
-- takeScreenshot: 06-climb-opened
+- takeScreenshot: 07-climb-opened
 
 # Back out and hop to Profile, then Home — confirms tab touch keeps working.
 - back
 - tapOn: 'Profile'
 - waitForAnimationToEnd
-- takeScreenshot: 07-profile
+- takeScreenshot: 08-profile
 - tapOn: 'Home'
 - extendedWaitUntil:
     visible:
       id: 'home-screen'
     timeout: 60000
-- takeScreenshot: 08-home-again
+- takeScreenshot: 09-home-again
