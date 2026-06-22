@@ -230,7 +230,8 @@ Run `vp run mobile:ota-setup` with no argument for the ordered runbook.
    - `EXPO_APP_ID` = `87499648-655e-4fb8-9856-65da37e55fb1` (our Expo project id)
    - `EXPO_ACCESS_TOKEN` = an Expo token (same value as the `EXPO_TOKEN` CI secret)
    - `CACHE_MODE` = `local` (or `redis`)
-   - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME`, `AWS_REGION`, `AWS_BASE_ENDPOINT` (R2), and
+   - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME`, `AWS_REGION`, `AWS_BASE_ENDPOINT` (the
+     S3-compatible endpoint — Boardsesh uses Tigris on fly.io), and
      `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
    - `KEYS_STORAGE_TYPE` = `environment`, plus `PUBLIC_EXPO_KEY_B64` / `PRIVATE_EXPO_KEY_B64`
      (base64 of the keys from step 2)

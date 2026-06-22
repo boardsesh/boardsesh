@@ -90,7 +90,7 @@ function generateKeys(force: boolean): void {
       `PRIVATE_EXPO_KEY_B64=${base64File(privateKeyPath)}`,
       `STORAGE_MODE=s3`,
       `S3_BUCKET_NAME=boardsesh-ota`,
-      `AWS_REGION=<region, e.g. auto for R2>`,
+      `AWS_REGION=<region; e.g. auto for R2/Tigris>`,
       `AWS_BASE_ENDPOINT=<S3-compatible endpoint>`,
       `AWS_ACCESS_KEY_ID=<bucket key id>`,
       `AWS_SECRET_ACCESS_KEY=<bucket secret>`,
@@ -197,10 +197,12 @@ function setupPreview(): void {
     ),
   );
   log('');
-  log('Apply (S3 / S3-compatible via the S3 API — add --endpoint-url <AWS_BASE_ENDPOINT> for R2):');
+  log('Apply via the S3 API (boardsesh-ota is Tigris on fly.io — pass its --endpoint-url; any');
+  log('S3-compatible provider works the same). FIRST get-bucket-lifecycle-configuration and MERGE —');
+  log('put-bucket-lifecycle-configuration REPLACES all rules:');
   log(`  aws s3api put-bucket-lifecycle-configuration --bucket ${BUCKET} \\`);
-  log('    --lifecycle-configuration file://lifecycle.json [--endpoint-url <AWS_BASE_ENDPOINT>]');
-  log('  (or add it in the Cloudflare R2 dashboard: Object lifecycle rules → prefix "pr-").');
+  log('    --lifecycle-configuration file://lifecycle.json --endpoint-url <S3 endpoint>');
+  log('  (or set it in the storage provider\'s lifecycle UI — prefix "pr-", expire after 14 days).');
   log('');
   log('── 2. GitHub setup (best-effort, idempotent) ──');
   ghTry(
