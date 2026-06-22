@@ -3,17 +3,12 @@
   "projectName": "Boardsesh Mobile",
   "devicePoolName": "android-16-freeze-repro",
   "appPackageId": "com.boardsesh.app.dev",
-  "comment": "Affected models on Android 16 (the cold-start touch-freeze class). Device ARNs are global (account-less) and stable. Edit the pool with `vp run mobile:device-farm -- --recreate-pool` after changing this list.",
+  "comment": "Lean smoke pool: one Pixel + one Samsung on Android 16 (the two OEMs that matter; AWS bills per device-minute). Device ARNs are global (account-less) and stable. Apply changes with `vp run mobile:device-farm -- --recreate-pool`.",
   "devices": [
     {
       "name": "Google Pixel 10",
       "os": "16",
       "arn": "arn:aws:devicefarm:us-west-2::device:876125E44C784FCD9A31D40F1E37E11F"
-    },
-    {
-      "name": "Google Pixel 9",
-      "os": "16",
-      "arn": "arn:aws:devicefarm:us-west-2::device:6D89F408709B4D3BBBBB17696A24B141"
     },
     {
       "name": "Samsung Galaxy S25",
