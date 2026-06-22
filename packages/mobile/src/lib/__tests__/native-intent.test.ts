@@ -27,6 +27,17 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path: 'com.boardsesh.app://share?dataUrl=SHAREKEY', initial: false })).toBe('');
   });
 
+  it('suppresses navigation for the OAuth fallback callback so the result handler owns it', () => {
+    // On Android the browser fallback's com.boardsesh.app://auth/callback redirect
+    // is delivered as a real deep link; routing it would hit +not-found and navigate
+    // the auth screen to home before runWebFallback can show its error. '' skips that.
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://auth/callback?transferToken=abc', initial: false })).toBe(
+      '',
+    );
+    // A ?error= callback is the case the suppression protects (must not navigate away).
+    expect(redirectSystemPath({ path: '/auth/callback?error=session_missing', initial: false })).toBe('');
+  });
+
   it('leaves ordinary deep links untouched', () => {
     getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
     expect(redirectSystemPath({ path: JOIN_LINK, initial: true })).toBe(JOIN_LINK);
