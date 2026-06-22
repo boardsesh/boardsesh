@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
@@ -69,6 +69,12 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // background-kill risk). The empty stack preserves the parent's layout box;
   // layers re-mount and re-decode from disk (no network) on foreground.
   const isBackgrounded = useIsAppBackgrounded();
+  // Reset the overlay-painted anchor when backgrounded so the screenshot/e2e
+  // anchor re-gates on the next real onLoad after foreground (the overlay
+  // re-decodes); otherwise the anchor would re-appear before the lit board does.
+  useEffect(() => {
+    if (isBackgrounded) setOverlayPainted(false);
+  }, [isBackgrounded]);
   if (isBackgrounded) {
     return <View style={[styles.stack, mirrored && styles.mirrored]} />;
   }
