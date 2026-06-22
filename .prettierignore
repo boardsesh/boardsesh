@@ -1,0 +1,4 @@
+# Generated / tool-owned files — never formatted, or the generator's output drifts vs a
+# formatted copy (and the `changelog-owned` CI gate rejects changelog edits). See vite.config.ts.
+**/*.generated.json
+**/drizzle/meta/
