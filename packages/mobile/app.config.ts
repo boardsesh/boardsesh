@@ -388,6 +388,22 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // expo-location above; the Android Google Maps key is set via
       // android.config.googleMaps.apiKey (env-gated). iOS uses Apple Maps.
       'expo-maps',
+      // Android 15/16 edge-to-edge theme. REQUIRED — do not remove (commit
+      // 5235c8ba0 removed it and reintroduced the Pixel 10 / Galaxy S24+ freeze).
+      // Android 16 forces edge-to-edge at the WINDOW level, but Expo SDK 56's
+      // unversioned `withEdgeToEdge` runs `withRestoreDefaultTheme`, which forces
+      // the Android `AppTheme` parent back to `Theme.AppCompat.DayNight.NoActionBar`
+      // (a NON-edge-to-edge theme) unless THIS plugin reapplies the edge-to-edge
+      // parent (`Theme.EdgeToEdge`). With edge-to-edge windows on a non-edge-to-edge
+      // theme, the autolinked react-native-edge-to-edge native layer (and <SystemBars>)
+      // resolves `Theme.EdgeToEdge` styleables that don't exist — logcat fills with
+      // `Invalid resource ID 0x000000xx` and touch dies on most of the app until a
+      // configuration change (e.g. split-screen) re-runs window metrics. Do NOT add
+      // `android.edgeToEdgeEnabled` — Expo SDK 56 rejects it with a warning (Android 16
+      // makes edge-to-edge mandatory); the parent theme is the only knob, and this
+      // plugin is the supported way to set it (Expo's restore step explicitly defers
+      // to it). The runtime <SystemBars> in app/_layout.tsx drives bar icon contrast.
+      'react-native-edge-to-edge',
       // Android 12+ system splash + the launch screen on every platform. The
       // transparent brand mark sits on a black background for a consistent
       // icon-to-app handoff. app/_layout.tsx already drives

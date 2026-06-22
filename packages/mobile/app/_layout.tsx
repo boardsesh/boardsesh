@@ -61,6 +61,7 @@ import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -425,6 +426,11 @@ function RootLayout() {
                                                             JS bottom-bar variants. */}
                                                           <AccessoryOnboardingTip />
                                                           <OnboardingGate ready={authReady && fontsReady} />
+                                                          {/* Tester-only diagnostic for the Android-16 edge-to-edge
+                                                            touch-dead bug; a root sibling (stays tappable while the
+                                                            <Stack> hit-region is frozen). No-op unless built with
+                                                            EXPO_PUBLIC_FREEZE_DEBUG=1. */}
+                                                          <FreezeDebugOverlay />
                                                         </UserDrawerProvider>
                                                       </TabBarHeightProvider>
                                                       <AnalyticsScreenTracker />
