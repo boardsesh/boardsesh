@@ -13,7 +13,6 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
-import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
@@ -24,10 +23,10 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
 import { Button } from '../../src/components/Button';
-import { FeedbackSheet } from '../../src/components/user-drawer/FeedbackSheet';
 import { track } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
+import { openDiscordInvite } from '../../src/lib/discord';
 
 export default function LoginScreen() {
   const { signInWithCredentials } = useAuth();
@@ -35,10 +34,6 @@ export default function LoginScreen() {
   const theme = useTheme();
   const router = useRouter();
   const passwordRef = useRef<RNTextInput>(null);
-  // Bug report sheet — the only in-app way for a user who can't get past login to
-  // reach us. Mounted here (inside the QueueProvider / BottomSheetModalProvider
-  // tree) so the shared FeedbackSheet works without auth; submission is public.
-  const feedbackSheetRef = useRef<BottomSheetModal>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -252,8 +247,8 @@ export default function LoginScreen() {
           </Pressable>
         </View>
 
-        {/* Last-resort help for someone stuck at the gate: sign-in failing, can't
-            create an account. Subtle so it stays out of the way of the happy path. */}
+        {/* Last-resort help for someone stuck at the gate: opens our Discord in the
+            browser. Sheet-free on purpose so nothing can block the login screen. */}
         <View style={styles.troubleRow}>
           <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
             {t('login.links.troubleSigningIn')}{' '}
@@ -261,17 +256,16 @@ export default function LoginScreen() {
           <Pressable
             onPress={() => {
               hapticLight();
-              feedbackSheetRef.current?.present();
+              void openDiscordInvite('login');
             }}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             style={styles.footerLinkHit}
-            accessibilityRole="button"
+            accessibilityRole="link"
           >
-            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.reportBug')}</Text>
+            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
           </Pressable>
         </View>
       </ScrollView>
-      <FeedbackSheet sheetRef={feedbackSheetRef} mode="bug" showDiscordLink />
     </KeyboardAvoidingView>
   );
 }
