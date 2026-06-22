@@ -2,6 +2,7 @@ import React from 'react';
 import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
+import type { BackgroundVariant } from '../lib/background-image-cache';
 import { LayeredClimbImage } from './LayeredClimbImage';
 
 type BoardImageNativeProps = {
@@ -30,6 +31,20 @@ type BoardImageNativeProps = {
    * for the full-size play view (renders at native board width).
    */
   renderWidth?: number;
+  /**
+   * Force the bundled board-photo resolution independently of `renderWidth`.
+   * The play-drawer carousel passes `renderWidth` (display-sized overlay) +
+   * `backgroundVariant="full"` (crisp shared photo). See useNativeClimbRender.
+   */
+  backgroundVariant?: BackgroundVariant;
+  /**
+   * Forwarded to the holds-overlay <Image> so expo-image recycles the view and
+   * releases the previous climb's decoded overlay bitmap when this stays mounted
+   * but the climb changes (the play-drawer carousel swapping climbs). Without it,
+   * the old full-size overlay lingers in the in-memory cache alongside the new
+   * one. Key it on the per-climb `frames`.
+   */
+  recyclingKey?: string;
   style?: ViewStyle;
   /**
    * testID forwarded to the holds-overlay layer, which only mounts once the async
@@ -61,6 +76,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
   mirrored,
   filledStyle = false,
   renderWidth,
+  backgroundVariant,
+  recyclingKey,
   style,
   overlayTestID,
 }: BoardImageNativeProps) {
@@ -72,6 +89,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     setIds,
     filledStyle,
     renderWidth,
+    backgroundVariant,
   });
 
   const containerStyle: ViewStyle = {
@@ -87,6 +105,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         backgroundPaths={backgroundPaths}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
+        recyclingKey={recyclingKey}
         overlayTestID={overlayTestID}
       />
     </View>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
+import { useIsAppBackgrounded } from '../lib/app-visibility';
 
 type LayeredClimbImageProps = {
   overlayUri: string | null;
@@ -60,6 +61,17 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // blank drawer. Gating on onLoad makes the anchor mean "the lit board is on
   // screen".
   const [overlayPainted, setOverlayPainted] = useState(false);
+
+  // While the app is backgrounded, drop the decoded board-art bitmaps: render
+  // an empty stack instead of the <Image> layers so expo-image releases their
+  // GPU textures + native-heap bitmaps (the views stay mounted across a
+  // background, so without this they pin ~100 MB+ that raises the OS
+  // background-kill risk). The empty stack preserves the parent's layout box;
+  // layers re-mount and re-decode from disk (no network) on foreground.
+  const isBackgrounded = useIsAppBackgrounded();
+  if (isBackgrounded) {
+    return <View style={[styles.stack, mirrored && styles.mirrored]} />;
+  }
 
   return (
     <View style={[styles.stack, mirrored && styles.mirrored]}>

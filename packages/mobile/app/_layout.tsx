@@ -57,6 +57,7 @@ import { spacing } from '../src/theme/tokens';
 import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError } from '../src/lib/error-reporting';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
+import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
@@ -269,6 +270,10 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
+
+  // Flush the decoded-image memory cache on background / memory warning so the
+  // board-art bitmaps don't keep the backgrounded app at ~575 MB (kill risk).
+  useImageCacheMemoryManagement();
 
   useEffect(() => {
     let cancelled = false;

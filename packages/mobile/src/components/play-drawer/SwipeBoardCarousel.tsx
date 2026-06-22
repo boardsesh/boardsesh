@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   useWindowDimensions,
+  PixelRatio,
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
@@ -100,6 +101,18 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   );
   const boardStyle = useMemo<ViewStyle | undefined>(
     () => (boardBox ? { width: boardBox.width, height: boardBox.height } : undefined),
+    [boardBox],
+  );
+  // Render the per-climb holds overlay at the displayed pixel size, not the
+  // board's native ~1080px. The board photo is shared per board-config (one
+  // decode for every climb on the wall) and stays full-res via
+  // backgroundVariant="full"; only the overlay shrinks. Without this, swiping
+  // through climbs piles a native-res (~7 MB RGBA) overlay per climb into
+  // expo-image's memory cache. Clamped to native width inside
+  // useNativeClimbRender (never upscales), so high-DPR phones whose display
+  // width already exceeds native render unchanged.
+  const overlayRenderWidth = useMemo(
+    () => (boardBox ? Math.round(boardBox.width * PixelRatio.get()) : undefined),
     [boardBox],
   );
   // The carousel works in board-width units: a letterboxed (narrower) board
@@ -233,6 +246,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 boardWidth={boardWidth}
                 boardHeight={boardHeight}
                 mirrored={mirrored}
+                renderWidth={overlayRenderWidth}
+                backgroundVariant="full"
+                // Climb identity (not the per-frame override) so the overlay
+                // recycles on swipe-to-new-climb, not on every playback frame.
+                recyclingKey={currentFrames}
                 style={boardStyle}
               />
             </Animated.View>
@@ -250,6 +268,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              renderWidth={overlayRenderWidth}
+              backgroundVariant="full"
+              recyclingKey={peekFrames}
               style={boardStyle}
             />
           )}
