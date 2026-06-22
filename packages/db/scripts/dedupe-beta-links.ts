@@ -17,8 +17,11 @@
  *
  * Usage:
  *   vp run db:dedupe-beta-links
- *   vp run db:dedupe-beta-links -- --board kilter --limit 20
- *   vp run db:dedupe-beta-links -- --apply
+ *   vp run db:dedupe-beta-links --board kilter --limit 20
+ *   vp run db:dedupe-beta-links --apply
+ *
+ * (A `--` separator before the flags also works — `vp` forwards it to the script
+ * verbatim and parseArgs skips it — but it isn't needed.)
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { pathToFileURL } from 'node:url';
@@ -30,6 +33,7 @@ const APPLY_FLAG = '--apply';
 const BOARD_FLAG = '--board';
 const LIMIT_FLAG = '--limit';
 const HELP_FLAG = '--help';
+const ARG_SEPARATOR = '--';
 
 type ScriptArgs = {
   apply: boolean;
@@ -47,10 +51,16 @@ function readRequiredOptionValue(args: string[], optionIndex: number, flagName: 
   return optionValue;
 }
 
-function parseArgs(args: string[]): ScriptArgs {
+export function parseArgs(args: string[]): ScriptArgs {
   const parsed: ScriptArgs = { apply: false, board: null, limit: null, help: false };
   for (let index = 0; index < args.length; index++) {
     const current = args[index];
+    if (current === ARG_SEPARATOR) {
+      // `vp run db:dedupe-beta-links -- --apply` forwards the `--` separator to
+      // the script verbatim, so tolerate (skip) it rather than rejecting it as
+      // an unknown argument. Both `-- --apply` and `--apply` then work.
+      continue;
+    }
     if (current === APPLY_FLAG) {
       parsed.apply = true;
       continue;
@@ -83,8 +93,8 @@ function parseArgs(args: string[]): ScriptArgs {
 function printHelp(): void {
   console.info(`Usage:
   vp run db:dedupe-beta-links
-  vp run db:dedupe-beta-links -- --board kilter --limit 20
-  vp run db:dedupe-beta-links -- --apply
+  vp run db:dedupe-beta-links --board kilter --limit 20
+  vp run db:dedupe-beta-links --apply
 
 Options:
   --apply           Delete the redundant rows. Omit for a dry-run report.

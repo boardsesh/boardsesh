@@ -6,8 +6,11 @@
  *
  * Usage:
  *   vp run db:dedupe-gyms
- *   vp run db:dedupe-gyms -- --only-name "Sandbox Bouldering"
- *   vp run db:dedupe-gyms -- --apply --limit 10
+ *   vp run db:dedupe-gyms --only-name "Sandbox Bouldering"
+ *   vp run db:dedupe-gyms --apply --limit 10
+ *
+ * (A `--` separator before the flags also works — `vp` forwards it to the script
+ * verbatim and parseArgs skips it — but it isn't needed.)
  */
 
 import { sql, type SQLWrapper } from 'drizzle-orm';
@@ -29,6 +32,7 @@ const APPLY_FLAG = '--apply';
 const LIMIT_FLAG = '--limit';
 const ONLY_NAME_FLAG = '--only-name';
 const HELP_FLAG = '--help';
+const ARG_SEPARATOR = '--';
 
 type ExecuteDb = {
   execute(query: SQLWrapper | string): PromiseLike<unknown>;
@@ -101,6 +105,12 @@ function parseArgs(args: string[]): ScriptArgs {
 
   for (let index = 0; index < args.length; index++) {
     const currentArg = args[index];
+    if (currentArg === ARG_SEPARATOR) {
+      // `vp run db:dedupe-gyms -- --apply` forwards the `--` separator to the
+      // script verbatim, so tolerate (skip) it rather than rejecting it as an
+      // unknown argument. Both `-- --apply` and `--apply` then work.
+      continue;
+    }
     if (currentArg === APPLY_FLAG) {
       parsedArgs.apply = true;
       continue;
@@ -130,8 +140,8 @@ function parseArgs(args: string[]): ScriptArgs {
 function printHelp(): void {
   console.info(`Usage:
   vp run db:dedupe-gyms
-  vp run db:dedupe-gyms -- --only-name "Sandbox Bouldering"
-  vp run db:dedupe-gyms -- --apply --limit 10
+  vp run db:dedupe-gyms --only-name "Sandbox Bouldering"
+  vp run db:dedupe-gyms --apply --limit 10
 
 Options:
   --apply              Merge candidates. Omit for dry-run.
