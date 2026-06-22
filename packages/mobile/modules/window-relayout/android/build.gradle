@@ -1,0 +1,29 @@
+plugins {
+  id 'com.android.library'
+  // Canonical Expo local-module plugin: applies Kotlin + provides
+  // expo-modules-core (Module/ModuleDefinition API) on the compile classpath.
+  // Groovy (not .kts) so the library defaultConfig versionCode/versionName the
+  // plugin requires can be set. Mirrors modules/live-activity/android/build.gradle.
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.windowrelayout'
+  compileSdk 36
+
+  defaultConfig {
+    minSdk 24
+    // Required by expo-module-gradle-plugin's publication setup.
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // ViewCompat.requestApplyInsets — androidx.core. expo-modules-core comes from
+  // the plugin above.
+  implementation 'androidx.core:core-ktx:1.13.1'
+}

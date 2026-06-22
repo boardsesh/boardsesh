@@ -1,0 +1,7 @@
+{
+  "name": "@boardsesh/window-relayout-module",
+  "version": "0.1.0",
+  "description": "Android-only diagnostic bridge: force a window-insets re-dispatch / Activity recreate to test the edge-to-edge login-screen touch-freeze (Pixel 9/10, Galaxy S24/S25).",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

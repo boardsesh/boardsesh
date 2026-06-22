@@ -1,0 +1,187 @@
+name: Android Diagnostic APK (login freeze)
+
+# Builds a sideloadable, bundled-JS Android APK with the FreezeDebugOverlay baked
+# in (EXPO_PUBLIC_FREEZE_DEBUG=1) so EXTERNAL CONTRIBUTORS can reproduce + diagnose
+# the Android-16 edge-to-edge login-screen touch-freeze (Pixel 9/10, Galaxy
+# S24/S25) — we have no in-house devices that hit it.
+#
+# Unlike android-apk-rn.yml (production sideload) this is intentionally minimal:
+#   - manual-only (workflow_dispatch), runs off ANY branch;
+#   - BOARDSESH_APP_VARIANT=dev → package com.boardsesh.app.dev, "Boardsesh Dev"
+#     name + reddish icons, so it installs SIDE-BY-SIDE and never touches a
+#     contributor's real app;
+#   - `./gradlew assembleRelease` bundles the JS (no Metro needed), and with no
+#     ANDROID_KEYSTORE_* env the release build type falls back to the deterministic
+#     Expo debug keystore (with-android-release-signing) — so it signs + installs
+#     with NO secrets and NO Production environment, off a feature branch;
+#   - no Play upload, no AAB, no fingerprint tag, no OTA — diagnostic only.
+#
+# The relayout_fix input additionally bakes EXPO_PUBLIC_RELAYOUT_FIX=1, which makes
+# the candidate fix fire automatically on the login screen (see app/auth/login.tsx)
+# — build that variant to confirm the auto-fix once a contributor validates the
+# overlay's manual "Relayout" button.
+
+on:
+  workflow_dispatch:
+    inputs:
+      relayout_fix:
+        description: 'Bake EXPO_PUBLIC_RELAYOUT_FIX=1 (auto-relayout on login mount) to test the candidate fix'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: android-diagnostic-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # softprops/action-gh-release attaches the APK to a prerelease
+
+env:
+  # Repo-level vars only (no Production-environment secrets), so the build runs off
+  # any branch. The backend/analytics values mirror the other Android workflows.
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  # The whole point of this build: turn on the on-screen FreezeDebugOverlay.
+  EXPO_PUBLIC_FREEZE_DEBUG: '1'
+  # Off unless the dispatcher opts in. '1' makes login auto-relayout on mount.
+  EXPO_PUBLIC_RELAYOUT_FIX: ${{ inputs.relayout_fix && '1' || '' }}
+  # Switches app.config.ts to the side-by-side "Boardsesh Dev" identity.
+  BOARDSESH_APP_VARIANT: dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses and install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-rn-
+
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EXPO_PUBLIC_FREEZE_DEBUG=$EXPO_PUBLIC_FREEZE_DEBUG
+          EXPO_PUBLIC_RELAYOUT_FIX=$EXPO_PUBLIC_RELAYOUT_FIX
+          EOF
+          echo "Built .env (FREEZE_DEBUG=$EXPO_PUBLIC_FREEZE_DEBUG RELAYOUT_FIX='$EXPO_PUBLIC_RELAYOUT_FIX')"
+
+      # The Sentry Gradle upload task is incompatible with the Expo-generated
+      # Gradle version; runtime Sentry stays on via the DSN. Same as apk-rn.
+      - name: Disable Sentry source map upload
+        run: echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
+
+      - name: Expo prebuild (generate android/)
+        working-directory: packages/mobile
+        run: bunx expo prebuild --platform android --clean --no-install
+
+      # Diagnostic builds never go to Play, so the elaborate Play-ceiling logic in
+      # apk-rn isn't needed — run_number is monotonic enough that a newer
+      # diagnostic APK upgrades an older one in place (same debug keystore).
+      - name: Set version code
+        run: |
+          set -euo pipefail
+          code=${{ github.run_number }}
+          sed -Ei "s/^([[:space:]]*)versionCode .*/\\1versionCode ${code}/" packages/mobile/android/app/build.gradle
+          echo "versionCode set to ${code}"
+
+      # No ANDROID_KEYSTORE_* env → with-android-release-signing falls back to the
+      # deterministic Expo debug keystore, so the release APK is signed + installable
+      # without any secrets (fine for a sideloaded diagnostic build).
+      - name: Build debug-signed arm64 release APK (bundled JS)
+        working-directory: packages/mobile/android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
+
+      - name: Locate and rename APK
+        id: apk
+        run: |
+          set -euo pipefail
+          release_dir=packages/mobile/android/app/build/outputs/apk/release
+          src="$(find "$release_dir" -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          [ -n "$src" ] || { echo "::error::No release APK produced"; exit 1; }
+          dest="$release_dir/boardsesh-dev-freeze-debug-arm64-v8a.apk"
+          cp -f "$src" "$dest"
+          echo "path=$dest" >> "$GITHUB_OUTPUT"
+          echo "Built $dest"
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boardsesh-dev-freeze-debug-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish prerelease (shareable download link)
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: diag-android-${{ github.run_number }}
+          name: Android login-freeze diagnostic (build ${{ github.run_number }})
+          body: |
+            **Diagnostic build for the Android login-screen freeze** — not a release.
+
+            - **Package:** `com.boardsesh.app.dev` ("Boardsesh Dev") — installs
+              side-by-side with the real app; your normal Boardsesh stays untouched.
+            - **Arch:** arm64-v8a · **JS:** bundled (no dev server needed).
+            - **FreezeDebugOverlay:** ON (red box, top of screen).
+            - **Auto-relayout fix (EXPO_PUBLIC_RELAYOUT_FIX):** `${{ inputs.relayout_fix && 'ON' || 'off' }}`.
+            - Commit: ${{ github.sha }} (branch `${{ github.ref_name }}`).
+
+            **How to test the login freeze:**
+            1. Install the APK (allow "install unknown apps"), open "Boardsesh Dev",
+               and go to the login screen.
+            2. If the form won't respond, tap **Snap** in the red box, then **Relayout**.
+            3. If touch comes back after Relayout → screenshot the red box and report it.
+            4. If not, enter split-screen, tap **Snap** again, screenshot, and report
+               both readouts (and whether **Recreate** helped).
+          draft: false
+          prerelease: true
+          files: ${{ steps.apk.outputs.path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

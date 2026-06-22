@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -9,6 +9,7 @@ import {
   View,
   type TextInput as RNTextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -28,6 +29,15 @@ import { track } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { openDiscordInvite } from '../../src/lib/discord';
+import { windowRelayoutNative } from '../../modules/window-relayout/src/index';
+
+// Candidate fix for the Android-16 cold-start login freeze, OFF by default. The
+// diagnostic build (EXPO_PUBLIC_FREEZE_DEBUG=1) leaves this unset so it still
+// reproduces the frozen baseline and the FreezeDebugOverlay's Relayout button
+// drives the same native call on demand. Flip EXPO_PUBLIC_RELAYOUT_FIX=1 in a
+// build once a contributor confirms a relayout restores touch — then this fires
+// automatically when the login screen mounts.
+const RELAYOUT_FIX_ENABLED = process.env.EXPO_PUBLIC_RELAYOUT_FIX === '1';
 
 export default function LoginScreen() {
   const { signInWithCredentials } = useAuth();
@@ -42,6 +52,21 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   // Shared Apple/Google flow; errors land in the same region as credentials sign-in.
   const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({ setError });
+
+  // Login is the cold-start screen and, on Android 16 edge-to-edge (Pixel 9/10,
+  // Galaxy S24/S25), its native hit-region can be laid out against stale window
+  // metrics and stay touch-dead until a real Configuration change (split-screen)
+  // re-runs them. Once mounted, force a window-insets re-dispatch on the next
+  // frame so the metrics are recomputed up front — the same thing the
+  // FreezeDebugOverlay's Relayout button does. Gated OFF by default (see
+  // RELAYOUT_FIX_ENABLED); the no-op module call is Android-only and harmless.
+  useEffect(() => {
+    if (!RELAYOUT_FIX_ENABLED || Platform.OS !== 'android') return;
+    const frame = requestAnimationFrame(() => {
+      void windowRelayoutNative?.requestApplyInsets();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const trimmedEmail = email.trim();
   const canSubmit = !submitting && trimmedEmail.length > 0 && password.length > 0;
@@ -118,186 +143,194 @@ export default function LoginScreen() {
   const showSocialSignIn = showAppleSignIn || showGoogleSignIn;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-      >
-        {showAndroidFreezeNotice ? (
-          <View
-            style={[
-              styles.freezeNotice,
-              { backgroundColor: theme.systemColors.secondaryBackground, borderColor: theme.systemColors.separator },
-            ]}
-            accessibilityRole="alert"
-          >
-            <Icon name="warning" size={22} color={theme.brandColors.warning} />
-            <View style={styles.freezeNoticeText}>
-              <Text style={[styles.freezeNoticeTitle, { color: theme.systemColors.label }]}>
-                {t('login.splitScreenNotice.title')}
-              </Text>
-              <Text style={[styles.freezeNoticeBody, { color: theme.systemColors.secondaryLabel }]}>
-                {t('login.splitScreenNotice.body')}
-              </Text>
+    // SafeAreaView (not a bare View): login has no native header, so without it
+    // the form draws under the status/nav bars under Android's mandatory
+    // edge-to-edge. It also subscribes this subtree to the safe-area context, so
+    // the screen re-lays-out when the real insets arrive — a guard against the
+    // cold-start inset race the relayout fix above also targets.
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          {showAndroidFreezeNotice ? (
+            <View
+              style={[
+                styles.freezeNotice,
+                { backgroundColor: theme.systemColors.secondaryBackground, borderColor: theme.systemColors.separator },
+              ]}
+              accessibilityRole="alert"
+            >
+              <Icon name="warning" size={22} color={theme.brandColors.warning} />
+              <View style={styles.freezeNoticeText}>
+                <Text style={[styles.freezeNoticeTitle, { color: theme.systemColors.label }]}>
+                  {t('login.splitScreenNotice.title')}
+                </Text>
+                <Text style={[styles.freezeNoticeBody, { color: theme.systemColors.secondaryLabel }]}>
+                  {t('login.splitScreenNotice.body')}
+                </Text>
+              </View>
             </View>
-          </View>
-        ) : null}
-        <View style={styles.header}>
-          <Image
-            source={require('../../assets/splash-icon.png')}
-            style={styles.logo}
-            contentFit="contain"
-            accessible={false}
-          />
-          <Text style={[styles.title, { color: theme.brandColors.primary }]}>Boardsesh</Text>
-          <Text style={[styles.subtitle, { color: theme.systemColors.secondaryLabel }]}>
-            {t('nativeStart.tagline')}
-          </Text>
-        </View>
-
-        <View style={styles.form}>
-          <AuthTextInput
-            testID="auth-email-input"
-            label={t('login.fields.email')}
-            value={email}
-            onChangeText={setEmail}
-            placeholder={t('login.placeholders.email')}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="emailAddress"
-            autoComplete="email"
-            returnKeyType="next"
-            onSubmitEditing={() => passwordRef.current?.focus()}
-            editable={!submitting}
-          />
-          <AuthTextInput
-            ref={passwordRef}
-            testID="auth-password-input"
-            label={t('login.fields.password')}
-            value={password}
-            onChangeText={setPassword}
-            placeholder={t('login.placeholders.password')}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="password"
-            autoComplete="password"
-            returnKeyType="done"
-            onSubmitEditing={() => {
-              void onSubmit();
-            }}
-            editable={!submitting}
-            showLabel={t('login.a11y.showPassword')}
-            hideLabel={t('login.a11y.hidePassword')}
-          />
-          <Button
-            testID="auth-submit-button"
-            title={t('nativeStart.signIn')}
-            onPress={() => {
-              void onSubmit();
-            }}
-            variant="filled"
-            size="large"
-            loading={submitting}
-            disabled={!canSubmit}
-            style={styles.submitButton}
-          />
-          {error ? (
-            <Text style={styles.errorText} accessibilityLiveRegion="polite">
-              {error}
-            </Text>
           ) : null}
-        </View>
+          <View style={styles.header}>
+            <Image
+              source={require('../../assets/splash-icon.png')}
+              style={styles.logo}
+              contentFit="contain"
+              accessible={false}
+            />
+            <Text style={[styles.title, { color: theme.brandColors.primary }]}>Boardsesh</Text>
+            <Text style={[styles.subtitle, { color: theme.systemColors.secondaryLabel }]}>
+              {t('nativeStart.tagline')}
+            </Text>
+          </View>
 
-        {showSocialSignIn && (
-          <>
-            <View style={styles.dividerRow}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-              <Text style={styles.dividerLabel}>{t('nativeStart.orContinueWith')}</Text>
-              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-            </View>
+          <View style={styles.form}>
+            <AuthTextInput
+              testID="auth-email-input"
+              label={t('login.fields.email')}
+              value={email}
+              onChangeText={setEmail}
+              placeholder={t('login.placeholders.email')}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="emailAddress"
+              autoComplete="email"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              editable={!submitting}
+            />
+            <AuthTextInput
+              ref={passwordRef}
+              testID="auth-password-input"
+              label={t('login.fields.password')}
+              value={password}
+              onChangeText={setPassword}
+              placeholder={t('login.placeholders.password')}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="password"
+              autoComplete="password"
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                void onSubmit();
+              }}
+              editable={!submitting}
+              showLabel={t('login.a11y.showPassword')}
+              hideLabel={t('login.a11y.hidePassword')}
+            />
+            <Button
+              testID="auth-submit-button"
+              title={t('nativeStart.signIn')}
+              onPress={() => {
+                void onSubmit();
+              }}
+              variant="filled"
+              size="large"
+              loading={submitting}
+              disabled={!canSubmit}
+              style={styles.submitButton}
+            />
+            {error ? (
+              <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                {error}
+              </Text>
+            ) : null}
+          </View>
 
-            <View style={styles.buttons}>
-              {showAppleSignIn && (
-                // Apple's official native button — App Review requires it when other
-                // third-party logins are offered. Self-labeled/localized; colour and
-                // corner radius come from the dedicated props (not `style`).
-                <AppleAuthentication.AppleAuthenticationButton
-                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                  buttonStyle={
-                    isDark
-                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                  }
-                  cornerRadius={12}
-                  style={styles.appleButton}
-                  onPress={() => {
-                    hapticLight();
-                    void handleOAuthSignIn('apple');
-                  }}
-                />
-              )}
-              {/* Google's official brand-compliant button — only when the build
+          {showSocialSignIn && (
+            <>
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+                <Text style={styles.dividerLabel}>{t('nativeStart.orContinueWith')}</Text>
+                <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+              </View>
+
+              <View style={styles.buttons}>
+                {showAppleSignIn && (
+                  // Apple's official native button — App Review requires it when other
+                  // third-party logins are offered. Self-labeled/localized; colour and
+                  // corner radius come from the dedicated props (not `style`).
+                  <AppleAuthentication.AppleAuthenticationButton
+                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                    buttonStyle={
+                      isDark
+                        ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                        : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                    }
+                    cornerRadius={12}
+                    style={styles.appleButton}
+                    onPress={() => {
+                      hapticLight();
+                      void handleOAuthSignIn('apple');
+                    }}
+                  />
+                )}
+                {/* Google's official brand-compliant button — only when the build
                   shipped the Google native config (otherwise it would fail on tap). */}
-              {showGoogleSignIn && (
-                <GoogleSigninButton
-                  size={GoogleSigninButton.Size.Wide}
-                  color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
-                  disabled={oauthInProgress}
-                  style={styles.googleButton}
-                  onPress={() => {
-                    hapticLight();
-                    void handleOAuthSignIn('google');
-                  }}
-                />
-              )}
-            </View>
-          </>
-        )}
+                {showGoogleSignIn && (
+                  <GoogleSigninButton
+                    size={GoogleSigninButton.Size.Wide}
+                    color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
+                    disabled={oauthInProgress}
+                    style={styles.googleButton}
+                    onPress={() => {
+                      hapticLight();
+                      void handleOAuthSignIn('google');
+                    }}
+                  />
+                )}
+              </View>
+            </>
+          )}
 
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
-            {t('login.links.noAccount')}{' '}
-          </Text>
-          <Pressable
-            onPress={() => {
-              hapticLight();
-              router.push('/auth/register');
-            }}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-            style={styles.footerLinkHit}
-            accessibilityRole="link"
-          >
-            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.submit.signUp')}</Text>
-          </Pressable>
-        </View>
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
+              {t('login.links.noAccount')}{' '}
+            </Text>
+            <Pressable
+              onPress={() => {
+                hapticLight();
+                router.push('/auth/register');
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+              style={styles.footerLinkHit}
+              accessibilityRole="link"
+            >
+              <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.submit.signUp')}</Text>
+            </Pressable>
+          </View>
 
-        {/* Last-resort help for someone stuck at the gate: opens our Discord in the
+          {/* Last-resort help for someone stuck at the gate: opens our Discord in the
             browser. Sheet-free on purpose so nothing can block the login screen. */}
-        <View style={styles.troubleRow}>
-          <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
-            {t('login.links.troubleSigningIn')}{' '}
-          </Text>
-          <Pressable
-            onPress={() => {
-              hapticLight();
-              void openDiscordInvite('login');
-            }}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-            style={styles.footerLinkHit}
-            accessibilityRole="link"
-          >
-            <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <View style={styles.troubleRow}>
+            <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
+              {t('login.links.troubleSigningIn')}{' '}
+            </Text>
+            <Pressable
+              onPress={() => {
+                hapticLight();
+                void openDiscordInvite('login');
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+              style={styles.footerLinkHit}
+              accessibilityRole="link"
+            >
+              <Text style={[styles.footerLink, { color: theme.systemColors.accent }]}>{t('login.links.discord')}</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
   container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   freezeNotice: {
     flexDirection: 'row',
