@@ -59,7 +59,10 @@ so events group in Sentry: `react-query`, `native-auth`, `queue-mutation`,
 - **React Query** (`providers/query-provider.tsx`) — `QueryCache` / `MutationCache`
   `onError` report every query/mutation failure once `retry` is exhausted. This is
   the chokepoint for API / GraphQL-HTTP / REST failures; don't re-report at
-  individual `useQuery`/`useMutation` call sites.
+  individual `useQuery`/`useMutation` call sites. A query that keeps failing re-fires
+  `onError` on every refetch (focus / reconnect / remount), but Sentry groups those
+  into one issue by stack fingerprint — the event count climbs without spawning
+  duplicates, so no extra `queryHash` dedup is needed (unlike the old PostHog setup).
 - Direct **GraphQL-WS** ops (`@boardsesh/queue-react`, `@boardsesh/playlists-react`)
   bypass React Query, so their catch sites report explicitly.
 

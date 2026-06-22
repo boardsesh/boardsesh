@@ -69,6 +69,31 @@ export function toSentryTag(value: unknown): string | number | boolean {
   }
 }
 
+// The slice of Sentry's Scope this module writes to. Structural (not the SDK's
+// `Scope`) so the mapping below is testable with a plain fake — and so the real
+// `Scope` passed by `withScope` stays assignable to it.
+type SentryScopeLike = {
+  setLevel: (level: NonNullable<ErrorReportContext['level']>) => void;
+  setTag: (key: string, value: string | number | boolean) => void;
+  setExtra: (key: string, value: unknown) => void;
+};
+
+/**
+ * Map our ErrorReportContext onto a Sentry scope. Extracted as a pure function
+ * (no enablement gate, no SDK init) so the level/tag/extra mapping is directly
+ * unit-testable: `captureToSentry` only runs on real builds (`!__DEV__`), so
+ * without this the coercion/mapping would be invisible to CI behind the gate.
+ */
+export function applyErrorContextToScope(scope: SentryScopeLike, context?: ErrorReportContext): void {
+  if (context?.level) scope.setLevel(context.level);
+  for (const [key, value] of Object.entries(context?.tags ?? {})) {
+    scope.setTag(key, toSentryTag(value));
+  }
+  for (const [key, value] of Object.entries(context?.extra ?? {})) {
+    scope.setExtra(key, value);
+  }
+}
+
 /**
  * Report an error to Sentry if it is active. No-op otherwise. The optional
  * context (level/tags/extra) is mapped onto a Sentry scope so callers can attach
@@ -77,13 +102,7 @@ export function toSentryTag(value: unknown): string | number | boolean {
 export function captureToSentry(error: unknown, context?: ErrorReportContext): void {
   if (!isSentryEnabled) return;
   Sentry.withScope((scope) => {
-    if (context?.level) scope.setLevel(context.level);
-    for (const [key, value] of Object.entries(context?.tags ?? {})) {
-      scope.setTag(key, toSentryTag(value));
-    }
-    for (const [key, value] of Object.entries(context?.extra ?? {})) {
-      scope.setExtra(key, value);
-    }
+    applyErrorContextToScope(scope, context);
     Sentry.captureException(error);
   });
 }

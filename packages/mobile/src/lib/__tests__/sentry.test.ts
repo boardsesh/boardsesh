@@ -15,7 +15,14 @@ vi.mock('@sentry/react-native', () => ({
 }));
 
 import * as Sentry from '@sentry/react-native';
-import { captureToSentry, flushSentry, wrapWithSentry, isSentryEnabled, toSentryTag } from '../sentry';
+import {
+  applyErrorContextToScope,
+  captureToSentry,
+  flushSentry,
+  wrapWithSentry,
+  isSentryEnabled,
+  toSentryTag,
+} from '../sentry';
 
 describe('isSentryEnabled', () => {
   it('is false in dev / test (no DSN + __DEV__)', () => {
@@ -66,5 +73,43 @@ describe('toSentryTag', () => {
     // The point is it returns a string and does not throw — exact text is the
     // String() fallback, not a crash.
     expect(typeof toSentryTag(circular)).toBe('string');
+  });
+});
+
+// captureToSentry only runs the scope mapping when isSentryEnabled (false under
+// vitest, since __DEV__ is frozen true), so the mapping is extracted into this
+// pure function and exercised here with a fake scope — that's where a level /
+// tag / extra bug would otherwise hide behind the enablement gate.
+describe('applyErrorContextToScope', () => {
+  function makeScope() {
+    return { setLevel: vi.fn(), setTag: vi.fn(), setExtra: vi.fn() };
+  }
+
+  it('sets the level when one is provided', () => {
+    const scope = makeScope();
+    applyErrorContextToScope(scope, { level: 'warning' });
+    expect(scope.setLevel).toHaveBeenCalledWith('warning');
+  });
+
+  it('sets each tag with its coerced value (objects → JSON, not "[object Object]")', () => {
+    const scope = makeScope();
+    applyErrorContextToScope(scope, { tags: { source: 'react-query', response: { status: 500 } } });
+    expect(scope.setTag).toHaveBeenCalledWith('source', 'react-query');
+    expect(scope.setTag).toHaveBeenCalledWith('response', '{"status":500}');
+  });
+
+  it('sets each extra verbatim (no coercion)', () => {
+    const scope = makeScope();
+    const payload = { board: 'kilter', angle: 40 };
+    applyErrorContextToScope(scope, { extra: { payload } });
+    expect(scope.setExtra).toHaveBeenCalledWith('payload', payload);
+  });
+
+  it('touches nothing when there is no context', () => {
+    const scope = makeScope();
+    applyErrorContextToScope(scope);
+    expect(scope.setLevel).not.toHaveBeenCalled();
+    expect(scope.setTag).not.toHaveBeenCalled();
+    expect(scope.setExtra).not.toHaveBeenCalled();
   });
 });
