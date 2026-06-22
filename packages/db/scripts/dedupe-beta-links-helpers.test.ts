@@ -148,6 +148,15 @@ test('a populated field on the survivor is never overwritten by a duplicate', ()
   assert.deepEqual(backfill, {});
 });
 
+test('a field missing from the survivor and every duplicate stays unset', () => {
+  // angle is null on both rows, so there's no donor — backfill must not invent
+  // a value or carry an `angle: null` entry.
+  const survivor = row({ link: 'https://www.instagram.com/reel/AAA/', videoIdentity: 'instagram:AAA', angle: null });
+  const duplicate = row({ link: 'https://www.instagram.com/p/AAA/', videoIdentity: null, angle: null });
+  const { backfill } = chooseBetaLinkToKeep([survivor, duplicate]);
+  assert.deepEqual(backfill, {});
+});
+
 test('when two duplicates supply the same field, the higher-priority one wins', () => {
   const survivor = row({ link: 'https://www.instagram.com/reel/AAA/', videoIdentity: 'instagram:AAA', angle: null });
   // Both duplicates carry an angle; the attributed one outranks the bare one, so

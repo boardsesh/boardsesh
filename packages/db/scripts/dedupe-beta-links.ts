@@ -121,19 +121,28 @@ function printReport(
   shown: BetaLinkDuplicateGroup[],
   apply: boolean,
 ): void {
-  const redundantRows = allGroups.reduce((total, group) => total + group.remove.length, 0);
-  const recoverGroups = allGroups.filter((group) => Object.keys(group.backfill).length > 0).length;
+  // Headline counts describe what THIS run acts on (the shown == selected
+  // groups), so a --limit dry-run matches the subsequent --apply. The global
+  // totals are surfaced only as context when --limit truncates the set.
+  const shownRedundant = shown.reduce((total, group) => total + group.remove.length, 0);
+  const shownRecover = shown.filter((group) => Object.keys(group.backfill).length > 0).length;
+  const limited = shown.length < allGroups.length;
   console.info(`[dedupe-beta-links] Scanned ${totalRows} beta link(s).`);
-  console.info(
-    `[dedupe-beta-links] ${allGroups.length} duplicate group(s), ${redundantRows} redundant row(s) to remove.`,
-  );
-  if (recoverGroups > 0) {
+  if (limited) {
+    const totalRedundant = allGroups.reduce((total, group) => total + group.remove.length, 0);
     console.info(
-      `[dedupe-beta-links] ${recoverGroups} survivor(s) will recover metadata from a duplicate before it is deleted.`,
+      `[dedupe-beta-links] ${allGroups.length} duplicate group(s) found (${totalRedundant} redundant row(s) total); processing the first ${shown.length} (--limit).`,
+    );
+    console.info(`[dedupe-beta-links] This run: ${shownRedundant} redundant row(s) to remove.`);
+  } else {
+    console.info(
+      `[dedupe-beta-links] ${allGroups.length} duplicate group(s), ${shownRedundant} redundant row(s) to remove.`,
     );
   }
-  if (shown.length < allGroups.length) {
-    console.info(`[dedupe-beta-links] Showing the first ${shown.length} group(s) (--limit).`);
+  if (shownRecover > 0) {
+    console.info(
+      `[dedupe-beta-links] ${shownRecover} survivor(s) will recover metadata from a duplicate before it is deleted.`,
+    );
   }
   for (const group of shown) {
     console.info('');
@@ -217,7 +226,7 @@ async function main(): Promise<void> {
           deletedRows += deleted.length;
         }
         if (Object.keys(group.backfill).length > 0) {
-          await transaction
+          const updated = await transaction
             .update(boardBetaLinks)
             .set(group.backfill)
             .where(
@@ -226,8 +235,9 @@ async function main(): Promise<void> {
                 eq(boardBetaLinks.climbUuid, group.keep.climbUuid),
                 eq(boardBetaLinks.link, group.keep.link),
               ),
-            );
-          recoveredSurvivors += 1;
+            )
+            .returning({ link: boardBetaLinks.link });
+          recoveredSurvivors += updated.length;
         }
       }
       return { removed: deletedRows, recovered: recoveredSurvivors };
