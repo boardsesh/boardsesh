@@ -66,13 +66,6 @@ import { windowRelayoutNative } from '../modules/window-relayout/src/index';
 
 void SplashScreen.preventAutoHideAsync();
 
-// Candidate fix for the Android-16 edge-to-edge cold-start touch-freeze (Pixel
-// 9/10, Galaxy S24/S25). OFF by default: the FREEZE_DEBUG build reproduces the
-// frozen baseline and the FreezeDebugOverlay's Relayout button drives the same
-// native call on demand. Flip EXPO_PUBLIC_RELAYOUT_FIX=1 in a build once a
-// contributor confirms a relayout restores touch.
-const RELAYOUT_FIX_ENABLED = process.env.EXPO_PUBLIC_RELAYOUT_FIX === '1';
-
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
 // JS from Metro; a stray warning would pop a LogBox toast into a captured
 // screenshot. Suppress all LogBox UI in screenshot mode. EXPO_PUBLIC_SCREENSHOT_MODE
@@ -299,14 +292,14 @@ function RootLayout() {
   useEffect(() => {
     if (!authReady || !fontsReady) return;
     void SplashScreen.hideAsync().finally(() => {
-      // The first screen after a cold start (login when logged out, the home tab
-      // when already logged in) has its native hit-region laid out against stale
-      // edge-to-edge window metrics and stays touch-dead until a real
-      // Configuration change (split-screen) re-runs them. Once the splash is gone
-      // and the first screen is up, force a window-insets re-dispatch so the
-      // metrics are recomputed up front. Fire twice to cover first-frame timing.
-      // Android-only and gated OFF by default (see RELAYOUT_FIX_ENABLED).
-      if (!RELAYOUT_FIX_ENABLED || Platform.OS !== 'android') return;
+      // Android-16 (Pixel 9/10, Galaxy S24/S25) cold-start touch-freeze fix:
+      // the first screen's native hit-region is laid out against stale
+      // edge-to-edge window metrics and stays touch-dead until a Configuration
+      // change re-runs them. Force a window-insets re-dispatch once the splash
+      // is gone. Fire twice: one frame for the first layout pass, 500 ms for
+      // the occasional second measurement cycle. Confirmed via diagnostic APK:
+      // win 411x891 → 411x805, top inset 40 → 0 after requestApplyInsets.
+      if (Platform.OS !== 'android') return;
       requestAnimationFrame(() => void windowRelayoutNative?.requestApplyInsets());
       setTimeout(() => void windowRelayoutNative?.requestApplyInsets(), 500);
     });
