@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-// Capture the single 'change' handler the store installs at module load.
+// Capture the 'change' handler the store installs on first subscribe.
 const appState = vi.hoisted(() => {
   const ref: { handler: ((state: string) => void) | null } = { handler: null };
   return {
@@ -21,14 +21,17 @@ vi.mock('react-native', () => ({
 
 import { useIsAppBackgrounded } from '../app-visibility';
 
+// The store is a module-level singleton, so each stateful test normalizes to the
+// foreground at the start rather than relying on the previous test's end state.
 describe('app-visibility store', () => {
-  it('installs a single AppState change listener at module load', () => {
-    expect(appState.addEventListener).toHaveBeenCalledTimes(1);
+  it('subscribes to AppState change events', () => {
+    renderHook(() => useIsAppBackgrounded());
     expect(appState.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
   });
 
-  it('flips to backgrounded on "background" and back on "active"', () => {
+  it('reports backgrounded on "background" and clears on "active"', () => {
     const { result } = renderHook(() => useIsAppBackgrounded());
+    act(() => appState.fire('active'));
     expect(result.current).toBe(false);
     act(() => appState.fire('background'));
     expect(result.current).toBe(true);
@@ -36,8 +39,9 @@ describe('app-visibility store', () => {
     expect(result.current).toBe(false);
   });
 
-  it('ignores the transient "inactive" state (no blank-on-app-switcher-peek)', () => {
+  it('ignores the transient "inactive" state', () => {
     const { result } = renderHook(() => useIsAppBackgrounded());
+    act(() => appState.fire('active'));
     act(() => appState.fire('inactive'));
     expect(result.current).toBe(false);
   });
