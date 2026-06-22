@@ -16,19 +16,8 @@ name: Android Diagnostic APK (login freeze)
 #     with NO secrets and NO Production environment, off a feature branch;
 #   - no Play upload, no AAB, no fingerprint tag, no OTA — diagnostic only.
 #
-# The relayout_fix input additionally bakes EXPO_PUBLIC_RELAYOUT_FIX=1, which makes
-# the candidate fix fire automatically on the login screen (see app/auth/login.tsx)
-# — build that variant to confirm the auto-fix once a contributor validates the
-# overlay's manual "Relayout" button.
-
 on:
   workflow_dispatch:
-    inputs:
-      relayout_fix:
-        description: 'Bake EXPO_PUBLIC_RELAYOUT_FIX=1 (auto-relayout on login mount) to test the candidate fix'
-        type: boolean
-        required: false
-        default: false
 
 concurrency:
   group: android-diagnostic-apk-${{ github.ref }}
@@ -50,8 +39,6 @@ env:
   EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
   # The whole point of this build: turn on the on-screen FreezeDebugOverlay.
   EXPO_PUBLIC_FREEZE_DEBUG: '1'
-  # Off unless the dispatcher opts in. '1' makes login auto-relayout on mount.
-  EXPO_PUBLIC_RELAYOUT_FIX: ${{ inputs.relayout_fix && '1' || '' }}
   # Switches app.config.ts to the side-by-side "Boardsesh Dev" identity.
   BOARDSESH_APP_VARIANT: dev
 
@@ -105,9 +92,8 @@ jobs:
           EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
           EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
           EXPO_PUBLIC_FREEZE_DEBUG=$EXPO_PUBLIC_FREEZE_DEBUG
-          EXPO_PUBLIC_RELAYOUT_FIX=$EXPO_PUBLIC_RELAYOUT_FIX
           EOF
-          echo "Built .env (FREEZE_DEBUG=$EXPO_PUBLIC_FREEZE_DEBUG RELAYOUT_FIX='$EXPO_PUBLIC_RELAYOUT_FIX')"
+          echo "Built .env (FREEZE_DEBUG=$EXPO_PUBLIC_FREEZE_DEBUG)"
 
       # The Sentry Gradle upload task is incompatible with the Expo-generated
       # Gradle version; runtime Sentry stays on via the DSN. Same as apk-rn.
@@ -170,16 +156,15 @@ jobs:
               side-by-side with the real app; your normal Boardsesh stays untouched.
             - **Arch:** arm64-v8a · **JS:** bundled (no dev server needed).
             - **FreezeDebugOverlay:** ON (red box, top of screen).
-            - **Auto-relayout fix (EXPO_PUBLIC_RELAYOUT_FIX):** `${{ inputs.relayout_fix && 'ON' || 'off' }}`.
             - Commit: ${{ github.sha }} (branch `${{ github.ref_name }}`).
 
             **How to test the login freeze:**
             1. Install the APK (allow "install unknown apps"), open "Boardsesh Dev",
                and go to the login screen.
-            2. If the form won't respond, tap **Snap** in the red box, then **Relayout**.
-            3. If touch comes back after Relayout → screenshot the red box and report it.
-            4. If not, enter split-screen, tap **Snap** again, screenshot, and report
-               both readouts (and whether **Recreate** helped).
+            2. If the form won't respond, tap **Snap** in the red box and screenshot
+               the metrics.
+            3. Enter split-screen, return to the app, tap **Snap** again, and report
+               both readouts plus whether touch recovered.
           draft: false
           prerelease: true
           files: ${{ steps.apk.outputs.path }}
