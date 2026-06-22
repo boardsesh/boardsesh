@@ -95,7 +95,7 @@ function readRequiredOptionValue(args: string[], optionIndex: number, flagName: 
   return optionValue;
 }
 
-function parseArgs(args: string[]): ScriptArgs {
+export function parseArgs(args: string[]): ScriptArgs {
   const parsedArgs: ScriptArgs = {
     apply: false,
     limit: null,
