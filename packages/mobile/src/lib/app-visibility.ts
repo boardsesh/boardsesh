@@ -33,6 +33,9 @@ function subscribe(onStoreChange: () => void): () => void {
       if (AppState?.currentState != null) backgrounded = AppState.currentState === 'background';
       subscription = AppState?.addEventListener?.('change', (state) => setBackgrounded(state === 'background')) ?? null;
     } catch {
+      // Keep the flag + subscription consistent if currentState read but
+      // addEventListener threw (partial mock).
+      backgrounded = false;
       subscription = null;
     }
   }
