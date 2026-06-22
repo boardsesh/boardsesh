@@ -75,9 +75,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-diagnostic-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-rn-
+            ${{ runner.os }}-gradle-rn-diagnostic-
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile
@@ -156,6 +156,8 @@ jobs:
               side-by-side with the real app; your normal Boardsesh stays untouched.
             - **Arch:** arm64-v8a · **JS:** bundled (no dev server needed).
             - **FreezeDebugOverlay:** ON (red box, top of screen).
+            - **Sign-in:** use email/password. Native Google Sign-In is not expected
+              to work in this debug-signed dev package.
             - Commit: ${{ github.sha }} (branch `${{ github.ref_name }}`).
 
             **How to test the login freeze:**
