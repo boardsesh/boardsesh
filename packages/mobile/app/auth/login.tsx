@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -29,15 +29,6 @@ import { track } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { openDiscordInvite } from '../../src/lib/discord';
-import { windowRelayoutNative } from '../../modules/window-relayout/src/index';
-
-// Candidate fix for the Android-16 cold-start login freeze, OFF by default. The
-// diagnostic build (EXPO_PUBLIC_FREEZE_DEBUG=1) leaves this unset so it still
-// reproduces the frozen baseline and the FreezeDebugOverlay's Relayout button
-// drives the same native call on demand. Flip EXPO_PUBLIC_RELAYOUT_FIX=1 in a
-// build once a contributor confirms a relayout restores touch — then this fires
-// automatically when the login screen mounts.
-const RELAYOUT_FIX_ENABLED = process.env.EXPO_PUBLIC_RELAYOUT_FIX === '1';
 
 export default function LoginScreen() {
   const { signInWithCredentials } = useAuth();
@@ -52,21 +43,6 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   // Shared Apple/Google flow; errors land in the same region as credentials sign-in.
   const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({ setError });
-
-  // Login is the cold-start screen and, on Android 16 edge-to-edge (Pixel 9/10,
-  // Galaxy S24/S25), its native hit-region can be laid out against stale window
-  // metrics and stay touch-dead until a real Configuration change (split-screen)
-  // re-runs them. Once mounted, force a window-insets re-dispatch on the next
-  // frame so the metrics are recomputed up front — the same thing the
-  // FreezeDebugOverlay's Relayout button does. Gated OFF by default (see
-  // RELAYOUT_FIX_ENABLED); the no-op module call is Android-only and harmless.
-  useEffect(() => {
-    if (!RELAYOUT_FIX_ENABLED || Platform.OS !== 'android') return;
-    const frame = requestAnimationFrame(() => {
-      void windowRelayoutNative?.requestApplyInsets();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, []);
 
   const trimmedEmail = email.trim();
   const canSubmit = !submitting && trimmedEmail.length > 0 && password.length > 0;
@@ -145,9 +121,9 @@ export default function LoginScreen() {
   return (
     // SafeAreaView (not a bare View): login has no native header, so without it
     // the form draws under the status/nav bars under Android's mandatory
-    // edge-to-edge. It also subscribes this subtree to the safe-area context, so
-    // the screen re-lays-out when the real insets arrive — a guard against the
-    // cold-start inset race the relayout fix above also targets.
+    // edge-to-edge. (The Android-16 cold-start touch-freeze itself is handled
+    // app-wide by the relayout in app/_layout.tsx — it hits whatever screen is
+    // first, login or the home tab — not here.)
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView

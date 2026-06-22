@@ -4,7 +4,7 @@
 // handler, not the other way round.
 import { wrapWithSentry } from '../src/lib/sentry';
 import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Pressable, StyleSheet, View } from 'react-native';
+import { LogBox, Platform, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 56's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -62,8 +62,16 @@ import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScr
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
+import { windowRelayoutNative } from '../modules/window-relayout/src/index';
 
 void SplashScreen.preventAutoHideAsync();
+
+// Candidate fix for the Android-16 edge-to-edge cold-start touch-freeze (Pixel
+// 9/10, Galaxy S24/S25). OFF by default: the FREEZE_DEBUG build reproduces the
+// frozen baseline and the FreezeDebugOverlay's Relayout button drives the same
+// native call on demand. Flip EXPO_PUBLIC_RELAYOUT_FIX=1 in a build once a
+// contributor confirms a relayout restores touch.
+const RELAYOUT_FIX_ENABLED = process.env.EXPO_PUBLIC_RELAYOUT_FIX === '1';
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
 // JS from Metro; a stray warning would pop a LogBox toast into a captured
@@ -290,7 +298,18 @@ function RootLayout() {
 
   useEffect(() => {
     if (!authReady || !fontsReady) return;
-    void SplashScreen.hideAsync();
+    void SplashScreen.hideAsync().finally(() => {
+      // The first screen after a cold start (login when logged out, the home tab
+      // when already logged in) has its native hit-region laid out against stale
+      // edge-to-edge window metrics and stays touch-dead until a real
+      // Configuration change (split-screen) re-runs them. Once the splash is gone
+      // and the first screen is up, force a window-insets re-dispatch so the
+      // metrics are recomputed up front. Fire twice to cover first-frame timing.
+      // Android-only and gated OFF by default (see RELAYOUT_FIX_ENABLED).
+      if (!RELAYOUT_FIX_ENABLED || Platform.OS !== 'android') return;
+      requestAnimationFrame(() => void windowRelayoutNative?.requestApplyInsets());
+      setTimeout(() => void windowRelayoutNative?.requestApplyInsets(), 500);
+    });
   }, [authReady, fontsReady]);
 
   return (

@@ -149,8 +149,8 @@ function FreezeDebugOverlayInner() {
         <Text style={styles.title}>FREEZE DEBUG</Text>
         <Text style={styles.metrics}>{metricsRef.current}</Text>
         <Text style={styles.instructions}>
-          If login won&apos;t respond: tap Snap, then Relayout. If touch comes back, screenshot this box. Else enter
-          split-screen and tap Snap again.
+          If the app won&apos;t respond after opening from a full close (login OR home): tap Snap, then Relayout. If
+          touch comes back, screenshot this box. Else enter split-screen and tap Snap again.
         </Text>
         <View style={styles.buttonRow}>
           <Pressable onPress={() => snap()} style={styles.button} hitSlop={8}>
