@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 type AndroidEarlyEdgeToEdgePlugin = {
   addEarlyAndroidEdgeToEdge(contents: string): string;
   HELPER_NAME: string;
+  RELAYOUT_NAME: string;
 };
 
 const plugin = require('../../../plugins/with-android-early-edge-to-edge.js') as AndroidEarlyEdgeToEdgePlugin;
@@ -46,6 +47,16 @@ describe('with-android-early-edge-to-edge', () => {
     );
   });
 
+  it('fires the inset relayout after super.onCreate (the Pixel split-screen fix)', () => {
+    const result = plugin.addEarlyAndroidEdgeToEdge(mainActivitySource());
+
+    expect(result).toContain('import androidx.core.view.ViewCompat');
+    expect(result).toContain(`private fun ${plugin.RELAYOUT_NAME}()`);
+    expect(result).toContain('ViewCompat.requestApplyInsets(decorView)');
+    // The relayout runs AFTER super.onCreate — the decor view must exist to post to.
+    expect(result.indexOf('    super.onCreate(null)')).toBeLessThan(result.indexOf(`    ${plugin.RELAYOUT_NAME}()`));
+  });
+
   it('is idempotent', () => {
     const once = plugin.addEarlyAndroidEdgeToEdge(mainActivitySource());
     const twice = plugin.addEarlyAndroidEdgeToEdge(once);
@@ -53,5 +64,6 @@ describe('with-android-early-edge-to-edge', () => {
     expect(twice).toBe(once);
     expect(twice.match(new RegExp(`private fun ${plugin.HELPER_NAME}`, 'g'))).toHaveLength(1);
     expect(twice.match(new RegExp(`    ${plugin.HELPER_NAME}\\(\\)`, 'g'))).toHaveLength(1);
+    expect(twice.match(new RegExp(`    ${plugin.RELAYOUT_NAME}\\(\\)`, 'g'))).toHaveLength(1);
   });
 });
