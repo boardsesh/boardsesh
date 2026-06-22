@@ -125,6 +125,9 @@ export const DeferredSections = memo(function DeferredSections({
               boardName={boardName}
               qualityAverage={climb.quality_average}
               ascensionistCount={climb.ascensionist_count}
+              kilterAscensionistCount={climb.kilterAscensionistCount}
+              auroraAscensionistCount={climb.auroraAscensionistCount}
+              boardseshAscensionistCount={climb.boardseshAscensionistCount}
             />
           </CollapsibleSection>
 

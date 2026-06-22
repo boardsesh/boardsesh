@@ -305,6 +305,13 @@
         "font": "Francés",
         "both": "Ambos"
       },
+      "ascentCounts": {
+        "title": "Conteo de ascensos",
+        "description": "Elige qué encadenes contar. App del tablero es el conteo de la app propia del tablero; Boardsesh cuenta los encadenes registrados aquí.",
+        "all": "Todos",
+        "boardApp": "App del tablero",
+        "boardsesh": "Boardsesh"
+      },
       "language": {
         "title": "Idioma",
         "system": "Sistema",

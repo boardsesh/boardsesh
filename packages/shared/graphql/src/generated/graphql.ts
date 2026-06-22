@@ -626,12 +626,14 @@ export type Climb = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb */
   ascensionist_count: Scalars['Int']['output'];
+  /** Ascensionist count contributed by Aurora syncs (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Official benchmark difficulty if this is a benchmark climb */
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
-  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
-  characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /** Ascensionist count contributed by Boardsesh logs (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
@@ -650,6 +652,8 @@ export type Climb = {
   is_draft?: Maybe<Scalars['Boolean']['output']>;
   /** Whether this climb disallows matching (both hands on the same hold) */
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
+  /** Ascensionist count contributed by Kilter syncs (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
   /** Whether the climb should be displayed mirrored */
@@ -706,8 +710,6 @@ export type ClimbInput = {
   benchmark_difficulty?: InputMaybe<Scalars['String']['input']>;
   /** Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board. */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
-  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -798,6 +800,8 @@ export type ClimbQueueItemInput = {
 export type ClimbSearchInput = {
   /** Board angle in degrees */
   angle: Scalars['Int']['input'];
+  /** Ascent-count source to rank by when sorting by ascents/popular ('all' | 'boardApp' | 'boardsesh'). Default 'all' keeps the covering-index fast path. */
+  ascentSource?: InputMaybe<Scalars['String']['input']>;
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
@@ -883,6 +887,10 @@ export type ClimbStatsForAngle = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb at this angle */
   ascensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Aurora syncs at this angle (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Boardsesh logs at this angle (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Human-readable grade label derived from displayDifficulty (e.g., 'V5', '6B+') */
   difficulty?: Maybe<Scalars['String']['output']>;
   /** Average difficulty rating */
@@ -893,6 +901,8 @@ export type ClimbStatsForAngle = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Ascensionist count contributed by Kilter syncs at this angle (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
@@ -1842,8 +1852,6 @@ export type Gym = {
   address?: Maybe<Scalars['String']['output']>;
   /** Number of linked boards */
   boardCount: Scalars['Int']['output'];
-  /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
-  boardTypes: Array<Scalars['String']['output']>;
   /** Number of comments */
   commentCount: Scalars['Int']['output'];
   /** Contact email */
@@ -1933,70 +1941,6 @@ export type GymMembersInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
-};
-
-/** A scanned post whose climb name matched multiple climbs — the user picks one. */
-export type InstagramBetaAmbiguous = {
-  __typename?: 'InstagramBetaAmbiguous';
-  angle?: Maybe<Scalars['Int']['output']>;
-  boardType: Scalars['String']['output'];
-  candidates: Array<InstagramBetaCandidate>;
-  link: Scalars['String']['output'];
-  parsedName: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** A candidate climb when a scanned name matched more than one climb. */
-export type InstagramBetaCandidate = {
-  __typename?: 'InstagramBetaCandidate';
-  climbUuid: Scalars['String']['output'];
-  layoutId: Scalars['Int']['output'];
-  name: Scalars['String']['output'];
-  setterUsername?: Maybe<Scalars['String']['output']>;
-};
-
-/** A scanned post resolved to exactly one climb (ready to attach). */
-export type InstagramBetaMatch = {
-  __typename?: 'InstagramBetaMatch';
-  angle?: Maybe<Scalars['Int']['output']>;
-  boardType: Scalars['String']['output'];
-  climbName: Scalars['String']['output'];
-  climbUuid: Scalars['String']['output'];
-  link: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** Input for instagramBetaScan: a default board plus the scraped posts. */
-export type InstagramBetaScanInput = {
-  boardType: Scalars['String']['input'];
-  posts: Array<InstagramScanPostInput>;
-};
-
-/** Result of scanning Instagram posts against Boardsesh's catalog and existing beta. */
-export type InstagramBetaScanResult = {
-  __typename?: 'InstagramBetaScanResult';
-  alreadyLinked: Array<InstagramBetaMatch>;
-  ambiguous: Array<InstagramBetaAmbiguous>;
-  missing: Array<InstagramBetaMatch>;
-  parsed: Scalars['Int']['output'];
-  scanned: Scalars['Int']['output'];
-  unmatched: Array<InstagramBetaUnmatched>;
-};
-
-/** A scanned post we could not act on (no caption, unparseable, or no matching climb). */
-export type InstagramBetaUnmatched = {
-  __typename?: 'InstagramBetaUnmatched';
-  link: Scalars['String']['output'];
-  parsedName?: Maybe<Scalars['String']['output']>;
-  reason: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** A single scraped Instagram post fed to the beta-import scanner. */
-export type InstagramScanPostInput = {
-  caption?: InputMaybe<Scalars['String']['input']>;
-  shortcode: Scalars['String']['input'];
-  takenAt?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Result of exporting a session to an external platform. */
@@ -2128,19 +2072,6 @@ export type MoonBoardHoldsInput = {
   hand: Array<Scalars['String']['input']>;
   start: Array<Scalars['String']['input']>;
 };
-
-/**
- * MoonBoard problem method, stored as a mutually-exclusive climb-characteristic
- * token. Omit for the "feet follow hands" default. Source of truth for the token
- * set: CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
- */
-export type MoonBoardMethod =
-  /** No foot holds; the kickboard is not used. */
-  | 'method_footless'
-  /** No foot holds; the kickboard may be used. */
-  | 'method_footless_kickboard'
-  /** Feet follow hands, but the kickboard is off-limits. */
-  | 'method_no_kickboard';
 
 /** Root mutation type for all write operations. */
 export type Mutation = {
@@ -3638,12 +3569,6 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
-   * Resolve scraped Instagram posts against Boardsesh: which beta videos are
-   * missing, already linked, ambiguous, or unmatched. Read-only — the client
-   * attaches the missing ones via the attachBetaLink mutation.
-   */
-  instagramBetaScan: InstagramBetaScanResult;
-  /**
    * Connection state of every supported external platform integration for the
    * current user, including never-connected providers (connected: false).
    * Requires authentication.
@@ -4103,11 +4028,6 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
-};
-
-/** Root query type for all read operations. */
-export type QueryInstagramBetaScanArgs = {
-  input: InstagramBetaScanInput;
 };
 
 /** Root query type for all read operations. */
@@ -4612,8 +4532,6 @@ export type SaveMoonBoardClimbInput = {
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;
   layoutId: Scalars['Int']['input'];
-  /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
-  method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
@@ -4663,8 +4581,6 @@ export type SaveTickInput = {
 export type SearchBoardsInput = {
   /** Filter by board type */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Filter by board type (OR) — multi-select; composes with boardType if both are set */
-  boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Max results to return */
@@ -4681,8 +4597,6 @@ export type SearchBoardsInput = {
 
 /** Input for searching gyms. */
 export type SearchGymsInput = {
-  /** Filter to gyms that have a board of one of these types (OR) */
-  boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Max results to return */
@@ -6174,59 +6088,6 @@ export type BetaLinkPreviewQuery = {
   };
 };
 
-export type InstagramBetaScanQueryVariables = Exact<{
-  input: InstagramBetaScanInput;
-}>;
-
-export type InstagramBetaScanQuery = {
-  __typename?: 'Query';
-  instagramBetaScan: {
-    __typename?: 'InstagramBetaScanResult';
-    scanned: number;
-    parsed: number;
-    missing: Array<{
-      __typename?: 'InstagramBetaMatch';
-      shortcode: string;
-      link: string;
-      climbUuid: string;
-      climbName: string;
-      boardType: string;
-      angle?: number | null;
-    }>;
-    alreadyLinked: Array<{
-      __typename?: 'InstagramBetaMatch';
-      shortcode: string;
-      link: string;
-      climbUuid: string;
-      climbName: string;
-      boardType: string;
-      angle?: number | null;
-    }>;
-    ambiguous: Array<{
-      __typename?: 'InstagramBetaAmbiguous';
-      shortcode: string;
-      link: string;
-      parsedName: string;
-      boardType: string;
-      angle?: number | null;
-      candidates: Array<{
-        __typename?: 'InstagramBetaCandidate';
-        climbUuid: string;
-        name: string;
-        layoutId: number;
-        setterUsername?: string | null;
-      }>;
-    }>;
-    unmatched: Array<{
-      __typename?: 'InstagramBetaUnmatched';
-      shortcode: string;
-      link: string;
-      parsedName?: string | null;
-      reason: string;
-    }>;
-  };
-};
-
 export type ClimbStatsForAnglesQueryVariables = Exact<{
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
@@ -6238,6 +6099,9 @@ export type ClimbStatsForAnglesQuery = {
     __typename?: 'ClimbStatsForAngle';
     angle: number;
     ascensionistCount?: number | null;
+    kilterAscensionistCount?: number | null;
+    auroraAscensionistCount?: number | null;
+    boardseshAscensionistCount?: number | null;
     qualityAverage?: number | null;
     difficultyAverage?: number | null;
     displayDifficulty?: number | null;
@@ -8782,119 +8646,6 @@ export const BetaLinkPreviewDocument = {
     },
   ],
 } as unknown as DocumentNode<BetaLinkPreviewQuery, BetaLinkPreviewQueryVariables>;
-export const InstagramBetaScanDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'InstagramBetaScan' },
-      variableDefinitions: [
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-          type: {
-            kind: 'NonNullType',
-            type: { kind: 'NamedType', name: { kind: 'Name', value: 'InstagramBetaScanInput' } },
-          },
-        },
-      ],
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'instagramBetaScan' },
-            arguments: [
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'input' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
-              },
-            ],
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'scanned' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'parsed' } },
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'missing' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
-                    ],
-                  },
-                },
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'alreadyLinked' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
-                    ],
-                  },
-                },
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'ambiguous' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'parsedName' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
-                      {
-                        kind: 'Field',
-                        name: { kind: 'Name', value: 'candidates' },
-                        selectionSet: {
-                          kind: 'SelectionSet',
-                          selections: [
-                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
-                            { kind: 'Field', name: { kind: 'Name', value: 'name' } },
-                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
-                            { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
-                          ],
-                        },
-                      },
-                    ],
-                  },
-                },
-                {
-                  kind: 'Field',
-                  name: { kind: 'Name', value: 'unmatched' },
-                  selectionSet: {
-                    kind: 'SelectionSet',
-                    selections: [
-                      { kind: 'Field', name: { kind: 'Name', value: 'shortcode' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'parsedName' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
-                    ],
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<InstagramBetaScanQuery, InstagramBetaScanQueryVariables>;
 export const ClimbStatsForAnglesDocument = {
   kind: 'Document',
   definitions: [
@@ -8937,6 +8688,9 @@ export const ClimbStatsForAnglesDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'kilterAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'auroraAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshAscensionistCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'difficultyAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'displayDifficulty' } },

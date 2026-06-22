@@ -34,6 +34,11 @@ export type ClimbSearchParams = {
   // Sorting
   sortBy?: 'ascents' | 'difficulty' | 'name' | 'quality' | 'popular' | 'creation' | (string & {});
   sortOrder?: 'asc' | 'desc' | (string & {});
+  // Ascent-count source to rank by for ascents/popular sorts. 'all' (default)
+  // keeps the v2 covering-index fast path; 'boardApp'/'boardsesh' route to the
+  // standard LEFT JOIN path and ORDER BY the source expression. Loosely typed to
+  // match sortBy — the resolver/validator gate the shape upstream.
+  ascentSource?: 'all' | 'boardApp' | 'boardsesh' | (string & {});
   // Filters
   gradeAccuracy?: number;
   minGrade?: number;
@@ -88,6 +93,7 @@ export type ClimbSearchInputLike = {
   minAscents?: number | null;
   minRating?: number | null;
   sortBy?: string | null;
+  ascentSource?: string | null;
   sortOrder?: string | null;
   name?: string | null;
   // GraphQL field is `setter`; web field is `settername`. Accept both — the
@@ -158,6 +164,8 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     minAscents: input.minAscents || undefined,
     minRating: input.minRating || undefined,
     sortBy: normalizeSearchSortBy(input.sortBy),
+    // Default 'all' so the ascents/quality fast path stays on the covering index.
+    ascentSource: input.ascentSource || 'all',
     sortOrder: input.sortOrder || 'desc',
     name: input.name || undefined,
     settername: setter && setter.length > 0 ? setter : undefined,
@@ -204,6 +212,12 @@ export type ClimbRow = {
   layoutId: number;
   angle: number;
   ascensionist_count: number;
+  /** Raw per-source ascensionist counts. The total `ascensionist_count` is
+   *  GREATEST(kilter, aurora) + boardsesh; the client derives the "Board app"
+   *  view as GREATEST(kilter, aurora). Null when not tracked. */
+  kilterAscensionistCount: number | null;
+  auroraAscensionistCount: number | null;
+  boardseshAscensionistCount: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

@@ -7,6 +7,8 @@ import { Text } from './Text';
 import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { useGradeFormat } from '../hooks/use-grade-format';
+import { useAscentCountSource } from '../lib/ascent-count-source-preference';
+import { selectSourceCount } from '../lib/ascent-count-source';
 import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
@@ -38,6 +40,13 @@ export type ClimbListItemClimb = {
   mirrored?: boolean | null;
   is_draft?: boolean | null;
   ascensionist_count?: number | null;
+  // Per-source ascensionist counts (all nullable). The subtitle's sends figure
+  // honours the user's "Ascent counts" setting via `selectSourceCount`; absent
+  // fields fall back to the total. Constructors that don't carry them (tick-to-
+  // climb, presence) leave them undefined and the selector uses the total.
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   quality_average: string;
   setter_username?: string | null;
   // Intrinsic climb attributes shown as grey glyphs after the name.
@@ -142,9 +151,32 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   const { t } = useTranslation('climbs');
   const { formatGrade } = useGradeFormat();
   const { systemColors } = useTheme();
+  const { source: ascentCountSource } = useAscentCountSource();
 
   const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
   const formattedGrade = formatGrade(climb.difficulty);
+
+  // Sends shown per the user's "Ascent counts" setting. A climb with no per-
+  // source fields (queue/tick/presence shapes) falls back to the total.
+  const sendsCount = useMemo(
+    () =>
+      selectSourceCount(
+        {
+          total: climb.ascensionist_count ?? 0,
+          kilter: climb.kilterAscensionistCount,
+          aurora: climb.auroraAscensionistCount,
+          boardsesh: climb.boardseshAscensionistCount,
+        },
+        ascentCountSource,
+      ),
+    [
+      climb.ascensionist_count,
+      climb.kilterAscensionistCount,
+      climb.auroraAscensionistCount,
+      climb.boardseshAscensionistCount,
+      ascentCountSource,
+    ],
+  );
 
   // Subtitle parts: sends · quality★ · setter (each dropped when absent). A
   // caller-supplied override wins outright — a string replaces the line, null
@@ -155,8 +187,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     if (climb.is_draft) {
       parts.push(t('createClimbForm.draftBadge'));
     }
-    if (!climb.is_draft && climb.ascensionist_count) {
-      parts.push(formatSends(climb.ascensionist_count, t));
+    if (!climb.is_draft && sendsCount) {
+      parts.push(formatSends(sendsCount, t));
     }
     const qualityNum = parseFloat(climb.quality_average);
     if (qualityNum > 0) {
@@ -166,14 +198,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       parts.push(climb.setter_username);
     }
     return parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
-  }, [
-    primarySubtitleOverride,
-    climb.is_draft,
-    climb.ascensionist_count,
-    climb.quality_average,
-    climb.setter_username,
-    t,
-  ]);
+  }, [primarySubtitleOverride, climb.is_draft, sendsCount, climb.quality_average, climb.setter_username, t]);
 
   const subtitleDetailText = useMemo(() => {
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];

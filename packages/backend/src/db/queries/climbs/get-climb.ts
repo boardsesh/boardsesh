@@ -32,6 +32,11 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
         frames_pace: tables.climbs.framesPace,
         angle: sql<number>`COALESCE(${tables.climbStats.angle}, ${params.angle})`,
         ascensionist_count: sql<number>`COALESCE(${tables.climbStats.ascensionistCount}, 0)`,
+        // Raw per-source counts (nullable bigint columns) — select directly so
+        // the client can derive the "Board app" = GREATEST(kilter, aurora) view.
+        kilter_ascensionist_count: tables.climbStats.kilterAscensionistCount,
+        aurora_ascensionist_count: tables.climbStats.auroraAscensionistCount,
+        boardsesh_ascensionist_count: tables.climbStats.boardseshAscensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
         quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
         difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
@@ -74,6 +79,11 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       layoutId: params.layout_id,
       angle: Number(params.angle),
       ascensionist_count: Number(row.ascensionist_count || 0),
+      // Keep null distinct from 0 so the client can tell "not tracked" apart
+      // from a genuine zero per source.
+      kilterAscensionistCount: row.kilter_ascensionist_count ?? null,
+      auroraAscensionistCount: row.aurora_ascensionist_count ?? null,
+      boardseshAscensionistCount: row.boardsesh_ascensionist_count ?? null,
       difficulty: getGradeLabel(row.difficulty_id),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),

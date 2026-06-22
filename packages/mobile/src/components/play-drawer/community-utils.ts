@@ -1,8 +1,9 @@
-import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
+import type { ClimbStatsForAnglesEntry, ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
 import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { formatCount } from '../../lib/format-climb-stats';
+import { selectSourceCount, type AscentCountSource } from '../../lib/ascent-count-source';
 
 export type AngleGradeBar = {
   angle: number;
@@ -10,9 +11,19 @@ export type AngleGradeBar = {
   difficulty: number;
   /** Formatted grade label shown above the bar (e.g. "V6"). */
   gradeName: string;
-  /** Ascensionist count (sends) at this angle — drives bar height. */
+  /** Per-source ascensionist count (sends) at this angle — drives bar height. */
   sends: number;
 };
+
+/** Map a per-angle stats row to the four fields `selectSourceCount` needs. */
+function angleEntrySourceFields(entry: ClimbStatsForAnglesEntry) {
+  return {
+    total: entry.ascensionistCount ?? 0,
+    kilter: entry.kilterAscensionistCount,
+    aurora: entry.auroraAscensionistCount,
+    boardsesh: entry.boardseshAscensionistCount,
+  };
+}
 
 // Round a raw step up to a friendly 1/2/5 × 10ⁿ value so axis ticks read
 // 0/5/10/15 instead of 0/3/6/9.
@@ -91,26 +102,21 @@ export function buildAscentChartScale(sends: number[]): AscentChartScale {
 
 const GRADE_BY_ID = new Map<number, BoulderGrade>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]));
 
-// Latest snapshot per angle → one grade bar; out-of-range difficulties show the rounded number.
-// The grade (label + colour) comes from the difficulty; bar height comes from the ascent count.
+// One grade bar per angle; out-of-range difficulties show the rounded number.
+// The grade (label + colour) is derived from the difficulty — NOT the source —
+// while bar HEIGHT is the per-source ascent count for the chosen source. Angles
+// with no difficulty snapshot are skipped (no grade label to draw).
 export function buildAngleGradeBars(
-  history: ClimbStatsHistoryEntry[] | undefined,
+  entries: ClimbStatsForAnglesEntry[] | undefined,
   gradeFormat: GradeDisplayFormat,
+  source: AscentCountSource,
 ): AngleGradeBar[] {
-  if (!history) return [];
+  if (!entries) return [];
 
-  const latestByAngle = new Map<number, { entry: ClimbStatsHistoryEntry; difficulty: number }>();
-  for (const entry of history) {
-    const difficulty = entry.displayDifficulty ?? entry.difficultyAverage;
-    if (difficulty == null) continue;
-    const existing = latestByAngle.get(entry.angle);
-    if (!existing || new Date(entry.createdAt).getTime() > new Date(existing.entry.createdAt).getTime()) {
-      latestByAngle.set(entry.angle, { entry, difficulty });
-    }
-  }
-
-  return Array.from(latestByAngle.values())
-    .map(({ entry, difficulty }) => {
+  return entries
+    .map((entry) => {
+      const difficulty = entry.displayDifficulty ?? entry.difficultyAverage;
+      if (difficulty == null) return null;
       const grade = GRADE_BY_ID.get(Math.round(difficulty));
       const gradeName = grade
         ? (formatGrade(grade.difficulty_name, gradeFormat) ?? grade.v_grade)
@@ -119,10 +125,24 @@ export function buildAngleGradeBars(
         angle: entry.angle,
         difficulty,
         gradeName,
-        sends: entry.ascensionistCount ?? 0,
+        sends: selectSourceCount(angleEntrySourceFields(entry), source),
       };
     })
-    .sort((a, b) => a.angle - b.angle);
+    .filter((bar): bar is AngleGradeBar => bar !== null)
+    .sort((leftBar, rightBar) => leftBar.angle - rightBar.angle);
+}
+
+/**
+ * Total sends across all angles for a given source — used to decide which source
+ * toggles are meaningful (a source with 0 across every angle is disabled, and
+ * when only one source is non-zero the toggle is hidden entirely).
+ */
+export function totalSendsForSource(
+  entries: ClimbStatsForAnglesEntry[] | undefined,
+  source: AscentCountSource,
+): number {
+  if (!entries) return 0;
+  return entries.reduce((sum, entry) => sum + selectSourceCount(angleEntrySourceFields(entry), source), 0);
 }
 
 export type AngleStats = {

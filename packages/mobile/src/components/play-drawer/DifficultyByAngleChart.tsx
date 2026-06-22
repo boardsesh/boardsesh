@@ -13,6 +13,14 @@ type DifficultyByAngleChartProps = {
   /** Localised "Log scale" caption, shown (and folded into the a11y label) only
    *  when the y-axis switches to log. */
   logScaleLabel?: string;
+  /** Small label rendered above the y-axis (e.g. "sends") so the axis reads. */
+  yAxisTitle?: string;
+  /**
+   * Shown in place of the bars, inside the reserved chart height, when the
+   * selected source has zero ascents across every angle. Keeps the frame so the
+   * layout doesn't jump when the user toggles to an empty source.
+   */
+  emptyMessage?: string;
 };
 
 const CHART_HEIGHT = 150;
@@ -51,9 +59,15 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   data,
   accessibilityLabel,
   logScaleLabel,
+  yAxisTitle,
+  emptyMessage,
 }: DifficultyByAngleChartProps) {
   const { chartColors, colorScheme } = useTheme();
   const [width, setWidth] = useState(0);
+
+  // All bars at zero for the chosen source — show the in-place empty message
+  // inside the reserved height rather than a row of flat bars.
+  const allZero = data.length > 0 && data.every((bar) => bar.sends === 0);
 
   // Bars + axis scale only depend on the data + scheme — memoize so a parent
   // re-render (or a width change) doesn't rebuild them (and their top-label
@@ -134,12 +148,23 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
       accessibilityRole={chartAccessibilityLabel ? 'image' : undefined}
       accessibilityLabel={chartAccessibilityLabel}
     >
+      {yAxisTitle ? (
+        <Text variant="caption2" color={chartColors.secondaryLabel} style={styles.yAxisTitle}>
+          {yAxisTitle}
+        </Text>
+      ) : null}
       {showLogScale ? (
         <Text variant="caption2" color={chartColors.secondaryLabel} style={styles.logScaleLabel}>
           {logScaleLabel}
         </Text>
       ) : null}
-      {width > 0 ? (
+      {allZero && emptyMessage ? (
+        <View style={styles.emptyOverlay}>
+          <Text variant="footnote" color={chartColors.secondaryLabel}>
+            {emptyMessage}
+          </Text>
+        </View>
+      ) : width > 0 ? (
         <BarChart
           data={model.barData}
           width={plotWidth - 8}
@@ -189,6 +214,14 @@ const styles = StyleSheet.create({
   logScaleLabel: {
     alignSelf: 'flex-end',
     marginBottom: spacing[1],
+  },
+  yAxisTitle: {
+    marginBottom: spacing[1],
+  },
+  emptyOverlay: {
+    height: CHART_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topLabelContainer: {
     marginBottom: spacing[1],

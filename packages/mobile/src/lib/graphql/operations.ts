@@ -80,6 +80,9 @@ const CLIMB_SEARCH_FIELDS = `
   frames
   angle
   ascensionist_count
+  kilterAscensionistCount
+  auroraAscensionistCount
+  boardseshAscensionistCount
   difficulty
   quality_average
   stars
@@ -1137,6 +1140,9 @@ const SUBSCRIPTION_CLIMB_FIELDS = `
   setter_username
   angle
   ascensionist_count
+  kilterAscensionistCount
+  auroraAscensionistCount
+  boardseshAscensionistCount
   difficulty
   quality_average
   stars

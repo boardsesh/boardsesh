@@ -63,6 +63,9 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        kilterAscensionistCount: 7,
+        auroraAscensionistCount: 4,
+        boardseshAscensionistCount: 5,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,
@@ -77,6 +80,10 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 40,
         ascensionistCount: 12,
+        // Raw per-source counts pass straight through for the client to fold.
+        kilterAscensionistCount: 7,
+        auroraAscensionistCount: 4,
+        boardseshAscensionistCount: 5,
         qualityAverage: 3.5,
         difficultyAverage: 20.4,
         displayDifficulty: 20.6,
@@ -92,6 +99,9 @@ describe('climbStatsForAngles resolver', () => {
       {
         angle: 30,
         ascensionistCount: 0,
+        kilterAscensionistCount: null,
+        auroraAscensionistCount: null,
+        boardseshAscensionistCount: null,
         qualityAverage: null,
         difficultyAverage: null,
         displayDifficulty: null,
@@ -104,6 +114,10 @@ describe('climbStatsForAngles resolver', () => {
 
     expect(entry.difficulty).toBeNull();
     expect(entry.displayDifficulty).toBeNull();
+    // Untracked per-source counts surface as null (distinct from a genuine 0).
+    expect(entry.kilterAscensionistCount).toBeNull();
+    expect(entry.auroraAscensionistCount).toBeNull();
+    expect(entry.boardseshAscensionistCount).toBeNull();
   });
 
   it('returns an empty array for a climb with no logged angles', async () => {

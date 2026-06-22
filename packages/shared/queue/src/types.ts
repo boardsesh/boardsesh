@@ -29,6 +29,12 @@ export type Climb = {
   frames: string;
   angle: number;
   ascensionist_count: number;
+  // Per-source ascensionist counts (all nullable). Carried through queue
+  // conversion so a queued climb's row can honour the "Ascent counts" setting.
+  // The total `ascensionist_count` is GREATEST(kilter, aurora) + boardsesh.
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;

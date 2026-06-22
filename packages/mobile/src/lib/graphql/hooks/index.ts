@@ -25,6 +25,8 @@ import {
   type SimilarClimbsResponse,
   CLIMB_STATS_HISTORY,
   type ClimbStatsHistoryResponse,
+  CLIMB_STATS_FOR_ANGLES,
+  type ClimbStatsForAnglesResponse,
 } from '@boardsesh/graphql/operations';
 import {
   GET_FAVORITES,
@@ -815,6 +817,27 @@ export function useClimbStatsHistory(boardName: string, climbUuid: string | null
         climbUuid: climbUuid!,
       }),
     select: (data) => data.climbStatsHistory,
+    enabled: !!climbUuid,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Latest per-angle stats for a climb, carrying the per-source ascensionist
+ * counts (kilter / aurora / boardsesh) the Community "grade by angle" chart
+ * needs to redraw bar heights when the user switches ascent source. Unlike
+ * {@link useClimbStatsHistory} (multi-snapshot, for the angle selector), this
+ * returns one row per angle.
+ */
+export function useClimbStatsForAngles(boardName: string, climbUuid: string | null) {
+  return useQuery({
+    queryKey: ['climbStatsForAngles', boardName, climbUuid],
+    queryFn: () =>
+      getHttpClient().request<ClimbStatsForAnglesResponse>(CLIMB_STATS_FOR_ANGLES, {
+        boardName,
+        climbUuid: climbUuid!,
+      }),
+    select: (data) => data.climbStatsForAngles,
     enabled: !!climbUuid,
     staleTime: 5 * 60 * 1000,
   });

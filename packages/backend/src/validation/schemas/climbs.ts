@@ -130,6 +130,10 @@ export const ClimbSearchInputSchema = z.object({
   minAscents: z.number().int().min(0).optional(),
   minRating: z.number().min(0).max(5).optional(),
   sortBy: z.string().optional(),
+  // Ascent-count source to rank by for ascents/popular sorts. Loose string to
+  // match sortBy; the query treats anything other than 'boardApp'/'boardsesh' as
+  // the default 'all' (covering-index fast path).
+  ascentSource: z.enum(['all', 'boardApp', 'boardsesh']).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   name: z.string().max(200).optional(),
   setter: z.array(z.string().max(100)).optional(),

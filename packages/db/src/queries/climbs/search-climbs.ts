@@ -27,6 +27,11 @@ type RawSelectResult = {
   is_draft: boolean | null;
   angle: number | null;
   ascensionist_count: string | null;
+  // Per-source bigint counts. postgres.js returns bigint over the wire as JS
+  // strings (no types parser configured), so coerce in the mapper.
+  kilter_ascensionist_count: number | string | null;
+  aurora_ascensionist_count: number | string | null;
+  boardsesh_ascensionist_count: number | string | null;
   difficulty_id: number | string | null;
   quality_average: number | string | null;
   difficulty_error: number | string | null;
@@ -61,6 +66,11 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     layoutId: params.layout_id,
     angle: params.angle,
     ascensionist_count: Number(result.ascensionist_count || 0),
+    // Raw per-source counts stay nullable — distinguish "not tracked" (null)
+    // from a genuine zero. Coerce the string-over-wire bigints to numbers.
+    kilterAscensionistCount: toIntegerOrNull(result.kilter_ascensionist_count),
+    auroraAscensionistCount: toIntegerOrNull(result.aurora_ascensionist_count),
+    boardseshAscensionistCount: toIntegerOrNull(result.boardsesh_ascensionist_count),
     difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id)),
     quality_average: result.quality_average?.toString() || '0',
     stars: getClimbStars(result.quality_average),
@@ -97,9 +107,47 @@ export function clampSearchPage(page: number | undefined): number {
   return Math.min(Math.max(Math.trunc(page as number), 0), MAX_SEARCH_PAGE);
 }
 
-export function getStatsDrivenSort(sortBy: string, sortOrder: 'asc' | 'desc'): StatsDrivenSort | null {
+/**
+ * The covering-index fast path (statsDrivenSearch) orders by the combined
+ * `ascensionist_count`. When the caller opts into a per-source ranking
+ * ('boardApp' / 'boardsesh'), the ORDER BY can no longer textually match the v2
+ * covering index (migration 0122), so we must NOT take the fast path — return
+ * null here to fall through to standardSearch, which ORDER BYs the source
+ * expression instead. Quality sort is unaffected by ascentSource. The default
+ * 'all' (or undefined) keeps every ascents/quality query on the index.
+ */
+export function getStatsDrivenSort(
+  sortBy: string,
+  sortOrder: 'asc' | 'desc',
+  ascentSource: string = 'all',
+): StatsDrivenSort | null {
   if (sortOrder !== 'desc') return null;
-  if (sortBy === 'ascents' || sortBy === 'quality') return sortBy;
+  if (sortBy === 'ascents' || sortBy === 'quality') {
+    // Source-specific ascent ranking can't use the combined-count covering index.
+    if (sortBy === 'ascents' && ascentSource !== 'all') return null;
+    return sortBy;
+  }
+  return null;
+}
+
+/**
+ * SQL expression for the active ascent-count source, used by standardSearch's
+ * ascents/popular ORDER BY (and the popular sum) when the caller opted into a
+ * per-source ranking. 'all' returns null — callers keep the existing combined
+ * `ascensionist_count` expression.
+ *
+ * NOTE: these source-opted sorts intentionally accept a slower plan (LEFT JOIN +
+ * SET LOCAL max_parallel_workers_per_gather = 0, no covering index). The default
+ * 'all' path is unchanged and keeps the v2 covering index. We do NOT add a
+ * per-source index for this in this change.
+ */
+export function sourceAscentCountExpression(ascentSource: string): ReturnType<typeof sql> | null {
+  if (ascentSource === 'boardApp') {
+    return sql`GREATEST(COALESCE(${boardClimbStats.kilterAscensionistCount}, 0), COALESCE(${boardClimbStats.auroraAscensionistCount}, 0))`;
+  }
+  if (ascentSource === 'boardsesh') {
+    return sql`COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`;
+  }
   return null;
 }
 
@@ -143,7 +191,10 @@ export const searchClimbs = async (
   // Drafts never have stats, so force creation sort (stats-based sorts would be meaningless)
   const sortBy = isDraftsQuery ? 'creation' : normalizeSearchSortBy(searchParams.sortBy);
   const sortOrder = searchParams.sortOrder === 'asc' ? 'asc' : 'desc';
-  const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder);
+  // 'all' (default) keeps ascents/quality on the covering-index fast path; a
+  // per-source ascent ranking routes to standardSearch (see getStatsDrivenSort).
+  const ascentSource = searchParams.ascentSource || 'all';
+  const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder, ascentSource);
 
   const hasStatsFilters = filters.getClimbStatsConditions().length > 0;
   if (!statsDrivenSort) {
@@ -276,6 +327,9 @@ async function statsDrivenSearch(
     is_draft: boardClimbs.isDraft,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
+    kilter_ascensionist_count: boardClimbStats.kilterAscensionistCount,
+    aurora_ascensionist_count: boardClimbStats.auroraAscensionistCount,
+    boardsesh_ascensionist_count: boardClimbStats.boardseshAscensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
     difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
     quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
@@ -380,15 +434,24 @@ async function runStandardSearch(
   page: number,
   pageSize: number,
 ): Promise<ClimbSearchResult> {
+  // Ascent-count source to rank by ('all' keeps the combined count). For
+  // ascents/popular sorts, 'boardApp'/'boardsesh' swap in the per-source
+  // expression below. Already routed here off the fast path by getStatsDrivenSort.
+  const ascentSource = searchParams.ascentSource || 'all';
+  const sourceExpression = sourceAscentCountExpression(ascentSource);
+
   // For the popular sort, pre-aggregate total ascents across all angles via a joined subquery
   // instead of a correlated subquery that runs per candidate row.
   // Scoped with an EXISTS to only aggregate stats for climbs matching the search filters.
+  // When a per-source ranking is active, SUM the SAME source expression so the
+  // cross-angle popularity total reflects the chosen source, not the combined count.
+  const popularSumExpression = sourceExpression ?? sql`${boardClimbStats.ascensionistCount}`;
   const popularCountsSubquery =
     sortBy === 'popular'
       ? db
           .select({
             climbUuid: boardClimbStats.climbUuid,
-            totalAscensionistCount: sql<number>`COALESCE(SUM(${boardClimbStats.ascensionistCount}), 0)`.as(
+            totalAscensionistCount: sql<number>`COALESCE(SUM(${popularSumExpression}), 0)`.as(
               'total_ascensionist_count',
             ),
           })
@@ -412,7 +475,9 @@ async function runStandardSearch(
       : null;
 
   const allowedSortColumns: Record<string, ReturnType<typeof sql>> = {
-    ascents: sql`${boardClimbStats.ascensionistCount}`,
+    // Per-source ascent ranking ('boardApp'/'boardsesh') swaps in the source
+    // expression; 'all' keeps the combined count (NULLS LAST + uuid tiebreak below).
+    ascents: sourceExpression ?? sql`${boardClimbStats.ascensionistCount}`,
     difficulty: sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
     name: sql`${boardClimbs.name}`,
     quality: sql`${boardClimbStats.qualityAverage}`,
@@ -441,6 +506,9 @@ async function runStandardSearch(
     is_draft: boardClimbs.isDraft,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
+    kilter_ascensionist_count: boardClimbStats.kilterAscensionistCount,
+    aurora_ascensionist_count: boardClimbStats.auroraAscensionistCount,
+    boardsesh_ascensionist_count: boardClimbStats.boardseshAscensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
     difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
     quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,

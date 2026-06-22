@@ -629,12 +629,14 @@ export type Climb = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb */
   ascensionist_count: Scalars['Int']['output'];
+  /** Ascensionist count contributed by Aurora syncs (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Official benchmark difficulty if this is a benchmark climb */
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
-  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
-  characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /** Ascensionist count contributed by Boardsesh logs (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
@@ -653,6 +655,8 @@ export type Climb = {
   is_draft?: Maybe<Scalars['Boolean']['output']>;
   /** Whether this climb disallows matching (both hands on the same hold) */
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
+  /** Ascensionist count contributed by Kilter syncs (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
   /** Whether the climb should be displayed mirrored */
@@ -709,8 +713,6 @@ export type ClimbInput = {
   benchmark_difficulty?: InputMaybe<Scalars['String']['input']>;
   /** Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board. */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
-  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -801,6 +803,8 @@ export type ClimbQueueItemInput = {
 export type ClimbSearchInput = {
   /** Board angle in degrees */
   angle: Scalars['Int']['input'];
+  /** Ascent-count source to rank by when sorting by ascents/popular ('all' | 'boardApp' | 'boardsesh'). Default 'all' keeps the covering-index fast path. */
+  ascentSource?: InputMaybe<Scalars['String']['input']>;
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
@@ -886,6 +890,10 @@ export type ClimbStatsForAngle = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb at this angle */
   ascensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Aurora syncs at this angle (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Boardsesh logs at this angle (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Human-readable grade label derived from displayDifficulty (e.g., 'V5', '6B+') */
   difficulty?: Maybe<Scalars['String']['output']>;
   /** Average difficulty rating */
@@ -896,6 +904,8 @@ export type ClimbStatsForAngle = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Ascensionist count contributed by Kilter syncs at this angle (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
@@ -1845,8 +1855,6 @@ export type Gym = {
   address?: Maybe<Scalars['String']['output']>;
   /** Number of linked boards */
   boardCount: Scalars['Int']['output'];
-  /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
-  boardTypes: Array<Scalars['String']['output']>;
   /** Number of comments */
   commentCount: Scalars['Int']['output'];
   /** Contact email */
@@ -1936,70 +1944,6 @@ export type GymMembersInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
-};
-
-/** A scanned post whose climb name matched multiple climbs — the user picks one. */
-export type InstagramBetaAmbiguous = {
-  __typename?: 'InstagramBetaAmbiguous';
-  angle?: Maybe<Scalars['Int']['output']>;
-  boardType: Scalars['String']['output'];
-  candidates: Array<InstagramBetaCandidate>;
-  link: Scalars['String']['output'];
-  parsedName: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** A candidate climb when a scanned name matched more than one climb. */
-export type InstagramBetaCandidate = {
-  __typename?: 'InstagramBetaCandidate';
-  climbUuid: Scalars['String']['output'];
-  layoutId: Scalars['Int']['output'];
-  name: Scalars['String']['output'];
-  setterUsername?: Maybe<Scalars['String']['output']>;
-};
-
-/** A scanned post resolved to exactly one climb (ready to attach). */
-export type InstagramBetaMatch = {
-  __typename?: 'InstagramBetaMatch';
-  angle?: Maybe<Scalars['Int']['output']>;
-  boardType: Scalars['String']['output'];
-  climbName: Scalars['String']['output'];
-  climbUuid: Scalars['String']['output'];
-  link: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** Input for instagramBetaScan: a default board plus the scraped posts. */
-export type InstagramBetaScanInput = {
-  boardType: Scalars['String']['input'];
-  posts: Array<InstagramScanPostInput>;
-};
-
-/** Result of scanning Instagram posts against Boardsesh's catalog and existing beta. */
-export type InstagramBetaScanResult = {
-  __typename?: 'InstagramBetaScanResult';
-  alreadyLinked: Array<InstagramBetaMatch>;
-  ambiguous: Array<InstagramBetaAmbiguous>;
-  missing: Array<InstagramBetaMatch>;
-  parsed: Scalars['Int']['output'];
-  scanned: Scalars['Int']['output'];
-  unmatched: Array<InstagramBetaUnmatched>;
-};
-
-/** A scanned post we could not act on (no caption, unparseable, or no matching climb). */
-export type InstagramBetaUnmatched = {
-  __typename?: 'InstagramBetaUnmatched';
-  link: Scalars['String']['output'];
-  parsedName?: Maybe<Scalars['String']['output']>;
-  reason: Scalars['String']['output'];
-  shortcode: Scalars['String']['output'];
-};
-
-/** A single scraped Instagram post fed to the beta-import scanner. */
-export type InstagramScanPostInput = {
-  caption?: InputMaybe<Scalars['String']['input']>;
-  shortcode: Scalars['String']['input'];
-  takenAt?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Result of exporting a session to an external platform. */
@@ -2131,19 +2075,6 @@ export type MoonBoardHoldsInput = {
   hand: Array<Scalars['String']['input']>;
   start: Array<Scalars['String']['input']>;
 };
-
-/**
- * MoonBoard problem method, stored as a mutually-exclusive climb-characteristic
- * token. Omit for the "feet follow hands" default. Source of truth for the token
- * set: CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
- */
-export type MoonBoardMethod =
-  /** No foot holds; the kickboard is not used. */
-  | 'method_footless'
-  /** No foot holds; the kickboard may be used. */
-  | 'method_footless_kickboard'
-  /** Feet follow hands, but the kickboard is off-limits. */
-  | 'method_no_kickboard';
 
 /** Root mutation type for all write operations. */
 export type Mutation = {
@@ -3641,12 +3572,6 @@ export type Query = {
   /** Get members of a gym. */
   gymMembers: GymMemberConnection;
   /**
-   * Resolve scraped Instagram posts against Boardsesh: which beta videos are
-   * missing, already linked, ambiguous, or unmatched. Read-only — the client
-   * attaches the missing ones via the attachBetaLink mutation.
-   */
-  instagramBetaScan: InstagramBetaScanResult;
-  /**
    * Connection state of every supported external platform integration for the
    * current user, including never-connected providers (connected: false).
    * Requires authentication.
@@ -4106,11 +4031,6 @@ export type QueryGymBySlugArgs = {
 /** Root query type for all read operations. */
 export type QueryGymMembersArgs = {
   input: GymMembersInput;
-};
-
-/** Root query type for all read operations. */
-export type QueryInstagramBetaScanArgs = {
-  input: InstagramBetaScanInput;
 };
 
 /** Root query type for all read operations. */
@@ -4615,8 +4535,6 @@ export type SaveMoonBoardClimbInput = {
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;
   layoutId: Scalars['Int']['input'];
-  /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
-  method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
@@ -4666,8 +4584,6 @@ export type SaveTickInput = {
 export type SearchBoardsInput = {
   /** Filter by board type */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Filter by board type (OR) — multi-select; composes with boardType if both are set */
-  boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Max results to return */
@@ -4684,8 +4600,6 @@ export type SearchBoardsInput = {
 
 /** Input for searching gyms. */
 export type SearchGymsInput = {
-  /** Filter to gyms that have a board of one of these types (OR) */
-  boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Max results to return */
@@ -6295,13 +6209,6 @@ export type ResolversTypes = ResolversObject<{
   GymMemberRole: GymMemberRole;
   GymMembersInput: GymMembersInput;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
-  InstagramBetaAmbiguous: ResolverTypeWrapper<InstagramBetaAmbiguous>;
-  InstagramBetaCandidate: ResolverTypeWrapper<InstagramBetaCandidate>;
-  InstagramBetaMatch: ResolverTypeWrapper<InstagramBetaMatch>;
-  InstagramBetaScanInput: InstagramBetaScanInput;
-  InstagramBetaScanResult: ResolverTypeWrapper<InstagramBetaScanResult>;
-  InstagramBetaUnmatched: ResolverTypeWrapper<InstagramBetaUnmatched>;
-  InstagramScanPostInput: InstagramScanPostInput;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   IntegrationExportResult: ResolverTypeWrapper<IntegrationExportResult>;
   IntegrationProvider: IntegrationProvider;
@@ -6316,7 +6223,6 @@ export type ResolversTypes = ResolversObject<{
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
-  MoonBoardMethod: MoonBoardMethod;
   Mutation: ResolverTypeWrapper<{}>;
   MyBoardsInput: MyBoardsInput;
   MyGymsInput: MyGymsInput;
@@ -6582,13 +6488,6 @@ export type ResolversParentTypes = ResolversObject<{
   GymMemberConnection: GymMemberConnection;
   GymMembersInput: GymMembersInput;
   ID: Scalars['ID']['output'];
-  InstagramBetaAmbiguous: InstagramBetaAmbiguous;
-  InstagramBetaCandidate: InstagramBetaCandidate;
-  InstagramBetaMatch: InstagramBetaMatch;
-  InstagramBetaScanInput: InstagramBetaScanInput;
-  InstagramBetaScanResult: InstagramBetaScanResult;
-  InstagramBetaUnmatched: InstagramBetaUnmatched;
-  InstagramScanPostInput: InstagramScanPostInput;
   Int: Scalars['Int']['output'];
   IntegrationExportResult: IntegrationExportResult;
   IntegrationStatus: IntegrationStatus;
@@ -7062,9 +6961,10 @@ export type ClimbResolvers<
 > = ResolversObject<{
   angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   ascensionist_count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  auroraAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   benchmark_difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  boardseshAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -7074,6 +6974,7 @@ export type ClimbResolvers<
   framesPace?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   is_draft?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   is_no_match?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  kilterAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   mirrored?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -7176,11 +7077,14 @@ export type ClimbStatsForAngleResolvers<
 > = ResolversObject<{
   angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   ascensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  auroraAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  boardseshAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficultyAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   faAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   faUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  kilterAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -7631,7 +7535,6 @@ export type GymResolvers<
 > = ResolversObject<{
   address?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  boardTypes?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   commentCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   contactEmail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   contactPhone?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -7684,67 +7587,6 @@ export type GymMemberConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   members?: Resolver<Array<ResolversTypes['GymMember']>, ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type InstagramBetaAmbiguousResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['InstagramBetaAmbiguous'] = ResolversParentTypes['InstagramBetaAmbiguous'],
-> = ResolversObject<{
-  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
-  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  candidates?: Resolver<Array<ResolversTypes['InstagramBetaCandidate']>, ParentType, ContextType>;
-  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  parsedName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type InstagramBetaCandidateResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['InstagramBetaCandidate'] = ResolversParentTypes['InstagramBetaCandidate'],
-> = ResolversObject<{
-  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type InstagramBetaMatchResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['InstagramBetaMatch'] = ResolversParentTypes['InstagramBetaMatch'],
-> = ResolversObject<{
-  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
-  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  climbName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type InstagramBetaScanResultResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['InstagramBetaScanResult'] = ResolversParentTypes['InstagramBetaScanResult'],
-> = ResolversObject<{
-  alreadyLinked?: Resolver<Array<ResolversTypes['InstagramBetaMatch']>, ParentType, ContextType>;
-  ambiguous?: Resolver<Array<ResolversTypes['InstagramBetaAmbiguous']>, ParentType, ContextType>;
-  missing?: Resolver<Array<ResolversTypes['InstagramBetaMatch']>, ParentType, ContextType>;
-  parsed?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  scanned?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  unmatched?: Resolver<Array<ResolversTypes['InstagramBetaUnmatched']>, ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
-export type InstagramBetaUnmatchedResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['InstagramBetaUnmatched'] = ResolversParentTypes['InstagramBetaUnmatched'],
-> = ResolversObject<{
-  link?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  parsedName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  shortcode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -8939,12 +8781,6 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryGymMembersArgs, 'input'>
-  >;
-  instagramBetaScan?: Resolver<
-    ResolversTypes['InstagramBetaScanResult'],
-    ParentType,
-    ContextType,
-    RequireFields<QueryInstagramBetaScanArgs, 'input'>
   >;
   integrations?: Resolver<Array<ResolversTypes['IntegrationStatus']>, ParentType, ContextType>;
   isFollowing?: Resolver<
@@ -10196,11 +10032,6 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GymConnection?: GymConnectionResolvers<ContextType>;
   GymMember?: GymMemberResolvers<ContextType>;
   GymMemberConnection?: GymMemberConnectionResolvers<ContextType>;
-  InstagramBetaAmbiguous?: InstagramBetaAmbiguousResolvers<ContextType>;
-  InstagramBetaCandidate?: InstagramBetaCandidateResolvers<ContextType>;
-  InstagramBetaMatch?: InstagramBetaMatchResolvers<ContextType>;
-  InstagramBetaScanResult?: InstagramBetaScanResultResolvers<ContextType>;
-  InstagramBetaUnmatched?: InstagramBetaUnmatchedResolvers<ContextType>;
   IntegrationExportResult?: IntegrationExportResultResolvers<ContextType>;
   IntegrationStatus?: IntegrationStatusResolvers<ContextType>;
   JSON?: GraphQLScalarType;

@@ -38,6 +38,7 @@ import { useNativeAccessoryActive } from '../../../src/hooks/use-bottom-accessor
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useAscentCountSource } from '../../../src/lib/ascent-count-source-preference';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { getHttpClient } from '../../../src/lib/graphql/client';
@@ -349,6 +350,10 @@ function ClimbListInner() {
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
   const { formatGradeByDifficultyId } = useGradeFormat();
+  // Rank "most ascents / popular" by the user's chosen count source. Feeds the
+  // search input below so changing the setting reorders results (and busts the
+  // react-query key, since it's part of the input the key is derived from).
+  const { source: ascentCountSource } = useAscentCountSource();
 
   const boardConfig = useMemo(
     () => (hasBoardConfig ? { boardName, layoutId, sizeId, setIds, angle } : null),
@@ -480,15 +485,18 @@ function ClimbListInner() {
   const searchInput = useMemo(
     () =>
       mergeBoardFilters(
-        toClimbSearchInput(
-          filters,
-          { boardName, layoutId, sizeId, setIds, angle },
-          { page: 0, pageSize: PAGE_SIZE },
-          { name },
-        ),
+        {
+          ...toClimbSearchInput(
+            filters,
+            { boardName, layoutId, sizeId, setIds, angle },
+            { page: 0, pageSize: PAGE_SIZE },
+            { name },
+          ),
+          ascentSource: ascentCountSource,
+        },
         boardFilters,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters],
+    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters, ascentCountSource],
   );
 
   const {
@@ -594,7 +602,11 @@ function ClimbListInner() {
   const fetchSearchPage = useCallback(
     async ({ page, pageSize }: { page: number; pageSize: number }) => {
       const input = mergeBoardFilters(
-        toClimbSearchInput(filters, { boardName, layoutId, sizeId, setIds, angle }, { page, pageSize }, { name }),
+        {
+          ...toClimbSearchInput(filters, { boardName, layoutId, sizeId, setIds, angle }, { page, pageSize }, { name }),
+          // Same source the list uses, so swiped pages keep the list's ordering.
+          ascentSource: ascentCountSource,
+        },
         boardFilters,
       );
       const response = await getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
@@ -603,7 +615,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters],
+    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters, ascentCountSource],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);

@@ -49,6 +49,12 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     angle: Int!
     "Number of people who have completed this climb at this angle"
     ascensionistCount: Int
+    "Ascensionist count contributed by Kilter syncs at this angle (raw per-source count). Null when not tracked."
+    kilterAscensionistCount: Int
+    "Ascensionist count contributed by Aurora syncs at this angle (raw per-source count). Null when not tracked."
+    auroraAscensionistCount: Int
+    "Ascensionist count contributed by Boardsesh logs at this angle (raw per-source count). Null when not tracked."
+    boardseshAscensionistCount: Int
     "Average quality rating"
     qualityAverage: Float
     "Average difficulty rating"

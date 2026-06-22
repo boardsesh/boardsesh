@@ -5,6 +5,9 @@ export const CLIMB_STATS_FOR_ANGLES = gql`
     climbStatsForAngles(boardName: $boardName, climbUuid: $climbUuid) {
       angle
       ascensionistCount
+      kilterAscensionistCount
+      auroraAscensionistCount
+      boardseshAscensionistCount
       qualityAverage
       difficultyAverage
       displayDifficulty
@@ -18,6 +21,10 @@ export const CLIMB_STATS_FOR_ANGLES = gql`
 export type ClimbStatsForAnglesEntry = {
   angle: number;
   ascensionistCount: number | null;
+  // Raw per-source counts; the client derives "Board app" = GREATEST(kilter, aurora).
+  kilterAscensionistCount: number | null;
+  auroraAscensionistCount: number | null;
+  boardseshAscensionistCount: number | null;
   qualityAverage: number | null;
   difficultyAverage: number | null;
   displayDifficulty: number | null;

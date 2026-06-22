@@ -24,6 +24,11 @@ export type SubscriptionClimb = {
   setter_username: string;
   angle: number;
   ascensionist_count: number;
+  // Per-source ascensionist counts (all nullable) so a peer-synced queue row can
+  // honour the local "Ascent counts" setting. Nullish from older peers.
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;
@@ -62,6 +67,9 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       setter_username: subscriptionItem.climb.setter_username,
       angle: subscriptionItem.climb.angle,
       ascensionist_count: subscriptionItem.climb.ascensionist_count,
+      kilterAscensionistCount: subscriptionItem.climb.kilterAscensionistCount,
+      auroraAscensionistCount: subscriptionItem.climb.auroraAscensionistCount,
+      boardseshAscensionistCount: subscriptionItem.climb.boardseshAscensionistCount,
       difficulty: subscriptionItem.climb.difficulty,
       quality_average: subscriptionItem.climb.quality_average,
       stars: subscriptionItem.climb.stars,
