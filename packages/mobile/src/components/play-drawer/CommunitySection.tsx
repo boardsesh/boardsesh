@@ -107,8 +107,13 @@ export const CommunitySection = memo(function CommunitySection({
   // present — a single source is redundant with the headline total.
   const breakdownEntries = useMemo(() => {
     const present: { source: AscentCountSource; count: number }[] = [];
+    // Only treat Board app as a real source when the climb actually carries a
+    // board-app split — otherwise `boardAppCount` would fall back to the total
+    // for absent (undefined) fields and show a phantom "Board app" entry. Same
+    // guard the headline uses.
+    const hasBoardAppData = countFields.kilter != null || countFields.aurora != null;
     const boardApp = boardAppCount(countFields);
-    if (boardApp > 0) present.push({ source: 'boardApp', count: boardApp });
+    if (hasBoardAppData && boardApp > 0) present.push({ source: 'boardApp', count: boardApp });
     const boardsesh = countFields.boardsesh ?? 0;
     if (boardsesh > 0) present.push({ source: 'boardsesh', count: boardsesh });
     return present;
