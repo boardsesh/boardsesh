@@ -12,7 +12,6 @@ import {
 } from '@boardsesh/profile-stats';
 import type { GetUserProfileStatsQueryResponse } from '@boardsesh/graphql/operations';
 import type { CssBarChartBar, GroupedBar } from '@/app/components/charts/css-bar-chart';
-import { themeTokens } from '@/app/theme/theme-config';
 import { type GradeDisplayFormat } from '@/app/lib/grade-colors';
 import { getGradeChartColor, getLayoutColor } from './profile-constants';
 
@@ -26,9 +25,11 @@ import { getGradeChartColor, getLayoutColor } from './profile-constants';
 // Re-export the (color-less) timeframe filter unchanged.
 export { filterLogbookByTimeframe };
 
-// Derive flash/redpoint colors from design tokens
-const FLASH_COLOR = `${themeTokens.colors.success}99`; // 60% opacity hex
-const REDPOINT_COLOR = `${themeTokens.colors.error}99`;
+// Flash/redpoint legend colours (60% opacity). Scheme-neutral mid-tones so the bars
+// read on both light and dark surfaces — these feed chart data (not CSS), so a
+// scheme-aware var() can't be used.
+const FLASH_COLOR = '#10b98199';
+const REDPOINT_COLOR = '#ef444499';
 
 const layoutColorForKey = (layoutKey: string): string => {
   const { boardType, layoutId } = parseLayoutKey(layoutKey);

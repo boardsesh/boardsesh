@@ -20,7 +20,6 @@ import {
 import { ANGLES } from '@/app/lib/board-data';
 import type { BoardName, BoardDetails, Climb } from '@/app/lib/types';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import DrawerClimbHeader from '../climb-card/drawer-climb-header';
 import { useTranslation } from 'react-i18next';
@@ -153,7 +152,7 @@ export default function AngleSelector({
             cursor: 'pointer',
             '&:hover': { boxShadow: 3 },
             backgroundColor: isSelected ? 'var(--semantic-selected)' : undefined,
-            borderColor: isSelected ? themeTokens.colors.primary : undefined,
+            borderColor: isSelected ? 'var(--color-primary)' : undefined,
             borderWidth: isSelected ? 2 : 1,
             borderStyle: 'solid',
           }}
@@ -197,11 +196,7 @@ export default function AngleSelector({
                   }}
                 >
                   {stats.quality_average !== null && Number(stats.quality_average) > 0 && (
-                    <Typography
-                      variant="body2"
-                      component="span"
-                      sx={{ fontSize: 11, color: themeTokens.colors.warning }}
-                    >
+                    <Typography variant="body2" component="span" sx={{ fontSize: 11, color: 'var(--color-warning)' }}>
                       ★{Number(stats.quality_average).toFixed(1)}
                     </Typography>
                   )}

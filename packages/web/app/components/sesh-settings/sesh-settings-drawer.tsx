@@ -325,7 +325,7 @@ export default function SeshSettingsDrawer({
                 onClick={handleStopSession}
                 aria-label={t('settings.stopSession')}
                 sx={{
-                  color: themeTokens.colors.error,
+                  color: 'var(--color-error)',
                   flexShrink: 0,
                 }}
               >

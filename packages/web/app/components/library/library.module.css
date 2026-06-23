@@ -272,7 +272,7 @@
 .likedGradient {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.08) 100%),
-    linear-gradient(135deg, var(--color-error), #d87f7a);
+    linear-gradient(135deg, var(--color-error), #e57373);
 }
 
 /* Placeholder to prevent CLS while auth status resolves.

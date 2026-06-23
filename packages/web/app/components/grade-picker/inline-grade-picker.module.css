@@ -94,23 +94,23 @@
 @media (hover: hover) {
   .pickerItem:hover {
     opacity: 1;
-    background-color: rgba(175, 45, 60, 0.14);
+    background-color: rgba(109, 40, 217, 0.14);
   }
 }
 
 .pickerItem:focus-visible {
   opacity: 1;
-  background-color: rgba(175, 45, 60, 0.14);
+  background-color: rgba(109, 40, 217, 0.14);
 }
 
-/* Brand-rose tint + solid ring so selection reads even against vivid grade-text colors.
+/* Brand-violet tint + solid ring so selection reads even against vivid grade-text colors.
    Uses inset box-shadow (not outline) so the ring honours border-radius and can't be
    killed by upstream `outline: 0` resets — the prior outline-based version rendered
    too faintly in light mode against the pale fill. */
 .pickerItemSelected {
   opacity: 1;
-  background-color: rgba(175, 45, 60, 0.32);
-  box-shadow: inset 0 0 0 2px #8c4a52;
+  background-color: rgba(109, 40, 217, 0.32);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
   font-weight: 700;
 }
 
@@ -130,7 +130,7 @@
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Dark mode: keep the rose ring on top of the white-tint fill for consistency with light mode */
+/* Dark mode: keep the violet ring on top of the white-tint fill for consistency with light mode */
 :global(html[data-theme='dark']) .pickerItemSelected {
   background-color: rgba(255, 255, 255, 0.15);
 }

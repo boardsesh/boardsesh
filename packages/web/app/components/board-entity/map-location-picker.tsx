@@ -57,7 +57,7 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
     } else {
       const icon = L.divIcon({
         className: '',
-        html: '<div style="width:16px;height:16px;background:#8C4A52;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
+        html: '<div style="width:16px;height:16px;background:#6d28d9;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
         iconSize: [16, 16],
         iconAnchor: [8, 8],
       });

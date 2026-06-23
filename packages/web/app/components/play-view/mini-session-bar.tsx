@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import AvatarGroup from '@mui/material/AvatarGroup';
 import type { SessionUser } from '@boardsesh/shared-schema';
-import { themeTokens } from '@/app/theme/theme-config';
 import { TickBadgeAvatar } from '@/app/components/session/tick-badge-avatar';
 import type { ClimbQueueItem } from '../queue-control/types';
 
@@ -60,7 +59,7 @@ export function MiniSessionBar({
         // Warm whisper tint — gives the band a reason to exist visually without
         // painting it like an alert. ~5% theme warning so it sits between the
         // neutral climb area above and the neutral action bar below.
-        backgroundColor: `color-mix(in srgb, ${themeTokens.colors.warning} 5%, transparent)`,
+        backgroundColor: 'color-mix(in srgb, var(--color-warning) 5%, transparent)',
         minHeight: 36,
       }}
     >

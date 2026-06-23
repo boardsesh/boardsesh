@@ -670,9 +670,9 @@ export default function PlaylistDetailContent({
               </MenuItem>
             )}
             {isOwner && (
-              <MenuItem onClick={handleDelete} sx={{ color: themeTokens.colors.error }}>
+              <MenuItem onClick={handleDelete} sx={{ color: 'var(--color-error)' }}>
                 <ListItemIcon>
-                  <DeleteOutlined sx={{ color: themeTokens.colors.error }} />
+                  <DeleteOutlined sx={{ color: 'var(--color-error)' }} />
                 </ListItemIcon>
                 <ListItemText>{t('detail.menu.delete')}</ListItemText>
               </MenuItem>

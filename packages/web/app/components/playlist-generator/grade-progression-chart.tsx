@@ -3,9 +3,9 @@
 import React, { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { getGradesForBoard } from '@/app/lib/board-data';
-import { themeTokens } from '@/app/theme/theme-config';
 import { CssBarChart, type CssBarChartBar } from '@/app/components/charts/css-bar-chart';
 import type { BoardDetails } from '@/app/lib/types';
 import type { PlannedClimbSlot } from './types';
@@ -22,6 +22,8 @@ function getGradeName(difficultyId: number, grades: ReturnType<typeof getGradesF
 
 const GradeProgressionChart: React.FC<GradeProgressionChartProps> = ({ plannedSlots, boardDetails, height = 120 }) => {
   const { t } = useTranslation('playlists');
+  const theme = useTheme();
+  const barColor = theme.palette.primaryFill.main;
   const grades = useMemo(() => getGradesForBoard(boardDetails.board_name), [boardDetails.board_name]);
   const bars: CssBarChartBar[] = useMemo(() => {
     if (plannedSlots.length === 0) return [];
@@ -41,11 +43,11 @@ const GradeProgressionChart: React.FC<GradeProgressionChartProps> = ({ plannedSl
       segments: [
         {
           value: gradeCounts.get(gradeId)!,
-          color: themeTokens.colors.primary,
+          color: barColor,
         },
       ],
     }));
-  }, [plannedSlots, grades]);
+  }, [plannedSlots, grades, barColor]);
 
   if (plannedSlots.length === 0) {
     return (

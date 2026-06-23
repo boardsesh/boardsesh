@@ -32,8 +32,8 @@ export default function CommunityStatusBadge({
         label={communityGrade}
         size="small"
         sx={{
-          bgcolor: `${themeTokens.colors.primary}14`,
-          color: themeTokens.colors.primary,
+          bgcolor: 'var(--semantic-selected)',
+          color: 'var(--color-primary)',
           fontWeight: 600,
           fontSize: compact ? 10 : 11,
           height: compact ? 20 : 24,
@@ -51,7 +51,7 @@ export default function CommunityStatusBadge({
         size="small"
         sx={{
           bgcolor: `${themeTokens.colors.amber}22`,
-          color: themeTokens.colors.warning,
+          color: 'var(--color-warning)',
           fontWeight: 600,
           fontSize: compact ? 10 : 11,
           height: compact ? 20 : 24,
@@ -90,12 +90,12 @@ export default function CommunityStatusBadge({
         label={compact ? undefined : 'Frozen'}
         size="small"
         sx={{
-          bgcolor: themeTokens.colors.warningBg,
-          color: themeTokens.colors.warning,
+          bgcolor: 'var(--color-warning-bg)',
+          color: 'var(--color-warning)',
           fontWeight: 600,
           fontSize: compact ? 10 : 11,
           height: compact ? 20 : 24,
-          '& .MuiChip-icon': { color: themeTokens.colors.warning },
+          '& .MuiChip-icon': { color: 'var(--color-warning)' },
           ...(compact && { '& .MuiChip-label': { display: 'none' } }),
         }}
       />,

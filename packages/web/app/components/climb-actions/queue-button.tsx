@@ -13,7 +13,6 @@ import MuiTooltip from '@mui/material/Tooltip';
 import { track } from '@/app/lib/analytics';
 import { useQueueActions, useQueueList } from '../graphql-queue';
 import type { Climb, BoardDetails } from '@/app/lib/types';
-import { themeTokens } from '@/app/theme/theme-config';
 
 type QueueButtonProps = {
   climb: Climb;
@@ -60,7 +59,7 @@ export default function QueueButton({
 
   const iconStyle: React.CSSProperties = {
     fontSize: size === 'small' ? 14 : 16,
-    color: recentlyAdded ? themeTokens.colors.success : 'inherit',
+    color: recentlyAdded ? 'var(--color-success)' : 'inherit',
     cursor: recentlyAdded ? 'not-allowed' : 'pointer',
   };
 

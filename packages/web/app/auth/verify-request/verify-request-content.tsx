@@ -119,12 +119,12 @@ export default function VerifyRequestContent() {
             <Stack spacing={3} sx={{ width: '100%' }}>
               {errorMessage ? (
                 <>
-                  <CancelOutlined sx={{ fontSize: 48, color: themeTokens.colors.error, mx: 'auto' }} />
+                  <CancelOutlined sx={{ fontSize: 48, color: 'var(--color-error)', mx: 'auto' }} />
                   <MuiAlert severity="error">{errorMessage}</MuiAlert>
                 </>
               ) : (
                 <>
-                  <MailOutlined sx={{ fontSize: 48, color: themeTokens.colors.primary, mx: 'auto' }} />
+                  <MailOutlined sx={{ fontSize: 48, color: 'var(--color-primary)', mx: 'auto' }} />
                   <Typography variant="h3">{t('verifyRequest.title')}</Typography>
                   <Typography variant="body1" component="p" color="text.secondary">
                     {t('verifyRequest.description')}

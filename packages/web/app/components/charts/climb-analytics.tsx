@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
+import { useTheme } from '@mui/material/styles';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   CLIMB_STATS_HISTORY,
@@ -18,20 +19,28 @@ import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 
-// Consistent color palette for angle lines, using design tokens
-const ANGLE_COLORS = [
-  themeTokens.colors.primary,
-  themeTokens.colors.success,
-  themeTokens.colors.warning,
-  themeTokens.syntax.keyword,
-  themeTokens.colors.purple,
-  themeTokens.colors.pink,
-  themeTokens.syntax.type,
-  themeTokens.syntax.string,
-];
+// Consistent color palette for angle lines. The leading three slots use the
+// scheme-aware brand/status colours (read from the MUI palette so they resolve
+// per light/dark), then fall through to the static decorative tokens.
+function useAngleColors(): string[] {
+  const theme = useTheme();
+  return useMemo(
+    () => [
+      theme.palette.primary.main,
+      theme.palette.success.main,
+      theme.palette.warning.main,
+      themeTokens.syntax.keyword,
+      themeTokens.colors.purple,
+      themeTokens.colors.pink,
+      themeTokens.syntax.type,
+      themeTokens.syntax.string,
+    ],
+    [theme.palette.primary.main, theme.palette.success.main, theme.palette.warning.main],
+  );
+}
 
-function getAngleColor(index: number): string {
-  return ANGLE_COLORS[index % ANGLE_COLORS.length];
+function angleColorAt(angleColors: string[], index: number): string {
+  return angleColors[index % angleColors.length];
 }
 
 const GRADE_BY_ID: Map<number, BoulderGrade> = new Map(BOULDER_GRADES.map((g) => [g.difficulty_id, g]));
@@ -125,9 +134,10 @@ type AngleFilterProps = {
   angles: number[];
   selected: Set<number>;
   onToggle: (angle: number) => void;
+  angleColors: string[];
 };
 
-function AngleFilter({ angles, selected, onToggle }: AngleFilterProps) {
+function AngleFilter({ angles, selected, onToggle, angleColors }: AngleFilterProps) {
   if (angles.length <= 1) return null;
 
   return (
@@ -140,11 +150,11 @@ function AngleFilter({ angles, selected, onToggle }: AngleFilterProps) {
           variant={selected.has(angle) ? 'filled' : 'outlined'}
           onClick={() => onToggle(angle)}
           sx={{
-            backgroundColor: selected.has(angle) ? getAngleColor(i) : undefined,
+            backgroundColor: selected.has(angle) ? angleColorAt(angleColors, i) : undefined,
             color: selected.has(angle) ? '#fff' : undefined,
-            borderColor: getAngleColor(i),
+            borderColor: angleColorAt(angleColors, i),
             '&:hover': {
-              backgroundColor: selected.has(angle) ? getAngleColor(i) : undefined,
+              backgroundColor: selected.has(angle) ? angleColorAt(angleColors, i) : undefined,
               opacity: 0.85,
             },
           }}
@@ -162,6 +172,7 @@ type ClimbAnalyticsProps = {
 export default function ClimbAnalytics({ climbUuid, boardType }: ClimbAnalyticsProps) {
   const { t } = useTranslation('profile');
   const { gradeFormat } = useGradeFormat();
+  const angleColors = useAngleColors();
   const [rows, setRows] = useState<ClimbStatsHistoryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -278,7 +289,7 @@ export default function ClimbAnalytics({ climbUuid, boardType }: ClimbAnalyticsP
             return point?.value ?? null;
           }),
           label: `${angle}°`,
-          color: getAngleColor(colorIndex),
+          color: angleColorAt(angleColors, colorIndex),
           curve: 'linear' as const,
           showMark: options.showMark ?? true,
           connectNulls: true,
@@ -290,7 +301,12 @@ export default function ClimbAnalytics({ climbUuid, boardType }: ClimbAnalyticsP
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <AngleFilter angles={allAngles} selected={selectedAngles ?? new Set()} onToggle={handleToggleAngle} />
+      <AngleFilter
+        angles={allAngles}
+        selected={selectedAngles ?? new Set()}
+        onToggle={handleToggleAngle}
+        angleColors={angleColors}
+      />
 
       {ascentsData && ascentsData.labels.length > 0 && (
         <Box>
