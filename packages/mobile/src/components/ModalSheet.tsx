@@ -9,11 +9,11 @@ import { forwardRef, useCallback, useMemo, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
-  BottomSheetBackdrop,
   BottomSheetScrollView,
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from './SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSheetBackground } from './GlassSheetBackground';
@@ -71,7 +71,7 @@ export const ModalSheet = forwardRef<BottomSheetModal, ModalSheetProps>(function
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
+      <SheetBackdrop
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}

@@ -9,13 +9,13 @@ import {
   type ViewStyle,
 } from 'react-native';
 import BottomSheet, {
-  BottomSheetBackdrop,
   BottomSheetFooter,
   BottomSheetScrollView,
   BottomSheetView,
   type BottomSheetBackdropProps,
   type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from './SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSheetBackground } from './GlassSheetBackground';
@@ -133,7 +133,7 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={sheetChrome.scrimOpacity} />
+      <SheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={sheetChrome.scrimOpacity} />
     ),
     [sheetChrome.scrimOpacity],
   );

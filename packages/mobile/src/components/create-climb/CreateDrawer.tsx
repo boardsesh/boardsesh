@@ -3,11 +3,11 @@ import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, {
   BottomSheetScrollView,
-  BottomSheetBackdrop,
   BottomSheetHandle,
   type BottomSheetBackdropProps,
   type BottomSheetHandleProps,
 } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from '../SheetBackdrop';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
@@ -131,7 +131,7 @@ export function CreateDrawer({
   // dismisses the drawer (autosave keeps any in-progress draft).
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
+      <SheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
     ),
     [],
   );

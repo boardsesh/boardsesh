@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, type PropsWithChildren } from 
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import {
   BottomSheetModal,
-  BottomSheetBackdrop,
   BottomSheetView,
   BottomSheetFlatList,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from '../SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -67,7 +67,7 @@ export function DevicePickerSheet({
 
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
+      <SheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
     ),
     [],
   );

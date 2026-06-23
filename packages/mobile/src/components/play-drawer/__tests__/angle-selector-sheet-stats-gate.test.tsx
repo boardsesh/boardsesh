@@ -31,6 +31,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styleSheet: unknown) => styleSheet },
 }));
 
+// SheetBackdrop pulls in react-native-gesture-handler + reanimated; this suite
+// stubs the whole sheet, so stub the backdrop too (it isn't exercised here).
+vi.mock('../../SheetBackdrop', () => ({ SheetBackdrop: () => null }));
 vi.mock('@gorhom/bottom-sheet', () => ({
   BottomSheetModal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   BottomSheetBackdrop: () => null,

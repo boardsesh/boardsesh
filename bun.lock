@@ -773,7 +773,6 @@
   },
   "patchedDependencies": {
     "react-native-screens@4.25.2": "patches/react-native-screens@4.25.2.patch",
-    "@gorhom/bottom-sheet@5.2.14": "patches/@gorhom%2Fbottom-sheet@5.2.14.patch",
     "expo-dev-launcher@56.0.20": "patches/expo-dev-launcher@56.0.20.patch",
   },
   "overrides": {

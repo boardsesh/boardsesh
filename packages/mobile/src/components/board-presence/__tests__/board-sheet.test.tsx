@@ -68,6 +68,9 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onRefresh, 'aria-label': 'refresh' }),
 }));
 
+// SheetBackdrop pulls in react-native-gesture-handler + reanimated; this suite
+// stubs the whole sheet, so stub the backdrop too (it isn't exercised here).
+vi.mock('../../SheetBackdrop', () => ({ SheetBackdrop: () => null }));
 vi.mock('@gorhom/bottom-sheet', () => ({
   BottomSheetModal: forwardRef(({ children }: { children?: ReactNode }, ref: Ref<unknown>) => {
     useImperativeHandle(ref, () => ({ present: sheetModal.present, dismiss: sheetModal.dismiss }));

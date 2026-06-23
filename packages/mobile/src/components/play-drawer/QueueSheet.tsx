@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from '../SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -162,7 +163,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
+      <SheetBackdrop
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}

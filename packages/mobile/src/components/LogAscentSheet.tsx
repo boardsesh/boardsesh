@@ -8,12 +8,8 @@
 // lifts the sheet above the tab bar — same pattern as DevicePickerSheet.
 import { useCallback, useEffect, useMemo, useRef, type PropsWithChildren } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from './SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
@@ -94,7 +90,7 @@ export function LogAscentSheet({
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
+      <SheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
     ),
     [],
   );

@@ -52,6 +52,9 @@ type SheetMockProps = {
   footerComponent?: FooterComponent;
 };
 type ScrollMockProps = { children?: ReactNode; contentContainerStyle?: unknown };
+// SheetBackdrop pulls in react-native-gesture-handler + reanimated; this suite
+// stubs the whole sheet, so stub the backdrop too (it isn't exercised here).
+vi.mock('../SheetBackdrop', () => ({ SheetBackdrop: () => null }));
 vi.mock('@gorhom/bottom-sheet', () => ({
   default: forwardRef(({ children, footerComponent }: SheetMockProps, ref: Ref<unknown>) => {
     captures.footerComponents.push(footerComponent);

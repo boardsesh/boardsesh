@@ -7,12 +7,12 @@ import { View, Pressable, StyleSheet, Platform, type ViewStyle } from 'react-nat
 // scrollable coordinates nested scrolling correctly.
 import { ScrollView } from 'react-native-gesture-handler';
 import {
-  BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
   type BottomSheetScrollViewMethods,
 } from '@gorhom/bottom-sheet';
+import { SheetBackdrop } from './SheetBackdrop';
 import { FullWindowOverlay } from 'react-native-screens';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -388,7 +388,7 @@ export function ClimbFilterSheet({
 
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
+      <SheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
     ),
     [],
   );
