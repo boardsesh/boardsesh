@@ -50,13 +50,16 @@ export const themeTokens = {
     accentRose: '#F43F5E', // Modern rose — decorative playlist/OG palette (re-pulled from warm coral)
   },
 
-  // Warm text colours scoped to brand surfaces (landing hero, splash, OG/social,
-  // App Store screenshots, marketing emails). Retuned toward Velvet in Phase 5.
+  // Text colours scoped to brand surfaces (landing hero, splash, OG/social, App Store
+  // screenshots, marketing emails). Retuned from the old warm cream to cool Velvet
+  // label values so the hero reads as the same product as the violet chrome.
+  // `*Light` are the values for light surfaces (violet-black); the unsuffixed pair is
+  // for dark brand surfaces (cool near-white). The `--bs-text-brand-*` CSS vars mirror.
   text: {
-    brandPrimary: '#f4f1ea',
-    brandMuted: '#8a8780',
-    brandPrimaryLight: '#2a1f1f',
-    brandMutedLight: '#6b5b54',
+    brandPrimary: '#f5f2fb',
+    brandMuted: '#a9a2b6',
+    brandPrimaryLight: '#16111f',
+    brandMutedLight: '#5b5563',
   },
 
   // Neutral palette — violet-tinted greys (low chroma in the mids, decoupled from the
