@@ -204,7 +204,7 @@ html[data-theme='dark'] {
   --semantic-selected-hover: rgba(199, 184, 232, 0.24);
   --semantic-selected-light: rgba(199, 184, 232, 0.1);
   --semantic-selected-border: #a78bfa;
-  --separator: rgba(180, 168, 205, 0.2);
+  --separator: rgba(180, 168, 205, 0.18);
 
   /* Status mains + background tints (scheme-aware) */
   --color-success: #34d399;
