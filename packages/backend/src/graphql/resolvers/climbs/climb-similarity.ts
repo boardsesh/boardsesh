@@ -192,8 +192,13 @@ export async function findExactDuplicateMatch({
         AND ${dbSchema.boardClimbs.framesCount} = 1
         -- "No match" placeholder climbs are not real routes; never block a real
         -- setter's save by citing a placeholder. Reads the structured no_match
-        -- characteristic (backfilled from the Aurora description convention).
-        AND NOT (COALESCE(${dbSchema.boardClimbs.characteristics}, '{}') @> ARRAY['no_match'])
+        -- characteristic (backfilled from the Aurora description convention); the
+        -- description LIKE is a transition fallback for any row synced in the
+        -- window between the backfill migration and this code deploy.
+        AND NOT (
+          COALESCE(${dbSchema.boardClimbs.characteristics}, '{}') @> ARRAY['no_match']
+          OR LOWER(COALESCE(${dbSchema.boardClimbs.description}, '')) LIKE 'no match%'
+        )
         ${excludeUuid ? sql`AND ${dbSchema.boardClimbs.uuid} <> ${excludeUuid}` : sql``}
       GROUP BY
         ${dbSchema.boardClimbs.uuid},
@@ -332,8 +337,13 @@ export async function findSimilarClimbs({
           AND c.frames_count = 1
           -- "No match" placeholder climbs are not real routes; exclude them from
           -- both the gate and the similarity list. Reads the structured no_match
-          -- characteristic (backfilled from the Aurora description convention).
-          AND NOT (COALESCE(c.characteristics, '{}') @> ARRAY['no_match'])
+          -- characteristic (backfilled from the Aurora description convention); the
+          -- description LIKE is a transition fallback for any row synced in the
+          -- window between the backfill migration and this code deploy.
+          AND NOT (
+            COALESCE(c.characteristics, '{}') @> ARRAY['no_match']
+            OR LOWER(COALESCE(c.description, '')) LIKE 'no match%'
+          )
           ${excludeUuid ? sql`AND h.climb_uuid <> ${excludeUuid}` : sql``}
         GROUP BY h.climb_uuid
         HAVING COUNT(DISTINCT h.hold_id) >= CEIL(${targetSize}::float * ${safeThreshold})::int
