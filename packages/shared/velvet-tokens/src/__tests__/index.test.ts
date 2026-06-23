@@ -51,4 +51,9 @@ describe('blendOpaque', () => {
   it('passes through when either input is not hex', () => {
     expect(blendOpaque('rgba(0,0,0,0.5)', '#ffffff', 0.5)).toBe('#ffffff');
   });
+
+  it('clamps out-of-range alpha so it never emits an invalid hex', () => {
+    expect(blendOpaque('#ffffff', '#000000', 2)).toBe('#ffffff'); // clamps to 1
+    expect(blendOpaque('#ffffff', '#000000', -1)).toBe('#000000'); // clamps to 0
+  });
 });

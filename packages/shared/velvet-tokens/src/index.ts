@@ -131,7 +131,12 @@ export function withAlpha(color: string, alpha: number): string {
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  return `rgba(${r}, ${g}, ${b}, ${clampAlpha(alpha)})`;
+}
+
+/** Clamp an alpha to [0, 1] so out-of-range input can't emit an invalid colour. */
+function clampAlpha(alpha: number): number {
+  return Math.min(1, Math.max(0, alpha));
 }
 
 function parseHex(color: string): [number, number, number] | null {
@@ -162,7 +167,8 @@ export function blendOpaque(foreground: string, background: string, alpha: numbe
     }
     return background;
   }
-  const mix = (channel: 0 | 1 | 2) => fg[channel] * alpha + bg[channel] * (1 - alpha);
+  const a = clampAlpha(alpha);
+  const mix = (channel: 0 | 1 | 2) => fg[channel] * a + bg[channel] * (1 - a);
   return `#${toHexByte(mix(0))}${toHexByte(mix(1))}${toHexByte(mix(2))}`;
 }
 

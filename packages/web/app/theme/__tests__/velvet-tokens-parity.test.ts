@@ -133,8 +133,12 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast('#ffffff', darkTokens.colors.primaryFill)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('dark text on the amber accent ≥ 4.5:1', () => {
+  it('dark text on the amber accent ≥ 4.5:1 (both schemes, via the built theme)', () => {
     expect(contrast(themeTokens.colors.onAccent, themeTokens.colors.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(lightTheme.palette.accent.contrastText, lightTheme.palette.accent.main)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrast(darkTheme.palette.accent.contrastText, darkTheme.palette.accent.main)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('dark foreground violet on the dark page ≥ 4.5:1', () => {
