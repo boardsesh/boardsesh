@@ -63,7 +63,7 @@ const CHIP_SX = { height: 20, fontSize: '0.7rem' } as const;
 
 // Donut geometry (SVG user units). Outer ø 104, ~14px ring like the native arc.
 const DONUT_SIZE = 104;
-const DONUT_RADIUS = 45;
+const DONUT_RADIUS = 43; // outer stroke edge stays inside the viewBox (43 + 14/2 = 50 < 52)
 const DONUT_STROKE = 14;
 const DONUT_CENTER = DONUT_SIZE / 2;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
