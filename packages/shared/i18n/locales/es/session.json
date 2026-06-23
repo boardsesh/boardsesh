@@ -314,7 +314,7 @@
       "ascentSource": "Fuente de ascensos",
       "source": {
         "all": "Todos",
-        "boardApp": "App del tablero",
+        "boardApp": "App del plafón",
         "boardsesh": "Boardsesh"
       },
       "breakdownEntry": "{{source}} {{value}}",

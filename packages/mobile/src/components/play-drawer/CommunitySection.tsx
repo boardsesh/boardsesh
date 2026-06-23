@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -38,12 +38,28 @@ export const CommunitySection = memo(function CommunitySection({
   const { t } = useTranslation('session');
   const { gradeFormat } = useGradeFormat();
   const { systemColors } = useTheme();
-  const { source: preferredSource } = useAscentCountSource();
+  const { source: preferredSource, loaded: preferenceLoaded } = useAscentCountSource();
   const { data: angleStats } = useClimbStatsForAngles(boardName, climbUuid);
 
   // Chart source is a LOCAL, per-view override — toggling it never writes back to
   // the global "Ascent counts" setting. Seeded from the user's preference.
   const [chartSource, setChartSource] = useState<AscentCountSource>(preferredSource);
+
+  // `preferredSource` starts at the "all" default before the AsyncStorage read
+  // resolves, so the initial useState seed can miss a saved "boardApp"/
+  // "boardsesh" choice. Re-seed once the preference loads — but stop as soon as
+  // the user picks a source here, so we never clobber their local override.
+  const userPickedChartSource = useRef(false);
+  useEffect(() => {
+    if (preferenceLoaded && !userPickedChartSource.current) {
+      setChartSource(preferredSource);
+    }
+  }, [preferenceLoaded, preferredSource]);
+
+  const handleSelectChartSource = useCallback((next: AscentCountSource) => {
+    userPickedChartSource.current = true;
+    setChartSource(next);
+  }, []);
 
   const qualityNum = parseFloat(qualityAverage);
   const hasQuality = qualityNum > 0;
@@ -59,8 +75,16 @@ export const CommunitySection = memo(function CommunitySection({
     [ascensionistCount, kilterAscensionistCount, auroraAscensionistCount, boardseshAscensionistCount],
   );
 
-  // Headline reflects the user's chosen source.
-  const headlineCount = selectSourceCount(countFields, preferredSource);
+  // Headline reflects the user's chosen source. "Board app" keeps a display-only
+  // fallback to the combined total when this climb carries no board-app split
+  // (kilter + aurora both absent/null — e.g. a Boardsesh-origin climb) so the
+  // headline isn't blank. The breakdown + toggle below stay strict (they treat a
+  // null source as a real 0), so they never show a phantom "Board app" entry.
+  // "Boardsesh" is exact too: a null there means no Boardsesh senders → 0.
+  const headlineCount =
+    preferredSource === 'boardApp' && kilterAscensionistCount == null && auroraAscensionistCount == null
+      ? ascensionistCount
+      : selectSourceCount(countFields, preferredSource);
   const hasAscensionists = headlineCount > 0;
 
   // Per-source breakdown: only the non-zero meaningful sources (Board app =
@@ -204,7 +228,7 @@ export const CommunitySection = memo(function CommunitySection({
             <SegmentedControl
               options={sourceOptions}
               selectedKey={activeChartSource}
-              onSelect={setChartSource}
+              onSelect={handleSelectChartSource}
               disabledKeys={disabledSourceKeys}
               textVariant="footnote"
               trackColor={systemColors.fill}

@@ -13,10 +13,18 @@ export function isAscentCountSource(value: unknown): value is AscentCountSource 
 }
 
 /**
- * The per-source count fields a climb (or per-angle stats row) carries. All
- * nullable: the backend leaves a source null when it has no data for it (e.g. a
- * Tension climb has no Kilter count). `total` is the combined ascensionist count
- * we fall back to.
+ * The per-source count fields a climb (or per-angle stats row) carries.
+ *
+ * The distinction between `undefined` and `null` is load-bearing:
+ * - `undefined` — this shape never carried the per-source split (queue / tick /
+ *   board-presence climbs that only select `ascensionist_count`). We don't know
+ *   the breakdown, so the selector falls back to the combined `total`.
+ * - `null` — the backend returned the field and it has no data: a real zero.
+ *   Migration 0099 leaves `boardsesh_ascensionist_count` NULL for every climb
+ *   with no Boardsesh ticks, so NULL means "zero senders", not "unknown". The
+ *   search sort agrees (`COALESCE(boardsesh, 0)` /
+ *   `GREATEST(COALESCE(kilter,0), COALESCE(aurora,0))`), so we mirror it: a
+ *   present-but-null source counts as 0, never the total.
  */
 export type AscentCountFields = {
   /** The combined total — `ascensionist_count`. Always present. */
@@ -28,12 +36,14 @@ export type AscentCountFields = {
 
 /**
  * "Board app" = the count from the board's own app, modelled as the larger of
- * the Kilter and Aurora counts (the same source under two sync paths). When BOTH
- * are null we have no board-app signal, so fall back to the total.
+ * the Kilter and Aurora counts (the same source under two sync paths). Both
+ * fields ABSENT (undefined) means this shape carries no split, so fall back to
+ * the total; a present-but-null source is a real 0 (mirrors the search sort
+ * `GREATEST(COALESCE(kilter,0), COALESCE(aurora,0))`).
  */
 export function boardAppCount(fields: AscentCountFields): number {
   const { kilter, aurora, total } = fields;
-  if (kilter == null && aurora == null) return total;
+  if (kilter === undefined && aurora === undefined) return total;
   return Math.max(kilter ?? 0, aurora ?? 0);
 }
 
@@ -41,9 +51,11 @@ export function boardAppCount(fields: AscentCountFields): number {
  * Resolve the count to show for the chosen source.
  *
  * - `all` → the combined total.
- * - `boardApp` → max(kilter, aurora); falls back to the total when both are null.
- * - `boardsesh` → the Boardsesh count; falls back to the total when null, but a
- *   real 0 stays 0 (someone could have a board-app climb with no Boardsesh ticks).
+ * - `boardApp` → max(kilter, aurora); falls back to the total only when both
+ *   fields are absent (undefined). A present-but-null source counts as 0.
+ * - `boardsesh` → the Boardsesh count; falls back to the total only when the
+ *   field is absent (undefined). A present null/0 stays 0 — NULL means "no
+ *   Boardsesh senders", not "unknown", so we never show the Aurora total here.
  */
 export function selectSourceCount(fields: AscentCountFields, source: AscentCountSource): number {
   switch (source) {
@@ -52,6 +64,6 @@ export function selectSourceCount(fields: AscentCountFields, source: AscentCount
     case 'boardApp':
       return boardAppCount(fields);
     case 'boardsesh':
-      return fields.boardsesh ?? fields.total;
+      return fields.boardsesh === undefined ? fields.total : (fields.boardsesh ?? 0);
   }
 }

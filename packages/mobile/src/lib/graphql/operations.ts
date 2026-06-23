@@ -110,6 +110,9 @@ const CLIMB_DETAIL_FIELDS = `
   frames
   angle
   ascensionist_count
+  kilterAscensionistCount
+  auroraAscensionistCount
+  boardseshAscensionistCount
   difficulty
   quality_average
   stars

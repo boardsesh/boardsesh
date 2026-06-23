@@ -15,8 +15,14 @@ describe('selectSourceCount', () => {
     expect(selectSourceCount(fields({ kilter: 12, aurora: 80 }), 'boardApp')).toBe(80);
   });
 
-  it('falls back to the total for "boardApp" when both board counts are null', () => {
-    expect(selectSourceCount(fields({ kilter: null, aurora: null, total: 55 }), 'boardApp')).toBe(55);
+  it('treats both board counts present-but-null as 0 for "boardApp" (no total fallback)', () => {
+    // Present NULL is a real zero (the climb has no board-app sync data), not
+    // "unknown" — matches the search sort, which never falls back to the total.
+    expect(selectSourceCount(fields({ kilter: null, aurora: null, total: 55 }), 'boardApp')).toBe(0);
+  });
+
+  it('falls back to the total for "boardApp" only when both board fields are absent', () => {
+    expect(selectSourceCount(fields({ kilter: undefined, aurora: undefined, total: 55 }), 'boardApp')).toBe(55);
   });
 
   it('treats a single null board count as 0, not a fallback', () => {
@@ -29,8 +35,14 @@ describe('selectSourceCount', () => {
     expect(selectSourceCount(fields({ boardsesh: 30 }), 'boardsesh')).toBe(30);
   });
 
-  it('falls back to the total for "boardsesh" when the count is null', () => {
-    expect(selectSourceCount(fields({ boardsesh: null, total: 42 }), 'boardsesh')).toBe(42);
+  it('treats a present-but-null Boardsesh count as 0 (no total fallback)', () => {
+    // NULL means "no Boardsesh senders" (migration 0099 leaves it NULL for
+    // climbs with no ticks), so we show 0, never the Aurora-derived total.
+    expect(selectSourceCount(fields({ boardsesh: null, total: 42 }), 'boardsesh')).toBe(0);
+  });
+
+  it('falls back to the total for "boardsesh" only when the field is absent', () => {
+    expect(selectSourceCount(fields({ boardsesh: undefined, total: 42 }), 'boardsesh')).toBe(42);
   });
 
   it('keeps a real Boardsesh 0 as 0 (no fallback)', () => {
@@ -43,9 +55,13 @@ describe('boardAppCount', () => {
     expect(boardAppCount(fields({ kilter: 3, aurora: 8 }))).toBe(8);
   });
 
-  it('falls back to the total only when both are null', () => {
-    expect(boardAppCount(fields({ kilter: null, aurora: null, total: 12 }))).toBe(12);
+  it('treats present-but-null board counts as 0 (no total fallback)', () => {
+    expect(boardAppCount(fields({ kilter: null, aurora: null, total: 12 }))).toBe(0);
     expect(boardAppCount(fields({ kilter: 0, aurora: null, total: 12 }))).toBe(0);
+  });
+
+  it('falls back to the total only when both fields are absent (undefined)', () => {
+    expect(boardAppCount(fields({ kilter: undefined, aurora: undefined, total: 12 }))).toBe(12);
   });
 });
 
