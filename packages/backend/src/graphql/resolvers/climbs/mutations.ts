@@ -572,12 +572,17 @@ export const climbMutations = {
         updateSet.description = validated.description;
         // Keep the no_match characteristic in sync with the Aurora description
         // convention, preserving any other tokens (e.g. a MoonBoard method).
-        const nextCharacteristics = withCharacteristic(
-          existing.characteristics,
-          CLIMB_CHARACTERISTICS.NO_MATCH,
-          isNoMatchClimb(validated.description),
-        );
-        updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
+        // no_match is an Aurora-family concept — never derive it for MoonBoard,
+        // where a description starting with "no match" is just user prose and
+        // would otherwise clobber the climb's method token.
+        if (validated.boardType !== 'moonboard') {
+          const nextCharacteristics = withCharacteristic(
+            existing.characteristics,
+            CLIMB_CHARACTERISTICS.NO_MATCH,
+            isNoMatchClimb(validated.description),
+          );
+          updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
+        }
       }
       if (validated.frames !== undefined) updateSet.frames = validated.frames;
       if (validated.angle !== undefined) updateSet.angle = validated.angle;

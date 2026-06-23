@@ -44,7 +44,7 @@ import { useCreateClimb } from '@boardsesh/create-climb-react';
 import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import type { MoonBoardClimbDuplicateMatch, UpdateClimbInput } from '@boardsesh/shared-schema';
-import { CLIMB_CHARACTERISTICS, getMoonBoardMethod } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 
 // The three mutually-exclusive MoonBoard method tokens (the create form's
 // selectable methods). The "feet follow hands" default is the empty selection.
@@ -1142,6 +1142,7 @@ export default function CreateClimbForm({
     description,
     userGrade,
     isBenchmark,
+    method,
     isDraft,
     selectedAngle,
     wsAuthToken,

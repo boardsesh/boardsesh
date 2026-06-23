@@ -363,6 +363,10 @@ async function syncBoardLayoutGroup(
             set: {
               holdFingerprint: sql`COALESCE(${boardClimbs.holdFingerprint}, excluded.hold_fingerprint)`,
               frames: sql`COALESCE(${boardClimbs.frames}, excluded.frames)`,
+              // Fill the no_match characteristic on a re-sync that reaches this
+              // branch (the dedup path normally skips existing UUIDs). COALESCE
+              // so we never wipe a token an existing row already carries.
+              characteristics: sql`COALESCE(${boardClimbs.characteristics}, excluded.characteristics)`,
             },
           });
       });

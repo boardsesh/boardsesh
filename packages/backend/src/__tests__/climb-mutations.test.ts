@@ -580,6 +580,98 @@ describe('climb mutations', () => {
     );
   });
 
+  it('updateClimb syncs the no_match characteristic from the description on Aurora boards', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-1',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: null,
+        },
+      ]),
+    );
+    // updateClimb does `await tx.update(...).set(...).where(...)` but ignores the
+    // result, so the chain doesn't need to be thenable — `.where()` returns a
+    // plain object and `await` resolves it as-is. (Avoids a `then` literal, which
+    // oxlint flags as an accidental thenable.)
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-1', description: 'No match\nbeta' } },
+      makeCtx(),
+    );
+
+    expect(updateSet?.characteristics).toEqual(['no_match']);
+  });
+
+  it('updateClimb never derives no_match for MoonBoard, preserving the method token', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'mb-1',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 40,
+          layoutId: 3,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: ['method_footless'],
+        },
+      ]),
+    );
+    // updateClimb does `await tx.update(...).set(...).where(...)` but ignores the
+    // result, so the chain doesn't need to be thenable — `.where()` returns a
+    // plain object and `await` resolves it as-is. (Avoids a `then` literal, which
+    // oxlint flags as an accidental thenable.)
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      // A MoonBoard description that *looks* like the Aurora "no match" prefix.
+      { input: { boardType: 'moonboard', uuid: 'mb-1', description: 'no match for the feet here' } },
+      makeCtx(),
+    );
+
+    // The guard skips the no_match derivation entirely — characteristics is not
+    // in the update set, so the stored method_footless token is untouched.
+    expect(updateSet).toBeDefined();
+    expect(updateSet).not.toHaveProperty('characteristics');
+  });
+
   it('throws when publishing a draft without an angle', async () => {
     mockDb.select.mockReturnValueOnce(
       createMockChain([
