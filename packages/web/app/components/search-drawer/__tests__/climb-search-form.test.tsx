@@ -249,7 +249,7 @@ describe('ClimbSearchForm — zone changes prune out-of-zone holds', () => {
       for (const [name, value] of Object.entries(attrs)) {
         expect(node.getAttribute(name)).toBe(value);
       }
-      expect(node.getAttribute('fill')).toBe('#111827');
+      expect(node.getAttribute('fill')).toBe('#16111F');
       expect(node.getAttribute('fill-opacity')).toBe('0.42');
       // Exclusion rects must absorb pointer events so taps on dimmed holds
       // outside the zone never reach BoardRenderer underneath (issue #2040).
@@ -267,7 +267,9 @@ describe('ClimbSearchForm — zone changes prune out-of-zone holds', () => {
     expect(outline.getAttribute('width')).toBe('645');
     expect(outline.getAttribute('height')).toBe('705');
     expect(outline.getAttribute('fill')).toBe('none');
-    expect(outline.getAttribute('stroke')).toBe('#8C4A52');
+    // Velvet: the zone outline stroke is the scheme-aware foreground violet, applied
+    // via a style prop (so the CSS var resolves) rather than the SVG stroke attribute.
+    expect(outline.style.stroke).toBe('var(--color-primary)');
     expect(outline.getAttribute('pointer-events')).toBe('none');
   });
 

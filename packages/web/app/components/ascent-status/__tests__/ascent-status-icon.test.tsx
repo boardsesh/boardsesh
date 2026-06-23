@@ -34,7 +34,8 @@ describe('AscentStatusIcon', () => {
 
     const badge = screen.getByTestId('attempt-badge');
     expect(badge.getAttribute('data-status')).toBe('attempt');
-    expect(badge.style.backgroundColor).toBe('rgb(184, 82, 76)');
+    // Velvet: the attempt badge fill is now the scheme-aware error token.
+    expect(badge.style.backgroundColor).toBe('var(--color-error)');
     expect(badge.getAttribute('style')).toContain('width: 20px');
     expect(badge.firstElementChild?.getAttribute('style')).toContain('transform: scaleX(-1)');
   });
