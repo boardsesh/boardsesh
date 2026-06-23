@@ -32,40 +32,63 @@
 }
 
 .chartLabel {
+  display: block;
   margin-bottom: 6px;
 }
 
-.gradeBarContainer {
+.donutRow {
   display: flex;
-  gap: 2px;
-  align-items: flex-end;
-  height: 32px;
+  align-items: center;
+  gap: 14px;
 }
 
-.gradeBar {
+.donutGraphic {
+  position: relative;
+  flex-shrink: 0;
+  width: 104px;
+  height: 104px;
+}
+
+.donut {
+  display: block;
+}
+
+.donutTrack {
+  stroke: var(--separator);
+}
+
+.donutCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.donutSide {
   flex: 1;
-  min-width: 4px;
-  max-width: 24px;
-  border-radius: 2px 2px 0 0;
-  transition: opacity 0.15s ease;
+  min-width: 0;
 }
 
 .gradeLegend {
   display: flex;
-  gap: 2px;
-  margin-top: 2px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
-.gradeLegendLabel {
-  flex: 1;
-  min-width: 4px;
-  max-width: 24px;
-  text-align: center;
-  font-size: 8px;
-  color: var(--neutral-400);
+.gradeLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.gradeLegendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .arrowIcon {
@@ -93,11 +116,7 @@
     gap: 12px;
   }
 
-  .gradeBarContainer {
-    height: 24px;
-  }
-
-  .gradeLegendLabel {
-    font-size: 7px;
+  .donutRow {
+    gap: 12px;
   }
 }

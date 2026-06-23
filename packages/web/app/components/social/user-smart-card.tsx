@@ -10,7 +10,6 @@ import MuiAvatar from '@mui/material/Avatar';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import Skeleton from '@mui/material/Skeleton';
-import Box from '@mui/material/Box';
 import { PersonOutlined, ArrowForwardIos } from '@mui/icons-material';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
@@ -50,7 +49,26 @@ type GradeBar = {
   color: string;
 };
 
+type DonutSegment = {
+  grade: string;
+  count: number;
+  color: string;
+  /** length of the visible arc, in user units along the ring circumference */
+  dash: number;
+  /** offset from the 12-o'clock start, in user units */
+  offset: number;
+};
+
 const CHIP_SX = { height: 20, fontSize: '0.7rem' } as const;
+
+// Donut geometry (SVG user units). Outer ø 104, ~14px ring like the native arc.
+const DONUT_SIZE = 104;
+const DONUT_RADIUS = 45;
+const DONUT_STROKE = 14;
+const DONUT_CENTER = DONUT_SIZE / 2;
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+// Hairline seam between segments; only applied when there is more than one grade.
+const DONUT_SEGMENT_GAP = 3;
 
 export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardProps) {
   const { t } = useTranslation('feed');
@@ -121,7 +139,28 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
     });
   }, [rawStats, gradeFormat]);
 
-  const maxCount = useMemo(() => Math.max(...gradeBars.map((b: GradeBar) => b.count), 1), [gradeBars]);
+  const donut = useMemo(() => {
+    const total = gradeBars.reduce((sum: number, bar: GradeBar) => sum + bar.count, 0);
+    if (total <= 0) return { total: 0, segments: [] as DonutSegment[] };
+    const multipleGrades = gradeBars.length > 1;
+    const gap = multipleGrades ? DONUT_SEGMENT_GAP : 0;
+    let cursor = 0;
+    const segments: DonutSegment[] = gradeBars.map((bar: GradeBar) => {
+      const fullLength = (bar.count / total) * DONUT_CIRCUMFERENCE;
+      // Carve the seam out of the segment so the ring stays gap-free overall.
+      const dash = Math.max(fullLength - gap, multipleGrades ? 0.5 : fullLength);
+      const segment: DonutSegment = {
+        grade: bar.grade,
+        count: bar.count,
+        color: bar.color,
+        dash,
+        offset: cursor,
+      };
+      cursor += fullLength;
+      return segment;
+    });
+    return { total, segments };
+  }, [gradeBars]);
 
   const displayName = profile?.profile?.displayName || profile?.name || 'Climber';
   const avatarUrl = profile?.profile?.avatarUrl || profile?.image;
@@ -187,33 +226,76 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
 
           {gradeBars.length > 0 && (
             <div className={styles.chartSection}>
-              <Typography variant="caption" component="span" color="text.secondary" className={styles.chartLabel}>
-                {t('userSmartCard.distinctClimb', { count: totalClimbs })}
-              </Typography>
+              <div className={styles.donutRow}>
+                <div className={styles.donutGraphic}>
+                  <svg
+                    className={styles.donut}
+                    viewBox={`0 0 ${DONUT_SIZE} ${DONUT_SIZE}`}
+                    width={DONUT_SIZE}
+                    height={DONUT_SIZE}
+                    role="img"
+                    aria-label={t('userSmartCard.distinctClimb', { count: totalClimbs })}
+                  >
+                    {/* Track sits under the segments so single-grade rings still read as a ring. */}
+                    <circle
+                      className={styles.donutTrack}
+                      cx={DONUT_CENTER}
+                      cy={DONUT_CENTER}
+                      r={DONUT_RADIUS}
+                      fill="none"
+                      strokeWidth={DONUT_STROKE}
+                    />
+                    {/* Rotate -90° so segments begin at 12 o'clock. */}
+                    <g transform={`rotate(-90 ${DONUT_CENTER} ${DONUT_CENTER})`}>
+                      {donut.segments.map((segment: DonutSegment) => (
+                        <circle
+                          key={segment.grade}
+                          cx={DONUT_CENTER}
+                          cy={DONUT_CENTER}
+                          r={DONUT_RADIUS}
+                          fill="none"
+                          stroke={segment.color}
+                          strokeWidth={DONUT_STROKE}
+                          strokeDasharray={`${segment.dash} ${DONUT_CIRCUMFERENCE - segment.dash}`}
+                          strokeDashoffset={-segment.offset}
+                        >
+                          <title>{`${segment.grade}: ${segment.count}`}</title>
+                        </circle>
+                      ))}
+                    </g>
+                  </svg>
 
-              <div className={styles.gradeBarContainer}>
-                {gradeBars.map((bar: GradeBar) => (
-                  <Box
-                    key={bar.grade}
-                    className={styles.gradeBar}
-                    sx={{
-                      height: `${Math.max((bar.count / maxCount) * 100, 8)}%`,
-                      backgroundColor: bar.color,
-                    }}
-                    title={`${bar.grade}: ${bar.count}`}
-                  />
-                ))}
-              </div>
-              <div className={styles.gradeLegend}>
-                {gradeBars.map((bar: GradeBar) => (
-                  <span key={bar.grade} className={styles.gradeLegendLabel}>
-                    {gradeFormatLoaded ? (
-                      bar.grade
-                    ) : (
-                      <Skeleton variant="text" width={20} sx={{ display: 'inline-block', fontSize: 'inherit' }} />
-                    )}
-                  </span>
-                ))}
+                  <div className={styles.donutCenter} aria-hidden="true">
+                    <Typography variant="h6" component="span" fontWeight={700} color="text.primary" lineHeight={1}>
+                      {totalClimbs}
+                    </Typography>
+                  </div>
+                </div>
+
+                <div className={styles.donutSide}>
+                  <Typography variant="caption" component="span" color="text.secondary" className={styles.chartLabel}>
+                    {t('userSmartCard.distinctClimb', { count: totalClimbs })}
+                  </Typography>
+
+                  <div className={styles.gradeLegend}>
+                    {gradeBars.map((bar: GradeBar) => (
+                      <span key={bar.grade} className={styles.gradeLegendItem}>
+                        <span
+                          className={styles.gradeLegendDot}
+                          style={{ backgroundColor: bar.color }}
+                          aria-hidden="true"
+                        />
+                        <Typography variant="caption" component="span" color="text.secondary">
+                          {gradeFormatLoaded ? (
+                            bar.grade
+                          ) : (
+                            <Skeleton variant="text" width={18} sx={{ display: 'inline-block', fontSize: 'inherit' }} />
+                          )}
+                        </Typography>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
