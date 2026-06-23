@@ -6,10 +6,11 @@ design language. **"Velvet Send"** is the design language, and it lives in the m
 `packages/mobile/src/theme/` — treat that directory as the single source of truth and this doc as
 its explanation.
 
-> **Web has not migrated yet.** The Next.js app (`packages/web`) still runs the older rose/sage
-> palette in `packages/web/app/theme/theme-config.ts`. That palette is legacy — it is on its way to
-> Velvet Send, it is not a peer design language. New visual work should target Velvet Send. See
-> [Legacy web palette](#legacy-web-palette-pending-migration) at the end for what web still uses today.
+> **Web is on Velvet Send too.** The Next.js app (`packages/web`) renders this palette in light and
+> dark via `packages/web/app/theme/theme-config.ts` + `app/components/index.css` (kept in sync by a
+> parity test). The brand hexes and colour helpers are shared with mobile through
+> `@boardsesh/velvet-tokens`. See [Web (consuming Velvet Send)](#web-consuming-velvet-send) at the
+> end for the web-specific wiring — the foreground/fill split and scheme-aware CSS vars.
 
 ---
 
@@ -453,18 +454,23 @@ against the theme get dark mode for free — there is no `isDark ? a : b` branch
 
 ---
 
-## Legacy web palette (pending migration)
+## Web (consuming Velvet Send)
 
-The web app (`packages/web`) has **not** moved to Velvet Send yet. Until it does, web uses the older
-"warm organic" palette in `packages/web/app/theme/theme-config.ts` (exposed as CSS custom properties
-in `packages/web/app/components/index.css`):
+The web app renders Velvet Send in light and dark. Wiring notes specific to web:
 
-- Primary `#8C4A52` (dusty rose), success `#6B9080` (sage), error `#B8524C` (brick), warning `#C4943C`
-  (amber), plus a 9-step neutral scale `#F9FAFB`…`#111827`.
+- **Shared source of truth.** The brand palette, surface anchors, and colour helpers (`brandColors`,
+  `brandColorsDark`, `materialSurfaces`, `withAlpha`, `blendOpaque`) live in `@boardsesh/velvet-tokens`;
+  mobile re-exports them and web imports them. Change a brand hex there, not in each app.
+- **Two synced sources.** `app/theme/theme-config.ts` feeds MUI + direct imports; `app/components/index.css`
+  feeds the CSS custom properties read by the `.module.css` files. Every shared colour changes in BOTH —
+  `app/theme/__tests__/velvet-tokens-parity.test.ts` enforces parity (plus the MUI split + WCAG contrast).
+- **Foreground/fill split.** MUI `palette.primary.main` is the FOREGROUND violet (links, text/outlined
+  buttons, selection controls); the FILL ships through an augmented `primaryFill` palette channel used
+  only by filled buttons/FAB. Violet can't be both a dark-mode foreground and a white-text fill the way
+  rose was, so the two roles are separate tokens.
+- **Scheme-awareness.** A direct `themeTokens.colors.{primary,success,error,warning,info}` read renders
+  the *light* value in dark mode — use the scheme-aware CSS vars instead: `var(--color-primary)`
+  (foreground), `var(--color-primary-fill)` (fills), `var(--color-success|error|warning|info)` (status).
 
-This is legacy and slated to converge on Velvet Send — don't treat it as a second design language or
-extend it. When you touch web visuals, prefer pulling toward the violet palette where it doesn't
-break existing screens, and flag larger migrations rather than entrenching rose/sage.
-
-**Shared across web and mobile:** only the climbing **grade colours** (`@boardsesh/board-constants`).
-Those are tied to grade bands, not to either app's chrome, and stay shared.
+**Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
+climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.

@@ -233,6 +233,8 @@ export const darkTokens = {
     success: brandColorsDark.success, // #34D399
     warning: brandColorsDark.warning, // #FBBF24
     error: brandColorsDark.error, // #F87171
+    errorMuted: 'rgba(248, 113, 113, 0.2)', // lighter red wash for non-destructive buttons on dark
+    errorMutedHover: 'rgba(248, 113, 113, 0.3)',
     accentGreen: '#2DD4BF',
     accentRose: '#FB7185',
   },
