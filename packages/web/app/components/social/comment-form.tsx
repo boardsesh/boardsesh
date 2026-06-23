@@ -6,7 +6,6 @@ import TextField from '@mui/material/TextField';
 import MuiButton from '@mui/material/Button';
 import MuiTypography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
-import { themeTokens } from '@/app/theme/theme-config';
 
 const MAX_BODY_LENGTH = 2000;
 const COUNTER_THRESHOLD = 1800;
@@ -80,10 +79,7 @@ export default function CommentForm({
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           {showCounter && (
-            <MuiTypography
-              variant="caption"
-              sx={{ color: isOverLimit ? themeTokens.colors.error : 'var(--neutral-400)' }}
-            >
+            <MuiTypography variant="caption" sx={{ color: isOverLimit ? 'var(--color-error)' : 'var(--neutral-400)' }}>
               {body.length}/{MAX_BODY_LENGTH}
             </MuiTypography>
           )}

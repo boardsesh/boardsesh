@@ -6,7 +6,6 @@ import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import { track } from '@/app/lib/analytics';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useOptionalQueueActions } from '../../graphql-queue';
-import { themeTokens } from '@/app/theme/theme-config';
 import {
   buildActionResult,
   computeActionDisplay,
@@ -61,7 +60,7 @@ export function QueueAction({
   const shortLabel = recentlyAdded ? 'Added' : 'Queue';
 
   const Icon = recentlyAdded ? CheckCircleOutlined : AddCircleOutlined;
-  const iconStyle = recentlyAdded ? { color: themeTokens.colors.success, fontSize: iconSize } : { fontSize: iconSize };
+  const iconStyle = recentlyAdded ? { color: 'var(--color-success)', fontSize: iconSize } : { fontSize: iconSize };
   const icon = <Icon sx={iconStyle} />;
   const ListIcon = recentlyAdded ? CheckCircleOutlined : AddCircleOutlined;
   const listIcon = <ListIcon sx={{ fontSize: iconSize }} />;

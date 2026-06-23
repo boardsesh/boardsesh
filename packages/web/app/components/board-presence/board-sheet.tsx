@@ -255,7 +255,7 @@ function NowOnTheWallHero({ climb, formattedGrade, gradeColor, setByLine, litByL
         </Typography>
       ) : null}
       {litBy ? (
-        <Typography variant="caption" sx={{ display: 'block', color: themeTokens.colors.warning }} noWrap>
+        <Typography variant="caption" sx={{ display: 'block', color: 'var(--color-warning)' }} noWrap>
           {litByLine(litBy)}
         </Typography>
       ) : null}

@@ -35,10 +35,10 @@ export default function ProposalVoteBar({
           label={t('proposalVoteBar.approved')}
           size="small"
           sx={{
-            bgcolor: themeTokens.colors.successBg,
-            color: themeTokens.colors.success,
+            bgcolor: 'var(--color-success-bg)',
+            color: 'var(--color-success)',
             fontWeight: 600,
-            '& .MuiChip-icon': { color: themeTokens.colors.success },
+            '& .MuiChip-icon': { color: 'var(--color-success)' },
           }}
         />
       </Box>
@@ -52,8 +52,8 @@ export default function ProposalVoteBar({
           label={t('proposalVoteBar.rejected')}
           size="small"
           sx={{
-            bgcolor: themeTokens.colors.errorBg,
-            color: themeTokens.colors.error,
+            bgcolor: 'var(--color-error-bg)',
+            color: 'var(--color-error)',
             fontWeight: 600,
           }}
         />
@@ -68,7 +68,7 @@ export default function ProposalVoteBar({
           {t('proposalVoteBar.votesNeeded', { current: weightedUpvotes, required: requiredUpvotes })}
         </Typography>
         {weightedDownvotes > 0 && (
-          <Typography variant="caption" sx={{ color: themeTokens.colors.error }}>
+          <Typography variant="caption" sx={{ color: 'var(--color-error)' }}>
             {t('proposalVoteBar.opposed', { count: weightedDownvotes })}
           </Typography>
         )}
@@ -82,7 +82,7 @@ export default function ProposalVoteBar({
           bgcolor: themeTokens.neutral[200],
           '& .MuiLinearProgress-bar': {
             borderRadius: 3,
-            bgcolor: progress >= 100 ? themeTokens.colors.success : themeTokens.colors.primary,
+            bgcolor: progress >= 100 ? 'var(--color-success)' : 'var(--color-primary-fill)',
           },
         }}
       />

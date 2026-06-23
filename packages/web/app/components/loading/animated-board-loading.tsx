@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 import BoardRenderer from '../board-renderer/board-renderer';
 import type { BoardDetails } from '@/app/lib/types';
 import type { LitUpHoldsMap } from '../board-renderer/types';
@@ -37,6 +38,7 @@ const AnimatedBoardLoading: React.FC<AnimatedBoardLoadingProps> = ({
 }) => {
   const [currentMessage, setCurrentMessage] = useState(loadingMessages[0]);
   const [animationFrame, setAnimationFrame] = useState(0);
+  const theme = useTheme();
 
   // Generate animated holds map with radial sweep animation (like clock hands)
   const animatedHoldsMap = useMemo<LitUpHoldsMap>(() => {
@@ -51,8 +53,10 @@ const AnimatedBoardLoading: React.FC<AnimatedBoardLoadingProps> = ({
     const sweepWidth = 60; // 60 degree sweep arc
 
     const holdsMap: LitUpHoldsMap = {};
-    // Use theme colors for the animation - primary, secondary, and success for variety
-    const colors = [themeTokens.colors.primary, themeTokens.colors.secondary, themeTokens.colors.success];
+    // Use theme colors for the animation - primary, secondary, and success for variety.
+    // Read from the MUI palette so the sweep stays scheme-aware (the board renderer
+    // consumes these as raw hold colours, not as CSS, so a var() string won't resolve).
+    const colors = [theme.palette.primary.main, theme.palette.secondary.main, theme.palette.success.main];
 
     for (const hold of boardDetails.holdsData) {
       // Calculate angle from center (in degrees, 0-360)
@@ -77,7 +81,7 @@ const AnimatedBoardLoading: React.FC<AnimatedBoardLoadingProps> = ({
     }
 
     return holdsMap;
-  }, [boardDetails, animationFrame]);
+  }, [boardDetails, animationFrame, theme]);
 
   // Message rotation effect (only for overlay mode)
   useEffect(() => {
@@ -168,8 +172,8 @@ const AnimatedBoardLoading: React.FC<AnimatedBoardLoadingProps> = ({
           style={{
             width: '80px',
             height: '80px',
-            border: '4px solid rgba(6, 182, 212, 0.2)', // primary color at 20% opacity
-            borderTop: `4px solid ${themeTokens.colors.primary}`,
+            border: '4px solid var(--semantic-selected)', // faint primary wash
+            borderTop: '4px solid var(--color-primary)',
             borderRadius: '50%',
             animation: 'spin 1s linear infinite',
           }}

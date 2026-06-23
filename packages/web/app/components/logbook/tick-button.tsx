@@ -107,14 +107,14 @@ export const TickButton: React.FC<TickButtonProps> = ({
     let backgroundColor: string;
     let hoverBackgroundColor: string;
     if (ascentType === 'attempt') {
-      backgroundColor = themeTokens.colors.error;
-      hoverBackgroundColor = themeTokens.colors.error;
+      backgroundColor = 'var(--color-error)';
+      hoverBackgroundColor = 'var(--color-error)';
     } else if (isFlashVariant) {
       backgroundColor = themeTokens.colors.amber;
       hoverBackgroundColor = themeTokens.colors.amber;
     } else {
-      backgroundColor = themeTokens.colors.success;
-      hoverBackgroundColor = themeTokens.colors.successHover;
+      backgroundColor = 'var(--color-success)';
+      hoverBackgroundColor = 'var(--color-success-hover)';
     }
     buttonSx = {
       backgroundColor,
@@ -132,7 +132,7 @@ export const TickButton: React.FC<TickButtonProps> = ({
       max={100}
       sx={{
         '& .MuiBadge-badge': {
-          backgroundColor: hasSuccessfulAscent ? themeTokens.colors.success : themeTokens.colors.error,
+          backgroundColor: hasSuccessfulAscent ? 'var(--color-success)' : 'var(--color-error)',
           color: 'common.white',
         },
       }}

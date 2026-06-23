@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useOptionalQueueActions, useOptionalCurrentClimb } from '../../graphql-queue';
-import { themeTokens } from '@/app/theme/theme-config';
 import { buildActionResult, computeActionDisplay, ActionIconElement } from '../action-view-renderer';
 import { useOptionalPlaylistActivation } from '../playlist-activation-context';
 
@@ -50,7 +49,7 @@ export function SetActiveAction({
 
   const label = isCurrentClimb ? t('actions.sendToBoard.active') : t('actions.sendToBoard.label');
   const tooltip = isCurrentClimb ? t('actions.sendToBoard.activeTooltip') : t('actions.sendToBoard.tooltip');
-  const iconStyle = isCurrentClimb ? { color: themeTokens.colors.primary, fontSize: iconSize } : { fontSize: iconSize };
+  const iconStyle = isCurrentClimb ? { color: 'var(--color-primary)', fontSize: iconSize } : { fontSize: iconSize };
   const icon = <PlayCircleOutlineOutlined sx={iconStyle} />;
 
   return buildActionResult({

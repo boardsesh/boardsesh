@@ -243,7 +243,7 @@ export default function PlaylistSelectionContent({
                               {playlist.climbCount} {playlist.climbCount === 1 ? 'climb' : 'climbs'}
                             </MuiTypography>
                           </Stack>
-                          {isInPlaylist && <CheckOutlined sx={{ color: themeTokens.colors.success, fontSize: 18 }} />}
+                          {isInPlaylist && <CheckOutlined sx={{ color: 'var(--color-success)', fontSize: 18 }} />}
                         </Stack>
                       </ListItem>
                     );

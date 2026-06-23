@@ -9,7 +9,6 @@ import { track } from '@/app/lib/analytics';
 import { useFavorite } from './use-favorite';
 import type { BoardName } from '@/app/lib/types';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
-import { themeTokens } from '@/app/theme/theme-config';
 import { useTranslation } from 'react-i18next';
 
 type FavoriteButtonProps = {
@@ -97,7 +96,7 @@ export default function FavoriteButton({
 
   const iconStyle: React.CSSProperties = {
     fontSize: size === 'small' ? 14 : 16,
-    color: isFavorited ? themeTokens.colors.error : 'inherit',
+    color: isFavorited ? 'var(--color-error)' : 'inherit',
     cursor: isLoading ? 'wait' : 'pointer',
     transition: 'color 0.2s, transform 0.2s',
   };

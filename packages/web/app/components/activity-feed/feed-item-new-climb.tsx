@@ -21,7 +21,6 @@ import AscentThumbnail from './ascent-thumbnail';
 import VoteButton from '@/app/components/social/vote-button';
 import CommentSection from '@/app/components/social/comment-section';
 import ClimbIcons from '@/app/components/climb-card/climb-icons';
-import { themeTokens } from '@/app/theme/theme-config';
 import styles from './ascents-feed.module.css';
 
 dayjs.extend(relativeTime);
@@ -101,7 +100,7 @@ export default function FeedItemNewClimb({ item }: FeedItemNewClimbProps) {
               <IconButton
                 size="small"
                 onClick={() => setCommentsOpen((prev) => !prev)}
-                sx={{ color: commentsOpen ? themeTokens.colors.primary : 'text.secondary' }}
+                sx={{ color: commentsOpen ? 'var(--color-primary)' : 'text.secondary' }}
               >
                 <ChatBubbleOutlineOutlined fontSize="small" />
               </IconButton>

@@ -69,7 +69,7 @@ const rightSwipeActionLayerBaseStyle: React.CSSProperties = {
 // Static initial styles for action layers — opacity updated via direct DOM manipulation during swipe
 const shortSwipeLayerInitialStyle: React.CSSProperties = {
   ...swipeActionLayerBaseStyle,
-  backgroundColor: themeTokens.colors.primary,
+  backgroundColor: 'var(--color-primary-fill)',
   opacity: 0,
 };
 
@@ -81,14 +81,14 @@ const longSwipeLayerInitialStyle: React.CSSProperties = {
 
 const rightActionLayerDefaultStyle: React.CSSProperties = {
   ...rightSwipeActionLayerBaseStyle,
-  backgroundColor: themeTokens.colors.success,
+  backgroundColor: 'var(--color-success)',
   opacity: 0,
   transition: 'opacity 120ms ease-out',
 };
 
 const rightActionLayerConfirmedStyle: React.CSSProperties = {
   ...rightSwipeActionLayerBaseStyle,
-  backgroundColor: themeTokens.colors.success,
+  backgroundColor: 'var(--color-success)',
   opacity: 0,
   transition: 'opacity 120ms ease-out',
 };
@@ -472,7 +472,7 @@ const ClimbListItem: React.FC<ClimbListItemProps> = React.memo(
         top: 0,
         bottom: 0,
         width: rightActionRevealWidth,
-        backgroundColor: swipeRightAction?.color ?? themeTokens.colors.error,
+        backgroundColor: swipeRightAction?.color ?? 'var(--color-error)',
         display: 'flex' as const,
         alignItems: 'center' as const,
         justifyContent: 'flex-end' as const,

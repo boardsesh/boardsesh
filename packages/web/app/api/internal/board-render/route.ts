@@ -174,8 +174,8 @@ function createOgBackgroundBuffer(boardWidth: number, boardHeight: number): Buff
           </filter>
         </defs>
         <rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#bg)" />
-        <circle cx="212" cy="144" r="156" fill="#5fb27a" opacity="0.18" filter="url(#blur)" />
-        <circle cx="984" cy="468" r="188" fill="#d65a4f" opacity="0.16" filter="url(#blur)" />
+        <circle cx="212" cy="144" r="156" fill="#0d9488" opacity="0.18" filter="url(#blur)" />
+        <circle cx="984" cy="468" r="188" fill="#f43f5e" opacity="0.16" filter="url(#blur)" />
         <rect x="24" y="24" width="${OG_IMAGE_WIDTH - 48}" height="${OG_IMAGE_HEIGHT - 48}" rx="28" fill="none" stroke="rgba(255,255,255,0.08)" />
         <rect x="${frameX}" y="${frameY}" width="${frameWidth}" height="${frameHeight}" rx="22" fill="rgba(6, 10, 14, 0.55)" stroke="rgba(255,255,255,0.10)" />
       </svg>

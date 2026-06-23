@@ -741,9 +741,9 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                     sx={{
                       width: 44,
                       height: 44,
-                      backgroundColor: themeTokens.colors.success,
+                      backgroundColor: 'var(--color-success)',
                       color: 'common.white',
-                      '&:hover': { backgroundColor: themeTokens.colors.success },
+                      '&:hover': { backgroundColor: 'var(--color-success)' },
                     }}
                   >
                     {isSaving ? <CircularProgress size={18} color="inherit" /> : <SaveOutlined sx={{ fontSize: 18 }} />}
@@ -827,13 +827,13 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
           </MenuItem>
           <MenuItem onClick={() => handleStatusSelect('send')}>
             <ListItemIcon>
-              <CheckOutlined sx={{ color: themeTokens.colors.success }} />
+              <CheckOutlined sx={{ color: 'var(--color-success)' }} />
             </ListItemIcon>
             <ListItemText>{tProfile('logbook.feed.status.send')}</ListItemText>
           </MenuItem>
           <MenuItem onClick={() => handleStatusSelect('attempt')}>
             <ListItemIcon>
-              <PersonFallingIcon sx={{ color: themeTokens.colors.error }} />
+              <PersonFallingIcon sx={{ color: 'var(--color-error)' }} />
             </ListItemIcon>
             <ListItemText>{tProfile('logbook.feed.status.attempt')}</ListItemText>
           </MenuItem>

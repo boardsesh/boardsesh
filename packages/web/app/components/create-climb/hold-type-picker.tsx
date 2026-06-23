@@ -280,12 +280,12 @@ function renderSearchToolbar(
             color: 'common.white',
           },
           '& .MuiToggleButton-root[value="include"].Mui-selected': {
-            backgroundColor: themeTokens.colors.success,
-            '&:hover': { backgroundColor: themeTokens.colors.successHover },
+            backgroundColor: 'var(--color-success)',
+            '&:hover': { backgroundColor: 'var(--color-success-hover)' },
           },
           '& .MuiToggleButton-root[value="exclude"].Mui-selected': {
-            backgroundColor: themeTokens.colors.error,
-            '&:hover': { backgroundColor: themeTokens.colors.error },
+            backgroundColor: 'var(--color-error)',
+            '&:hover': { backgroundColor: 'var(--color-error)' },
           },
         }}
       >
@@ -389,7 +389,7 @@ function Swatch({ label, color, isActive, isDisabled = false, isClear, excluded,
         borderRadius: `${themeTokens.borderRadius.md}px`,
         opacity: isDisabled ? 0.35 : 1,
         transition: themeTokens.transitions.fast,
-        '&:hover': isDisabled ? undefined : { backgroundColor: themeTokens.semantic.selectedLight },
+        '&:hover': isDisabled ? undefined : { backgroundColor: 'var(--semantic-selected-light)' },
       }}
     >
       <Box

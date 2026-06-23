@@ -62,7 +62,7 @@ export const viewport: Viewport = {
   // without resizing the layout viewport, so 100dvh and position:fixed
   // bottom bars stay anchored when an input is focused.
   interactiveWidget: 'resizes-visual',
-  themeColor: '#101012',
+  themeColor: '#15101e',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

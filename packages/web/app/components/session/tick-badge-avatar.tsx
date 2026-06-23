@@ -4,11 +4,10 @@ import React from 'react';
 import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import CheckOutlined from '@mui/icons-material/CheckOutlined';
-import { themeTokens } from '@/app/theme/theme-config';
 
 const TICK_BADGE_SX = {
   '& .MuiBadge-badge': {
-    backgroundColor: themeTokens.colors.success,
+    backgroundColor: 'var(--color-success)',
     color: 'common.white',
     width: 16,
     height: 16,

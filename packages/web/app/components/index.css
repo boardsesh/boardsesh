@@ -16,6 +16,9 @@
   --color-accent: #ff8a3d;
   --color-on-accent: #16111f;
 
+  /* Help/guide accent — violet-slate */
+  --color-info: #5e6491;
+
   /* Neutral palette — violet-tinted greys (decoupled from the surface ladder) */
   --neutral-50: #f8f6fb;
   --neutral-100: #f1eef7;
@@ -179,6 +182,7 @@ html[data-theme='dark'] {
   --color-on-primary: #ffffff;
   --color-accent: #ff8a3d;
   --color-on-accent: #16111f;
+  --color-info: #a5abd6;
 
   /* Neutral palette (violet-grey, inverted: 50 darkest → 900 lightest) */
   --neutral-50: #1a1622;

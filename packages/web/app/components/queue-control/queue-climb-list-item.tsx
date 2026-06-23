@@ -78,7 +78,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
   const swipeRightAction: SwipeActionOverride = useMemo(
     () => ({
       icon: <CheckOutlined style={{ color: 'white', fontSize: 20 }} />,
-      color: themeTokens.colors.success,
+      color: 'var(--color-success)',
       onAction: () => onTickClick(item.climb),
     }),
     [item.climb, onTickClick],
@@ -143,7 +143,7 @@ const QueueClimbListItem: React.FC<QueueClimbListItemProps> = ({
             max={100}
             sx={{
               '& .MuiBadge-badge': {
-                backgroundColor: hasSuccessfulAscent ? themeTokens.colors.success : themeTokens.colors.error,
+                backgroundColor: hasSuccessfulAscent ? 'var(--color-success)' : 'var(--color-error)',
                 color: 'common.white',
               },
             }}

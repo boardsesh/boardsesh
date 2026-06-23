@@ -11,7 +11,6 @@ import TextField from '@mui/material/TextField';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import Snackbar from '@mui/material/Snackbar';
-import { themeTokens } from '@/app/theme/theme-config';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { FREEZE_CLIMB } from '@boardsesh/graphql/operations/proposals';
@@ -93,8 +92,8 @@ export default function FreezeClimbDialog({
             disabled={loading}
             sx={{
               textTransform: 'none',
-              bgcolor: themeTokens.colors.primary,
-              '&:hover': { bgcolor: themeTokens.colors.primaryHover },
+              bgcolor: 'var(--color-primary-fill)',
+              '&:hover': { bgcolor: 'var(--color-primary-fill-hover)' },
             }}
           >
             {loading ? 'Saving...' : 'Save'}

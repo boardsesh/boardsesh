@@ -46,11 +46,12 @@ import type { CommunityRoleAssignment, CommunityRoleType } from '@boardsesh/shar
 type UserResult = SearchUsersQueryResponse['searchUsers']['results'][number]['user'];
 
 // Chip accent per role: admins read as the destructive/error colour, testers as
-// the cool info slate, community leaders as brand primary.
+// the cool info slate, community leaders as brand primary. Returns a scheme-aware
+// CSS custom property so the chip stays readable in dark mode.
 function roleChipColor(role: CommunityRoleType): string {
-  if (role === 'admin') return themeTokens.colors.error;
-  if (role === 'tester') return themeTokens.colors.info;
-  return themeTokens.colors.primary;
+  if (role === 'admin') return 'var(--color-error)';
+  if (role === 'tester') return 'var(--color-info)';
+  return 'var(--color-primary)';
 }
 
 export default function RoleManagement() {
@@ -180,8 +181,8 @@ export default function RoleManagement() {
           onClick={() => setShowGrantDialog(true)}
           sx={{
             textTransform: 'none',
-            bgcolor: themeTokens.colors.primary,
-            '&:hover': { bgcolor: themeTokens.colors.primaryHover },
+            bgcolor: 'var(--color-primary-fill)',
+            '&:hover': { bgcolor: 'var(--color-primary-fill-hover)' },
           }}
         >
           {t('roles.grant')}
@@ -222,7 +223,7 @@ export default function RoleManagement() {
                     }
                     size="small"
                     sx={{
-                      bgcolor: `${roleChipColor(role.role)}14`,
+                      bgcolor: `color-mix(in srgb, ${roleChipColor(role.role)} 12%, transparent)`,
                       color: roleChipColor(role.role),
                       fontWeight: 600,
                       fontSize: 11,
@@ -368,8 +369,8 @@ export default function RoleManagement() {
             disabled={!selectedUser}
             sx={{
               textTransform: 'none',
-              bgcolor: themeTokens.colors.primary,
-              '&:hover': { bgcolor: themeTokens.colors.primaryHover },
+              bgcolor: 'var(--color-primary-fill)',
+              '&:hover': { bgcolor: 'var(--color-primary-fill-hover)' },
             }}
           >
             {t('roles.dialog.submit')}

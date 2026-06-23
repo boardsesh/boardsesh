@@ -215,8 +215,8 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
                 size="small"
                 sx={{
                   borderRadius: themeTokens.borderRadius.full,
-                  bgcolor: themeTokens.colors.successBg,
-                  color: themeTokens.colors.success,
+                  bgcolor: 'var(--color-success-bg)',
+                  color: 'var(--color-success)',
                   '& .MuiChip-icon': { color: 'inherit' },
                 }}
               />

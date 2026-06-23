@@ -73,7 +73,7 @@ export default function AdminPage() {
           component={LocaleLink}
           href="/admin/retention"
           underline="hover"
-          sx={{ color: themeTokens.colors.primary }}
+          sx={{ color: 'var(--color-primary)' }}
         >
           {t('nav.retention')}
         </MuiLink>

@@ -191,7 +191,7 @@ export function TickAction({
   }
 
   const icon = <CheckOutlined sx={{ fontSize: iconSize }} />;
-  const badgeColor = hasSuccessfulAscent ? themeTokens.colors.success : themeTokens.colors.error;
+  const badgeColor = hasSuccessfulAscent ? 'var(--color-success)' : 'var(--color-error)';
 
   // Whether to show the board selector or go straight to the form.
   // Show board selector when outside a board route, authenticated, and either still loading or have matching boards.

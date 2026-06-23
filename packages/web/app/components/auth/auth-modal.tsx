@@ -33,7 +33,6 @@ import {
 } from '@/app/components/auth/validate-fields';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { themeTokens } from '@/app/theme/theme-config';
 import { generateRandomUsername } from '@/app/lib/generate-username';
 
 type AuthModalProps = {
@@ -170,7 +169,7 @@ export default function AuthModal({ open, onClose, onSuccess, title, description
       <DialogContent>
         <Stack spacing={3} sx={{ width: '100%' }}>
           <Stack spacing={1} sx={{ width: '100%', textAlign: 'center' }}>
-            <Favorite sx={{ fontSize: 32, color: themeTokens.colors.error, mx: 'auto' }} />
+            <Favorite sx={{ fontSize: 32, color: 'var(--color-error)', mx: 'auto' }} />
             <Typography variant="body2" component="span" fontWeight={600} sx={{ fontSize: 18 }}>
               {resolvedTitle}
             </Typography>

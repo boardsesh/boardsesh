@@ -156,7 +156,7 @@ export default function ProposalSection({
                     size="small"
                     onClick={() => setShowFreezeDialog(true)}
                     sx={{
-                      color: communityStatus?.isFrozen ? themeTokens.colors.warning : themeTokens.neutral[400],
+                      color: communityStatus?.isFrozen ? 'var(--color-warning)' : themeTokens.neutral[400],
                     }}
                   >
                     <AcUnitIcon fontSize="small" />

@@ -1163,7 +1163,7 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                           onClick={(e) => quickTickBarRef.current?.saveAttempt(e.currentTarget)}
                           sx={{
                             backgroundColor: themeTokens.colors.errorMuted,
-                            color: themeTokens.colors.error,
+                            color: 'var(--color-error)',
                             '&:hover': { backgroundColor: themeTokens.colors.errorMutedHover },
                           }}
                           aria-label={t('queueBar.ariaLabels.logAttempt')}

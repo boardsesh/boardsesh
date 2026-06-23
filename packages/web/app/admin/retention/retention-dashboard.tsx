@@ -14,6 +14,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '@mui/material/styles';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { themeTokens } from '@/app/theme/theme-config';
 
@@ -53,6 +54,7 @@ function formatPct(value: number | null, placeholder: string): string {
 
 export default function RetentionDashboard({ rows }: RetentionDashboardProps) {
   const { t } = useTranslation('admin');
+  const theme = useTheme();
   const placeholder = t('retention.table.notReady');
 
   const chartRows = [...rows].reverse().filter((row) => row.d7Pct !== null || row.d7AnyPct !== null);
@@ -63,7 +65,7 @@ export default function RetentionDashboard({ rows }: RetentionDashboardProps) {
   return (
     <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
       <Box sx={{ mb: 3 }}>
-        <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+        <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: 'var(--color-primary)' }}>
           {t('retention.back')}
         </MuiLink>
       </Box>
@@ -89,12 +91,12 @@ export default function RetentionDashboard({ rows }: RetentionDashboardProps) {
                 {
                   data: chartTickValues,
                   label: t('retention.chart.label'),
-                  color: themeTokens.colors.primary,
+                  color: theme.palette.primary.main,
                 },
                 {
                   data: chartAnyValues,
                   label: t('retention.chart.labelAny'),
-                  color: themeTokens.colors.success,
+                  color: theme.palette.success.main,
                 },
               ]}
               xAxis={[

@@ -16,7 +16,6 @@ import { useTranslation } from 'react-i18next';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import BoardImportPrompt from '@/app/components/settings/board-import-prompt';
 import UserSmartCard from '@/app/components/social/user-smart-card';
-import { themeTokens } from '@/app/theme/theme-config';
 import styles from './aurora-migration.module.css';
 
 export default function AuroraMigrationContent() {
@@ -108,7 +107,7 @@ export default function AuroraMigrationContent() {
                       height: 32,
                       fontSize: 14,
                       fontWeight: 600,
-                      bgcolor: themeTokens.colors.primary,
+                      bgcolor: 'var(--color-primary-fill)',
                     }}
                   >
                     1
@@ -141,7 +140,7 @@ export default function AuroraMigrationContent() {
                       height: 32,
                       fontSize: 14,
                       fontWeight: 600,
-                      bgcolor: isAuthenticated ? themeTokens.colors.success : themeTokens.colors.primary,
+                      bgcolor: isAuthenticated ? 'var(--color-success)' : 'var(--color-primary-fill)',
                     }}
                   >
                     {isAuthenticated ? <CheckCircleOutlined sx={{ fontSize: 18 }} /> : '2'}
@@ -186,7 +185,7 @@ export default function AuroraMigrationContent() {
                       height: 32,
                       fontSize: 14,
                       fontWeight: 600,
-                      bgcolor: themeTokens.colors.primary,
+                      bgcolor: 'var(--color-primary-fill)',
                     }}
                   >
                     3
@@ -222,7 +221,7 @@ export default function AuroraMigrationContent() {
                       height: 32,
                       fontSize: 14,
                       fontWeight: 600,
-                      bgcolor: themeTokens.colors.primary,
+                      bgcolor: 'var(--color-primary-fill)',
                     }}
                   >
                     4

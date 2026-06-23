@@ -146,7 +146,7 @@ export default function LikedClimbsViewContent({ boardDetails, angle }: LikedCli
           <div className={styles.heroContent}>
             <div
               className={styles.heroSquare}
-              style={{ background: 'linear-gradient(135deg, var(--color-error), #D87F7A)' }}
+              style={{ background: 'linear-gradient(135deg, var(--color-error), #e57373)' }}
             >
               <FavoriteOutlined className={styles.heroSquareIcon} />
             </div>

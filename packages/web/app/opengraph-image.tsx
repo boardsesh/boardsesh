@@ -29,7 +29,7 @@ export default function Image() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0e0e10',
+        backgroundColor: '#15101e',
         fontFamily: 'sans-serif',
       }}
     >

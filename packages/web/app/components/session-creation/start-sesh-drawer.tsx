@@ -442,8 +442,8 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
         sx={{
           p: 1.25,
           borderRadius: 1,
-          border: `1px solid ${themeTokens.colors.primary}`,
-          bgcolor: themeTokens.semantic.selectedLight,
+          border: '1px solid var(--color-primary)',
+          bgcolor: 'var(--semantic-selected-light)',
         }}
       >
         <AutoFixHighOutlined fontSize="small" sx={{ color: 'primary.main' }} />

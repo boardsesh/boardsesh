@@ -40,7 +40,7 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark, #1b8a4a) 100%);
+  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark, #036b4d) 100%);
   color: white;
   border: none;
   cursor: pointer;
@@ -76,12 +76,12 @@
 
 /* Success state - climb has been sent */
 .tickFabSuccess {
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark, #1b8a4a) 100%);
+  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark, #036b4d) 100%);
 }
 
 /* Attempt state - climb attempted but not sent */
 .tickFabAttempt {
-  background: linear-gradient(135deg, var(--color-warning, #f59e0b) 0%, var(--color-warning-dark, #d97706) 100%);
+  background: linear-gradient(135deg, var(--color-warning, #b45309) 0%, var(--color-warning-dark, #a04a08) 100%);
 }
 
 /* FAB hiding animation when tick bar is active */

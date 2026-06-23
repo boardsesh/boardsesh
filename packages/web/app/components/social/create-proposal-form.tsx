@@ -193,8 +193,8 @@ export default function CreateProposalForm({
               disabled={loading || !proposedValue || (type === 'grade' && proposedValue === currentClimbDifficulty)}
               sx={{
                 textTransform: 'none',
-                bgcolor: themeTokens.colors.primary,
-                '&:hover': { bgcolor: themeTokens.colors.primaryHover },
+                bgcolor: 'var(--color-primary-fill)',
+                '&:hover': { bgcolor: 'var(--color-primary-fill-hover)' },
               }}
             >
               {loading ? t('proposal.submitting') : t('proposal.submit')}

@@ -53,7 +53,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
       <body
         style={{
           margin: 0,
-          backgroundColor: '#0A0A0A',
+          backgroundColor: '#15101e',
           color: '#F3F4F6',
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         }}
@@ -77,7 +77,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
               padding: '12px 24px',
               borderRadius: 8,
               border: 'none',
-              backgroundColor: '#8C4A52',
+              backgroundColor: '#6d28d9',
               color: '#fff',
               fontSize: 16,
               cursor: 'pointer',

@@ -66,7 +66,7 @@ const listUrlToCreateUrl = (url: string): string => {
 
 const actionSx = {
   color: 'var(--neutral-400)',
-  '&.Mui-selected': { color: themeTokens.colors.primary },
+  '&.Mui-selected': { color: 'var(--color-primary)' },
   WebkitTapHighlightColor: 'transparent',
   touchAction: 'manipulation',
   minWidth: 'auto',

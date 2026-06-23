@@ -248,7 +248,7 @@ export function PlaylistAction({
                               {playlist.climbCount} {playlist.climbCount === 1 ? 'climb' : 'climbs'}
                             </MuiTypography>
                           </Stack>
-                          {isInPlaylist && <CheckOutlined sx={{ color: themeTokens.colors.success, fontSize: 14 }} />}
+                          {isInPlaylist && <CheckOutlined sx={{ color: 'var(--color-success)', fontSize: 14 }} />}
                         </Stack>
                       </ListItem>
                     );

@@ -3,9 +3,12 @@ import type { CssBarChartBar } from './css-bar-chart';
 import { formatVGrade } from '@/app/lib/grade-colors';
 import { themeTokens } from '@/app/theme/theme-config';
 
-// Match profile page flash/redpoint colors (theme-derived, 60% opacity hex suffix)
-const FLASH_COLOR = `${themeTokens.colors.success}99`;
-const SEND_COLOR = `${themeTokens.colors.error}99`;
+// Flash/send legend colours (60% opacity). Scheme-neutral mid-tones so the bars stay
+// legible on both the light and the dark card surface — the brand success/error tones
+// are tuned per scheme and would wash out in the other one (these feed chart data, not
+// CSS, so a scheme-aware var() can't be used here).
+const FLASH_COLOR = '#10b98199';
+const SEND_COLOR = '#ef444499';
 const ATTEMPT_COLOR = `${themeTokens.neutral[300]}99`;
 
 export const SESSION_GRADE_LEGEND = [

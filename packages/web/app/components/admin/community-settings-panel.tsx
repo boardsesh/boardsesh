@@ -199,8 +199,8 @@ export default function CommunitySettingsPanel() {
           disabled={!hasChanges || saving}
           sx={{
             textTransform: 'none',
-            bgcolor: themeTokens.colors.primary,
-            '&:hover': { bgcolor: themeTokens.colors.primaryHover },
+            bgcolor: 'var(--color-primary-fill)',
+            '&:hover': { bgcolor: 'var(--color-primary-fill-hover)' },
           }}
         >
           {saving ? t('settings.saving') : t('settings.save')}

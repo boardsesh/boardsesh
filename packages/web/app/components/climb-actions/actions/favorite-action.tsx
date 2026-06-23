@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 import type { ClimbActionProps, ClimbActionResult } from '../types';
 import { useFavorite } from '../use-favorite';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
-import { themeTokens } from '@/app/theme/theme-config';
 import { buildActionResult, computeActionDisplay, ActionListElement } from '../action-view-renderer';
 
 export function FavoriteAction({
@@ -94,7 +93,7 @@ export function FavoriteAction({
 
   const label = isFavorited ? t('actions.favorite.label.favorited') : t('actions.favorite.label.favorite');
   const HeartIcon = isFavorited ? Favorite : FavoriteBorderOutlined;
-  const iconStyle = isFavorited ? { color: themeTokens.colors.error, fontSize: iconSize } : { fontSize: iconSize };
+  const iconStyle = isFavorited ? { color: 'var(--color-error)', fontSize: iconSize } : { fontSize: iconSize };
   const listIcon = <HeartIcon sx={{ fontSize: iconSize }} />;
 
   return buildActionResult({

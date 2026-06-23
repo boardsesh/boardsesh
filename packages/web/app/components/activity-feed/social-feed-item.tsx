@@ -185,7 +185,7 @@ const SocialFeedItem: React.FC<SocialFeedItemProps> = ({ item, showUserHeader = 
               <IconButton
                 size="small"
                 onClick={() => setCommentsOpen((prev) => !prev)}
-                sx={{ color: commentsOpen ? themeTokens.colors.primary : 'text.secondary' }}
+                sx={{ color: commentsOpen ? 'var(--color-primary)' : 'text.secondary' }}
               >
                 <ChatBubbleOutlineOutlined fontSize="small" />
               </IconButton>

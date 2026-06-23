@@ -12,7 +12,6 @@ import { useBoardProvider } from '../board-provider/board-provider-context';
 import { getGradesForBoard } from '@/app/lib/board-data';
 import { loadTickDraft } from '@/app/lib/tick-draft-db';
 import { useTickSave, buildTickTarget, type TickTarget } from '@/app/hooks/use-tick-save';
-import { themeTokens } from '@/app/theme/theme-config';
 import {
   TickControls,
   TickGradeButton,
@@ -189,9 +188,9 @@ export const InlineListTickBar: React.FC<InlineListTickBarProps> = ({
               sx={{
                 width: 36,
                 height: 36,
-                backgroundColor: themeTokens.colors.success,
+                backgroundColor: 'var(--color-success)',
                 color: 'common.white',
-                '&:hover': { backgroundColor: themeTokens.colors.success },
+                '&:hover': { backgroundColor: 'var(--color-success)' },
               }}
             >
               <CheckOutlined sx={{ fontSize: 18 }} />
@@ -204,9 +203,9 @@ export const InlineListTickBar: React.FC<InlineListTickBarProps> = ({
               sx={{
                 width: 36,
                 height: 36,
-                backgroundColor: themeTokens.colors.error,
+                backgroundColor: 'var(--color-error)',
                 color: 'common.white',
-                '&:hover': { backgroundColor: themeTokens.colors.error },
+                '&:hover': { backgroundColor: 'var(--color-error)' },
               }}
             >
               <PersonFallingIcon sx={{ fontSize: 18 }} />

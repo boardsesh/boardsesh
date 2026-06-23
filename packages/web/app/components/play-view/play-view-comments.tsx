@@ -106,7 +106,7 @@ const PlayViewComments: React.FC<PlayViewCommentsProps> = ({ climbUuid }) => {
                       height: themeTokens.spacing[5],
                       fontSize: themeTokens.typography.fontSize.xs,
                       bgcolor: hasSuccess ? 'var(--color-success-bg)' : 'var(--neutral-100)',
-                      color: hasSuccess ? themeTokens.colors.success : 'var(--neutral-500)',
+                      color: hasSuccess ? 'var(--color-success)' : 'var(--neutral-500)',
                     }}
                   />
                   {ascent.tries > 1 && (

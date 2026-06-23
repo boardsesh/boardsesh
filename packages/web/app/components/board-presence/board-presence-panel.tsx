@@ -99,7 +99,7 @@ export function BoardPresencePanel() {
           color: 'text.primary',
         }}
       >
-        <LightbulbOutlined sx={{ fontSize: 18, color: themeTokens.colors.warning }} />
+        <LightbulbOutlined sx={{ fontSize: 18, color: 'var(--color-warning)' }} />
         <Box sx={{ textAlign: 'left', maxWidth: 180 }}>
           <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, lineHeight: 1.1 }} noWrap>
             {t('boardPresence.open')}

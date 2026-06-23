@@ -2,7 +2,6 @@
 
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { themeTokens } from '@/app/theme/theme-config';
 import styles from './direction-picker.module.css';
 
 type DirectionPickerProps = {
@@ -140,14 +139,14 @@ const DirectionPicker: React.FC<DirectionPickerProps> = ({ value, onChange, disa
               y1={center}
               x2={arrowEndX}
               y2={arrowEndY}
-              stroke={themeTokens.colors.primary}
+              style={{ stroke: 'var(--color-primary)' }}
               strokeWidth={3}
               strokeLinecap="round"
             />
             {/* Arrow head */}
             <polygon
               points={`${arrowEndX},${arrowEndY} ${arrowHead1X},${arrowHead1Y} ${arrowHead2X},${arrowHead2Y}`}
-              fill={themeTokens.colors.primary}
+              style={{ fill: 'var(--color-primary)' }}
             />
           </>
         )}

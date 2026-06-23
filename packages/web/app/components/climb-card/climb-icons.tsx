@@ -14,7 +14,7 @@ type ClimbIconsProps = {
 const benchmarkIconSx = {
   marginLeft: '4px',
   fontSize: themeTokens.typography.fontSize.xs,
-  color: themeTokens.colors.primary,
+  color: 'var(--color-primary)',
 } as const;
 
 const noMatchIconSx = {

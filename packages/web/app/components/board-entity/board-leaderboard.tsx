@@ -161,7 +161,7 @@ export default function BoardLeaderboard({ boardUuid }: BoardLeaderboardProps) {
                             entry.rank <= 3
                               ? themeTokens.typography.fontWeight.bold
                               : themeTokens.typography.fontWeight.normal,
-                          color: entry.rank <= 3 ? themeTokens.colors.primary : undefined,
+                          color: entry.rank <= 3 ? 'var(--color-primary)' : undefined,
                         }}
                       >
                         {entry.rank}

@@ -180,7 +180,7 @@ export default function StatsSummary({
                   height: '100%',
                   width: `${percentile.percentile}%`,
                   borderRadius: 4,
-                  bgcolor: themeTokens.colors.primary,
+                  bgcolor: 'var(--color-primary-fill)',
                   transition: 'width 0.5s ease',
                 }}
               />
