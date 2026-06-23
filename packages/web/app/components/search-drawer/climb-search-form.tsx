@@ -450,14 +450,14 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
             <Chip
               label={t('search.holds.included', { count: includeCount })}
               size="small"
-              sx={{ bgcolor: themeTokens.colors.success, color: 'common.white' }}
+              sx={{ bgcolor: 'var(--color-success)', color: 'common.white' }}
             />
           )}
           {excludeCount > 0 && (
             <Chip
               label={t('search.holds.excluded', { count: excludeCount })}
               size="small"
-              sx={{ bgcolor: themeTokens.colors.error, color: 'common.white' }}
+              sx={{ bgcolor: 'var(--color-error)', color: 'common.white' }}
             />
           )}
           {zoneEnabled ? (
@@ -601,7 +601,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
               width={rectSvg.width}
               height={rectSvg.height}
               fill="none"
-              stroke={themeTokens.colors.primary}
+              style={{ stroke: 'var(--color-primary)' }}
               strokeOpacity={RECT_STROKE_OPACITY}
               strokeWidth={Math.max(boardWidth, boardHeight) * 0.005}
               pointerEvents="none"
@@ -640,7 +640,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
                 y1={rectSvg.centerY}
                 x2={rectSvg.centerX + crosshairArm}
                 y2={rectSvg.centerY}
-                stroke={themeTokens.colors.primary}
+                style={{ stroke: 'var(--color-primary)' }}
                 strokeOpacity={RECT_STROKE_OPACITY}
                 strokeWidth={crosshairStrokeWidth}
                 strokeLinecap="round"
@@ -652,7 +652,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
                 y1={rectSvg.centerY - crosshairArm}
                 x2={rectSvg.centerX}
                 y2={rectSvg.centerY + crosshairArm}
-                stroke={themeTokens.colors.primary}
+                style={{ stroke: 'var(--color-primary)' }}
                 strokeOpacity={RECT_STROKE_OPACITY}
                 strokeWidth={crosshairStrokeWidth}
                 strokeLinecap="round"
@@ -663,7 +663,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
                 cx={rectSvg.centerX}
                 cy={rectSvg.centerY}
                 r={centerDotRadius}
-                fill={themeTokens.colors.primary}
+                style={{ fill: 'var(--color-primary)' }}
                 fillOpacity={HANDLE_OPACITY}
                 stroke={themeTokens.neutral[50]}
                 strokeWidth={centerDotRadius * 0.35}
@@ -695,7 +695,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
                     cx={handlePos.x}
                     cy={handlePos.y}
                     r={handleRadius}
-                    fill={themeTokens.colors.primary}
+                    style={{ fill: 'var(--color-primary)' }}
                     fillOpacity={HANDLE_OPACITY}
                     stroke={themeTokens.neutral[50]}
                     strokeWidth={handleRadius * 0.25}

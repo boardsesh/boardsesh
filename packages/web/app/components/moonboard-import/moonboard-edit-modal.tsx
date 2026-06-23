@@ -15,7 +15,6 @@ import { useMoonBoardCreateClimb } from '../create-climb/use-moonboard-create-cl
 import HoldIndicator from '../create-climb/hold-indicator';
 import HoldTypePicker from '../create-climb/hold-type-picker';
 import { useHoldTypePicker } from '../create-climb/use-hold-type-picker';
-import { themeTokens } from '@/app/theme/theme-config';
 import { coordinateToHoldId, MOONBOARD_HOLD_STATES } from '@/app/lib/moonboard-config';
 import { convertLitUpHoldsMapToMoonBoardHolds } from '@/app/lib/moonboard-climb-helpers';
 import type { MoonBoardClimb, GridCoordinate } from '@boardsesh/moonboard-ocr/browser';
@@ -143,25 +142,17 @@ export default function MoonBoardEditModal({
               <HoldIndicator
                 count={startingCount}
                 max={2}
-                color={themeTokens.colors.error}
+                color="var(--color-error)"
                 label={t('createClimbForm.holds.start')}
               />
-              <HoldIndicator
-                count={handCount}
-                color={themeTokens.colors.primary}
-                label={t('createClimbForm.holds.hand')}
-              />
+              <HoldIndicator count={handCount} color="var(--color-primary)" label={t('createClimbForm.holds.hand')} />
               <HoldIndicator
                 count={finishCount}
                 max={2}
-                color={themeTokens.colors.success}
+                color="var(--color-success)"
                 label={t('createClimbForm.holds.finish')}
               />
-              <HoldIndicator
-                count={totalHolds}
-                color={themeTokens.colors.secondary}
-                label={t('createClimbForm.holds.total')}
-              />
+              <HoldIndicator count={totalHolds} color="var(--neutral-500)" label={t('createClimbForm.holds.total')} />
             </Stack>
 
             {!isValid && totalHolds > 0 && (

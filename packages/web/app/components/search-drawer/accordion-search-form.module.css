@@ -69,7 +69,7 @@
 
 .panelContent :global(.MuiOutlinedInput-root.Mui-focused) {
   background-color: var(--input-bg-focused, #ffffff);
-  box-shadow: 0 0 0 2px var(--color-primary, #8c4a52);
+  box-shadow: 0 0 0 2px var(--color-primary, #6d28d9);
 }
 
 .panelContent :global(.MuiOutlinedInput-notchedOutline) {

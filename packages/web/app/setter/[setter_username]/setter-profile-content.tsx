@@ -21,7 +21,6 @@ import {
   type GetSetterProfileQueryVariables,
   type GetSetterProfileQueryResponse,
 } from '@boardsesh/graphql/operations';
-import { themeTokens } from '@/app/theme/theme-config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { shareWithFallback } from '@/app/lib/share-utils';
 import type { SetterProfile } from '@boardsesh/shared-schema';
@@ -112,7 +111,7 @@ export default function SetterProfileContent({ username }: SetterProfileContentP
           <div className={styles.heroContent}>
             <div
               className={styles.heroSquare}
-              style={{ backgroundColor: themeTokens.colors.primary, overflow: 'hidden' }}
+              style={{ backgroundColor: 'var(--color-primary-fill)', overflow: 'hidden' }}
             >
               {avatarUrl ? (
                 <Image src={avatarUrl} alt={displayName} fill style={{ objectFit: 'cover' }} />

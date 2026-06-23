@@ -317,7 +317,7 @@ const LogbookSearchForm: React.FC<LogbookSearchFormProps> = ({
       <div className={footerStyles.searchFooter}>
         <div className={footerStyles.resultCount}>
           <Stack direction="row" spacing={1}>
-            <FilterListOutlined sx={{ color: themeTokens.colors.primary }} />
+            <FilterListOutlined sx={{ color: 'var(--color-primary)' }} />
             <MuiTypography variant="body2" component="span" color="text.secondary">
               <span className={footerStyles.resultBadge}>{activeFilterCount}</span>{' '}
               {t('logbook.search.filterCount', { count: activeFilterCount })}

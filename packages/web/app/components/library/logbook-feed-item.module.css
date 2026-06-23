@@ -23,7 +23,7 @@
 
 /* Delete-ready state: swipe has crossed the long-right threshold */
 .leftActionLayer.deleteReady {
-  background-color: var(--color-error, #b8524c);
+  background-color: var(--color-error, #c81e1e);
 }
 
 .leftActionLayer.deleteReady .swipeIcon {

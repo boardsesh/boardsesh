@@ -55,7 +55,7 @@ export default function AuthErrorContent() {
         <Card sx={{ width: '100%', maxWidth: 400, textAlign: 'center' }}>
           <CardContent>
             <Stack spacing={3} sx={{ width: '100%' }}>
-              <CancelOutlined sx={{ fontSize: 48, color: themeTokens.colors.error, mx: 'auto' }} />
+              <CancelOutlined sx={{ fontSize: 48, color: 'var(--color-error)', mx: 'auto' }} />
               <Typography variant="h3">{t('error.title')}</Typography>
               <MuiAlert severity="error">{getAuthErrorMessage(error, t)}</MuiAlert>
               <Button variant="contained" href="/auth/login" fullWidth size="large">

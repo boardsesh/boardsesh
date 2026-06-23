@@ -33,14 +33,14 @@ const STATUS_CONFIG: Record<
   },
   send: {
     Icon: CheckOutlined,
-    iconColor: themeTokens.colors.success,
-    badgeBackgroundColor: themeTokens.colors.success,
+    iconColor: 'var(--color-success)',
+    badgeBackgroundColor: 'var(--color-success)',
     badgeIconColor: 'white',
   },
   attempt: {
     Icon: PersonFallingIcon,
-    iconColor: themeTokens.colors.error,
-    badgeBackgroundColor: themeTokens.colors.error,
+    iconColor: 'var(--color-error)',
+    badgeBackgroundColor: 'var(--color-error)',
     badgeIconColor: 'white',
   },
 };

@@ -89,7 +89,7 @@ const HoldView: React.FC<HoldViewProps> = ({ hold, boardDetails, expanded = fals
         cx={hold.cx}
         cy={hold.cy}
         r={hold.r}
-        stroke={themeTokens.colors.primary}
+        style={{ stroke: 'var(--color-primary)' }}
         strokeWidth={strokeWidth}
         fill="none"
       />
@@ -97,7 +97,7 @@ const HoldView: React.FC<HoldViewProps> = ({ hold, boardDetails, expanded = fals
         cx={hold.cx}
         cy={hold.cy}
         r={outerRadius}
-        stroke={themeTokens.colors.primary}
+        style={{ stroke: 'var(--color-primary)' }}
         strokeWidth={outerStrokeWidth}
         fill="none"
         strokeDasharray={expanded ? '8 8' : '4 4'}
@@ -481,7 +481,7 @@ const HoldClassificationWizard: React.FC<HoldClassificationWizardProps> = ({
           <LinearProgress
             variant="determinate"
             value={progress}
-            sx={{ '& .MuiLinearProgress-bar': { backgroundColor: themeTokens.colors.primary } }}
+            sx={{ '& .MuiLinearProgress-bar': { backgroundColor: 'var(--color-primary-fill)' } }}
           />
         </div>
 

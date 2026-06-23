@@ -1772,7 +1772,7 @@ export default function CreateClimbForm({
                 >
                   <PlayCircleOutlineOutlined
                     fontSize="small"
-                    sx={isPreviewActive ? { color: themeTokens.colors.primary } : undefined}
+                    sx={isPreviewActive ? { color: 'var(--color-primary)' } : undefined}
                   />
                 </IconButton>
               </span>
@@ -1882,7 +1882,7 @@ export default function CreateClimbForm({
                   <HoldIndicator
                     count={startingCount}
                     max={2}
-                    color={themeTokens.colors.success}
+                    color="var(--color-success)"
                     label={t('createClimbForm.holds.starting')}
                   />
                   <HoldIndicator
@@ -1893,7 +1893,7 @@ export default function CreateClimbForm({
                   />
                   <HoldIndicator
                     count={totalHolds}
-                    color={themeTokens.colors.primary}
+                    color="var(--color-primary)"
                     label={t('createClimbForm.holds.total')}
                   />
                 </>
@@ -1902,23 +1902,23 @@ export default function CreateClimbForm({
                   <HoldIndicator
                     count={startingCount}
                     max={2}
-                    color={themeTokens.colors.error}
+                    color="var(--color-error)"
                     label={t('createClimbForm.holds.start')}
                   />
                   <HoldIndicator
                     count={handCount}
-                    color={themeTokens.colors.primary}
+                    color="var(--color-primary)"
                     label={t('createClimbForm.holds.hand')}
                   />
                   <HoldIndicator
                     count={finishCount}
                     max={2}
-                    color={themeTokens.colors.success}
+                    color="var(--color-success)"
                     label={t('createClimbForm.holds.finish')}
                   />
                   <HoldIndicator
                     count={totalHolds}
-                    color={themeTokens.colors.secondary}
+                    color="var(--neutral-500)"
                     label={t('createClimbForm.holds.total')}
                   />
                 </>

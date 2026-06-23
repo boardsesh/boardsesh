@@ -137,7 +137,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
         </IconButton>
       )}
       <IconButton onClick={onToggleFavorite}>
-        {isFavorited ? <Favorite sx={{ color: themeTokens.colors.error }} /> : <FavoriteBorderOutlined />}
+        {isFavorited ? <Favorite sx={{ color: 'var(--color-error)' }} /> : <FavoriteBorderOutlined />}
       </IconButton>
       {/* Lightbulb: the primary "send to the wall" gesture.
           Filled+amber-glowing when the lightbulb is active (wall confirmed in
@@ -170,7 +170,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
           onAnimationEnd={lightbulbCoachmark ? onLightbulbCoachmarkSeen : undefined}
         >
           {lightbulbActive ? (
-            <Lightbulb className={styles.lightbulbConnectedGlow} sx={{ color: themeTokens.colors.warning }} />
+            <Lightbulb className={styles.lightbulbConnectedGlow} sx={{ color: 'var(--color-warning)' }} />
           ) : (
             <LightbulbOutlined />
           )}
@@ -185,7 +185,7 @@ export const PlayViewActionBar = React.memo(function PlayViewActionBar({
         max={99}
         sx={{
           '& .MuiBadge-badge': {
-            backgroundColor: themeTokens.colors.primary,
+            backgroundColor: 'var(--color-primary-fill)',
             color: 'common.white',
           },
         }}
