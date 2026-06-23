@@ -93,13 +93,15 @@ export function withCharacteristic(
 export function moonBoardMethodToCharacteristic(method: string | null | undefined): ClimbCharacteristic | null {
   if (!method) return null;
   const normalized = method.toLowerCase();
+  const noKickboard = normalized.includes('no kickboard') || normalized.includes('no-kickboard');
   const footless = normalized.includes('footless');
-  const kickboard = normalized.includes('kickboard');
+  // A "no kickboard" qualifier negates the kickboard half, so it must not push a
+  // footless problem into the kickboard-allowed token ("Footless, no kickboard"
+  // is footless *without* the kickboard).
+  const kickboard = normalized.includes('kickboard') && !noKickboard;
   if (footless && kickboard) return CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD;
   if (footless) return CLIMB_CHARACTERISTICS.METHOD_FOOTLESS;
-  if (normalized.includes('no kickboard') || normalized.includes('no-kickboard')) {
-    return CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD;
-  }
+  if (noKickboard) return CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD;
   // "Feet follow hands" (default) and anything else → no method token.
   return null;
 }

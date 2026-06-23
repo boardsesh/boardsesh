@@ -86,12 +86,12 @@ describe('moonBoardMethodToCharacteristic', () => {
     expect(moonBoardMethodToCharacteristic('Screw ons only')).toBeNull();
   });
 
-  it('resolves ambiguous footless + kickboard wording to the combined token (documents priority)', () => {
-    // "footless" + "kickboard" both present → footless_kickboard wins (it's
-    // checked first), regardless of how the kickboard half is phrased.
-    expect(moonBoardMethodToCharacteristic('Footless, no kickboard')).toBe('method_footless_kickboard');
+  it('treats a "no kickboard" qualifier as negating the kickboard half', () => {
+    // Footless WITH the kickboard → the combined token.
     expect(moonBoardMethodToCharacteristic('footless + kickboard allowed')).toBe('method_footless_kickboard');
-    // "no kickboard" without "footless" → the no-kickboard token.
+    // Footless but explicitly NO kickboard → plain footless, not the combined token.
+    expect(moonBoardMethodToCharacteristic('Footless, no kickboard')).toBe('method_footless');
+    // "no kickboard" without footless → the no-kickboard token.
     expect(moonBoardMethodToCharacteristic('Feet follow hands, no kickboard')).toBe('method_no_kickboard');
   });
 });

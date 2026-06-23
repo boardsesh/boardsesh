@@ -191,6 +191,9 @@ describe('findExactDuplicateMatch', () => {
     const [query] = mockDb.execute.mock.calls[0];
     const { sql: rendered } = new PgDialect().sqlToQuery(query as SQL);
     expect(rendered).toContain("@> ARRAY['no_match']");
+    // ...plus the description-prefix fallback for rows synced in the window
+    // between the backfill migration and this code deploy.
+    expect(rendered).toContain("LIKE 'no match%'");
   });
 });
 

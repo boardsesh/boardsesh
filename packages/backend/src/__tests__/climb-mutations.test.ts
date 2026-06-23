@@ -624,6 +624,47 @@ describe('climb mutations', () => {
     expect(updateSet?.characteristics).toEqual(['no_match']);
   });
 
+  it('updateClimb clears no_match (to null) when the Aurora description prefix is removed', async () => {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([
+        {
+          uuid: 'climb-2',
+          userId: 'user-123',
+          isDraft: true,
+          publishedAt: null,
+          createdAt: '2026-05-14T20:00:00.000Z',
+          angle: 35,
+          layoutId: 8,
+          frames: 'p1r1',
+          framesCount: 1,
+          setterUsername: 'Alice Setter',
+          characteristics: ['no_match'],
+        },
+      ]),
+    );
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-2', description: 'just a regular climb now' } },
+      makeCtx(),
+    );
+
+    // Token removed → stored as null (not an empty array).
+    expect(updateSet?.characteristics).toBeNull();
+  });
+
   it('updateClimb never derives no_match for MoonBoard, preserving the method token', async () => {
     let updateSet: Record<string, unknown> | undefined;
     mockDb.select.mockReturnValueOnce(
