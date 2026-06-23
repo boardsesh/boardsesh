@@ -20,27 +20,27 @@
   --color-info: #5e6491;
 
   /* Neutral palette — violet-tinted greys (decoupled from the surface ladder) */
-  --neutral-50: #f8f6fb;
-  --neutral-100: #f1eef7;
-  --neutral-200: #e5e1ee;
-  --neutral-300: #cbc5d6;
-  --neutral-400: #8e8898;
-  --neutral-500: #5b5563;
-  --neutral-600: #494551;
-  --neutral-700: #37333f;
-  --neutral-800: #26222d;
-  --neutral-900: #16111f;
+  --neutral-50: #ebe2f9;
+  --neutral-100: #ded2f3;
+  --neutral-200: #cbbcea;
+  --neutral-300: #ad9ecc;
+  --neutral-400: #7b7591;
+  --neutral-500: #595464;
+  --neutral-600: #48415a;
+  --neutral-700: #373042;
+  --neutral-800: #262030;
+  --neutral-900: #181221;
 
   /* Semantic colors */
-  --semantic-background: #f3effa;
-  --semantic-surface: #ffffff;
-  --semantic-surface-overlay: rgba(255, 255, 255, 0.95);
+  --semantic-background: #e8ddf6;
+  --semantic-surface: #faf6fe;
+  --semantic-surface-overlay: rgba(250, 246, 254, 0.95);
   --semantic-selected: rgba(109, 40, 217, 0.14);
   --semantic-selected-hover: rgba(109, 40, 217, 0.22);
   --semantic-selected-light: rgba(109, 40, 217, 0.08);
   --semantic-selected-border: #6d28d9;
   /* Dividers/hairlines — decoupled from neutral-200 so they never equal a surface. */
-  --separator: rgba(60, 55, 75, 0.18);
+  --separator: rgba(60, 50, 90, 0.2);
 
   /* Status colors */
   --color-success: #047857;
@@ -187,26 +187,26 @@ html[data-theme='dark'] {
   --color-info: #a5abd6;
 
   /* Neutral palette (violet-grey, inverted: 50 darkest → 900 lightest) */
-  --neutral-50: #1a1622;
-  --neutral-100: #241f2c;
-  --neutral-200: #322c3d;
-  --neutral-300: #423c4e;
-  --neutral-400: #6e687c;
-  --neutral-500: #a9a2b6;
-  --neutral-600: #c9c3d4;
-  --neutral-700: #e0dbea;
-  --neutral-800: #eeeaf5;
-  --neutral-900: #f5f2fb;
+  --neutral-50: #1e1434;
+  --neutral-100: #291c43;
+  --neutral-200: #37294b;
+  --neutral-300: #483b5c;
+  --neutral-400: #6f6882;
+  --neutral-500: #aca5bd;
+  --neutral-600: #c3bcd3;
+  --neutral-700: #d7d1e3;
+  --neutral-800: #e7e2f0;
+  --neutral-900: #f3effa;
 
   /* Semantic colors */
-  --semantic-background: #15101e;
-  --semantic-surface: #221a33;
-  --semantic-surface-overlay: rgba(34, 26, 51, 0.95);
+  --semantic-background: #110a20;
+  --semantic-surface: #251b3a;
+  --semantic-surface-overlay: rgba(37, 27, 58, 0.95);
   --semantic-selected: rgba(199, 184, 232, 0.16);
   --semantic-selected-hover: rgba(199, 184, 232, 0.24);
   --semantic-selected-light: rgba(199, 184, 232, 0.1);
   --semantic-selected-border: #a78bfa;
-  --separator: rgba(180, 168, 205, 0.18);
+  --separator: rgba(185, 170, 215, 0.2);
 
   /* Status mains + background tints (scheme-aware) */
   --color-success: #34d399;

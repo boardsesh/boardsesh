@@ -15,10 +15,12 @@
 // text). They are equal in light (#6D28D9) but diverge in dark — foreground lifts to
 // #A78BFA for legibility on near-black, fill stays #7C3AED so white text clears AA.
 
-import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
+import { brandColors, brandColorsDark } from '@boardsesh/velvet-tokens';
 
-const lightSurfaces = materialSurfaces.light;
-const darkSurfaces = materialSurfaces.dark;
+// Only the BRAND palette is shared with mobile. Web tunes its own surface + neutral
+// ramp — richer/more violet than the shared Material surfaces, so the velvet permeates
+// the cards and greys instead of reading as white + neutral grey. These are literals
+// below; the parity test keeps them in sync with index.css.
 
 export const themeTokens = {
   // Brand colors — Velvet Send violet + amber
@@ -30,7 +32,7 @@ export const themeTokens = {
     primaryFillHover: '#5B21B6',
     onPrimary: brandColors.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColors.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
-    onAccent: lightSurfaces.label, // #16111F — dark text on accent (8.95:1)
+    onAccent: '#16111F', // dark text on accent (8.95:1)
     secondary: '#5B5563', // violet-grey for info/secondary
     info: '#5E6491', // Violet-slate — help/guide accent, re-pulled into the violet family
     success: brandColors.success, // #047857
@@ -62,33 +64,33 @@ export const themeTokens = {
     brandMutedLight: '#5b5563',
   },
 
-  // Neutral palette — violet-tinted greys (low chroma in the mids, decoupled from the
-  // surface ladder so dividers/greys read neutral-with-a-whisper, not plum). Anchored
-  // on the Velvet label/secondaryLabel/tertiaryLabel values.
+  // Neutral palette — violet-tinted greys. The chroma lives in the SURFACE steps
+  // (50–300: backgrounds/chips/borders/skeletons) so the velvet permeates; the
+  // text-bearing mids (400/500) are desaturated to read as tinted-grey, not purple.
   neutral: {
-    50: '#F8F6FB',
-    100: '#F1EEF7',
-    200: '#E5E1EE',
-    300: '#CBC5D6',
-    400: '#8E8898', // tertiaryLabel — disabled/decorative tier (AA-exempt; body text re-points to 500)
-    500: '#5B5563', // secondaryLabel — secondary text (6.3:1 on bg)
-    600: '#494551',
-    700: '#37333F',
-    800: '#26222D', // text.primary
-    900: '#16111F', // label — max-contrast text
+    50: '#EBE2F9',
+    100: '#DED2F3',
+    200: '#CBBCEA',
+    300: '#AD9ECC',
+    400: '#7B7591', // disabled/decorative tier (AA-exempt; body text re-points to 500)
+    500: '#595464', // secondary text (6.8:1 on card, 5.6:1 on bg)
+    600: '#48415A',
+    700: '#373042',
+    800: '#262030', // text.primary
+    900: '#181221', // label — max-contrast text
   },
 
-  // Semantic colors
+  // Semantic colors — richer violet surfaces (cards faintly tinted, deeper page base)
   semantic: {
     selected: 'rgba(109, 40, 217, 0.14)', // Violet tint for selected state
     selectedHover: 'rgba(109, 40, 217, 0.22)',
     selectedLight: 'rgba(109, 40, 217, 0.08)', // Very subtle violet highlight
     selectedBorder: brandColors.primary, // #6D28D9 — matches foreground primary
-    separator: lightSurfaces.separator, // rgba(60,55,75,0.18) — dividers/hairlines (decoupled from neutral-200)
-    background: lightSurfaces.background, // #F3EFFA — violet-tinted page base
-    surface: lightSurfaces.secondaryBackground, // #FFFFFF — cards/sheets
-    surfaceElevated: lightSurfaces.elevatedSurface, // #FFFFFF
-    surfaceOverlay: 'rgba(255, 255, 255, 0.95)', // Semi-transparent overlay
+    separator: 'rgba(60, 50, 90, 0.2)', // dividers/hairlines (decoupled from neutral-200)
+    background: '#E8DDF6', // violet-tinted page base (richer than the shared surface)
+    surface: '#FAF6FE', // cards/sheets — faintly violet, not stark white
+    surfaceElevated: '#FFFFFF', // elevated layers pop one step brighter than the card
+    surfaceOverlay: 'rgba(250, 246, 254, 0.95)', // Semi-transparent overlay (matches surface)
     overlayLight: 'rgba(0, 0, 0, 0.3)', // Light dark overlay for hover states
     overlayDark: 'rgba(0, 0, 0, 0.6)', // Dark overlay for text backgrounds
   },
@@ -240,16 +242,16 @@ export const darkTokens = {
   },
 
   neutral: {
-    50: '#1A1622',
-    100: '#241F2C',
-    200: '#322C3D',
-    300: '#423C4E',
-    400: '#6E687C', // tertiaryLabel (disabled/decorative)
-    500: '#A9A2B6', // secondaryLabel — secondary text (6.75:1 on surface)
-    600: '#C9C3D4',
-    700: '#E0DBEA',
-    800: '#EEEAF5', // text.primary
-    900: '#F5F2FB', // label — max-contrast text
+    50: '#1E1434',
+    100: '#291C43',
+    200: '#37294B',
+    300: '#483B5C',
+    400: '#6F6882', // disabled/decorative
+    500: '#ACA5BD', // secondary text (6.8:1 on card)
+    600: '#C3BCD3',
+    700: '#D7D1E3',
+    800: '#E7E2F0', // text.primary
+    900: '#F3EFFA', // label — max-contrast text
   },
 
   semantic: {
@@ -257,12 +259,12 @@ export const darkTokens = {
     selectedHover: 'rgba(199, 184, 232, 0.24)',
     selectedLight: 'rgba(199, 184, 232, 0.10)',
     selectedBorder: brandColorsDark.primary, // #A78BFA
-    separator: darkSurfaces.separator, // rgba(180,168,205,0.18)
-    background: darkSurfaces.background, // #15101E
-    surface: darkSurfaces.secondaryBackground, // #221A33
-    surfaceElevated: darkSurfaces.elevatedSurface, // #2A2142
+    separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines
+    background: '#110A20', // deeper violet near-black (richer than a generic dark theme)
+    surface: '#251B3A', // cards/sheets — richer violet
+    surfaceElevated: '#2F234A',
     inputSurface: '#FFFFFF', // Intentional white inputs in dark mode (contrast) — do not change
-    surfaceOverlay: 'rgba(34, 26, 51, 0.95)',
+    surfaceOverlay: 'rgba(37, 27, 58, 0.95)',
     overlayLight: 'rgba(0, 0, 0, 0.4)',
     overlayDark: 'rgba(0, 0, 0, 0.7)',
   },
