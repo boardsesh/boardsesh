@@ -49,7 +49,6 @@ vi.mock('@gorhom/bottom-sheet', () => ({
   }),
   BottomSheetView: ({ children, style }: SheetViewMockProps) =>
     createElement('div', { 'data-sheet-view': 'true', 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
-  BottomSheetBackdrop: () => createElement('div', { 'data-backdrop': 'true' }),
 }));
 
 // Gesture-nav phone: a non-zero bottom inset is the case the dynamic-sizing fix

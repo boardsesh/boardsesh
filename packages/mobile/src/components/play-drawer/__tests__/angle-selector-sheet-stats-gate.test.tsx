@@ -36,7 +36,6 @@ vi.mock('react-native', () => ({
 vi.mock('../../SheetBackdrop', () => ({ SheetBackdrop: () => null }));
 vi.mock('@gorhom/bottom-sheet', () => ({
   BottomSheetModal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  BottomSheetBackdrop: () => null,
   BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 

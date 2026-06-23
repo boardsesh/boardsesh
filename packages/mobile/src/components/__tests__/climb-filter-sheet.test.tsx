@@ -89,7 +89,6 @@ vi.mock('@gorhom/bottom-sheet', () => ({
     useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: vi.fn() }), []);
     return createElement('div', null, children);
   }),
-  BottomSheetBackdrop: () => null,
   BottomSheetScrollView: forwardRef<unknown, { children?: ReactNode }>(function BottomSheetScrollView(
     { children },
     ref,

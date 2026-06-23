@@ -78,7 +78,6 @@ vi.mock('@gorhom/bottom-sheet', () => ({
   },
   BottomSheetFooter: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-footer': 'true' }, children),
-  BottomSheetBackdrop: () => null,
 }));
 
 vi.mock('react-native-screens', () => ({

@@ -76,7 +76,6 @@ vi.mock('@gorhom/bottom-sheet', () => ({
     useImperativeHandle(ref, () => ({ present: sheetModal.present, dismiss: sheetModal.dismiss }));
     return createElement('div', { 'data-sheet': 'true' }, children);
   }),
-  BottomSheetBackdrop: () => createElement('div', { 'data-backdrop': 'true' }),
   // Render the list inline so header + items + empty state appear in the DOM.
   BottomSheetFlatList: ({
     data,
