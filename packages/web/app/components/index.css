@@ -1,40 +1,52 @@
 /* Boardsesh Global Styles */
 
-/* Design tokens as CSS custom properties - derived from theme-config.ts */
+/* Design tokens as CSS custom properties — Velvet Send. Mirror of theme-config.ts;
+   the parity test in app/theme/__tests__ asserts these stay in sync. */
 :root {
-  /* Primary colors */
-  --color-primary: #8c4a52;
-  --color-primary-hover: #7a3f47;
+  /* Primary colors — Velvet Send violet. `--color-primary` is the FOREGROUND (links,
+     indicators, borders, focus); `--color-primary-fill` is the FILLED button
+     background (white text). Equal in light, diverge in dark. */
+  --color-primary: #6d28d9;
+  --color-primary-hover: #5b21b6;
+  --color-primary-fill: #6d28d9;
+  --color-primary-fill-hover: #5b21b6;
+  --color-on-primary: #ffffff;
 
-  /* Neutral palette */
-  --neutral-50: #f9fafb;
-  --neutral-100: #f3f4f6;
-  --neutral-200: #e5e7eb;
-  --neutral-300: #d1d5db;
-  --neutral-400: #9ca3af;
-  --neutral-500: #6b7280;
-  --neutral-600: #4b5563;
-  --neutral-700: #374151;
-  --neutral-800: #1f2937;
-  --neutral-900: #111827;
+  /* Amber accent — FILL-ONLY, always pair with --color-on-accent for text. */
+  --color-accent: #ff8a3d;
+  --color-on-accent: #16111f;
+
+  /* Neutral palette — violet-tinted greys (decoupled from the surface ladder) */
+  --neutral-50: #f8f6fb;
+  --neutral-100: #f1eef7;
+  --neutral-200: #e5e1ee;
+  --neutral-300: #cbc5d6;
+  --neutral-400: #8e8898;
+  --neutral-500: #5b5563;
+  --neutral-600: #494551;
+  --neutral-700: #37333f;
+  --neutral-800: #26222d;
+  --neutral-900: #16111f;
 
   /* Semantic colors */
-  --semantic-background: #f9fafb;
+  --semantic-background: #f3effa;
   --semantic-surface: #ffffff;
   --semantic-surface-overlay: rgba(255, 255, 255, 0.95);
-  --semantic-selected: #f7f2f3;
-  --semantic-selected-hover: #efe6e8;
-  --semantic-selected-light: rgba(140, 74, 82, 0.06);
-  --semantic-selected-border: #8c4a52;
+  --semantic-selected: rgba(109, 40, 217, 0.14);
+  --semantic-selected-hover: rgba(109, 40, 217, 0.22);
+  --semantic-selected-light: rgba(109, 40, 217, 0.08);
+  --semantic-selected-border: #6d28d9;
+  /* Dividers/hairlines — decoupled from neutral-200 so they never equal a surface. */
+  --separator: rgba(60, 55, 75, 0.18);
 
   /* Status colors */
-  --color-success: #6b9080;
-  --color-success-hover: #5a7a6c;
-  --color-success-bg: #eff5f2;
-  --color-error: #b8524c;
-  --color-error-bg: #f9efee;
-  --color-warning: #c4943c;
-  --color-warning-bg: #faf5ec;
+  --color-success: #047857;
+  --color-success-hover: #036b4d;
+  --color-success-bg: #e7f4ee;
+  --color-error: #c81e1e;
+  --color-error-bg: #fbe9e9;
+  --color-warning: #a04a08;
+  --color-warning-bg: #fbf0e3;
 
   /* Shadows */
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -48,6 +60,14 @@
   --overlay-light: rgba(0, 0, 0, 0.3);
   --overlay-dark: rgba(0, 0, 0, 0.6);
   --overlay-text: rgba(255, 255, 255, 0.9);
+
+  /* Velvet motion — Glass durations + M3 'standard' easing for utility transitions;
+     'emphasized' is reserved for large-surface enter/exit. */
+  --motion-fast: 150ms;
+  --motion-normal: 250ms;
+  --motion-slow: 350ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
 
   /* Typography scale (matches themeTokens.typography.fontSize in theme-config.ts) */
   --font-size-2xs: 8px;
@@ -74,14 +94,17 @@
   /* Border radius scale (matches themeTokens.borderRadius in theme-config.ts) */
   --border-radius-sm: 4px;
   --border-radius-md: 8px;
+  --border-radius-button: 10px;
   --border-radius-lg: 12px;
   --border-radius-xl: 16px;
   --border-radius-full: 9999px;
 
   /* Input field backgrounds */
-  --input-bg: #f9fafb;
-  --input-bg-hover: #f3f4f6;
+  --input-bg: #ffffff;
+  --input-bg-hover: #f1eef7;
   --input-bg-focused: #ffffff;
+  /* Placeholder text on the (always light) input surface — fixed dark grey ≥4.5:1. */
+  --input-placeholder: #6b6577;
 
   /* Safe-area insets, exposed as CSS vars so consumers resolve through
      a single indirection (and so future per-platform or per-view overrides
@@ -146,37 +169,53 @@
 html[data-theme='dark'] {
   color-scheme: dark;
 
-  /* Neutral palette (inverted) */
-  --neutral-50: #121212;
-  --neutral-100: #222222;
-  --neutral-200: #333333;
-  --neutral-300: #3a3a3a;
-  --neutral-400: #6b7280;
-  --neutral-500: #b3b3b3;
-  --neutral-600: #d1d5db;
-  --neutral-700: #e5e7eb;
-  --neutral-800: #f3f4f6;
-  --neutral-900: #f9fafb;
+  /* Brand violet — foreground lifts to #A78BFA for legibility on near-black; the FILL
+     stays dark (#7C3AED) so white text clears AA. These did not exist in the dark
+     block before (rose was scheme-invariant). */
+  --color-primary: #a78bfa;
+  --color-primary-hover: #c4b5fd;
+  --color-primary-fill: #7c3aed;
+  --color-primary-fill-hover: #6d28d9;
+  --color-on-primary: #ffffff;
+  --color-accent: #ff8a3d;
+  --color-on-accent: #16111f;
+
+  /* Neutral palette (violet-grey, inverted: 50 darkest → 900 lightest) */
+  --neutral-50: #1a1622;
+  --neutral-100: #241f2c;
+  --neutral-200: #322c3d;
+  --neutral-300: #423c4e;
+  --neutral-400: #6e687c;
+  --neutral-500: #a9a2b6;
+  --neutral-600: #c9c3d4;
+  --neutral-700: #e0dbea;
+  --neutral-800: #eeeaf5;
+  --neutral-900: #f5f2fb;
 
   /* Semantic colors */
-  --semantic-background: #0e0e0e;
-  --semantic-surface: #1a1a1a;
-  --semantic-surface-overlay: rgba(26, 26, 26, 0.95);
-  --semantic-selected: rgba(175, 45, 60, 0.22);
-  --semantic-selected-hover: rgba(175, 45, 60, 0.3);
-  --semantic-selected-light: rgba(175, 45, 60, 0.12);
+  --semantic-background: #15101e;
+  --semantic-surface: #221a33;
+  --semantic-surface-overlay: rgba(34, 26, 51, 0.95);
+  --semantic-selected: rgba(199, 184, 232, 0.16);
+  --semantic-selected-hover: rgba(199, 184, 232, 0.24);
+  --semantic-selected-light: rgba(199, 184, 232, 0.1);
+  --semantic-selected-border: #a78bfa;
+  --separator: rgba(180, 168, 205, 0.2);
 
-  /* Status background tints (semi-transparent for dark) */
-  --color-success-bg: rgba(107, 144, 128, 0.12);
-  --color-error-bg: rgba(184, 82, 76, 0.12);
-  --color-warning-bg: rgba(196, 148, 60, 0.12);
+  /* Status mains + background tints (scheme-aware) */
+  --color-success: #34d399;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+  --color-success-bg: rgba(52, 211, 153, 0.14);
+  --color-error-bg: rgba(248, 113, 113, 0.14);
+  --color-warning-bg: rgba(251, 191, 36, 0.14);
 
   /* Input field backgrounds (white in dark mode) */
   --input-bg: #ffffff;
-  --input-bg-hover: #f3f4f6;
+  --input-bg-hover: #f1eef7;
   --input-bg-focused: #ffffff;
   /* Input text stays dark in dark mode because inputs have white backgrounds */
-  --input-text: #1f2937;
+  --input-text: #26222d;
 
   /* Shadows (stronger for dark backgrounds) */
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
@@ -223,13 +262,19 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Smooth transitions for interactive elements */
+/* Smooth transitions for interactive elements. Explicit property list (not `all`) so
+   focus outlines stay instant and border-radius is never animated. */
 a,
 button,
 .MuiButton-root,
 .MuiCard-root,
 .MuiOutlinedInput-root {
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--motion-normal) var(--ease-standard),
+    border-color var(--motion-normal) var(--ease-standard),
+    box-shadow var(--motion-normal) var(--ease-standard),
+    color var(--motion-normal) var(--ease-standard),
+    transform var(--motion-normal) var(--ease-standard);
 }
 
 /* Selected state styling utility class - use higher specificity instead of !important */
@@ -260,15 +305,41 @@ button,
 
 /* Firefox scrollbar properties are set in the html rule above */
 
-/* Focus styles for accessibility */
+/* Focus styles for accessibility. The foreground violet clears 3:1 on the page in
+   both schemes, but in dark mode the focus ring can wrap the intentionally-white
+   inputs, where #A78BFA is only 2.72:1 — so dark uses the fill violet (#7C3AED,
+   5.70:1 on white, 3.99:1 on the page). Outline is not transitioned (stays instant). */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
+html[data-theme='dark'] :focus-visible {
+  outline-color: var(--color-primary-fill);
+}
+
 /* Remove default focus outline when using mouse */
 :focus:not(:focus-visible) {
   outline: none;
+}
+
+/* Reduced motion: drop transforms and collapse durations, keep opacity cross-fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  a:hover,
+  button:hover,
+  .MuiButton-root:not(:disabled):hover,
+  .MuiCard-root:hover {
+    transform: none !important;
+  }
 }
 
 /* Header shadow utility */
@@ -340,7 +411,7 @@ html[data-theme='dark'] .MuiSelect-icon {
 }
 
 html[data-theme='dark'] .MuiOutlinedInput-input::placeholder {
-  color: var(--neutral-500);
+  color: var(--input-placeholder);
   opacity: 1;
 }
 

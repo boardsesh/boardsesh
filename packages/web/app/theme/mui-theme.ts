@@ -1,12 +1,56 @@
 import { createTheme, type ThemeOptions, type Components, type Theme } from '@mui/material/styles';
 import { themeTokens, darkTokens } from './theme-config';
 
-// Shared component overrides used by both light and dark themes
+// Velvet Send adds two brand channels MUI doesn't ship by default:
+// - `primaryFill`: the FILLED-surface violet (button bg + white text). Kept separate
+//   from `primary` (the FOREGROUND violet that MUI reads via palette.primary.main for
+//   links, text/outlined buttons, and selection controls) because in dark mode the
+//   two diverge — foreground #A78BFA vs fill #7C3AED.
+// - `accent`: the amber spark (#FF8A3D), fill-only with dark text.
+declare module '@mui/material/styles' {
+  interface Palette {
+    primaryFill: Palette['primary'];
+    accent: Palette['primary'];
+  }
+  interface PaletteOptions {
+    primaryFill?: PaletteOptions['primary'];
+    accent?: PaletteOptions['primary'];
+  }
+}
+declare module '@mui/material/Button' {
+  interface ButtonPropsColorOverrides {
+    primaryFill: true;
+    accent: true;
+  }
+}
+declare module '@mui/material/Chip' {
+  interface ChipPropsColorOverrides {
+    primaryFill: true;
+    accent: true;
+  }
+}
+declare module '@mui/material/Fab' {
+  interface FabPropsColorOverrides {
+    primaryFill: true;
+    accent: true;
+  }
+}
+declare module '@mui/material/SvgIcon' {
+  interface SvgIconPropsColorOverrides {
+    primaryFill: true;
+    accent: true;
+  }
+}
+
+// Shared component overrides used by both light and dark themes. Anything that reads
+// the brand colour uses a `({ theme }) =>` callback so it picks up the scheme-aware
+// palette (foreground in light vs dark); raw `themeTokens.*` is only for values that
+// are intentionally scheme-invariant.
 const sharedComponents: Components<Theme> = {
   MuiButton: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.md,
+        borderRadius: themeTokens.borderRadius.button,
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
         '&:not(:disabled):not(.MuiButton-text):hover': {
@@ -17,6 +61,19 @@ const sharedComponents: Components<Theme> = {
           transform: 'translateY(0)',
         },
       },
+      // Contained PRIMARY buttons render the FILL violet (white text), not the
+      // foreground that palette.primary.main now carries. Set the v7 variant vars
+      // plus a direct fallback so both code paths resolve to the fill.
+      containedPrimary: ({ theme }) => ({
+        '--variant-containedBg': theme.palette.primaryFill.main,
+        '--variant-containedColor': theme.palette.primaryFill.contrastText,
+        '--variant-containedHoverBg': theme.palette.primaryFill.dark,
+        backgroundColor: theme.palette.primaryFill.main,
+        color: theme.palette.primaryFill.contrastText,
+        '&:hover': {
+          backgroundColor: theme.palette.primaryFill.dark,
+        },
+      }),
       sizeMedium: {
         height: 40,
         padding: `0 ${themeTokens.spacing[4]}px`,
@@ -32,12 +89,23 @@ const sharedComponents: Components<Theme> = {
       disableElevation: true,
     },
   },
+  MuiFab: {
+    styleOverrides: {
+      primary: ({ theme }) => ({
+        backgroundColor: theme.palette.primaryFill.main,
+        color: theme.palette.primaryFill.contrastText,
+        '&:hover': {
+          backgroundColor: theme.palette.primaryFill.dark,
+        },
+      }),
+    },
+  },
   MuiCard: {
     styleOverrides: {
       root: {
         borderRadius: themeTokens.borderRadius.lg,
         boxShadow: 'var(--shadow-sm)',
-        transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+        transition: 'box-shadow 250ms cubic-bezier(0.2, 0, 0, 1), transform 250ms cubic-bezier(0.2, 0, 0, 1)',
         userSelect: 'none' as const,
         '&:hover': {
           boxShadow: 'var(--shadow-md)',
@@ -49,7 +117,7 @@ const sharedComponents: Components<Theme> = {
     styleOverrides: {
       root: {
         '& .MuiOutlinedInput-root': {
-          borderRadius: themeTokens.borderRadius.md,
+          borderRadius: themeTokens.borderRadius.button,
         },
       },
     },
@@ -61,14 +129,14 @@ const sharedComponents: Components<Theme> = {
   MuiOutlinedInput: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.md,
+        borderRadius: themeTokens.borderRadius.button,
       },
     },
   },
   MuiSelect: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.md,
+        borderRadius: themeTokens.borderRadius.button,
       },
     },
   },
@@ -124,26 +192,26 @@ const sharedComponents: Components<Theme> = {
   },
   MuiTabs: {
     styleOverrides: {
-      indicator: {
-        backgroundColor: themeTokens.colors.primary,
-      },
+      indicator: ({ theme }) => ({
+        backgroundColor: theme.palette.primary.main,
+      }),
     },
   },
   MuiTab: {
     styleOverrides: {
-      root: {
+      root: ({ theme }) => ({
         textTransform: 'none' as const,
         fontWeight: themeTokens.typography.fontWeight.medium,
         '&.Mui-selected': {
-          color: themeTokens.colors.primary,
+          color: theme.palette.primary.main,
         },
-      },
+      }),
     },
   },
   MuiChip: {
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.sm,
+        borderRadius: themeTokens.borderRadius.full,
         fontWeight: themeTokens.typography.fontWeight.medium,
       },
     },
@@ -162,7 +230,7 @@ const sharedComponents: Components<Theme> = {
         color: themeTokens.colors.amber,
       },
       icon: {
-        transition: 'transform 0.15s ease',
+        transition: 'transform 150ms cubic-bezier(0.2, 0, 0, 1)',
         '&:hover': {
           transform: 'scale(1.1)',
         },
@@ -213,6 +281,11 @@ const sharedComponents: Components<Theme> = {
   },
 };
 
+// Velvet motion: Glass-leaning. M3 'standard' easing on utility transitions; MUI's
+// `sharp` slot (used by enter/exit of large surfaces) gets the 'emphasized' curve.
+const standardEasing = themeTokens.motion.easing.standard;
+const emphasizedEasing = themeTokens.motion.easing.emphasized;
+
 // Shared options for both themes (typography, shape, transitions)
 const sharedOptions: Partial<ThemeOptions> = {
   typography: {
@@ -234,17 +307,23 @@ const sharedOptions: Partial<ThemeOptions> = {
     },
   },
   shape: {
-    borderRadius: themeTokens.borderRadius.md,
+    borderRadius: themeTokens.borderRadius.button,
   },
   transitions: {
     duration: {
       shortest: 150,
       shorter: 150,
-      short: 200,
-      standard: 200,
-      complex: 300,
-      enteringScreen: 200,
-      leavingScreen: 200,
+      short: 250,
+      standard: 250,
+      complex: 350,
+      enteringScreen: 250,
+      leavingScreen: 250,
+    },
+    easing: {
+      easeInOut: standardEasing,
+      easeOut: standardEasing,
+      easeIn: 'cubic-bezier(0.4, 0, 1, 1)',
+      sharp: emphasizedEasing,
     },
   },
 };
@@ -262,7 +341,7 @@ const lightShadows = [
   ...Array(16).fill(themeTokens.shadows.xl),
 ] as unknown as typeof createTheme extends (o: { shadows?: infer S }) => unknown ? S : never;
 
-// Dark mode component overrides — extends shared overrides with white input fields
+// Dark mode component overrides — extends shared overrides with white input fields.
 const darkComponents: Components<Theme> = {
   ...sharedComponents,
   MuiInputBase: {
@@ -276,6 +355,8 @@ const darkComponents: Components<Theme> = {
       },
       input: {
         '&::placeholder': {
+          // Inputs are white in dark mode, so the placeholder must be a dark grey
+          // that clears AA on white — the LIGHT neutral scale, not the inverted one.
           color: themeTokens.neutral[500],
           opacity: 1,
         },
@@ -285,8 +366,8 @@ const darkComponents: Components<Theme> = {
   MuiOutlinedInput: {
     ...sharedComponents.MuiOutlinedInput,
     styleOverrides: {
-      root: {
-        borderRadius: themeTokens.borderRadius.md,
+      root: ({ theme }) => ({
+        borderRadius: themeTokens.borderRadius.button,
         backgroundColor: darkTokens.semantic.inputSurface,
         color: themeTokens.neutral[800],
         '& .MuiOutlinedInput-notchedOutline': {
@@ -295,13 +376,15 @@ const darkComponents: Components<Theme> = {
         '&:hover .MuiOutlinedInput-notchedOutline': {
           borderColor: themeTokens.neutral[400],
         },
+        // Focus border uses the FILL violet (#7C3AED, 5.70:1 on the white input), not
+        // the lifted foreground #A78BFA (2.72:1 on white — fails).
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-          borderColor: themeTokens.colors.primary,
+          borderColor: theme.palette.primaryFill.main,
         },
         '&.Mui-disabled': {
           backgroundColor: themeTokens.neutral[200],
         },
-      },
+      }),
     },
   },
   MuiFilledInput: {
@@ -325,7 +408,7 @@ const darkComponents: Components<Theme> = {
     ...sharedComponents.MuiSelect,
     styleOverrides: {
       root: {
-        borderRadius: themeTokens.borderRadius.md,
+        borderRadius: themeTokens.borderRadius.button,
         backgroundColor: darkTokens.semantic.inputSurface,
         color: themeTokens.neutral[800],
       },
@@ -344,7 +427,7 @@ const darkComponents: Components<Theme> = {
   },
   MuiInputLabel: {
     styleOverrides: {
-      root: {
+      root: ({ theme }) => ({
         // Resting label sits inside the white input — needs dark text.
         color: themeTokens.neutral[700],
         // Shrunk label floats over the dark page bg — needs light text.
@@ -352,17 +435,17 @@ const darkComponents: Components<Theme> = {
           color: darkTokens.neutral[700],
         },
         '&.Mui-focused': {
-          color: themeTokens.colors.primary,
+          color: theme.palette.primary.main,
         },
-      },
+      }),
     },
   },
   MuiTextField: {
     ...sharedComponents.MuiTextField,
     styleOverrides: {
-      root: {
+      root: ({ theme }) => ({
         '& .MuiOutlinedInput-root': {
-          borderRadius: themeTokens.borderRadius.md,
+          borderRadius: themeTokens.borderRadius.button,
           backgroundColor: darkTokens.semantic.inputSurface,
           color: themeTokens.neutral[800],
         },
@@ -373,9 +456,9 @@ const darkComponents: Components<Theme> = {
           color: darkTokens.neutral[700],
         },
         '& .MuiInputLabel-root.Mui-focused': {
-          color: themeTokens.colors.primary,
+          color: theme.palette.primary.main,
         },
-      },
+      }),
     },
   },
 };
@@ -393,97 +476,96 @@ const darkShadows = [
   ...Array(16).fill(darkTokens.shadows.xl),
 ] as unknown as typeof createTheme extends (o: { shadows?: infer S }) => unknown ? S : never;
 
-export const lightTheme = createTheme({
-  ...sharedOptions,
-  palette: {
-    mode: 'light',
-    primary: {
-      main: themeTokens.colors.primary,
-      dark: themeTokens.colors.primaryActive,
-    },
-    secondary: {
-      main: themeTokens.colors.secondary,
-    },
-    success: {
-      main: themeTokens.colors.success,
-      dark: themeTokens.colors.successHover,
-      light: themeTokens.colors.successBg,
-    },
-    warning: {
-      main: themeTokens.colors.warning,
-      light: themeTokens.colors.warningBg,
-    },
-    error: {
-      main: themeTokens.colors.error,
-      light: themeTokens.colors.errorBg,
-    },
-    info: {
-      main: themeTokens.neutral[500],
-    },
-    background: {
-      default: themeTokens.semantic.surface,
-      paper: themeTokens.semantic.surface,
-    },
-    text: {
-      primary: themeTokens.neutral[800],
-      secondary: themeTokens.neutral[500],
-      disabled: themeTokens.neutral[400],
-    },
-    divider: themeTokens.neutral[200],
-    action: {
-      hover: themeTokens.semantic.selectedLight,
-      selected: themeTokens.semantic.selected,
-    },
-  },
-  shadows: lightShadows,
-  components: sharedComponents,
-});
+function buildTheme(mode: 'light' | 'dark'): Theme {
+  const isDark = mode === 'dark';
+  const brand = isDark ? darkTokens.colors : themeTokens.colors;
+  const neutral = isDark ? darkTokens.neutral : themeTokens.neutral;
+  const semantic = isDark ? darkTokens.semantic : themeTokens.semantic;
+  const statusLight = isDark
+    ? darkTokens.statusBg
+    : {
+        success: themeTokens.colors.successBg,
+        error: themeTokens.colors.errorBg,
+        warning: themeTokens.colors.warningBg,
+      };
 
-export const darkTheme = createTheme({
-  ...sharedOptions,
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: themeTokens.colors.primary,
-      dark: themeTokens.colors.primaryActive,
+  const base = createTheme({
+    ...sharedOptions,
+    palette: {
+      mode,
+      // primary.main is the FOREGROUND violet (links, text/outlined buttons, selection
+      // controls, tab indicator all read palette.primary.main). FILL goes to the
+      // augmented `primaryFill` channel below. contrastText is the text colour when
+      // primary is ever used as a background: white on the light #6D28D9, dark on the
+      // lifted dark #A78BFA — set explicitly so MUI's getContrastText never warns.
+      primary: {
+        main: brand.primary,
+        dark: brand.primaryActive,
+        contrastText: isDark ? themeTokens.colors.onAccent : themeTokens.colors.onPrimary,
+      },
+      secondary: {
+        main: brand.secondary,
+      },
+      success: {
+        main: brand.success,
+        dark: themeTokens.colors.successHover,
+        light: statusLight.success,
+      },
+      warning: {
+        main: brand.warning,
+        light: statusLight.warning,
+      },
+      error: {
+        main: brand.error,
+        light: statusLight.error,
+      },
+      info: {
+        main: brand.info,
+      },
+      background: {
+        default: semantic.background,
+        paper: semantic.surface,
+      },
+      text: {
+        primary: neutral[800],
+        secondary: neutral[500],
+        disabled: neutral[400],
+      },
+      divider: semantic.separator,
+      action: {
+        hover: semantic.selectedLight,
+        selected: semantic.selected,
+      },
     },
-    secondary: {
-      main: themeTokens.colors.secondary,
+    shadows: isDark ? darkShadows : lightShadows,
+    components: isDark ? darkComponents : sharedComponents,
+  });
+
+  // Augment the custom brand channels into full PaletteColors (fills in `light`, keeps
+  // our explicit main/dark/contrastText).
+  return createTheme(base, {
+    palette: {
+      primaryFill: base.palette.augmentColor({
+        color: {
+          main: brand.primaryFill,
+          dark: brand.primaryFillHover,
+          contrastText: themeTokens.colors.onPrimary,
+        },
+        name: 'primaryFill',
+      }),
+      accent: base.palette.augmentColor({
+        color: {
+          main: themeTokens.colors.accent,
+          contrastText: themeTokens.colors.onAccent,
+        },
+        name: 'accent',
+      }),
     },
-    success: {
-      main: themeTokens.colors.success,
-      dark: themeTokens.colors.successHover,
-      light: darkTokens.statusBg.success,
-    },
-    warning: {
-      main: themeTokens.colors.warning,
-      light: darkTokens.statusBg.warning,
-    },
-    error: {
-      main: themeTokens.colors.error,
-      light: darkTokens.statusBg.error,
-    },
-    info: {
-      main: darkTokens.neutral[500],
-    },
-    background: {
-      default: darkTokens.semantic.surface,
-      paper: darkTokens.semantic.surfaceElevated,
-    },
-    text: {
-      primary: darkTokens.neutral[800],
-      secondary: darkTokens.neutral[500],
-      disabled: darkTokens.neutral[400],
-    },
-    divider: darkTokens.neutral[200],
-    action: {
-      hover: darkTokens.semantic.selectedLight,
-      selected: darkTokens.semantic.selected,
-    },
-  },
-  shadows: darkShadows,
-  components: darkComponents,
-});
+  });
+}
+
+export const lightTheme = buildTheme('light');
+export const darkTheme = buildTheme('dark');
 
 // Backward compat — existing imports of `muiTheme` continue to work
 export const muiTheme = lightTheme;
