@@ -96,6 +96,11 @@ export const CommunitySection = memo(function CommunitySection({
   // headline isn't blank. The breakdown + toggle below stay strict (they treat a
   // null source as a real 0), so they never show a phantom "Board app" entry.
   // "Boardsesh" is exact too: a null there means no Boardsesh senders → 0.
+  //
+  // The `== null` here is intentionally looser than `selectSourceCount`'s
+  // `=== undefined` checks: the headline wants the total whenever there's no
+  // board-app split at all (null OR absent), while the selector only treats a
+  // truly-absent (undefined) field as "unknown".
   const headlineCount =
     preferredSource === 'boardApp' && kilterAscensionistCount == null && auroraAscensionistCount == null
       ? ascensionistCount
