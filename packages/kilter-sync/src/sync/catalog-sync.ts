@@ -363,10 +363,13 @@ async function syncBoardLayoutGroup(
             set: {
               holdFingerprint: sql`COALESCE(${boardClimbs.holdFingerprint}, excluded.hold_fingerprint)`,
               frames: sql`COALESCE(${boardClimbs.frames}, excluded.frames)`,
-              // Fill the no_match characteristic on a re-sync that reaches this
-              // branch (the dedup path normally skips existing UUIDs). COALESCE
-              // so we never wipe a token an existing row already carries.
-              characteristics: sql`COALESCE(${boardClimbs.characteristics}, excluded.characteristics)`,
+              // Track the latest derived no_match on a re-sync that reaches this
+              // branch (the dedup path normally skips existing UUIDs). Overwrite
+              // (not COALESCE) so a "No match" prefix removed upstream actually
+              // clears the token — matching aurora-sync's excluded.characteristics.
+              // For Kilter the array only ever holds no_match (method is
+              // MoonBoard-only), so this can't drop an unrelated token.
+              characteristics: sql`excluded.characteristics`,
             },
           });
       });

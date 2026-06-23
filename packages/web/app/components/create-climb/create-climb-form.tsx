@@ -45,13 +45,6 @@ import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import type { MoonBoardClimbDuplicateMatch, UpdateClimbInput } from '@boardsesh/shared-schema';
 import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-
-// The three mutually-exclusive MoonBoard method tokens (the create form's
-// selectable methods). The "feet follow hands" default is the empty selection.
-type MoonBoardMethodToken =
-  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS
-  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD
-  | typeof CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD;
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import { convertLitUpHoldsStringToMap } from '../board-renderer/util';
 import type { LitUpHoldsMap } from '../board-renderer/types';
@@ -92,6 +85,13 @@ import {
   type SaveMoonBoardClimbMutationResponse,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+
+// The three mutually-exclusive MoonBoard method tokens (the create form's
+// selectable methods). The "feet follow hands" default is the empty selection.
+type MoonBoardMethodToken =
+  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS
+  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD
+  | typeof CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD;
 
 const SETTINGS_DRAWER_STYLES = {
   wrapper: { height: 'auto', maxHeight: '70vh' },
