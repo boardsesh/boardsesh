@@ -55,6 +55,7 @@
     "@boardsesh/queue-react": "*",
     "@boardsesh/queue-runtime": "*",
     "@boardsesh/shared-schema": "*",
+    "@boardsesh/velvet-tokens": "*",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@emotion/react": "^11.14.0",

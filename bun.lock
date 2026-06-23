@@ -222,6 +222,7 @@
         "@boardsesh/queue-react": "*",
         "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/velvet-tokens": "*",
         "@expo/vector-icons": "15.1.1",
         "@gorhom/bottom-sheet": "^5.2.14",
         "@react-native-async-storage/async-storage": "^3.1.0",
@@ -630,6 +631,15 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/velvet-tokens": {
+      "name": "@boardsesh/velvet-tokens",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/node": "^25.3.3",
+        "typescript": "~6.0.3",
+        "vitest": "*",
+      },
+    },
     "packages/sync-runtime": {
       "name": "@boardsesh/sync-runtime",
       "version": "1.0.0",
@@ -676,6 +686,7 @@
         "@boardsesh/queue-react": "*",
         "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/velvet-tokens": "*",
         "@emoji-mart/data": "^1.2.1",
         "@emoji-mart/react": "^1.1.1",
         "@emotion/react": "^11.14.0",
@@ -1125,6 +1136,8 @@
     "@boardsesh/shared-schema": ["@boardsesh/shared-schema@workspace:packages/shared-schema"],
 
     "@boardsesh/sync-runtime": ["@boardsesh/sync-runtime@workspace:packages/sync-runtime"],
+
+    "@boardsesh/velvet-tokens": ["@boardsesh/velvet-tokens@workspace:packages/shared/velvet-tokens"],
 
     "@boardsesh/web": ["@boardsesh/web@workspace:packages/web"],
 

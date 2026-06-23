@@ -35,6 +35,7 @@ const nextConfig = {
     '@boardsesh/playback-react',
     '@boardsesh/climb-filters',
     '@boardsesh/i18n',
+    '@boardsesh/velvet-tokens',
   ],
   // Empty turbopack config to silence warning about webpack config
   turbopack: {},
