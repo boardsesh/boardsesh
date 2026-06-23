@@ -164,8 +164,8 @@
      swaps in the warm cream that ships on dark brand surfaces.
      Canonical values live in app/theme/theme-config.ts as
      `text.brandPrimaryLight` / `text.brandMutedLight` — keep in sync. */
-  --bs-text-brand-primary: #2a1f1f;
-  --bs-text-brand-muted: #6b5b54;
+  --bs-text-brand-primary: #16111f;
+  --bs-text-brand-muted: #5b5563;
 }
 
 /* Dark mode overrides */
@@ -234,10 +234,10 @@ html[data-theme='dark'] {
   --overlay-dark: rgba(0, 0, 0, 0.7);
   --overlay-text: rgba(255, 255, 255, 0.85);
 
-  /* Brand surfaces are dark in dark mode — restore the warm cream pair.
+  /* Cool near-white pair for dark brand surfaces.
      Canonical values: `themeTokens.text.brandPrimary` / `text.brandMuted`. */
-  --bs-text-brand-primary: #f4f1ea;
-  --bs-text-brand-muted: #8a8780;
+  --bs-text-brand-primary: #f5f2fb;
+  --bs-text-brand-muted: #a9a2b6;
 }
 
 /* Base styles */

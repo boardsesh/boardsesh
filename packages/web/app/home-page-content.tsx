@@ -76,7 +76,7 @@ type OnboardingCardProps = {
 const accentSurface: Record<OnboardingCardAccent, string> = {
   action: 'var(--semantic-selected-light)', // existing rose tint
   social: 'rgba(156, 39, 176, 0.10)', // V11 purple
-  help: 'rgba(74, 111, 138, 0.12)', // info slate — same desaturated dark-UI family as the rest
+  help: 'rgba(94, 100, 145, 0.12)', // violet-slate (Velvet info) — same family as the rest
   v11: 'rgba(156, 39, 176, 0.10)', // V11 #9C27B0
   v12: 'rgba(123, 31, 162, 0.10)', // V12 #7B1FA2
   v13: 'rgba(106, 27, 154, 0.10)', // V13 #6A1B9A
@@ -88,7 +88,7 @@ function resolveAccentIconColor(accent: OnboardingCardAccent): string {
     case 'social':
       return themeTokens.colors.purple;
     case 'help':
-      return themeTokens.colors.info;
+      return 'var(--color-info)';
     case 'v11':
       return '#9C27B0';
     case 'v12':
@@ -99,7 +99,7 @@ function resolveAccentIconColor(accent: OnboardingCardAccent): string {
       return 'inherit';
     case 'action':
     default:
-      return themeTokens.colors.primary;
+      return 'var(--color-primary)';
   }
 }
 
@@ -437,22 +437,17 @@ export default function HomePageContent({
               fontSize: themeTokens.typography.fontSize.lg,
               fontWeight: themeTokens.typography.fontWeight.semibold,
               textTransform: 'none',
-              // Brand-surface CTA — V13 brand purple, not the in-product
-              // rose. The hero is the only place this rule applies on /;
-              // the rest of the page is in-product chrome and stays on
-              // tokens.primary. The global MUI Button override applies a
-              // translateY(-1px) on hover; explicitly cancel it here so
-              // the brand CTA stays anchored.
-              backgroundColor: '#6A1B9A',
-              // CTA sits on a constant purple background in both themes, so
-              // pin the label to the warm cream rather than reading the
-              // theme-aware brand text token (which flips dark in light mode
-              // and would drop contrast against the purple to ~3.6:1).
-              color: themeTokens.text.brandPrimary,
-              boxShadow: '0 4px 12px rgba(106, 27, 154, 0.30)',
+              // Brand CTA — the Velvet violet fill with an amber spark glow
+              // (Velvet's warm half on the hero). The scheme-aware fill clears
+              // AA with white text in both modes. The global MUI Button override
+              // adds a translateY(-1px) on hover; cancel it so the CTA stays
+              // anchored under the warm glow.
+              backgroundColor: 'var(--color-primary-fill)',
+              color: 'var(--color-on-primary)',
+              boxShadow: '0 6px 18px rgba(255, 138, 61, 0.35)',
               '&:hover': {
-                backgroundColor: '#5C1A87',
-                boxShadow: '0 4px 12px rgba(106, 27, 154, 0.40)',
+                backgroundColor: 'var(--color-primary-fill-hover)',
+                boxShadow: '0 8px 22px rgba(255, 138, 61, 0.45)',
                 transform: 'none',
               },
             }}
