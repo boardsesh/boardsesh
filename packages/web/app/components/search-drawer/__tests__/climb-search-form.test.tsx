@@ -249,7 +249,7 @@ describe('ClimbSearchForm — zone changes prune out-of-zone holds', () => {
       for (const [name, value] of Object.entries(attrs)) {
         expect(node.getAttribute(name)).toBe(value);
       }
-      expect(node.getAttribute('fill')).toBe('#16111F');
+      expect(node.getAttribute('fill')).toBe('#181221');
       expect(node.getAttribute('fill-opacity')).toBe('0.42');
       // Exclusion rects must absorb pointer events so taps on dimmed holds
       // outside the zone never reach BoardRenderer underneath (issue #2040).
