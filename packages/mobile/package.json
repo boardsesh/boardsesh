@@ -35,6 +35,7 @@
     "@boardsesh/queue-react": "*",
     "@boardsesh/queue-runtime": "*",
     "@boardsesh/shared-schema": "*",
+    "@boardsesh/velvet-tokens": "*",
     "@boardsesh/watch-pairing": "*",
     "@expo/ui": "57.0.3",
     "@expo/vector-icons": "15.1.1",
