@@ -23,7 +23,7 @@ import type {
   SyncPutFields,
 } from '../api/sync-api-types';
 import { UNIFIED_TABLES } from '../db/table-select';
-import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
+import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 import { setterFollows, notifications, userBoardMappings, userFollows } from '@boardsesh/db/schema';
@@ -598,6 +598,10 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           isListed: item.is_listed,
           createdAt: item.created_at,
           angle: item.angle,
+          // Derive the structured no_match characteristic from Aurora's "No match"
+          // description convention on ingest. Aurora boards carry no other
+          // characteristic, so the array is fully determined by the description.
+          characteristics: isNoMatchClimb(item.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         })),
       )
       .onConflictDoUpdate({
@@ -607,6 +611,9 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           isListed: sql`CASE WHEN ${climbsSchema.isListed} = false AND excluded.is_listed = true THEN true ELSE ${climbsSchema.isListed} END`,
           name: sql`excluded.name`,
           description: sql`excluded.description`,
+          // Description is overwritten from excluded, so keep the derived
+          // characteristic in sync with it (handles remote no-match toggles).
+          characteristics: sql`excluded.characteristics`,
         },
       });
   });

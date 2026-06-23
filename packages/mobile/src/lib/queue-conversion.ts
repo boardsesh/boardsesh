@@ -34,6 +34,7 @@ export type SubscriptionClimb = {
   // framesCount/framesPace drive multi-frame playback at the setter's pace.
   mirrored?: boolean | null;
   is_no_match?: boolean | null;
+  characteristics?: string[] | null;
   framesCount?: number | null;
   framesPace?: number | null;
 };
@@ -68,6 +69,7 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       benchmark_difficulty: subscriptionItem.climb.benchmark_difficulty,
       mirrored: subscriptionItem.climb.mirrored,
       is_no_match: subscriptionItem.climb.is_no_match,
+      characteristics: subscriptionItem.climb.characteristics,
       framesCount: subscriptionItem.climb.framesCount,
       framesPace: subscriptionItem.climb.framesPace,
     },

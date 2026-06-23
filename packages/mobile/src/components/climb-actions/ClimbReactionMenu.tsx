@@ -220,7 +220,11 @@ export function ClimbReactionMenu({
                 <Text variant="headline" numberOfLines={1} style={styles.name}>
                   {climb.name}
                 </Text>
-                <ClimbAttributeIcons isNoMatch={climb.is_no_match} benchmarkDifficulty={climb.benchmark_difficulty} />
+                <ClimbAttributeIcons
+                  isNoMatch={climb.is_no_match}
+                  benchmarkDifficulty={climb.benchmark_difficulty}
+                  characteristics={climb.characteristics}
+                />
                 {formattedGrade || climb.difficulty ? (
                   <Text variant="headline" numberOfLines={1} style={[styles.grade, { color: gradeColor }]}>
                     {formattedGrade ?? climb.difficulty}

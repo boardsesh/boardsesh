@@ -193,6 +193,8 @@ export type ClimbRow = {
   stars: number;
   difficulty_error: string;
   benchmark_difficulty: string | null;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). */
+  characteristics: string[] | null;
   is_draft: boolean;
   created_at: string | null;
   published_at: string | null;

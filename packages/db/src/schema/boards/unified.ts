@@ -340,6 +340,16 @@ export const boardClimbs = pgTable(
     // are duplicates; the dedup path in kilter-sync writes one canonical
     // board_climbs row and routes additional UUIDs through board_climb_aliases.
     holdFingerprint: text('hold_fingerprint'),
+    // Structured climb characteristics — the replacement for the magic strings
+    // that used to live in `description` (Aurora's "No match" prefix) and the
+    // MoonBoard "method" the importer dropped. Tokens: 'no_match',
+    // 'method_footless', 'method_footless_kickboard', 'method_no_kickboard'
+    // (see @boardsesh/shared-schema CLIMB_CHARACTERISTICS). Internal reads/filters
+    // use this array; the description prefix stays only as the Aurora wire format.
+    // A GIN index (board_climbs_characteristics_idx) is created in a custom
+    // migration — like compatible_size_ids' GIN index (migration 0073), kept out
+    // of the schema so drizzle-kit generate never emits a destructive diff for it.
+    characteristics: text('characteristics').array(),
   },
   (table) => ({
     boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),

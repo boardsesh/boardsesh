@@ -6,6 +6,9 @@ import {
   type SaveClimbResult,
   type UpdateClimbResult,
   SUPPORTED_BOARDS,
+  CLIMB_CHARACTERISTICS,
+  isNoMatchClimb,
+  withCharacteristic,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
@@ -15,6 +18,7 @@ import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
+import { requireAdminOrLeader } from '../social/roles';
 import {
   buildMoonBoardClimbHoldRows,
   buildMoonBoardDuplicateError,
@@ -268,6 +272,18 @@ export const climbMutations = {
       throw new Error('saveMoonBoardClimb is only supported for boardType=moonboard');
     }
 
+    // Benchmarks are a trusted, community-wide signal — only admins and
+    // community leaders can flag one at creation. (Changing benchmark status
+    // afterwards goes through the community proposals system.) Gate before any
+    // work so a non-privileged request is rejected cleanly.
+    if (validated.isBenchmark) {
+      await requireAdminOrLeader(ctx, 'moonboard');
+    }
+
+    // MoonBoard "method" (footless / footless+kickboard / no-kickboard) is stored
+    // as a structured characteristic; the default "feet follow hands" is no token.
+    const characteristics = validated.method ? withCharacteristic(null, validated.method, true) : null;
+
     const uuid = generateClimbUuid();
     const now = new Date().toISOString();
     const publishedAt = isDraft ? null : now;
@@ -314,6 +330,7 @@ export const climbMutations = {
       publishedAt,
       synced: false,
       syncError: null,
+      characteristics,
     });
 
     const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
@@ -441,6 +458,7 @@ export const climbMutations = {
         frames: dbSchema.boardClimbs.frames,
         framesCount: dbSchema.boardClimbs.framesCount,
         setterUsername: dbSchema.boardClimbs.setterUsername,
+        characteristics: dbSchema.boardClimbs.characteristics,
       })
       .from(dbSchema.boardClimbs)
       .where(
@@ -550,7 +568,17 @@ export const climbMutations = {
         publishedAt: nextPublishedAt,
       };
       if (validated.name !== undefined) updateSet.name = validated.name;
-      if (validated.description !== undefined) updateSet.description = validated.description;
+      if (validated.description !== undefined) {
+        updateSet.description = validated.description;
+        // Keep the no_match characteristic in sync with the Aurora description
+        // convention, preserving any other tokens (e.g. a MoonBoard method).
+        const nextCharacteristics = withCharacteristic(
+          existing.characteristics,
+          CLIMB_CHARACTERISTICS.NO_MATCH,
+          isNoMatchClimb(validated.description),
+        );
+        updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
+      }
       if (validated.frames !== undefined) updateSet.frames = validated.frames;
       if (validated.angle !== undefined) updateSet.angle = validated.angle;
       if (validated.framesCount !== undefined) updateSet.framesCount = validated.framesCount;

@@ -44,6 +44,14 @@ import { useCreateClimb } from '@boardsesh/create-climb-react';
 import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import { useOptionalBluetoothContext } from '../board-bluetooth-control/bluetooth-context';
 import type { MoonBoardClimbDuplicateMatch, UpdateClimbInput } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, getMoonBoardMethod } from '@boardsesh/shared-schema';
+
+// The three mutually-exclusive MoonBoard method tokens (the create form's
+// selectable methods). The "feet follow hands" default is the empty selection.
+type MoonBoardMethodToken =
+  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS
+  | typeof CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD
+  | typeof CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD;
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import { convertLitUpHoldsStringToMap } from '../board-renderer/util';
 import type { LitUpHoldsMap } from '../board-renderer/types';
@@ -317,6 +325,8 @@ export default function CreateClimbForm({
   const [ocrWarnings, setOcrWarnings] = useState<string[]>([]);
   const [userGrade, setUserGrade] = useState<string | undefined>(undefined);
   const [isBenchmark, setIsBenchmark] = useState(false);
+  // MoonBoard method as a characteristic token; '' = the "feet follow hands" default.
+  const [method, setMethod] = useState<MoonBoardMethodToken | ''>('');
   const userGradeLabel = useMemo(() => (userGrade ? getMoonBoardGradeLabel(userGrade) : undefined), [userGrade]);
   const [selectedAngle, setSelectedAngle] = useState<number>(angle);
   const [moonBoardDuplicateMatch, setMoonBoardDuplicateMatch] = useState<MoonBoardClimbDuplicateMatch | null>(null);
@@ -532,6 +542,7 @@ export default function CreateClimbForm({
     if (boardType === 'moonboard') {
       setUserGrade(undefined);
       setIsBenchmark(false);
+      setMethod('');
       setOcrError(null);
       setOcrWarnings([]);
       setMoonBoardDuplicateMatch(null);
@@ -1071,6 +1082,7 @@ export default function CreateClimbForm({
           isDraft: isDraft,
           userGrade,
           isBenchmark,
+          method: method || undefined,
           setter: undefined,
         },
       };
@@ -1933,6 +1945,28 @@ export default function CreateClimbForm({
                       {g.label}
                     </MenuItem>
                   ))}
+                </MuiSelect>
+              </div>
+              <div className={styles.settingsField}>
+                <Typography variant="body2" component="span" color="text.secondary" className={styles.settingsLabel}>
+                  {t('createClimbForm.fields.method')}
+                </Typography>
+                <MuiSelect
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value as MoonBoardMethodToken | '')}
+                  className={styles.settingsGradeField}
+                  size="small"
+                >
+                  <MenuItem value="">{t('createClimbForm.methodOptions.feetFollowHands')}</MenuItem>
+                  <MenuItem value={CLIMB_CHARACTERISTICS.METHOD_FOOTLESS}>
+                    {t('createClimbForm.methodOptions.footless')}
+                  </MenuItem>
+                  <MenuItem value={CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD}>
+                    {t('createClimbForm.methodOptions.footlessKickboard')}
+                  </MenuItem>
+                  <MenuItem value={CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD}>
+                    {t('createClimbForm.methodOptions.noKickboard')}
+                  </MenuItem>
                 </MuiSelect>
               </div>
               <div className={styles.settingsField}>

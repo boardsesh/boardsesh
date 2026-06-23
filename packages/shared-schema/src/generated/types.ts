@@ -633,6 +633,8 @@ export type Climb = {
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** ISO timestamp of when this climb row was created */
   created_at?: Maybe<Scalars['String']['output']>;
   /** Description or notes about the climb (nullable - omitted from search results, fetch separately via climb detail query) */
@@ -707,6 +709,8 @@ export type ClimbInput = {
   benchmark_difficulty?: InputMaybe<Scalars['String']['input']>;
   /** Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board. */
   boardType?: InputMaybe<Scalars['String']['input']>;
+  /** Structured climb characteristics, round-tripped so the queue keeps method/no-match tags. */
+  characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   difficulty: Scalars['String']['input'];
   difficulty_error: Scalars['String']['input'];
@@ -4598,6 +4602,8 @@ export type SaveMoonBoardClimbInput = {
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;
   layoutId: Scalars['Int']['input'];
+  /** MoonBoard method as a characteristic token: method_footless / method_footless_kickboard / method_no_kickboard. Omit for the 'feet follow hands' default. */
+  method?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
@@ -7044,6 +7050,7 @@ export type ClimbResolvers<
   ascensionist_count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   benchmark_difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

@@ -93,6 +93,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     isDraft: Boolean
     userGrade: String
     isBenchmark: Boolean
+    "MoonBoard method as a characteristic token: method_footless / method_footless_kickboard / method_no_kickboard. Omit for the 'feet follow hands' default."
+    method: String
     setter: String
   }
 

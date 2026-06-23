@@ -11,6 +11,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { formatSends } from '@/app/lib/format-climb-stats';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
+import { resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
 import type { Climb } from '@/app/lib/types';
 
 type ClimbDetailHeaderProps = {
@@ -114,7 +115,11 @@ export default function ClimbDetailHeader({ climb, communityGrade }: ClimbDetail
               }}
             >
               {climb.name}
-              <ClimbIcons benchmarkDifficulty={climb.benchmark_difficulty} isNoMatch={!!climb.is_no_match} />
+              <ClimbIcons
+                benchmarkDifficulty={climb.benchmark_difficulty}
+                isNoMatch={!!climb.is_no_match}
+                methodLabel={resolveMoonBoardMethodLabel(climb.characteristics, t)}
+              />
             </Typography>
           </MarqueeText>
         </Box>

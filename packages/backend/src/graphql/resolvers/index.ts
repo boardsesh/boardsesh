@@ -54,7 +54,7 @@ import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
-import { isNoMatchClimb } from './shared/helpers';
+import { isNoMatchClimb, isNoMatch } from './shared/helpers';
 
 export const resolvers = {
   // Scalar types
@@ -134,7 +134,11 @@ export const resolvers = {
 
   // Climb type resolvers (derived fields)
   Climb: {
-    is_no_match: (climb: { description?: string | null }) => isNoMatchClimb(climb.description),
+    // Prefer the structured characteristic; fall back to the Aurora description
+    // convention for any parent that didn't select the characteristics array
+    // (or for rows synced before the column was backfilled — the prefix persists).
+    is_no_match: (climb: { characteristics?: string[] | null; description?: string | null }) =>
+      climb.characteristics != null ? isNoMatch(climb.characteristics) : isNoMatchClimb(climb.description),
   },
 
   // Union type resolvers

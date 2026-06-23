@@ -11,6 +11,8 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import { resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
+import { getMoonBoardMethod } from '@boardsesh/shared-schema';
 
 export type ClimbTitleData = {
   name?: string;
@@ -23,6 +25,7 @@ export type ClimbTitleData = {
   is_draft?: boolean | null;
   communityGrade?: string | null;
   is_no_match?: boolean | null;
+  characteristics?: string[] | null;
 };
 
 export type ClimbTitleProps = {
@@ -249,6 +252,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
 
     const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
     const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
+    const methodLabel = resolveMoonBoardMethodLabel(climb.characteristics, t);
 
     const renderDifficultyText = () => {
       if (hasGrade) {
@@ -267,7 +271,11 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       <MarqueeText active={isActive}>
         <Typography variant="body2" component="span" sx={nameSx}>
           {climb.name}
-          <ClimbIcons benchmarkDifficulty={climb.benchmark_difficulty} isNoMatch={resolvedIsNoMatch} />
+          <ClimbIcons
+            benchmarkDifficulty={climb.benchmark_difficulty}
+            isNoMatch={resolvedIsNoMatch}
+            methodLabel={methodLabel}
+          />
         </Typography>
       </MarqueeText>
     );
@@ -454,6 +462,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       prevClimb.is_draft === nextClimb.is_draft &&
       prevClimb.communityGrade === nextClimb.communityGrade &&
       prevClimb.is_no_match === nextClimb.is_no_match &&
+      getMoonBoardMethod(prevClimb.characteristics) === getMoonBoardMethod(nextClimb.characteristics) &&
       prev.showAngle === next.showAngle &&
       prev.showSetterInfo === next.showSetterInfo &&
       prev.nameAddon === next.nameAddon &&

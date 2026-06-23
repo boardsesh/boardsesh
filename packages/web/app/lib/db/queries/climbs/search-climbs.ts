@@ -5,6 +5,7 @@ import { searchClimbs as sharedSearchClimbs, mapSearchInputToParams } from '@boa
 import { getBoardClimbSearchTag } from '@/app/lib/climb-search-cache';
 import type { ParsedBoardRouteParameters, SearchRequestPagination, BoardName, Climb } from '@/app/lib/types';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
+import { isNoMatch, isNoMatchClimb } from '@/app/lib/no-match-climb';
 
 /**
  * Cache durations for climb search queries (in seconds)
@@ -45,7 +46,9 @@ async function _executeClimbSearch(
   const climbs: Climb[] = result.climbs.map((row) => ({
     ...row,
     mirrored: undefined,
-    is_no_match: /^no match/i.test(row.description || ''),
+    // Prefer the structured characteristic; fall back to the Aurora description
+    // convention for rows synced before the column was backfilled.
+    is_no_match: row.characteristics != null ? isNoMatch(row.characteristics) : isNoMatchClimb(row.description),
   }));
 
   return { climbs, hasMore: result.hasMore };

@@ -43,6 +43,7 @@ export type ClimbListItemClimb = {
   // Intrinsic climb attributes shown as grey glyphs after the name.
   is_no_match?: boolean | null;
   benchmark_difficulty?: string | null;
+  characteristics?: string[] | null;
 };
 
 type ClimbListItemContentProps = {
@@ -185,7 +186,11 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           <Text variant="body" numberOfLines={1} style={styles.climbName}>
             {climb.name}
           </Text>
-          <ClimbAttributeIcons isNoMatch={climb.is_no_match} benchmarkDifficulty={climb.benchmark_difficulty} />
+          <ClimbAttributeIcons
+            isNoMatch={climb.is_no_match}
+            benchmarkDifficulty={climb.benchmark_difficulty}
+            characteristics={climb.characteristics}
+          />
         </View>
         {subtitleText ? (
           <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>

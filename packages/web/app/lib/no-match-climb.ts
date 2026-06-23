@@ -1,1 +1,1 @@
-export { isNoMatchClimb } from '@boardsesh/shared-schema';
+export { isNoMatchClimb, isNoMatch } from '@boardsesh/shared-schema';

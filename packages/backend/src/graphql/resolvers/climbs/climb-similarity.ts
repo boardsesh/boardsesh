@@ -190,9 +190,10 @@ export async function findExactDuplicateMatch({
         AND ${dbSchema.boardClimbs.isDraft} = FALSE
         AND ${dbSchema.boardClimbs.isListed} IS NOT FALSE
         AND ${dbSchema.boardClimbs.framesCount} = 1
-        -- Aurora-convention "No match" placeholder climbs are not real
-        -- routes; never block a real setter's save by citing a placeholder.
-        AND LOWER(COALESCE(${dbSchema.boardClimbs.description}, '')) NOT LIKE 'no match%'
+        -- "No match" placeholder climbs are not real routes; never block a real
+        -- setter's save by citing a placeholder. Reads the structured no_match
+        -- characteristic (backfilled from the Aurora description convention).
+        AND NOT (COALESCE(${dbSchema.boardClimbs.characteristics}, '{}') @> ARRAY['no_match'])
         ${excludeUuid ? sql`AND ${dbSchema.boardClimbs.uuid} <> ${excludeUuid}` : sql``}
       GROUP BY
         ${dbSchema.boardClimbs.uuid},
@@ -329,9 +330,10 @@ export async function findSimilarClimbs({
           -- left is_listed NULL (most kilter/tension Aurora-synced climbs).
           AND c.is_listed IS NOT FALSE
           AND c.frames_count = 1
-          -- Aurora-convention "No match" placeholder climbs are not real
-          -- routes; exclude them from both the gate and the similarity list.
-          AND LOWER(COALESCE(c.description, '')) NOT LIKE 'no match%'
+          -- "No match" placeholder climbs are not real routes; exclude them from
+          -- both the gate and the similarity list. Reads the structured no_match
+          -- characteristic (backfilled from the Aurora description convention).
+          AND NOT (COALESCE(c.characteristics, '{}') @> ARRAY['no_match'])
           ${excludeUuid ? sql`AND h.climb_uuid <> ${excludeUuid}` : sql``}
         GROUP BY h.climb_uuid
         HAVING COUNT(DISTINCT h.hold_id) >= CEIL(${targetSize}::float * ${safeThreshold})::int

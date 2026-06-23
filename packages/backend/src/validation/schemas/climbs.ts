@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
+import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -226,6 +227,16 @@ export const SaveMoonBoardClimbInputSchema = z.object({
   isDraft: z.boolean().optional(),
   userGrade: z.string().max(20).optional(),
   isBenchmark: z.boolean().optional(),
+  // MoonBoard problem "method" as a characteristic token (mutually exclusive).
+  // Omitted = the "feet follow hands" default. Source of truth for the token set:
+  // CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
+  method: z
+    .enum([
+      CLIMB_CHARACTERISTICS.METHOD_FOOTLESS,
+      CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD,
+      CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD,
+    ])
+    .optional(),
   setter: z.string().max(100).optional(),
 });
 

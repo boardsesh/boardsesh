@@ -324,6 +324,11 @@
     },
     "detailHeader": {
       "project": "proyecto"
+    },
+    "method": {
+      "footless": "Sin pies",
+      "footlessKickboard": "Sin pies + KB",
+      "noKickboard": "Sin KB"
     }
   },
   "detail": {
@@ -409,6 +414,7 @@
       "grade": "Grado",
       "gradeNone": "Ninguno",
       "benchmark": "Benchmark",
+      "method": "Método",
       "description": "Descripción (opcional)"
     },
     "holds": {
@@ -420,6 +426,12 @@
     },
     "validation": {
       "needsStartFinish": "Un bloque válido necesita al menos 1 presa de salida y 1 de final"
+    },
+    "methodOptions": {
+      "feetFollowHands": "Los pies siguen a las manos",
+      "footless": "Sin pies",
+      "footlessKickboard": "Sin pies + kickboard",
+      "noKickboard": "Sin kickboard"
     }
   },
   "draftsDrawer": {
@@ -681,7 +693,12 @@
         "attempt": "Intentado"
       },
       "noMatch": "Sin igualar",
-      "benchmark": "Benchmark"
+      "benchmark": "Benchmark",
+      "method": {
+        "footless": "Sin pies",
+        "footlessKickboard": "Sin pies + KB",
+        "noKickboard": "Sin KB"
+      }
     },
     "climbActions": {
       "preview": "Vista previa",

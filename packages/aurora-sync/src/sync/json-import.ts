@@ -13,6 +13,7 @@ import { randomUUID, createHash } from 'crypto';
 import { fontGradeToDifficultyId } from '@boardsesh/board-config';
 import { LAYOUTS, HOLE_PLACEMENTS } from '@boardsesh/board-constants/product-sizes';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
+import { isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 
 const BATCH_SIZE = 100;
@@ -766,6 +767,7 @@ export async function importJsonExportData(
         setterUsername: data.user.username,
         name: climb.name,
         description: climb.description ?? '',
+        characteristics: isNoMatchClimb(climb.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         frames,
         framesCount: 1,
         framesPace: 0,
@@ -814,6 +816,7 @@ export async function importJsonExportData(
         setterUsername: data.user.username,
         name: climb.name,
         description: climb.description ?? '',
+        characteristics: isNoMatchClimb(climb.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         frames,
         framesCount: 1,
         framesPace: 0,
@@ -846,6 +849,7 @@ export async function importJsonExportData(
                 name: sql`excluded.name`,
                 setterUsername: sql`excluded.setter_username`,
                 description: sql`excluded.description`,
+                characteristics: sql`excluded.characteristics`,
                 frames: sql`excluded.frames`,
                 isDraft: sql`excluded.is_draft`,
                 isListed: sql`excluded.is_listed`,

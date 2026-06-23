@@ -712,6 +712,7 @@ export function PlayDrawer({
                         setterUsername={displayedClimb.setter_username}
                         isNoMatch={displayedClimb.is_no_match}
                         benchmarkDifficulty={displayedClimb.benchmark_difficulty}
+                        characteristics={displayedClimb.characteristics}
                         // The accessory-bar wall climb is physically lit right now, so its
                         // read-only "on the wall" status rides in the header's leading slot
                         // (left of the name, opposite the grade) rather than as a banner.

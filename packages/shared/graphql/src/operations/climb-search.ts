@@ -22,6 +22,7 @@ const CLIMB_SEARCH_FIELDS = `
   benchmark_difficulty
   is_draft
   is_no_match
+  characteristics
   published_at
   created_at
   framesCount
@@ -49,6 +50,7 @@ const CLIMB_DETAIL_FIELDS = `
   difficulty_error
   mirrored
   benchmark_difficulty
+  characteristics
   userAscents
   userAttempts
   is_draft

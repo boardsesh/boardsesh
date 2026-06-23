@@ -44,6 +44,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardType: String
     "Whether this climb disallows matching (both hands on the same hold)"
     is_no_match: Boolean
+    "Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod)."
+    characteristics: [String!]
     "ISO timestamp of when this climb was first published (null while still a draft)"
     published_at: String
     "ISO timestamp of when this climb row was created"
@@ -78,6 +80,8 @@ export const climbTypeDefs = /* GraphQL */ `
     mirrored: Boolean
     benchmark_difficulty: String
     is_no_match: Boolean
+    "Structured climb characteristics, round-tripped so the queue keeps method/no-match tags."
+    characteristics: [String!]
     "Whether this climb is still a draft."
     is_draft: Boolean
     "ISO timestamp of when this climb was first published."

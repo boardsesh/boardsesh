@@ -181,10 +181,12 @@ export const schemaSQL = `
     "required_set_ids" integer[],
     "compatible_size_ids" integer[],
     "published_at" text,
-    "hold_fingerprint" text
+    "hold_fingerprint" text,
+    "characteristics" text[]
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
+  CREATE INDEX IF NOT EXISTS "board_climbs_characteristics_idx" ON "board_climbs" USING gin ("characteristics");
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,

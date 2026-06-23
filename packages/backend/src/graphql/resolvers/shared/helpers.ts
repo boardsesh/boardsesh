@@ -13,7 +13,7 @@ import { logger } from '../../../utils/logger';
 export { validateInput } from '../../../validation/schemas';
 // Re-export MAX_RETRIES from types
 export { MAX_RETRIES } from './types';
-export { isNoMatchClimb } from '@boardsesh/shared-schema';
+export { isNoMatchClimb, isNoMatch } from '@boardsesh/shared-schema';
 
 /**
  * Configuration for session membership retry behavior.

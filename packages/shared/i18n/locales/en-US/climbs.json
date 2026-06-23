@@ -324,6 +324,11 @@
     },
     "detailHeader": {
       "project": "project"
+    },
+    "method": {
+      "footless": "Footless",
+      "footlessKickboard": "Footless + KB",
+      "noKickboard": "No KB"
     }
   },
   "detail": {
@@ -418,6 +423,7 @@
       "grade": "Grade",
       "gradeNone": "None",
       "benchmark": "Benchmark",
+      "method": "Method",
       "description": "Description (optional)"
     },
     "holds": {
@@ -429,6 +435,12 @@
     },
     "validation": {
       "needsStartFinish": "A valid climb needs at least 1 start hold and 1 finish hold"
+    },
+    "methodOptions": {
+      "feetFollowHands": "Feet follow hands",
+      "footless": "Footless",
+      "footlessKickboard": "Footless + kickboard",
+      "noKickboard": "No kickboard"
     }
   },
   "draftsDrawer": {
@@ -681,7 +693,12 @@
         "attempt": "Tried"
       },
       "noMatch": "No matching",
-      "benchmark": "Benchmark"
+      "benchmark": "Benchmark",
+      "method": {
+        "footless": "Footless",
+        "footlessKickboard": "Footless + KB",
+        "noKickboard": "No KB"
+      }
     },
     "climbActions": {
       "preview": "Preview",

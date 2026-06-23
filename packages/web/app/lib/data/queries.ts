@@ -12,7 +12,7 @@ import { getGradeLabel } from '@boardsesh/db/queries';
 
 import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Size } from '../types';
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
-import { isNoMatchClimb } from '@/app/lib/no-match-climb';
+import { isNoMatchClimb, isNoMatch } from '@/app/lib/no-match-climb';
 
 async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Promise<Climb> {
   // Direct-by-UUID lookups intentionally do NOT filter `frames_count = 1`.
@@ -27,7 +27,7 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
         ROUND(climb_stats.quality_average::numeric, 2) as quality_average,
         ROUND(climb_stats.difficulty_average::numeric - climb_stats.display_difficulty::numeric, 2) AS difficulty_error,
         CASE WHEN climb_stats.benchmark_difficulty > 0 THEN climb_stats.benchmark_difficulty::text ELSE NULL END as benchmark_difficulty,
-        climbs.is_draft, climbs.created_at, climbs.published_at
+        climbs.is_draft, climbs.created_at, climbs.published_at, climbs.characteristics
         FROM board_climbs climbs
         LEFT JOIN board_climb_stats climb_stats
           ON climb_stats.climb_uuid = climbs.uuid
@@ -43,7 +43,7 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
-    is_no_match: isNoMatchClimb(row.description),
+    is_no_match: row.characteristics != null ? isNoMatch(row.characteristics) : isNoMatchClimb(row.description),
   } as Climb;
 }
 

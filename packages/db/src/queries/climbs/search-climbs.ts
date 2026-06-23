@@ -26,6 +26,7 @@ type RawSelectResult = {
   difficulty_error: number | string | null;
   benchmark_difficulty: number | null;
   description: string | null;
+  characteristics: string[] | null;
   created_at: string | null;
   published_at: string | null;
   frames_count: number | null;
@@ -62,6 +63,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
       result.benchmark_difficulty && result.benchmark_difficulty > 0 ? result.benchmark_difficulty.toString() : null,
     is_draft: result.is_draft ?? false,
     description: result.description || '',
+    characteristics: result.characteristics ?? null,
     created_at: result.created_at,
     published_at: result.published_at,
     framesCount: result.frames_count ?? null,
@@ -276,6 +278,7 @@ async function statsDrivenSearch(
     >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
     benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
     description: boardClimbs.description,
+    characteristics: boardClimbs.characteristics,
     created_at: boardClimbs.createdAt,
     published_at: boardClimbs.publishedAt,
     frames_count: boardClimbs.framesCount,
@@ -440,6 +443,7 @@ async function runStandardSearch(
     >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
     benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
     description: boardClimbs.description,
+    characteristics: boardClimbs.characteristics,
     created_at: boardClimbs.createdAt,
     published_at: boardClimbs.publishedAt,
     frames_count: boardClimbs.framesCount,

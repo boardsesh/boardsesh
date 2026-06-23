@@ -1,0 +1,88 @@
+import { describe, it, expect } from 'vitest';
+import {
+  CLIMB_CHARACTERISTICS,
+  hasCharacteristic,
+  isNoMatch,
+  getMoonBoardMethod,
+  withCharacteristic,
+  isMethodCharacteristic,
+  moonBoardMethodToCharacteristic,
+} from '../characteristics';
+
+describe('hasCharacteristic / isNoMatch', () => {
+  it('detects a present token', () => {
+    expect(hasCharacteristic(['no_match'], CLIMB_CHARACTERISTICS.NO_MATCH)).toBe(true);
+    expect(hasCharacteristic(['method_footless'], CLIMB_CHARACTERISTICS.NO_MATCH)).toBe(false);
+  });
+
+  it('handles null/undefined/empty', () => {
+    expect(isNoMatch(null)).toBe(false);
+    expect(isNoMatch(undefined)).toBe(false);
+    expect(isNoMatch([])).toBe(false);
+    expect(isNoMatch(['no_match'])).toBe(true);
+  });
+});
+
+describe('getMoonBoardMethod', () => {
+  it('returns the single method token, or null for the default', () => {
+    expect(getMoonBoardMethod(['method_footless'])).toBe('method_footless');
+    expect(getMoonBoardMethod(['no_match', 'method_footless_kickboard'])).toBe('method_footless_kickboard');
+    expect(getMoonBoardMethod(['no_match'])).toBeNull();
+    expect(getMoonBoardMethod([])).toBeNull();
+    expect(getMoonBoardMethod(null)).toBeNull();
+  });
+});
+
+describe('isMethodCharacteristic', () => {
+  it('only the method_* tokens are methods', () => {
+    expect(isMethodCharacteristic('method_footless')).toBe(true);
+    expect(isMethodCharacteristic('method_no_kickboard')).toBe(true);
+    expect(isMethodCharacteristic('no_match')).toBe(false);
+  });
+});
+
+describe('withCharacteristic', () => {
+  it('adds and removes a non-method token without touching others', () => {
+    expect(withCharacteristic(['method_footless'], CLIMB_CHARACTERISTICS.NO_MATCH, true)).toEqual([
+      'method_footless',
+      'no_match',
+    ]);
+    expect(withCharacteristic(['method_footless', 'no_match'], CLIMB_CHARACTERISTICS.NO_MATCH, false)).toEqual([
+      'method_footless',
+    ]);
+  });
+
+  it('is idempotent', () => {
+    expect(withCharacteristic(['no_match'], CLIMB_CHARACTERISTICS.NO_MATCH, true)).toEqual(['no_match']);
+    expect(withCharacteristic([], CLIMB_CHARACTERISTICS.NO_MATCH, false)).toEqual([]);
+  });
+
+  it('enables a method token by clearing any sibling method (mutual exclusivity)', () => {
+    expect(
+      withCharacteristic(['no_match', 'method_footless'], CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD, true),
+    ).toEqual(['no_match', 'method_footless_kickboard']);
+  });
+
+  it('handles null/undefined input', () => {
+    expect(withCharacteristic(null, CLIMB_CHARACTERISTICS.NO_MATCH, true)).toEqual(['no_match']);
+    expect(withCharacteristic(undefined, CLIMB_CHARACTERISTICS.METHOD_FOOTLESS, true)).toEqual(['method_footless']);
+  });
+});
+
+describe('moonBoardMethodToCharacteristic', () => {
+  it('maps known method strings, case/punctuation-insensitively', () => {
+    expect(moonBoardMethodToCharacteristic('Footless')).toBe('method_footless');
+    expect(moonBoardMethodToCharacteristic('Footless + kickboard')).toBe('method_footless_kickboard');
+    expect(moonBoardMethodToCharacteristic('footless+kickboard')).toBe('method_footless_kickboard');
+    expect(moonBoardMethodToCharacteristic('No kickboard')).toBe('method_no_kickboard');
+    expect(moonBoardMethodToCharacteristic('no-kickboard')).toBe('method_no_kickboard');
+  });
+
+  it('maps the default and unknowns to null', () => {
+    expect(moonBoardMethodToCharacteristic('Feet follow hands')).toBeNull();
+    expect(moonBoardMethodToCharacteristic('')).toBeNull();
+    expect(moonBoardMethodToCharacteristic(null)).toBeNull();
+    expect(moonBoardMethodToCharacteristic(undefined)).toBeNull();
+    expect(moonBoardMethodToCharacteristic('Screw ons only')).toBeNull();
+  });
+});

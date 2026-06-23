@@ -4,6 +4,7 @@
 export * from './types';
 export * from './schema';
 export * from './utils';
+export * from './characteristics';
 export * from './beta-video-url';
 export * from './caption-climb-match';
 export * from './image-sizes';

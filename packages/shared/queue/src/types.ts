@@ -37,6 +37,8 @@ export type Climb = {
   benchmark_difficulty: string | null;
   is_draft?: boolean | null;
   is_no_match?: boolean | null;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). */
+  characteristics?: string[] | null;
   userAscents?: number | null;
   userAttempts?: number | null;
   created_at?: string | null;

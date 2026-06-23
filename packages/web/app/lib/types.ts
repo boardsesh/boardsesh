@@ -24,6 +24,9 @@ export type Climb = {
   benchmark_difficulty: string | null; // Benchmark difficulty, can be null
   is_draft?: boolean | null;
   is_no_match?: boolean | null;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   userAscents?: number | null;
   userAttempts?: number | null;
   // ISO timestamp of when this climb row was created

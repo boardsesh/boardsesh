@@ -87,6 +87,7 @@ const CLIMB_SEARCH_FIELDS = `
   benchmark_difficulty
   is_draft
   is_no_match
+  characteristics
   published_at
   created_at
   userAscents
@@ -1141,6 +1142,7 @@ const SUBSCRIPTION_CLIMB_FIELDS = `
   benchmark_difficulty
   mirrored
   is_no_match
+  characteristics
   framesCount
   framesPace
 `;

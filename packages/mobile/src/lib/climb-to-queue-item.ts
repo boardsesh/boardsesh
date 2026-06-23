@@ -36,6 +36,7 @@ export function toClimbInput(climb: Climb): ClimbInput {
     mirrored: climb.mirrored,
     benchmark_difficulty: climb.benchmark_difficulty,
     is_no_match: climb.is_no_match,
+    characteristics: climb.characteristics,
     is_draft: climb.is_draft,
     published_at: climb.published_at,
     userAscents: climb.userAscents,
@@ -74,6 +75,7 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       difficulty_error: climb.difficulty_error,
       benchmark_difficulty: climb.benchmark_difficulty,
       is_no_match: climb.is_no_match,
+      characteristics: climb.characteristics,
       userAscents: climb.userAscents,
       userAttempts: climb.userAttempts,
       // Carry multi-frame playback metadata so a climb queued from search /

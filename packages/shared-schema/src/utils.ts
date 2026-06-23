@@ -1,3 +1,10 @@
+/**
+ * @deprecated Aurora interop only. The structured `no_match` characteristic
+ * (see {@link isNoMatch} and `board_climbs.characteristics`) is now the internal
+ * source of truth. This regex stays because Aurora encodes "no match" as a
+ * `No match\n` description prefix that we still ingest and derive from — use it
+ * only on the ingest/wire-format boundary, never as the internal read path.
+ */
 export function isNoMatchClimb(description: string | null | undefined): boolean {
   return /^no match/i.test(description || '');
 }
@@ -6,12 +13,11 @@ export function isNoMatchClimb(description: string | null | undefined): boolean 
 const NO_MATCH_PREFIX = 'No match\n';
 
 /**
- * Toggle the "no match" marker on a climb description. Aurora encodes the
- * no-match rule as a description that starts with "no match" (see
- * {@link isNoMatchClimb}). Enabling prepends a canonical marker when one isn't
- * already present; disabling strips a leading no-match line. A real
- * `is_no_match` column is the proper long-term home — this keeps the convention
- * in one place until that lands.
+ * @deprecated Aurora interop only. Toggle the "no match" marker on a climb
+ * description (the Aurora wire format). The structured `no_match` characteristic
+ * is now the internal source of truth; only keep encoding the prefix on paths
+ * that read/write Aurora descriptions. Enabling prepends a canonical marker when
+ * one isn't already present; disabling strips a leading no-match line.
  */
 export function withNoMatch(description: string | null | undefined, enabled: boolean): string {
   const current = description ?? '';

@@ -36,6 +36,9 @@ export type Climb = {
   userAttempts?: number | null; // GraphQL nullable Int
   boardType?: string; // Populated in multi-board contexts
   is_no_match?: boolean | null; // Whether matching is disallowed
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   is_draft?: boolean | null; // Whether this climb is still a draft
   // ISO timestamp of when the climb was first published (transitioned out of
   // draft). Null while the climb is still a draft. Used by the create form
@@ -75,6 +78,8 @@ export type ClimbInput = {
   mirrored?: boolean | null;
   benchmark_difficulty?: string | null;
   is_no_match?: boolean | null;
+  // Structured characteristics round-tripped so the queue keeps method/no-match tags.
+  characteristics?: string[] | null;
   // Round-trips draft/publish state through the queue so peers can gate
   // the Edit affordance without re-querying the DB.
   is_draft?: boolean | null;
@@ -201,6 +206,9 @@ export type SaveMoonBoardClimbInput = {
   isDraft?: boolean | null;
   userGrade?: string | null;
   isBenchmark?: boolean | null;
+  /** MoonBoard method as a characteristic token (method_footless / method_footless_kickboard /
+   *  method_no_kickboard). Omit for the "feet follow hands" default. */
+  method?: string | null;
   setter?: string | null;
 };
 

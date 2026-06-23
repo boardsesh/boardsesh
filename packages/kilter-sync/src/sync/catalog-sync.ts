@@ -10,6 +10,7 @@ import {
   type NewBoardClimb,
 } from '@boardsesh/db/schema';
 import { populateDenormalizedColumns } from '@boardsesh/db/queries';
+import { isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 
 import type { KilterTokenProvider } from '../api/token-provider';
 import {
@@ -317,6 +318,9 @@ async function syncBoardLayoutGroup(
         setterUsername: climb.username,
         name: climb.name,
         description: climb.description ?? '',
+        // Derive the structured no_match characteristic from the Aurora "No match"
+        // description convention (carried through the Kilter Grips catalog too).
+        characteristics: isNoMatchClimb(climb.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         edgeLeft: climb.edgeLeft,
         edgeRight: climb.edgeRight,
         edgeBottom: climb.edgeBottom,

@@ -1,0 +1,1 @@
+ALTER TABLE "board_climbs" ADD COLUMN "characteristics" text[];
