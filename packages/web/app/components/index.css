@@ -48,6 +48,8 @@
   --color-success-bg: #e7f4ee;
   --color-error: #c81e1e;
   --color-error-bg: #fbe9e9;
+  --color-error-muted: rgba(200, 30, 30, 0.18);
+  --color-error-muted-hover: rgba(200, 30, 30, 0.28);
   --color-warning: #a04a08;
   --color-warning-bg: #fbf0e3;
 
@@ -212,6 +214,8 @@ html[data-theme='dark'] {
   --color-warning: #fbbf24;
   --color-success-bg: rgba(52, 211, 153, 0.14);
   --color-error-bg: rgba(248, 113, 113, 0.14);
+  --color-error-muted: rgba(248, 113, 113, 0.2);
+  --color-error-muted-hover: rgba(248, 113, 113, 0.3);
   --color-warning-bg: rgba(251, 191, 36, 0.14);
 
   /* Input field backgrounds (white in dark mode) */

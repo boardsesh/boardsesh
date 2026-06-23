@@ -31,7 +31,18 @@ function extractVars(selector: string): Record<string, string> {
   const start = cssText.indexOf(selector);
   if (start === -1) throw new Error(`selector ${selector} not found in index.css`);
   const open = cssText.indexOf('{', start);
-  const close = cssText.indexOf('}', open);
+  // Brace-balanced scan to the matching close, so a future nested at-rule inside the
+  // block doesn't silently truncate the var map at the first '}'.
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < cssText.length; i++) {
+    if (cssText[i] === '{') depth += 1;
+    else if (cssText[i] === '}' && --depth === 0) {
+      close = i;
+      break;
+    }
+  }
+  if (close === -1) throw new Error(`unbalanced braces after ${selector}`);
   const body = cssText.slice(open + 1, close);
   const vars: Record<string, string> = {};
   for (const line of body.split('\n')) {
@@ -60,6 +71,7 @@ describe('index.css ↔ theme-config parity', () => {
     ['--color-success', themeTokens.colors.success, darkTokens.colors.success],
     ['--color-error', themeTokens.colors.error, darkTokens.colors.error],
     ['--color-warning', themeTokens.colors.warning, darkTokens.colors.warning],
+    ['--color-error-muted', themeTokens.colors.errorMuted, darkTokens.colors.errorMuted],
     ['--semantic-background', themeTokens.semantic.background, darkTokens.semantic.background],
     ['--semantic-surface', themeTokens.semantic.surface, darkTokens.semantic.surface],
     ['--semantic-selected-border', themeTokens.semantic.selectedBorder, darkTokens.semantic.selectedBorder],
