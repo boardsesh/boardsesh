@@ -107,10 +107,24 @@ describe('buildAngleGradeBars', () => {
 describe('totalSendsForSource', () => {
   it('sums the per-source count across all angles', () => {
     const entries = [
-      makeEntry({ angle: 40, ascensionistCount: 10, boardseshAscensionistCount: 3 }),
-      makeEntry({ angle: 50, ascensionistCount: 20, boardseshAscensionistCount: 7 }),
+      makeEntry({
+        angle: 40,
+        ascensionistCount: 10,
+        kilterAscensionistCount: 6,
+        auroraAscensionistCount: 4,
+        boardseshAscensionistCount: 3,
+      }),
+      makeEntry({
+        angle: 50,
+        ascensionistCount: 20,
+        kilterAscensionistCount: 5,
+        auroraAscensionistCount: 12,
+        boardseshAscensionistCount: 7,
+      }),
     ];
     expect(totalSendsForSource(entries, 'all')).toBe(30);
+    // boardApp sums the per-angle GREATEST(kilter, aurora): max(6,4) + max(5,12).
+    expect(totalSendsForSource(entries, 'boardApp')).toBe(18);
     expect(totalSendsForSource(entries, 'boardsesh')).toBe(10);
   });
 

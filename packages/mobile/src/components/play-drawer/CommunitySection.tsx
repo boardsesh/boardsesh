@@ -64,6 +64,21 @@ export const CommunitySection = memo(function CommunitySection({
   const qualityNum = parseFloat(qualityAverage);
   const hasQuality = qualityNum > 0;
 
+  // Memoize the five quality stars so a chartSource toggle (local state) doesn't
+  // rebuild this array every render.
+  const starIcons = useMemo(() => {
+    if (!hasQuality) return null;
+    const fullStars = Math.floor(qualityNum);
+    return Array.from({ length: 5 }, (_, starIndex) => (
+      <Icon
+        key={starIndex}
+        name={starIndex < fullStars ? 'star.fill' : 'star'}
+        size={14}
+        color={starIndex < fullStars ? iosSystemColors.starGold : iosSystemColors.systemGray4}
+      />
+    ));
+  }, [qualityNum, hasQuality]);
+
   // The four count fields the selector reads (climb-level totals from props).
   const countFields = useMemo(
     () => ({
@@ -94,10 +109,10 @@ export const CommunitySection = memo(function CommunitySection({
     const present: { source: AscentCountSource; count: number }[] = [];
     const boardApp = boardAppCount(countFields);
     if (boardApp > 0) present.push({ source: 'boardApp', count: boardApp });
-    const boardsesh = boardseshAscensionistCount ?? 0;
+    const boardsesh = countFields.boardsesh ?? 0;
     if (boardsesh > 0) present.push({ source: 'boardsesh', count: boardsesh });
     return present;
-  }, [countFields, boardseshAscensionistCount]);
+  }, [countFields]);
 
   const sourceLabel = useMemo(
     (): Record<AscentCountSource, string> => ({
@@ -184,16 +199,7 @@ export const CommunitySection = memo(function CommunitySection({
     <View style={styles.container}>
       {hasQuality && (
         <View style={styles.statRow}>
-          <View style={styles.starsRow}>
-            {Array.from({ length: 5 }, (_, starIndex) => (
-              <Icon
-                key={starIndex}
-                name={starIndex < Math.floor(qualityNum) ? 'star.fill' : 'star'}
-                size={14}
-                color={starIndex < Math.floor(qualityNum) ? iosSystemColors.starGold : iosSystemColors.systemGray4}
-              />
-            ))}
-          </View>
+          <View style={styles.starsRow}>{starIcons}</View>
           <Text variant="subheadline" color={iosSystemColors.systemGray}>
             {formatQuality(qualityAverage)} &middot; {t('mobile.community.avgQuality')}
           </Text>
