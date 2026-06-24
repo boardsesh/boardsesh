@@ -1592,10 +1592,12 @@ Requires user authentication and controller ownership.
 > in the Capacitor app at repo-root `mobile/`. That app has been removed from the repo; the
 > live implementation now ships in the React Native app under
 > `packages/mobile/modules/live-activity/ios/`. The `mobile/ios/App/...` paths below refer
-> to the original Capacitor layout — the Swift logic carried over largely intact, but the
-> webview-owned `graphql-ws` description is specific to the old Capacitor build.
+> to the original Capacitor layout and have not all been reconciled to the RN file names
+> (e.g. the Capacitor `LiveActivityPlugin.swift` is the Expo `LiveActivityModule.swift`, and
+> the `.entitlements` are now generated from `app.config.ts`). Full reconciliation of this
+> doc is tracked in issue #3176.
 
-On iOS, the JavaScript webapp runs inside a single Capacitor webview and owns the `graphql-ws` WebSocket connection (same client as the browser path). A separate native `SessionWebSocketManager` holds its own `URLSessionWebSocketTask` purely to feed the Live Activity widget — the JS-side WebSocket is suspended when the phone is locked, so without the native connection the lock-screen widget would freeze the moment the app goes to background. APNs push notifications carry the same queue updates to the Live Activity once both the app and the native WS are suspended (see [Live Activity Push Notifications](#live-activity-push-notifications-apns) below).
+In the Capacitor app, the JavaScript webapp ran inside a single webview and owned the `graphql-ws` WebSocket connection (the same client as the browser path); the RN app is fully native and no longer loads the web UI. The native side carried over: a separate `SessionWebSocketManager` holds its own `URLSessionWebSocketTask` purely to feed the Live Activity widget — the JS-side WebSocket is suspended when the phone is locked, so without the native connection the lock-screen widget would freeze the moment the app goes to background. APNs push notifications carry the same queue updates to the Live Activity once both the app and the native WS are suspended (see [Live Activity Push Notifications](#live-activity-push-notifications-apns) below).
 
 The earlier multi-webview + native-WebSocket bridge architecture (Capacitor plugin proxying the JS layer through `URLSessionWebSocketTask`) was removed when main reverted the multi-webview / native tab bar work (#1803). Today there is no `NativeWebSocketPlugin` and no JS-side `NativeWSClient`; iOS uses the same browser-based `graphql-ws` client as web and Android.
 
