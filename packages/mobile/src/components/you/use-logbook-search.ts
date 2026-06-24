@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import {
   DEFAULT_LOGBOOK_FILTERS,
   DEFAULT_LOGBOOK_SORT,
@@ -6,30 +6,38 @@ import {
   type LogbookSortPreset,
   type LogbookSortState,
 } from '@boardsesh/logbook';
+import { loadLogbookPrefs, saveLogbookPrefs } from '../../lib/logbook-prefs-store';
 
 /**
  * Logbook search state for the mobile Logbook tab: the climb-name term, the
  * filter set, and the sort. The tab owns this and feeds it to the filter sheet
  * (props) and to `toAscentFeedInput` for the feed query, mirroring the climbs
  * screen's `ClimbSearchProvider` but as a hook (single consumer, no context).
+ *
+ * Filters + sort persist across app restarts (AsyncStorage); the climb-name
+ * term is transient and is not persisted.
  */
 export type LogbookSearchState = {
   filters: LogbookFilterState;
   sort: LogbookSortState;
-  /** Committed climb-name search term. */
+  /** Committed climb-name search term (not persisted). */
   name: string;
+  /** True once persisted prefs have loaded (or been confirmed absent). */
+  hydrated: boolean;
 };
 
 const DEFAULT_STATE: LogbookSearchState = {
   filters: DEFAULT_LOGBOOK_FILTERS,
   sort: DEFAULT_LOGBOOK_SORT,
   name: '',
+  hydrated: false,
 };
 
 type Action =
   | { type: 'setName'; name: string }
   | { type: 'setPreset'; preset: LogbookSortPreset }
   | { type: 'apply'; filters: LogbookFilterState; sort: LogbookSortState }
+  | { type: 'hydrate'; filters: LogbookFilterState; sort: LogbookSortState }
   | { type: 'reset' };
 
 function reducer(state: LogbookSearchState, action: Action): LogbookSearchState {
@@ -40,8 +48,10 @@ function reducer(state: LogbookSearchState, action: Action): LogbookSearchState 
       return { ...state, sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: action.preset } };
     case 'apply':
       return { ...state, filters: action.filters, sort: action.sort };
+    case 'hydrate':
+      return { ...state, filters: action.filters, sort: action.sort, hydrated: true };
     case 'reset':
-      return { ...DEFAULT_STATE };
+      return { ...DEFAULT_STATE, hydrated: true };
     default:
       return state;
   }
@@ -56,6 +66,29 @@ export type UseLogbookSearch = LogbookSearchState & {
 
 export function useLogbookSearch(): UseLogbookSearch {
   const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
+
+  // Hydrate persisted filter/sort once on mount. The feed waits on `hydrated`
+  // (see LogbookTab) so it fetches once with the restored prefs, not twice.
+  useEffect(() => {
+    let cancelled = false;
+    void loadLogbookPrefs().then((prefs) => {
+      if (cancelled) return;
+      dispatch({
+        type: 'hydrate',
+        filters: prefs?.filters ?? DEFAULT_LOGBOOK_FILTERS,
+        sort: prefs?.sort ?? DEFAULT_LOGBOOK_SORT,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist filter/sort across restarts once hydrated (the name stays transient).
+  useEffect(() => {
+    if (!state.hydrated) return;
+    void saveLogbookPrefs({ filters: state.filters, sort: state.sort });
+  }, [state.hydrated, state.filters, state.sort]);
 
   // Stable action identities so the toolbar / name handler don't churn.
   const actions = useMemo(

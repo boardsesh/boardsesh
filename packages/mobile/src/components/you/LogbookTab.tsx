@@ -61,7 +61,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   // Logbook search/filter/sort state. The committed name lives here; the visible
   // input value is debounced before it commits to the query.
   const logbookSearch = useLogbookSearch();
-  const { filters, sort, name, setName, apply } = logbookSearch;
+  const { filters, sort, name, setName, apply, hydrated } = logbookSearch;
   const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,7 +98,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   // between unrelated re-renders.
   const feedInput = useMemo(() => toAscentFeedInput({ filters, sort, name }), [filters, sort, name]);
 
-  const feed = useUserAscentsFeed(userId, feedInput);
+  // Gate on `hydrated` so the feed fetches once with the restored prefs rather
+  // than once with defaults then again after persistence loads.
+  const feed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated });
   // Stabilise the FlashList `data` identity so it doesn't re-diff every render.
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [], [feed.data]);
 

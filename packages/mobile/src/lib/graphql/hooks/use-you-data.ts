@@ -93,7 +93,11 @@ export function useUserClimbPercentile(userId: string | undefined) {
 }
 
 /** Paginated logbook (ascents) feed for the Logbook tab. */
-export function useUserAscentsFeed(userId: string | undefined, input?: GetUserAscentsFeedQueryVariables['input']) {
+export function useUserAscentsFeed(
+  userId: string | undefined,
+  input?: GetUserAscentsFeedQueryVariables['input'],
+  options?: { enabled?: boolean },
+) {
   return useInfiniteQuery({
     queryKey: ['userAscentsFeed', userId, input],
     initialPageParam: 0,
@@ -107,7 +111,7 @@ export function useUserAscentsFeed(userId: string | undefined, input?: GetUserAs
       lastPage.userAscentsFeed.hasMore
         ? allPages.reduce((total, page) => total + page.userAscentsFeed.items.length, 0)
         : undefined,
-    enabled: !!userId,
+    enabled: !!userId && (options?.enabled ?? true),
   });
 }
 
