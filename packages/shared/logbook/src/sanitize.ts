@@ -21,7 +21,14 @@ const VALID_SORT_PRESETS: LogbookSortPreset[] = ['recent', 'hardest'];
 const sanitizeDifficulty = (value: unknown): number | '' =>
   typeof value === 'number' && Number.isFinite(value) ? value : '';
 
-const sanitizeDate = (value: unknown): string => (typeof value === 'string' ? value : '');
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const sanitizeDate = (value: unknown): string => {
+  if (typeof value !== 'string' || !ISO_DATE_PATTERN.test(value)) return '';
+  // Reject shape-valid but impossible dates (e.g. month 13) — the picker never
+  // produces them, but a corrupted/hand-edited payload might, and they'd flow
+  // straight into the backend's date comparison.
+  return Number.isNaN(new Date(`${value}T00:00:00`).getTime()) ? '' : value;
+};
 
 const sanitizeBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 

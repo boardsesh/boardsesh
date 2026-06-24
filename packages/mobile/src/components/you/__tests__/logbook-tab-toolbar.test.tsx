@@ -9,6 +9,7 @@ import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT, type LogbookFilterState 
 // drive the toolbar without native components.
 const captured = vi.hoisted(() => ({
   feedInput: undefined as unknown,
+  feedEnabled: undefined as boolean | undefined,
   onSearchChange: null as ((text: string) => void) | null,
   onApply: null as ((filters: LogbookFilterState, sort: typeof DEFAULT_LOGBOOK_SORT) => void) | null,
   sheetMounted: false,
@@ -80,12 +81,19 @@ vi.mock('../../ScreenTitle', () => ({
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 
-// Real feed hook capture: record the input arg each render.
+// Real feed hook capture: record the input arg + the enabled gate each render.
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useUserAscentsFeed: (_userId: string | undefined, input: unknown) => {
+  useUserAscentsFeed: (_userId: string | undefined, input: unknown, options?: { enabled?: boolean }) => {
     captured.feedInput = input;
+    captured.feedEnabled = options?.enabled;
     return feed;
   },
+}));
+
+// Deterministic hydration: no persisted prefs, resolves on a microtask.
+vi.mock('../../../lib/logbook-prefs-store', () => ({
+  loadLogbookPrefs: vi.fn(() => Promise.resolve(null)),
+  saveLogbookPrefs: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
@@ -150,6 +158,19 @@ describe('LogbookTab toolbar', () => {
 
     fireEvent.click(getByLabelText('mobile.logbook.filter'));
     expect(captured.sheetMounted).toBe(true);
+  });
+
+  it('gates the feed until persisted prefs hydrate, then opens it', async () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    // Before hydration the feed is disabled, so it never fetches with defaults
+    // (the guard against a default-then-persisted double fetch).
+    expect(captured.feedEnabled).toBe(false);
+    // Flush the mocked loadLogbookPrefs microtask → hydrate → gate opens.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(captured.feedEnabled).toBe(true);
   });
 
   it('applies sheet filters/sort into the feed input', () => {

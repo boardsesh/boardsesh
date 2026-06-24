@@ -161,6 +161,10 @@ export function LogbookFilterSheet({
   }, []);
 
   const snapPoints = useMemo(() => ['90%'], []);
+  // One stable "today" ceiling so the To-date row's maximumDate prop keeps a
+  // constant identity across renders (a fresh Date each render would re-arm
+  // DateRangeRow's openAndroid useCallback every time).
+  const today = useMemo(() => new Date(), []);
 
   const updateFilters = useCallback((patch: Partial<LogbookFilterState>) => {
     setDraftFilters((previous) => ({ ...previous, ...patch }));
@@ -410,7 +414,7 @@ export function LogbookFilterSheet({
               value={draftFilters.toDate}
               onChange={handleToDate}
               clearLabel={t('mobile.logbook.dateAny')}
-              maximumDate={new Date()}
+              maximumDate={today}
             />
 
             <View style={styles.subsectionGap} />

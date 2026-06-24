@@ -125,6 +125,13 @@ describe('sanitizeLogbookFilters', () => {
     expect(sanitizeLogbookFilters({ minGrade: 'x' }).minGrade).toBe('');
     expect(sanitizeLogbookFilters({ minGrade: 12 }).minGrade).toBe(12);
   });
+
+  it('keeps valid ISO dates but rejects malformed or impossible ones', () => {
+    expect(sanitizeLogbookFilters({ fromDate: '2026-01-15' }).fromDate).toBe('2026-01-15');
+    expect(sanitizeLogbookFilters({ fromDate: 'not-a-date' }).fromDate).toBe('');
+    expect(sanitizeLogbookFilters({ fromDate: '01/15/2026' }).fromDate).toBe('');
+    expect(sanitizeLogbookFilters({ toDate: '2026-13-40' }).toDate).toBe('');
+  });
 });
 
 describe('sanitizeLogbookSort', () => {
