@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { getPasswordResetIdentifier } from '@/app/lib/auth/password-reset';
 
 const resetPasswordSchema = z
   .object({
@@ -21,12 +22,7 @@ const resetPasswordSchema = z
     path: ['confirmPassword'],
   });
 
-const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 const MIN_RESPONSE_TIME_MS = 1500;
-
-function getResetIdentifier(email: string): string {
-  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
-}
 
 async function consistentDelay(startTime: number): Promise<void> {
   const elapsed = Date.now() - startTime;
@@ -65,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     const { email, token, password } = validationResult.data;
     const db = getDb();
-    const identifier = getResetIdentifier(email);
+    const identifier = getPasswordResetIdentifier(email);
 
     const resetToken = await db
       .select()

@@ -59,7 +59,7 @@ export default function ResetPasswordScreen() {
     track('Password Reset Submitted', { flow: 'native' });
 
     try {
-      const result = await resetPassword(email, token, password);
+      const result = await resetPassword(email, token, password, confirmPassword);
       if (!result.success) {
         if (result.error === 'network') {
           setFormError(t('nativeStart.networkError'));

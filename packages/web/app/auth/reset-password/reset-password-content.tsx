@@ -15,6 +15,7 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Logo from '@/app/components/brand/logo';
 import BackButton from '@/app/components/back-button';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
@@ -165,7 +166,7 @@ export default function ResetPasswordContent() {
                 </>
               )}
 
-              <Button variant="text" href="/auth/login">
+              <Button component={LocaleLink} variant="text" href="/auth/login">
                 {t('resetPassword.back')}
               </Button>
             </Stack>

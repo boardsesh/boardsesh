@@ -14,8 +14,11 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Logo from '@/app/components/brand/logo';
 import BackButton from '@/app/components/back-button';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordContent() {
   const { t } = useTranslation('auth');
@@ -25,8 +28,13 @@ export default function ForgotPasswordContent() {
   const { showMessage } = useSnackbar();
 
   const handleSubmit = async () => {
-    if (!email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setEmailError(t('forgotPassword.validation.emailRequired'));
+      return;
+    }
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setEmailError(t('forgotPassword.validation.emailInvalid'));
       return;
     }
 
@@ -35,7 +43,7 @@ export default function ForgotPasswordContent() {
       const response = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: trimmedEmail }),
       });
 
       const data = await response.json();
@@ -110,12 +118,12 @@ export default function ForgotPasswordContent() {
                 variant="contained"
                 onClick={handleSubmit}
                 disabled={loading}
-                startIcon={loading ? <CircularProgress size={16} /> : undefined}
+                startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
               >
-                {loading ? <CircularProgress size={16} /> : t('forgotPassword.submit')}
+                {t('forgotPassword.submit')}
               </Button>
 
-              <Button variant="text" href="/auth/login">
+              <Button component={LocaleLink} variant="text" href="/auth/login">
                 {t('forgotPassword.back')}
               </Button>
             </Stack>

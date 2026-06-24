@@ -5,13 +5,13 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { sendPasswordResetEmail } from '@/app/lib/email/email-service';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
+import { getPasswordResetIdentifier } from '@/app/lib/auth/password-reset';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
 });
 
 const MIN_RESPONSE_TIME_MS = 1500;
-const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 
 async function consistentDelay(startTime: number): Promise<void> {
   const elapsed = Date.now() - startTime;
@@ -19,10 +19,6 @@ async function consistentDelay(startTime: number): Promise<void> {
   if (remaining > 0) {
     await new Promise((resolve) => setTimeout(resolve, remaining));
   }
-}
-
-function getResetIdentifier(email: string): string {
-  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -81,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     const token = crypto.randomUUID();
     const expires = new Date(Date.now() + 60 * 60 * 1000);
-    const identifier = getResetIdentifier(email);
+    const identifier = getPasswordResetIdentifier(email);
 
     await db.transaction(async (tx) => {
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));

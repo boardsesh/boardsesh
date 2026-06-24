@@ -414,13 +414,18 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
  * Submit a new password using a reset token from the email link.
  * Calls the web API's reset-password endpoint.
  */
-export async function resetPassword(email: string, token: string, newPassword: string): Promise<PasswordResetResult> {
+export async function resetPassword(
+  email: string,
+  token: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<PasswordResetResult> {
   let response: Response;
   try {
     response = await fetch(`${WEB_BASE_URL}/api/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, token, password: newPassword, confirmPassword: newPassword }),
+      body: JSON.stringify({ email, token, password: newPassword, confirmPassword }),
       signal: createTimeoutSignal(15_000),
     });
   } catch {
